@@ -78,7 +78,7 @@ describe('React countries list', () => {
     expect(h.view.container.querySelector('table')).not.toBeNull()
     expect(
       el<HTMLAnchorElement>('i18n-countries-link-en').getAttribute('href'),
-    ).toBe('/hilos/i18n/countries/en')
+    ).toBe('/hilos/i18n/country/144')
     expect(el('i18n-countries-own-qx').textContent).toContain('Custom')
     expect(el('hilos-table-row-144').textContent).toContain('EN')
     expect(el('i18n-countries-locale-none-en').textContent).toContain(

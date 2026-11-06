@@ -302,20 +302,29 @@ export class HilosI18nCountryPage {
   protected readonly loading = hilosSignal(this.router.pageLoading)
   // The country the address names now — read live, never a snapshot of the
   // first mount: navigating to another country is a new subject.
-  private readonly countryCode = hilosSignal(
+  private readonly countryId = hilosSignal(
     computedSignal(() =>
-      String(this.router.currentRoute.get().params['countryCode'] ?? ''),
+      String(this.router.currentRoute.get().params['countryId'] ?? ''),
     ),
   )
 
   /** The card and its edit session, bound to one context and one country. */
   protected readonly binding = computed(() => {
     const context = this.context()
-    const card = createHilosI18nCountryCard(context)
+    this.countryId()
+    const rawCard = createHilosI18nCountryCard(context)
+    const card = computedSignal(() => {
+      const current = rawCard.get()
+      return current !== null &&
+        String(current.countryId) ===
+          String(this.router.currentRoute.get().params['countryId'])
+        ? current
+        : null
+    })
 
     return {
       context,
-      countryCode: this.countryCode(),
+      countryId: this.countryId(),
       card,
       window: createHilosI18nCountryCardWindow(card, context),
       deleteCountry: createHilosI18nCountryDelete(context).deleteCountry,

@@ -24,6 +24,8 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
+// spec-owner: demo — carries Chat's Vue browser journeys for these shared pages
+
 // Real Vue Security pages through the built Chat artifact and the live daemon.
 // Each first response belongs to the subscription bookmarked before navigation;
 // raw physical packets and all their batch inners are retained in attachments.
@@ -160,8 +162,8 @@ test('provider row opens a complete first head before filtered asks and keeps ro
     await createTestAdmin(expect, page)
     await gotoPage(expect, page, `${SECURITY_PATH}/oauth`)
     for (const [providerKey, providerName, path] of [
-      ['oauth:github', 'github', '/hilos/security/oauth/github'],
-      ['oauth:google', 'google', '/hilos/security/oauth/google'],
+      ['oauth:github', 'github', '/hilos/security/oauth/provider/github'],
+      ['oauth:google', 'google', '/hilos/security/oauth/provider/google'],
     ]) {
       const link = shownByTestId(
         page,
@@ -200,10 +202,10 @@ test('provider row opens a complete first head before filtered asks and keeps ro
 
     await shownByTestId(page, 'hilos-oauth-provider-open-oauth:google').click()
     await expectPageReady(expect, page)
-    const providerPath = '/hilos/security/oauth/google'
+    const providerPath = '/hilos/security/oauth/provider/google'
     await expect(page).toHaveURL(providerPath)
     let opening = log.sent.length
-    await gotoPage(expect, page, '/hilos/security/oauth/unknown')
+    await gotoPage(expect, page, '/hilos/security/oauth/provider/unknown')
     const unknown = await expectSecurityFirstReply(
       expect,
       log,

@@ -724,9 +724,9 @@ filters or row actions. It draws `Column` (the qualified `table.column`) and
 The eight Change Log page routes are `/hilos/change-log`,
 `/hilos/change-log/feed`, `/hilos/change-log/tables` and
 `/hilos/change-log/noisy`; the table owner uses
-`/hilos/change-log/tables/{tableId}`, `/hilos/change-log/tables/{tableId}/columns`,
-`/hilos/change-log/tables/{tableId}/triggers` and
-`/hilos/change-log/tables/{tableId}/history/{record?}`. `tableId` is the live
+`/hilos/change-log/table/{tableId}`, `/hilos/change-log/table/{tableId}/columns`,
+`/hilos/change-log/table/{tableId}/triggers` and
+`/hilos/change-log/table/{tableId}/history/{record?}`. `tableId` is the live
 table name. Only History accepts the optional record key; composite key parts
 are encoded, comma-joined and encoded as one route segment. The plural `/tables`
 address remains the list page.

@@ -408,7 +408,7 @@ final class I18nLocaleDeleteTest extends IntegrationTestCase
      */
     private function subscribe(string $acceptKey): void
     {
-        $params = ['languageCode' => 'en'];
+        $params = ['languageId' => (string)Hilos::$db->languages['en']->id];
         $windows = [
             ChatTableContext::hilosI18nLanguageLocales => new TableWindowDescriptorDTO(
                 filter: [HilosI18nLanguageLocalesTable::FILTER_LANGUAGE => Hilos::$db->languages['en']->id],

@@ -199,26 +199,27 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     admin: true,
   },
   [HilosPages.ANALYTICS_BROWSER_SESSION]: {
-    path: '/hilos/analytics/browser-sessions/{browserSessionId}',
+    path: '/hilos/analytics/browser-session/{browserSessionId}',
     admin: true,
     paramPatterns: { browserSessionId: '\\+?\\d+' },
   },
   [HilosPages.ANALYTICS_BROWSER_SESSIONS]: {
     path: '/hilos/analytics/browser-sessions/{period?}',
     admin: true,
+    paramPatterns: { period: '(?!\\+?\\d+(?![\\s\\S]))[\\s\\S]+' },
   },
   [HilosPages.ANALYTICS_PERSON]: {
-    path: '/hilos/analytics/people/{userId}',
+    path: '/hilos/analytics/person/{userId}',
     admin: true,
   },
   [HilosPages.ROLES]: { path: '/hilos/roles', admin: true },
   [HilosPages.MODERATION]: { path: '/hilos/moderation', admin: true },
   [HilosPages.MODERATION_KIND]: {
-    path: '/hilos/moderation/{kind}',
+    path: '/hilos/moderation/kind/{kind}',
     admin: true,
   },
   [HilosPages.MODERATION_KIND_RULES]: {
-    path: '/hilos/moderation/{kind}/rules',
+    path: '/hilos/moderation/kind/{kind}/rules',
     admin: true,
   },
   [HilosPages.BACKUP]: { path: '/hilos/backup', admin: true },
@@ -260,35 +261,40 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   [HilosPages.I18N_ACTIONS]: { path: '/hilos/i18n/actions', admin: true },
   [HilosPages.I18N_EMAILS]: { path: '/hilos/i18n/emails', admin: true },
   [HilosPages.I18N_LANGUAGE]: {
-    path: '/hilos/i18n/languages/{languageCode}',
+    path: '/hilos/i18n/language/{languageId}',
     admin: true,
+    paramPatterns: { languageId: '[1-9][0-9]*' },
   },
   [HilosPages.I18N_LANGUAGE_NAMES]: {
-    path: '/hilos/i18n/languages/{languageCode}/names',
+    path: '/hilos/i18n/language/{languageId}/names',
     admin: true,
+    paramPatterns: { languageId: '[1-9][0-9]*' },
   },
   [HilosPages.I18N_LANGUAGE_LOCALES]: {
-    path: '/hilos/i18n/languages/{languageCode}/locales',
+    path: '/hilos/i18n/language/{languageId}/locales',
     admin: true,
+    paramPatterns: { languageId: '[1-9][0-9]*' },
   },
   [HilosPages.I18N_COUNTRY]: {
-    path: '/hilos/i18n/countries/{countryCode}',
+    path: '/hilos/i18n/country/{countryId}',
     admin: true,
+    paramPatterns: { countryId: '[1-9][0-9]*' },
   },
   [HilosPages.I18N_COUNTRY_NAMES]: {
-    path: '/hilos/i18n/countries/{countryCode}/names',
+    path: '/hilos/i18n/country/{countryId}/names',
     admin: true,
+    paramPatterns: { countryId: '[1-9][0-9]*' },
   },
   [HilosPages.I18N_UI_PAGE]: {
-    path: '/hilos/i18n/ui-pages/{uiPageId}',
+    path: '/hilos/i18n/ui-page/{uiPageId}',
     admin: true,
   },
   [HilosPages.I18N_GROUP]: {
-    path: '/hilos/i18n/groups/{groupId}',
+    path: '/hilos/i18n/group/{groupId}',
     admin: true,
   },
   [HilosPages.I18N_ACTION]: {
-    path: '/hilos/i18n/actions/{actionId}',
+    path: '/hilos/i18n/action/{actionId}',
     admin: true,
   },
   [HilosPages.I18N_TRANSLATE_ENTITY]: {
@@ -330,19 +336,19 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     admin: true,
   },
   [HilosPages.CHANGE_LOG_TABLE]: {
-    path: '/hilos/change-log/tables/{tableId}',
+    path: '/hilos/change-log/table/{tableId}',
     admin: true,
   },
   [HilosPages.CHANGE_LOG_TABLE_COLUMNS]: {
-    path: '/hilos/change-log/tables/{tableId}/columns',
+    path: '/hilos/change-log/table/{tableId}/columns',
     admin: true,
   },
   [HilosPages.CHANGE_LOG_TABLE_TRIGGERS]: {
-    path: '/hilos/change-log/tables/{tableId}/triggers',
+    path: '/hilos/change-log/table/{tableId}/triggers',
     admin: true,
   },
   [HilosPages.CHANGE_LOG_TABLE_HISTORY]: {
-    path: '/hilos/change-log/tables/{tableId}/history/{record?}',
+    path: '/hilos/change-log/table/{tableId}/history/{record?}',
     admin: true,
   },
   [HilosPages.DAEMON]: { path: '/hilos/daemon', admin: true },
@@ -350,30 +356,36 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     path: '/hilos/daemon/placement',
     admin: true,
   },
-  [HilosPages.DAEMON_NODE]: { path: '/hilos/daemon/{nodeId}', admin: true },
+  [HilosPages.DAEMON_NODE]: {
+    path: '/hilos/daemon/node/{nodeId}',
+    admin: true,
+  },
   [HilosPages.DAEMON_WORKERS]: {
-    path: '/hilos/daemon/{nodeId}/workers',
+    path: '/hilos/daemon/node/{nodeId}/workers',
     admin: true,
   },
   [HilosPages.DAEMON_AGENTS]: {
-    path: '/hilos/daemon/{nodeId}/agents',
+    path: '/hilos/daemon/node/{nodeId}/agents',
     admin: true,
   },
   [HilosPages.DAEMON_CRON]: {
-    path: '/hilos/daemon/{nodeId}/cron',
+    path: '/hilos/daemon/node/{nodeId}/cron',
     admin: true,
   },
   [HilosPages.DAEMON_WEBSOCKETS]: {
-    path: '/hilos/daemon/{nodeId}/websockets',
+    path: '/hilos/daemon/node/{nodeId}/websockets',
     admin: true,
   },
   [HilosPages.DAEMON_HTTP_SERVER]: {
-    path: '/hilos/daemon/{nodeId}/http',
+    path: '/hilos/daemon/node/{nodeId}/http',
     admin: true,
   },
-  [HilosPages.DAEMON_ENV]: { path: '/hilos/daemon/{nodeId}/env', admin: true },
+  [HilosPages.DAEMON_ENV]: {
+    path: '/hilos/daemon/node/{nodeId}/env',
+    admin: true,
+  },
   [HilosPages.DAEMON_ENV_ORPHANS]: {
-    path: '/hilos/daemon/{nodeId}/env/orphans',
+    path: '/hilos/daemon/node/{nodeId}/env/orphans',
     admin: true,
   },
   [HilosPages.DAEMON_ENV_MISMATCH]: {
@@ -410,15 +422,15 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   },
   [HilosPages.MCP_SKILLS]: { path: '/hilos/mcp-skills', admin: true },
   [HilosPages.MCP_SKILLS_MCP]: {
-    path: '/hilos/mcp-skills/{mcpId}',
+    path: '/hilos/mcp-skills/server/{mcpId}',
     admin: true,
   },
   [HilosPages.MCP_SKILLS_MCP_LOGS]: {
-    path: '/hilos/mcp-skills/{mcpId}/logs',
+    path: '/hilos/mcp-skills/server/{mcpId}/logs',
     admin: true,
   },
   [HilosPages.MCP_SKILLS_MCP_LOGS_VIEW]: {
-    path: '/hilos/mcp-skills/{mcpId}/logs/view',
+    path: '/hilos/mcp-skills/server/{mcpId}/logs/view',
     admin: true,
   },
   [HilosPages.SIL]: { path: '/hilos/sil', admin: true },
@@ -429,19 +441,19 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   },
   [HilosPages.COMMUNICATIONS]: { path: '/hilos/communications', admin: true },
   [HilosPages.COMMUNICATIONS_CHANNEL]: {
-    path: '/hilos/communications/{channelId}',
+    path: '/hilos/communications/channel/{channelId}',
     admin: true,
   },
   [HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION]: {
-    path: '/hilos/communications/{channelId}/configuration',
+    path: '/hilos/communications/channel/{channelId}/configuration',
     admin: true,
   },
   [HilosPages.COMMUNICATIONS_DELIVERIES]: {
-    path: '/hilos/communications/{channelId}/deliveries',
+    path: '/hilos/communications/channel/{channelId}/deliveries',
     admin: true,
   },
   [HilosPages.COMMUNICATIONS_CHANNEL_FRAME]: {
-    path: '/hilos/communications/{channelId}/frame',
+    path: '/hilos/communications/channel/{channelId}/frame',
     admin: true,
   },
   [HilosPages.SECURITY]: { path: '/hilos/security', admin: true },
@@ -452,7 +464,7 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   },
   [HilosPages.SECURITY_OAUTH]: { path: '/hilos/security/oauth', admin: true },
   [HilosPages.SECURITY_OAUTH_PROVIDER]: {
-    path: '/hilos/security/oauth/{providerId}',
+    path: '/hilos/security/oauth/provider/{providerId}',
     admin: true,
   },
   [HilosPages.SECURITY_SIGN_IN_METHODS]: {
@@ -499,15 +511,15 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   [HilosPages.LEGAL_SETTINGS]: { path: '/hilos/legal/settings', admin: true },
   [HilosPages.BILLING]: { path: '/hilos/billing', admin: true },
   [HilosPages.BILLING_PROVIDER]: {
-    path: '/hilos/billing/{providerId}',
+    path: '/hilos/billing/provider/{providerId}',
     admin: true,
   },
   [HilosPages.BILLING_PAYMENTS]: {
-    path: '/hilos/billing/{providerId}/payments',
+    path: '/hilos/billing/provider/{providerId}/payments',
     admin: true,
   },
   [HilosPages.BILLING_REFUNDS]: {
-    path: '/hilos/billing/{providerId}/refunds',
+    path: '/hilos/billing/provider/{providerId}/refunds',
     admin: true,
   },
   [HilosPages.PUBLIC_STATUS]: { path: '/status', admin: false },

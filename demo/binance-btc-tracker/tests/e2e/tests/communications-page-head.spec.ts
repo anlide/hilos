@@ -18,6 +18,8 @@ import {
   sessionToken,
 } from '../../../../../framework/frontend/e2e/index.js'
 
+// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
+
 const OVERVIEW = 'hilos_communications_channel'
 const CONFIGURATION = 'hilos_communications_channel_configuration'
 const DELIVERIES = 'hilos_communications_deliveries'
@@ -35,7 +37,7 @@ test('Configure opens Configuration and channel links bind the real Email and Sm
     await shownByTestId(page, `hilos-channel-configure-${channel}`).click()
     await expectPageReady(expect, page)
     await expect(page).toHaveURL(
-      `/hilos/communications/${channel}/configuration`,
+      `/hilos/communications/channel/${channel}/configuration`,
     )
     await expectCommunicationsChannelHead(
       expect,
@@ -49,7 +51,7 @@ test('Configure opens Configuration and channel links bind the real Email and Sm
 
     await page.getByTestId(`hilos-page-tab-${OVERVIEW}`).click()
     await expectPageReady(expect, page)
-    await expect(page).toHaveURL(`/hilos/communications/${channel}`)
+    await expect(page).toHaveURL(`/hilos/communications/channel/${channel}`)
     await expectCommunicationsChannelHead(
       expect,
       page,
@@ -61,7 +63,9 @@ test('Configure opens Configuration and channel links bind the real Email and Sm
 
     await page.getByTestId(`hilos-page-tab-${DELIVERIES}`).click()
     await expectPageReady(expect, page)
-    await expect(page).toHaveURL(`/hilos/communications/${channel}/deliveries`)
+    await expect(page).toHaveURL(
+      `/hilos/communications/channel/${channel}/deliveries`,
+    )
     await expectCommunicationsChannelHead(
       expect,
       page,
@@ -86,7 +90,11 @@ for (const tab of ['configuration', 'deliveries'] as const) {
         ['email', 'Email'],
         ['sms', 'Sms'],
       ] as const) {
-        await gotoPage(expect, page, `/hilos/communications/${channel}/${tab}`)
+        await gotoPage(
+          expect,
+          page,
+          `/hilos/communications/channel/${channel}/${tab}`,
+        )
         await expectCommunicationsChannelHead(expect, page, tab, channel, label)
         await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
         const beforeReload = wire.packets.length
@@ -149,7 +157,7 @@ test('a different admin session changes the open summary while Deliveries keeps 
       await gotoPage(
         expect,
         configuration,
-        '/hilos/communications/sms/configuration',
+        '/hilos/communications/channel/sms/configuration',
       )
       await expectCommunicationsChannelHead(
         expect,
@@ -173,7 +181,7 @@ test('a different admin session changes the open summary while Deliveries keeps 
         CONFIGURATION,
       ).at(-1)!.summary
 
-      await gotoPage(expect, overview, '/hilos/communications/sms')
+      await gotoPage(expect, overview, '/hilos/communications/channel/sms')
       await expectCommunicationsChannelHead(
         expect,
         overview,
@@ -193,7 +201,11 @@ test('a different admin session changes the open summary while Deliveries keeps 
         }),
       ).toEqual([])
 
-      await gotoPage(expect, journal, '/hilos/communications/sms/deliveries')
+      await gotoPage(
+        expect,
+        journal,
+        '/hilos/communications/channel/sms/deliveries',
+      )
       await expectCommunicationsChannelHead(
         expect,
         journal,

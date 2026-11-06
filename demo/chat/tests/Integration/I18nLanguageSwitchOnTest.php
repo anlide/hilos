@@ -239,7 +239,7 @@ final class I18nLanguageSwitchOnTest extends IntegrationTestCase
 
     private function subscribe(string $acceptKey, string $code): void
     {
-        $params = ['languageCode' => $code];
+        $params = ['languageId' => (string)Hilos::$db->languages[$code]->id];
         Hilos::$sr->subscribeToPage(LanguageDetailPage::PAGE,
             new WebSocketPageSubscribeSignalDTO($acceptKey, LanguageDetailPage::PAGE, $params));
         ExecutionContext::run(new ExecutionFrame(acceptKey: $acceptKey), function () use ($acceptKey, $params): void {

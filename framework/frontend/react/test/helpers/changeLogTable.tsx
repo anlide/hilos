@@ -225,7 +225,7 @@ export function tableRouter(
     dashboardSections: createSignal(undefined),
     resolvePath: (page, to = {}) => {
       if (unbuilt.includes(page)) return undefined
-      const base = `/hilos/change-log/tables/${encodeURIComponent(to.tableId ?? '')}`
+      const base = `/hilos/change-log/table/${encodeURIComponent(to.tableId ?? '')}`
       if (page === HilosPages.CHANGE_LOG_TABLE) return base
       if (page === HilosPages.CHANGE_LOG_TABLE_COLUMNS) return `${base}/columns`
       if (page === HilosPages.CHANGE_LOG_TABLE_TRIGGERS)

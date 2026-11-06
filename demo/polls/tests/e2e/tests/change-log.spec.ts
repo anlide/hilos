@@ -5,7 +5,6 @@ import {
   grantAdminToSelf,
   CHANGE_LOG_BLOCK_ACTION,
   CHANGE_LOG_FEED_PATH,
-  CHANGE_LOG_TABLES_PATH,
   chooseChangeLogFeedTable,
   dismissToasts,
   expectChangeLogDashboardCard,
@@ -24,6 +23,8 @@ import {
   gotoPage,
   signUpAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
+
+// spec-owner: demo — carries Polls' Angular browser journeys for these shared pages
 
 test('opens Change Log from the admin dashboard with its overview and feed', async ({
   page,
@@ -101,7 +102,7 @@ test('its registration receipt shows person and identity creation as facts witho
   await gotoPage(
     expect,
     page,
-    `${CHANGE_LOG_TABLES_PATH}/hilos_user/history/${userId}`,
+    `/hilos/change-log/table/hilos_user/history/${userId}`,
   )
   await expectTrackedTableRecord(expect, page, 'hilos_user', String(userId), 51)
   const receiptId = await expectRegistrationHistory(expect, page)

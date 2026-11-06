@@ -191,7 +191,7 @@ describe('HilosModerationPage', () => {
       '[aria-label="Open Profile name"]',
     )!
     expect(open.getAttribute('href')).toBe(
-      '/hilos/moderation/hilos_profile_name',
+      '/hilos/moderation/kind/hilos_profile_name',
     )
     open.click()
     expect(h.router.currentRoute.get().params.kind).toBe(initial.kind)

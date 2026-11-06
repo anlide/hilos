@@ -29,7 +29,7 @@ export interface HilosI18nLanguageLocalesPageProps {
 }
 const PLATE = 'badge bg-body-tertiary text-body-secondary border fw-normal'
 
-/** The pair table of one code-addressed language, including its countryless row. */
+/** The pair table of one id-addressed language, including its countryless row. */
 export function HilosI18nLanguageLocalesPage({
   context,
 }: HilosI18nLanguageLocalesPageProps) {
@@ -42,33 +42,42 @@ export function HilosI18nLanguageLocalesPage({
   const [binding, setBinding] = useState({ context, revision: 0 })
   if (binding.context !== context)
     setBinding({ context, revision: binding.revision + 1 })
-  const code = (route.params.languageCode as string | undefined) ?? ''
+  const languageId = (route.params.languageId as string | undefined) ?? ''
   return (
     <LanguageLocales
-      key={`${binding.revision}:${code}`}
+      key={`${binding.revision}:${languageId}`}
       context={context}
-      code={code}
+      languageId={languageId}
     />
   )
 }
 
 function LanguageLocales({
   context,
-  code,
-}: HilosI18nLanguageLocalesPageProps & { code: string }) {
+  languageId,
+}: HilosI18nLanguageLocalesPageProps & { languageId: string }) {
   const router = useContext(HilosRouterContext)!
   const language = useMemo(
     () =>
       computedSignal(
         () =>
-          (router.currentRoute.get().params.languageCode as
-            string | undefined) ?? '',
+          (router.currentRoute.get().params.languageId as string | undefined) ??
+          '',
       ),
     [router],
   )
+  const rawCard = useMemo(() => createHilosI18nLanguageCard(context), [context])
   const liveCard = useMemo(
-    () => createHilosI18nLanguageCard(context),
-    [context],
+    () =>
+      computedSignal(() => {
+        const current = rawCard.get()
+        return current !== null &&
+          String(current.languageId) ===
+            String(router.currentRoute.get().params.languageId)
+          ? current
+          : null
+      }),
+    [rawCard, router],
   )
   const name = useMemo(
     () =>
@@ -97,7 +106,7 @@ function LanguageLocales({
       createHilosI18nLanguageLocalesTable(
         context,
         computedSignal(() =>
-          liveCard.get()?.code === language.get()
+          String(liveCard.get()?.languageId) === language.get()
             ? (liveCard.get()?.languageId ?? null)
             : null,
         ),
@@ -152,7 +161,12 @@ function LanguageLocales({
   }
 
   function openWindow(row: HilosI18nLocaleRow): void {
-    if (opened || deleteTarget || liveCard.get()?.code !== code) return
+    if (
+      opened ||
+      deleteTarget ||
+      String(liveCard.get()?.languageId) !== languageId
+    )
+      return
     const fresh = locales.controller.focusRow(row.rowKey)
     if (!fresh) {
       locales.controller.releaseFocus()
@@ -168,7 +182,8 @@ function LanguageLocales({
       !fresh ||
       fresh.localeCode === null ||
       fresh.formats === null ||
-      subject?.code !== code
+      subject === null ||
+      String(subject.languageId) !== languageId
     ) {
       locales.controller.releaseFocus()
       return
@@ -177,7 +192,7 @@ function LanguageLocales({
       languageId: fresh.languageId,
       countryId: fresh.countryId,
       localeId: fresh.localeId!,
-      languageCode: code,
+      languageCode: subject.code,
       countryCode: fresh.countryCode,
       localeCode: fresh.localeCode,
       nativeName: subject.nativeName,

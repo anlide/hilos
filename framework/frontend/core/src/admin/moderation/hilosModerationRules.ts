@@ -1,3 +1,4 @@
+import { resolveHilosPath } from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { readNumber, readString } from '../../state/fieldReaders.js'
 import { type Scope } from '../../state/ScopeManager.js'
@@ -296,5 +297,5 @@ export function createHilosModerationRules(
 
 /** Path to the kind's own rules. */
 export function moderationKindRulesPath(kind: string): string {
-  return `/hilos/moderation/${encodeURIComponent(kind)}/rules`
+  return resolveHilosPath(HilosPages.MODERATION_KIND_RULES, { kind })
 }

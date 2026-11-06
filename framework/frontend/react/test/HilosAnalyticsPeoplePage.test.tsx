@@ -335,8 +335,8 @@ describe('HilosAnalyticsPeoplePage', () => {
       'Deleted user #610',
     ])
     expect(links.map((link) => link.getAttribute('href'))).toEqual([
-      '/hilos/analytics/people/7',
-      '/hilos/analytics/people/610',
+      '/hilos/analytics/person/7',
+      '/hilos/analytics/person/610',
     ])
     for (const suffix of ['link', 'name', 'sessions', 'last-seen']) {
       expect(

@@ -78,7 +78,7 @@ function backend() {
     createAppPageRouter({}),
     pages,
     {
-      pathname: () => `/hilos/moderation/${initial.kind}/rules`,
+      pathname: () => `/hilos/moderation/kind/${initial.kind}/rules`,
       pushState: () => {},
       replaceState: () => {},
       onPopState: () => () => {},
@@ -209,8 +209,8 @@ describe('HilosModerationKindRulesPage', () => {
         link.getAttribute('href'),
       ]),
     ).toEqual([
-      ['Overview', '/hilos/moderation/hilos_profile_name'],
-      ['Rules', '/hilos/moderation/hilos_profile_name/rules'],
+      ['Overview', '/hilos/moderation/kind/hilos_profile_name'],
+      ['Rules', '/hilos/moderation/kind/hilos_profile_name/rules'],
     ])
     expect(text(navigation.querySelector('[aria-current="page"]'))).toBe(
       'Rules',
@@ -340,7 +340,7 @@ describe('HilosModerationKindRulesPage', () => {
     view.querySelector<HTMLButtonElement>('[aria-label="Edit rule"]')!.click()
     fixture!.detectChanges()
     expect(view.querySelector('textarea')?.value).toBe('Old rule')
-    h.router.navigate('/hilos/moderation/hilos_profile_photo/rules')
+    h.router.navigate('/hilos/moderation/kind/hilos_profile_photo/rules')
     fixture!.detectChanges()
     expect(view.querySelector('[role="dialog"]')).toBeNull()
     expect(view.querySelector('table')).toBeNull()

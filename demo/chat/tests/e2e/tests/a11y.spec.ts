@@ -26,7 +26,6 @@ import {
   expectHilosUserOverview,
   expectChangeLogSectionHead,
   expectChangeLogTableHead,
-  CHANGE_LOG_TABLES_PATH,
   expectHilosUserOverviewAccessibility,
   cleanupFixtures,
   type TestCleanup,
@@ -118,6 +117,8 @@ import {
   modelKey,
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+
+// spec-owner: demo — carries Chat's Vue browser journeys for these shared pages
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
@@ -373,7 +374,7 @@ test('Analytics Person has one entity heading naming its table and a decorative 
   const userId = await createTestAdmin(expect, page)
   const name = await page.getByTestId('self-user').innerText()
   const label = `${name} (#${userId})`
-  await gotoPage(expect, page, `/hilos/analytics/people/${userId}`)
+  await gotoPage(expect, page, `/hilos/analytics/person/${userId}`)
   await expectPageReady(expect, page)
 
   const carrier = page.getByTestId('hilos-admin-page')
@@ -1046,7 +1047,7 @@ test('Communications exposes one named head and keyboard links between channel p
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/communications/email')
+  await gotoPage(expect, page, '/hilos/communications/channel/email')
   await expectCommunicationsAccessibility(expect, page, 'overview', 'Enabled')
 
   const configuration = page.getByTestId(
@@ -1133,7 +1134,7 @@ test('Node pages expose one entity heading, link tabs and tables named through t
 
 test.describe('Moderation accessibility', () => {
   const kind = 'hilos_profile_name'
-  const rulesPath = `/hilos/moderation/${kind}/rules`
+  const rulesPath = `/hilos/moderation/kind/${kind}/rules`
   const moderationTest = test.extend<{
     cleanup: TestCleanup
     ownedRule: string
@@ -1369,7 +1370,7 @@ test('Change Log table owner names its navigation and viewport for tracked and u
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  const tablePath = `${CHANGE_LOG_TABLES_PATH}/hilos_user`
+  const tablePath = `/hilos/change-log/table/hilos_user`
   await gotoPage(expect, page, tablePath)
   await expectChangeLogTableHead(
     expect,
@@ -1441,7 +1442,7 @@ test('Change Log table owner names its navigation and viewport for tracked and u
       ),
   ).toBe(0)
 
-  const untrackedPath = `${CHANGE_LOG_TABLES_PATH}/hilos_session`
+  const untrackedPath = `/hilos/change-log/table/hilos_session`
   await gotoPage(expect, page, untrackedPath)
   await expectChangeLogTableHead(
     expect,

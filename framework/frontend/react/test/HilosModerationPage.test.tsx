@@ -62,7 +62,7 @@ describe('HilosModerationPage', () => {
     expect(tableRows[2]!.textContent).toContain('2 built-in + 1 of your own')
     const open = within(table).getByRole('link', { name: 'Open Profile name' })
     expect(open.getAttribute('href')).toBe(
-      '/hilos/moderation/hilos_profile_name',
+      '/hilos/moderation/kind/hilos_profile_name',
     )
     expect(view.queryByRole('tablist')).toBeNull()
     expect(el('hilos-page-tabs')).toBeNull()

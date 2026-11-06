@@ -24,58 +24,58 @@ use PHPUnit\Framework\TestCase;
 /** Pins the shared address contract of the five i18n detail pages. */
 final class I18nPageAddressTest extends TestCase
 {
-    public function testLanguageCodeRequiresExactlyTwoLowercaseAsciiLetters(): void
+    public function testLanguageIdRequiresCanonicalPositiveInteger(): void
     {
         self::assertSame(
-            'en',
-            HilosI18nLanguagePageSubscribeParams::fromPageRouteParams(new PageRouteParams(['languageCode' => 'en']))->languageCode,
+            11,
+            HilosI18nLanguagePageSubscribeParams::fromPageRouteParams(new PageRouteParams(['languageId' => '11']))->languageId,
         );
 
-        foreach ([[], ['languageCode' => '']] as $raw) {
+        foreach ([[], ['languageId' => ''], ['languageCode' => 'en']] as $raw) {
             try {
                 HilosI18nLanguagePageSubscribeParams::fromPageRouteParams(new PageRouteParams($raw));
-                self::fail('Expected missing languageCode');
+                self::fail('Expected missing languageId');
             } catch (MissingPageRouteParamException $e) {
                 self::assertSame(400, $e->httpCode);
-                self::assertSame(HilosPageRouteParams::HILOS_I18N_LANGUAGE_CODE, $e->paramKey);
+                self::assertSame(HilosPageRouteParams::HILOS_I18N_LANGUAGE_ID, $e->paramKey);
             }
         }
 
-        foreach (['e', 'eng', 'EN', 'e1', 'é', "en\n"] as $code) {
+        foreach (['en', '0', '-1', '+1', '01', '1.0', ' 1', "1\n", (string)PHP_INT_MAX . '0'] as $code) {
             try {
-                HilosI18nLanguagePageSubscribeParams::fromPageRouteParams(new PageRouteParams(['languageCode' => $code]));
-                self::fail('Expected invalid languageCode');
+                HilosI18nLanguagePageSubscribeParams::fromPageRouteParams(new PageRouteParams(['languageId' => $code]));
+                self::fail('Expected invalid languageId');
             } catch (InvalidPageRouteParamException $e) {
                 self::assertSame(400, $e->httpCode);
-                self::assertSame(HilosPageRouteParams::HILOS_I18N_LANGUAGE_CODE, $e->paramKey);
+                self::assertSame(HilosPageRouteParams::HILOS_I18N_LANGUAGE_ID, $e->paramKey);
             }
         }
     }
 
-    public function testCountryCodeRequiresExactlyTwoLowercaseAsciiLetters(): void
+    public function testCountryIdRequiresCanonicalPositiveInteger(): void
     {
         self::assertSame(
-            'pl',
-            HilosI18nCountryPageSubscribeParams::fromPageRouteParams(new PageRouteParams(['countryCode' => 'pl']))->countryCode,
+            141,
+            HilosI18nCountryPageSubscribeParams::fromPageRouteParams(new PageRouteParams(['countryId' => '141']))->countryId,
         );
 
-        foreach ([[], ['countryCode' => '']] as $raw) {
+        foreach ([[], ['countryId' => ''], ['countryCode' => 'pl']] as $raw) {
             try {
                 HilosI18nCountryPageSubscribeParams::fromPageRouteParams(new PageRouteParams($raw));
-                self::fail('Expected missing countryCode');
+                self::fail('Expected missing countryId');
             } catch (MissingPageRouteParamException $e) {
                 self::assertSame(400, $e->httpCode);
-                self::assertSame(HilosPageRouteParams::HILOS_I18N_COUNTRY_CODE, $e->paramKey);
+                self::assertSame(HilosPageRouteParams::HILOS_I18N_COUNTRY_ID, $e->paramKey);
             }
         }
 
-        foreach (['p', 'pol', 'PL', 'p1', 'ż', "pl\n"] as $code) {
+        foreach (['pl', '0', '-1', '+1', '01', '1.0', ' 1', "1\n", (string)PHP_INT_MAX . '0'] as $code) {
             try {
-                HilosI18nCountryPageSubscribeParams::fromPageRouteParams(new PageRouteParams(['countryCode' => $code]));
-                self::fail('Expected invalid countryCode');
+                HilosI18nCountryPageSubscribeParams::fromPageRouteParams(new PageRouteParams(['countryId' => $code]));
+                self::fail('Expected invalid countryId');
             } catch (InvalidPageRouteParamException $e) {
                 self::assertSame(400, $e->httpCode);
-                self::assertSame(HilosPageRouteParams::HILOS_I18N_COUNTRY_CODE, $e->paramKey);
+                self::assertSame(HilosPageRouteParams::HILOS_I18N_COUNTRY_ID, $e->paramKey);
             }
         }
     }

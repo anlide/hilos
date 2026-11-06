@@ -258,7 +258,7 @@ export async function expectDaemonNodeHead(
     await expect(link).toHaveRole('link')
     await expect(link).toHaveAttribute(
       'href',
-      `${DAEMON_ROOT_PATH}/${nodeId}${tab.path}`,
+      resolveHilosPath(tab.key, { nodeId }),
     )
     if (tab.key === pageKey)
       await expect(link).toHaveAttribute('aria-current', 'page')
@@ -340,7 +340,7 @@ export async function expectStandaloneNodeOverview(
   await expect(environment).toHaveText('On the environment page')
   await expect(environment).toHaveAttribute(
     'href',
-    '/hilos/daemon/standalone/env',
+    resolveHilosPath(HilosPages.DAEMON_ENV, { nodeId: 'standalone' }),
   )
   await expect(
     page.getByTestId('hilos-daemon-environment-unbuilt'),
@@ -936,7 +936,9 @@ export async function expectStandaloneEnvOrphans(
   await expect(link).toBeFocused()
   await link.press('Enter')
   await expect(page).toHaveURL(
-    new RegExp(`/hilos/daemon/${nodeId}/env/orphans$`),
+    new RegExp(
+      `${resolveHilosPath(HilosPages.DAEMON_ENV_ORPHANS, { nodeId })}$`,
+    ),
   )
   await expectDaemonPage(expect, page, 'hilos_daemon_env_orphans')
   await expect(page.getByRole('table')).toHaveCount(1)
@@ -1086,7 +1088,10 @@ export async function expectClusterOverview(
     await expect(node).toHaveAccessibleName(
       `Node ${nodeNames === undefined ? nodeId : `${nodeNames[nodeId]} (${nodeId})`}`,
     )
-    await expect(node).toHaveAttribute('href', `${DAEMON_ROOT_PATH}/${nodeId}`)
+    await expect(node).toHaveAttribute(
+      'href',
+      resolveHilosPath(HilosPages.DAEMON_NODE, { nodeId }),
+    )
     await expect(node).not.toHaveAttribute('aria-pressed')
     await expect(node).toHaveAttribute('data-state', state)
     if (state !== 'silent') {
@@ -1213,7 +1218,9 @@ export async function expectClusterDaemonNodeOverview(
   await expectDaemonNodeHead(expect, page, 'hilos_daemon_node', nodeId, {
     nodeName,
   })
-  await expect(page).toHaveURL(`${DAEMON_ROOT_PATH}/${nodeId}`)
+  await expect(page).toHaveURL(
+    resolveHilosPath(HilosPages.DAEMON_NODE, { nodeId }),
+  )
   await expect(page.getByTestId('hilos-daemon-node-overview')).toHaveAttribute(
     'data-node-id',
     nodeId,
@@ -1356,7 +1363,7 @@ export async function expectClusterDaemonNodeOverview(
   }
   await expect(
     page.getByTestId('hilos-daemon-environment-link'),
-  ).toHaveAttribute('href', `${DAEMON_ROOT_PATH}/${nodeId}/env`)
+  ).toHaveAttribute('href', resolveHilosPath(HilosPages.DAEMON_ENV, { nodeId }))
   const maintenance = page
     .getByTestId('hilos-daemon-maintenance')
     .locator('button')
@@ -2027,7 +2034,9 @@ export async function expectDaemonEntryPoints(
   )
   await expect(page.getByTestId('hilos-daemon-entry-metrics')).toHaveAttribute(
     'href',
-    `${DAEMON_ROOT_PATH}/${source.nodeId}/http`,
+    resolveHilosPath(HilosPages.DAEMON_HTTP_SERVER, {
+      nodeId: source.nodeId,
+    }),
   )
   return source
 }

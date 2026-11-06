@@ -75,9 +75,9 @@ describe('HilosChangeLogTablePage', () => {
     expect(
       tiles.map((tile) => [tile.tagName, tile.getAttribute('href')]),
     ).toEqual([
-      ['A', '/hilos/change-log/tables/bot/history'],
-      ['A', '/hilos/change-log/tables/bot/columns'],
-      ['A', '/hilos/change-log/tables/bot/triggers'],
+      ['A', '/hilos/change-log/table/bot/history'],
+      ['A', '/hilos/change-log/table/bot/columns'],
+      ['A', '/hilos/change-log/table/bot/triggers'],
     ])
     expect(
       tiles.map(
@@ -194,7 +194,7 @@ describe('HilosChangeLogTablePage', () => {
         container.querySelectorAll('[data-id^="hilos-change-log-table-link-"]'),
         (link) => link.getAttribute('href'),
       ),
-    ).toEqual(['/hilos/change-log/tables/hilos_session/triggers'])
+    ).toEqual(['/hilos/change-log/table/hilos_session/triggers'])
     expect(
       within(
         element('hilos-change-log-table-link-triggers', container),

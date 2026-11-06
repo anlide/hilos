@@ -1,4 +1,6 @@
 import type { Expect, Locator, Page } from '@playwright/test'
+import { resolveHilosPath } from '../core/src/routing/hilosAdmin.js'
+import { HilosPages } from '../core/src/routing/hilosPages.js'
 import { deliveryObject, type DeliveryFrameLog } from './deliveryFrames.js'
 import { expectReaderMillisecondMoment } from './moments.js'
 import { shownByTestId } from './table.js'
@@ -129,6 +131,14 @@ const PEOPLE_HANDLE = 'hilos-analytics-people-table'
 export const ANALYTICS_SESSION_LIST_PATH = '/hilos/analytics/browser-sessions'
 export const ANALYTICS_SESSION_LIST_HANDLE =
   'hilos-analytics-browser-session-list-table'
+
+/** Resolve the address of one browser-session entity. */
+export function analyticsBrowserSessionPath(browserSessionId: number): string {
+  return resolveHilosPath(HilosPages.ANALYTICS_BROWSER_SESSION, {
+    browserSessionId: String(browserSessionId),
+  })
+}
+
 const SESSION_LIST_PAGE = 'hilos_analytics_browser_sessions'
 const SESSION_LIST_TABLE = 'hilosAnalyticsBrowserSessionList'
 const SESSION_LIST_LINK = 'hilos-analytics-browser-session-list-session'
@@ -363,13 +373,15 @@ export async function expectAnalyticsSessionListRow(
   await expect(link).toHaveText(`#${sessionId}`)
   await expect(link).toHaveAttribute(
     'href',
-    `${ANALYTICS_SESSION_LIST_PATH}/${sessionId}`,
+    analyticsBrowserSessionPath(sessionId),
   )
   const signedIn = analyticsSessionListCell(page, 'person', sessionId)
   await expect(signedIn).toHaveText(`${person.name} (#${person.userId})`)
   await expect(signedIn.getByRole('link')).toHaveAttribute(
     'href',
-    `/hilos/analytics/people/${person.userId}`,
+    resolveHilosPath(HilosPages.ANALYTICS_PERSON, {
+      userId: String(person.userId),
+    }),
   )
   expect(value.browser).toContain(`Chrome ${browserMajor}`)
   await expect(analyticsSessionListCell(page, 'browser', sessionId)).toHaveText(
@@ -503,7 +515,9 @@ export async function expectAnalyticsPeoplePerson(
   )
   await expect(analyticsPersonLink(page, person.userId)).toHaveAttribute(
     'href',
-    `/hilos/analytics/people/${person.userId}`,
+    resolveHilosPath(HilosPages.ANALYTICS_PERSON, {
+      userId: String(person.userId),
+    }),
   )
   await expect(
     analyticsSessionCell(
@@ -1347,7 +1361,7 @@ export async function expectAnalyticsSessionListViewer(
     }
     await expect(analyticsSessionListCell(page, 'session', id)).toHaveAttribute(
       'href',
-      `${ANALYTICS_SESSION_LIST_PATH}/${id}`,
+      analyticsBrowserSessionPath(id),
     )
   }
   await expect(shownByTestId(table, SESSION_LIST_LINK)).toHaveCount(
@@ -1357,6 +1371,6 @@ export async function expectAnalyticsSessionListViewer(
     .getByRole('link')
     .evaluateAll((links) => links.map((link) => link.getAttribute('href')))
   expect(hrefs).toEqual(
-    settled.rows.map((row) => `${ANALYTICS_SESSION_LIST_PATH}/${row.rowKey}`),
+    settled.rows.map((row) => analyticsBrowserSessionPath(Number(row.rowKey))),
   )
 }

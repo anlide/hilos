@@ -261,14 +261,23 @@ export class HilosI18nLanguageNamesPage {
   // The language the address names now — read live, never a snapshot of the
   // first mount: navigating to another language is a new subject.
   private readonly language = computedSignal(() =>
-    String(this.router.currentRoute.get().params['languageCode'] ?? ''),
+    String(this.router.currentRoute.get().params['languageId'] ?? ''),
   )
-  private readonly languageCode = hilosSignal(this.language)
+  private readonly languageId = hilosSignal(this.language)
 
   /** The card and the names table, bound to one context. */
   protected readonly binding = computed(() => {
     const context = this.context()
-    const card = createHilosI18nLanguageCard(context)
+    this.languageId()
+    const rawCard = createHilosI18nLanguageCard(context)
+    const card = computedSignal(() => {
+      const current = rawCard.get()
+      return current !== null &&
+        String(current.languageId) ===
+          String(this.router.currentRoute.get().params['languageId'])
+        ? current
+        : null
+    })
 
     return {
       context,
@@ -277,7 +286,7 @@ export class HilosI18nLanguageNamesPage {
         context,
         HILOS_I18N_LANGUAGE_NAMES,
         computedSignal(() =>
-          card.get()?.code === this.language.get()
+          String(card.get()?.languageId) === this.language.get()
             ? (card.get()?.languageId ?? null)
             : null,
         ),
@@ -288,15 +297,25 @@ export class HilosI18nLanguageNamesPage {
   protected readonly windows = computed(() => {
     const { context, card, names } = this.binding()
 
+    const window = createHilosI18nLanguageNameWindow(
+      names.controller,
+      card,
+      computedSignal((): string => {
+        const held = window.target.get()
+        return (
+          card.get()?.code ??
+          (String(held?.languageId) === this.language.get()
+            ? (held?.languageCode ?? '')
+            : '')
+        )
+      }),
+      context,
+    )
+
     return {
-      languageCode: this.languageCode(),
+      languageId: this.languageId(),
       names,
-      window: createHilosI18nLanguageNameWindow(
-        names.controller,
-        card,
-        this.language,
-        context,
-      ),
+      window,
     }
   })
   protected readonly card = signal<HilosI18nLanguageCard | null>(null)
@@ -313,7 +332,7 @@ export class HilosI18nLanguageNamesPage {
 
     return target !== null &&
       this.card()?.languageId === target.languageId &&
-      this.languageCode() === target.languageCode &&
+      this.languageId() === String(target.languageId) &&
       row?.inLanguageId === target.inLanguageId
       ? row
       : null
@@ -389,15 +408,16 @@ export class HilosI18nLanguageNamesPage {
     if (this.deleteOpen() || window.saving.get()) return
     window.close()
     const attempt = ++this.opening
-    const languageCode = this.language.get()
+    const languageId = this.language.get()
     const resolved = binding.names.controller.focusRow(row.rowKey)
     if (attempt !== this.opening) return
     const fresh = binding.names.controller.focusedRow.get()
     const subject = binding.card.get()
     if (
       resolved === null ||
-      this.language.get() !== languageCode ||
-      subject?.code !== languageCode ||
+      this.language.get() !== languageId ||
+      subject === null ||
+      String(subject.languageId) !== languageId ||
       fresh?.inLanguageId !== row.inLanguageId ||
       fresh.name === null
     ) {
@@ -418,7 +438,7 @@ export class HilosI18nLanguageNamesPage {
       languageId: subject.languageId,
       inLanguageId: fresh.inLanguageId,
       nameId,
-      languageCode,
+      languageCode: subject.code,
       languageNativeName: subject.nativeName,
       inLanguageCode: fresh.code,
       inLanguageNativeName: fresh.nativeName,

@@ -81,7 +81,7 @@ describe('React languages list', () => {
     expect(h.view.container.querySelector('table')).not.toBeNull()
     expect(
       el<HTMLAnchorElement>('i18n-languages-link-en').getAttribute('href'),
-    ).toBe('/hilos/i18n/languages/en')
+    ).toBe('/hilos/i18n/language/11')
     expect(el('i18n-languages-default-en').textContent).toContain('Default')
     expect(el('i18n-languages-own-qx').textContent).toContain('Custom')
     expect(el<HTMLInputElement>('i18n-languages-rtl-qx').checked).toBe(true)

@@ -203,18 +203,12 @@ describe('HilosI18nLanguageLocalesPage', () => {
   it('closes the windows on a route change and lets their row go', () => {
     const h = setup()
     h.click('i18n-locales-edit-uk-UA')
-    h.act(() =>
-      h.route.set({ ...h.route.get(), params: { languageCode: 'ru' } }),
-    )
+    h.act(() => h.route.set({ ...h.route.get(), params: { languageId: '12' } }))
     expect(h.el('modal')).toBeNull()
     expect(h.focuses.at(-1)).toBe('')
-    h.act(() =>
-      h.route.set({ ...h.route.get(), params: { languageCode: 'uk' } }),
-    )
+    h.act(() => h.route.set({ ...h.route.get(), params: { languageId: '19' } }))
     h.click('i18n-locales-delete-uk-UA')
-    h.act(() =>
-      h.route.set({ ...h.route.get(), params: { languageCode: 'ru' } }),
-    )
+    h.act(() => h.route.set({ ...h.route.get(), params: { languageId: '12' } }))
     expect(h.el('modal')).toBeNull()
     expect(h.focuses.at(-1)).toBe('')
   })

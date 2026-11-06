@@ -15,7 +15,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguagePageSubscribeParams;
 
-/** Shared admission for pages addressed to one language code. */
+/** Shared admission for pages addressed to one language id. */
 abstract class AbstractHilosI18nLanguageCodePage extends AbstractHilosPage
 {
     /** @var list<string> Language collection read on subscribe */
@@ -24,17 +24,17 @@ abstract class AbstractHilosI18nLanguageCodePage extends AbstractHilosPage
     /**
      * @param string $acceptKey Subscribing connection
      * @param PageRouteParams $params Raw route parameters
-     * @throws MissingPageRouteParamException When languageCode is missing or empty
-     * @throws InvalidPageRouteParamException When languageCode has an invalid format
-     * @throws PageResourceNotFoundException When the language code is unknown
+     * @throws MissingPageRouteParamException When languageId is missing or empty
+     * @throws InvalidPageRouteParamException When languageId has an invalid format
+     * @throws PageResourceNotFoundException When the language id is unknown
      * @throws DatabaseException When the language lookup fails
      * @throws HilosException When the database context is unavailable
      */
     final protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
         $address = HilosI18nLanguagePageSubscribeParams::fromPageRouteParams($params);
-        if (!isset(Hilos::$db->languages[$address->languageCode])) {
-            throw new PageResourceNotFoundException('Unknown language: ' . $address->languageCode);
+        if (!isset(Hilos::$db->languages[$address->languageId])) {
+            throw new PageResourceNotFoundException('Unknown language: ' . $address->languageId);
         }
     }
 

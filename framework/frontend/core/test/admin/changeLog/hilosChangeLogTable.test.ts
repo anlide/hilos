@@ -259,7 +259,7 @@ describe('change-log record route param', () => {
 
   it('addresses a numeric record in the example form', () => {
     expect(roundTrip([57])).toEqual({
-      path: '/hilos/change-log/tables/bot/history/57',
+      path: '/hilos/change-log/table/bot/history/57',
       record: ['57'],
     })
   })
@@ -275,7 +275,7 @@ describe('change-log record route param', () => {
   })
 
   it('opens the table without a record when the tail is absent', () => {
-    const match = router.match('/hilos/change-log/tables/bot')
+    const match = router.match('/hilos/change-log/table/bot')
     expect(match).toEqual({
       page: HilosPages.CHANGE_LOG_TABLE,
       params: { tableId: 'bot' },

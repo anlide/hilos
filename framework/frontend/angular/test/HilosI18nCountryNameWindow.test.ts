@@ -12,6 +12,7 @@ import {
   HILOS_I18N_COUNTRY_NAME_COPY,
   HilosPages,
   computedSignal,
+  createSignal,
   createHilosI18nCountryCard,
   createHilosI18nCountryNameWindow,
   createHilosI18nNamesTable,
@@ -35,9 +36,7 @@ function setup(viewer = false) {
     usInFrench,
   ])
   bench.countryCard()
-  const country = computedSignal(() =>
-    String(bench.route.get().params['countryCode'] ?? ''),
-  )
+  const country = createSignal('us')
   const card = createHilosI18nCountryCard(bench.context)
   const names = createHilosI18nNamesTable(
     bench.context,
@@ -58,7 +57,7 @@ function setup(viewer = false) {
   const button = (name: 'submit' | 'cancel') =>
     view.el<HTMLButtonElement>(`i18n-country-name-${name}`)!
 
-  return { ...bench, ...view, names, window, input, button }
+  return { ...bench, ...view, names, window, input, button, country }
 }
 
 describe('HilosI18nCountryNameWindow', () => {
@@ -304,8 +303,8 @@ describe('HilosI18nCountryNameWindow', () => {
     h.type('i18n-country-name-input', 'Old draft')
     h.submit()
     h.act(() => {
-      h.route.set({ ...h.route.get(), params: { countryCode: 'ca' } })
-      h.route.set({ ...h.route.get(), params: { countryCode: 'us' } })
+      h.country.set('ca')
+      h.country.set('us')
     })
     expect(h.window.opened.get()).toBe(false)
     h.act(() => h.window.open('15'))

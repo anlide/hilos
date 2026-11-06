@@ -14,25 +14,25 @@ use Hilos\Core\Page\PageRouteParams;
 final class HilosI18nLanguagePageSubscribeParams extends AbstractPageSubscribeParamsDTO
 {
     /**
-     * @param string $languageCode Two-letter lowercase language code
+     * @param int $languageId Positive language primary id
      */
-    public function __construct(public readonly string $languageCode)
+    public function __construct(public readonly int $languageId)
     {
     }
 
     /**
      * @param PageRouteParams $params Raw route parameters
      * @return static Validated language address
-     * @throws MissingPageRouteParamException When languageCode is missing or empty
-     * @throws InvalidPageRouteParamException When languageCode is not two lowercase ASCII letters
+     * @throws MissingPageRouteParamException When languageId is missing or empty
+     * @throws InvalidPageRouteParamException When languageId is not a canonical positive integer
      */
     public static function fromPageRouteParams(PageRouteParams $params): static
     {
-        $languageCode = $params->requireString(HilosPageRouteParams::HILOS_I18N_LANGUAGE_CODE);
-        if (preg_match('/^[a-z]{2}$/D', $languageCode) !== 1) {
-            throw new InvalidPageRouteParamException(HilosPageRouteParams::HILOS_I18N_LANGUAGE_CODE, 'expected two lowercase letters');
+        $languageId = $params->requirePositiveInt(HilosPageRouteParams::HILOS_I18N_LANGUAGE_ID);
+        if ((string)$languageId !== $params->requireString(HilosPageRouteParams::HILOS_I18N_LANGUAGE_ID)) {
+            throw new InvalidPageRouteParamException(HilosPageRouteParams::HILOS_I18N_LANGUAGE_ID, 'expected a canonical positive integer');
         }
 
-        return new static($languageCode);
+        return new static($languageId);
     }
 }

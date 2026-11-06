@@ -2,6 +2,7 @@ import { expect, test } from '../test.js'
 
 import {
   ANALYTICS_SESSION_LIST_PATH,
+  analyticsBrowserSessionPath,
   analyticsPeopleViewports,
   analyticsPersonLink,
   analyticsSessionLink,
@@ -38,6 +39,8 @@ import { setAdminViewMode } from '../../../../../framework/frontend/scripts/admi
 import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
 import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/index.js'
+
+// spec-owner: demo — carries Tasks' React browser journeys for these shared pages
 
 const sendCommand = createStandCommandChannel({ timeoutMs: 5_000 })
 
@@ -268,7 +271,7 @@ test('opens a real person and session from People and Browser sessions and retur
       user.userId,
       AUTH_ACTION_LOGIN,
     )
-    const personPath = `/hilos/analytics/people/${user.userId}`
+    const personPath = `/hilos/analytics/person/${user.userId}`
     const label = `${user.name} (#${user.userId})`
     const lead =
       'Browser sessions where this person signed in last. Other people may have performed actions in the same browser.'
@@ -428,7 +431,7 @@ test('opens a real person and session from People and Browser sessions and retur
     await expectAnalyticsPeoplePerson(expect, admin, forwarded, user)
 
     const id = session.browserSessionId!
-    const sessionPath = `${ANALYTICS_SESSION_LIST_PATH}/${id}`
+    const sessionPath = analyticsBrowserSessionPath(id)
     const sessionLabel = `Browser session #${id}`
     const expectListReturn = async () => {
       const returning = frames.sent.length
@@ -736,7 +739,7 @@ test('Browser sessions viewer receives hidden personal values with only public s
       session.browserSessionId!,
     ).click()
     await expect(viewer).toHaveURL(
-      `${ANALYTICS_SESSION_LIST_PATH}/${session.browserSessionId}`,
+      analyticsBrowserSessionPath(session.browserSessionId!),
     )
     await expectPageReady(expect, viewer)
     await expectAnalyticsBrowserSessionHead(expect, viewer, 'Browser session')

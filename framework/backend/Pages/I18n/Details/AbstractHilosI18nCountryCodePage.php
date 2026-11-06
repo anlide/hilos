@@ -19,7 +19,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryPageSubscribeParams;
 
-/** Shared admission for pages addressed to one country code. */
+/** Shared admission for pages addressed to one country id. */
 abstract class AbstractHilosI18nCountryCodePage extends AbstractHilosPage
 {
     /** @var list<string> Country collection read on subscribe */
@@ -28,15 +28,14 @@ abstract class AbstractHilosI18nCountryCodePage extends AbstractHilosPage
     /**
      * Names the country this page is about by its primary id.
      *
-     * The address is the country code. The reference is the row's primary id,
-     * read through the countries collection, which accepts either.
+     * The address and the resource both name the country's primary id.
      *
      * @param string $acceptKey Subscribing connection
      * @param PageRouteParams $params Raw route parameters
      * @return ?PageResource Country row, addressed by primary id
-     * @throws MissingPageRouteParamException When countryCode is missing or empty
-     * @throws InvalidPageRouteParamException When countryCode has an invalid format
-     * @throws PageResourceNotFoundException When the country code is unknown
+     * @throws MissingPageRouteParamException When countryId is missing or empty
+     * @throws InvalidPageRouteParamException When countryId has an invalid format
+     * @throws PageResourceNotFoundException When the country id is unknown
      * @throws PageInternalErrorException When the country id is empty
      * @throws DatabaseException When the country lookup fails
      * @throws LogicException When collection classes are not configured
@@ -45,8 +44,8 @@ abstract class AbstractHilosI18nCountryCodePage extends AbstractHilosPage
     final protected function resolvePageResource(string $acceptKey, PageRouteParams $params): ?PageResource
     {
         $address = HilosI18nCountryPageSubscribeParams::fromPageRouteParams($params);
-        $country = Hilos::$db->countries[$address->countryCode]
-            ?? throw new PageResourceNotFoundException('Unknown country: ' . $address->countryCode);
+        $country = Hilos::$db->countries[$address->countryId]
+            ?? throw new PageResourceNotFoundException('Unknown country: ' . $address->countryId);
 
         return PageResource::db(HilosDbContext::countries, $country->id);
     }

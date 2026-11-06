@@ -64,8 +64,7 @@ export const HILOS_I18N_COUNTRY_WINDOW_COPY = {
   open: { edit: 'Edit country', view: 'View country: nothing to edit' },
   title: (mode: HilosI18nCountryWindowMode, label: string) =>
     `${mode === 'edit' ? 'Edit country' : 'Country'} · ${label}`,
-  codeHint:
-    'The country code never changes: its URL and the external catalog use it.',
+  codeHint: 'The country code never changes: the external catalog uses it.',
   hints: {
     none: "This country has no locales yet: add one on a language's Locales page.",
     suggested: 'Suggested by the built-in catalog — save to keep it.',

@@ -12,6 +12,7 @@ import {
   expectI18nName,
   expectPageReady,
   gotoPage,
+  readI18nRowId,
   grantAdminToSelf,
   i18nNameRow,
   openI18nName,
@@ -36,8 +37,6 @@ const APP_NAME = 'Hilos Tasks'
 const UNNAMED = 'Unnamed country'
 const OVERVIEW = 'hilos_i18n_country'
 const NAMES = 'hilos_i18n_country_names'
-const OVERVIEW_PATH = '/hilos/i18n/countries/qj'
-const PATH = '/hilos/i18n/countries/qj/names'
 const WINDOW = 'i18n-country-name-window'
 const INPUT = 'i18n-country-name-input'
 const SUBMIT = 'i18n-country-name-submit'
@@ -47,15 +46,22 @@ const CONFIRM = 'i18n-country-name-delete-confirm'
 const CANCEL_DELETE = 'i18n-country-name-delete-cancel'
 
 test('country-names.life', async ({ page, context, i18n }) => {
+  const countryIds: Record<string, string> = {}
   // Catalog reading, two live tabs and fresh reloads cover the country-name lifecycle.
   test.slow()
   const actions = countSentFrames(page, '"type":"action"')
   const log = watchDeliveryFrames(page)
   i18n.defer(async () => log.stop())
   await grantAdminToSelf(expect, page)
+  countryIds['us'] = await readI18nRowId(expect, page, 'country', 'us')
   await test.step('Read reflowed catalog names and carrier values through code-based Names/Overview navigation without actions', async () => {
     const before = actions()
-    await gotoPage(expect, page, '/hilos/i18n/countries/us/names', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/country/${(countryIds['us'] ??= await readI18nRowId(expect, page, 'country', 'us'))}/names`,
+      PAGE_READY,
+    )
     const row = i18nNameRow(page, 'country', 'en')
     await expect(row).toContainText('English')
     await expect(row).toContainText('United States')
@@ -112,6 +118,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
     }
     await expectCountryPageHead(expect, page, {
       code: 'us',
+      id: countryIds['us']!,
       name: 'United States',
       appName: 'Hilos Tasks',
       currentPage: 'hilos_i18n_country_names',
@@ -121,14 +128,21 @@ test('country-names.life', async ({ page, context, i18n }) => {
       page.getByTestId('hilos-page-tab-hilos_i18n_country'),
     )
     await expectPageReady(expect, page)
-    await expect(page).toHaveURL(/\/countries\/us$/)
+    await expect(page).toHaveURL(
+      new RegExp(`/hilos/i18n/country/${countryIds['us']}$`),
+    )
     await clickSubmit(
       expect,
       page.getByTestId('hilos-page-tab-hilos_i18n_country_names'),
     )
     await expectPageReady(expect, page)
     await expect(row).toContainText('United States')
-    await gotoPage(expect, page, '/hilos/i18n/countries/us/names', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/country/${(countryIds['us'] ??= await readI18nRowId(expect, page, 'country', 'us'))}/names`,
+      PAGE_READY,
+    )
     await expect(row).toContainText('English')
     await expect(row).toContainText('United States')
     await expect(
@@ -155,10 +169,20 @@ test('country-names.life', async ({ page, context, i18n }) => {
   i18n.defer(() => overview.close())
   const otherLog = watchDeliveryFrames(observer)
   i18n.defer(async () => otherLog.stop())
-  await gotoPage(expect, page, PATH, PAGE_READY)
+  await gotoPage(
+    expect,
+    page,
+    `/hilos/i18n/country/${(countryIds['qj'] ??= await readI18nRowId(expect, page, 'country', 'qj'))}/names`,
+    PAGE_READY,
+  )
   await expect(shownByTestId(page, 'i18n-names-none-en')).toHaveText('No name')
   await expectI18nName(expect, page, 'country', 'qk', 'Fixture base')
-  await gotoPage(expect, overview, '/hilos/i18n/countries/qj', PAGE_READY)
+  await gotoPage(
+    expect,
+    overview,
+    `/hilos/i18n/country/${(countryIds['qj'] ??= await readI18nRowId(expect, overview, 'country', 'qj'))}`,
+    PAGE_READY,
+  )
   let live = await watchI18nLivePages(expect, [page, overview])
 
   await test.step('Cancel an Add, then add/rename/save empty/delete the default-language name with a cold check after every write', async () => {
@@ -175,12 +199,20 @@ test('country-names.life', async ({ page, context, i18n }) => {
 
     async function checkColdCountryName(name: string | null): Promise<void> {
       const head = name || UNNAMED
-      await gotoPage(expect, observer, PATH, PAGE_READY)
+      await gotoPage(
+        expect,
+        observer,
+        `/hilos/i18n/country/${(countryIds['qj'] ??= await readI18nRowId(expect, observer, 'country', 'qj'))}/names`,
+        PAGE_READY,
+      )
       await observer.reload()
       await expectPageReady(expect, observer)
-      await expect(observer).toHaveURL(/\/countries\/qj\/names$/)
+      await expect(observer).toHaveURL(
+        new RegExp(`/hilos/i18n/country/${countryIds['qj']}/names$`),
+      )
       await expectCountryPageHead(expect, observer, {
         code: 'qj',
+        id: countryIds['qj']!,
         name: head,
         appName: APP_NAME,
         currentPage: NAMES,
@@ -211,12 +243,20 @@ test('country-names.life', async ({ page, context, i18n }) => {
         }
       }
 
-      await gotoPage(expect, observer, OVERVIEW_PATH, PAGE_READY)
+      await gotoPage(
+        expect,
+        observer,
+        `/hilos/i18n/country/${(countryIds['qj'] ??= await readI18nRowId(expect, observer, 'country', 'qj'))}`,
+        PAGE_READY,
+      )
       await observer.reload()
       await expectPageReady(expect, observer)
-      await expect(observer).toHaveURL(/\/countries\/qj$/)
+      await expect(observer).toHaveURL(
+        new RegExp(`/hilos/i18n/country/${countryIds['qj']}$`),
+      )
       await expectCountryPageHead(expect, observer, {
         code: 'qj',
+        id: countryIds['qj']!,
         name: head,
         appName: APP_NAME,
         currentPage: OVERVIEW,
@@ -275,12 +315,14 @@ test('country-names.life', async ({ page, context, i18n }) => {
         previous = episode.value
         await expectCountryPageHead(expect, page, {
           code: 'qj',
+          id: countryIds['qj']!,
           name: episode.value || UNNAMED,
           appName: APP_NAME,
           currentPage: NAMES,
         })
         await expectCountryPageHead(expect, overview, {
           code: 'qj',
+          id: countryIds['qj']!,
           name: episode.value || UNNAMED,
           appName: APP_NAME,
           currentPage: OVERVIEW,
@@ -319,12 +361,14 @@ test('country-names.life', async ({ page, context, i18n }) => {
       )
       await expectCountryPageHead(expect, page, {
         code: 'qj',
+        id: countryIds['qj']!,
         name: UNNAMED,
         appName: APP_NAME,
         currentPage: NAMES,
       })
       await expectCountryPageHead(expect, overview, {
         code: 'qj',
+        id: countryIds['qj']!,
         name: UNNAMED,
         appName: APP_NAME,
         currentPage: OVERVIEW,
@@ -338,9 +382,15 @@ test('country-names.life', async ({ page, context, i18n }) => {
   })
 
   await test.step('Open a second Names subscriber on the fixed country pair', async () => {
-    await gotoPage(expect, observer, PATH, PAGE_READY)
+    await gotoPage(
+      expect,
+      observer,
+      `/hilos/i18n/country/${(countryIds['qj'] ??= await readI18nRowId(expect, observer, 'country', 'qj'))}/names`,
+      PAGE_READY,
+    )
     await expectCountryPageHead(expect, observer, {
       code: 'qj',
+      id: countryIds['qj']!,
       name: UNNAMED,
       appName: APP_NAME,
       currentPage: NAMES,
@@ -569,6 +619,7 @@ test('country-names.life', async ({ page, context, i18n }) => {
 })
 
 test('country-names.live-conflict', async ({ page, context, i18n }) => {
+  const countryIds: Record<string, string> = {}
   // Four sequential conflict episodes, a no-conflict delivery and explicit saves cross two live tabs.
   test.slow()
   await i18n.countryNames()
@@ -585,7 +636,12 @@ test('country-names.live-conflict', async ({ page, context, i18n }) => {
     '"action":"hilos_i18n_country_name_',
   )
   for (const tab of [page, observer])
-    await gotoPage(expect, tab, PATH, PAGE_READY)
+    await gotoPage(
+      expect,
+      tab,
+      `/hilos/i18n/country/${(countryIds['qj'] ??= await readI18nRowId(expect, tab, 'country', 'qj'))}/names`,
+      PAGE_READY,
+    )
   const live = await watchI18nLivePages(expect, [page, observer])
   let baseCoordinates: Record<string, unknown> = {}
   let correctionCoordinates: Record<string, unknown> = {}
@@ -814,13 +870,19 @@ test('country-names.live-conflict', async ({ page, context, i18n }) => {
 })
 
 test('country-names.anonymous-view', async ({ page, i18n }) => {
+  const countryIds: Record<string, string> = {}
   // All four forms retain local draft/cancel behavior under the real anonymous view-mode gate.
   test.slow()
   await i18n.countryNames()
   i18n.defer(() => setAdminViewMode(false))
   await setAdminViewMode(true)
   const actions = countSentFrames(page, '"type":"action"')
-  await gotoPage(expect, page, PATH, PAGE_READY)
+  await gotoPage(
+    expect,
+    page,
+    `/hilos/i18n/country/${(countryIds['qj'] ??= await readI18nRowId(expect, page, 'country', 'qj'))}/names`,
+    PAGE_READY,
+  )
   await expect(page.getByTestId('view-mode-banner')).toBeVisible()
   await expandI18nNameCorrections(expect, page, 'country', 'qk')
   for (const [control, original] of [

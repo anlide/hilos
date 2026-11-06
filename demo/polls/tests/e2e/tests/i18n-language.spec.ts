@@ -7,6 +7,7 @@ import {
   expectLanguagePageHead,
   expectPageReady,
   gotoPage,
+  readI18nRowId,
   grantAdminToSelf,
   PAGE_READY,
   settleRemovedRow,
@@ -26,6 +27,7 @@ import {
 const test = base.extend<{ i18n: I18nFixtureScope }>({ i18n: i18nFixtures })
 
 test('language.life', async ({ page, i18n }) => {
+  const languageIds: Record<string, string> = {}
   // One administrator owns the known/custom add, navigation, edit and delete journey.
   test.slow()
   await i18n.ownLanguage('pt')
@@ -33,11 +35,18 @@ test('language.life', async ({ page, i18n }) => {
   const addRequests = countSentFrames(page, 'hilos_i18n_language_add')
   const updates = countSentFrames(page, 'hilos_i18n_language_update')
   await grantAdminToSelf(expect, page)
+  languageIds['en'] = await readI18nRowId(expect, page, 'language', 'en')
 
   await test.step('Read the protected default card and follow its Overview values with F5 and Back', async () => {
-    await gotoPage(expect, page, '/hilos/i18n/languages/en', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['en'] ??= await readI18nRowId(expect, page, 'language', 'en'))}`,
+      PAGE_READY,
+    )
     await expectLanguagePageHead(expect, page, {
       code: 'en',
+      id: languageIds['en']!,
       nativeName: 'English',
       currentPage: 'hilos_i18n_language',
       appName: 'Hilos Polls',
@@ -114,13 +123,16 @@ test('language.life', async ({ page, i18n }) => {
       const link = page.getByTestId(value)
       await expect(link).toHaveAttribute(
         'href',
-        `/hilos/i18n/languages/en${path}`,
+        `/hilos/i18n/language/${languageIds['en']}${path}`,
       )
       await clickSubmit(expect, link)
-      await expect(page).toHaveURL(new RegExp(`/languages/en${path}$`))
+      await expect(page).toHaveURL(
+        new RegExp(`/hilos/i18n/language/${languageIds['en']}${path}$`),
+      )
       await expectPageReady(expect, page)
       await expectLanguagePageHead(expect, page, {
         code: 'en',
+        id: languageIds['en']!,
         nativeName: 'English',
         currentPage: key,
         appName: 'Hilos Polls',
@@ -130,6 +142,7 @@ test('language.life', async ({ page, i18n }) => {
       await expectPageReady(expect, page)
       await expectLanguagePageHead(expect, page, {
         code: 'en',
+        id: languageIds['en']!,
         nativeName: 'English',
         currentPage: key,
         appName: 'Hilos Polls',
@@ -137,9 +150,12 @@ test('language.life', async ({ page, i18n }) => {
       await expect(page.getByRole('table')).toHaveAccessibleName('English')
       await page.goBack()
       await expectPageReady(expect, page)
-      await expect(page).toHaveURL(/\/languages\/en$/)
+      await expect(page).toHaveURL(
+        new RegExp(`/hilos/i18n/language/${languageIds['en']}$`),
+      )
       await expectLanguagePageHead(expect, page, {
         code: 'en',
+        id: languageIds['en']!,
         nativeName: 'English',
         currentPage: 'hilos_i18n_language',
         appName: 'Hilos Polls',
@@ -174,7 +190,7 @@ test('language.life', async ({ page, i18n }) => {
     })
     await expect(row.getByTestId('i18n-languages-link-en')).toHaveAttribute(
       'href',
-      '/hilos/i18n/languages/en',
+      `/hilos/i18n/language/${languageIds['en']}`,
     )
     await expect(row.getByTestId('i18n-languages-default-en')).toContainText(
       'Default language',
@@ -282,7 +298,12 @@ test('language.life', async ({ page, i18n }) => {
   })
 
   await test.step('Switch on without a locale, read the frozen view, then switch off and edit from both places', async () => {
-    await gotoPage(expect, page, '/hilos/i18n/languages/pt', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['pt'] ??= await readI18nRowId(expect, page, 'language', 'pt'))}`,
+      PAGE_READY,
+    )
     await clickSubmit(expect, page.getByTestId('language-card-switch-on'))
     await expect(page.getByTestId('language-card-switch-on-locale')).toHaveText(
       'not created',
@@ -363,7 +384,12 @@ test('language.life', async ({ page, i18n }) => {
     )
     expect(languageId).toBeGreaterThan(0)
     const locale = await i18n.locale({ languageId, enabled: true })
-    await gotoPage(expect, page, '/hilos/i18n/languages/pt', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['pt'] ??= await readI18nRowId(expect, page, 'language', 'pt'))}`,
+      PAGE_READY,
+    )
     await clickSubmit(expect, page.getByTestId('language-card-switch-on'))
     await expect(page.getByTestId('language-card-switch-on-locale')).toHaveText(
       'switched on',
@@ -472,7 +498,12 @@ test('language.life', async ({ page, i18n }) => {
   })
 
   await test.step('Cancel and confirm deletion from the card, then delete the custom row from the list', async () => {
-    await gotoPage(expect, page, '/hilos/i18n/languages/pt', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['pt'] ??= await readI18nRowId(expect, page, 'language', 'pt'))}`,
+      PAGE_READY,
+    )
     await clickSubmit(expect, page.getByTestId('language-card-delete'))
     await expect(page.getByTestId('i18n-language-delete-window')).toContainText(
       "Deleting it also removes the built-in catalog's country names written in it.",
@@ -507,9 +538,11 @@ test('language.life', async ({ page, i18n }) => {
 })
 
 test('language.live-identity', async ({ page, context, i18n }) => {
+  const languageIds: Record<string, string> = {}
   // The owner identity stays bound through a delete/recreate of the same public code.
   test.slow()
   const original = await i18n.language({ code: 'uk', nativeName: 'Українська' })
+  languageIds['uk'] = String(original.id)
   const writes: Array<{
     languageId: number
     nativeName: string
@@ -540,10 +573,21 @@ test('language.live-identity', async ({ page, context, i18n }) => {
     })
   })
   await grantAdminToSelf(expect, page)
+  languageIds['uk'] = await readI18nRowId(expect, page, 'language', 'uk')
   const observer = await context.newPage()
   i18n.defer(() => observer.close())
-  await gotoPage(expect, page, '/hilos/i18n/languages/uk', PAGE_READY)
-  await gotoPage(expect, observer, '/hilos/i18n/languages/uk/names', PAGE_READY)
+  await gotoPage(
+    expect,
+    page,
+    `/hilos/i18n/language/${(languageIds['uk'] ??= await readI18nRowId(expect, page, 'language', 'uk'))}`,
+    PAGE_READY,
+  )
+  await gotoPage(
+    expect,
+    observer,
+    `/hilos/i18n/language/${(languageIds['uk'] ??= await readI18nRowId(expect, observer, 'language', 'uk'))}/names`,
+    PAGE_READY,
+  )
   const live = await watchI18nLivePages(expect, [observer])
   const name = page.getByTestId('i18n-language-edit-native-name')
   const save = page.getByTestId('i18n-language-edit-submit')
@@ -562,6 +606,7 @@ test('language.live-identity', async ({ page, context, i18n }) => {
     )
     await expectLanguagePageHead(expect, page, {
       code: 'uk',
+      id: languageIds['uk']!,
       nativeName: 'Українська card',
       currentPage: 'hilos_i18n_language',
       appName: 'Hilos Polls',
@@ -571,6 +616,7 @@ test('language.live-identity', async ({ page, context, i18n }) => {
     )
     await expectLanguagePageHead(expect, observer, {
       code: 'uk',
+      id: languageIds['uk']!,
       nativeName: 'Українська card',
       currentPage: 'hilos_i18n_language_names',
       appName: 'Hilos Polls',
@@ -581,8 +627,12 @@ test('language.live-identity', async ({ page, context, i18n }) => {
     await expect(
       observer.getByRole('table', { name: 'Українська card' }),
     ).toBeVisible()
-    await expect(page).toHaveURL(/\/hilos\/i18n\/languages\/uk$/)
-    await expect(observer).toHaveURL(/\/hilos\/i18n\/languages\/uk\/names$/)
+    await expect(page).toHaveURL(
+      new RegExp(`/hilos/i18n/language/${languageIds['uk']}$`),
+    )
+    await expect(observer).toHaveURL(
+      new RegExp(`/hilos/i18n/language/${languageIds['uk']}/names$`),
+    )
     await cardLive.unchanged()
     await gotoPage(expect, page, '/hilos/i18n/languages', PAGE_READY)
     const row = shownByTestId(page, /^hilos-table-row-/).filter({
@@ -599,6 +649,7 @@ test('language.live-identity', async ({ page, context, i18n }) => {
     await expect(row).toContainText('Українська list')
     await expectLanguagePageHead(expect, observer, {
       code: 'uk',
+      id: languageIds['uk']!,
       nativeName: 'Українська list',
       currentPage: 'hilos_i18n_language_names',
       appName: 'Hilos Polls',
@@ -610,7 +661,9 @@ test('language.live-identity', async ({ page, context, i18n }) => {
       observer.getByRole('table', { name: 'Українська list' }),
     ).toBeVisible()
     await expect(page).toHaveURL(/\/hilos\/i18n\/languages$/)
-    await expect(observer).toHaveURL(/\/hilos\/i18n\/languages\/uk\/names$/)
+    await expect(observer).toHaveURL(
+      new RegExp(`/hilos/i18n/language/${languageIds['uk']}/names$`),
+    )
     expect(writes).toEqual([
       { languageId: original.id, nativeName: 'Українська card', rtl: true },
       { languageId: original.id, nativeName: 'Українська list', rtl: true },
@@ -633,12 +686,18 @@ test('language.live-identity', async ({ page, context, i18n }) => {
       code: 'uk',
       nativeName: 'Українська',
     })
+    languageIds['uk'] = String(replacement.id)
     expect(replacement.id).not.toBe(original.id)
-    await gotoPage(expect, page, '/hilos/i18n/languages/uk', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['uk'] ??= await readI18nRowId(expect, page, 'language', 'uk'))}`,
+      PAGE_READY,
+    )
     await gotoPage(
       expect,
       observer,
-      '/hilos/i18n/languages/uk/names',
+      `/hilos/i18n/language/${(languageIds['uk'] ??= await readI18nRowId(expect, observer, 'language', 'uk'))}/names`,
       PAGE_READY,
     )
     await clickSubmit(expect, page.getByTestId('language-card-edit'))
@@ -670,6 +729,7 @@ test('language.live-identity', async ({ page, context, i18n }) => {
     await expect(page.getByTestId('i18n-language-edit-window')).toHaveCount(0)
     await expectLanguagePageHead(expect, observer, {
       code: 'uk',
+      id: languageIds['uk']!,
       nativeName: 'Must not reach replacement',
       currentPage: 'hilos_i18n_language_names',
       appName: 'Hilos Polls',

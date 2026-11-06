@@ -87,7 +87,7 @@ describe('React country names page', () => {
     ).toBe('page')
     expect(el('hilos-page-tab-hilos_i18n_country').textContent).toBe('Overview')
     expect(el('hilos-page-tab-hilos_i18n_country').getAttribute('href')).toBe(
-      '/hilos/i18n/countries/gg',
+      '/hilos/i18n/country/143',
     )
     expect(
       el('hilos-page-tab-hilos_i18n_country').getAttribute('aria-current'),
@@ -148,7 +148,7 @@ describe('React country names page', () => {
       act(() => {
         h.route.set({
           page: HilosPages.I18N_COUNTRY_NAMES,
-          params: { countryCode: 'fr' },
+          params: { countryId: '103' },
           admin: true,
         })
         h.card({
@@ -162,7 +162,7 @@ describe('React country names page', () => {
       expect(identity.get()?.pageHeadOwner?.label).toBe('France')
       expect(el('country-head-code').textContent).toBe('fr')
       expect(el('hilos-page-tab-hilos_i18n_country').getAttribute('href')).toBe(
-        '/hilos/i18n/countries/fr',
+        '/hilos/i18n/country/103',
       )
       h.view.unmount()
       expect(identity.get()?.pageHeadOwner?.label).toBe('Country')
@@ -301,7 +301,7 @@ describe('React country names page', () => {
       act(() => {
         h.route.set({
           page: HilosPages.I18N_COUNTRY_NAMES,
-          params: { countryCode: 'fr' },
+          params: { countryId: '103' },
           admin: true,
         })
         h.card({ ...countryCard, countryId: 103, code: 'fr' })
@@ -329,7 +329,7 @@ describe('React country names page', () => {
       click('i18n-names-delete-en')
       h.route.set({
         page: HilosPages.I18N_COUNTRY_NAMES,
-        params: { countryCode: 'fr' },
+        params: { countryId: '103' },
         admin: true,
       })
       h.card({ ...countryCard, countryId: 103, code: 'fr' })
@@ -636,7 +636,7 @@ describe('React country names under a country deleted elsewhere', () => {
     {
       name: 'leaving for another country',
       leave: (live: ReturnType<typeof liveNames>) =>
-        live.navigation.navigate('/hilos/i18n/countries/fr/names'),
+        live.navigation.navigate('/hilos/i18n/country/103/names'),
       code: null,
     },
   ])(

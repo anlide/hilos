@@ -20,6 +20,8 @@ import {
   createTestAdmin,
 } from '../../../../../framework/frontend/e2e/index.js'
 
+// spec-owner: demo — carries Tasks' React browser journeys for these shared pages
+
 test('follows a block receipt to the history of its record and back to the whole table', async ({
   browser,
   page,
@@ -66,7 +68,7 @@ test('follows a block receipt to the history of its record and back to the whole
       String(person.userId),
       51,
     )
-    const recordPath = `${CHANGE_LOG_TABLES_PATH}/hilos_user/history/${person.userId}`
+    const recordPath = `/hilos/change-log/table/hilos_user/history/${person.userId}`
     await expect(page).toHaveURL(recordPath)
     const clearRecordFilter = shownByTestId(
       page,
@@ -75,7 +77,7 @@ test('follows a block receipt to the history of its record and back to the whole
     await expect(clearRecordFilter).toHaveRole('link')
     await expect(clearRecordFilter).toHaveAttribute(
       'href',
-      `${CHANGE_LOG_TABLES_PATH}/hilos_user/history`,
+      `/hilos/change-log/table/hilos_user/history`,
     )
     // The registration's receipt also carries the zone the browser named at
     // sign-up, a second update of this record, so the block is found by its change.
@@ -121,7 +123,7 @@ test('follows a block receipt to the history of its record and back to the whole
     await expect(page).toHaveURL(recordPath)
     await expect(clearRecordFilter).toHaveAttribute(
       'href',
-      `${CHANGE_LOG_TABLES_PATH}/hilos_user/history`,
+      `/hilos/change-log/table/hilos_user/history`,
     )
     await expectRegistrationHistory(expect, page)
     const directEditKey = await tableRowKeyByText(expect, page, 'block')
@@ -149,11 +151,11 @@ test('follows a block receipt to the history of its record and back to the whole
     await expectRegistrationHistory(expect, page)
     await expect(clearRecordFilter).toHaveAttribute(
       'href',
-      `${CHANGE_LOG_TABLES_PATH}/hilos_user/history`,
+      `/hilos/change-log/table/hilos_user/history`,
     )
     await page.goBack()
     await expectTrackedTableWhole(expect, page, 'hilos_user', 51)
-    await expect(page).toHaveURL(`${CHANGE_LOG_TABLES_PATH}/hilos_user/history`)
+    await expect(page).toHaveURL(`/hilos/change-log/table/hilos_user/history`)
     await page.goForward()
     await expectTrackedTableRecord(
       expect,

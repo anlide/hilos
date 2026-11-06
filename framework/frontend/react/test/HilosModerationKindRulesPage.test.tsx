@@ -149,8 +149,8 @@ describe('HilosModerationKindRulesPage', () => {
           node.getAttribute('aria-current'),
         ]),
     ).toEqual([
-      ['Overview', '/hilos/moderation/hilos_profile_name', null],
-      ['Rules', '/hilos/moderation/hilos_profile_name/rules', 'page'],
+      ['Overview', '/hilos/moderation/kind/hilos_profile_name', null],
+      ['Rules', '/hilos/moderation/kind/hilos_profile_name/rules', 'page'],
     ])
     expect(h.view.queryByRole('tablist')).toBeNull()
     const crumbs = within(
@@ -197,7 +197,7 @@ describe('HilosModerationKindRulesPage', () => {
     const h = rulesHarness()
     const oldScope = h.context.scopes.page()
     deliver(() =>
-      h.navigation.navigate('/hilos/moderation/hilos_profile_photo/rules'),
+      h.navigation.navigate('/hilos/moderation/kind/hilos_profile_photo/rules'),
     )
     expect(h.context.scopes.page()).not.toBe(oldScope)
     expect(el('hilos-moderation-rules-loading')).not.toBeNull()
@@ -465,7 +465,9 @@ describe('HilosModerationKindRulesPage', () => {
         ownRuleCount: 1,
       }
       deliver(() =>
-        h.navigation.navigate('/hilos/moderation/hilos_profile_photo/rules'),
+        h.navigation.navigate(
+          '/hilos/moderation/kind/hilos_profile_photo/rules',
+        ),
       )
       expect(h.view.queryByRole('dialog')).toBeNull()
       expect(h.rules().focusedRow.get()).toBeUndefined()
@@ -535,7 +537,9 @@ describe('HilosModerationKindRulesPage', () => {
     const view = h.mount(<HilosView pages={pages} />, true)
     fireEvent.click(el('hilos-table-main-action'))
     input('add', 'Unsent draft')
-    deliver(() => h.navigation.navigate('/hilos/moderation/hilos_profile_name'))
+    deliver(() =>
+      h.navigation.navigate('/hilos/moderation/kind/hilos_profile_name'),
+    )
     expect(h.context.connection.tableWindowDescriptors()).toEqual({})
     deliver(() => h.answer([initial], HilosPages.MODERATION_KIND))
     expect(view.queryByRole('dialog')).toBeNull()
@@ -544,7 +548,7 @@ describe('HilosModerationKindRulesPage', () => {
     )
     fireEvent.click(view.getByRole('link', { name: 'Rules' }))
     deliver(() => h.answer([initial]))
-    deliver(() => h.navigation.navigate('/hilos/moderation/unknown/rules'))
+    deliver(() => h.navigation.navigate('/hilos/moderation/kind/unknown/rules'))
     deliver(() =>
       h.receive('subscription_page_error', {
         page: PAGE,

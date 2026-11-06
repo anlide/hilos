@@ -56,8 +56,8 @@ function harness(param: string | undefined = '57') {
   const pages = bindPageScope(connection, scopes)
   const initialPath =
     param === undefined
-      ? '/hilos/analytics/browser-sessions'
-      : `/hilos/analytics/browser-sessions/${encodeURIComponent(param)}`
+      ? '/hilos/analytics/browser-session'
+      : `/hilos/analytics/browser-session/${encodeURIComponent(param)}`
   const router = createHilosRouter(
     createAppPageRouter({}),
     pages,
@@ -167,8 +167,8 @@ function harness(param: string | undefined = '57') {
 
   const sessionPath = (id: string | undefined) =>
     id === undefined
-      ? '/hilos/analytics/browser-sessions'
-      : `/hilos/analytics/browser-sessions/${encodeURIComponent(id)}`
+      ? '/hilos/analytics/browser-session'
+      : `/hilos/analytics/browser-session/${encodeURIComponent(id)}`
 
   return {
     fixture,

@@ -131,7 +131,7 @@ describe('HilosI18nCountryPage', () => {
       h
         .el(`hilos-page-tab-${HilosPages.I18N_COUNTRY_NAMES}`)
         ?.getAttribute('href'),
-    ).toBe('/hilos/i18n/countries/us/names')
+    ).toBe('/hilos/i18n/country/102/names')
     expect(h.el('country-card-edit')?.getAttribute('aria-label')).toBe(
       'Edit country',
     )
@@ -179,6 +179,9 @@ describe('HilosI18nCountryPage', () => {
     'draws an own country named %j as Unnamed country, its code apart in capitals and the custom mark',
     (name) => {
       const h = setup()
+      h.act(() =>
+        h.route.set({ ...h.route.get(), params: { countryId: '147' } }),
+      )
       h.act(() =>
         h.countryCard({ ...ownCard, summary: { ...ownCard.summary, name } }),
       )
@@ -249,7 +252,7 @@ describe('HilosI18nCountryPage', () => {
     h.act(() =>
       h.route.set({
         page: HilosPages.I18N_COUNTRY,
-        params: { countryCode: 'fr' },
+        params: { countryId: '103' },
         admin: true,
       }),
     )
@@ -268,7 +271,7 @@ describe('HilosI18nCountryPage', () => {
       h
         .el(`hilos-page-tab-${HilosPages.I18N_COUNTRY_NAMES}`)
         ?.getAttribute('href'),
-    ).toBe('/hilos/i18n/countries/fr/names')
+    ).toBe('/hilos/i18n/country/103/names')
     // A new context lets the former subject's name and block go.
     const next = i18nBench(HilosPages.I18N_COUNTRY)
     h.fixture.componentRef.setInput('context', next.context)
@@ -509,6 +512,7 @@ describe('HilosI18nCountryPage', () => {
 
   it('keeps the confirmation and its action when its own deletion takes the card, and returns to the list only after the ack', async () => {
     const h = setup()
+    h.act(() => h.route.set({ ...h.route.get(), params: { countryId: '147' } }))
     h.act(() => h.countryCard(ownCard))
     h.click('country-card-delete')
     expect(h.el('modal')?.textContent).toContain('Delete country · QY')
@@ -529,6 +533,7 @@ describe('HilosI18nCountryPage', () => {
 
   it('keeps a refused card deletion open without navigating, even after a late hint', async () => {
     const h = setup()
+    h.act(() => h.route.set({ ...h.route.get(), params: { countryId: '147' } }))
     h.act(() => h.countryCard(ownCard))
     h.click('country-card-delete')
     h.act(() =>
@@ -557,6 +562,7 @@ describe('HilosI18nCountryPage', () => {
 
   it('lets a viewer open and read every window while nothing is sent', () => {
     const h = setup(true)
+    h.act(() => h.route.set({ ...h.route.get(), params: { countryId: '147' } }))
     h.act(() => h.countryCard(ownCard))
     h.click('country-card-edit')
     h.type('i18n-country-edit-currency-symbol', 'Q')
@@ -590,18 +596,19 @@ describe('HilosI18nCountryPage', () => {
 
   it('drops the windows and a pending deletion when the address names another country', async () => {
     const h = setup()
+    h.act(() => h.route.set({ ...h.route.get(), params: { countryId: '147' } }))
     h.act(() => h.countryCard(ownCard))
     h.click('country-card-delete')
     h.click('i18n-country-delete-confirm')
     h.act(() =>
       h.route.set({
         page: HilosPages.I18N_COUNTRY,
-        params: { countryCode: 'fr' },
+        params: { countryId: '103' },
         admin: true,
       }),
     )
     expect(h.el('modal')).toBeNull()
-    h.act(() => h.countryCard(countryCard))
+    h.act(() => h.countryCard({ ...countryCard, countryId: 103, code: 'fr' }))
     h.click('country-card-edit')
     await h.settle(() => h.succeed(0))
     expect(h.el('i18n-country-window')).not.toBeNull()
@@ -659,7 +666,7 @@ describe('HilosI18nCountryPage', () => {
     h.act(() =>
       h.route.set({
         page: HilosPages.I18N_COUNTRY,
-        params: { countryCode: 'fr' },
+        params: { countryId: '103' },
         admin: true,
       }),
     )
@@ -676,6 +683,7 @@ describe('HilosI18nCountryPage', () => {
     h.fixture.componentRef.setInput('context', next.context)
     h.detect()
     expect(countryName(h)).toEqual(['Country', 'Country'])
+    h.act(() => h.route.set({ ...h.route.get(), params: { countryId: '102' } }))
     h.act(() => next.countryCard())
     expect(countryName(next)).toEqual(['United States', 'United States'])
     const other = next.scopes.openPage(HilosPages.I18N_COUNTRIES)
@@ -712,13 +720,13 @@ describe('HilosI18nCountryPage', () => {
     h.act(() =>
       h.route.set({
         page: HilosPages.I18N_COUNTRY,
-        params: { countryCode: 'fr' },
+        params: { countryId: '103' },
         admin: true,
       }),
     )
     expect(h.el('modal')).toBeNull()
     expect(document.querySelector('hilos-i18n-country-window')).not.toBe(former)
-    h.act(() => h.countryCard())
+    h.act(() => h.countryCard({ ...countryCard, countryId: 103, code: 'fr' }))
     h.click('country-card-edit')
     expect(h.el<HTMLButtonElement>('i18n-country-cancel')?.disabled).toBe(false)
     await h.settle(() => h.refuse(0, 'The former country refused.'))
@@ -906,7 +914,7 @@ describe('HilosI18nCountryPage under a country deleted elsewhere', () => {
     {
       name: 'leaving for another country',
       leave: (live: LiveCountryTab) =>
-        live.navigation.navigate('/hilos/i18n/countries/fr'),
+        live.navigation.navigate('/hilos/i18n/country/103'),
       code: null,
     },
   ])(

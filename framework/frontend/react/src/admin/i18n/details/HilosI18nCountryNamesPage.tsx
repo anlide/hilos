@@ -27,7 +27,7 @@ export interface HilosI18nCountryNamesPageProps {
   context: HilosI18nCountryContext
 }
 
-/** Names and corrections of the code-addressed country, over the shared core. */
+/** Names and corrections of the id-addressed country, over the shared core. */
 export function HilosI18nCountryNamesPage({
   context,
 }: HilosI18nCountryNamesPageProps) {
@@ -40,31 +40,43 @@ export function HilosI18nCountryNamesPage({
   const [binding, setBinding] = useState({ context, revision: 0 })
   if (binding.context !== context)
     setBinding({ context, revision: binding.revision + 1 })
-  const code = (route.params.countryCode as string | undefined) ?? ''
+  const countryId = (route.params.countryId as string | undefined) ?? ''
   return (
     <CountryNames
-      key={`${binding.revision}:${code}`}
+      key={`${binding.revision}:${countryId}`}
       context={context}
-      code={code}
+      countryId={countryId}
     />
   )
 }
 
 function CountryNames({
   context,
-  code,
-}: HilosI18nCountryNamesPageProps & { code: string }) {
+  countryId,
+}: HilosI18nCountryNamesPageProps & { countryId: string }) {
   const router = useContext(HilosRouterContext)!
   const country = useMemo(
     () =>
       computedSignal(
         () =>
-          (router.currentRoute.get().params.countryCode as
-            string | undefined) ?? '',
+          (router.currentRoute.get().params.countryId as string | undefined) ??
+          '',
       ),
     [router],
   )
-  const liveCard = useMemo(() => createHilosI18nCountryCard(context), [context])
+  const rawCard = useMemo(() => createHilosI18nCountryCard(context), [context])
+  const liveCard = useMemo(
+    () =>
+      computedSignal(() => {
+        const current = rawCard.get()
+        return current !== null &&
+          String(current.countryId) ===
+            String(router.currentRoute.get().params.countryId)
+          ? current
+          : null
+      }),
+    [rawCard, router],
+  )
   // The shell is drawn here, under the hook's own re-render, so the head shows
   // the bound name in its first paint. The name belongs to the country.
   const name = useMemo(
@@ -92,7 +104,7 @@ function CountryNames({
         context,
         HILOS_I18N_COUNTRY_NAMES,
         computedSignal(() =>
-          liveCard.get()?.code === country.get()
+          String(liveCard.get()?.countryId) === country.get()
             ? (liveCard.get()?.countryId ?? null)
             : null,
         ),
@@ -104,7 +116,15 @@ function CountryNames({
       createHilosI18nCountryNameWindow(
         names.controller,
         liveCard,
-        country,
+        computedSignal((): string => {
+          const held = nameWindow.target.get()
+          return (
+            liveCard.get()?.code ??
+            (String(held?.countryId) === country.get()
+              ? (held?.countryCode ?? '')
+              : '')
+          )
+        }),
         context,
       ),
     [names, liveCard, country, context],
@@ -158,7 +178,8 @@ function CountryNames({
       subject = liveCard.get()
     if (
       resolved === null ||
-      subject?.code !== code ||
+      subject === null ||
+      String(subject.countryId) !== countryId ||
       fresh?.inLanguageId !== row.inLanguageId ||
       fresh.name === null
     ) {
@@ -179,7 +200,7 @@ function CountryNames({
       countryId: subject.countryId,
       inLanguageId: fresh.inLanguageId,
       nameId,
-      countryCode: code,
+      countryCode: subject.code,
       countryName: subject.summary.name ?? subject.code.toUpperCase(),
       inLanguageCode: fresh.code,
       inLanguageNativeName: fresh.nativeName,

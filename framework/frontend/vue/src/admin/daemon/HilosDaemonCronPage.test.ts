@@ -42,7 +42,7 @@ function router(diagramBuilt = false, scopes: ScopeManager): HilosRouter {
       params: { nodeId: 'n1' },
       admin: true,
     }),
-    currentPath: createSignal('/hilos/daemon/n1/cron'),
+    currentPath: createSignal('/hilos/daemon/node/n1/cron'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),

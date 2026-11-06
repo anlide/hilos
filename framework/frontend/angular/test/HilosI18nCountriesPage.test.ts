@@ -97,7 +97,7 @@ describe('HilosI18nCountriesPage', () => {
   it('draws the declared projections: linked codes, a missing name and locale, the own mark, read-only ticks and both openers', () => {
     const h = setup()
     expect(h.el('i18n-countries-link-us')?.getAttribute('href')).toBe(
-      '/hilos/i18n/countries/us',
+      '/hilos/i18n/country/102',
     )
     expect(h.el('hilos-table-row-105')?.textContent).toContain('ZZ')
     expect(h.el('i18n-countries-own-zz')?.textContent).toContain(

@@ -191,7 +191,7 @@ describe('HilosModerationKindPage', () => {
       'Profile name',
     )
     const previousScope = h.context.scopes.page()
-    deliver(() => h.navigation.navigate('/hilos/moderation/project_note'))
+    deliver(() => h.navigation.navigate('/hilos/moderation/kind/project_note'))
     expect(h.context.scopes.page()).not.toBe(previousScope)
     expect(view.container.textContent).not.toContain('Profile name')
     expect(el('hilos-moderation-kind-overview')).toBeNull()
@@ -255,7 +255,7 @@ describe('HilosModerationKindPage', () => {
       ['Rules', null],
     ])
     expect(links[1]!.getAttribute('href')).toBe(
-      '/hilos/moderation/hilos_profile_name/rules',
+      '/hilos/moderation/kind/hilos_profile_name/rules',
     )
     expect(view.queryByRole('tablist')).toBeNull()
     fireEvent.click(links[1]!)
@@ -275,7 +275,7 @@ describe('HilosModerationKindPage', () => {
     expect(view.getByRole('heading', { level: 1 }).textContent).toBe(
       'Profile name',
     )
-    deliver(() => h.navigation.navigate('/hilos/moderation/unknown'))
+    deliver(() => h.navigation.navigate('/hilos/moderation/kind/unknown'))
     deliver(() =>
       h.receive('subscription_page_error', {
         page: PAGE,

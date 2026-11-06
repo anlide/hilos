@@ -3,6 +3,8 @@ import {
   HILOS_CHANGE_LOG_RECEIPT_READ,
   changeLogReceiptReadReplySchema,
 } from '../core/src/admin/changeLog/index.js'
+import { resolveHilosPath } from '../core/src/routing/hilosAdmin.js'
+import { HilosPages } from '../core/src/routing/hilosPages.js'
 import { watchClientDocument } from './lazyBundles.js'
 import type { SocketFrame } from './socket.js'
 import { shownByTestId, tableRowKeyByText } from './table.js'
@@ -658,31 +660,32 @@ export async function expectChangeLogTableHead(
   await expect(tabs).toHaveAccessibleName('Table pages')
   await expect(tabs).toHaveRole('navigation')
   const entries = journaled
-    ? [
-        ['', 'Overview'],
-        ['columns', 'Columns'],
-        ['triggers', 'Triggers'],
-        ['history', 'History'],
-      ]
-    : [
-        ['', 'Overview'],
-        ['triggers', 'Triggers'],
-      ]
+    ? ([
+        [HilosPages.CHANGE_LOG_TABLE, 'Overview'],
+        [HilosPages.CHANGE_LOG_TABLE_COLUMNS, 'Columns'],
+        [HilosPages.CHANGE_LOG_TABLE_TRIGGERS, 'Triggers'],
+        [HilosPages.CHANGE_LOG_TABLE_HISTORY, 'History'],
+      ] as const)
+    : ([
+        [HilosPages.CHANGE_LOG_TABLE, 'Overview'],
+        [HilosPages.CHANGE_LOG_TABLE_TRIGGERS, 'Triggers'],
+      ] as const)
   await expect(tabs.getByRole('link')).toHaveText(
-    entries.map(([, label]) => label!),
+    entries.map(([, label]) => label),
   )
-  for (const [suffix] of entries) {
-    const key = `hilos_change_log_table${suffix ? `_${suffix}` : ''}`
-    const link = tabs.getByTestId(`hilos-page-tab-${key}`)
-    const recordSuffix =
-      suffix === 'history' && recordKey !== undefined
-        ? `/${encodeURIComponent(recordKey)}`
-        : ''
+  for (const [pageKey] of entries) {
+    const link = tabs.getByTestId(`hilos-page-tab-${pageKey}`)
+    const params: Record<string, string> = { tableId: table }
+    if (
+      pageKey === HilosPages.CHANGE_LOG_TABLE_HISTORY &&
+      recordKey !== undefined
+    )
+      params.record = recordKey
     await expect(link).toHaveAttribute(
       'href',
-      `${CHANGE_LOG_TABLES_PATH}/${encodeURIComponent(table)}${suffix ? `/${suffix}` : ''}${recordSuffix}`,
+      resolveHilosPath(pageKey, params),
     )
-    if (key === currentPage) {
+    if (pageKey === currentPage) {
       await expect(link).toHaveAttribute('aria-current', 'page')
       await expect(link).toHaveClass(/\bactive\b/)
     } else {
@@ -756,7 +759,11 @@ export async function expectTrackedTableOverview(
   since?: number,
 ): Promise<void> {
   await expect(page).toHaveURL(
-    new RegExp(`${CHANGE_LOG_TABLES_PATH}/${escapeRegExp(table)}$`),
+    new RegExp(
+      `${escapeRegExp(
+        resolveHilosPath(HilosPages.CHANGE_LOG_TABLE, { tableId: table }),
+      )}$`,
+    ),
   )
   await expect(page.getByTestId('hilos-page-state')).toHaveAttribute(
     'data-state',
@@ -790,7 +797,12 @@ export async function expectTrackedTableRecord(
 ): Promise<void> {
   await expect(page).toHaveURL(
     new RegExp(
-      `${CHANGE_LOG_TABLES_PATH}/${escapeRegExp(table)}/history/${escapeRegExp(recordKey)}$`,
+      `${escapeRegExp(
+        resolveHilosPath(HilosPages.CHANGE_LOG_TABLE_HISTORY, {
+          tableId: table,
+          record: recordKey,
+        }),
+      )}$`,
     ),
   )
   await expect(page.getByTestId('hilos-page-state')).toHaveAttribute(
@@ -826,7 +838,13 @@ export async function expectTrackedTableWhole(
   since?: number,
 ): Promise<void> {
   await expect(page).toHaveURL(
-    new RegExp(`${CHANGE_LOG_TABLES_PATH}/${escapeRegExp(table)}/history$`),
+    new RegExp(
+      `${escapeRegExp(
+        resolveHilosPath(HilosPages.CHANGE_LOG_TABLE_HISTORY, {
+          tableId: table,
+        }),
+      )}$`,
+    ),
   )
   await expect(page.getByTestId('hilos-page-state')).toHaveAttribute(
     'data-state',

@@ -453,28 +453,28 @@ describe('unbuilt pages', () => {
         [HilosPages.I18N_COUNTRIES, '/hilos/i18n/countries', {}],
         [
           HilosPages.I18N_LANGUAGE,
-          '/hilos/i18n/languages/en',
-          { languageCode: 'en' },
+          '/hilos/i18n/language/11',
+          { languageId: '11' },
         ],
         [
           HilosPages.I18N_LANGUAGE_NAMES,
-          '/hilos/i18n/languages/en/names',
-          { languageCode: 'en' },
+          '/hilos/i18n/language/11/names',
+          { languageId: '11' },
         ],
         [
           HilosPages.I18N_LANGUAGE_LOCALES,
-          '/hilos/i18n/languages/en/locales',
-          { languageCode: 'en' },
+          '/hilos/i18n/language/11/locales',
+          { languageId: '11' },
         ],
         [
           HilosPages.I18N_COUNTRY,
-          '/hilos/i18n/countries/pl',
-          { countryCode: 'pl' },
+          '/hilos/i18n/country/141',
+          { countryId: '141' },
         ],
         [
           HilosPages.I18N_COUNTRY_NAMES,
-          '/hilos/i18n/countries/pl/names',
-          { countryCode: 'pl' },
+          '/hilos/i18n/country/141/names',
+          { countryId: '141' },
         ],
         [HilosPages.I18N_ENTITIES, '/hilos/i18n/entities', {}],
       ] as const) {

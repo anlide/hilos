@@ -325,8 +325,8 @@ describe('HilosAnalyticsPeoplePage', () => {
         'Deleted user #610',
       ])
       expect(links.map((link) => link.getAttribute('href'))).toEqual([
-        '/hilos/analytics/people/7',
-        '/hilos/analytics/people/610',
+        '/hilos/analytics/person/7',
+        '/hilos/analytics/person/610',
       ])
       for (const suffix of ['link', 'name', 'sessions', 'last-seen']) {
         expect(
@@ -359,7 +359,7 @@ describe('HilosAnalyticsPeoplePage', () => {
       h.root.querySelector('[data-id="hilos-table-main-action"]'),
     ).toBeNull()
     click(h, 'a[data-id="hilos-analytics-person-link"]')
-    expect(h.router.navigate).toHaveBeenCalledWith('/hilos/analytics/people/7')
+    expect(h.router.navigate).toHaveBeenCalledWith('/hilos/analytics/person/7')
   })
 
   it('keeps a viewer number linked beside Hidden and never formats hidden values', () => {
@@ -385,7 +385,7 @@ describe('HilosAnalyticsPeoplePage', () => {
     for (const projection of [table(h), get(h.root, '[role="list"]')]) {
       const link = get(projection, 'a[data-id="hilos-analytics-person-link"]')
       expect(link.textContent?.trim()).toBe('#7')
-      expect(link.getAttribute('href')).toBe('/hilos/analytics/people/7')
+      expect(link.getAttribute('href')).toBe('/hilos/analytics/person/7')
       expect(
         get(projection, '[data-id="hilos-analytics-person-name"]').textContent,
       ).toContain('Hidden')

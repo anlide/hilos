@@ -922,12 +922,12 @@ describe('HilosSecurityOauthPage in the admin view mode', () => {
       wrapper
         .get('[data-id="hilos-oauth-provider-open-oauth:github"]')
         .attributes('href'),
-    ).toBe('/hilos/security/oauth/github')
+    ).toBe('/hilos/security/oauth/provider/github')
     expect(
       wrapper
         .get('[data-id="hilos-oauth-provider-open-oauth:google"]')
         .attributes('href'),
-    ).toBe('/hilos/security/oauth/google')
+    ).toBe('/hilos/security/oauth/provider/google')
   })
 
   it('an admin on a node in the mode has Save and Reset active', async () => {

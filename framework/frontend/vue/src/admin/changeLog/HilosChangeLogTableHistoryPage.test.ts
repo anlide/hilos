@@ -42,7 +42,7 @@ describe('HilosChangeLogTableHistoryPage', () => {
     const link = row.get('[data-id="hilos-change-log-history-record-101"]')
     expect(link.text()).toBe('#57')
     expect(link.attributes('href')).toBe(
-      '/hilos/change-log/tables/bot/history/57',
+      '/hilos/change-log/table/bot/history/57',
     )
     expect(r.value.resolvePath).toHaveBeenCalledWith(
       HilosPages.CHANGE_LOG_TABLE_HISTORY,
@@ -50,7 +50,7 @@ describe('HilosChangeLogTableHistoryPage', () => {
     )
     await link.trigger('click')
     expect(r.value.navigate).toHaveBeenCalledWith(
-      '/hilos/change-log/tables/bot/history/57',
+      '/hilos/change-log/table/bot/history/57',
     )
     expect(row.text()).toContain('updated')
     const field = row
@@ -201,14 +201,12 @@ describe('HilosChangeLogTableHistoryPage', () => {
     expect(plate.text()).toContain('Only record #57')
     expect(wrapper.text()).not.toContain('All records of this table')
     const clear = plate.get('[data-id="hilos-change-log-record-filter-clear"]')
-    expect(clear.attributes('href')).toBe(
-      '/hilos/change-log/tables/bot/history',
-    )
+    expect(clear.attributes('href')).toBe('/hilos/change-log/table/bot/history')
     expect(clear.attributes('aria-label')).toBe('Show all records')
     expect(clear.get('i').attributes('aria-hidden')).toBe('true')
     await clear.trigger('click')
     expect(r.value.navigate).toHaveBeenCalledWith(
-      '/hilos/change-log/tables/bot/history',
+      '/hilos/change-log/table/bot/history',
     )
   })
 

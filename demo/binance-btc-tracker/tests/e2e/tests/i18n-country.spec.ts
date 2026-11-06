@@ -12,6 +12,7 @@ import {
   expectI18nPageHead,
   expectPageReady,
   gotoPage,
+  readI18nRowId,
   grantAdminToSelf,
   i18nCountryUpdates,
   markDocument,
@@ -36,6 +37,7 @@ import {
 const test = base.extend<{ i18n: I18nFixtureScope }>({ i18n: i18nFixtures })
 
 test('country.life', async ({ page, i18n }, testInfo) => {
+  const countryIds: Record<string, string> = {}
   // Table navigation, both creation decisions and the edit/switch/delete cycle share one administrator.
   test.slow()
   await i18n.ownCountry('gg')
@@ -44,12 +46,15 @@ test('country.life', async ({ page, i18n }, testInfo) => {
     currencySymbol: '¤',
     currencyCode: 'XQR',
   })
+  countryIds['qr'] = String(companion.id)
   const frames = watchDeliveryFrames(page)
   i18n.defer(async () => frames.stop())
   const writes = () => i18nCountryUpdates(frames)
   const deletes = countSentFrames(page, 'hilos_i18n_country_delete')
   const adds = countSentFrames(page, 'hilos_i18n_country_add')
   await grantAdminToSelf(expect, page)
+  countryIds['us'] = await readI18nRowId(expect, page, 'country', 'us')
+  countryIds['ie'] = await readI18nRowId(expect, page, 'country', 'ie')
   let englishId = 0
 
   await test.step('Read, page and search the countries catalog and capture the default language prerequisite', async () => {
@@ -94,7 +99,7 @@ test('country.life', async ({ page, i18n }, testInfo) => {
     })
     await expect(row.getByTestId('i18n-countries-link-us')).toHaveAttribute(
       'href',
-      '/hilos/i18n/countries/us',
+      `/hilos/i18n/country/${countryIds['us']}`,
     )
     await expect(row).toContainText('United States')
     await expect(row).toContainText('$')
@@ -112,9 +117,15 @@ test('country.life', async ({ page, i18n }, testInfo) => {
   })
 
   await test.step('Open the known country directly and follow Overview and Names by pointer, keyboard, Back and F5', async () => {
-    await gotoPage(expect, page, '/hilos/i18n/countries/us', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/country/${(countryIds['us'] ??= await readI18nRowId(expect, page, 'country', 'us'))}`,
+      PAGE_READY,
+    )
     await expectCountryPageHead(expect, page, {
       code: 'us',
+      id: countryIds['us']!,
       name: 'United States',
       currentPage: 'hilos_i18n_country',
       appName: 'BTC Tracker',
@@ -150,13 +161,16 @@ test('country.life', async ({ page, i18n }, testInfo) => {
     const names = page.getByTestId('country-overview-name-count')
     await expect(names).toHaveAttribute(
       'href',
-      '/hilos/i18n/countries/us/names',
+      `/hilos/i18n/country/${countryIds['us']}/names`,
     )
     await clickSubmit(expect, names)
     await expectPageReady(expect, page)
-    await expect(page).toHaveURL(/\/countries\/us\/names$/)
+    await expect(page).toHaveURL(
+      new RegExp(`/hilos/i18n/country/${countryIds['us']}/names$`),
+    )
     await expectCountryPageHead(expect, page, {
       code: 'us',
+      id: countryIds['us']!,
       name: 'United States',
       currentPage: 'hilos_i18n_country_names',
       appName: 'BTC Tracker',
@@ -165,24 +179,32 @@ test('country.life', async ({ page, i18n }, testInfo) => {
     await expectDocumentUnchanged(expect, page)
     await page.goBack()
     await expectPageReady(expect, page)
-    await expect(page).toHaveURL(/\/countries\/us$/)
+    await expect(page).toHaveURL(
+      new RegExp(`/hilos/i18n/country/${countryIds['us']}$`),
+    )
     await expect(page.getByTestId('country-card-main')).toBeVisible()
     await expectDocumentUnchanged(expect, page)
     const namesTab = page.getByTestId('hilos-page-tab-hilos_i18n_country_names')
     await namesTab.focus()
     await namesTab.press('Enter')
     await expectPageReady(expect, page)
-    await expect(page).toHaveURL(/\/countries\/us\/names$/)
+    await expect(page).toHaveURL(
+      new RegExp(`/hilos/i18n/country/${countryIds['us']}/names$`),
+    )
     await expectDocumentUnchanged(expect, page)
     for (const [path, currentPage] of [
-      ['/hilos/i18n/countries/us', 'hilos_i18n_country'],
-      ['/hilos/i18n/countries/us/names', 'hilos_i18n_country_names'],
+      [`/hilos/i18n/country/${countryIds['us']}`, 'hilos_i18n_country'],
+      [
+        `/hilos/i18n/country/${countryIds['us']}/names`,
+        'hilos_i18n_country_names',
+      ],
     ]) {
       await gotoPage(expect, page, path!, PAGE_READY)
       await page.reload()
       await expectPageReady(expect, page)
       await expectCountryPageHead(expect, page, {
         code: 'us',
+        id: countryIds['us']!,
         name: 'United States',
         currentPage: currentPage!,
         appName: 'BTC Tracker',
@@ -193,7 +215,9 @@ test('country.life', async ({ page, i18n }, testInfo) => {
       page.getByTestId('hilos-page-tab-hilos_i18n_country'),
     )
     await expectPageReady(expect, page)
-    await expect(page).toHaveURL(/\/countries\/us$/)
+    await expect(page).toHaveURL(
+      new RegExp(`/hilos/i18n/country/${countryIds['us']}$`),
+    )
     await expect(
       page.getByTestId('hilos-page-tab-hilos_i18n_country'),
     ).toHaveAttribute('aria-current', 'page')
@@ -253,7 +277,12 @@ test('country.life', async ({ page, i18n }, testInfo) => {
   })
 
   await test.step('Edit the custom currency, reject incomplete fields and read its frozen view', async () => {
-    await gotoPage(expect, page, '/hilos/i18n/countries/gg', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/country/${(countryIds['gg'] ??= await readI18nRowId(expect, page, 'country', 'gg'))}`,
+      PAGE_READY,
+    )
     await expect(page.getByTestId('country-head-own')).toBeVisible()
     await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
       'Unnamed country',
@@ -377,7 +406,12 @@ test('country.life', async ({ page, i18n }, testInfo) => {
       currencyCode: 'EUR',
       defaultLocaleId: locale.id,
     })
-    await gotoPage(expect, page, '/hilos/i18n/countries/ie', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/country/${(countryIds['ie'] ??= await readI18nRowId(expect, page, 'country', 'ie'))}`,
+      PAGE_READY,
+    )
     await clickSubmit(expect, page.getByTestId('country-card-switch-on'))
     await clickSubmit(
       expect,
@@ -460,7 +494,12 @@ test('country.life', async ({ page, i18n }, testInfo) => {
         }),
         contentType: 'application/json',
       })
-      await gotoPage(expect, page, `/hilos/i18n/countries/${code}`, PAGE_READY)
+      await gotoPage(
+        expect,
+        page,
+        `/hilos/i18n/country/${countryIds[code!]}`,
+        PAGE_READY,
+      )
       await expect(
         page.getByTestId('country-card-delete-verdict'),
       ).toContainText(verdict!)
@@ -479,7 +518,12 @@ test('country.life', async ({ page, i18n }, testInfo) => {
   })
 
   await test.step('Cancel and confirm custom deletion from State, then remove the companion from the list', async () => {
-    await gotoPage(expect, page, '/hilos/i18n/countries/gg', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/country/${(countryIds['gg'] ??= await readI18nRowId(expect, page, 'country', 'gg'))}`,
+      PAGE_READY,
+    )
     await clickSubmit(expect, page.getByTestId('country-card-delete'))
     await expect(page.getByTestId('i18n-country-delete-window')).toContainText(
       'It will be removed entirely.',
@@ -513,10 +557,27 @@ test('country.life', async ({ page, i18n }, testInfo) => {
 })
 
 test('country.live-deletion', async ({ page, context, i18n }) => {
+  const countryIds: Record<string, string> = {}
   // Both deletion entry places notify open Overview/Names drafts, then cold subscriptions prove the final 404.
   test.slow()
-  await i18n.country({ code: 'qn', currencySymbol: '¤', currencyCode: 'XQN' })
-  await i18n.country({ code: 'qo', currencySymbol: '¤', currencyCode: 'XQO' })
+  countryIds['qn'] = String(
+    (
+      await i18n.country({
+        code: 'qn',
+        currencySymbol: '¤',
+        currencyCode: 'XQN',
+      })
+    ).id,
+  )
+  countryIds['qo'] = String(
+    (
+      await i18n.country({
+        code: 'qo',
+        currencySymbol: '¤',
+        currencyCode: 'XQO',
+      })
+    ).id,
+  )
   await grantAdminToSelf(expect, page)
   for (const [code, entry] of [
     ['qn', 'list'],
@@ -531,11 +592,16 @@ test('country.live-deletion', async ({ page, context, i18n }) => {
       const nameFrames = watchPageErrorFrames(names)
       const cardWrites = countSentFrames(card, 'hilos_i18n_country_update')
       const nameWrites = countSentFrames(names, 'hilos_i18n_country_name_add')
-      await gotoPage(expect, card, `/hilos/i18n/countries/${code}`, PAGE_READY)
+      await gotoPage(
+        expect,
+        card,
+        `/hilos/i18n/country/${countryIds[code!]}`,
+        PAGE_READY,
+      )
       await gotoPage(
         expect,
         names,
-        `/hilos/i18n/countries/${code}/names`,
+        `/hilos/i18n/country/${countryIds[code!]}/names`,
         PAGE_READY,
       )
       await clickSubmit(expect, card.getByTestId('country-card-edit'))
@@ -561,7 +627,7 @@ test('country.live-deletion', async ({ page, context, i18n }) => {
         await gotoPage(
           expect,
           page,
-          `/hilos/i18n/countries/${code}`,
+          `/hilos/i18n/country/${countryIds[code!]}`,
           PAGE_READY,
         )
         await clickSubmit(expect, page.getByTestId('country-card-delete'))
@@ -580,8 +646,19 @@ test('country.live-deletion', async ({ page, context, i18n }) => {
       await expect(page.getByTestId('hilos-toast-success')).toContainText(
         `Country ${code} deleted.`,
       )
-      await expectDeletedCountryCard(expect, card, cardFrames, code!)
-      await expectDeletedCountryCard(expect, names, nameFrames, code!, 'names')
+      await expectDeletedCountryCard(
+        expect,
+        card,
+        cardFrames,
+        countryIds[code!],
+      )
+      await expectDeletedCountryCard(
+        expect,
+        names,
+        nameFrames,
+        countryIds[code!],
+        'names',
+      )
       await expect(card.getByTestId('i18n-country-window')).toBeVisible()
       await expect(names.getByTestId('i18n-country-name-window')).toBeVisible()
       await expect(symbol).toHaveValue('Q$')
@@ -612,8 +689,19 @@ test('country.live-deletion', async ({ page, context, i18n }) => {
           `${prefix}-cancel`,
         )
       }
-      await expectDeletedCountryCard(expect, card, cardFrames, code!)
-      await expectDeletedCountryCard(expect, names, nameFrames, code!, 'names')
+      await expectDeletedCountryCard(
+        expect,
+        card,
+        cardFrames,
+        countryIds[code!],
+      )
+      await expectDeletedCountryCard(
+        expect,
+        names,
+        nameFrames,
+        countryIds[code!],
+        'names',
+      )
       await live.unchanged()
       for (const [observer, frames, tab] of [
         [card, cardFrames, 'overview'],
@@ -625,7 +713,7 @@ test('country.live-deletion', async ({ page, context, i18n }) => {
           expect,
           observer,
           frames,
-          code!,
+          countryIds[code!],
           beforeReload,
           tab,
         )
@@ -633,14 +721,14 @@ test('country.live-deletion', async ({ page, context, i18n }) => {
         await gotoPage(
           expect,
           observer,
-          `/hilos/i18n/countries/${code}${tab === 'names' ? '/names' : ''}`,
+          `/hilos/i18n/country/${countryIds[code!]}${tab === 'names' ? '/names' : ''}`,
           PAGE_REFUSED,
         )
         await expectDeletedCountryCardReloaded(
           expect,
           observer,
           frames,
-          code!,
+          countryIds[code!],
           beforeDirect,
           tab,
         )

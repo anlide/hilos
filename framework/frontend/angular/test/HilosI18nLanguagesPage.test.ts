@@ -76,7 +76,7 @@ describe('HilosI18nLanguagesPage', () => {
     const h = setup()
     expect(h.fixture.nativeElement.querySelector('table')).not.toBeNull()
     expect(h.el('i18n-languages-link-en')?.getAttribute('href')).toBe(
-      '/hilos/i18n/languages/en',
+      '/hilos/i18n/language/11',
     )
     expect(h.el('i18n-languages-default-en')?.textContent).toContain(
       'Default language',

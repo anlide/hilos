@@ -25,7 +25,7 @@ export interface HilosI18nLanguagePageProps {
   context: HilosI18nLanguageContext
 }
 
-/** A code-addressed card: a new subject releases every window of the former subject. */
+/** A id-addressed card: a new subject releases every window of the former subject. */
 export function HilosI18nLanguagePage({ context }: HilosI18nLanguagePageProps) {
   const router = useContext(HilosRouterContext)
   if (!router)
@@ -36,7 +36,7 @@ export function HilosI18nLanguagePage({ context }: HilosI18nLanguagePageProps) {
     setBinding({ context, revision: binding.revision + 1 })
   return (
     <LanguageCard
-      key={`${binding.revision}:${route.params.languageCode}`}
+      key={`${binding.revision}:${route.params.languageId}`}
       context={context}
     />
   )
@@ -45,9 +45,18 @@ export function HilosI18nLanguagePage({ context }: HilosI18nLanguagePageProps) {
 /** The windows belong to this mounted route subject and its page data. */
 function LanguageCard({ context }: HilosI18nLanguagePageProps) {
   const router = useContext(HilosRouterContext)!
+  const rawCard = useMemo(() => createHilosI18nLanguageCard(context), [context])
   const cardSignal = useMemo(
-    () => createHilosI18nLanguageCard(context),
-    [context],
+    () =>
+      computedSignal(() => {
+        const current = rawCard.get()
+        return current !== null &&
+          String(current.languageId) ===
+            String(router.currentRoute.get().params.languageId)
+          ? current
+          : null
+      }),
+    [rawCard, router],
   )
   const name = useMemo(
     () =>
@@ -71,7 +80,7 @@ function LanguageCard({ context }: HilosI18nLanguagePageProps) {
       ? []
       : hilosTabLinks(
           identity?.pageTabs ?? [],
-          { languageCode: card.code },
+          { languageId: String(card.languageId) },
           router.resolvePath,
         )
   const namesPath = tabs.find(

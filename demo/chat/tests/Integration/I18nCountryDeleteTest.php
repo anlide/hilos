@@ -311,13 +311,13 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
         $this->registerSameAdmin('delete-names');
         $countryId = Hilos::$db->countries['qx']->id;
         foreach (['delete-ak', 'delete-second'] as $acceptKey) {
-            $this->subscribe($acceptKey, 'qx');
+            $this->subscribe($acceptKey, Hilos::$db->countries['qx']->id);
             $cards = $this->drainCardResponses();
             self::assertCount(1, $cards);
             self::assertSame('qx', $this->cardOf($cards[0])['code']);
             $this->assertBoundCountry($acceptKey, $countryId);
         }
-        $this->subscribe('delete-names', 'qx', CountryNamesPage::class);
+        $this->subscribe('delete-names', Hilos::$db->countries['qx']->id, CountryNamesPage::class);
         $names = $this->drainCardResponses();
         self::assertCount(1, $names);
         self::assertSame('qx', $this->cardOf($names[0])['code']);
@@ -347,7 +347,7 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
         self::assertTrue(Hilos::$sr?->hasPageDeliveryFailure('delete-second'));
         self::assertTrue(Hilos::$sr?->hasPageDeliveryFailure('delete-names'));
 
-        $this->subscribe('delete-second', 'qx');
+        $this->subscribe('delete-second', $countryId);
         $resent = $this->drainByAcceptKey()['delete-second'] ?? [];
         self::assertSame([], $this->framesNamed($resent, SignalTypeConstants::PAGE_RESPONSE));
         $errors = $this->framesNamed($resent, SignalConstants::SUBSCRIPTION_PAGE_ERROR);
@@ -362,7 +362,7 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
     {
         $this->createFixture();
         $this->registerAdmin();
-        $this->subscribe('delete-ak', 'qx');
+        $this->subscribe('delete-ak', Hilos::$db->countries['qx']->id);
         self::assertCount(1, $this->drainCardResponses());
         $cached = Hilos::$db->countries['qx'];
         $this->assertBoundCountry('delete-ak', $cached->id);
@@ -397,7 +397,7 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
         $this->createFixture();
         $this->registerAdmin();
         $oldId = Hilos::$db->countries['qx']->id;
-        $this->subscribe('delete-ak', 'qx');
+        $this->subscribe('delete-ak', Hilos::$db->countries['qx']->id);
         self::assertCount(1, $this->drainCardResponses());
         $this->assertBoundCountry('delete-ak', $oldId);
 
@@ -408,7 +408,7 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
         $newId = Hilos::$db->countries['qx']->id;
         self::assertNotSame($oldId, $newId);
         $this->registerSameAdmin('delete-second');
-        $this->subscribe('delete-second', 'qx');
+        $this->subscribe('delete-second', Hilos::$db->countries['qx']->id);
         $this->worker->recordCommittedSync();
         self::assertSame([], Hilos::$browser->flushToSignalRouter());
 
@@ -575,18 +575,22 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
 
     /**
      * @param string $acceptKey Subscribing connection
-     * @param string $code Country route address
+     * @param int $countryId Captured country primary id
      * @param class-string<CountryDetailPage|CountryNamesPage> $pageClass Page class to subscribe to
      * @throws HilosException When subscription setup or its response fails
      */
     private function subscribe(
         string $acceptKey,
-        string $code,
+        int $countryId,
         string $pageClass = CountryDetailPage::class,
     ): void {
         $this->worker->deliver(
             SignalTypeConstants::PAGE_SUBSCRIBE,
-            new WebSocketPageSubscribeSignalDTO($acceptKey, $pageClass::PAGE, ['countryCode' => $code]),
+            new WebSocketPageSubscribeSignalDTO(
+                $acceptKey,
+                $pageClass::PAGE,
+                ['countryId' => (string)$countryId],
+            ),
             $pageClass::PAGE,
         );
     }

@@ -10,6 +10,7 @@ import {
   PASSWORD,
   uniqueEmail,
   ANALYTICS_SESSION_LIST_PATH,
+  analyticsBrowserSessionPath,
   analyticsSessionListViewports,
   analyticsSessionListCell,
   analyticsSessionLink,
@@ -44,6 +45,8 @@ import { setAdminViewMode } from '../../../../../framework/frontend/scripts/admi
 import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/index.js'
+
+// spec-owner: demo — carries Chat's Vue browser journeys for these shared pages
 
 const sendCommand = createCommandChannel({
   host: process.env.COMMAND_HOST ?? 'chat-test',
@@ -113,7 +116,7 @@ test('opens a real person from Analytics People and returns through People crumb
       sendCommand,
       user.userId,
     )
-    const personPath = `/hilos/analytics/people/${user.userId}`
+    const personPath = `/hilos/analytics/person/${user.userId}`
     const label = `${user.name} (#${user.userId})`
     const lead =
       'Browser sessions where this person signed in last. Other people may have performed actions in the same browser.'
@@ -452,7 +455,7 @@ test('Browser sessions opens real sessions from the tab and Person with the same
     await expect(period.getByTestId('hilos-dropdown-menu')).toBeHidden()
 
     await analyticsSessionListCell(page, 'session', id).click()
-    await expect(page).toHaveURL(`${ANALYTICS_SESSION_LIST_PATH}/${id}`)
+    await expect(page).toHaveURL(analyticsBrowserSessionPath(id))
     await expectPageReady(expect, page)
     await expectAnalyticsSessionReturn(expect, page, id)
     let returning = frames.sent.length
@@ -470,10 +473,10 @@ test('Browser sessions opens real sessions from the tab and Person with the same
     )
     // Signed in leads to Person, whose existing session link has the same parent.
     await analyticsSessionListCell(page, 'person', id).click()
-    await expect(page).toHaveURL(`/hilos/analytics/people/${userId}`)
+    await expect(page).toHaveURL(`/hilos/analytics/person/${userId}`)
     await expectPageReady(expect, page)
     await analyticsSessionLink(page, id).click()
-    await expect(page).toHaveURL(`${ANALYTICS_SESSION_LIST_PATH}/${id}`)
+    await expect(page).toHaveURL(analyticsBrowserSessionPath(id))
     await expectPageReady(expect, page)
     await expectAnalyticsSessionReturn(expect, page, id)
     returning = frames.sent.length
@@ -701,7 +704,7 @@ test('Browser sessions viewer receives hidden personal values with only public s
       session.browserSessionId!,
     ).click()
     await expect(viewer).toHaveURL(
-      `${ANALYTICS_SESSION_LIST_PATH}/${session.browserSessionId}`,
+      analyticsBrowserSessionPath(session.browserSessionId!),
     )
     await expectPageReady(expect, viewer)
     await expectAnalyticsBrowserSessionHead(expect, viewer, 'Browser session')

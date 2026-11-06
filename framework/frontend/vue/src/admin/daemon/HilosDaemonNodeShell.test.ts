@@ -410,7 +410,7 @@ describe('HilosDaemonNodeShell', () => {
       h.view
         .get('[data-id="hilos-daemon-environment-link"]')
         .attributes('href'),
-    ).toBe('/hilos/daemon/n2/env')
+    ).toBe('/hilos/daemon/node/n2/env')
     h.scopes.openPage(HilosPages.DAEMON_NODE)
     await nextTick()
     expect(h.view.find('h1').exists()).toBe(false)

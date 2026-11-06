@@ -15,6 +15,8 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { FOLLOWED_STREAM } from '../helpers/logs.js'
 
+// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
+
 /** Wire key of the framework users table, the one table of the `/hilos/users` page. */
 const HILOS_USERS_TABLE = 'hilosUsers'
 
@@ -127,7 +129,7 @@ test('cold-loads a parametrized admin page through the framework shell', async (
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/communications/email/deliveries')
+  await gotoPage(expect, page, '/hilos/communications/channel/email/deliveries')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expectCommunicationsChannelHead(expect, page, 'deliveries')
 
@@ -148,7 +150,7 @@ test('cold-loads a parametrized admin page through the framework shell', async (
   await expect(currentBreadcrumb.locator('a')).toHaveCount(0)
   await expect(
     page.getByTestId('hilos-page-tab-hilos_communications_channel'),
-  ).toHaveAttribute('href', '/hilos/communications/email')
+  ).toHaveAttribute('href', '/hilos/communications/channel/email')
   const communications = page.getByTestId(
     'hilos-breadcrumb-hilos_communications',
   )

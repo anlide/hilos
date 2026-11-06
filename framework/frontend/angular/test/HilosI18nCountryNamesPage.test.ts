@@ -97,7 +97,7 @@ describe('HilosI18nCountryNamesPage', () => {
     expect(names?.classList.contains('active')).toBe(true)
     expect(names?.getAttribute('aria-current')).toBe('page')
     const overview = h.el(`hilos-page-tab-${HilosPages.I18N_COUNTRY}`)
-    expect(overview?.getAttribute('href')).toBe('/hilos/i18n/countries/us')
+    expect(overview?.getAttribute('href')).toBe('/hilos/i18n/country/102')
     expect(overview?.getAttribute('aria-current')).toBeNull()
     const table = document.querySelector('table')
     expect(table).not.toBeNull()
@@ -309,19 +309,13 @@ describe('HilosI18nCountryNamesPage', () => {
   it('closes both windows on a route change and lets their row go', () => {
     const h = setup()
     h.click('i18n-names-delete-en')
-    h.act(() =>
-      h.route.set({ ...h.route.get(), params: { countryCode: 'ca' } }),
-    )
+    h.act(() => h.route.set({ ...h.route.get(), params: { countryId: '103' } }))
     expect(h.el('modal')).toBeNull()
     expect(h.focuses.at(-1)).toBe('')
-    h.act(() =>
-      h.route.set({ ...h.route.get(), params: { countryCode: 'us' } }),
-    )
+    h.act(() => h.route.set({ ...h.route.get(), params: { countryId: '102' } }))
     h.click('i18n-country-name-edit-en')
     h.type('i18n-country-name-input', 'Draft')
-    h.act(() =>
-      h.route.set({ ...h.route.get(), params: { countryCode: 'ca' } }),
-    )
+    h.act(() => h.route.set({ ...h.route.get(), params: { countryId: '103' } }))
     expect(h.el('modal')).toBeNull()
     expect(h.focuses.at(-1)).toBe('')
   })
@@ -331,9 +325,7 @@ describe('HilosI18nCountryNamesPage', () => {
     h.click('i18n-country-name-edit-en')
     const former = document.querySelector('hilos-i18n-country-name-window')
     expect(former).not.toBeNull()
-    h.act(() =>
-      h.route.set({ ...h.route.get(), params: { countryCode: 'ca' } }),
-    )
+    h.act(() => h.route.set({ ...h.route.get(), params: { countryId: '103' } }))
     expect(h.el('modal')).toBeNull()
     const next = document.querySelector('hilos-i18n-country-name-window')
     expect(next).not.toBeNull()
@@ -424,7 +416,7 @@ describe('HilosI18nCountryNamesPage', () => {
     expect(document.querySelector('table')).toBe(table)
     expect(bench.unregister).not.toHaveBeenCalled()
     h.act(() =>
-      bench.route.set({ ...bench.route.get(), params: { countryCode: 'ca' } }),
+      bench.route.set({ ...bench.route.get(), params: { countryId: '103' } }),
     )
     h.act(() => bench.countryCard(null))
     expect(countryName(bench)).toEqual(['Country', 'Country'])
@@ -440,6 +432,9 @@ describe('HilosI18nCountryNamesPage', () => {
     const next = i18nBench(HilosPages.I18N_COUNTRY_NAMES, [usInEnglish])
     h.act(() => h.fixture.componentRef.setInput('context', next.context))
     expect(countryName(bench)).toEqual(['Country', 'Country'])
+    h.act(() =>
+      bench.route.set({ ...bench.route.get(), params: { countryId: '102' } }),
+    )
     h.act(() => next.countryCard())
     expect(countryName(next)).toEqual(['United States', 'United States'])
     const other = next.scopes.openPage(HilosPages.I18N_LANGUAGE)
@@ -640,7 +635,7 @@ describe('HilosI18nCountryNamesPage under a country deleted elsewhere', () => {
     {
       name: 'leaving for another country',
       leave: (live: LiveCountryTab) =>
-        live.navigation.navigate('/hilos/i18n/countries/fr/names'),
+        live.navigation.navigate('/hilos/i18n/country/103/names'),
       code: null,
     },
   ])(

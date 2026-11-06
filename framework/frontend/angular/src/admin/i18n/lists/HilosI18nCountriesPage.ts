@@ -304,7 +304,7 @@ export class HilosI18nCountriesPage {
    */
   protected countryPath(row: HilosI18nCountryRow): string | undefined {
     return this.router.resolvePath(HilosPages.I18N_COUNTRY, {
-      countryCode: row.code,
+      countryId: String(row.countryId),
     })
   }
 

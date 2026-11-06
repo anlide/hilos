@@ -68,7 +68,7 @@ function backend() {
     createAppPageRouter({}),
     pages,
     {
-      pathname: () => `/hilos/moderation/${initial.kind}`,
+      pathname: () => `/hilos/moderation/kind/${initial.kind}`,
       pushState: () => {},
       replaceState: () => {},
       onPopState: () => () => {},
@@ -316,7 +316,7 @@ describe('HilosModerationKindPage', () => {
     const h = backend()
     h.answer()
     const view = mount(h)
-    h.router.navigate(`/hilos/moderation/${photo.kind}`)
+    h.router.navigate(`/hilos/moderation/kind/${photo.kind}`)
     fixture!.detectChanges()
     expect(view.querySelector('dl')).toBeNull()
     expect(

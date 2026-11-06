@@ -1,10 +1,40 @@
 import type { Expect, Locator, Page } from '@playwright/test'
 
 import { deliveryObject, type DeliveryFrameLog } from './deliveryFrames.js'
-import { clickSubmit } from './input.js'
+import { clickSubmit, typeInto } from './input.js'
+import { gotoPage, PAGE_READY } from './page.js'
 import type { PageErrorFrameLog } from './pageErrorFrames.js'
 import { shownByTestId } from './table.js'
 import { dismissToasts } from './toasts.js'
+
+/**
+ * Read a persisted i18n row's primary id from its ordinary list before cold entry.
+ *
+ * @param expect The spec's expect.
+ * @param page The browser reading the catalog.
+ * @param kind The entity whose list supplies the row.
+ * @param code The display code used to find the row.
+ */
+export async function readI18nRowId(
+  expect: Expect,
+  page: Page,
+  kind: 'country' | 'language',
+  code: string,
+): Promise<string> {
+  const list = kind === 'country' ? 'countries' : 'languages'
+  await gotoPage(expect, page, `/hilos/i18n/${list}`, PAGE_READY)
+  await typeInto(page.getByTestId('hilos-table-search'), code)
+  const row = shownByTestId(page, /^hilos-table-(row|card)-[0-9]+$/).filter({
+    has: page.getByTestId(`i18n-${list}-link-${code}`),
+  })
+  await expect(row).toHaveCount(1)
+  const id = (await row.getAttribute('data-id'))!.replace(
+    /^hilos-table-(row|card)-/,
+    '',
+  )
+  expect(id).toMatch(/^[1-9][0-9]*$/)
+  return id
+}
 
 // The countries section's page key and address, the country tabs' page keys
 // and the server's 404 catalog. This folder does not import the core, so the
@@ -21,7 +51,7 @@ const COUNTRY_DELETED_LINE = 'It was deleted just now.'
 
 /**
  * Each country tab as its 404 names it: the page key on the frame, the address
- * after the country's code, and the tab's own words for a body it cannot draw.
+ * after the country's primary id, and the tab's own words for a body it cannot draw.
  */
 const COUNTRY_TABS = {
   overview: {
@@ -495,7 +525,7 @@ export async function expectBuiltInCountryCard(
  * crumb and the browser tab carry the shown name; the trail is the named
  * Breadcrumb, its Countries link keeps the section's address and its last
  * crumb is text rather than a link; the Country pages row reads Overview and
- * Names, the two links keep the code-based addresses whatever the name, only
+ * Names, the two links keep the primary-id addresses whatever the name, only
  * the tab on screen is current; and no child cards stand under the head. The
  * country's own block stays in the spec, with the fixture it describes.
  *
@@ -507,7 +537,13 @@ export async function expectBuiltInCountryCard(
 export async function expectCountryPageHead(
   expect: Expect,
   page: Page,
-  country: { code: string; name: string; appName: string; currentPage: string },
+  country: {
+    id: string | number
+    code: string
+    name: string
+    appName: string
+    currentPage: string
+  },
 ): Promise<void> {
   await expect(page.getByTestId('hilos-page-head')).toBeVisible()
   await expect(page.getByTestId('hilos-page-head-skeleton')).toHaveCount(0)
@@ -544,7 +580,7 @@ export async function expectCountryPageHead(
   const tabs = page.getByTestId('hilos-page-tabs')
   await expect(tabs).toHaveAccessibleName('Country pages')
   await expect(tabs.getByRole('link')).toHaveText(['Overview', 'Names'])
-  const overviewPath = `${COUNTRIES_PATH}/${country.code}`
+  const overviewPath = `/hilos/i18n/country/${country.id}`
   for (const [key, href] of [
     [COUNTRY_CARD_PAGE, overviewPath],
     [COUNTRY_NAMES_PAGE, `${overviewPath}/names`],
@@ -565,7 +601,7 @@ export async function expectCountryPageHead(
 
 /**
  * The adopted language owner's single heading, live breadcrumb and browser title,
- * with code-based addresses and the catalog's ordered Overview, Names, Locales row.
+ * with primary-id addresses and the catalog's ordered Overview, Names, Locales row.
  * @param expect The spec's expect.
  * @param page A page on any of the language's three tabs.
  * @param language The code, permitted native name, active page key and app name.
@@ -574,6 +610,7 @@ export async function expectLanguagePageHead(
   expect: Expect,
   page: Page,
   language: {
+    id: string | number
     code: string
     nativeName: string
     currentPage: string
@@ -627,7 +664,7 @@ export async function expectLanguagePageHead(
     'Locales',
   ])
   await expect(page.getByRole('tablist')).toHaveCount(0)
-  const base = `/hilos/i18n/languages/${language.code}`
+  const base = `/hilos/i18n/language/${language.id}`
   for (const [key, suffix] of [
     ['hilos_i18n_language', ''],
     ['hilos_i18n_language_names', '/names'],
@@ -776,21 +813,19 @@ function countryNotFound(
  *
  * @param expect The spec's expect.
  * @param page The window on the deleted country's tab.
- * @param countryCode The deleted country's code, still in the address.
+ * @param countryId The deleted country's captured primary id.
  * @param tab The tab the window stands on.
  * @param line Whether the deletion line stands under the 404.
  */
 async function expectCountryNotFoundScreen(
   expect: Expect,
   page: Page,
-  countryCode: string,
+  countryId: string,
   tab: keyof typeof COUNTRY_TABS,
   line: boolean,
 ): Promise<void> {
   await expect(page).toHaveURL(
-    new RegExp(
-      `/hilos/i18n/countries/${countryCode}${COUNTRY_TABS[tab].path}$`,
-    ),
+    new RegExp(`/hilos/i18n/country/${countryId}${COUNTRY_TABS[tab].path}$`),
   )
   await expect(page.getByTestId('hilos-page-state')).toHaveAttribute(
     'data-state',
@@ -826,17 +861,17 @@ async function expectCountryNotFoundScreen(
  * @param expect The spec's expect.
  * @param page The window that was open on the country's tab.
  * @param frames Frames observed on that window since before it opened.
- * @param countryCode The deleted country's code, still in the address.
+ * @param countryId The deleted country's captured primary id.
  * @param tab The tab the window was open on; Overview unless named.
  */
 export async function expectDeletedCountryCard(
   expect: Expect,
   page: Page,
   frames: readonly PageErrorFrameLog[],
-  countryCode: string,
+  countryId: string,
   tab: keyof typeof COUNTRY_TABS = 'overview',
 ): Promise<void> {
-  await expectCountryNotFoundScreen(expect, page, countryCode, tab, true)
+  await expectCountryNotFoundScreen(expect, page, countryId, tab, true)
   await expect
     .poll(() =>
       frames.some((frame) => {
@@ -853,7 +888,7 @@ export async function expectDeletedCountryCard(
  * @param expect The spec's expect.
  * @param page The window reloaded on the deleted country's tab.
  * @param frames Frames observed on that window, including the reload.
- * @param countryCode The deleted country's code, still in the address.
+ * @param countryId The deleted country's captured primary id.
  * @param loggedBeforeReload How many frames the log held before the reload.
  * @param tab The tab the window was reloaded on; Overview unless named.
  */
@@ -861,11 +896,11 @@ export async function expectDeletedCountryCardReloaded(
   expect: Expect,
   page: Page,
   frames: readonly PageErrorFrameLog[],
-  countryCode: string,
+  countryId: string,
   loggedBeforeReload: number,
   tab: keyof typeof COUNTRY_TABS = 'overview',
 ): Promise<void> {
-  await expectCountryNotFoundScreen(expect, page, countryCode, tab, false)
+  await expectCountryNotFoundScreen(expect, page, countryId, tab, false)
   await expect
     .poll(() =>
       frames.slice(loggedBeforeReload).some((frame) => {

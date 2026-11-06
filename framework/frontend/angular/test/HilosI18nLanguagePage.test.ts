@@ -124,12 +124,12 @@ describe('HilosI18nLanguagePage', () => {
     const h = setup()
     h.act(() => h.card())
     for (const [id, label, path] of [
-      ['name-count', 'Names: 3', '/hilos/i18n/languages/uk/names'],
-      ['locale-count', 'Locales: 2', '/hilos/i18n/languages/uk/locales'],
+      ['name-count', 'Names: 3', '/hilos/i18n/language/19/names'],
+      ['locale-count', 'Locales: 2', '/hilos/i18n/language/19/locales'],
       [
         'countryless-state',
         'Locale without a country: Not created',
-        '/hilos/i18n/languages/uk/locales',
+        '/hilos/i18n/language/19/locales',
       ],
     ]) {
       const value = h.el(`language-overview-${id}`)!
@@ -163,7 +163,7 @@ describe('HilosI18nLanguagePage', () => {
         }
       })
       expect(h.el('language-overview-name-count')?.getAttribute('href')).toBe(
-        '/hilos/i18n/languages/uk/names',
+        '/hilos/i18n/language/19/names',
       )
       for (const id of ['locale-count', 'countryless-state']) {
         const value = h.el(`language-overview-${id}`)!
@@ -327,7 +327,7 @@ describe('HilosI18nLanguagePage', () => {
       h
         .el(`hilos-page-tab-${HilosPages.I18N_LANGUAGE_NAMES}`)
         ?.getAttribute('href'),
-    ).toBe('/hilos/i18n/languages/uk/names')
+    ).toBe('/hilos/i18n/language/19/names')
     expect(h.el('language-card-edit')).not.toBeNull()
     h.act(() =>
       h.card({
@@ -634,7 +634,7 @@ describe('HilosI18nLanguagePage', () => {
     h.act(() => {
       h.route.set({
         page: HilosPages.I18N_LANGUAGE,
-        params: { languageCode: 'fr' },
+        params: { languageId: '13' },
         admin: true,
       })
       h.card({
@@ -650,20 +650,20 @@ describe('HilosI18nLanguagePage', () => {
     expect(languageName(h)).toEqual(['Français', 'Français'])
     expect(h.el('language-card-code')?.textContent?.trim()).toBe('fr')
     expect(h.el('language-overview-name-count')?.getAttribute('href')).toBe(
-      '/hilos/i18n/languages/fr/names',
+      '/hilos/i18n/language/13/names',
     )
     expect(h.el('language-overview-locale-count')?.getAttribute('href')).toBe(
-      '/hilos/i18n/languages/fr/locales',
+      '/hilos/i18n/language/13/locales',
     )
     expect(
       h.el('language-overview-countryless-state')?.getAttribute('href'),
-    ).toBe('/hilos/i18n/languages/fr/locales')
+    ).toBe('/hilos/i18n/language/13/locales')
     h.click('language-card-delete')
     h.click('i18n-language-delete-confirm')
     h.act(() => {
       h.route.set({
         page: HilosPages.I18N_LANGUAGE,
-        params: { languageCode: 'ar' },
+        params: { languageId: '16' },
         admin: true,
       })
       h.card({
@@ -678,10 +678,10 @@ describe('HilosI18nLanguagePage', () => {
     expect(languageName(h)).toEqual(['العربية', 'العربية'])
     expect(h.el('modal')).toBeNull()
     expect(h.el('language-overview-name-count')?.getAttribute('href')).toBe(
-      '/hilos/i18n/languages/ar/names',
+      '/hilos/i18n/language/16/names',
     )
     expect(h.el('language-overview-locale-count')?.getAttribute('href')).toBe(
-      '/hilos/i18n/languages/ar/locales',
+      '/hilos/i18n/language/16/locales',
     )
     h.click('language-card-delete')
     await h.settle(() => h.succeed())
@@ -705,13 +705,14 @@ describe('HilosI18nLanguagePage', () => {
       nativeName: 'Français',
       summary: { ...languageCard.summary, nameCount: 8 },
     })
+    h.act(() => h.route.set({ ...h.route.get(), params: { languageId: '13' } }))
     h.fixture.componentRef.setInput('context', next.context)
     h.detect()
     expect(h.el('i18n-language-edit-window')).toBeNull()
     expect(languageName(h)).toEqual(['Language', 'Language'])
     expect(h.el('language-card-code')?.textContent?.trim()).toBe('fr')
     expect(h.el('language-overview-name-count')?.getAttribute('href')).toBe(
-      '/hilos/i18n/languages/fr/names',
+      '/hilos/i18n/language/13/names',
     )
     expect(h.el('language-overview-name-count')?.textContent?.trim()).toBe('8')
     h.act(() =>
@@ -723,7 +724,7 @@ describe('HilosI18nLanguagePage', () => {
     expect(h.el('language-overview-name-count')?.textContent?.trim()).toBe('8')
     expect(
       h.el('language-overview-countryless-state')?.getAttribute('href'),
-    ).toBe('/hilos/i18n/languages/fr/locales')
+    ).toBe('/hilos/i18n/language/13/locales')
     h.fixture.destroy()
     expect(h.listenerCount()).toBe(h.unmounted)
     expect(languageName(h)).toEqual(['Language', 'Language'])

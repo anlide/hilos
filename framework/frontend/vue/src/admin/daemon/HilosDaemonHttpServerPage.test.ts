@@ -76,7 +76,7 @@ function harness(diagramBuilt = false, nodeId = 'n1') {
   })
   const router: HilosRouter = {
     currentRoute,
-    currentPath: createSignal(`/hilos/daemon/${nodeId}/http`),
+    currentPath: createSignal(`/hilos/daemon/node/${nodeId}/http`),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),

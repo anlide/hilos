@@ -1035,7 +1035,7 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
      */
     private function subscribe(string $acceptKey): void
     {
-        $params = ['countryCode' => 'qj'];
+        $params = ['countryId' => (string)Hilos::$db->countries['qj']->id];
         $windows = [ChatTableContext::hilosI18nCountryNames => new TableWindowDescriptorDTO(
             filter: [
                 HilosI18nCountryNamesTable::FILTER_COUNTRY => isset(Hilos::$db->countries['qj'])

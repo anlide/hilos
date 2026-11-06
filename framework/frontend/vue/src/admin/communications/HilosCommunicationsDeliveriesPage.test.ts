@@ -331,9 +331,9 @@ describe('HilosCommunicationsDeliveriesPage shared head', () => {
     expect(
       row.findAll('a').map((link) => [link.text(), link.attributes('href')]),
     ).toEqual([
-      ['Overview', '/hilos/communications/email'],
-      ['Configuration', '/hilos/communications/email/configuration'],
-      ['Deliveries', '/hilos/communications/email/deliveries'],
+      ['Overview', '/hilos/communications/channel/email'],
+      ['Configuration', '/hilos/communications/channel/email/configuration'],
+      ['Deliveries', '/hilos/communications/channel/email/deliveries'],
     ])
     expect(
       row.findAll('[aria-current="page"]').map((link) => link.text()),

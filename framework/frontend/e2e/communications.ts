@@ -8,6 +8,8 @@ import {
   deliveryObject as object,
   type DeliveryFrameLog,
 } from './deliveryFrames.js'
+import { resolveHilosPath } from '../core/src/routing/hilosAdmin.js'
+import { HilosPages } from '../core/src/routing/hilosPages.js'
 import { shownByTestId } from './table.js'
 
 const CHANNEL = 'hilos_communications_channel'
@@ -83,18 +85,32 @@ export async function expectCommunicationsChannelHead(
   )
   await expect(page.getByTestId(`hilos-page-tab-${CHANNEL}`)).toHaveAttribute(
     'href',
-    `/hilos/communications/${channel}`,
+    resolveHilosPath(HilosPages.COMMUNICATIONS_CHANNEL, {
+      channelId: channel,
+    }),
   )
   await expect(
     page.getByTestId(`hilos-page-tab-${CONFIGURATION}`),
-  ).toHaveAttribute('href', `/hilos/communications/${channel}/configuration`)
+  ).toHaveAttribute(
+    'href',
+    resolveHilosPath(HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION, {
+      channelId: channel,
+    }),
+  )
   await expect(
     page.getByTestId(`hilos-page-tab-${DELIVERIES}`),
-  ).toHaveAttribute('href', `/hilos/communications/${channel}/deliveries`)
+  ).toHaveAttribute(
+    'href',
+    resolveHilosPath(HilosPages.COMMUNICATIONS_DELIVERIES, {
+      channelId: channel,
+    }),
+  )
   if (channel === 'email') {
     await expect(page.getByTestId(`hilos-page-tab-${FRAME}`)).toHaveAttribute(
       'href',
-      '/hilos/communications/email/frame',
+      resolveHilosPath(HilosPages.COMMUNICATIONS_CHANNEL_FRAME, {
+        channelId: 'email',
+      }),
     )
   } else {
     await expect(page.getByTestId(`hilos-page-tab-${FRAME}`)).toHaveCount(0)

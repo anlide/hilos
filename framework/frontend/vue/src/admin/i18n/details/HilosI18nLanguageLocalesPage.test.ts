@@ -73,7 +73,7 @@ const templates = {
 function localesRoute() {
   return createSignal<PageRouteMatch>({
     page: HilosPages.I18N_LANGUAGE_LOCALES,
-    params: { languageCode: 'ru' },
+    params: { languageId: '12' },
     admin: true,
   })
 }
@@ -86,14 +86,14 @@ function router(
   answerAsLanguage(scopes)
   return {
     currentRoute: route,
-    currentPath: createSignal('/hilos/i18n/languages/ru/locales'),
+    currentPath: createSignal('/hilos/i18n/language/12/locales'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading,
     pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: (page, params) => {
-      const base = `/hilos/i18n/languages/${params?.languageCode}`
+      const base = `/hilos/i18n/language/${params?.languageId}`
       if (page === HilosPages.I18N_LANGUAGE) return base
       if (page === HilosPages.I18N_LANGUAGE_NAMES) return `${base}/names`
       if (page === HilosPages.I18N_LANGUAGE_LOCALES) return `${base}/locales`
@@ -321,13 +321,13 @@ describe('HilosI18nLanguageLocalesPage', () => {
     )
     expect(localesTab.attributes('aria-current')).toBe('page')
     expect(localesTab.attributes('href')).toBe(
-      '/hilos/i18n/languages/ru/locales',
+      '/hilos/i18n/language/12/locales',
     )
 
     const mainTab = wrapper.find(
       '[data-id="hilos-page-tab-hilos_i18n_language"]',
     )
-    expect(mainTab.attributes('href')).toBe('/hilos/i18n/languages/ru')
+    expect(mainTab.attributes('href')).toBe('/hilos/i18n/language/12')
 
     expect(wrapper.find('table').exists()).toBe(true)
     expect(
@@ -441,7 +441,7 @@ describe('HilosI18nLanguageLocalesPage', () => {
 
     route.set({
       page: HilosPages.I18N_LANGUAGE_LOCALES,
-      params: { languageCode: 'en' },
+      params: { languageId: '11' },
       admin: true,
     })
     await nextTick()

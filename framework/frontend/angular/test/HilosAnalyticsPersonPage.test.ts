@@ -78,7 +78,7 @@ function harness(
   const identity = createSignal(pageIdentity(scopes))
   const router: HilosRouter = {
     currentRoute,
-    currentPath: createSignal('/hilos/analytics/people/7'),
+    currentPath: createSignal('/hilos/analytics/person/7'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
@@ -455,8 +455,8 @@ describe('HilosAnalyticsPersonPage', () => {
     ]
     expect(links.map((link) => link.textContent)).toEqual(['#58', '#57'])
     expect(links.map((link) => link.getAttribute('href'))).toEqual([
-      '/hilos/analytics/browser-sessions/58',
-      '/hilos/analytics/browser-sessions/57',
+      '/hilos/analytics/browser-session/58',
+      '/hilos/analytics/browser-session/57',
     ])
     expect(links.map((link) => link.getAttribute('data-record'))).toEqual([
       '58',
@@ -487,8 +487,8 @@ describe('HilosAnalyticsPersonPage', () => {
         ),
       ].map((link) => link.getAttribute('href')),
     ).toEqual([
-      '/hilos/analytics/browser-sessions/58',
-      '/hilos/analytics/browser-sessions/57',
+      '/hilos/analytics/browser-session/58',
+      '/hilos/analytics/browser-session/57',
     ])
   })
 

@@ -12,6 +12,7 @@ import {
   HILOS_I18N_LANGUAGE_NAMES,
   HilosPages,
   computedSignal,
+  createSignal,
   createHilosI18nLanguageCard,
   createHilosI18nLanguageNameWindow,
   createHilosI18nNamesTable,
@@ -35,9 +36,7 @@ function setup(viewer = false) {
     frenchName,
   ])
   bench.card()
-  const language = computedSignal(() =>
-    String(bench.route.get().params['languageCode'] ?? ''),
-  )
+  const language = createSignal('uk')
   const card = createHilosI18nLanguageCard(bench.context)
   const names = createHilosI18nNamesTable(
     bench.context,
@@ -58,7 +57,7 @@ function setup(viewer = false) {
   const button = (name: 'submit' | 'cancel') =>
     view.el<HTMLButtonElement>(`i18n-language-name-${name}`)!
 
-  return { ...bench, ...view, names, window, input, button }
+  return { ...bench, ...view, names, window, input, button, language }
 }
 
 describe('HilosI18nLanguageNameWindow', () => {
@@ -257,8 +256,8 @@ describe('HilosI18nLanguageNameWindow', () => {
     h.type('i18n-language-name-input', 'Old draft')
     h.submit()
     h.act(() => {
-      h.route.set({ ...h.route.get(), params: { languageCode: 'ru' } })
-      h.route.set({ ...h.route.get(), params: { languageCode: 'uk' } })
+      h.language.set('ru')
+      h.language.set('uk')
     })
     expect(h.window.opened.get()).toBe(false)
     h.act(() => h.window.open('15'))

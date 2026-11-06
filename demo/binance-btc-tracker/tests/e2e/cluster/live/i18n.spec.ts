@@ -13,6 +13,7 @@ import {
   clickSubmit,
   typeInto,
   gotoPage,
+  readI18nRowId,
   PAGE_READY,
   grantAdminToSelf,
 } from '../../../../../../framework/frontend/e2e/index.js'
@@ -84,10 +85,16 @@ test(
   'cluster i18n: language nativeName reaches the other master in both directions',
   { tag: '@quarantine:F-016' },
   async ({ masters: [first, second] }) => {
+    const languageIds: Record<string, string> = {}
     try {
       await switchLanguageOff('uk')
       for (const page of [first, second]) {
-        await gotoPage(expect, page, '/hilos/i18n/languages/uk', PAGE_READY)
+        await gotoPage(
+          expect,
+          page,
+          `/hilos/i18n/language/${(languageIds['uk'] ??= await readI18nRowId(expect, page, 'language', 'uk'))}`,
+          PAGE_READY,
+        )
         await expect(page.getByTestId('hilos-page-head-title')).toHaveText(
           'Українська',
         )
@@ -132,6 +139,7 @@ test(
   'cluster i18n: country currencySymbol reaches a card on another master',
   { tag: '@quarantine:F-016' },
   async ({ masters: [writer, observer] }) => {
+    const countryIds: Record<string, string> = {}
     let original:
       { symbol: string; currency: string; locale: string } | undefined
     let originalLine = ''
@@ -146,7 +154,12 @@ test(
       await expect(
         shownByTestId(writer, 'i18n-countries-edit-ie'),
       ).toBeVisible()
-      await gotoPage(expect, observer, '/hilos/i18n/countries/ie', PAGE_READY)
+      await gotoPage(
+        expect,
+        observer,
+        `/hilos/i18n/country/${(countryIds['ie'] ??= await readI18nRowId(expect, observer, 'country', 'ie'))}`,
+        PAGE_READY,
+      )
       originalLine = (
         await observer.getByTestId('country-head-description').innerText()
       )
@@ -198,6 +211,7 @@ test(
   'cluster i18n: locale off and on reach the other master without reconnecting',
   { tag: '@quarantine:F-016' },
   async ({ masters: [first, second] }) => {
+    const languageIds: Record<string, string> = {}
     try {
       await switchLanguageOff('pt')
       await switchLocaleOn('pt')
@@ -205,7 +219,7 @@ test(
         await gotoPage(
           expect,
           page,
-          '/hilos/i18n/languages/pt/locales',
+          `/hilos/i18n/language/${(languageIds['pt'] ??= await readI18nRowId(expect, page, 'language', 'pt'))}/locales`,
           PAGE_READY,
         )
         await expect(
@@ -256,6 +270,7 @@ test(
   'cluster i18n: language base and correction are created and edited across masters',
   { tag: '@quarantine:F-016' },
   async ({ masters: [first, second] }) => {
+    const languageIds: Record<string, string> = {}
     await clearLanguageNamesFixture()
     try {
       await seedLanguageNamesFixture()
@@ -264,7 +279,7 @@ test(
         await gotoPage(
           expect,
           page,
-          '/hilos/i18n/languages/qw/names',
+          `/hilos/i18n/language/${(languageIds['qw'] ??= await readI18nRowId(expect, page, 'language', 'qw'))}/names`,
           PAGE_READY,
         )
         await expect(shownByTestId(page, 'i18n-names-none-qv')).toHaveText(
@@ -327,6 +342,7 @@ test(
   'cluster i18n: country base and correction edits reach both masters',
   { tag: '@quarantine:F-016' },
   async ({ masters: [first, second] }) => {
+    const countryIds: Record<string, string> = {}
     await clearCountryNamesFixture()
     try {
       await seedCountryNamesFixture()
@@ -335,7 +351,7 @@ test(
         await gotoPage(
           expect,
           page,
-          '/hilos/i18n/countries/qj/names',
+          `/hilos/i18n/country/${(countryIds['qj'] ??= await readI18nRowId(expect, page, 'country', 'qj'))}/names`,
           PAGE_READY,
         )
         await expectI18nName(expect, page, 'country', 'qk', 'Fixture base')

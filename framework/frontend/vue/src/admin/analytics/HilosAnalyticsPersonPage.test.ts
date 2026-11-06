@@ -86,7 +86,7 @@ function harness(
     },
     scopes,
   )
-  let path = `/hilos/analytics/people/${param ?? ''}`
+  let path = `/hilos/analytics/person/${param ?? ''}`
   const navigation = createHilosRouter(createAppPageRouter({}), subscription, {
     pathname: () => path,
     pushState: (next) => {
@@ -118,7 +118,7 @@ function harness(
     sendTableViewport,
     unregisterTableWindow,
     navigate(id: string) {
-      router.navigate(`/hilos/analytics/people/${id}`)
+      router.navigate(`/hilos/analytics/person/${id}`)
     },
     identity(
       label = 'Ada (#7)',
@@ -285,8 +285,8 @@ describe('HilosAnalyticsPersonPage', () => {
     )
     expect(links.map((link) => link.text())).toEqual(['#58', '#57'])
     expect(links.map((link) => link.attributes('href'))).toEqual([
-      '/hilos/analytics/browser-sessions/58',
-      '/hilos/analytics/browser-sessions/57',
+      '/hilos/analytics/browser-session/58',
+      '/hilos/analytics/browser-session/57',
     ])
     expect(links.map((link) => link.attributes('data-record'))).toEqual([
       '58',
@@ -315,8 +315,8 @@ describe('HilosAnalyticsPersonPage', () => {
         )
         .map((link) => link.attributes('href')),
     ).toEqual([
-      '/hilos/analytics/browser-sessions/58',
-      '/hilos/analytics/browser-sessions/57',
+      '/hilos/analytics/browser-session/58',
+      '/hilos/analytics/browser-session/57',
     ])
   })
 

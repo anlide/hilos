@@ -26,7 +26,7 @@ import {
   computedSignal,
   HilosPages,
 } from '@hilos/core/base'
-import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import HilosAdminPage from '../../../HilosAdminPage.vue'
 import HilosLink from '../../../HilosLink.vue'
@@ -38,7 +38,20 @@ import HilosI18nCountrySwitchOff from './HilosI18nCountrySwitchOff.vue'
 import HilosI18nCountrySwitchOn from './HilosI18nCountrySwitchOn.vue'
 
 const props = defineProps<{ context: HilosI18nCountryContext }>()
-const cardSignal = createHilosI18nCountryCard(props.context)
+const router = inject(hilosRouterKey)
+if (!router) {
+  throw new Error('HilosI18nCountryPage requires a provided Hilos router.')
+}
+const routeId = computedSignal(() =>
+  String(router.currentRoute.get().params.countryId ?? ''),
+)
+const rawCard = createHilosI18nCountryCard(props.context)
+const cardSignal = computedSignal(() => {
+  const current = rawCard.get()
+  return current !== null && String(current.countryId) === routeId.get()
+    ? current
+    : null
+})
 const unbindName = bindPageInstanceName(
   props.context.scopes,
   HilosPages.I18N_COUNTRY,
@@ -56,20 +69,27 @@ const unbindName = bindPageInstanceName(
 )
 onUnmounted(unbindName)
 const card = useSignal(cardSignal)
+const currentId = useSignal(routeId)
 const window = createHilosI18nCountryCardWindow(cardSignal, props.context)
 const copy = HILOS_I18N_COUNTRY_WINDOW_COPY
 onMounted(window.start)
 onUnmounted(window.dispose)
-const router = inject(hilosRouterKey)
-if (!router) {
-  throw new Error('HilosI18nCountryPage requires a provided Hilos router.')
-}
+
 const loading = useSignal(router.pageLoading)
+watch(
+  useSignal(routeId),
+  () => {
+    window.close()
+    deleteOpen.value = false
+    deleteTarget.value = null
+  },
+  { flush: 'sync' },
+)
 const namesPath = computed(() =>
   card.value === null
     ? undefined
     : router.resolvePath(HilosPages.I18N_COUNTRY_NAMES, {
-        countryCode: card.value.code,
+        countryId: String(card.value.countryId),
       }),
 )
 const enabledLocaleCount = computed(
@@ -294,8 +314,16 @@ const deleted = (): void => {
               </p>
             </div>
             <div class="text-nowrap">
-              <HilosI18nCountrySwitchOn :context="context" :card="card" />
-              <HilosI18nCountrySwitchOff :context="context" :card="card" />
+              <HilosI18nCountrySwitchOn
+                :key="`on:${currentId}`"
+                :context="context"
+                :card="card"
+              />
+              <HilosI18nCountrySwitchOff
+                :key="`off:${currentId}`"
+                :context="context"
+                :card="card"
+              />
             </div>
           </div>
           <div
@@ -349,6 +377,7 @@ const deleted = (): void => {
       Country details are no longer available.
     </p>
     <HilosI18nCountryDelete
+      :key="currentId"
       v-model="deleteOpen"
       :target="deleteTarget"
       :source="deleteSource"

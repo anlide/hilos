@@ -24,7 +24,7 @@ function harness(showLogLinks?: boolean) {
   })
   const router = {
     currentRoute,
-    currentPath: createSignal('/hilos/daemon/n1/workers'),
+    currentPath: createSignal('/hilos/daemon/node/n1/workers'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),

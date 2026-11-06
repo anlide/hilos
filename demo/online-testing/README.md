@@ -92,7 +92,7 @@ The backend registers all eight Change Log pages and their table bindings.
 The Angular views mount Overview at `/hilos/change-log`, Feed at
 `/hilos/change-log/feed`, Tracked tables at `/hilos/change-log/tables`,
 and Noisy columns at `/hilos/change-log/noisy`. A table's Overview is at
-`/hilos/change-log/tables/{tableId}`, with Columns at `/columns`,
+`/hilos/change-log/table/{tableId}`, with Columns at `/columns`,
 Triggers at `/triggers`, and History at `/history/{record?}` beneath that address.
 
 ## First run

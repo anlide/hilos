@@ -19,6 +19,8 @@ import {
   placementNode,
 } from '../../helpers/cluster.js'
 
+// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
+
 const ORPHANS_PAGE = 'hilos_daemon_env_orphans'
 const ORPHANS_WINDOW = 'hilosDaemonEnvOrphans'
 
@@ -52,11 +54,11 @@ async function readLiveOrphans(
   await gotoPage(
     expect,
     page,
-    `/hilos/daemon/${nodeId}/env/orphans`,
+    `/hilos/daemon/node/${nodeId}/env/orphans`,
     PAGE_READY,
   )
   await expect(page).toHaveURL(
-    new RegExp(`/hilos/daemon/${nodeId}/env/orphans$`),
+    new RegExp(`/hilos/daemon/node/${nodeId}/env/orphans$`),
   )
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(
     CLUSTER_NODE_NAMES[nodeId],

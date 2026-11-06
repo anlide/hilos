@@ -49,17 +49,17 @@ function makeRouter(
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.I18N_LANGUAGE_NAMES,
-      params: { languageCode: 'qx' },
+      params: { languageId: '46' },
       admin: true,
     }),
-    currentPath: createSignal('/hilos/i18n/languages/qx/names'),
+    currentPath: createSignal('/hilos/i18n/language/46/names'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading,
     pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: (page, params) => {
-      const base = `/hilos/i18n/languages/${params?.languageCode}`
+      const base = `/hilos/i18n/language/${params?.languageId}`
       if (page === HilosPages.I18N_LANGUAGE) return base
       if (page === HilosPages.I18N_LANGUAGE_NAMES) return `${base}/names`
       if (page === HilosPages.I18N_LANGUAGE_LOCALES) return `${base}/locales`
@@ -172,12 +172,12 @@ describe('HilosI18nLanguageNamesPage', () => {
       '[data-id="hilos-page-tab-hilos_i18n_language_names"]',
     )
     expect(namesTab.attributes('aria-current')).toBe('page')
-    expect(namesTab.attributes('href')).toBe('/hilos/i18n/languages/qx/names')
+    expect(namesTab.attributes('href')).toBe('/hilos/i18n/language/46/names')
 
     const mainTab = wrapper.find(
       '[data-id="hilos-page-tab-hilos_i18n_language"]',
     )
-    expect(mainTab.attributes('href')).toBe('/hilos/i18n/languages/qx')
+    expect(mainTab.attributes('href')).toBe('/hilos/i18n/language/46')
 
     expect(wrapper.find('table').exists()).toBe(true)
     expect(wrapper.findAll('button')).toHaveLength(0)
@@ -281,7 +281,7 @@ function deletionPage(viewer = false) {
   const context = makeContext(scopes)
   const route = createSignal<PageRouteMatch>({
     page: HilosPages.I18N_LANGUAGE_NAMES,
-    params: { languageCode: 'qx' },
+    params: { languageId: '46' },
     admin: true,
   })
   const router = { ...makeRouter(scopes), currentRoute: route }
@@ -491,7 +491,7 @@ describe('language name deletion from the page', () => {
       }
       s.route.set({
         page: HilosPages.I18N_LANGUAGE_NAMES,
-        params: { languageCode: 'en' },
+        params: { languageId: '11' },
         admin: true,
       })
       await settlePage()
@@ -729,13 +729,17 @@ describe('language name add/edit from the page', () => {
     ).toBe(false)
     s.route.set({
       page: HilosPages.I18N_LANGUAGE_NAMES,
-      params: { languageCode: 'qz' },
+      params: { languageId: '48' },
       admin: true,
     })
     await settlePage()
     expect(window.opened.get()).toBe(false)
     expect(s.controller.focusedRow.get()).toBeUndefined()
-    s.scope.data.set(LANGUAGE_CARD_DATA, { ...testCard, code: 'qz' })
+    s.scope.data.set(LANGUAGE_CARD_DATA, {
+      ...testCard,
+      languageId: 48,
+      code: 'qz',
+    })
     s.controller.ingestWindow(
       [{ rowKey: '47', slots: { language: s.slot } }],
       1,

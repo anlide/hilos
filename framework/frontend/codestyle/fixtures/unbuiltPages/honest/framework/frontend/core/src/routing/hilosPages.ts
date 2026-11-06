@@ -24,7 +24,7 @@ export const HILOS_ROUTE_DECLARATIONS = {
   [HilosPages.PUBLIC]: { path: '/public', admin: false },
   [HilosPages.I18N_LANGUAGES]: { path: '/hilos/i18n/languages', admin: true },
   [HilosPages.I18N_LANGUAGE]: {
-    path: '/hilos/i18n/languages/{languageCode}',
+    path: '/hilos/i18n/language/{languageId}',
     admin: true,
   },
 }

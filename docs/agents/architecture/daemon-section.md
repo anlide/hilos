@@ -307,7 +307,7 @@ existing page fingerprint; repeated identical reports do not resend the page.
 
 ## The Node Line
 
-Each node is an entity page at `/hilos/daemon/{nodeId}`. Its catalog entry opts
+Each node is an entity page at `/hilos/daemon/node/{nodeId}`. Its catalog entry opts
 into the shared `HilosPageHead`, drawn by `HilosDaemonNodeShell` in Vue, React,
 and Angular. The owner is the node, not the Daemon root section. One head and
 one row serve Overview, Workers, Agents, Cron, WebSockets, HTTP, Environment,
@@ -316,7 +316,7 @@ child tab. The root's Nodes diagram links to
 each addressed Node Overview; the selected node remains its own entity and
 head owner.
 
-The WebSockets child at `/hilos/daemon/{nodeId}/websockets` adds its own
+The WebSockets child at `/hilos/daemon/node/{nodeId}/websockets` adds its own
 `websockets` page-data field to the shared node line. The initial answer carries
 both together; the existing node-page publisher sends data-only changes and
 retries a complete answer on a later picture fact after a failed subscription.

@@ -286,7 +286,7 @@ describe('HilosDaemonWebsocketsPage', () => {
     await flushPromises()
     expect(h.view.get(id('count')).text()).toBe('0')
     expect(h.view.get('h1').text()).toBe('n1')
-    h.router.navigate('/hilos/daemon/n2')
+    h.router.navigate('/hilos/daemon/node/n2')
     h.answer(null)
     h.emit('projectSignal', {
       type: 'page_response',

@@ -7,6 +7,7 @@ import {
   login,
   openSignIn,
   waitAnalyticsBrowserSession,
+  analyticsBrowserSessionPath,
   analyticsSessionLink,
   expectAnalyticsActionRows,
   expectAnalyticsActionsInOrder,
@@ -31,6 +32,8 @@ import {
 import { setAdmin } from '../../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { seedTestUser } from '../../../../../../framework/frontend/scripts/testUser.mjs'
 import { AUTH_ACTION_LOGIN } from '../../../../../../framework/frontend/core/src/index.js'
+
+// spec-owner: demo — carries Online Testing's Angular cluster browser journeys
 
 const stand = readClusterBrowserStand()
 const sendCommand = clusterCommandChannel(stand, stand.follower)
@@ -126,7 +129,7 @@ for (const [index, sourceNode] of stand.masters.entries()) {
       await gotoPage(expect, admin, `/hilos/user/${user.userId}`)
       await admin.getByTestId('hilos-user-analytics-link').click()
       await expect(admin).toHaveURL(
-        new RegExp(`/hilos/analytics/people/${user.userId}$`),
+        new RegExp(`/hilos/analytics/person/${user.userId}$`),
       )
       await expectPageReady(expect, admin)
       await expectAnalyticsPersonSession(
@@ -145,7 +148,7 @@ for (const [index, sourceNode] of stand.masters.entries()) {
       await analyticsSessionLink(admin, userSession.browserSessionId!).click()
       await expect(admin).toHaveURL(
         new RegExp(
-          `/hilos/analytics/browser-sessions/${userSession.browserSessionId}$`,
+          `${analyticsBrowserSessionPath(userSession.browserSessionId!)}$`,
         ),
       )
       await expectPageReady(expect, admin)
@@ -183,7 +186,7 @@ for (const [index, sourceNode] of stand.masters.entries()) {
       await gotoPage(
         expect,
         admin,
-        `/hilos/analytics/browser-sessions/${adminSession.browserSessionId}`,
+        analyticsBrowserSessionPath(adminSession.browserSessionId!),
       )
       await expectOtherAnalyticsSession(
         expect,

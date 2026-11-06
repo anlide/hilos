@@ -31,7 +31,7 @@ import {
   type HilosI18nLocaleRow,
   type HilosI18nLocaleWindowMode,
 } from '@hilos/core/admin/i18n'
-import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import HilosAdminPage from '../../../HilosAdminPage.vue'
 import HilosViewportTable from '../../../HilosViewportTable.vue'
@@ -41,7 +41,22 @@ import HilosI18nLocaleDelete from './HilosI18nLocaleDelete.vue'
 import HilosI18nLocaleWindow from './HilosI18nLocaleWindow.vue'
 
 const props = defineProps<{ context: HilosI18nLanguageContext }>()
-const liveCard = createHilosI18nLanguageCard(props.context)
+const router = inject(hilosRouterKey)
+if (!router) {
+  throw new Error(
+    'HilosI18nLanguageLocalesPage requires a provided router: app.provide(hilosRouterKey, router).',
+  )
+}
+const routeId = computedSignal(() =>
+  String(router.currentRoute.get().params.languageId ?? ''),
+)
+const rawCard = createHilosI18nLanguageCard(props.context)
+const liveCard = computedSignal(() => {
+  const current = rawCard.get()
+  return current !== null && String(current.languageId) === routeId.get()
+    ? current
+    : null
+})
 const unbindName = bindPageInstanceName(
   props.context.scopes,
   HilosPages.I18N_LANGUAGE,
@@ -65,21 +80,13 @@ const opened = ref<{ rowKey: string; mode: HilosI18nLocaleWindowMode } | null>(
 )
 const deleteTarget = ref<HilosI18nLocaleDeleteTarget | null>(null)
 const { deleteLocale } = createHilosI18nLocaleDelete(props.context)
-const router = inject(hilosRouterKey)
-if (!router) {
-  throw new Error(
-    'HilosI18nLanguageLocalesPage requires a provided router: app.provide(hilosRouterKey, router).',
-  )
-}
+
 const loading = useSignal(router.pageLoading)
-const language = computedSignal(
-  () =>
-    (router.currentRoute.get().params.languageCode as string | undefined) ?? '',
-)
+
 const locales = createHilosI18nLanguageLocalesTable(
   props.context,
   computedSignal(() =>
-    liveCard.get()?.code === language.get()
+    String(liveCard.get()?.languageId) === routeId.get()
       ? (liveCard.get()?.languageId ?? null)
       : null,
   ),
@@ -107,6 +114,15 @@ const deleteSource = computed<HilosI18nLocaleDeleteTarget | null>(() => {
     countryLabel: hilosI18nLocaleCountryLabel(row),
   }
 })
+watch(
+  useSignal(routeId),
+  () => {
+    opened.value = null
+    deleteTarget.value = null
+    locales.controller.releaseFocus()
+  },
+  { flush: 'sync' },
+)
 onMounted(() => locales.start())
 onUnmounted(() => {
   locales.controller.releaseFocus()
@@ -132,18 +148,28 @@ function openWindow(
   row: HilosI18nLocaleRow,
   mode: HilosI18nLocaleWindowMode,
 ): void {
-  if (opened.value !== null || deleteTarget.value !== null) return
+  if (
+    opened.value !== null ||
+    deleteTarget.value !== null ||
+    card.value === null
+  )
+    return
   opened.value = { rowKey: row.rowKey, mode }
 }
 
 function openDelete(row: HilosI18nLocaleRow): void {
-  if (opened.value !== null || deleteTarget.value !== null) return
+  if (
+    opened.value !== null ||
+    deleteTarget.value !== null ||
+    card.value === null
+  )
+    return
   const fresh = locales.controller.focusRow(row.rowKey)
   if (
     !fresh ||
     fresh.localeCode === null ||
     fresh.formats === null ||
-    card.value?.code !== language.get()
+    String(card.value?.languageId) !== routeId.get()
   ) {
     locales.controller.releaseFocus()
     return

@@ -26,6 +26,8 @@ import {
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
 
+// spec-owner: demo — carries Online Testing's Angular cluster browser journeys
+
 test('the communications section configures email, sends a test and records delivery', async ({
   page,
 }) => {
@@ -41,7 +43,7 @@ test('the communications section configures email, sends a test and records deli
   await shownByTestId(page, 'hilos-channel-configure-email').click()
   await expectCommunicationsChannelHead(expect, page, 'configuration')
   expect(new URL(page.url()).pathname).toBe(
-    '/hilos/communications/email/configuration',
+    '/hilos/communications/channel/email/configuration',
   )
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(page.getByTestId('hilos-channel-test')).toHaveCount(0)
@@ -78,7 +80,7 @@ test('the letter frame editor has a dialog name and keyboard focus', async ({
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/communications/email/frame')
+  await gotoPage(expect, page, '/hilos/communications/channel/email/frame')
   await expectCommunicationsAccessibility(expect, page, 'frame', 'Enabled')
   const preview = page.getByTestId('hilos-channel-frame-preview')
   await expect(preview).toHaveAttribute('title', 'Letter frame preview')
@@ -131,7 +133,7 @@ test('letter frame cold entry, reload and history carry one complete saved previ
     ).toEqual(original)
 
     // This demo registers email only; the SMS frame address must still be refused.
-    await gotoPage(expect, page, '/hilos/communications/sms/frame')
+    await gotoPage(expect, page, '/hilos/communications/channel/sms/frame')
     await expect(page.getByTestId('hilos-page-state')).toHaveAttribute(
       'data-state',
       'error',

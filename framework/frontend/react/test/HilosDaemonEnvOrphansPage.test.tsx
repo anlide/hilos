@@ -27,7 +27,7 @@ function harness() {
   })
   const router = {
     currentRoute,
-    currentPath: createSignal('/hilos/daemon/n1/env/orphans'),
+    currentPath: createSignal('/hilos/daemon/node/n1/env/orphans'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),

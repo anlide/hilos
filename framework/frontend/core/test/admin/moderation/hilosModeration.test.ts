@@ -348,16 +348,16 @@ describe('createHilosModerationKindsTable', () => {
 describe('moderationKindPath', () => {
   it('formats literal base path with encoded kind identifier', () => {
     expect(moderationKindPath('chat_message')).toBe(
-      '/hilos/moderation/chat_message',
+      '/hilos/moderation/kind/chat_message',
     )
     expect(moderationKindPath('hilos_profile_name')).toBe(
-      '/hilos/moderation/hilos_profile_name',
+      '/hilos/moderation/kind/hilos_profile_name',
     )
     expect(moderationKindPath('custom/kind')).toBe(
-      '/hilos/moderation/custom%2Fkind',
+      '/hilos/moderation/kind/custom%2Fkind',
     )
     expect(moderationKindPath('kind with spaces')).toBe(
-      '/hilos/moderation/kind%20with%20spaces',
+      '/hilos/moderation/kind/kind%20with%20spaces',
     )
   })
 })

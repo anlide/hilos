@@ -40,6 +40,7 @@ import {
   expectPageReady,
   expectMaintenancePageHead,
   gotoPage,
+  readI18nRowId,
   gotoPublicStatus,
   PAGE_READY,
   grantAdminToSelf,
@@ -78,6 +79,8 @@ import {
   leaveProtectedMode,
   openProtectedModeIfAny,
 } from '../../../../../framework/frontend/scripts/protectedMode.mjs'
+
+// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
 
 const statusExpect = expect.configure({ timeout: STATUS_EXPECT_TIMEOUT_MS })
 const pausedExpect = statusExpect.configure({
@@ -182,7 +185,7 @@ test('Analytics Person has one entity heading naming its table and a decorative 
   await expect(page.getByTestId('self-user')).toBeVisible()
   const name = await page.getByTestId('self-user').innerText()
   const label = `${name} (#${userId})`
-  await gotoPage(expect, page, `/hilos/analytics/people/${userId}`, PAGE_READY)
+  await gotoPage(expect, page, `/hilos/analytics/person/${userId}`, PAGE_READY)
 
   const carrier = page.getByTestId('hilos-admin-page')
   await expect(carrier).toHaveAttribute('data-page', 'hilos_analytics_person')
@@ -377,9 +380,11 @@ test('language pages expose one named head, current link and named table through
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/i18n/languages/en', PAGE_READY)
+  const languageId = await readI18nRowId(expect, page, 'language', 'en')
+  await gotoPage(expect, page, `/hilos/i18n/language/${languageId}`, PAGE_READY)
   await expectLanguagePageHead(expect, page, {
     code: 'en',
+    id: languageId,
     nativeName: 'English',
     currentPage: 'hilos_i18n_language',
     appName: 'BTC Tracker',
@@ -405,6 +410,7 @@ test('language pages expose one named head, current link and named table through
     await expectPageReady(expect, page)
     await expectLanguagePageHead(expect, page, {
       code: 'en',
+      id: languageId,
       nativeName: 'English',
       currentPage: key,
       appName: 'BTC Tracker',

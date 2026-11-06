@@ -100,7 +100,9 @@ onUnmounted(() => {
 
 /** The country card path, or nothing when that page has no address here. */
 const countryPath = (row: HilosI18nCountryRow): string | undefined =>
-  router.resolvePath(HilosPages.I18N_COUNTRY, { countryCode: row.code })
+  router.resolvePath(HilosPages.I18N_COUNTRY, {
+    countryId: String(row.countryId),
+  })
 </script>
 
 <template>

@@ -296,7 +296,7 @@ describe('HilosCommunicationsDeliveriesPage shared head', () => {
           `[data-id="hilos-page-tab-${HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION}"]`,
         )
         ?.getAttribute('href'),
-    ).toBe('/hilos/communications/email/configuration')
+    ).toBe('/hilos/communications/channel/email/configuration')
     expect(root.querySelector('span.form-label')).toBeNull()
     expect(
       root.querySelector('[data-id="hilos-viewport-table"]'),

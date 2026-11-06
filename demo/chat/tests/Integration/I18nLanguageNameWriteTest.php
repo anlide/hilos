@@ -815,7 +815,7 @@ final class I18nLanguageNameWriteTest extends IntegrationTestCase
      */
     private function subscribe(string $acceptKey): void
     {
-        $params = ['languageCode' => 'qw'];
+        $params = ['languageId' => (string)Hilos::$db->languages['qw']->id];
         $windows = [ChatTableContext::hilosI18nLanguageNames => new TableWindowDescriptorDTO(
             filter: [
                 HilosI18nLanguageNamesTable::FILTER_LANGUAGE => isset(Hilos::$db->languages['qw'])

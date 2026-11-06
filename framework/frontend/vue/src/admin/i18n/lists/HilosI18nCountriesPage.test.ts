@@ -106,8 +106,8 @@ function router(): HilosRouter {
     pageIdentity: createSignal(undefined),
     dashboardSections: createSignal(undefined),
     resolvePath: (page, params) =>
-      page === HilosPages.I18N_COUNTRY && params?.countryCode === 'us'
-        ? '/hilos/i18n/countries/us'
+      page === HilosPages.I18N_COUNTRY && params?.countryId === '102'
+        ? '/hilos/i18n/country/102'
         : undefined,
     clearPageError: () => {},
     denyCurrentPage: () => {},
@@ -280,7 +280,7 @@ describe('HilosI18nCountriesPage', () => {
     const known = view.get('[data-id="i18n-countries-link-us"]')
     expect(known.text()).toBe('us')
     expect(known.attributes('href') ?? known.attributes('to')).toContain(
-      '/hilos/i18n/countries/us',
+      '/hilos/i18n/country/102',
     )
     expect(known.classes()).toContain('link-secondary')
     expect(known.classes()).toContain('text-uppercase')

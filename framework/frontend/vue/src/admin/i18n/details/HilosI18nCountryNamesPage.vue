@@ -47,7 +47,22 @@ import HilosI18nCountryNameWindow from './HilosI18nCountryNameWindow.vue'
 import HilosI18nNamesTable from './HilosI18nNamesTable.vue'
 
 const props = defineProps<{ context: HilosI18nCountryContext }>()
-const liveCard = createHilosI18nCountryCard(props.context)
+const router = inject(hilosRouterKey)
+if (!router) {
+  throw new Error(
+    'HilosI18nCountryNamesPage requires a provided router: app.provide(hilosRouterKey, router).',
+  )
+}
+const routeId = computedSignal(() =>
+  String(router.currentRoute.get().params.countryId ?? ''),
+)
+const rawCard = createHilosI18nCountryCard(props.context)
+const liveCard = computedSignal(() => {
+  const current = rawCard.get()
+  return current !== null && String(current.countryId) === routeId.get()
+    ? current
+    : null
+})
 const unbindName = bindPageInstanceName(
   props.context.scopes,
   HilosPages.I18N_COUNTRY,
@@ -65,22 +80,14 @@ const unbindName = bindPageInstanceName(
 )
 onUnmounted(unbindName)
 const card = useSignal(liveCard)
-const router = inject(hilosRouterKey)
-if (!router) {
-  throw new Error(
-    'HilosI18nCountryNamesPage requires a provided router: app.provide(hilosRouterKey, router).',
-  )
-}
+
 const loading = useSignal(router.pageLoading)
-const country = computedSignal(
-  () =>
-    (router.currentRoute.get().params.countryCode as string | undefined) ?? '',
-)
+
 const names = createHilosI18nNamesTable(
   props.context,
   HILOS_I18N_COUNTRY_NAMES,
   computedSignal(() =>
-    liveCard.get()?.code === country.get()
+    String(liveCard.get()?.countryId) === routeId.get()
       ? (liveCard.get()?.countryId ?? null)
       : null,
   ),
@@ -88,7 +95,15 @@ const names = createHilosI18nNamesTable(
 const nameWindow = createHilosI18nCountryNameWindow(
   names.controller,
   liveCard,
-  country,
+  computedSignal((): string => {
+    const held = nameWindow.target.get()
+    return (
+      liveCard.get()?.code ??
+      (String(held?.countryId) === routeId.get()
+        ? (held?.countryCode ?? '')
+        : '')
+    )
+  }),
   props.context,
 )
 const nameCopy = HILOS_I18N_COUNTRY_NAME_COPY
@@ -99,10 +114,10 @@ const deleteWindow = ref<InstanceType<
 > | null>(null)
 const target = shallowRef<HilosI18nCountryNameDeleteTarget | null>(null)
 const focused = useSignal(names.controller.focusedRow)
-const currentCountry = useSignal(country)
+const currentCountry = useSignal(routeId)
 const source = computed(() =>
   card.value?.countryId === target.value?.countryId &&
-  currentCountry.value === target.value?.countryCode &&
+  currentCountry.value === String(target.value?.countryId) &&
   focused.value?.inLanguageId === target.value?.inLanguageId
     ? (focused.value ?? null)
     : null,
@@ -128,15 +143,16 @@ async function openDelete(
   if (deleteOpen.value || nameWindow.saving.get()) return
   nameWindow.close()
   const attempt = ++opening
-  const countryCode = country.get()
+  const countryId = routeId.get()
   const resolved = await names.controller.focusRow(row.rowKey)
   if (attempt !== opening) return
   const fresh = names.controller.focusedRow.get()
   const subject = card.value
   if (
     resolved === null ||
-    country.get() !== countryCode ||
-    subject?.code !== countryCode ||
+    routeId.get() !== countryId ||
+    subject === null ||
+    String(subject.countryId) !== countryId ||
     fresh?.inLanguageId !== row.inLanguageId ||
     fresh.name === null
   ) {
@@ -157,7 +173,7 @@ async function openDelete(
     countryId: subject.countryId,
     inLanguageId: fresh.inLanguageId,
     nameId,
-    countryCode,
+    countryCode: subject.code,
     countryName: subject.summary.name || subject.code.toUpperCase(),
     inLanguageCode: fresh.code,
     inLanguageNativeName: fresh.nativeName,
@@ -175,7 +191,15 @@ async function openDelete(
   deleteOpen.value = true
 }
 
-watch(currentCountry, closeDelete, { flush: 'sync' })
+watch(
+  currentCountry,
+  () => {
+    nameWindow.close()
+    closeDelete()
+    target.value = null
+  },
+  { flush: 'sync' },
+)
 watch(
   deleteOpen,
   (open) => {

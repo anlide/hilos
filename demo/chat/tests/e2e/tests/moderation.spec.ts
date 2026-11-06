@@ -56,6 +56,8 @@ import {
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { picture } from '../helpers/profilePhoto.js'
 
+// spec-owner: demo — carries Chat's Vue browser journeys for these shared pages
+
 // The Moderation section on Vue. Tests 1–5 carry the same titles and steps as
 // tasks (React) and polls (Angular); the checks the three share are one copy in
 // framework/frontend/e2e/moderation.ts, and this file keeps the scenario, its
@@ -78,7 +80,7 @@ test.describe.configure({ mode: 'default' })
 const PHOTO = FRAMEWORK_MODERATION_KINDS.find(
   ({ kind }) => kind === 'hilos_profile_photo',
 )!
-const OVERVIEW_PATH = `/hilos/moderation/${PHOTO.kind}`
+const OVERVIEW_PATH = `/hilos/moderation/kind/${PHOTO.kind}`
 const RULES_PATH = `${OVERVIEW_PATH}/rules`
 const VIEW_MODE_DESCRIPTION =
   'View mode · You can look around, but not change anything.'
@@ -179,12 +181,12 @@ test('opens every declared kind from the dashboard through Overview and Rules, w
       )
       await expect(open).toHaveAttribute(
         'href',
-        `/hilos/moderation/${declared.kind}`,
+        `/hilos/moderation/kind/${declared.kind}`,
       )
       await expect(open).toHaveAccessibleName(`Open ${declared.title}`)
       await clickSubmit(expect, open)
       await expectPageReady(expect, page)
-      await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}`)
+      await expect(page).toHaveURL(`/hilos/moderation/kind/${declared.kind}`)
       await expectModerationKindHead(expect, page, declared, 'overview')
       await expectModerationKindOverview(expect, page, declared)
       await document.unchanged()
@@ -194,7 +196,9 @@ test('opens every declared kind from the dashboard through Overview and Rules, w
         page.getByTestId('hilos-page-tab-hilos_moderation_kind_rules'),
       )
       await expectPageReady(expect, page)
-      await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}/rules`)
+      await expect(page).toHaveURL(
+        `/hilos/moderation/kind/${declared.kind}/rules`,
+      )
       await expectModerationKindHead(expect, page, declared, 'rules')
       await expect(rulesTable).toBeVisible()
       await document.unchanged()
@@ -204,7 +208,7 @@ test('opens every declared kind from the dashboard through Overview and Rules, w
         page.getByTestId('hilos-page-tab-hilos_moderation_kind'),
       )
       await expectPageReady(expect, page)
-      await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}`)
+      await expect(page).toHaveURL(`/hilos/moderation/kind/${declared.kind}`)
       await expectModerationKindHead(expect, page, declared, 'overview')
       await expect(rulesTable).toHaveCount(0)
       await document.unchanged()
@@ -226,7 +230,7 @@ test('opens every declared kind from the dashboard through Overview and Rules, w
     await page.goBack()
     await expectPageReady(expect, page)
     await expect(page).toHaveURL(
-      `/hilos/moderation/${CHAT_MESSAGE_PICTURE.kind}`,
+      `/hilos/moderation/kind/${CHAT_MESSAGE_PICTURE.kind}`,
     )
     await expectModerationKindHead(
       expect,
@@ -238,14 +242,14 @@ test('opens every declared kind from the dashboard through Overview and Rules, w
     // between the two kinds: the same detail screen must swap picture data for
     // text data, and back.
     await page.evaluate(() => window.history.go(-4))
-    await expect(page).toHaveURL(`/hilos/moderation/${CHAT_MESSAGE.kind}`)
+    await expect(page).toHaveURL(`/hilos/moderation/kind/${CHAT_MESSAGE.kind}`)
     await expectPageReady(expect, page)
     await expectModerationKindHead(expect, page, CHAT_MESSAGE, 'overview')
     await expectModerationKindOverview(expect, page, CHAT_MESSAGE)
     await document.unchanged()
     await page.evaluate(() => window.history.go(4))
     await expect(page).toHaveURL(
-      `/hilos/moderation/${CHAT_MESSAGE_PICTURE.kind}`,
+      `/hilos/moderation/kind/${CHAT_MESSAGE_PICTURE.kind}`,
     )
     await expectPageReady(expect, page)
     await expectModerationKindHead(
@@ -260,21 +264,27 @@ test('opens every declared kind from the dashboard through Overview and Rules, w
 
   await test.step('Cold entry and F5 on Overview and Rules answer with the same data', async () => {
     for (const declared of DECLARED_KINDS) {
-      await gotoPage(expect, page, `/hilos/moderation/${declared.kind}`)
+      await gotoPage(expect, page, `/hilos/moderation/kind/${declared.kind}`)
       await expectModerationKindHead(expect, page, declared, 'overview')
       await expectModerationKindOverview(expect, page, declared)
       await page.reload()
       await expectPageReady(expect, page)
-      await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}`)
+      await expect(page).toHaveURL(`/hilos/moderation/kind/${declared.kind}`)
       await expectModerationKindHead(expect, page, declared, 'overview')
       await expectModerationKindOverview(expect, page, declared)
 
-      await gotoPage(expect, page, `/hilos/moderation/${declared.kind}/rules`)
+      await gotoPage(
+        expect,
+        page,
+        `/hilos/moderation/kind/${declared.kind}/rules`,
+      )
       await expectModerationKindHead(expect, page, declared, 'rules')
       await expect(rulesTable).toBeVisible()
       await page.reload()
       await expectPageReady(expect, page)
-      await expect(page).toHaveURL(`/hilos/moderation/${declared.kind}/rules`)
+      await expect(page).toHaveURL(
+        `/hilos/moderation/kind/${declared.kind}/rules`,
+      )
       await expectModerationKindHead(expect, page, declared, 'rules')
       await expect(rulesTable).toBeVisible()
     }
@@ -289,8 +299,11 @@ test('refuses an unknown kind on Overview and Rules as 404 from the server subsc
   const observed = watchPageReplies(page)
   await grantAdminToSelf(expect, page)
   for (const [pageKey, path] of [
-    ['hilos_moderation_kind', '/hilos/moderation/unknown_kind'],
-    ['hilos_moderation_kind_rules', '/hilos/moderation/unknown_kind/rules'],
+    ['hilos_moderation_kind', '/hilos/moderation/kind/unknown_kind'],
+    [
+      'hilos_moderation_kind_rules',
+      '/hilos/moderation/kind/unknown_kind/rules',
+    ],
   ] as const) {
     await test.step(`${path} is refused`, async () => {
       await gotoPage(expect, page, path, PAGE_REFUSED)

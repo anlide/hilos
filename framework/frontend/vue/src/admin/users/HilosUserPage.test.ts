@@ -3295,10 +3295,10 @@ describe('HilosUserPage link to the person in Analytics (HIL-1420)', () => {
     const link = modalEl('hilos-page-head-action')
     expect(link?.tagName).toBe('A')
     expect(link?.textContent?.trim()).toBe('Actions in Analytics')
-    expect(link?.getAttribute('href')).toBe('/hilos/analytics/people/1')
+    expect(link?.getAttribute('href')).toBe('/hilos/analytics/person/1')
     expect(link?.closest('[data-id="hilos-page-head-block"]')).not.toBeNull()
     link?.click()
-    expect(navigate).toHaveBeenCalledWith('/hilos/analytics/people/1')
+    expect(navigate).toHaveBeenCalledWith('/hilos/analytics/person/1')
     expect(modalEl('modal')).toBeNull()
 
     context.scopes.page()?.data.set('analyticsEnabled', false)
@@ -3343,7 +3343,7 @@ describe('HilosUserPage link to the person in Analytics (HIL-1420)', () => {
     expect(modalEl('hilos-user-merge-zone')).toBeNull()
     expect(modalEl('hilos-user-impersonate-open')).toBeNull()
     expect(modalEl('hilos-page-head-action')?.getAttribute('href')).toBe(
-      '/hilos/analytics/people/1',
+      '/hilos/analytics/person/1',
     )
   })
 })

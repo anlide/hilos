@@ -23,6 +23,8 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { rotateLogs, walkLogs } from '../helpers/logs.js'
 
+// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
+
 const READER_ZONE = 'America/Los_Angeles'
 test.use({ timezoneId: READER_ZONE })
 
@@ -417,7 +419,12 @@ test(
     // A previous attempt may already have archived this quiet writer's startup.
     // Restart through the real Daemon dialog to get a live file on every attempt;
     // successful settings writes themselves never print into the library's log.
-    await gotoPage(expect, page, '/hilos/daemon/standalone/agents', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      '/hilos/daemon/node/standalone/agents',
+      PAGE_READY,
+    )
     const search = page.getByTestId('hilos-table-search')
     await typeInto(search, agent)
     const restart = shownByTestId(page, `hilos-daemon-agent-restart-${agent}`)
@@ -454,7 +461,12 @@ test(
     const batch = batchInstant(await rotateNewBatch(page, before))
     expect(batch).toBeGreaterThan(0)
 
-    await gotoPage(expect, page, '/hilos/daemon/standalone/agents', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      '/hilos/daemon/node/standalone/agents',
+      PAGE_READY,
+    )
     await typeInto(search, agent)
     const log = shownByTestId(page, `hilos-daemon-agent-log-${agent}`)
     await expect(log).toHaveAttribute('href', livePath)

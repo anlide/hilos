@@ -746,7 +746,7 @@ describe('HilosDaemonPage', () => {
       expect(h.view.get('[data-id="hilos-daemon-consensus"]').text()).toContain(
         `Report: ${label} · Majority: 3`,
       )
-      expect(box.attributes('href')).toBe('/hilos/daemon/n1')
+      expect(box.attributes('href')).toBe('/hilos/daemon/node/n1')
       expect(h.view.get('[data-id="hilos-daemon-node-n1"]').element).toBe(
         box.element,
       )
@@ -776,7 +776,7 @@ describe('HilosDaemonPage', () => {
     h.update(picture([silent]))
     await nextTick()
     const box = () => h.view.get('[data-id="hilos-daemon-node-n1"]')
-    expect(box().attributes('href')).toBe('/hilos/daemon/n1')
+    expect(box().attributes('href')).toBe('/hilos/daemon/node/n1')
     expect(box().text()).toContain('Silent since')
     expect(
       h.view.get('[data-id="hilos-daemon-silent-n1"]').text(),
@@ -839,7 +839,7 @@ describe('HilosDaemonPage', () => {
       await nextTick()
       expect(hilosAdminAccess.get()).toBe('view')
       const box = h.view.get('[data-id="hilos-daemon-node-standalone"]')
-      expect(box.attributes('href')).toBe('/hilos/daemon/standalone')
+      expect(box.attributes('href')).toBe('/hilos/daemon/node/standalone')
       expect(box.text()).toContain('Single installation')
       expect(box.text()).not.toContain('Clock')
       expect(
@@ -922,7 +922,7 @@ describe('HilosDaemonPage', () => {
       expect(link.exists()).toBe(source !== null)
       if (source)
         expect(link.attributes('href')).toBe(
-          `/hilos/daemon/${source.nodeId}/http`,
+          `/hilos/daemon/node/${source.nodeId}/http`,
         )
       expect(h.register).not.toHaveBeenCalled()
     }

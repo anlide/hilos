@@ -271,8 +271,8 @@ describe('HilosChangeLogTableTriggersPage', () => {
         .getAllByRole('link')
         .map((link) => [link.textContent, link.getAttribute('href')]),
     ).toEqual([
-      ['Overview', '/hilos/change-log/tables/hilos_session'],
-      ['Triggers', '/hilos/change-log/tables/hilos_session/triggers'],
+      ['Overview', '/hilos/change-log/table/hilos_session'],
+      ['Triggers', '/hilos/change-log/table/hilos_session/triggers'],
     ])
     expect(tabs.querySelectorAll('[aria-current="page"]')).toHaveLength(1)
     expect(

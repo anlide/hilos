@@ -5,54 +5,100 @@ import { HilosPages } from '../../src/routing/hilosPages.js'
 describe('createAppPageRouter', () => {
   it('splits Analytics session identities from list periods in the real catalog', () => {
     const router = createAppPageRouter({})
-    for (const [tail, page, params] of [
-      ['/64', HilosPages.ANALYTICS_BROWSER_SESSION, { browserSessionId: '64' }],
+    for (const [path, page, params] of [
       [
-        '/%2B64',
+        '/hilos/analytics/browser-session/64',
+        HilosPages.ANALYTICS_BROWSER_SESSION,
+        { browserSessionId: '64' },
+      ],
+      [
+        '/hilos/analytics/browser-session/%2B64',
         HilosPages.ANALYTICS_BROWSER_SESSION,
         { browserSessionId: '+64' },
       ],
-      ['/0', HilosPages.ANALYTICS_BROWSER_SESSION, { browserSessionId: '0' }],
       [
-        '/9007199254740992',
+        '/hilos/analytics/browser-session/0',
+        HilosPages.ANALYTICS_BROWSER_SESSION,
+        { browserSessionId: '0' },
+      ],
+      [
+        '/hilos/analytics/browser-session/9007199254740992',
         HilosPages.ANALYTICS_BROWSER_SESSION,
         { browserSessionId: '9007199254740992' },
       ],
-      ['', HilosPages.ANALYTICS_BROWSER_SESSIONS, {}],
-      ['/today', HilosPages.ANALYTICS_BROWSER_SESSIONS, { period: 'today' }],
       [
-        '/this-hour',
+        '/hilos/analytics/browser-sessions',
+        HilosPages.ANALYTICS_BROWSER_SESSIONS,
+        {},
+      ],
+      [
+        '/hilos/analytics/browser-sessions/today',
+        HilosPages.ANALYTICS_BROWSER_SESSIONS,
+        { period: 'today' },
+      ],
+      [
+        '/hilos/analytics/browser-sessions/this-hour',
         HilosPages.ANALYTICS_BROWSER_SESSIONS,
         { period: 'this-hour' },
       ],
       [
-        '/this-week',
+        '/hilos/analytics/browser-sessions/this-week',
         HilosPages.ANALYTICS_BROWSER_SESSIONS,
         { period: 'this-week' },
       ],
       [
-        '/any-time',
+        '/hilos/analytics/browser-sessions/any-time',
         HilosPages.ANALYTICS_BROWSER_SESSIONS,
         { period: 'any-time' },
       ],
       [
-        '/unknown',
+        '/hilos/analytics/browser-sessions/unknown',
         HilosPages.ANALYTICS_BROWSER_SESSIONS,
         { period: 'unknown' },
       ],
-      ['/64%0A', HilosPages.ANALYTICS_BROWSER_SESSIONS, { period: '64\n' }],
-      ['/%252B64', HilosPages.ANALYTICS_BROWSER_SESSIONS, { period: '%2B64' }],
+      [
+        '/hilos/analytics/browser-sessions/64%0A',
+        HilosPages.ANALYTICS_BROWSER_SESSIONS,
+        { period: '64\n' },
+      ],
+      [
+        '/hilos/analytics/browser-sessions/%252B64',
+        HilosPages.ANALYTICS_BROWSER_SESSIONS,
+        { period: '%2B64' },
+      ],
     ] as const) {
-      const path = `/hilos/analytics/browser-sessions${tail}`
       expect(router.match(path)).toEqual({ page, params, admin: true })
       expect(router.path(page, params)).toBe(path)
     }
-    expect(
-      router.path(HilosPages.ANALYTICS_BROWSER_SESSION, {
-        browserSessionId: 'today',
-      }),
-    ).toBeUndefined()
-    expect(router.match('/hilos/analytics/people/7')).toEqual({
+    for (const tail of [
+      '64',
+      '+64',
+      '%2B64',
+      '%2b%36%34',
+      '0',
+      '001',
+      '9007199254740992',
+    ]) {
+      expect(router.match(`/hilos/analytics/browser-sessions/${tail}`)).toEqual(
+        { page: null, params: {}, admin: false },
+      )
+      expect(
+        router.path(HilosPages.ANALYTICS_BROWSER_SESSIONS, {
+          period: decodeURIComponent(tail),
+        }),
+      ).toBeUndefined()
+    }
+    for (const browserSessionId of ['today', '64\n', '%2B64']) {
+      expect(
+        router.path(HilosPages.ANALYTICS_BROWSER_SESSION, { browserSessionId }),
+      ).toBeUndefined()
+      expect(
+        router.match(
+          `/hilos/analytics/browser-session/${encodeURIComponent(browserSessionId)}`,
+        ),
+      ).toEqual({ page: null, params: {}, admin: false })
+    }
+    expect(router.match('/hilos/analytics/person/7')).toEqual({
       page: HilosPages.ANALYTICS_PERSON,
       params: { userId: '7' },
       admin: true,
@@ -70,13 +116,13 @@ describe('createAppPageRouter', () => {
       '%ED%A0%80',
       '%F4%90%80%80',
     ]) {
-      expect(router.match(`/hilos/analytics/browser-sessions/${tail}`)).toEqual(
-        {
+      for (const prefix of ['browser-session', 'browser-sessions']) {
+        expect(router.match(`/hilos/analytics/${prefix}/${tail}`)).toEqual({
           page: null,
           params: {},
           admin: false,
-        },
-      )
+        })
+      }
     }
   })
 

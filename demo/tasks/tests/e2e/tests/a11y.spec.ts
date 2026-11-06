@@ -13,6 +13,7 @@ import {
   openSignIn,
   PASSWORD,
   createTestUser,
+  analyticsBrowserSessionPath,
   analyticsPersonLink,
   analyticsSessionLink,
   ANALYTICS_SESSION_LIST_HANDLE,
@@ -54,6 +55,7 @@ import {
   expectDaemonSectionAccessibility,
   expectPageReady,
   gotoPage,
+  readI18nRowId,
   PAGE_READY,
   grantAdminToSelf,
   expectProfileHeadAccessibility,
@@ -82,6 +84,8 @@ import { setAdminViewMode } from '../../../../../framework/frontend/scripts/admi
 import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
 import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/index.js'
+
+// spec-owner: demo — carries Tasks' React browser journeys for these shared pages
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
@@ -249,7 +253,7 @@ test('Communications exposes one named head and keyboard links between channel p
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/communications/email')
+  await gotoPage(expect, page, '/hilos/communications/channel/email')
   await expectCommunicationsAccessibility(
     expect,
     page,
@@ -304,10 +308,12 @@ test('language pages expose one named head and name their tables through it', as
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/i18n/languages/en')
+  const languageId = await readI18nRowId(expect, page, 'language', 'en')
+  await gotoPage(expect, page, `/hilos/i18n/language/${languageId}`)
   await expectPageReady(expect, page)
   await expectLanguagePageHead(expect, page, {
     code: 'en',
+    id: languageId,
     nativeName: 'English',
     currentPage: 'hilos_i18n_language',
     appName: 'Hilos Tasks',
@@ -337,6 +343,7 @@ test('language pages expose one named head and name their tables through it', as
     await expectPageReady(expect, page)
     await expectLanguagePageHead(expect, page, {
       code: 'en',
+      id: languageId,
       nativeName: 'English',
       currentPage,
       appName: 'Hilos Tasks',
@@ -737,7 +744,7 @@ test.describe('Analytics accessibility', () => {
       await person.focus()
       await expect(person).toBeFocused()
       await person.press('Enter')
-      await expect(page).toHaveURL(`/hilos/analytics/people/${user.userId}`)
+      await expect(page).toHaveURL(`/hilos/analytics/person/${user.userId}`)
       await expectPageReady(expect, page)
       await expectAnalyticsPersonNavigation(expect, page, frames, user)
       const heading = page.getByRole('heading', { level: 1 })
@@ -777,9 +784,7 @@ test.describe('Analytics accessibility', () => {
       await open.focus()
       await expect(open).toBeFocused()
       await open.press('Enter')
-      await expect(page).toHaveURL(
-        `${ANALYTICS_SESSION_LIST_PATH}/${sessionId}`,
-      )
+      await expect(page).toHaveURL(analyticsBrowserSessionPath(sessionId))
       await expectPageReady(expect, page)
       await expectAnalyticsBrowserSessionHead(
         expect,
@@ -861,7 +866,7 @@ test.describe('Daemon section accessibility', () => {
 
 test.describe('Moderation accessibility', () => {
   const kind = 'hilos_profile_name'
-  const rulesPath = `/hilos/moderation/${kind}/rules`
+  const rulesPath = `/hilos/moderation/kind/${kind}/rules`
   const moderationTest = test.extend<{
     cleanup: TestCleanup
     ownedRule: string

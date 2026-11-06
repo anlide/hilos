@@ -45,6 +45,8 @@ import {
   requestLeaderKill,
 } from '../../helpers/daemonCluster.js'
 
+// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
+
 const LEADER_AGENTS = ['hilos_index', 'hilos_daemon']
 const RESTART_AGENT = 'hilos_log_store'
 
@@ -184,11 +186,11 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
             const link = nodePage.getByTestId(`hilos-page-tab-${pageKey}`)
             await expect(link).toHaveAttribute(
               'href',
-              `${DAEMON_ROOT_PATH}/${remote.nodeId}/${path}`,
+              `${DAEMON_ROOT_PATH}/node/${remote.nodeId}/${path}`,
             )
             await link.click()
             await expect(nodePage).toHaveURL(
-              `${DAEMON_ROOT_PATH}/${remote.nodeId}/${path}`,
+              `${DAEMON_ROOT_PATH}/node/${remote.nodeId}/${path}`,
             )
             await expectDaemonNodeHead(
               reports,
@@ -366,7 +368,11 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
           )
           await nodePage.getByTestId(DAEMON_ROOT_CRUMB).click()
           await expectClusterOverview(reports, nodePage, initialPicture)
-          await gotoPage(expect, nodePage, `${DAEMON_ROOT_PATH}/unknown-node`)
+          await gotoPage(
+            expect,
+            nodePage,
+            `${DAEMON_ROOT_PATH}/node/unknown-node`,
+          )
           await reports
             .poll(() => refusals.at(-1)?.data)
             .toMatchObject({
@@ -438,7 +444,7 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
       await gotoPage(
         expect,
         leaderOverview.page,
-        `${DAEMON_ROOT_PATH}/${CLUSTER_LEADER}`,
+        `${DAEMON_ROOT_PATH}/node/${CLUSTER_LEADER}`,
         PAGE_READY,
       )
       await expectClusterDaemonNodeOverview(
@@ -455,7 +461,7 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
       await gotoPage(
         expect,
         pages[5].page,
-        `${DAEMON_ROOT_PATH}/${remote.nodeId}/workers`,
+        `${DAEMON_ROOT_PATH}/node/${remote.nodeId}/workers`,
         PAGE_READY,
       )
       await expectDaemonNodeHead(
@@ -645,7 +651,7 @@ test.fixme('cluster daemon: foreign node pages, remote restart, environment mism
       { nodeName: CLUSTER_NODE_NAMES[CLUSTER_LEADER] },
     )
     await expect(diagram.page).toHaveURL(
-      `${DAEMON_ROOT_PATH}/${CLUSTER_LEADER}`,
+      `${DAEMON_ROOT_PATH}/node/${CLUSTER_LEADER}`,
     )
     await expect(
       diagram.page.getByTestId('hilos-daemon-node-state'),

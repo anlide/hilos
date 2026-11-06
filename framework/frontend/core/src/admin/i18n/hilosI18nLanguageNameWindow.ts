@@ -118,7 +118,7 @@ export interface HilosI18nLanguageNameWindow extends Omit<
  *
  * @param controller The names table holding the writing language in focus.
  * @param card The live subject card.
- * @param language The subject code from the page's address.
+ * @param language The display code of the same language card.
  * @param context The tracked action dispatcher.
  */
 export function createHilosI18nLanguageNameWindow(

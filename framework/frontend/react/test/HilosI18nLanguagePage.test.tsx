@@ -60,7 +60,7 @@ describe('React language card', () => {
     )
     expect(
       el('hilos-page-tab-hilos_i18n_language_names').getAttribute('href'),
-    ).toBe('/hilos/i18n/languages/uk/names')
+    ).toBe('/hilos/i18n/language/19/names')
     act(() =>
       h.card({
         ...languageCard,
@@ -131,13 +131,13 @@ describe('React language card', () => {
       'Not created',
     )
     expect(el('language-overview-name-count').getAttribute('href')).toBe(
-      '/hilos/i18n/languages/uk/names',
+      '/hilos/i18n/language/19/names',
     )
     expect(el('language-overview-locale-count').getAttribute('href')).toBe(
-      '/hilos/i18n/languages/uk/locales',
+      '/hilos/i18n/language/19/locales',
     )
     expect(el('language-overview-countryless-state').getAttribute('href')).toBe(
-      '/hilos/i18n/languages/uk/locales',
+      '/hilos/i18n/language/19/locales',
     )
 
     const rtl = document.getElementById('language-card-rtl') as HTMLInputElement
@@ -282,7 +282,7 @@ describe('React language card', () => {
     act(() => {
       h.route.set({
         page: HilosPages.I18N_LANGUAGE,
-        params: { languageCode: 'fr' },
+        params: { languageId: '13' },
         admin: true,
       })
       h.card({
@@ -296,17 +296,17 @@ describe('React language card', () => {
     expectLanguagePageHead(HilosPages.I18N_LANGUAGE, 'Français')
     expect(el('language-card-code').textContent).toBe('fr')
     expect(el('language-overview-name-count').getAttribute('href')).toBe(
-      '/hilos/i18n/languages/fr/names',
+      '/hilos/i18n/language/13/names',
     )
     expect(el('language-overview-locale-count').getAttribute('href')).toBe(
-      '/hilos/i18n/languages/fr/locales',
+      '/hilos/i18n/language/13/locales',
     )
     click('language-card-delete')
     click('i18n-language-delete-confirm')
     act(() => {
       h.route.set({
         page: HilosPages.I18N_LANGUAGE,
-        params: { languageCode: 'ar' },
+        params: { languageId: '16' },
         admin: true,
       })
       h.card({
@@ -358,7 +358,7 @@ describe('React language card', () => {
     const next = harness()
     next.route.set({
       page: HilosPages.I18N_LANGUAGE,
-      params: { languageCode: 'fr' },
+      params: { languageId: '13' },
       admin: true,
     })
     next.card({
@@ -383,7 +383,7 @@ describe('React language card', () => {
     const next = harness()
     next.route.set({
       page: HilosPages.I18N_LANGUAGE,
-      params: { languageCode: 'fr' },
+      params: { languageId: '13' },
       admin: true,
     })
     next.card({

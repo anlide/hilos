@@ -131,7 +131,7 @@ function CountriesList({ context }: HilosI18nCountriesPageProps) {
         cells={{
           [HilosI18nCountryRowKey.code]: (row) => {
             const path = router.resolvePath(HilosPages.I18N_COUNTRY, {
-              countryCode: row.code,
+              countryId: String(row.countryId),
             })
             return path ? (
               <HilosLink

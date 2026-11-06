@@ -17,7 +17,7 @@ describe('Communications section', () => {
     expect(channelEl('hilos-page-tabs')).toBeNull()
     expect(
       channelEl('hilos-channel-configure-email')?.getAttribute('href'),
-    ).toBe('/hilos/communications/email/configuration')
+    ).toBe('/hilos/communications/channel/email/configuration')
     expect(channelEl('hilos-viewport-table')).not.toBeNull()
     expect(h.sent).toEqual([])
   })

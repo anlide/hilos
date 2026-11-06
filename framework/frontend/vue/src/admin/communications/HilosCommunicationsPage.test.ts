@@ -276,7 +276,7 @@ describe('HilosCommunicationsPage', () => {
       wrapper
         .get('table [data-id="hilos-channel-configure-sms"]')
         .attributes('href'),
-    ).toBe('/hilos/communications/sms/configuration')
+    ).toBe('/hilos/communications/channel/sms/configuration')
     expect(sent).toEqual([])
   })
 })

@@ -1,6 +1,8 @@
 import type { Expect, Locator, Page } from '@playwright/test'
 
 import type { TestCleanup } from './cleanupFixtures.js'
+import { resolveHilosPath } from '../core/src/routing/hilosAdmin.js'
+import { HilosPages } from '../core/src/routing/hilosPages.js'
 import {
   deliveryObject as object,
   type DeliveryFrameLog,
@@ -186,7 +188,13 @@ export function reserveModerationRules(
   rules: readonly string[],
 ): void {
   cleanup.defer(async () => {
-    await gotoPage(expect, page, `/hilos/moderation/${declared.kind}/rules`)
+    await gotoPage(
+      expect,
+      page,
+      resolveHilosPath(HilosPages.MODERATION_KIND_RULES, {
+        kind: declared.kind,
+      }),
+    )
     await dismissToasts(page)
     await deleteModerationOwnRules(expect, page, rules)
   })
@@ -312,17 +320,14 @@ export async function expectModerationKindTabs(
   await expect(tabs.getByRole('link')).toHaveText(['Overview', 'Rules'])
   await expect(tabs.locator('[aria-current="page"]')).toHaveCount(1)
   await expect(page.getByRole('tablist')).toHaveCount(0)
-  for (const [key, label, suffix] of [
-    ['hilos_moderation_kind', 'Overview', ''],
-    ['hilos_moderation_kind_rules', 'Rules', '/rules'],
+  for (const [key, label] of [
+    [HilosPages.MODERATION_KIND, 'Overview'],
+    [HilosPages.MODERATION_KIND_RULES, 'Rules'],
   ] as const) {
     const link = tabs.getByTestId(`hilos-page-tab-${key}`)
     await expect(link).toHaveRole('link')
     await expect(link).toHaveAccessibleName(label)
-    await expect(link).toHaveAttribute(
-      'href',
-      `/hilos/moderation/${kind}${suffix}`,
-    )
+    await expect(link).toHaveAttribute('href', resolveHilosPath(key, { kind }))
     if (label.toLowerCase() === current) {
       await expect(link).toHaveAttribute('aria-current', 'page')
     } else {
@@ -556,7 +561,9 @@ export async function expectModerationPagesAccessibility(
   await open.focus()
   await open.press('Enter')
   await expectPageReady(expect, page)
-  await expect(page).toHaveURL(`/hilos/moderation/${kind}`)
+  await expect(page).toHaveURL(
+    resolveHilosPath(HilosPages.MODERATION_KIND, { kind }),
+  )
   await expect(heading).toHaveCount(1)
   await expect(heading).toHaveAccessibleName(title)
   await expectModerationKindTabs(expect, page, kind, 'overview')
@@ -565,7 +572,9 @@ export async function expectModerationPagesAccessibility(
   await rules.focus()
   await rules.press('Enter')
   await expectPageReady(expect, page)
-  await expect(page).toHaveURL(`/hilos/moderation/${kind}/rules`)
+  await expect(page).toHaveURL(
+    resolveHilosPath(HilosPages.MODERATION_KIND_RULES, { kind }),
+  )
   await expect(heading).toHaveCount(1)
   await expect(heading).toHaveAccessibleName(title)
   await expectModerationKindTabs(expect, page, kind, 'rules')
@@ -759,7 +768,11 @@ export async function expectModerationViewerAccessibility(
     countSentFrames(viewer, `hilos_moderation_rule_${action}`),
   )
   const sentWrites = (): number[] => writes.map((sent) => sent())
-  await gotoPage(expect, viewer, `/hilos/moderation/${kind}/rules`)
+  await gotoPage(
+    expect,
+    viewer,
+    resolveHilosPath(HilosPages.MODERATION_KIND_RULES, { kind }),
+  )
   await expect(viewer.getByTestId('view-mode-banner')).toBeVisible()
   const viewerTable = viewer.getByTestId('hilos-moderation-rules-table')
   const viewerRow = moderationRuleRow(viewer, rule)

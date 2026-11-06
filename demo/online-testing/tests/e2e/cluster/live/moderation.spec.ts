@@ -12,6 +12,7 @@ import {
   expectClusterLeaderUnchanged,
   expectClusterSingleAgents,
   expectModerationRuleShown,
+  expectSessionRotation,
   gotoPage,
   login,
   newClusterMasterPage,
@@ -20,6 +21,7 @@ import {
   reserveModerationRules,
   shownByTestId,
   uniqueEmail,
+  PAGE_READY,
   watchClusterMasterUpgrades,
   type ClusterInspection,
   type TestCleanup,
@@ -33,6 +35,8 @@ import {
 } from '../../../../../../framework/frontend/scripts/standModel.mjs'
 import { seedTestUser } from '../../../../../../framework/frontend/scripts/testUser.mjs'
 
+// spec-owner: demo — carries Online Testing's Angular cluster browser journeys
+
 const test = base.extend<{ cleanup: TestCleanup }>({
   cleanup: cleanupFixtures,
 })
@@ -41,7 +45,7 @@ const sendCommand = clusterCommandChannel(stand, stand.follower)
 const NAME = FRAMEWORK_MODERATION_KINDS.find(
   ({ kind }) => kind === 'hilos_profile_name',
 )!
-const RULES_PATH = `/hilos/moderation/${NAME.kind}/rules`
+const RULES_PATH = `/hilos/moderation/kind/${NAME.kind}/rules`
 const SINGLE_AGENTS = ['hilos_moderator', 'hilos_moderation_rules_library']
 
 for (const [index, sourceNode] of stand.masters.entries()) {
@@ -85,12 +89,14 @@ for (const [index, sourceNode] of stand.masters.entries()) {
         for (const page of [author.page, observer.page]) {
           await gotoPage(expect, page, '/')
           await openSignIn(expect, page)
-          await login(expect, page, admin.email, PASSWORD)
-          await expect(page.getByTestId('nav-admin')).toHaveAttribute(
-            'data-access',
-            'full',
-          )
-          await gotoPage(expect, page, RULES_PATH)
+          await expectSessionRotation(expect, page, async () => {
+            await login(expect, page, admin.email, PASSWORD)
+            await expect(page.getByTestId('nav-admin')).toHaveAttribute(
+              'data-access',
+              'full',
+            )
+          })
+          await gotoPage(expect, page, RULES_PATH, PAGE_READY)
         }
       })
 
@@ -107,7 +113,9 @@ for (const [index, sourceNode] of stand.masters.entries()) {
         const user = await seedTestUser({ email: uniqueEmail() })
         await gotoPage(expect, source.page, '/')
         await openSignIn(expect, source.page)
-        await login(expect, source.page, user.email, PASSWORD)
+        await expectSessionRotation(expect, source.page, () =>
+          login(expect, source.page, user.email, PASSWORD),
+        )
         await gotoPage(expect, source.page, '/profile')
         // Only the rule carries the model key: this name cannot select its answer.
         const name = `Ordinary person ${sourceNode}`

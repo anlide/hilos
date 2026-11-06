@@ -55,7 +55,7 @@ describe('HilosI18nCountryFields', () => {
         expect(view.get('[data-id="country-code-hint"]').text()).toBe(
           mode === 'add'
             ? 'ISO 3166-1 alpha-2.'
-            : 'The country code never changes: its URL and the external catalog use it.',
+            : 'The country code never changes: the external catalog uses it.',
         )
       }
       if (mode === 'add')

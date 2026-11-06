@@ -40,7 +40,7 @@ final class HilosPageRouteParams
     public const string HILOS_ANALYTICS_HOUR_START_TS = 'hourStartTs';
 
     /**
-     * Route param for {@see HilosPageConstants::HILOS_ANALYTICS_PERSON} (`/hilos/analytics/people/{userId}`).
+     * Route param for {@see HilosPageConstants::HILOS_ANALYTICS_PERSON} (`/hilos/analytics/person/{userId}`).
      */
     public const string HILOS_ANALYTICS_PERSON_USER_ID = self::HILOS_USER_USER_ID;
 
@@ -48,10 +48,10 @@ final class HilosPageRouteParams
     public const string HILOS_CHANGE_LOG_TABLE_ID = 'tableId';
 
     /** Route param for language detail pages. */
-    public const string HILOS_I18N_LANGUAGE_CODE = 'languageCode';
+    public const string HILOS_I18N_LANGUAGE_ID = 'languageId';
 
     /** Route param for country detail pages. */
-    public const string HILOS_I18N_COUNTRY_CODE = 'countryCode';
+    public const string HILOS_I18N_COUNTRY_ID = 'countryId';
 
     /** Route param for one declared moderation kind. */
     public const string HILOS_MODERATION_KIND = 'kind';

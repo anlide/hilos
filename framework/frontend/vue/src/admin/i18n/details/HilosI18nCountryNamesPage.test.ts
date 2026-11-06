@@ -117,19 +117,19 @@ function makeRouter(
 ) {
   const currentRoute = createSignal<PageRouteMatch>({
     page: HilosPages.I18N_COUNTRY_NAMES,
-    params: { countryCode: 'us' },
+    params: { countryId: '102' },
     admin: true,
   })
   const navigation: HilosRouter = {
     currentRoute,
-    currentPath: createSignal('/hilos/i18n/countries/us/names'),
+    currentPath: createSignal('/hilos/i18n/country/102/names'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading,
     pageIdentity: pageIdentity(scopes),
     dashboardSections: createSignal(undefined),
     resolvePath: (page, params) => {
-      const base = `/hilos/i18n/countries/${params?.countryCode}`
+      const base = `/hilos/i18n/country/${params?.countryId}`
       if (page === HilosPages.I18N_COUNTRY) return base
       if (page === HilosPages.I18N_COUNTRY_NAMES) return `${base}/names`
       return undefined
@@ -338,12 +338,12 @@ describe('HilosI18nCountryNamesPage', () => {
       '[data-id="hilos-page-tab-hilos_i18n_country_names"]',
     )
     expect(namesTab.attributes('aria-current')).toBe('page')
-    expect(namesTab.attributes('href')).toBe('/hilos/i18n/countries/us/names')
+    expect(namesTab.attributes('href')).toBe('/hilos/i18n/country/102/names')
 
     const overviewTab = h.view.get(
       '[data-id="hilos-page-tab-hilos_i18n_country"]',
     )
-    expect(overviewTab.attributes('href')).toBe('/hilos/i18n/countries/us')
+    expect(overviewTab.attributes('href')).toBe('/hilos/i18n/country/102')
     expect(overviewTab.attributes('aria-current')).toBeUndefined()
     // The chain ends at the country, not at Names.
     expect(
@@ -369,7 +369,7 @@ describe('HilosI18nCountryNamesPage', () => {
 
     h.currentRoute.set({
       page: HilosPages.I18N_COUNTRY_NAMES,
-      params: { countryCode: 'gb' },
+      params: { countryId: '101' },
       admin: true,
     })
     await nextTick()
@@ -463,7 +463,7 @@ describe('HilosI18nCountryNamesPage', () => {
         h.view
           .get('[data-id="hilos-page-tab-hilos_i18n_country"]')
           .attributes('href'),
-      ).toBe('/hilos/i18n/countries/us')
+      ).toBe('/hilos/i18n/country/102')
       for (const liveName of ['Renamed', null, '']) {
         const display =
           liveName === null || liveName === '' ? 'Unnamed country' : liveName
@@ -494,7 +494,7 @@ describe('HilosI18nCountryNamesPage', () => {
     expect(identity.get()).toBeUndefined()
     h.currentRoute.set({
       page: HilosPages.I18N_COUNTRY_NAMES,
-      params: { countryCode: 'ie' },
+      params: { countryId: '140' },
       admin: true,
     })
     const next = h.scopes.openPage(HilosPages.I18N_COUNTRY_NAMES)
@@ -515,7 +515,7 @@ describe('HilosI18nCountryNamesPage', () => {
       h.view
         .get('[data-id="hilos-page-tab-hilos_i18n_country"]')
         .attributes('href'),
-    ).toBe('/hilos/i18n/countries/ie')
+    ).toBe('/hilos/i18n/country/140')
     expect(identity.get()?.pageHeadOwner?.label).toBe('Ireland')
     h.scope.data.set(COUNTRY_CARD_DATA, initialCard)
     expect(identity.get()?.pageHeadOwner?.label).toBe('Ireland')
@@ -526,6 +526,10 @@ describe('HilosI18nCountryNamesPage', () => {
     ])
     unrelated.data.set(COUNTRY_CARD_DATA, initialCard)
     expect(identity.get()?.breadcrumb[0].label).toBe('Country')
+    h.currentRoute.set({
+      ...h.currentRoute.get(),
+      params: { countryId: '102' },
+    })
     const current = h.scopes.openPage(HilosPages.I18N_COUNTRY_NAMES)
     answerAsNames(current)
     current.data.set(COUNTRY_CARD_DATA, initialCard)
@@ -579,7 +583,7 @@ function deletionPage(viewer = false) {
   const context = { ...seededContext().context, scopes }
   const route = createSignal<PageRouteMatch>({
     page: HilosPages.I18N_COUNTRY_NAMES,
-    params: { countryCode: 'us' },
+    params: { countryId: '102' },
     admin: true,
   })
   const router = { ...makeRouter(scopes).navigation, currentRoute: route }
@@ -808,7 +812,7 @@ describe('country name deletion from the page', () => {
       }
       s.route.set({
         page: HilosPages.I18N_COUNTRY_NAMES,
-        params: { countryCode: 'en' },
+        params: { countryId: '148' },
         admin: true,
       })
       await settlePage()
@@ -988,13 +992,17 @@ describe('country name add/edit from the page', () => {
     ).toBe(false)
     s.route.set({
       page: HilosPages.I18N_COUNTRY_NAMES,
-      params: { countryCode: 'qz' },
+      params: { countryId: '148' },
       admin: true,
     })
     await settlePage()
     expect(window.opened.get()).toBe(false)
     expect(s.controller.focusedRow.get()).toBeUndefined()
-    s.scope.data.set(COUNTRY_CARD_DATA, { ...initialCard, code: 'qz' })
+    s.scope.data.set(COUNTRY_CARD_DATA, {
+      ...initialCard,
+      countryId: 148,
+      code: 'qz',
+    })
     s.controller.ingestWindow(
       [{ rowKey: '51', slots: { language: s.slot } }],
       1,
@@ -1109,10 +1117,14 @@ describe('country name windows sharing focus during tracked writes', () => {
         .click()
       s.route.set({
         page: HilosPages.I18N_COUNTRY_NAMES,
-        params: { countryCode: 'gb' },
+        params: { countryId: '101' },
         admin: true,
       })
-      s.scope.data.set(COUNTRY_CARD_DATA, { ...initialCard, code: 'gb' })
+      s.scope.data.set(COUNTRY_CARD_DATA, {
+        ...initialCard,
+        countryId: 101,
+        code: 'gb',
+      })
       s.controller.ingestWindow(
         [{ rowKey: '51', slots: { language: s.slot } }],
         1,
@@ -1211,7 +1223,7 @@ function liveNamesPage() {
     },
     scopes,
   )
-  let path = '/hilos/i18n/countries/us/names'
+  let path = '/hilos/i18n/country/102/names'
   const navigation = createHilosRouter(createAppPageRouter({}), subscription, {
     pathname: () => path,
     pushState: (next) => {
@@ -1445,7 +1457,7 @@ describe('country names under a country deleted elsewhere', () => {
     {
       name: 'leaving for another country',
       leave: (live: ReturnType<typeof liveNamesPage>) =>
-        live.navigation.navigate('/hilos/i18n/countries/fr/names'),
+        live.navigation.navigate('/hilos/i18n/country/103/names'),
       code: null,
     },
   ])(

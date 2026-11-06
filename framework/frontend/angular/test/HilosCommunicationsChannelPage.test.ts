@@ -239,13 +239,13 @@ describe('HilosCommunicationsChannelPage Overview', () => {
         fixture,
         `hilos-page-tab-${HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION}`,
       )?.getAttribute('href'),
-    ).toBe('/hilos/communications/email/configuration')
+    ).toBe('/hilos/communications/channel/email/configuration')
     expect(
       element(
         fixture,
         `hilos-page-tab-${HilosPages.COMMUNICATIONS_DELIVERIES}`,
       )?.getAttribute('href'),
-    ).toBe('/hilos/communications/email/deliveries')
+    ).toBe('/hilos/communications/channel/email/deliveries')
     expect(element(fixture, 'hilos-viewport-table')).toBeNull()
     expect(h.registerTableWindow).not.toHaveBeenCalled()
 

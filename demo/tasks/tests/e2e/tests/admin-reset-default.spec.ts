@@ -9,11 +9,17 @@ import {
   grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
+// spec-owner: demo — carries Tasks' React browser journeys for these shared pages
+
 test('channel reset applies the env value shown in Back to', async ({
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/communications/email/configuration')
+  await gotoPage(
+    expect,
+    page,
+    '/hilos/communications/channel/email/configuration',
+  )
 
   const row = shownByTestId(
     page,
@@ -52,7 +58,7 @@ test('provider resets apply env credentials and the recipe scope without exposin
 }) => {
   await grantAdminToSelf(expect, page)
   // TasksOAuthProviderDirectory uses OAuthProviderPreset::GITHUB (oauth:github).
-  await gotoPage(expect, page, '/hilos/security/oauth/github')
+  await gotoPage(expect, page, '/hilos/security/oauth/provider/github')
 
   for (const field of [
     {

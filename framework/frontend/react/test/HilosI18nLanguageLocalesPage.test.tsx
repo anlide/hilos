@@ -61,7 +61,7 @@ describe('React language locales page', () => {
     ).toBe('page')
     expect(
       el('hilos-page-tab-hilos_i18n_language_names').getAttribute('href'),
-    ).toBe('/hilos/i18n/languages/uk/names')
+    ).toBe('/hilos/i18n/language/19/names')
     act(() =>
       h.card({
         ...languageCard,
@@ -259,7 +259,7 @@ describe('React language locales page', () => {
     act(() => {
       h.route.set({
         page: HilosPages.I18N_LANGUAGE_LOCALES,
-        params: { languageCode: 'fr' },
+        params: { languageId: '13' },
         admin: true,
       })
       h.card({

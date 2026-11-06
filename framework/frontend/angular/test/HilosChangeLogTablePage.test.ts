@@ -202,7 +202,7 @@ function harness(section: unknown = BOT) {
 /** Address the page as the application's route map does. */
 function tablePath(params: Record<string, string>): string {
   const record = params.record
-  return `/hilos/change-log/tables/${encodeURIComponent(params.tableId ?? '')}/history${
+  return `/hilos/change-log/table/${encodeURIComponent(params.tableId ?? '')}/history${
     record === undefined ? '' : `/${encodeURIComponent(record)}`
   }`
 }
@@ -217,7 +217,7 @@ function router(params: Record<string, string>, built = true) {
   const value: HilosRouter = {
     currentRoute,
     currentPath: createSignal(
-      `/hilos/change-log/tables/${encodeURIComponent(params.tableId ?? '')}`,
+      `/hilos/change-log/table/${encodeURIComponent(params.tableId ?? '')}`,
     ),
     currentTitle: createSignal('Tracked table'),
     pageError: createSignal(null),
@@ -227,7 +227,7 @@ function router(params: Record<string, string>, built = true) {
     resolvePath: vi.fn((page: string, to: Record<string, string> = {}) => {
       if (!built) return undefined
       if (page === HilosPages.CHANGE_LOG_TABLE_HISTORY) return tablePath(to)
-      const root = `/hilos/change-log/tables/${encodeURIComponent(to.tableId ?? '')}`
+      const root = `/hilos/change-log/table/${encodeURIComponent(to.tableId ?? '')}`
       if (page === HilosPages.CHANGE_LOG_TABLE) return root
       if (page === HilosPages.CHANGE_LOG_TABLE_COLUMNS) return `${root}/columns`
       if (page === HilosPages.CHANGE_LOG_TABLE_TRIGGERS)
@@ -381,7 +381,7 @@ describe('HilosChangeLogTablePage', () => {
       ['triggers', '/triggers'],
     ]) {
       const link = element(`hilos-change-log-table-link-${part}`)
-      const path = `/hilos/change-log/tables/bot${suffix}`
+      const path = `/hilos/change-log/table/bot${suffix}`
       expect(link.tagName).toBe('A')
       expect(link.getAttribute('href')).toBe(path)
       expect(get('i', link).getAttribute('aria-hidden')).toBe('true')
@@ -409,7 +409,7 @@ describe('HilosChangeLogTablePage', () => {
     ).toBeNull()
     expect(
       element('hilos-change-log-table-link-triggers').getAttribute('href'),
-    ).toBe('/hilos/change-log/tables/bot/triggers')
+    ).toBe('/hilos/change-log/table/bot/triggers')
     await unmount()
     TestBed.resetTestingModule()
     await mountOverview(harness(), router({ tableId: 'bot' }, false))
@@ -514,7 +514,7 @@ describe('HilosChangeLogTablePage', () => {
     )
     expect(
       element('hilos-change-log-table-link-triggers').getAttribute('href'),
-    ).toBe('/hilos/change-log/tables/hilos_session/triggers')
+    ).toBe('/hilos/change-log/table/hilos_session/triggers')
     expect(
       Array.from(
         document.querySelectorAll('nav[aria-label="Table pages"] a'),

@@ -38,7 +38,7 @@ export function HilosI18nCountryPage({ context }: HilosI18nCountryPageProps) {
     setBinding({ context, revision: binding.revision + 1 })
   return (
     <CountryCard
-      key={`${binding.revision}:${route.params.countryCode}`}
+      key={`${binding.revision}:${route.params.countryId}`}
       context={context}
     />
   )
@@ -46,9 +46,18 @@ export function HilosI18nCountryPage({ context }: HilosI18nCountryPageProps) {
 
 function CountryCard({ context }: HilosI18nCountryPageProps) {
   const router = useContext(HilosRouterContext)!
+  const rawCard = useMemo(() => createHilosI18nCountryCard(context), [context])
   const cardSignal = useMemo(
-    () => createHilosI18nCountryCard(context),
-    [context],
+    () =>
+      computedSignal(() => {
+        const current = rawCard.get()
+        return current !== null &&
+          String(current.countryId) ===
+            String(router.currentRoute.get().params.countryId)
+          ? current
+          : null
+      }),
+    [rawCard, router],
   )
   // The shell is drawn here, under the hook's own re-render, so the head shows
   // the bound name in its first paint.

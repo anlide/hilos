@@ -109,7 +109,7 @@ function harness(
   const navigation: HilosRouter = {
     currentRoute: route,
     currentPath: createSignal(
-      `/hilos/communications/${initial?.channel ?? 'sms'}`,
+      `/hilos/communications/channel/${initial?.channel ?? 'sms'}`,
     ),
     currentTitle: computedSignal(() => {
       const current = identity.get()
@@ -227,9 +227,9 @@ describe('HilosCommunicationsChannelPage Overview', () => {
     expect(
       row.findAll('a').map((link) => [link.text(), link.attributes('href')]),
     ).toEqual([
-      ['Overview', '/hilos/communications/sms'],
-      ['Configuration', '/hilos/communications/sms/configuration'],
-      ['Deliveries', '/hilos/communications/sms/deliveries'],
+      ['Overview', '/hilos/communications/channel/sms'],
+      ['Configuration', '/hilos/communications/channel/sms/configuration'],
+      ['Deliveries', '/hilos/communications/channel/sms/deliveries'],
     ])
     expect(
       row.findAll('[aria-current="page"]').map((link) => link.text()),

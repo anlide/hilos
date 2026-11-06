@@ -274,7 +274,7 @@ address, rather than computing the expectation with the same resolver:
 
 ```ts
 expect(resolveHilosPath(HilosPages.DAEMON_NODE, { nodeId: 'node-a' }))
-  .toBe('/hilos/daemon/node-a')
+  .toBe('/hilos/daemon/node/node-a')
 ```
 
 Intentionally unknown keys or codes are test data too. Calling a value

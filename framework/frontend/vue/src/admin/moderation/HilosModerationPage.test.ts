@@ -273,7 +273,7 @@ describe('HilosModerationPage', () => {
       'table a[data-id="hilos-moderation-open-hilos_profile_name"]',
     )
     expect(openName.attributes('href')).toBe(
-      '/hilos/moderation/hilos_profile_name',
+      '/hilos/moderation/kind/hilos_profile_name',
     )
     expect(openName.attributes('aria-label')).toBe('Open Profile name')
     expect(openName.text()).toBe(HILOS_MODERATION_COPY.open)
@@ -296,7 +296,7 @@ describe('HilosModerationPage', () => {
       'table a[data-id="hilos-moderation-open-hilos_profile_photo"]',
     )
     expect(openPhoto.attributes('href')).toBe(
-      '/hilos/moderation/hilos_profile_photo',
+      '/hilos/moderation/kind/hilos_profile_photo',
     )
     expect(openPhoto.attributes('aria-label')).toBe('Open Profile photo')
     expect(openPhoto.text()).toBe(HILOS_MODERATION_COPY.open)
@@ -317,7 +317,9 @@ describe('HilosModerationPage', () => {
     const openChat = wrapper.find(
       'table a[data-id="hilos-moderation-open-chat_message"]',
     )
-    expect(openChat.attributes('href')).toBe('/hilos/moderation/chat_message')
+    expect(openChat.attributes('href')).toBe(
+      '/hilos/moderation/kind/chat_message',
+    )
     expect(openChat.attributes('aria-label')).toBe('Open Chat message')
     expect(openChat.text()).toBe(HILOS_MODERATION_COPY.open)
   })

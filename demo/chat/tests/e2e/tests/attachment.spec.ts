@@ -551,7 +551,7 @@ async function uploadWorker(page: Page) {
   return readMonopolisticWorker(
     page,
     UPLOADS_WORKER_AGENT,
-    (page) => gotoPage(expect, page, '/hilos/daemon/standalone/workers'),
+    (page) => gotoPage(expect, page, '/hilos/daemon/node/standalone/workers'),
     async (predicate) => {
       await expect.poll(predicate).toBe(true)
     },

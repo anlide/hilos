@@ -863,12 +863,12 @@ describe('HilosSecurityOauthPage in the admin view mode', () => {
       (fixture.nativeElement as HTMLElement)
         .querySelector('[data-id="hilos-oauth-provider-open-oauth:github"]')
         ?.getAttribute('href'),
-    ).toBe('/hilos/security/oauth/github')
+    ).toBe('/hilos/security/oauth/provider/github')
     expect(
       (fixture.nativeElement as HTMLElement)
         .querySelector('[data-id="hilos-oauth-provider-open-oauth:google"]')
         ?.getAttribute('href'),
-    ).toBe('/hilos/security/oauth/google')
+    ).toBe('/hilos/security/oauth/provider/google')
   })
 
   it('an admin on a node in the mode has Save and Reset active', () => {

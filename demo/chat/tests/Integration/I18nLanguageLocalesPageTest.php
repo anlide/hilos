@@ -204,7 +204,7 @@ final class I18nLanguageLocalesPageTest extends IntegrationTestCase
 
     private function subscribeMain(string $acceptKey, string $code): void
     {
-        $params = ['languageCode' => $code];
+        $params = ['languageId' => (string)Hilos::$db->languages[$code]->id];
         Hilos::$sr->subscribeToPage(
             LanguageDetailPage::PAGE,
             new WebSocketPageSubscribeSignalDTO($acceptKey, LanguageDetailPage::PAGE, $params),
@@ -216,7 +216,7 @@ final class I18nLanguageLocalesPageTest extends IntegrationTestCase
 
     private function subscribeLocales(string $acceptKey, string $code): void
     {
-        $params = ['languageCode' => $code];
+        $params = ['languageId' => (string)Hilos::$db->languages[$code]->id];
         $windows = [
             ChatTableContext::hilosI18nLanguageLocales => new TableWindowDescriptorDTO(
                 filter: [

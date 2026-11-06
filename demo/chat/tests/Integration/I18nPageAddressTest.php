@@ -29,7 +29,7 @@ use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 
-/** The demo's real i18n pages admit codes before sending their single page response. */
+/** The demo's real i18n pages admit primary ids before sending their single page response. */
 final class I18nPageAddressTest extends IntegrationTestCase
 {
     private const string ACCEPT_KEY = 'i18n-address-viewer';
@@ -63,17 +63,18 @@ final class I18nPageAddressTest extends IntegrationTestCase
         parent::tearDown();
     }
 
-    public function testEnabledAndDisabledCodesGiveOneResponseForEachPage(): void
+    public function testEnabledAndDisabledIdsGiveOneResponseForEachPage(): void
     {
         foreach ([
-            [LanguageDetailPage::class, 'languageCode'],
-            [LanguageNamesPage::class, 'languageCode'],
-            [LanguageLocalesPage::class, 'languageCode'],
-            [CountryDetailPage::class, 'countryCode'],
-            [CountryNamesPage::class, 'countryCode'],
+            [LanguageDetailPage::class, 'languageId'],
+            [LanguageNamesPage::class, 'languageId'],
+            [LanguageLocalesPage::class, 'languageId'],
+            [CountryDetailPage::class, 'countryId'],
+            [CountryNamesPage::class, 'countryId'],
         ] as [$pageClass, $key]) {
             foreach (['qx', 'qy'] as $code) {
-                $responses = $this->subscribe($pageClass, [$key => $code]);
+                $collection = $key === 'countryId' ? Hilos::$db->countries : Hilos::$db->languages;
+                $responses = $this->subscribe($pageClass, [$key => (string)$collection[$code]->id]);
                 self::assertCount(1, $responses);
                 self::assertSame($pageClass::PAGE, $responses[0]->pageKey);
             }
@@ -83,18 +84,30 @@ final class I18nPageAddressTest extends IntegrationTestCase
     public function testBothAddressesAreRevalidatedOnUpdate(): void
     {
         foreach ([
-            [LanguageDetailPage::class, 'languageCode'],
-            [CountryDetailPage::class, 'countryCode'],
+            [LanguageDetailPage::class, 'languageId'],
+            [CountryDetailPage::class, 'countryId'],
+            [CountryNamesPage::class, 'countryId'],
+            [LanguageNamesPage::class, 'languageId'],
+            [LanguageLocalesPage::class, 'languageId'],
         ] as [$pageClass, $key]) {
+            $collection = $key === 'countryId' ? Hilos::$db->countries : Hilos::$db->languages;
             $this->assertRefusal($pageClass, [], MissingPageRouteParamException::class);
-            $this->assertRefusal($pageClass, [$key => 'QX'], InvalidPageRouteParamException::class);
-            $this->assertRefusal($pageClass, [$key => 'qz'], PageResourceNotFoundException::class);
+            $this->assertRefusal($pageClass, [$key => '+1'], InvalidPageRouteParamException::class);
+            $this->assertRefusal($pageClass, [$key => '999999'], PageResourceNotFoundException::class);
 
-            self::assertCount(1, $this->subscribe($pageClass, [$key => 'qx']));
-            self::assertCount(1, $this->subscribe($pageClass, [$key => 'qy'], update: true));
+            foreach ([false, true] as $update) {
+                foreach (['qx', '0', '-1', '+1', '01', '1.0', ' 1', "1\n", (string)PHP_INT_MAX . '0'] as $invalid) {
+                    $this->assertRefusal($pageClass, [$key => $invalid], InvalidPageRouteParamException::class, $update);
+                }
+                $oldKey = $key === 'countryId' ? 'countryCode' : 'languageCode';
+                $this->assertRefusal($pageClass, [$oldKey => 'qx'], MissingPageRouteParamException::class, $update);
+            }
+
+            self::assertCount(1, $this->subscribe($pageClass, [$key => (string)$collection['qx']->id]));
+            self::assertCount(1, $this->subscribe($pageClass, [$key => (string)$collection['qy']->id], update: true));
             $this->assertRefusal($pageClass, [], MissingPageRouteParamException::class, update: true);
-            $this->assertRefusal($pageClass, [$key => 'QX'], InvalidPageRouteParamException::class, update: true);
-            $this->assertRefusal($pageClass, [$key => 'qz'], PageResourceNotFoundException::class, update: true);
+            $this->assertRefusal($pageClass, [$key => '+1'], InvalidPageRouteParamException::class, update: true);
+            $this->assertRefusal($pageClass, [$key => '999999'], PageResourceNotFoundException::class, update: true);
         }
     }
 

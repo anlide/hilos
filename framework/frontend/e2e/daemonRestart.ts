@@ -5,6 +5,7 @@ import {
   readMonopolisticWorker,
   type MonopolisticWorker,
 } from './daemonWorker.js'
+import { DAEMON_WORKERS_PATH } from './daemon.js'
 import { gotoPage, PAGE_READY } from './page.js'
 
 /** The only isolated worker this stand's restart scenario may pause. */
@@ -34,12 +35,7 @@ export async function readRestartWorker(
     page,
     RESTART_AGENT,
     (workersPage) =>
-      gotoPage(
-        expect,
-        workersPage,
-        '/hilos/daemon/standalone/workers',
-        PAGE_READY,
-      ),
+      gotoPage(expect, workersPage, DAEMON_WORKERS_PATH, PAGE_READY),
     async (predicate) => {
       await expect.poll(predicate).toBe(true)
     },

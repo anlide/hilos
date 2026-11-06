@@ -85,7 +85,7 @@ export function harness(
   const path =
     page === HilosPages.MODERATION
       ? '/hilos/moderation'
-      : `/hilos/moderation/${options.kind ?? initial.kind}${page === HilosPages.MODERATION_KIND_RULES ? '/rules' : ''}`
+      : `/hilos/moderation/kind/${options.kind ?? initial.kind}${page === HilosPages.MODERATION_KIND_RULES ? '/rules' : ''}`
   const navigation = createHilosRouter(
     createAppPageRouter({}),
     pages,
@@ -378,7 +378,7 @@ export function formHarness(
     },
     replace(nextKind = kind.get()) {
       const sameKind = nextKind === kind.get()
-      h.navigation.navigate(`/hilos/moderation/${nextKind}/rules`)
+      h.navigation.navigate(`/hilos/moderation/kind/${nextKind}/rules`)
       // Navigating to the same address is a no-op; replace its actual page scope.
       if (sameKind) h.context.scopes.openPage(page)
       answer()

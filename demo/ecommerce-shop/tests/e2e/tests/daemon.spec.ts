@@ -182,11 +182,11 @@ test('mounts the Daemon section, navigates from the card and cold loads without 
   const workersLink = page.getByTestId(DAEMON_WORKERS_CHILD)
   await expect(workersLink).toHaveAttribute(
     'href',
-    `${DAEMON_ROOT_PATH}/${targetNodeId}/workers`,
+    `${DAEMON_ROOT_PATH}/node/${targetNodeId}/workers`,
   )
   await workersLink.click()
   await expect(page).toHaveURL(
-    new RegExp(`${DAEMON_ROOT_PATH}/${targetNodeId}/workers$`),
+    new RegExp(`${DAEMON_ROOT_PATH}/node/${targetNodeId}/workers$`),
   )
   await expectDaemonPage(expect, page, 'hilos_daemon_workers')
   if (SMOKE_NODES) {
@@ -219,11 +219,11 @@ test('mounts the Daemon section, navigates from the card and cold loads without 
   const agentsLink = page.getByTestId('hilos-page-tab-hilos_daemon_agents')
   await expect(agentsLink).toHaveAttribute(
     'href',
-    `${DAEMON_ROOT_PATH}/${targetNodeId}/agents`,
+    `${DAEMON_ROOT_PATH}/node/${targetNodeId}/agents`,
   )
   await agentsLink.click()
   await expect(page).toHaveURL(
-    new RegExp(`${DAEMON_ROOT_PATH}/${targetNodeId}/agents$`),
+    new RegExp(`${DAEMON_ROOT_PATH}/node/${targetNodeId}/agents$`),
   )
   await expectDaemonPage(expect, page, 'hilos_daemon_agents')
   if (SMOKE_NODES) {
@@ -267,11 +267,11 @@ test('mounts the Daemon section, navigates from the card and cold loads without 
   const envLink = page.getByTestId('hilos-page-tab-hilos_daemon_env')
   await expect(envLink).toHaveAttribute(
     'href',
-    `${DAEMON_ROOT_PATH}/${targetNodeId}/env`,
+    `${DAEMON_ROOT_PATH}/node/${targetNodeId}/env`,
   )
   await envLink.click()
   await expect(page).toHaveURL(
-    new RegExp(`${DAEMON_ROOT_PATH}/${targetNodeId}/env$`),
+    new RegExp(`${DAEMON_ROOT_PATH}/node/${targetNodeId}/env$`),
   )
   await expectDaemonPage(expect, page, 'hilos_daemon_env')
   if (SMOKE_NODES) {
@@ -439,7 +439,9 @@ for (const viewer of [false, true]) {
       await expectDaemonPage(expect, cold, 'hilos_daemon')
       await cold.getByTestId('hilos-daemon-entry-metrics').press('Enter')
       await expectDaemonPage(expect, cold, 'hilos_daemon_http_server')
-      await expect(cold).toHaveURL(`${DAEMON_ROOT_PATH}/${source.nodeId}/http`)
+      await expect(cold).toHaveURL(
+        `${DAEMON_ROOT_PATH}/node/${source.nodeId}/http`,
+      )
       await expect(cold.getByTestId('hilos-daemon-http-address')).toHaveText(
         new RegExp(`:${source.httpPort}\\s*$`),
       )

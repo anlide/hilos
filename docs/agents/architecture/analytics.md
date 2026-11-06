@@ -426,7 +426,7 @@ behavior; the first-snapshot reader-zone Overview below remains today's code.
   context.
 - A browser-session page shows its actions in order — when, on which page, and
   the action's name. Its key is `hilos_analytics_browser_session`, its route is
-  `/hilos/analytics/browser-sessions/{browserSessionId}`, and its SDK view is
+  `/hilos/analytics/browser-session/{browserSessionId}`, and its SDK view is
   `HilosAnalyticsBrowserSessionPage` in Vue, React and Angular. The opening `page_response` carries the
   short browser description and last signed-in person in `data.browserSession`,
   with `data.pageLabel` naming the session. Chat and Binance opt the Vue detail
@@ -489,7 +489,7 @@ behavior; the first-snapshot reader-zone Overview below remains today's code.
 - A person's page lists the browser sessions in which they were the last to
   sign in — first and last seen, browser and the number of actions — each
   session number linking to its session page. Its key is
-  `hilos_analytics_person`, its route is `/hilos/analytics/people/{userId}`, and
+  `hilos_analytics_person`, its route is `/hilos/analytics/person/{userId}`, and
   its SDK view is `HilosAnalyticsPersonPage` in Vue, React and Angular. The entry is the admin user
   card: its `analyticsEnabled` is true while the feature is on and the project
   registers the person page, and the card then links here, on a merged card

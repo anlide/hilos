@@ -28,9 +28,9 @@ final class LanguageCardBrowserData
 
     public const array BINDING = [
         BrowserParamKey::PARAMS => [
-            HilosPageRouteParams::HILOS_I18N_LANGUAGE_CODE => [
+            HilosPageRouteParams::HILOS_I18N_LANGUAGE_ID => [
                 BrowserRefKey::TYPE => BrowserRefType::PAGE_PARAM,
-                BrowserRefKey::KEY => HilosPageRouteParams::HILOS_I18N_LANGUAGE_CODE,
+                BrowserRefKey::KEY => HilosPageRouteParams::HILOS_I18N_LANGUAGE_ID,
             ],
         ],
     ];
@@ -54,8 +54,8 @@ final class LanguageCardBrowserData
 
     public const array BROWSER = [
         BrowserDataConfigKey::PARAMS => [
-            HilosPageRouteParams::HILOS_I18N_LANGUAGE_CODE => [
-                BrowserParamKey::TYPE => BrowserParamType::STRING,
+            HilosPageRouteParams::HILOS_I18N_LANGUAGE_ID => [
+                BrowserParamKey::TYPE => BrowserParamType::POSITIVE_INT,
                 BrowserParamKey::REQUIRED => true,
             ],
         ],
@@ -70,9 +70,9 @@ final class LanguageCardBrowserData
                 BrowserDataFieldKey::SOURCE => self::LANGUAGES_SOURCE,
                 BrowserDataFieldKey::ROW_KEY => Language::id,
                 BrowserDataFieldKey::WHERE => [
-                    Language::code => [
+                    Language::id => [
                         BrowserRefKey::TYPE => BrowserRefType::TABLE_PARAM,
-                        BrowserRefKey::KEY => HilosPageRouteParams::HILOS_I18N_LANGUAGE_CODE,
+                        BrowserRefKey::KEY => HilosPageRouteParams::HILOS_I18N_LANGUAGE_ID,
                     ],
                 ],
                 BrowserDataFieldKey::FIELDS => [

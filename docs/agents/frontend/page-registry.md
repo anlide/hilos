@@ -51,13 +51,14 @@ view files, which live in `views/<Page>/`:
   unchecked. A mismatch continues to the next route declaration, while an
   invalid value passed to `path()` returns `undefined`. A capture that cannot be
   decoded is a route miss, and successful captures are decoded exactly once.
-  Static routes keep their existing precedence. The Analytics browser-session
-  detail declaration precedes the optional-period list declaration and constrains
-  its id to digits with an optional leading plus: `/64` and `/+64` resolve to the
-  detail page, while `/today` and `/unknown` fall through to the list. This is a
-  route-specific constraint. The shared plural prefix of that detail and list
-  is a [transitional exception](#transitional-route-exceptions), not a pattern
-  for new pages; naming follows [the entity rule below](#entity-page-keys-and-routes).
+  Static routes keep their existing precedence. The browser-session detail route
+  is `/hilos/analytics/browser-session/{browserSessionId}`; the plural list remains
+  `/hilos/analytics/browser-sessions/{period?}`. A missing period and unknown
+  nonnumeric periods retain the list's Today fallback. That list rejects a decoded
+  period only when its entire value matches the former detail ID shape: an optional
+  leading `+` followed by digits. This route-specific constraint makes the former
+  numeric detail address a route miss instead of a Today list. Their entity and
+  list segments are distinct; naming follows [the entity rule below](#entity-page-keys-and-routes).
 
   **`admin` is required on every row and has no default.** It names the surface
   *type*, not any one feature that reads it — say `admin`, never
@@ -96,7 +97,7 @@ view files, which live in `views/<Page>/`:
   owner label, then the page's catalog label. Country's Vue pages bind their
   page-scoped card name this way. This adds no static name map or boot setting,
   and does not change the route: country detail pages keep their stable
-  `countryCode` address when a display name changes. Owners not adopted keep
+  `countryId` address when a display name changes. Owners not adopted keep
   their current path.
 
 Do **not** add a barrel `index.ts` inside `pages/` — import each file by its own
@@ -135,53 +136,60 @@ the key and URL should make that distinction visible without knowing the page.
 | A user's sessions | `hilos_user_sessions` | `/hilos/user/{userId}/sessions` |
 | One Analytics person | `hilos_analytics_person` | `/hilos/analytics/person/{userId}` |
 
-These are naming examples, not a claim that every current route already uses
-them. For a new single-user page, `hilos_users` and `/hilos/users/{userId}` are
-wrong; use `hilos_user` and `/hilos/user/{userId}`. A new channel page at
+The users and Analytics examples above match their current route declarations.
+For a new single-user page, `hilos_users` and `/hilos/users/{userId}` are wrong;
+use `hilos_user` and `/hilos/user/{userId}`. A new channel page at
 `/hilos/communications/{channelId}` is missing `channel` before its identifier.
 When user `42` is available, use `/hilos/user/42`, not `/hilos/user/alice`.
 
 The ID preference concerns entity identifiers, not constant path segments or
 every filter and period in a URL. For example, `{period?}` on a list does not
-make that list an entity detail page. This convention adds neither a router
-change nor runtime validators for grammatical number or digits; existing
-`paramPatterns` continue to mean exactly what their declarations say.
+make that list an entity detail page. The five language and country routes use
+`languageId` and `countryId`, canonical positive decimal strings for existing
+numeric primary IDs; their typed PHP subscribe params are integers. Language and
+country codes remain catalog, model and action values. This i18n validation is
+specific to those five subscriptions: their IDs are canonical positive decimal
+values. This does not establish a universal positive-ID rule for URL parameters
+or periods.
 
-### Transitional route exceptions
+### Former entity routes
 
-The following current addresses in
-[`hilosPages.ts`](../../../framework/frontend/core/src/routing/hilosPages.ts)
-depart from the naming rule. Treat them as transition inventory, not examples
-to copy or permission for new exceptions. Bringing these addresses into line
-is assigned to HIL-1806 (not in the code yet — HIL-1806).
+The 35 detail route declarations below now use singular entity segments.
+Former addresses do not match these declarations and do not redirect. This
+inventory records route history; it does not claim that every declaration has a
+mounted screen. The plural Browser sessions list keeps its existing address.
 
-Each child suffix below is appended to the complete address in its row.
+Each child suffix below is appended to both route families in its row.
 
-| Current entity address | Current child suffixes |
-|---|---|
-| `/hilos/analytics/browser-sessions/{browserSessionId}` | none; the list shares `/hilos/analytics/browser-sessions/{period?}` |
-| `/hilos/analytics/people/{userId}` | none |
-| `/hilos/i18n/languages/{languageCode}` | `/names`, `/locales` |
-| `/hilos/i18n/countries/{countryCode}` | `/names` |
-| `/hilos/i18n/ui-pages/{uiPageId}` | none |
-| `/hilos/i18n/groups/{groupId}` | none |
-| `/hilos/i18n/actions/{actionId}` | none |
-| `/hilos/change-log/tables/{tableId}` | `/columns`, `/triggers`, `/history/{record?}` |
-| `/hilos/daemon/{nodeId}` | `/workers`, `/agents`, `/cron`, `/websockets`, `/http`, `/env`, `/env/orphans` |
-| `/hilos/mcp-skills/{mcpId}` | `/logs`, `/logs/view` |
-| `/hilos/communications/{channelId}` | `/configuration`, `/deliveries`, `/frame` |
-| `/hilos/security/oauth/{providerId}` | none |
-| `/hilos/billing/{providerId}` | `/payments`, `/refunds` |
+| Former entity route | Current entity route | Child suffixes |
+|---|---|---|
+| `/hilos/analytics/browser-sessions/{browserSessionId}` | `/hilos/analytics/browser-session/{browserSessionId}` | none |
+| `/hilos/analytics/people/{userId}` | `/hilos/analytics/person/{userId}` | none |
+| `/hilos/moderation/{kind}` | `/hilos/moderation/kind/{kind}` | `/rules` |
+| `/hilos/i18n/languages/{languageCode}` | `/hilos/i18n/language/{languageId}` | `/names`, `/locales` |
+| `/hilos/i18n/countries/{countryCode}` | `/hilos/i18n/country/{countryId}` | `/names` |
+| `/hilos/i18n/ui-pages/{uiPageId}` | `/hilos/i18n/ui-page/{uiPageId}` | none |
+| `/hilos/i18n/groups/{groupId}` | `/hilos/i18n/group/{groupId}` | none |
+| `/hilos/i18n/actions/{actionId}` | `/hilos/i18n/action/{actionId}` | none |
+| `/hilos/change-log/tables/{tableId}` | `/hilos/change-log/table/{tableId}` | `/columns`, `/triggers`, `/history/{record?}` |
+| `/hilos/daemon/{nodeId}` | `/hilos/daemon/node/{nodeId}` | `/workers`, `/agents`, `/cron`, `/websockets`, `/http`, `/env`, `/env/orphans` |
+| `/hilos/mcp-skills/{mcpId}` | `/hilos/mcp-skills/server/{mcpId}` | `/logs`, `/logs/view` |
+| `/hilos/communications/{channelId}` | `/hilos/communications/channel/{channelId}` | `/configuration`, `/deliveries`, `/frame` |
+| `/hilos/security/oauth/{providerId}` | `/hilos/security/oauth/provider/{providerId}` | none |
+| `/hilos/billing/{providerId}` | `/hilos/billing/provider/{providerId}` | `/payments`, `/refunds` |
 
-Legal already uses `/hilos/legal/document/{documentKey}`; do not list
-`/hilos/legal/{documentKey}` as a current route. Existing code/key parameters,
-including `languageCode`, `countryCode` and `documentKey`, remain unchanged by
-this documentation; applying the ID preference requires checking the model.
+The retained string route identities have existing meanings: `nodeId` is the
+configured `CLUSTER_NODE_ID`, `tableId` is the change-log journal key, `kind` and
+`channelId` are catalog keys, and OAuth `providerId` is the provider name
+without an `oauth:` prefix. Do not create surrogate IDs for the existing
+unbuilt Billing, MCP Skills, or i18n UI-page, group and action declarations.
+Their current parameter names remain declarations only; they do not imply
+built screens or new models. Legal keeps
+`/hilos/legal/document/{documentKey}`; `documentKey` is unchanged.
 
-One other legacy address needs a separate scope decision: SIL still declares
-`/hilos/sil/users/{userId}` in code, although its page was removed from the
-approved mockup; this inventory promises no replacement page. It is not a
-naming example for new pages.
+SIL keeps its existing `/hilos/sil/users/{userId}` route until SIL is
+implemented. This inventory does not rename it or add User history or Requests
+pages; it is not a naming example for new pages.
 
 ## The public Status route
 

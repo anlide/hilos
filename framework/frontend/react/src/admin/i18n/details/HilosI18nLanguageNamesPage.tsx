@@ -26,7 +26,7 @@ export interface HilosI18nLanguageNamesPageProps {
   context: HilosI18nLanguageContext
 }
 
-/** Names and corrections of the code-addressed language, over the shared core. */
+/** Names and corrections of the id-addressed language, over the shared core. */
 export function HilosI18nLanguageNamesPage({
   context,
 }: HilosI18nLanguageNamesPageProps) {
@@ -39,33 +39,42 @@ export function HilosI18nLanguageNamesPage({
   const [binding, setBinding] = useState({ context, revision: 0 })
   if (binding.context !== context)
     setBinding({ context, revision: binding.revision + 1 })
-  const code = (route.params.languageCode as string | undefined) ?? ''
+  const languageId = (route.params.languageId as string | undefined) ?? ''
   return (
     <LanguageNames
-      key={`${binding.revision}:${code}`}
+      key={`${binding.revision}:${languageId}`}
       context={context}
-      code={code}
+      languageId={languageId}
     />
   )
 }
 
 function LanguageNames({
   context,
-  code,
-}: HilosI18nLanguageNamesPageProps & { code: string }) {
+  languageId,
+}: HilosI18nLanguageNamesPageProps & { languageId: string }) {
   const router = useContext(HilosRouterContext)!
   const language = useMemo(
     () =>
       computedSignal(
         () =>
-          (router.currentRoute.get().params.languageCode as
-            string | undefined) ?? '',
+          (router.currentRoute.get().params.languageId as string | undefined) ??
+          '',
       ),
     [router],
   )
+  const rawCard = useMemo(() => createHilosI18nLanguageCard(context), [context])
   const liveCard = useMemo(
-    () => createHilosI18nLanguageCard(context),
-    [context],
+    () =>
+      computedSignal(() => {
+        const current = rawCard.get()
+        return current !== null &&
+          String(current.languageId) ===
+            String(router.currentRoute.get().params.languageId)
+          ? current
+          : null
+      }),
+    [rawCard, router],
   )
   const name = useMemo(
     () =>
@@ -90,7 +99,7 @@ function LanguageNames({
         context,
         HILOS_I18N_LANGUAGE_NAMES,
         computedSignal(() =>
-          liveCard.get()?.code === language.get()
+          String(liveCard.get()?.languageId) === language.get()
             ? (liveCard.get()?.languageId ?? null)
             : null,
         ),
@@ -102,7 +111,15 @@ function LanguageNames({
       createHilosI18nLanguageNameWindow(
         names.controller,
         liveCard,
-        language,
+        computedSignal((): string => {
+          const held = nameWindow.target.get()
+          return (
+            liveCard.get()?.code ??
+            (String(held?.languageId) === language.get()
+              ? (held?.languageCode ?? '')
+              : '')
+          )
+        }),
         context,
       ),
     [names, liveCard, language, context],
@@ -155,7 +172,8 @@ function LanguageNames({
       subject = liveCard.get()
     if (
       resolved === null ||
-      subject?.code !== code ||
+      subject === null ||
+      String(subject.languageId) !== languageId ||
       fresh?.inLanguageId !== row.inLanguageId ||
       fresh.name === null
     ) {
@@ -176,7 +194,7 @@ function LanguageNames({
       languageId: subject.languageId,
       inLanguageId: fresh.inLanguageId,
       nameId,
-      languageCode: code,
+      languageCode: subject.code,
       languageNativeName: subject.nativeName,
       inLanguageCode: fresh.code,
       inLanguageNativeName: fresh.nativeName,

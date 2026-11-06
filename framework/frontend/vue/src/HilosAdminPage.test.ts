@@ -209,26 +209,32 @@ describe('HilosAdminPage', () => {
     })
     const child = () =>
       wrapper.find('[data-id="hilos-admin-child-hilos_daemon_workers"]')
-    expect(child().attributes('href')).toBe('/hilos/daemon/route-node/workers')
+    expect(child().attributes('href')).toBe(
+      '/hilos/daemon/node/route-node/workers',
+    )
     await wrapper.setProps({ childParams: { nodeId: 'selected-node' } })
     expect(child().attributes('href')).toBe(
-      '/hilos/daemon/selected-node/workers',
+      '/hilos/daemon/node/selected-node/workers',
     )
     expect(
       wrapper.find('[data-id="hilos-breadcrumb"] a').attributes('href'),
-    ).toBe('/hilos/daemon/route-node/workers')
+    ).toBe('/hilos/daemon/node/route-node/workers')
     await wrapper.setProps({ childParams: { nodeId: 'next' } })
-    expect(child().attributes('href')).toBe('/hilos/daemon/next/workers')
+    expect(child().attributes('href')).toBe('/hilos/daemon/node/next/workers')
     const nodeId = 'node /?#%2F🌍'
     await wrapper.setProps({ childParams: { nodeId } })
     const href = child().attributes('href')!
-    expect(href).toBe(`/hilos/daemon/${encodeURIComponent(nodeId)}/workers`)
+    expect(href).toBe(
+      `/hilos/daemon/node/${encodeURIComponent(nodeId)}/workers`,
+    )
     expect(matcher.match(href).params).toEqual({ nodeId })
     expect(
       wrapper.find('[data-id="hilos-breadcrumb"] a').attributes('href'),
-    ).toBe('/hilos/daemon/route-node/workers')
+    ).toBe('/hilos/daemon/node/route-node/workers')
     await wrapper.setProps({ childParams: undefined })
-    expect(child().attributes('href')).toBe('/hilos/daemon/route-node/workers')
+    expect(child().attributes('href')).toBe(
+      '/hilos/daemon/node/route-node/workers',
+    )
     wrapper.unmount()
   })
 })

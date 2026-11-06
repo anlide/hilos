@@ -43,7 +43,7 @@ const initial = {
 describe('Cron query evidence and ordering', () => {
   const mark = { documentStarted: 1, socket: 2, cursor: 10, rendered: [] }
   const browser = {
-    url: () => 'http://localhost/hilos/daemon/standalone/cron',
+    url: () => 'http://localhost/hilos/daemon/node/standalone/cron',
   } as Page
   const checks = Object.assign(
     (value: unknown, message?: string) => expect(value, message),

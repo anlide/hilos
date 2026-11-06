@@ -135,7 +135,7 @@ final class I18nLanguageCardTest extends IntegrationTestCase
         $snapshot = Hilos::$browser->buildSubscribeSnapshot(
             LanguageDetailPage::PAGE,
             'i18n-language-card-reader',
-            new PageRouteParams(['languageCode' => 'qx']),
+            new PageRouteParams(['languageId' => (string)Hilos::$db->languages['qx']->id]),
         )->toArray();
         self::assertSame([
             'languageId' => Hilos::$db->languages['qx']->id,
@@ -482,7 +482,7 @@ final class I18nLanguageCardTest extends IntegrationTestCase
      */
     private function subscribe(string $acceptKey, string $code, string $pageClass = LanguageDetailPage::class): void
     {
-        $params = ['languageCode' => $code];
+        $params = ['languageId' => (string)Hilos::$db->languages[$code]->id];
         Hilos::$sr->subscribeToPage(
             $pageClass::PAGE,
             new WebSocketPageSubscribeSignalDTO($acceptKey, $pageClass::PAGE, $params),

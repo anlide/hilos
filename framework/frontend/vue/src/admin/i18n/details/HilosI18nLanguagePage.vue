@@ -17,7 +17,7 @@ import {
   HilosPages,
   hilosTabLinks,
 } from '@hilos/core/base'
-import { computed, inject, onUnmounted, ref } from 'vue'
+import { computed, inject, onUnmounted, ref, watch } from 'vue'
 
 import HilosAdminPage from '../../../HilosAdminPage.vue'
 import HilosLink from '../../../HilosLink.vue'
@@ -29,7 +29,20 @@ import HilosI18nLanguageSwitchOn from './HilosI18nLanguageSwitchOn.vue'
 import HilosI18nLanguageWindow from './HilosI18nLanguageWindow.vue'
 
 const props = defineProps<{ context: HilosI18nLanguageContext }>()
-const cardSignal = createHilosI18nLanguageCard(props.context)
+const router = inject(hilosRouterKey)
+if (!router) {
+  throw new Error('HilosI18nLanguagePage requires a provided Hilos router.')
+}
+const routeId = computedSignal(() =>
+  String(router.currentRoute.get().params.languageId ?? ''),
+)
+const rawCard = createHilosI18nLanguageCard(props.context)
+const cardSignal = computedSignal(() => {
+  const current = rawCard.get()
+  return current !== null && String(current.languageId) === routeId.get()
+    ? current
+    : null
+})
 const unbindName = bindPageInstanceName(
   props.context.scopes,
   HilosPages.I18N_LANGUAGE,
@@ -47,6 +60,7 @@ const unbindName = bindPageInstanceName(
 )
 onUnmounted(unbindName)
 const card = useSignal(cardSignal)
+const currentId = useSignal(routeId)
 const languageWindow = createHilosI18nLanguageCardWindow(
   cardSignal,
   props.context,
@@ -68,11 +82,16 @@ const deleteSource = computed(() =>
         deleteReason: card.value.summary.deleteReason,
       },
 )
-const router = inject(hilosRouterKey)
-if (!router) {
-  throw new Error('HilosI18nLanguagePage requires a provided Hilos router.')
-}
+
 const loading = useSignal(router.pageLoading)
+watch(
+  useSignal(routeId),
+  () => {
+    languageWindow.close()
+    deleteOpen.value = false
+  },
+  { flush: 'sync' },
+)
 const identity = useSignal(router.pageIdentity)
 const tabs = computed(() => {
   const current = card.value
@@ -80,7 +99,7 @@ const tabs = computed(() => {
     ? []
     : hilosTabLinks(
         identity.value?.pageTabs ?? [],
-        { languageCode: current.code },
+        { languageId: String(current.languageId) },
         router.resolvePath,
       )
 })
@@ -344,8 +363,16 @@ const deleted = (): void => {
                 }}
               </span>
               <div class="mt-2">
-                <HilosI18nLanguageSwitchOff :context="context" :card="card" />
-                <HilosI18nLanguageSwitchOn :context="context" :card="card" />
+                <HilosI18nLanguageSwitchOff
+                  :key="`off:${currentId}`"
+                  :context="context"
+                  :card="card"
+                />
+                <HilosI18nLanguageSwitchOn
+                  :key="`on:${currentId}`"
+                  :context="context"
+                  :card="card"
+                />
               </div>
             </dd>
             <dt class="col-sm-4">Delete language</dt>
@@ -396,6 +423,7 @@ const deleted = (): void => {
     </p>
     <HilosI18nLanguageWindow :window="languageWindow" />
     <HilosI18nLanguageDelete
+      :key="currentId"
       v-model="deleteOpen"
       :context="context"
       :source="deleteSource"

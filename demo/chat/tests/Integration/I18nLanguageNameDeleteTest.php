@@ -696,7 +696,7 @@ final class I18nLanguageNameDeleteTest extends IntegrationTestCase
      */
     private function subscribe(string $acceptKey): void
     {
-        $params = ['languageCode' => 'qv'];
+        $params = ['languageId' => (string)Hilos::$db->languages['qv']->id];
         $windows = [ChatTableContext::hilosI18nLanguageNames => new TableWindowDescriptorDTO(
             filter: [
                 HilosI18nLanguageNamesTable::FILTER_LANGUAGE => isset(Hilos::$db->languages['qv'])

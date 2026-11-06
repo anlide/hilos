@@ -12,6 +12,7 @@ import {
   typeInto,
   expectPageReady,
   gotoPage,
+  readI18nRowId,
   PAGE_READY,
   createAdminStorageState,
 } from '../../../../../framework/frontend/e2e/index.js'
@@ -127,7 +128,13 @@ test('updates the whole overview in its existing window after language and custo
   const live = await watchI18nLivePages(expect, [page])
   const editor = await context.newPage()
   try {
-    await gotoPage(expect, editor, `${ROOT_PATH}/languages/de`, PAGE_READY)
+    const languageId = await readI18nRowId(expect, editor, 'language', 'de')
+    await gotoPage(
+      expect,
+      editor,
+      `${ROOT_PATH}/language/${languageId}`,
+      PAGE_READY,
+    )
     await expect(editor.getByTestId('language-card-enabled')).toHaveText(
       'Language switched off',
     )
@@ -192,7 +199,13 @@ test('updates the whole overview in its existing window after language and custo
     await live.unchanged()
     await document.unchanged()
 
-    await gotoPage(expect, editor, `${ROOT_PATH}/countries/qx`, PAGE_READY)
+    const countryId = await readI18nRowId(expect, editor, 'country', 'qx')
+    await gotoPage(
+      expect,
+      editor,
+      `${ROOT_PATH}/country/${countryId}`,
+      PAGE_READY,
+    )
     await expect(editor.getByTestId('country-card-enabled')).toHaveText(
       'Country switched off',
     )

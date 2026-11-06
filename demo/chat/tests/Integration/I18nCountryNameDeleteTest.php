@@ -878,7 +878,7 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
      */
     private function subscribe(string $acceptKey, string $countryCode = 'qj'): void
     {
-        $params = ['countryCode' => $countryCode];
+        $params = ['countryId' => (string)Hilos::$db->countries[$countryCode]->id];
         $windows = [ChatTableContext::hilosI18nCountryNames => new TableWindowDescriptorDTO(
             filter: [
                 HilosI18nCountryNamesTable::FILTER_COUNTRY => isset(Hilos::$db->countries[$countryCode])

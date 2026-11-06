@@ -24,10 +24,10 @@ import {
 
 describe('HilosChangeLogTableShell', () => {
   it.each([
-    ['57', '/hilos/change-log/tables/bot/history/57'],
+    ['57', '/hilos/change-log/table/bot/history/57'],
     [
       'part,with%2Ccomma',
-      '/hilos/change-log/tables/bot/history/part%2Cwith%252Ccomma',
+      '/hilos/change-log/table/bot/history/part%2Cwith%252Ccomma',
     ],
   ])(
     'retains record %s only in the History tab address',
@@ -43,16 +43,16 @@ describe('HilosChangeLogTableShell', () => {
           .findAll('a')
           .map((link) => link.attributes('href')),
       ).toEqual([
-        '/hilos/change-log/tables/bot',
-        '/hilos/change-log/tables/bot/columns',
-        '/hilos/change-log/tables/bot/triggers',
+        '/hilos/change-log/table/bot',
+        '/hilos/change-log/table/bot/columns',
+        '/hilos/change-log/table/bot/triggers',
         historyHref,
       ])
       expect(
         wrapper
           .get('[data-id="hilos-change-log-record-filter-clear"]')
           .attributes('href'),
-      ).toBe('/hilos/change-log/tables/bot/history')
+      ).toBe('/hilos/change-log/table/bot/history')
     },
   )
 

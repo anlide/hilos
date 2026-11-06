@@ -123,7 +123,7 @@ function LanguagesList({ context }: HilosI18nLanguagesPageProps) {
         cells={{
           [HilosI18nLanguageRowKey.code]: (row) => {
             const path = router.resolvePath(HilosPages.I18N_LANGUAGE, {
-              languageCode: row.code,
+              languageId: String(row.languageId),
             })
             return path ? (
               <HilosLink

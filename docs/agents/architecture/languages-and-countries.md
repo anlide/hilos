@@ -29,9 +29,10 @@ agent, not a dictionary of values.
 The reference belongs to the framework: one library owns the five `hilos_*`
 tables, and a project activates the section without supplying its contents.
 
-A public address resolves a language, country or locale by its immutable code.
-Internal references and action targets carry the captured primary ID, under
-[entity references](../orm/entity-references.md).
+Language editions and other public product addresses resolve a language,
+country or locale by its immutable code. The five i18n admin detail URLs use
+the row's primary ID instead. Internal references and action targets carry the
+captured primary ID, under [entity references](../orm/entity-references.md).
 A switched-on row is frozen for everyone, both a person and the reflow. The
 editing sequence is **switch off → edit → switch on**. A name has a lock,
 not an on-switch. The rules and their implementing leaves are below.
@@ -61,10 +62,11 @@ The seven locale formats are chosen from the closed lists in `LocaleTemplates`
 (ported from hleb). The create and update write doors refuse any other template,
 including writes made by reflow.
 
-Environment values and section URLs use language codes as external addresses.
-Catalog lookups use codes as definition keys. The entry boundary resolves these
-values; internal relationships use primary IDs. Codes remain immutable in every
-row state; this distinction introduces no rename operation.
+Environment values and language-edition URLs use language codes at their
+external boundary. Catalog lookups use codes as definition keys. The five i18n
+admin detail URLs use primary IDs. The entry boundary resolves each value;
+internal relationships use primary IDs. Codes remain immutable in every row
+state; this distinction introduces no rename operation.
 
 For each pair of *what is named × the language it is written in*, allow one
 base name and at most one override per locale. Both tables store a generated
@@ -538,10 +540,16 @@ by someone or referenced by a translation string belong to HIL-1424.
 
 ## Addresses
 
-A public language or country URL is addressed by code. A code never
-changes; a row number can change on a reload of the data, and a URL can be sent
-by mail. Code addresses and the three new names/locales page keys are registered
-together (HIL-1473). The Vue main language card is built (HIL-1478) and opens by
+The five language and country detail routes use the persisted primary ID as
+their address: `languageId` or `countryId` is a canonical positive decimal
+string (`[1-9][0-9]*`) on the wire and a typed PHP `int` in the subscribe params.
+A route addresses that row, not its code: after deletion, the old URL does not
+open a replacement row created with the same code. Codes remain immutable and
+keep their existing roles in models, catalog lookups, environment values,
+code-based language editions and language/country ADD actions; the cards and
+tables keep displaying their code labels. HIL-1473 registered the Names and
+Locales page keys; the table below lists their current routes alongside the
+detail routes. The Vue main language card is built (HIL-1478) and opens by
 direct URL with one subscribed `languageCard` snapshot and live updates; its
 Names and Locales pages use the same datum (HIL-1479). The Language entity head
 and Overview / Names / Locales row are adopted in Vue, React and Angular. The
@@ -592,12 +600,12 @@ wrappers, and `hilosAdminViews()` does not supply the Angular section-root key.
 |---|---|
 | `hilos_i18n` | `/hilos/i18n` |
 | `hilos_i18n_languages` | `/hilos/i18n/languages` |
-| `hilos_i18n_language` | `/hilos/i18n/languages/{languageCode}` |
-| `hilos_i18n_language_names` | `/hilos/i18n/languages/{languageCode}/names` |
-| `hilos_i18n_language_locales` | `/hilos/i18n/languages/{languageCode}/locales` |
+| `hilos_i18n_language` | `/hilos/i18n/language/{languageId}` |
+| `hilos_i18n_language_names` | `/hilos/i18n/language/{languageId}/names` |
+| `hilos_i18n_language_locales` | `/hilos/i18n/language/{languageId}/locales` |
 | `hilos_i18n_countries` | `/hilos/i18n/countries` |
-| `hilos_i18n_country` | `/hilos/i18n/countries/{countryCode}` |
-| `hilos_i18n_country_names` | `/hilos/i18n/countries/{countryCode}/names` |
+| `hilos_i18n_country` | `/hilos/i18n/country/{countryId}` |
+| `hilos_i18n_country_names` | `/hilos/i18n/country/{countryId}/names` |
 
 See the [page registry](../frontend/page-registry.md). The
 `/hilos/i18n/translate/**` branch goes away with HIL-1424.
@@ -634,7 +642,7 @@ Open windows capture those identities after focus. Live text on the same name
 merges normally; a different name, locale or subject ID leaves the draft
 available and blocks the stale operation. There is no fallback to the code,
 parent pair or equal text of a replacement. Vue, React and Angular share that
-contract and preserve the code labels and public URLs.
+contract, preserve the code labels, and use the primary-ID admin URLs.
 
 ## Switching The Section On
 
@@ -659,9 +667,9 @@ bound to the countries list in all six (HIL-1475). All six demos bind
 page (HIL-1479), and `countryCard` to both country card pages (HIL-1483). Vue
 serves the section root at `/hilos/i18n` and the languages list at
 `/hilos/i18n/languages` (HIL-1474), the main language card at
-`/hilos/i18n/languages/{languageCode}` (HIL-1478), its names at
-`/hilos/i18n/languages/{languageCode}/names` (HIL-1477) and its locales at
-`/hilos/i18n/languages/{languageCode}/locales` (HIL-1476). The Binance BTC
+`/hilos/i18n/language/{languageId}` (HIL-1478), its names at
+`/hilos/i18n/language/{languageId}/names` (HIL-1477) and its locales at
+`/hilos/i18n/language/{languageId}/locales` (HIL-1476). The Binance BTC
 Tracker and Chat mount thin, lazy Vue wrappers for the section overview and both
 lists outside `hilosAdminViews()`: the overview receives its current page scopes,
 and each list receives its project context. Both lists draw the shared section
@@ -700,8 +708,8 @@ edit/view/delete controls in every tab, and lowers the card's locale count.
 The edit window switches a locale on (HIL-1493); switching off from the view
 window is HIL-1494.
 Vue serves the countries list at `/hilos/i18n/countries` (HIL-1475), the main
-country card at `/hilos/i18n/countries/{countryCode}` (HIL-1482) and its names
-at `/hilos/i18n/countries/{countryCode}/names` (HIL-1483). The card shows the
+country card at `/hilos/i18n/country/{countryId}` (HIL-1482) and its names
+at `/hilos/i18n/country/{countryId}/names` (HIL-1483). The card shows the
 name, code, currency, default locale, enabled state, the switch-on window's
 default locale note, the switch-off window's locale and name counts, and
 read-only delete verdict: a known country never, else locales, else any name
@@ -790,8 +798,9 @@ These keys are pointers to later work, not implementation markers:
 - **Wrong:** add a “pin” button or put a lock on a language, country or locale;
   editing locks names automatically, while the three root tables use `enabled`.
 - **Wrong:** target an internal mutation by code after capturing a row. Carry
-  its primary ID and refuse if it disappeared. Public URLs keep their stable
-  code and resolve it only at entry.
+  its primary ID and refuse if it disappeared. Language and country admin
+  detail URLs also use that ID; code-based language-edition URLs continue to
+  resolve codes at their public entry boundary.
 - **Wrong:** put reflow on a timer; compare fingerprints at startup when the
   framework version changes.
 - **Wrong:** remove a name by saving an empty string; that saves a locked value.

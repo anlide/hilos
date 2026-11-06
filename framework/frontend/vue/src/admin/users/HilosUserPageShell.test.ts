@@ -306,7 +306,7 @@ describe('HilosUserPageShell', () => {
     expect(view.find('[data-id="hilos-admin-children"]').exists()).toBe(false)
     const analytics = view.get('[data-id="hilos-page-head-action"]')
     expect(analytics.text()).toBe('Actions in Analytics')
-    expect(analytics.attributes('href')).toBe('/hilos/analytics/people/1')
+    expect(analytics.attributes('href')).toBe('/hilos/analytics/person/1')
     expect(view.findAll('button')).toHaveLength(0)
 
     t.scopes
@@ -325,7 +325,7 @@ describe('HilosUserPageShell', () => {
         .trim(),
     ).toBe('Alice renamed')
     expect(t.navigation.currentTitle.get()).toBe('Alice renamed · Test app')
-    expect(analytics.attributes('href')).toBe('/hilos/analytics/people/1')
+    expect(analytics.attributes('href')).toBe('/hilos/analytics/person/1')
   })
 
   it('keeps hidden names hidden in the head, breadcrumb, avatar and browser title', async () => {
@@ -512,7 +512,7 @@ describe('HilosUserPageShell', () => {
     await nextTick()
     expect(
       view.get('[data-id="hilos-page-head-action"]').attributes('href'),
-    ).toBe('/hilos/analytics/people/42')
+    ).toBe('/hilos/analytics/person/42')
     t.scopes.page()!.data.set(HILOS_USER_ANALYTICS_ENABLED_KEY, false)
     await nextTick()
     expect(view.find('[data-id="hilos-page-head-action"]').exists()).toBe(false)
@@ -546,7 +546,7 @@ describe('HilosUserPageShell', () => {
         expect(link.attributes('href')).toBe('/hilos/user/2')
       expect(
         view.get('[data-id="hilos-page-head-action"]').attributes('href'),
-      ).toBe('/hilos/analytics/people/1')
+      ).toBe('/hilos/analytics/person/1')
       expect(view.findAll('button')).toHaveLength(0)
     },
   )

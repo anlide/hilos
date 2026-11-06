@@ -271,7 +271,7 @@ describe('HilosDaemonWebsocketsPage', () => {
     )
     expect(h.text('count')).toBe('0')
     await h.runAsync(() => {
-      h.router.navigate('/hilos/daemon/n2')
+      h.router.navigate('/hilos/daemon/node/n2')
       h.answer(null)
       h.emit('projectSignal', {
         type: 'page_response',

@@ -14,25 +14,25 @@ use Hilos\Core\Page\PageRouteParams;
 final class HilosI18nCountryPageSubscribeParams extends AbstractPageSubscribeParamsDTO
 {
     /**
-     * @param string $countryCode Two-letter lowercase country code
+     * @param int $countryId Positive country primary id
      */
-    public function __construct(public readonly string $countryCode)
+    public function __construct(public readonly int $countryId)
     {
     }
 
     /**
      * @param PageRouteParams $params Raw route parameters
      * @return static Validated country address
-     * @throws MissingPageRouteParamException When countryCode is missing or empty
-     * @throws InvalidPageRouteParamException When countryCode is not two lowercase ASCII letters
+     * @throws MissingPageRouteParamException When countryId is missing or empty
+     * @throws InvalidPageRouteParamException When countryId is not a canonical positive integer
      */
     public static function fromPageRouteParams(PageRouteParams $params): static
     {
-        $countryCode = $params->requireString(HilosPageRouteParams::HILOS_I18N_COUNTRY_CODE);
-        if (preg_match('/^[a-z]{2}$/D', $countryCode) !== 1) {
-            throw new InvalidPageRouteParamException(HilosPageRouteParams::HILOS_I18N_COUNTRY_CODE, 'expected two lowercase letters');
+        $countryId = $params->requirePositiveInt(HilosPageRouteParams::HILOS_I18N_COUNTRY_ID);
+        if ((string)$countryId !== $params->requireString(HilosPageRouteParams::HILOS_I18N_COUNTRY_ID)) {
+            throw new InvalidPageRouteParamException(HilosPageRouteParams::HILOS_I18N_COUNTRY_ID, 'expected a canonical positive integer');
         }
 
-        return new static($countryCode);
+        return new static($countryId);
     }
 }

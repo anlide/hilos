@@ -16,9 +16,349 @@ import {
 
 describe('HILOS_ROUTE_DECLARATIONS', () => {
   it.each([
-    ['oauth:github', 'github', '/hilos/security/oauth/github'],
-    ['oauth:google', 'google', '/hilos/security/oauth/google'],
-    ['oauth:Acme.sso', 'Acme.sso', '/hilos/security/oauth/Acme.sso'],
+    [
+      HilosPages.I18N_LANGUAGE,
+      'hilos_i18n_language',
+      { languageId: '11' },
+      '/hilos/i18n/language/11',
+      '/hilos/i18n/languages/en',
+      false,
+    ],
+    [
+      HilosPages.I18N_LANGUAGE_NAMES,
+      'hilos_i18n_language_names',
+      { languageId: '11' },
+      '/hilos/i18n/language/11/names',
+      '/hilos/i18n/languages/en/names',
+      false,
+    ],
+    [
+      HilosPages.I18N_LANGUAGE_LOCALES,
+      'hilos_i18n_language_locales',
+      { languageId: '11' },
+      '/hilos/i18n/language/11/locales',
+      '/hilos/i18n/languages/en/locales',
+      false,
+    ],
+    [
+      HilosPages.I18N_COUNTRY,
+      'hilos_i18n_country',
+      { countryId: '141' },
+      '/hilos/i18n/country/141',
+      '/hilos/i18n/countries/pl',
+      false,
+    ],
+    [
+      HilosPages.I18N_COUNTRY_NAMES,
+      'hilos_i18n_country_names',
+      { countryId: '141' },
+      '/hilos/i18n/country/141/names',
+      '/hilos/i18n/countries/pl/names',
+      false,
+    ],
+    [
+      HilosPages.ANALYTICS_BROWSER_SESSION,
+      'hilos_analytics_browser_session',
+      { browserSessionId: '+64' },
+      '/hilos/analytics/browser-session/%2B64',
+      '/hilos/analytics/browser-sessions/%2B64',
+      false,
+    ],
+    [
+      HilosPages.ANALYTICS_PERSON,
+      'hilos_analytics_person',
+      { userId: '7' },
+      '/hilos/analytics/person/7',
+      '/hilos/analytics/people/7',
+      false,
+    ],
+    [
+      HilosPages.MODERATION_KIND,
+      'hilos_moderation_kind',
+      { kind: 'raw /?#%2F🌍' },
+      '/hilos/moderation/kind/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      '/hilos/moderation/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      false,
+    ],
+    [
+      HilosPages.MODERATION_KIND_RULES,
+      'hilos_moderation_kind_rules',
+      { kind: 'raw /?#%2F🌍' },
+      '/hilos/moderation/kind/raw%20%2F%3F%23%252F%F0%9F%8C%8D/rules',
+      '/hilos/moderation/raw%20%2F%3F%23%252F%F0%9F%8C%8D/rules',
+      false,
+    ],
+    [
+      HilosPages.I18N_UI_PAGE,
+      'hilos_i18n_ui_page',
+      { uiPageId: 'raw /?#%2F🌍' },
+      '/hilos/i18n/ui-page/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      '/hilos/i18n/ui-pages/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      true,
+    ],
+    [
+      HilosPages.I18N_GROUP,
+      'hilos_i18n_group',
+      { groupId: 'raw /?#%2F🌍' },
+      '/hilos/i18n/group/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      '/hilos/i18n/groups/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      true,
+    ],
+    [
+      HilosPages.I18N_ACTION,
+      'hilos_i18n_action',
+      { actionId: 'raw /?#%2F🌍' },
+      '/hilos/i18n/action/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      '/hilos/i18n/actions/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      true,
+    ],
+    [
+      HilosPages.CHANGE_LOG_TABLE,
+      'hilos_change_log_table',
+      { tableId: 'raw /?#%2F🌍' },
+      '/hilos/change-log/table/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      '/hilos/change-log/tables/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      false,
+    ],
+    [
+      HilosPages.CHANGE_LOG_TABLE_COLUMNS,
+      'hilos_change_log_table_columns',
+      { tableId: 'raw /?#%2F🌍' },
+      '/hilos/change-log/table/raw%20%2F%3F%23%252F%F0%9F%8C%8D/columns',
+      '/hilos/change-log/tables/raw%20%2F%3F%23%252F%F0%9F%8C%8D/columns',
+      false,
+    ],
+    [
+      HilosPages.CHANGE_LOG_TABLE_TRIGGERS,
+      'hilos_change_log_table_triggers',
+      { tableId: 'raw /?#%2F🌍' },
+      '/hilos/change-log/table/raw%20%2F%3F%23%252F%F0%9F%8C%8D/triggers',
+      '/hilos/change-log/tables/raw%20%2F%3F%23%252F%F0%9F%8C%8D/triggers',
+      false,
+    ],
+    [
+      HilosPages.CHANGE_LOG_TABLE_HISTORY,
+      'hilos_change_log_table_history',
+      { tableId: 'raw /?#%2F🌍' },
+      '/hilos/change-log/table/raw%20%2F%3F%23%252F%F0%9F%8C%8D/history',
+      '/hilos/change-log/tables/raw%20%2F%3F%23%252F%F0%9F%8C%8D/history',
+      false,
+    ],
+    [
+      HilosPages.DAEMON_NODE,
+      'hilos_daemon_node',
+      { nodeId: 'raw /?#%2F🌍' },
+      '/hilos/daemon/node/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      '/hilos/daemon/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      false,
+    ],
+    [
+      HilosPages.DAEMON_WORKERS,
+      'hilos_daemon_workers',
+      { nodeId: 'raw /?#%2F🌍' },
+      '/hilos/daemon/node/raw%20%2F%3F%23%252F%F0%9F%8C%8D/workers',
+      '/hilos/daemon/raw%20%2F%3F%23%252F%F0%9F%8C%8D/workers',
+      false,
+    ],
+    [
+      HilosPages.DAEMON_AGENTS,
+      'hilos_daemon_agents',
+      { nodeId: 'raw /?#%2F🌍' },
+      '/hilos/daemon/node/raw%20%2F%3F%23%252F%F0%9F%8C%8D/agents',
+      '/hilos/daemon/raw%20%2F%3F%23%252F%F0%9F%8C%8D/agents',
+      false,
+    ],
+    [
+      HilosPages.DAEMON_CRON,
+      'hilos_daemon_cron',
+      { nodeId: 'raw /?#%2F🌍' },
+      '/hilos/daemon/node/raw%20%2F%3F%23%252F%F0%9F%8C%8D/cron',
+      '/hilos/daemon/raw%20%2F%3F%23%252F%F0%9F%8C%8D/cron',
+      false,
+    ],
+    [
+      HilosPages.DAEMON_WEBSOCKETS,
+      'hilos_daemon_websockets',
+      { nodeId: 'raw /?#%2F🌍' },
+      '/hilos/daemon/node/raw%20%2F%3F%23%252F%F0%9F%8C%8D/websockets',
+      '/hilos/daemon/raw%20%2F%3F%23%252F%F0%9F%8C%8D/websockets',
+      false,
+    ],
+    [
+      HilosPages.DAEMON_HTTP_SERVER,
+      'hilos_daemon_http_server',
+      { nodeId: 'raw /?#%2F🌍' },
+      '/hilos/daemon/node/raw%20%2F%3F%23%252F%F0%9F%8C%8D/http',
+      '/hilos/daemon/raw%20%2F%3F%23%252F%F0%9F%8C%8D/http',
+      false,
+    ],
+    [
+      HilosPages.DAEMON_ENV,
+      'hilos_daemon_env',
+      { nodeId: 'raw /?#%2F🌍' },
+      '/hilos/daemon/node/raw%20%2F%3F%23%252F%F0%9F%8C%8D/env',
+      '/hilos/daemon/raw%20%2F%3F%23%252F%F0%9F%8C%8D/env',
+      false,
+    ],
+    [
+      HilosPages.DAEMON_ENV_ORPHANS,
+      'hilos_daemon_env_orphans',
+      { nodeId: 'raw /?#%2F🌍' },
+      '/hilos/daemon/node/raw%20%2F%3F%23%252F%F0%9F%8C%8D/env/orphans',
+      '/hilos/daemon/raw%20%2F%3F%23%252F%F0%9F%8C%8D/env/orphans',
+      false,
+    ],
+    [
+      HilosPages.MCP_SKILLS_MCP,
+      'hilos_mcp_skills_mcp',
+      { mcpId: 'raw /?#%2F🌍' },
+      '/hilos/mcp-skills/server/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      '/hilos/mcp-skills/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      true,
+    ],
+    [
+      HilosPages.MCP_SKILLS_MCP_LOGS,
+      'hilos_mcp_skills_mcp_logs',
+      { mcpId: 'raw /?#%2F🌍' },
+      '/hilos/mcp-skills/server/raw%20%2F%3F%23%252F%F0%9F%8C%8D/logs',
+      '/hilos/mcp-skills/raw%20%2F%3F%23%252F%F0%9F%8C%8D/logs',
+      true,
+    ],
+    [
+      HilosPages.MCP_SKILLS_MCP_LOGS_VIEW,
+      'hilos_mcp_skills_mcp_logs_view',
+      { mcpId: 'raw /?#%2F🌍' },
+      '/hilos/mcp-skills/server/raw%20%2F%3F%23%252F%F0%9F%8C%8D/logs/view',
+      '/hilos/mcp-skills/raw%20%2F%3F%23%252F%F0%9F%8C%8D/logs/view',
+      true,
+    ],
+    [
+      HilosPages.COMMUNICATIONS_CHANNEL,
+      'hilos_communications_channel',
+      { channelId: 'raw /?#%2F🌍' },
+      '/hilos/communications/channel/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      '/hilos/communications/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      false,
+    ],
+    [
+      HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION,
+      'hilos_communications_channel_configuration',
+      { channelId: 'raw /?#%2F🌍' },
+      '/hilos/communications/channel/raw%20%2F%3F%23%252F%F0%9F%8C%8D/configuration',
+      '/hilos/communications/raw%20%2F%3F%23%252F%F0%9F%8C%8D/configuration',
+      false,
+    ],
+    [
+      HilosPages.COMMUNICATIONS_DELIVERIES,
+      'hilos_communications_deliveries',
+      { channelId: 'raw /?#%2F🌍' },
+      '/hilos/communications/channel/raw%20%2F%3F%23%252F%F0%9F%8C%8D/deliveries',
+      '/hilos/communications/raw%20%2F%3F%23%252F%F0%9F%8C%8D/deliveries',
+      false,
+    ],
+    [
+      HilosPages.COMMUNICATIONS_CHANNEL_FRAME,
+      'hilos_communications_channel_frame',
+      { channelId: 'raw /?#%2F🌍' },
+      '/hilos/communications/channel/raw%20%2F%3F%23%252F%F0%9F%8C%8D/frame',
+      '/hilos/communications/raw%20%2F%3F%23%252F%F0%9F%8C%8D/frame',
+      false,
+    ],
+    [
+      HilosPages.SECURITY_OAUTH_PROVIDER,
+      'hilos_security_oauth_provider',
+      { providerId: 'raw /?#%2F🌍' },
+      '/hilos/security/oauth/provider/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      '/hilos/security/oauth/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      false,
+    ],
+    [
+      HilosPages.BILLING_PROVIDER,
+      'hilos_billing_provider',
+      { providerId: 'raw /?#%2F🌍' },
+      '/hilos/billing/provider/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      '/hilos/billing/raw%20%2F%3F%23%252F%F0%9F%8C%8D',
+      true,
+    ],
+    [
+      HilosPages.BILLING_PAYMENTS,
+      'hilos_billing_payments',
+      { providerId: 'raw /?#%2F🌍' },
+      '/hilos/billing/provider/raw%20%2F%3F%23%252F%F0%9F%8C%8D/payments',
+      '/hilos/billing/raw%20%2F%3F%23%252F%F0%9F%8C%8D/payments',
+      true,
+    ],
+    [
+      HilosPages.BILLING_REFUNDS,
+      'hilos_billing_refunds',
+      { providerId: 'raw /?#%2F🌍' },
+      '/hilos/billing/provider/raw%20%2F%3F%23%252F%F0%9F%8C%8D/refunds',
+      '/hilos/billing/raw%20%2F%3F%23%252F%F0%9F%8C%8D/refunds',
+      true,
+    ],
+  ] as const)(
+    'roundtrips the explicit entity address for %s and refuses its former path',
+    (page, key, params, path, formerPath, unbuilt) => {
+      const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
+      expect(page).toBe(key)
+      expect(HILOS_ROUTE_DECLARATIONS[page].admin).toBe(true)
+      expect(router.path(page, params)).toBe(path)
+      expect(resolveHilosPath(page, params)).toBe(path)
+      expect(router.match(path)).toEqual({ page, params, admin: true })
+      expect(router.match(formerPath)).toEqual({
+        page: null,
+        params: {},
+        admin: false,
+      })
+      for (const kit of ['vue', 'react', 'angular'] as const) {
+        expect(hilosUnbuiltPages(kit).has(page)).toBe(unbuilt)
+      }
+      if ('countryId' in params || 'languageId' in params) {
+        const key = 'countryId' in params ? 'countryId' : 'languageId'
+        for (const invalid of ['', 'en', '0', '-1', '+1', '01', '1.0', '1\n']) {
+          expect(router.path(page, { [key]: invalid })).toBeUndefined()
+          expect(
+            router.match(
+              path.replace(
+                /\/(11|141)(?=\/|$)/,
+                `/${encodeURIComponent(invalid)}`,
+              ),
+            ).page,
+          ).toBeNull()
+        }
+        expect(
+          router.match(formerPath.replace(/\/(en|pl)(?=\/|$)/, '/141')).page,
+        ).toBeNull()
+        expect(router.match('/hilos/i18n/countries').page).toBe(
+          HilosPages.I18N_COUNTRIES,
+        )
+        expect(router.match('/hilos/i18n/languages').page).toBe(
+          HilosPages.I18N_LANGUAGES,
+        )
+      }
+      if (page === HilosPages.CHANGE_LOG_TABLE_HISTORY) {
+        const recordParams = { ...params, record: 'part,with%2Ccomma /?#🌍' }
+        const recordPath = `${path}/part%2Cwith%252Ccomma%20%2F%3F%23%F0%9F%8C%8D`
+        expect(router.path(page, recordParams)).toBe(recordPath)
+        expect(resolveHilosPath(page, recordParams)).toBe(recordPath)
+        expect(router.match(recordPath)).toEqual({
+          page,
+          params: recordParams,
+          admin: true,
+        })
+        expect(
+          router.match(
+            `${formerPath}/part%2Cwith%252Ccomma%20%2F%3F%23%F0%9F%8C%8D`,
+          ).page,
+        ).toBeNull()
+      }
+    },
+  )
+
+  it.each([
+    ['oauth:github', 'github', '/hilos/security/oauth/provider/github'],
+    ['oauth:google', 'google', '/hilos/security/oauth/provider/google'],
+    ['oauth:Acme.sso', 'Acme.sso', '/hilos/security/oauth/provider/Acme.sso'],
   ])(
     'roundtrips OAuth provider %s by name',
     (providerKey, providerName, path) => {
@@ -103,7 +443,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     'serves table page %s directly in every kit',
     (page, phpKey, tail) => {
       const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
-      const path = `/hilos/change-log/tables/bot${tail}`
+      const path = `/hilos/change-log/table/bot${tail}`
       expect(router.path(page, { tableId: 'bot' })).toBe(path)
       expect(router.match(path)).toEqual({
         page,
@@ -125,16 +465,16 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
 
   it('refuses the removed Overview record tail and clears a record to whole History', () => {
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
-    expect(router.match('/hilos/change-log/tables/bot/57').page).toBeNull()
-    expect(router.match('/hilos/change-log/tables/bot/unknown').page).toBeNull()
-    expect(router.match('/hilos/change-log/tables/bot/history/57')).toEqual({
+    expect(router.match('/hilos/change-log/table/bot/57').page).toBeNull()
+    expect(router.match('/hilos/change-log/table/bot/unknown').page).toBeNull()
+    expect(router.match('/hilos/change-log/table/bot/history/57')).toEqual({
       page: HilosPages.CHANGE_LOG_TABLE_HISTORY,
       params: { tableId: 'bot', record: '57' },
       admin: true,
     })
     expect(
       router.path(HilosPages.CHANGE_LOG_TABLE_HISTORY, { tableId: 'bot' }),
-    ).toBe('/hilos/change-log/tables/bot/history')
+    ).toBe('/hilos/change-log/table/bot/history')
   })
 
   it('addresses channel Configuration beside the unchanged Overview and Deliveries', () => {
@@ -153,13 +493,15 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       `HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION = '${page}';`,
     )
     expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
-      path: '/hilos/communications/{channelId}/configuration',
+      path: '/hilos/communications/channel/{channelId}/configuration',
       admin: true,
     })
     expect(resolveHilosPath(page, { channelId: 'email' })).toBe(
-      '/hilos/communications/email/configuration',
+      '/hilos/communications/channel/email/configuration',
     )
-    expect(router.match('/hilos/communications/email/configuration')).toEqual({
+    expect(
+      router.match('/hilos/communications/channel/email/configuration'),
+    ).toEqual({
       page,
       params: { channelId: 'email' },
       admin: true,
@@ -168,15 +510,15 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       resolveHilosPath(HilosPages.COMMUNICATIONS_CHANNEL, {
         channelId: 'email',
       }),
-    ).toBe('/hilos/communications/email')
-    expect(router.match('/hilos/communications/email')).toEqual({
+    ).toBe('/hilos/communications/channel/email')
+    expect(router.match('/hilos/communications/channel/email')).toEqual({
       page: HilosPages.COMMUNICATIONS_CHANNEL,
       params: { channelId: 'email' },
       admin: true,
     })
-    expect(router.match('/hilos/communications/email/deliveries').page).toBe(
-      HilosPages.COMMUNICATIONS_DELIVERIES,
-    )
+    expect(
+      router.match('/hilos/communications/channel/email/deliveries').page,
+    ).toBe(HilosPages.COMMUNICATIONS_DELIVERIES)
     expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
     expect(hilosUnbuiltPages('react').has(page)).toBe(false)
     expect(hilosUnbuiltPages('angular').has(page)).toBe(false)
@@ -197,13 +539,13 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       "HILOS_COMMUNICATIONS_CHANNEL_FRAME = 'hilos_communications_channel_frame';",
     )
     expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
-      path: '/hilos/communications/{channelId}/frame',
+      path: '/hilos/communications/channel/{channelId}/frame',
       admin: true,
     })
     expect(resolveHilosPath(page, { channelId: 'email' })).toBe(
-      '/hilos/communications/email/frame',
+      '/hilos/communications/channel/email/frame',
     )
-    expect(router.match('/hilos/communications/email/frame')).toEqual({
+    expect(router.match('/hilos/communications/channel/email/frame')).toEqual({
       page,
       params: { channelId: 'email' },
       admin: true,
@@ -320,7 +662,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(hilosUnbuiltPages('react').has(page)).toBe(false)
     expect(hilosUnbuiltPages('angular').has(page)).toBe(false)
     expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
-    expect(router.match(`${path}/profile_name`)).toEqual({
+    expect(router.match(`${path}/kind/profile_name`)).toEqual({
       page: HilosPages.MODERATION_KIND,
       params: { kind: 'profile_name' },
       admin: true,
@@ -341,20 +683,20 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(page).toBe('hilos_moderation_kind')
     expect(php).toContain(`HILOS_MODERATION_KIND = '${page}';`)
     expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
-      path: '/hilos/moderation/{kind}',
+      path: '/hilos/moderation/kind/{kind}',
       admin: true,
     })
     expect(resolveHilosPath(page, { kind: 'project/kind with spaces' })).toBe(
-      '/hilos/moderation/project%2Fkind%20with%20spaces',
+      '/hilos/moderation/kind/project%2Fkind%20with%20spaces',
     )
     expect(
-      router.match('/hilos/moderation/project%2Fkind%20with%20spaces'),
+      router.match('/hilos/moderation/kind/project%2Fkind%20with%20spaces'),
     ).toEqual({
       page,
       params: { kind: 'project/kind with spaces' },
       admin: true,
     })
-    expect(router.match('/hilos/moderation/profile_name/rules')).toEqual({
+    expect(router.match('/hilos/moderation/kind/profile_name/rules')).toEqual({
       page: HilosPages.MODERATION_KIND_RULES,
       params: { kind: 'profile_name' },
       admin: true,
@@ -375,14 +717,16 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(page).toBe('hilos_moderation_kind_rules')
     expect(php).toContain(`HILOS_MODERATION_KIND_RULES = '${page}';`)
     expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
-      path: '/hilos/moderation/{kind}/rules',
+      path: '/hilos/moderation/kind/{kind}/rules',
       admin: true,
     })
     expect(resolveHilosPath(page, { kind: 'project/kind with spaces' })).toBe(
-      '/hilos/moderation/project%2Fkind%20with%20spaces/rules',
+      '/hilos/moderation/kind/project%2Fkind%20with%20spaces/rules',
     )
     expect(
-      router.match('/hilos/moderation/project%2Fkind%20with%20spaces/rules'),
+      router.match(
+        '/hilos/moderation/kind/project%2Fkind%20with%20spaces/rules',
+      ),
     ).toEqual({
       page,
       params: { kind: 'project/kind with spaces' },
@@ -390,7 +734,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     })
     expect(resolveHilosPath(page)).toBe('/hilos')
     expect(
-      router.match('/hilos/moderation/profile_name/rules/extra').page,
+      router.match('/hilos/moderation/kind/profile_name/rules/extra').page,
     ).toBeNull()
     expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
     expect(hilosUnbuiltPages('react').has(page)).toBe(false)
@@ -473,74 +817,16 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     }
   })
 
-  it('addresses all five i18n detail pages by code', () => {
-    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
-    const addresses = [
-      [
-        HilosPages.I18N_LANGUAGE,
-        'hilos_i18n_language',
-        '/hilos/i18n/languages/{languageCode}',
-        { languageCode: 'en' },
-        '/hilos/i18n/languages/en',
-      ],
-      [
-        HilosPages.I18N_LANGUAGE_NAMES,
-        'hilos_i18n_language_names',
-        '/hilos/i18n/languages/{languageCode}/names',
-        { languageCode: 'en' },
-        '/hilos/i18n/languages/en/names',
-      ],
-      [
-        HilosPages.I18N_LANGUAGE_LOCALES,
-        'hilos_i18n_language_locales',
-        '/hilos/i18n/languages/{languageCode}/locales',
-        { languageCode: 'en' },
-        '/hilos/i18n/languages/en/locales',
-      ],
-      [
-        HilosPages.I18N_COUNTRY,
-        'hilos_i18n_country',
-        '/hilos/i18n/countries/{countryCode}',
-        { countryCode: 'pl' },
-        '/hilos/i18n/countries/pl',
-      ],
-      [
-        HilosPages.I18N_COUNTRY_NAMES,
-        'hilos_i18n_country_names',
-        '/hilos/i18n/countries/{countryCode}/names',
-        { countryCode: 'pl' },
-        '/hilos/i18n/countries/pl/names',
-      ],
-    ] as const
-
-    for (const [page, key, template, params, path] of addresses) {
-      expect(page).toBe(key)
-      expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
-        path: template,
-        admin: true,
-      })
-      expect(resolveHilosPath(page, params)).toBe(path)
-      expect(router.match(path)).toEqual({ page, params, admin: true })
-    }
-
-    expect(router.match('/hilos/i18n/languages').page).toBe(
-      HilosPages.I18N_LANGUAGES,
-    )
-    expect(router.match('/hilos/i18n/countries').page).toBe(
-      HilosPages.I18N_COUNTRIES,
-    )
-  })
-
   it('addresses a Daemon node with encoded params while static paths retain priority', () => {
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     expect(HilosPages.DAEMON_NODE).toBe('hilos_daemon_node')
     expect(HILOS_ROUTE_DECLARATIONS[HilosPages.DAEMON_NODE]).toEqual({
-      path: '/hilos/daemon/{nodeId}',
+      path: '/hilos/daemon/node/{nodeId}',
       admin: true,
     })
     const nodeId = 'node / east%?'
     const path = resolveHilosPath(HilosPages.DAEMON_NODE, { nodeId })!
-    expect(path).toBe('/hilos/daemon/node%20%2F%20east%25%3F')
+    expect(path).toBe('/hilos/daemon/node/node%20%2F%20east%25%3F')
     expect(router.match(path)).toEqual({
       page: HilosPages.DAEMON_NODE,
       params: { nodeId },
@@ -571,14 +857,14 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
 
     expect(router.match('/hilos/daemon').page).toBe(HilosPages.DAEMON)
     for (const [page, tail] of children) {
-      const path = `/hilos/daemon/standalone/${tail}`
+      const path = `/hilos/daemon/node/standalone/${tail}`
       expect(resolveHilosPath(page, { nodeId: 'standalone' })).toBe(path)
       expect(router.match(path)).toEqual({
         page,
         params: { nodeId: 'standalone' },
         admin: true,
       })
-      expect(router.match(`/hilos/daemon/${tail}`)).toEqual({
+      expect(router.match(`/hilos/daemon/node/${tail}`)).toEqual({
         page: HilosPages.DAEMON_NODE,
         params: { nodeId: tail },
         admin: true,
@@ -589,30 +875,30 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       params: {},
       admin: true,
     })
-    expect(router.match('/hilos/daemon/http/old-server').page).toBeNull()
+    expect(router.match('/hilos/daemon/node/http/old-server').page).toBeNull()
   })
 
   it('routes env orphans through an encoded node, not as one missing segment', () => {
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
     const nodeId = 'node / east%?'
     const path = resolveHilosPath(HilosPages.DAEMON_ENV_ORPHANS, { nodeId })!
-    expect(path).toBe('/hilos/daemon/node%20%2F%20east%25%3F/env/orphans')
+    expect(path).toBe('/hilos/daemon/node/node%20%2F%20east%25%3F/env/orphans')
     expect(router.match(path)).toEqual({
       page: HilosPages.DAEMON_ENV_ORPHANS,
       params: { nodeId },
       admin: true,
     })
-    expect(router.match('/hilos/daemon/standalone/env/orphans')).toEqual({
+    expect(router.match('/hilos/daemon/node/standalone/env/orphans')).toEqual({
       page: HilosPages.DAEMON_ENV_ORPHANS,
       params: { nodeId: 'standalone' },
       admin: true,
     })
-    expect(router.match('/hilos/daemon/env/orphans')).toEqual({
+    expect(router.match('/hilos/daemon/node/env/orphans')).toEqual({
       page: null,
       params: {},
       admin: false,
     })
-    expect(router.match('/hilos/daemon/env/env/orphans')).toEqual({
+    expect(router.match('/hilos/daemon/node/env/env/orphans')).toEqual({
       page: HilosPages.DAEMON_ENV_ORPHANS,
       params: { nodeId: 'env' },
       admin: true,
@@ -653,14 +939,14 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     const page = HilosPages.ANALYTICS_BROWSER_SESSION
     expect(page).toBe('hilos_analytics_browser_session')
     expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
-      path: '/hilos/analytics/browser-sessions/{browserSessionId}',
+      path: '/hilos/analytics/browser-session/{browserSessionId}',
       admin: true,
       paramPatterns: { browserSessionId: '\\+?\\d+' },
     })
     expect(resolveHilosPath(page, { browserSessionId: '57' })).toBe(
-      '/hilos/analytics/browser-sessions/57',
+      '/hilos/analytics/browser-session/57',
     )
-    expect(router.match('/hilos/analytics/browser-sessions/57')).toEqual({
+    expect(router.match('/hilos/analytics/browser-session/57')).toEqual({
       page,
       params: { browserSessionId: '57' },
       admin: true,
@@ -700,13 +986,13 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     const page = HilosPages.ANALYTICS_PERSON
     expect(page).toBe('hilos_analytics_person')
     expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
-      path: '/hilos/analytics/people/{userId}',
+      path: '/hilos/analytics/person/{userId}',
       admin: true,
     })
     expect(resolveHilosPath(page, { userId: '7' })).toBe(
-      '/hilos/analytics/people/7',
+      '/hilos/analytics/person/7',
     )
-    expect(router.match('/hilos/analytics/people/7')).toEqual({
+    expect(router.match('/hilos/analytics/person/7')).toEqual({
       page,
       params: { userId: '7' },
       admin: true,
@@ -714,7 +1000,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(router.match('/hilos/analytics/people').page).toBe(
       HilosPages.ANALYTICS_PEOPLE,
     )
-    expect(router.match('/hilos/analytics/browser-sessions/7').page).toBe(
+    expect(router.match('/hilos/analytics/browser-session/7').page).toBe(
       HilosPages.ANALYTICS_BROWSER_SESSION,
     )
     expect(router.match('/hilos/user/7').page).toBe(HilosPages.USER)
@@ -1067,7 +1353,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       params: { userId: '5' },
       admin: true,
     })
-    expect(router.match('/hilos/billing/stripe/payments')).toEqual({
+    expect(router.match('/hilos/billing/provider/stripe/payments')).toEqual({
       page: HilosPages.BILLING_PAYMENTS,
       params: { providerId: 'stripe' },
       admin: true,

@@ -305,8 +305,8 @@ describe('HilosAnalyticsPeoplePage', () => {
           'Deleted user #610',
         ])
         expect(links.map((link) => link.attributes('href'))).toEqual([
-          '/hilos/analytics/people/7',
-          '/hilos/analytics/people/610',
+          '/hilos/analytics/person/7',
+          '/hilos/analytics/person/610',
         ])
         for (const suffix of ['link', 'name', 'sessions', 'last-seen']) {
           expect(
@@ -342,7 +342,7 @@ describe('HilosAnalyticsPeoplePage', () => {
     for (const projection of [table(h.view), h.view.get('[role="list"]')]) {
       const link = projection.get('a[data-id="hilos-analytics-person-link"]')
       expect(link.text()).toBe('#7')
-      expect(link.attributes('href')).toBe('/hilos/analytics/people/7')
+      expect(link.attributes('href')).toBe('/hilos/analytics/person/7')
       expect(
         projection.get('[data-id="hilos-analytics-person-name"]').text(),
       ).toContain('Hidden')

@@ -22,12 +22,12 @@ describe('channel Overview', () => {
       channelEl(
         `hilos-page-tab-${HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION}`,
       )?.getAttribute('href'),
-    ).toBe('/hilos/communications/email/configuration')
+    ).toBe('/hilos/communications/channel/email/configuration')
     expect(
       channelEl(
         `hilos-page-tab-${HilosPages.COMMUNICATIONS_DELIVERIES}`,
       )?.getAttribute('href'),
-    ).toBe('/hilos/communications/email/deliveries')
+    ).toBe('/hilos/communications/channel/email/deliveries')
     expect(channelEl('hilos-page-tabs')?.getAttribute('aria-label')).toBe(
       'Channel pages',
     )

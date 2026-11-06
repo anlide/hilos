@@ -203,7 +203,7 @@ final class I18nCountryCardTest extends IntegrationTestCase
         $snapshot = Hilos::$browser->buildSubscribeSnapshot(
             CountryDetailPage::PAGE,
             'i18n-country-card-reader',
-            new PageRouteParams(['countryCode' => 'qx']),
+            new PageRouteParams(['countryId' => (string)Hilos::$db->countries['qx']->id]),
         )->toArray();
         self::assertSame([
             'countryId' => Hilos::$db->countries['qx']->id,
@@ -398,6 +398,7 @@ final class I18nCountryCardTest extends IntegrationTestCase
             self::assertSame('qx', $this->cardOf($opened[0])['code']);
             $this->assertBoundCountry('card-viewer', $country->id);
 
+            $deletedId = $country->id;
             $this->underAgent($this->agent, static function (): void {
                 Hilos::$db->countries['qx']->actions->delete();
             });
@@ -410,6 +411,32 @@ final class I18nCountryCardTest extends IntegrationTestCase
             self::assertNull(Hilos::$sr?->pageResource('card-one'));
             self::assertNull(Hilos::$sr?->pageResource('card-two'));
             self::assertNull(Hilos::$sr?->pageResource('card-viewer'));
+
+            $this->underAgent($this->agent, static function (): void {
+                Hilos::$db->countries->actions->create('qx', '¤', 'XQX');
+            });
+            $replacementId = Hilos::$db->countries['qx']->id;
+            self::assertNotSame($deletedId, $replacementId);
+            $this->worker->recordCommittedSync();
+            self::assertSame([], Hilos::$browser->flushToSignalRouter());
+            self::assertSame([], $this->drainCardResponses());
+            self::assertNull(Hilos::$sr?->pageResource('card-viewer'));
+
+            try {
+                new CountryDetailPage($this->agent)->onUpdateSubscription(
+                    'card-viewer',
+                    new PageRouteParams(['countryId' => (string)$deletedId]),
+                );
+                self::fail('The deleted primary id must not resolve its replacement by code');
+            } catch (PageResourceNotFoundException $e) {
+                self::assertSame(404, $e->httpCode);
+            }
+            self::assertSame([], $this->drainCardResponses());
+            $this->subscribe('card-viewer', 'qx');
+            $reopened = $this->drainCardResponses();
+            self::assertCount(1, $reopened);
+            self::assertSame($replacementId, $this->cardOf($reopened[0])['countryId']);
+            $this->assertBoundCountry('card-viewer', $replacementId);
         } finally {
             Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);
             RtTruthSourceRegistry::unregisterDaemon(AdminViewModeRuntime::RT_ITEM);
@@ -749,7 +776,11 @@ final class I18nCountryCardTest extends IntegrationTestCase
     ): void {
         $this->worker->deliver(
             SignalTypeConstants::PAGE_SUBSCRIBE,
-            new WebSocketPageSubscribeSignalDTO($acceptKey, $pageClass::PAGE, ['countryCode' => $code]),
+            new WebSocketPageSubscribeSignalDTO(
+                $acceptKey,
+                $pageClass::PAGE,
+                ['countryId' => (string)Hilos::$db->countries[$code]->id],
+            ),
             $pageClass::PAGE,
         );
     }

@@ -13,6 +13,7 @@ import {
   expectNoOtherLanguageNames,
   expectPageReady,
   gotoPage,
+  readI18nRowId,
   grantAdminToSelf,
   i18nNameRow,
   openI18nName,
@@ -31,7 +32,6 @@ import {
 } from '../../../../../framework/frontend/scripts/i18nFixtures.mjs'
 
 const test = base.extend<{ i18n: I18nFixtureScope }>({ i18n: i18nFixtures })
-const PATH = '/hilos/i18n/languages/qw/names'
 const WINDOW = 'i18n-language-name-window'
 const INPUT = 'i18n-language-name-input'
 const SUBMIT = 'i18n-language-name-submit'
@@ -51,16 +51,23 @@ const CORRECTION_SAVED =
   'Correction qv-GB of the name of HIL-1490 writing (qw) saved.'
 
 test('language-names.life', async ({ page, context, i18n }) => {
+  const languageIds: Record<string, string> = {}
   // Literal edits, three live subscribers and both deletion branches share one administrator.
   test.slow()
   const actions = countSentFrames(page, '"action":"hilos_i18n_language_name_')
   const log = watchDeliveryFrames(page)
   i18n.defer(async () => log.stop())
   await grantAdminToSelf(expect, page)
+  languageIds['en'] = await readI18nRowId(expect, page, 'language', 'en')
 
   await test.step('Read the empty default-language carrier, its hint and native Overview/Names navigation', async () => {
     const before = actions()
-    await gotoPage(expect, page, '/hilos/i18n/languages/en/names', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['en'] ??= await readI18nRowId(expect, page, 'language', 'en'))}/names`,
+      PAGE_READY,
+    )
     await expectNoOtherLanguageNames(expect, page)
     await expect(
       page.locator('table').getByTestId('hilos-table-empty-hint'),
@@ -69,6 +76,7 @@ test('language-names.life', async ({ page, context, i18n }) => {
     )
     await expectLanguagePageHead(expect, page, {
       code: 'en',
+      id: languageIds['en']!,
       nativeName: 'English',
       currentPage: 'hilos_i18n_language_names',
       appName: 'BTC Tracker',
@@ -78,7 +86,9 @@ test('language-names.life', async ({ page, context, i18n }) => {
       page.getByTestId('hilos-page-tab-hilos_i18n_language'),
     )
     await expectPageReady(expect, page)
-    await expect(page).toHaveURL(/\/languages\/en$/)
+    await expect(page).toHaveURL(
+      new RegExp(`/hilos/i18n/language/${languageIds['en']}$`),
+    )
     await expect(page.getByTestId('language-card-main')).toBeVisible()
     await clickSubmit(
       expect,
@@ -97,13 +107,23 @@ test('language-names.life', async ({ page, context, i18n }) => {
   const otherLog = watchDeliveryFrames(observer)
   i18n.defer(async () => otherLog.stop())
   for (const tab of [page, observer]) {
-    await gotoPage(expect, tab, PATH, PAGE_READY)
+    await gotoPage(
+      expect,
+      tab,
+      `/hilos/i18n/language/${(languageIds['qw'] ??= await readI18nRowId(expect, tab, 'language', 'qw'))}/names`,
+      PAGE_READY,
+    )
     await expect(shownByTestId(tab, 'i18n-names-none-qv')).toHaveText('No name')
     await expect(
       tab.getByTestId('i18n-language-name-locale-add-qv-GB'),
     ).toHaveCount(0)
   }
-  await gotoPage(expect, overview, '/hilos/i18n/languages/qw', PAGE_READY)
+  await gotoPage(
+    expect,
+    overview,
+    `/hilos/i18n/language/${(languageIds['qw'] ??= await readI18nRowId(expect, overview, 'language', 'qw'))}`,
+    PAGE_READY,
+  )
   const live = await watchI18nLivePages(expect, [page, observer, overview])
   await expect(overview.getByTestId('language-overview-name-count')).toHaveText(
     '0',
@@ -265,11 +285,21 @@ test('language-names.life', async ({ page, context, i18n }) => {
 
   await test.step('Cancel/remove a correction, explain a missing saved-empty name, then cascade the seeded base', async () => {
     for (const tab of [page, observer]) {
-      await gotoPage(expect, tab, '/hilos/i18n/languages/qv/names', PAGE_READY)
+      await gotoPage(
+        expect,
+        tab,
+        `/hilos/i18n/language/${(languageIds['qv'] ??= await readI18nRowId(expect, tab, 'language', 'qv'))}/names`,
+        PAGE_READY,
+      )
       await expectI18nName(expect, tab, 'language', 'qw', 'Fixture base')
       await expandI18nNameCorrections(expect, tab, 'language', 'qw')
     }
-    await gotoPage(expect, overview, '/hilos/i18n/languages/qv', PAGE_READY)
+    await gotoPage(
+      expect,
+      overview,
+      `/hilos/i18n/language/${(languageIds['qv'] ??= await readI18nRowId(expect, overview, 'language', 'qv'))}`,
+      PAGE_READY,
+    )
     const seededLive = await watchI18nLivePages(expect, [
       page,
       observer,
@@ -395,6 +425,7 @@ test('language-names.life', async ({ page, context, i18n }) => {
 })
 
 test('language-names.live-conflict', async ({ page, context, i18n }) => {
+  const languageIds: Record<string, string> = {}
   // Four sequential conflict episodes, a no-conflict delivery and explicit saves cross two live tabs.
   test.slow()
   await i18n.languageNames()
@@ -411,7 +442,12 @@ test('language-names.live-conflict', async ({ page, context, i18n }) => {
     '"action":"hilos_i18n_language_name_',
   )
   for (const tab of [page, observer])
-    await gotoPage(expect, tab, PATH, PAGE_READY)
+    await gotoPage(
+      expect,
+      tab,
+      `/hilos/i18n/language/${(languageIds['qw'] ??= await readI18nRowId(expect, tab, 'language', 'qw'))}/names`,
+      PAGE_READY,
+    )
   const live = await watchI18nLivePages(expect, [page, observer])
   let baseCoordinates: Record<string, unknown> = {}
   let correctionCoordinates: Record<string, unknown> = {}

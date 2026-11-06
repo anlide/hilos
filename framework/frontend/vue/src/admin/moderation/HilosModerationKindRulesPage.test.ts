@@ -86,7 +86,7 @@ async function harness(
     createAppPageRouter({}),
     pages,
     {
-      pathname: () => `/hilos/moderation/${first.kind}/rules`,
+      pathname: () => `/hilos/moderation/kind/${first.kind}/rules`,
       pushState: () => {},
       replaceState: () => {},
       onPopState: () => () => {},
@@ -287,8 +287,8 @@ describe('HilosModerationKindRulesPage', () => {
           link.attributes('aria-current'),
         ]),
     ).toEqual([
-      ['Overview', '/hilos/moderation/hilos_profile_name', undefined],
-      ['Rules', '/hilos/moderation/hilos_profile_name/rules', 'page'],
+      ['Overview', '/hilos/moderation/kind/hilos_profile_name', undefined],
+      ['Rules', '/hilos/moderation/kind/hilos_profile_name/rules', 'page'],
     ])
     expect(tabs.get('ul').classes()).toContain('flex-nowrap')
     expect(tabs.get('ul').classes()).toContain('overflow-x-auto')
@@ -350,7 +350,7 @@ describe('HilosModerationKindRulesPage', () => {
     expect(
       document.querySelector('[data-id="modal"]')?.getAttribute('aria-label'),
     ).toBe('Add rule · Profile name')
-    navigation.navigate('/hilos/moderation/second/rules')
+    navigation.navigate('/hilos/moderation/kind/second/rules')
     await nextTick()
     expect(
       document.querySelector('[data-id="hilos-moderation-rule-add"]'),
@@ -442,7 +442,7 @@ describe('HilosModerationKindRulesPage', () => {
       ).toMatchObject({ rowKey: '' })
       await opener.trigger('click')
       await flushPromises()
-      navigation.navigate('/hilos/moderation/second/rules')
+      navigation.navigate('/hilos/moderation/kind/second/rules')
       await flushPromises()
       expect(
         document.querySelector('[data-id="hilos-moderation-rule-edit"]'),
@@ -636,7 +636,7 @@ describe('HilosModerationKindRulesPage', () => {
       ).toMatchObject({ rowKey: '' })
       await opener.trigger('click')
       await flushPromises()
-      navigation.navigate('/hilos/moderation/second/rules')
+      navigation.navigate('/hilos/moderation/kind/second/rules')
       await flushPromises()
       expect(
         document.querySelector('[data-id="hilos-moderation-rule-delete"]'),
@@ -898,7 +898,7 @@ describe('HilosModerationKindRulesPage', () => {
         .findAll('li')
         .map((rule) => rule.text()),
     ).toEqual(['Allow polite names.', 'Block threats.'])
-    navigation.navigate('/hilos/moderation/second/rules')
+    navigation.navigate('/hilos/moderation/kind/second/rules')
     await nextTick()
     expect(
       view.find('[data-id="hilos-moderation-rules-loading"]').exists(),

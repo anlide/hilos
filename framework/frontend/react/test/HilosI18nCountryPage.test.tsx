@@ -100,8 +100,8 @@ describe('React country card', () => {
     const links = [...row.querySelectorAll('a')]
     expect(links.map((link) => link.textContent)).toEqual(['Overview', 'Names'])
     expect(links.map((link) => link.getAttribute('href'))).toEqual([
-      '/hilos/i18n/countries/gg',
-      '/hilos/i18n/countries/gg/names',
+      '/hilos/i18n/country/143',
+      '/hilos/i18n/country/143/names',
     ])
     expect(links[0]!.getAttribute('aria-current')).toBe('page')
     expect(links[1]!.getAttribute('aria-current')).toBeNull()
@@ -244,7 +244,7 @@ describe('React country card', () => {
     act(() => {
       h.route.set({
         page: HilosPages.I18N_COUNTRY,
-        params: { countryCode: 'fr' },
+        params: { countryId: '103' },
         admin: true,
       })
       h.card({
@@ -261,7 +261,7 @@ describe('React country card', () => {
     act(() => {
       h.route.set({
         page: HilosPages.I18N_COUNTRY,
-        params: { countryCode: 'ar' },
+        params: { countryId: '148' },
         admin: true,
       })
       h.card({
@@ -300,7 +300,7 @@ describe('React country card', () => {
     act(() => h.card())
     click('country-card-edit')
     const next = harness(HilosPages.I18N_COUNTRY)
-    next.card({ ...countryCard, countryId: 103, code: 'fr' })
+    next.card({ ...countryCard, countryId: 143, code: 'fr' })
     h.view.rerender(
       <HilosRouterContext.Provider value={h.navigation}>
         <HilosI18nCountryPage context={next.context} />
@@ -316,7 +316,7 @@ describe('React country card', () => {
     const next = harness(HilosPages.I18N_COUNTRY)
     next.card({
       ...countryCard,
-      countryId: 103,
+      countryId: 143,
       code: 'fr',
       summary: { ...countryCard.summary, name: 'Français' },
     })
@@ -375,7 +375,7 @@ describe('React country card', () => {
       expect(el('country-head-description')).not.toBeNull()
       expect(
         el('hilos-page-tab-hilos_i18n_country_names').getAttribute('href'),
-      ).toBe('/hilos/i18n/countries/gg/names')
+      ).toBe('/hilos/i18n/country/143/names')
       for (const liveName of ['Renamed', null, '', ' Spaced ']) {
         const display =
           liveName === null || liveName === '' ? 'Unnamed country' : liveName
@@ -408,7 +408,7 @@ describe('React country card', () => {
     act(() => {
       h.route.set({
         page: HilosPages.I18N_COUNTRY,
-        params: { countryCode: 'fr' },
+        params: { countryId: '103' },
         admin: true,
       })
       h.card(france)
@@ -419,7 +419,7 @@ describe('React country card', () => {
     expect(el('country-head-code').textContent).toBe('fr')
     expect(
       el('hilos-page-tab-hilos_i18n_country_names').getAttribute('href'),
-    ).toBe('/hilos/i18n/countries/fr/names')
+    ).toBe('/hilos/i18n/country/103/names')
     act(() =>
       h.card({ ...france, summary: { ...france.summary, name: 'République' } }),
     )
@@ -445,7 +445,7 @@ describe('React country card', () => {
     const next = harness(HilosPages.I18N_COUNTRY)
     next.card({
       ...countryCard,
-      countryId: 103,
+      countryId: 143,
       code: 'fr',
       summary: { ...countryCard.summary, name: 'France' },
     })
@@ -633,7 +633,7 @@ describe('React country card under a country deleted elsewhere', () => {
     {
       name: 'leaving for another country',
       leave: (live: ReturnType<typeof liveCard>) =>
-        live.navigation.navigate('/hilos/i18n/countries/fr'),
+        live.navigation.navigate('/hilos/i18n/country/103'),
       code: null,
     },
   ])(

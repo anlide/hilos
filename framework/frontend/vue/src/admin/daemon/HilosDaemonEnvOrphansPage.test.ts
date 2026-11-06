@@ -28,7 +28,7 @@ function harness(nodeId = 'n1') {
   })
   const router: HilosRouter = {
     currentRoute,
-    currentPath: createSignal(`/hilos/daemon/${nodeId}/env/orphans`),
+    currentPath: createSignal(`/hilos/daemon/node/${nodeId}/env/orphans`),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),

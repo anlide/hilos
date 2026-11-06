@@ -187,7 +187,7 @@ describe('HilosCommunicationsPage', () => {
       root
         .querySelector('[data-id="hilos-channel-configure-sms"]')
         ?.getAttribute('href'),
-    ).toBe('/hilos/communications/sms/configuration')
+    ).toBe('/hilos/communications/channel/sms/configuration')
 
     switchEl?.click()
     fixture.detectChanges()

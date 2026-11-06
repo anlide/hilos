@@ -27,9 +27,9 @@ describe('HilosChangeLogTablePage', () => {
       wrapper.get(`[data-id="hilos-change-log-table-link-${part}"]`),
     )
     expect(tiles.map((tile) => tile.attributes('href'))).toEqual([
-      '/hilos/change-log/tables/bot/history',
-      '/hilos/change-log/tables/bot/columns',
-      '/hilos/change-log/tables/bot/triggers',
+      '/hilos/change-log/table/bot/history',
+      '/hilos/change-log/table/bot/columns',
+      '/hilos/change-log/table/bot/triggers',
     ])
     expect(tiles.map((tile) => tile.get('h2').text())).toEqual([
       'Changes in 24 hours',
@@ -77,7 +77,7 @@ describe('HilosChangeLogTablePage', () => {
       wrapper
         .findAll('[data-id^="hilos-change-log-table-link-"]')
         .map((link) => link.attributes('href')),
-    ).toEqual(['/hilos/change-log/tables/hilos_session/triggers'])
+    ).toEqual(['/hilos/change-log/table/hilos_session/triggers'])
     expect(
       wrapper
         .findAll('[data-id^="hilos-page-tab-"]')

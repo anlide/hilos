@@ -1,3 +1,4 @@
+import { resolveHilosPath } from '../../routing/hilosAdmin.js'
 import { type Hideable } from '../../state/hiddenValue.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
@@ -199,5 +200,5 @@ export function createHilosModerationKindsTable(
  * @param kind Kind identifier.
  */
 export function moderationKindPath(kind: string): string {
-  return `/hilos/moderation/${encodeURIComponent(kind)}`
+  return resolveHilosPath(HilosPages.MODERATION_KIND, { kind })
 }

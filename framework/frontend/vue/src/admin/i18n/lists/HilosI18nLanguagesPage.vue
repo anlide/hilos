@@ -86,7 +86,9 @@ onUnmounted(() => {
 
 /** The language card path, or nothing when that page has no address here. */
 const languagePath = (row: HilosI18nLanguageRow): string | undefined =>
-  router.resolvePath(HilosPages.I18N_LANGUAGE, { languageCode: row.code })
+  router.resolvePath(HilosPages.I18N_LANGUAGE, {
+    languageId: String(row.languageId),
+  })
 </script>
 
 <template>

@@ -28,6 +28,8 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
+// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
+
 test('draws no pager under a single-page declared table', async ({ page }) => {
   await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/communications')
@@ -49,8 +51,16 @@ test('an open channel-field edit follows the other tab, then conflicts and keeps
 }) => {
   await grantAdminToSelf(expect, page)
   const tabB = await page.context().newPage()
-  await gotoPage(expect, page, '/hilos/communications/sms/configuration')
-  await gotoPage(expect, tabB, '/hilos/communications/sms/configuration')
+  await gotoPage(
+    expect,
+    page,
+    '/hilos/communications/channel/sms/configuration',
+  )
+  await gotoPage(
+    expect,
+    tabB,
+    '/hilos/communications/channel/sms/configuration',
+  )
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
   const row = 'hilos-table-row-notifications.channel.sms.from'
@@ -150,7 +160,7 @@ test.describe('the communications section in the admin view mode', () => {
       'Sms',
     )
     expect(new URL(page.url()).pathname).toBe(
-      '/hilos/communications/sms/configuration',
+      '/hilos/communications/channel/sms/configuration',
     )
 
     await page
@@ -180,7 +190,7 @@ test('the letter frame editor has a dialog name and keyboard focus', async ({
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/communications/email/frame')
+  await gotoPage(expect, page, '/hilos/communications/channel/email/frame')
   await expectCommunicationsAccessibility(expect, page, 'frame', 'Enabled')
   const preview = page.getByTestId('hilos-channel-frame-preview')
   await expect(preview).toHaveAttribute('title', 'Letter frame preview')
@@ -232,7 +242,7 @@ test('letter frame cold entry, reload and history carry one complete saved previ
       await expectCommunicationsFrameInitial(expect, page, wire, after),
     ).toEqual(original)
 
-    await gotoPage(expect, page, '/hilos/communications/sms')
+    await gotoPage(expect, page, '/hilos/communications/channel/sms')
     await expectCommunicationsChannelHead(
       expect,
       page,
@@ -240,7 +250,7 @@ test('letter frame cold entry, reload and history carry one complete saved previ
       'sms',
       'Sms',
     )
-    await gotoPage(expect, page, '/hilos/communications/sms/frame')
+    await gotoPage(expect, page, '/hilos/communications/channel/sms/frame')
     await expect(page.getByTestId('hilos-page-state')).toHaveAttribute(
       'data-state',
       'error',

@@ -14,6 +14,7 @@ import {
   openSignIn,
   PASSWORD,
   createTestUser,
+  analyticsBrowserSessionPath,
   ANALYTICS_SESSION_LIST_HANDLE,
   ANALYTICS_SESSION_LIST_PATH,
   analyticsPersonLink,
@@ -62,6 +63,7 @@ import {
   typeInto,
   expectPageReady,
   gotoPage,
+  readI18nRowId,
   grantAdminToSelf,
   expectProfileHeadAccessibility,
   watchProfileRenameStatus,
@@ -79,6 +81,8 @@ import { setAdminViewMode } from '../../../../../framework/frontend/scripts/admi
 import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
 import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/index.js'
+
+// spec-owner: demo — carries Polls' Angular browser journeys for these shared pages
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
@@ -211,11 +215,13 @@ test('the language Names table takes its name from the shared head', async ({
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/i18n/languages/en/names')
+  const languageId = await readI18nRowId(expect, page, 'language', 'en')
+  await gotoPage(expect, page, `/hilos/i18n/language/${languageId}/names`)
   await expectPageReady(expect, page)
 
   await expectLanguagePageHead(expect, page, {
     code: 'en',
+    id: languageId,
     nativeName: 'English',
     currentPage: 'hilos_i18n_language_names',
     appName: 'Hilos Polls',
@@ -555,14 +561,14 @@ test('Communications exposes one named head and keyboard links between channel p
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/communications/email')
+  await gotoPage(expect, page, '/hilos/communications/channel/email')
   await expectCommunicationsAccessibility(
     expect,
     page,
     'overview',
     'Enable Email',
   )
-  await expect(page).toHaveURL(/\/hilos\/communications\/email$/)
+  await expect(page).toHaveURL(/\/hilos\/communications\/channel\/email$/)
 
   const configuration = page.getByTestId(
     'hilos-page-tab-hilos_communications_channel_configuration',
@@ -577,7 +583,9 @@ test('Communications exposes one named head and keyboard links between channel p
     'configuration',
     'Enable Email',
   )
-  await expect(page).toHaveURL(/\/hilos\/communications\/email\/configuration$/)
+  await expect(page).toHaveURL(
+    /\/hilos\/communications\/channel\/email\/configuration$/,
+  )
 
   const deliveries = page.getByTestId(
     'hilos-page-tab-hilos_communications_deliveries',
@@ -592,7 +600,9 @@ test('Communications exposes one named head and keyboard links between channel p
     'deliveries',
     'Enable Email',
   )
-  await expect(page).toHaveURL(/\/hilos\/communications\/email\/deliveries$/)
+  await expect(page).toHaveURL(
+    /\/hilos\/communications\/channel\/email\/deliveries$/,
+  )
 
   const overview = page.getByTestId(
     'hilos-page-tab-hilos_communications_channel',
@@ -607,7 +617,7 @@ test('Communications exposes one named head and keyboard links between channel p
     'overview',
     'Enable Email',
   )
-  await expect(page).toHaveURL(/\/hilos\/communications\/email$/)
+  await expect(page).toHaveURL(/\/hilos\/communications\/channel\/email$/)
 })
 
 test('the default language deletion explanation is named, keyboard readable and returns focus', async ({
@@ -1050,9 +1060,7 @@ test.describe('Analytics accessibility', () => {
         await open.focus()
         await expect(open).toBeFocused()
         await open.press('Enter')
-        await expect(page).toHaveURL(
-          `${ANALYTICS_SESSION_LIST_PATH}/${sessionId}`,
-        )
+        await expect(page).toHaveURL(analyticsBrowserSessionPath(sessionId))
         await expectPageReady(expect, page)
         await expectAnalyticsBrowserSessionHead(
           expect,
@@ -1157,7 +1165,7 @@ test.describe('Analytics accessibility', () => {
         await person.focus()
         await expect(person).toBeFocused()
         await person.press('Enter')
-        await expect(page).toHaveURL(`/hilos/analytics/people/${user.userId}`)
+        await expect(page).toHaveURL(`/hilos/analytics/person/${user.userId}`)
         await expectPageReady(expect, page)
         await expectAnalyticsPersonSession(
           expect,
@@ -1268,7 +1276,7 @@ test.describe('Daemon section accessibility', () => {
 
 test.describe('Moderation accessibility', () => {
   const kind = 'hilos_profile_name'
-  const rulesPath = `/hilos/moderation/${kind}/rules`
+  const rulesPath = `/hilos/moderation/kind/${kind}/rules`
   const moderationTest = test.extend<{
     cleanup: TestCleanup
     ownedRule: string

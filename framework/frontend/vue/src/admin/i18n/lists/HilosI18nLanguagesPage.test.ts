@@ -93,7 +93,7 @@ function router(): HilosRouter {
     dashboardSections: createSignal(undefined),
     resolvePath: (page, params) =>
       page === HilosPages.I18N_LANGUAGE
-        ? `/hilos/i18n/languages/${params?.languageCode}`
+        ? `/hilos/i18n/language/${params?.languageId}`
         : undefined,
     clearPageError: () => {},
     denyCurrentPage: () => {},
@@ -440,7 +440,7 @@ describe('HilosI18nLanguagesPage', () => {
     const english = view.get('[data-id="i18n-languages-link-en"]')
     expect(english.text()).toBe('en')
     expect(english.attributes('href') ?? english.attributes('to')).toContain(
-      '/hilos/i18n/languages/en',
+      '/hilos/i18n/language/11',
     )
     expect(english.classes()).not.toContain('link-secondary')
     expect(view.get('[data-id="i18n-languages-default-en"]').text()).toContain(

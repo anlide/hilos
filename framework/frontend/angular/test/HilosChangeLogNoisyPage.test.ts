@@ -164,7 +164,7 @@ function router(detailBuilt: boolean): HilosRouter {
     dashboardSections: createSignal(undefined),
     resolvePath: vi.fn((page, params) =>
       detailBuilt && page === HilosPages.CHANGE_LOG_TABLE
-        ? `/hilos/change-log/tables/${params.tableId}`
+        ? `/hilos/change-log/table/${params.tableId}`
         : page === HilosPages.DASHBOARD
           ? '/hilos'
           : TABS.find((tab) => tab.page === page)?.path,

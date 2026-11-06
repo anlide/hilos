@@ -24,11 +24,13 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
+// spec-owner: demo — carries Chat's Vue browser journeys for these shared pages
+
 test('the letter frame editor has a dialog name and keyboard focus', async ({
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/communications/email/frame')
+  await gotoPage(expect, page, '/hilos/communications/channel/email/frame')
   await expectCommunicationsAccessibility(expect, page, 'frame', 'Enabled')
   const preview = page.getByTestId('hilos-channel-frame-preview')
   await expect(preview).toHaveAttribute('title', 'Letter frame preview')
@@ -80,7 +82,7 @@ test('letter frame cold entry, reload and history carry one complete saved previ
       await expectCommunicationsFrameInitial(expect, page, wire, after),
     ).toEqual(original)
 
-    await gotoPage(expect, page, '/hilos/communications/sms')
+    await gotoPage(expect, page, '/hilos/communications/channel/sms')
     await expectCommunicationsChannelHead(
       expect,
       page,
@@ -88,7 +90,7 @@ test('letter frame cold entry, reload and history carry one complete saved previ
       'sms',
       'Sms',
     )
-    await gotoPage(expect, page, '/hilos/communications/sms/frame')
+    await gotoPage(expect, page, '/hilos/communications/channel/sms/frame')
     await expect(page.getByTestId('hilos-page-state')).toHaveAttribute(
       'data-state',
       'error',
@@ -98,7 +100,7 @@ test('letter frame cold entry, reload and history carry one complete saved previ
       '404',
     )
     await expect(page.getByTestId('hilos-channel-frame-preview')).toHaveCount(0)
-    await gotoPage(expect, page, '/hilos/communications/push')
+    await gotoPage(expect, page, '/hilos/communications/channel/push')
     await expectCommunicationsChannelHead(
       expect,
       page,
@@ -106,7 +108,7 @@ test('letter frame cold entry, reload and history carry one complete saved previ
       'push',
       'Push',
     )
-    await gotoPage(expect, page, '/hilos/communications/push/frame')
+    await gotoPage(expect, page, '/hilos/communications/channel/push/frame')
     await expect(page.getByTestId('page-error')).toHaveAttribute(
       'data-error-code',
       '404',

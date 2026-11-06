@@ -74,10 +74,10 @@ describe('HilosChangeLogTableShell', () => {
           .getAllByRole('link')
           .map((link) => [link.textContent, link.getAttribute('href')]),
       ).toEqual([
-        ['Overview', '/hilos/change-log/tables/bot'],
-        ['Columns', '/hilos/change-log/tables/bot/columns'],
-        ['Triggers', '/hilos/change-log/tables/bot/triggers'],
-        ['History', '/hilos/change-log/tables/bot/history'],
+        ['Overview', '/hilos/change-log/table/bot'],
+        ['Columns', '/hilos/change-log/table/bot/columns'],
+        ['Triggers', '/hilos/change-log/table/bot/triggers'],
+        ['History', '/hilos/change-log/table/bot/history'],
       ])
       expect(tabs.querySelectorAll('[aria-current="page"]')).toHaveLength(1)
       expect(
@@ -104,10 +104,10 @@ describe('HilosChangeLogTableShell', () => {
   )
 
   it.each([
-    ['57', '/hilos/change-log/tables/bot/history/57'],
+    ['57', '/hilos/change-log/table/bot/history/57'],
     [
       'part,with%2Ccomma',
-      '/hilos/change-log/tables/bot/history/part%2Cwith%252Ccomma',
+      '/hilos/change-log/table/bot/history/part%2Cwith%252Ccomma',
     ],
   ])('keeps record %s only in the History address', (record, href) => {
     const h = tableHarness(BOT, HilosPages.CHANGE_LOG_TABLE_HISTORY)
@@ -118,9 +118,9 @@ describe('HilosChangeLogTableShell', () => {
         .getAllByRole('link')
         .map((link) => link.getAttribute('href')),
     ).toEqual([
-      '/hilos/change-log/tables/bot',
-      '/hilos/change-log/tables/bot/columns',
-      '/hilos/change-log/tables/bot/triggers',
+      '/hilos/change-log/table/bot',
+      '/hilos/change-log/table/bot/columns',
+      '/hilos/change-log/table/bot/triggers',
       href,
     ])
   })

@@ -507,7 +507,7 @@ The section has these pages, with Vue/chat as their first consumer:
 
 - `/hilos/moderation`, page key `hilos_moderation`: the kinds table
   (`AbstractHilosModerationPage` / `HilosModerationPage`).
-- `/hilos/moderation/{kind}`, page key `hilos_moderation_kind` and signal
+- `/hilos/moderation/kind/{kind}`, page key `hilos_moderation_kind` and signal
   `subscription_page_hilos_moderation_kind`: the kind's read-only Overview
   (`AbstractHilosModerationKindPage` / Chat's `ModerationKindPage`). Its
   required string route param is looked up in the code-declared kind directory;
@@ -515,7 +515,7 @@ The section has these pages, with Vue/chat as their first consumer:
   viewer behavior, declares no `DB_EXISTS` requirement or actions, and repeats
   the full directory check and page response for direct, repeated, updated and
   reconnected subscriptions.
-- `/hilos/moderation/{kind}/rules`, page key `hilos_moderation_kind_rules` and
+- `/hilos/moderation/kind/{kind}/rules`, page key `hilos_moderation_kind_rules` and
   signal `subscription_page_hilos_moderation_kind_rules`: the kind's own-rules
   page (`AbstractHilosModerationKindRulesPage` / Chat's
   `ModerationKindRulesPage`). It uses the same required string `kind` route

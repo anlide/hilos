@@ -118,13 +118,14 @@ function retiredHeaderLeft(view: VueWrapper): boolean {
 /** The route resolver gives unbuilt child pages no path. */
 function router(scopes: ScopeManager, childrenBuilt = false) {
   const pageLoading = createSignal(true)
+  const route = createSignal<PageRouteMatch>({
+    page: HilosPages.I18N_COUNTRY,
+    params: { countryId: '102' },
+    admin: true,
+  })
   const navigation: HilosRouter = {
-    currentRoute: createSignal<PageRouteMatch>({
-      page: HilosPages.I18N_COUNTRY,
-      params: { countryCode: 'us' },
-      admin: true,
-    }),
-    currentPath: createSignal('/hilos/i18n/countries/us'),
+    currentRoute: route,
+    currentPath: createSignal('/hilos/i18n/country/102'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading,
@@ -133,7 +134,7 @@ function router(scopes: ScopeManager, childrenBuilt = false) {
     resolvePath: (page, params) => {
       if (page === HilosPages.I18N_COUNTRIES) return '/hilos/i18n/countries'
       if (!childrenBuilt && page !== HilosPages.I18N_COUNTRY) return undefined
-      const base = `/hilos/i18n/countries/${params?.countryCode}`
+      const base = `/hilos/i18n/country/${params?.countryId}`
       if (page === HilosPages.I18N_COUNTRY) return base
       if (page === HilosPages.I18N_COUNTRY_NAMES) return `${base}/names`
       return undefined
@@ -147,7 +148,7 @@ function router(scopes: ScopeManager, childrenBuilt = false) {
     start: () => {},
     stop: () => {},
   }
-  return { navigation, pageLoading }
+  return { navigation, pageLoading, route }
 }
 
 function harness(
@@ -169,7 +170,7 @@ function harness(
     scopes,
     actions,
   }
-  const { navigation, pageLoading } = router(scopes, childrenBuilt)
+  const { navigation, pageLoading, route } = router(scopes, childrenBuilt)
   if (options.realShell) {
     scopes.session.data.set('adminViewMode', viewer)
     releases.push(bindAdminAccess(scopes))
@@ -192,7 +193,7 @@ function harness(
           },
     },
   })
-  return { scope, scopes, context, view, pageLoading, navigation }
+  return { scope, scopes, context, view, pageLoading, navigation, route }
 }
 
 describe('HilosI18nCountryPage', () => {
@@ -223,7 +224,7 @@ describe('HilosI18nCountryPage', () => {
     const names = h.view.get('[data-id="country-overview-name-count"]')
     expect(names.text()).toBe('0')
     expect(names.attributes('aria-label')).toBe('Names: 0')
-    expect(names.attributes('href')).toBe('/hilos/i18n/countries/us/names')
+    expect(names.attributes('href')).toBe('/hilos/i18n/country/102/names')
     expect(h.view.get('[data-id="country-overview-locale-count"]').text()).toBe(
       '0',
     )
@@ -248,10 +249,10 @@ describe('HilosI18nCountryPage', () => {
     const names = h.view.get('[data-id="country-overview-name-count"]')
     expect(names.element.tagName).toBe('A')
     expect(names.attributes('aria-label')).toBe('Names: 0')
-    expect(names.attributes('href')).toBe('/hilos/i18n/countries/us/names')
+    expect(names.attributes('href')).toBe('/hilos/i18n/country/102/names')
     await names.trigger('click')
     expect(navigate).toHaveBeenCalledExactlyOnceWith(
-      '/hilos/i18n/countries/us/names',
+      '/hilos/i18n/country/102/names',
     )
     h.scopes.dropPage()
     await nextTick()
@@ -262,6 +263,7 @@ describe('HilosI18nCountryPage', () => {
       false,
     )
     const next = h.scopes.openPage(HilosPages.I18N_COUNTRY)
+    h.route.set({ ...h.route.get(), params: { countryId: '140' } })
     next.data.set(COUNTRY_CARD_DATA, {
       ...initialCard,
       countryId: 140,
@@ -275,10 +277,10 @@ describe('HilosI18nCountryPage', () => {
     expect(currentNames.text()).toBe('3')
     expect(currentNames.attributes('aria-label')).toBe('Names: 3')
     expect(currentNames.attributes('href')).toBe(
-      '/hilos/i18n/countries/ie/names',
+      '/hilos/i18n/country/140/names',
     )
     await currentNames.trigger('click')
-    expect(navigate).toHaveBeenLastCalledWith('/hilos/i18n/countries/ie/names')
+    expect(navigate).toHaveBeenLastCalledWith('/hilos/i18n/country/140/names')
     h.view.unmount()
 
     const fallback = harness(false, {} as ActionLifecycle, false, {
@@ -432,8 +434,8 @@ describe('HilosI18nCountryPage', () => {
     const links = tabs.findAll('a')
     expect(links.map((link) => link.text())).toEqual(['Overview', 'Names'])
     expect(links.map((link) => link.attributes('href'))).toEqual([
-      '/hilos/i18n/countries/us',
-      '/hilos/i18n/countries/us/names',
+      '/hilos/i18n/country/102',
+      '/hilos/i18n/country/102/names',
     ])
     expect(links[0].attributes('aria-current')).toBe('page')
     expect(links[1].attributes('aria-current')).toBeUndefined()
@@ -602,7 +604,7 @@ describe('HilosI18nCountryPage', () => {
         h.view
           .get('[data-id="hilos-page-tab-hilos_i18n_country_names"]')
           .attributes('href'),
-      ).toBe('/hilos/i18n/countries/us/names')
+      ).toBe('/hilos/i18n/country/102/names')
       for (const liveName of ['Renamed', null, '']) {
         const display =
           liveName === null || liveName === '' ? 'Unnamed country' : liveName
@@ -645,6 +647,7 @@ describe('HilosI18nCountryPage', () => {
     const next = h.scopes.openPage(HilosPages.I18N_COUNTRY)
     answerAsCountry(next, 'Country')
     expect(identity.get()?.pageHeadOwner?.label).toBe('Country')
+    h.route.set({ ...h.route.get(), params: { countryId: '140' } })
     next.data.set(COUNTRY_CARD_DATA, {
       ...initialCard,
       countryId: 140,
@@ -679,6 +682,7 @@ describe('HilosI18nCountryPage', () => {
     ])
     unrelated.data.set(COUNTRY_CARD_DATA, initialCard)
     expect(identity.get()?.breadcrumb[0].label).toBe('Country')
+    h.route.set({ ...h.route.get(), params: { countryId: '102' } })
     const current = h.scopes.openPage(HilosPages.I18N_COUNTRY_NAMES)
     answerAsCountry(current, 'Country names')
     current.data.set(COUNTRY_CARD_DATA, initialCard)
@@ -784,6 +788,7 @@ describe('HilosI18nCountryPage', () => {
     const h = harness(false, { dispatch } as unknown as ActionLifecycle)
     const navigate = vi.spyOn(h.navigation, 'navigate')
     h.pageLoading.set(false)
+    h.route.set({ ...h.route.get(), params: { countryId: '147' } })
     h.scope.data.set(COUNTRY_CARD_DATA, {
       ...initialCard,
       countryId: 147,
@@ -846,6 +851,7 @@ describe('HilosI18nCountryPage', () => {
       code: 'qy',
       summary: { ...initialCard.summary, canDelete: true, deleteReason: null },
     }
+    h.route.set({ ...h.route.get(), params: { countryId: '147' } })
     h.scope.data.set(COUNTRY_CARD_DATA, own)
     await nextTick()
     await h.view.get('[data-id="country-card-delete"]').trigger('click')
@@ -883,6 +889,7 @@ describe('HilosI18nCountryPage', () => {
     const dispatch = vi.fn()
     const h = harness(false, { dispatch } as unknown as ActionLifecycle, true)
     h.pageLoading.set(false)
+    h.route.set({ ...h.route.get(), params: { countryId: '147' } })
     h.scope.data.set(COUNTRY_CARD_DATA, {
       ...initialCard,
       countryId: 147,
@@ -947,7 +954,7 @@ async function settlePage(): Promise<void> {
  *
  * @param actions The tracked action dispatcher the page's writes go through.
  */
-function livePage(actions = {} as ActionLifecycle) {
+function livePage(actions = {} as ActionLifecycle, countryId = '102') {
   const scopes = new ScopeManager()
   scopes.session.data.set('adminViewMode', false)
   releases.push(bindAdminAccess(scopes))
@@ -962,7 +969,7 @@ function livePage(actions = {} as ActionLifecycle) {
     },
     scopes,
   )
-  let path = '/hilos/i18n/countries/us'
+  let path = `/hilos/i18n/country/${countryId}`
   const navigation = createHilosRouter(createAppPageRouter({}), subscription, {
     pathname: () => path,
     pushState: (next) => {
@@ -1186,7 +1193,7 @@ describe('HilosI18nCountryPage under a country deleted elsewhere', () => {
     {
       name: 'leaving for another country',
       leave: (live: ReturnType<typeof livePage>) =>
-        live.navigation.navigate('/hilos/i18n/countries/fr'),
+        live.navigation.navigate('/hilos/i18n/country/103'),
       code: null,
     },
   ])(
@@ -1243,7 +1250,7 @@ describe('HilosI18nCountryPage under a country deleted elsewhere', () => {
       loading: createSignal(false),
       done,
     }))
-    const live = livePage({ dispatch } as unknown as ActionLifecycle)
+    const live = livePage({ dispatch } as unknown as ActionLifecycle, '147')
     await live.answer({
       ...initialCard,
       countryId: 147,

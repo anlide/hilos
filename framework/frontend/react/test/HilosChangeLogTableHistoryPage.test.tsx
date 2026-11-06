@@ -239,10 +239,10 @@ describe('HilosChangeLogTableHistoryPage', () => {
         .getAllByRole('link')
         .map((link) => [text(link), link.getAttribute('href')]),
     ).toEqual([
-      ['Overview', '/hilos/change-log/tables/bot'],
-      ['Columns', '/hilos/change-log/tables/bot/columns'],
-      ['Triggers', '/hilos/change-log/tables/bot/triggers'],
-      ['History', '/hilos/change-log/tables/bot/history'],
+      ['Overview', '/hilos/change-log/table/bot'],
+      ['Columns', '/hilos/change-log/table/bot/columns'],
+      ['Triggers', '/hilos/change-log/table/bot/triggers'],
+      ['History', '/hilos/change-log/table/bot/history'],
     ])
     expect(tabs.querySelectorAll('[aria-current="page"]')).toHaveLength(1)
     expect(
@@ -263,7 +263,7 @@ describe('HilosChangeLogTableHistoryPage', () => {
     const link = element('hilos-change-log-history-record-101', row)
     expect(text(link)).toBe('#57')
     expect(link.getAttribute('href')).toBe(
-      '/hilos/change-log/tables/bot/history/57',
+      '/hilos/change-log/table/bot/history/57',
     )
     expect(r.value.resolvePath).toHaveBeenCalledWith(
       HilosPages.CHANGE_LOG_TABLE_HISTORY,
@@ -271,7 +271,7 @@ describe('HilosChangeLogTableHistoryPage', () => {
     )
     act(() => link.click())
     expect(r.value.navigate).toHaveBeenCalledWith(
-      '/hilos/change-log/tables/bot/history/57',
+      '/hilos/change-log/table/bot/history/57',
     )
     expect(row.textContent).toContain('updated')
     expect(row.querySelector('code')?.textContent).toBe('description')
@@ -563,13 +563,13 @@ describe('HilosChangeLogTableHistoryPage', () => {
     expect(container.textContent).not.toContain('All records of this table')
     const clear = element('hilos-change-log-record-filter-clear', plate)
     expect(clear.getAttribute('href')).toBe(
-      '/hilos/change-log/tables/bot/history',
+      '/hilos/change-log/table/bot/history',
     )
     expect(clear.getAttribute('aria-label')).toBe('Show all records')
     expect(get(clear, 'i').getAttribute('aria-hidden')).toBe('true')
     act(() => clear.click())
     expect(r.value.navigate).toHaveBeenCalledWith(
-      '/hilos/change-log/tables/bot/history',
+      '/hilos/change-log/table/bot/history',
     )
   })
 

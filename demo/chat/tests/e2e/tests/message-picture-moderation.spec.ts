@@ -479,7 +479,8 @@ test.describe('a replacement queued before upload hold admission', () => {
       const worker = await readMonopolisticWorker(
         admin,
         UPLOADS_WORKER_AGENT,
-        (page) => gotoPage(expect, page, '/hilos/daemon/standalone/workers'),
+        (page) =>
+          gotoPage(expect, page, '/hilos/daemon/node/standalone/workers'),
         async (predicate) => {
           await expect.poll(predicate).toBe(true)
         },
@@ -716,7 +717,8 @@ test.describe('the whole picture group through final owner handover', () => {
       const worker = await readMonopolisticWorker(
         admin,
         UPLOADS_WORKER_AGENT,
-        (page) => gotoPage(expect, page, '/hilos/daemon/standalone/workers'),
+        (page) =>
+          gotoPage(expect, page, '/hilos/daemon/node/standalone/workers'),
         async (predicate) => {
           await expect.poll(predicate).toBe(true)
         },

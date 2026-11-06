@@ -58,7 +58,7 @@ export const HILOS_I18N_LANGUAGE_WINDOW_COPY = {
       lead: 'The language is switched on, so there is nothing to edit here.',
       text: 'A switched-on language is live for everyone, and nobody changes it — neither you nor the reflow. To change it, switch it off, edit it and switch it back on.',
     },
-    code: 'The code stays grey here too: URLs and the default-language environment value refer to this code, so it never changes.',
+    code: 'The code stays grey here too: the external catalog and the default-language environment value refer to this code, so it never changes.',
   },
   conflict: {
     nativeName: (value: string) =>

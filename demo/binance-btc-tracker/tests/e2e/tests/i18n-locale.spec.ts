@@ -11,6 +11,7 @@ import {
   expectLanguagePageHead,
   expectPageReady,
   gotoPage,
+  readI18nRowId,
   grantAdminToSelf,
   I18N_LOCALE_FIELDS,
   i18nLocaleRow,
@@ -31,7 +32,6 @@ import {
 } from '../../../../../framework/frontend/scripts/i18nFixtures.mjs'
 
 const test = base.extend<{ i18n: I18nFixtureScope }>({ i18n: i18nFixtures })
-const LOCALES_PATH = '/hilos/i18n/languages/en/locales'
 const ADD_TITLE = 'Add locale · English in United Kingdom'
 const WINDOW = 'i18n-locale-window'
 const SUBMIT = 'i18n-locale-submit'
@@ -62,20 +62,33 @@ const EMPTY_COUNTS = {
 } as const
 
 test('locale.life', async ({ page, context, i18n }) => {
+  const languageIds: Record<string, string> = {}
   // Two UI-add branches, seven formats, switching and four live pages share one administrator.
   test.slow()
-  await i18n.language({ code: 'qx', nativeName: 'Scope QX', enabled: true })
-  await i18n.language({ code: 'qy', nativeName: 'Scope QY' })
+  languageIds['qx'] = String(
+    (await i18n.language({ code: 'qx', nativeName: 'Scope QX', enabled: true }))
+      .id,
+  )
+  languageIds['qy'] = String(
+    (await i18n.language({ code: 'qy', nativeName: 'Scope QY' })).id,
+  )
   await i18n.ownLocale('en-GB')
   await i18n.ownLocale('qx')
   await grantAdminToSelf(expect, page)
+  languageIds['en'] = await readI18nRowId(expect, page, 'language', 'en')
   const other = await context.newPage()
   i18n.defer(() => other.close())
 
   await test.step('Enter the default locales directly and read its named table and frozen countryless view', async () => {
-    await gotoPage(expect, page, LOCALES_PATH, PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['en'] ??= await readI18nRowId(expect, page, 'language', 'en'))}/locales`,
+      PAGE_READY,
+    )
     await expectLanguagePageHead(expect, page, {
       code: 'en',
+      id: languageIds['en']!,
       nativeName: 'English',
       currentPage: 'hilos_i18n_language_locales',
       appName: 'BTC Tracker',
@@ -109,14 +122,18 @@ test('locale.life', async ({ page, context, i18n }) => {
       page.getByTestId('hilos-page-tab-hilos_i18n_language'),
     )
     await expectPageReady(expect, page)
-    await expect(page).toHaveURL(/\/languages\/en$/)
+    await expect(page).toHaveURL(
+      new RegExp(`/hilos/i18n/language/${languageIds['en']}$`),
+    )
     await expect(page.getByTestId('language-card-main')).toBeVisible()
     await clickSubmit(
       expect,
       page.getByTestId('hilos-page-tab-hilos_i18n_language_locales'),
     )
     await expectPageReady(expect, page)
-    await expect(page).toHaveURL(/\/languages\/en\/locales$/)
+    await expect(page).toHaveURL(
+      new RegExp(`/hilos/i18n/language/${languageIds['en']}/locales$`),
+    )
     await expect(row.getByTestId('i18n-locales-country-en')).toHaveText(
       '— no country',
     )
@@ -152,7 +169,12 @@ test('locale.life', async ({ page, context, i18n }) => {
   })
 
   await test.step('Keep switch-on confirmation still, preserve its unsaved draft, then freeze and unlock both subscribed pairs', async () => {
-    await gotoPage(expect, other, LOCALES_PATH, PAGE_READY)
+    await gotoPage(
+      expect,
+      other,
+      `/hilos/i18n/language/${(languageIds['en'] ??= await readI18nRowId(expect, other, 'language', 'en'))}/locales`,
+      PAGE_READY,
+    )
     const live = await watchI18nLivePages(expect, [page, other])
     const frame = page.getByTestId('modal').locator('.modal-content')
     const primary = page.getByTestId(/^i18n-locale-(submit|switch-on-confirm)$/)
@@ -252,27 +274,44 @@ test('locale.life', async ({ page, context, i18n }) => {
   })
 
   await test.step('Create an unknown countryless pair through UI and publish its exact scoped Overview counts', async () => {
-    await gotoPage(expect, page, '/hilos/i18n/languages/qx/locales', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['qx'] ??= await readI18nRowId(expect, page, 'language', 'qx'))}/locales`,
+      PAGE_READY,
+    )
     await gotoPage(
       expect,
       other,
-      '/hilos/i18n/languages/qx/locales',
+      `/hilos/i18n/language/${(languageIds['qx'] ??= await readI18nRowId(expect, other, 'language', 'qx'))}/locales`,
       PAGE_READY,
     )
     const own = await context.newPage()
     i18n.defer(() => own.close())
     const foreign = await context.newPage()
     i18n.defer(() => foreign.close())
-    await gotoPage(expect, own, '/hilos/i18n/languages/qx', PAGE_READY)
-    await gotoPage(expect, foreign, '/hilos/i18n/languages/qy', PAGE_READY)
+    await gotoPage(
+      expect,
+      own,
+      `/hilos/i18n/language/${(languageIds['qx'] ??= await readI18nRowId(expect, own, 'language', 'qx'))}`,
+      PAGE_READY,
+    )
+    await gotoPage(
+      expect,
+      foreign,
+      `/hilos/i18n/language/${(languageIds['qy'] ??= await readI18nRowId(expect, foreign, 'language', 'qy'))}`,
+      PAGE_READY,
+    )
     await expectLanguagePageHead(expect, own, {
       code: 'qx',
+      id: languageIds['qx']!,
       nativeName: 'Scope QX',
       currentPage: 'hilos_i18n_language',
       appName: 'BTC Tracker',
     })
     await expectLanguagePageHead(expect, foreign, {
       code: 'qy',
+      id: languageIds['qy']!,
       nativeName: 'Scope QY',
       currentPage: 'hilos_i18n_language',
       appName: 'BTC Tracker',
@@ -416,7 +455,9 @@ test('locale.life', async ({ page, context, i18n }) => {
         await expect(tab.getByTestId(`i18n-locales-${control}-qx`)).toHaveCount(
           0,
         )
-      await expect(tab).toHaveURL(/\/languages\/qx\/locales$/)
+      await expect(tab).toHaveURL(
+        new RegExp(`/hilos/i18n/language/${languageIds['qx']}/locales$`),
+      )
       await expect(tab.getByTestId('hilos-table-apply')).toHaveCount(0)
     }
     await expectI18nLanguageCounts(expect, own, EMPTY_COUNTS)
@@ -431,9 +472,12 @@ test('locale.life', async ({ page, context, i18n }) => {
     await expect(foreign.getByTestId('language-head-own')).toHaveText(
       'Custom language',
     )
-    await expect(foreign).toHaveURL(/\/languages\/qy$/)
+    await expect(foreign).toHaveURL(
+      new RegExp(`/hilos/i18n/language/${languageIds['qy']}$`),
+    )
     await expectLanguagePageHead(expect, foreign, {
       code: 'qy',
+      id: languageIds['qy']!,
       nativeName: 'Scope QY',
       currentPage: 'hilos_i18n_language',
       appName: 'BTC Tracker',
@@ -444,26 +488,36 @@ test('locale.life', async ({ page, context, i18n }) => {
 })
 
 test('locale.protected-defaults', async ({ page, i18n }) => {
+  const countryIds: Record<string, string> = {}
+  const languageIds: Record<string, string> = {}
   // Three independent protection paths include real server refusals and the country pointer UI.
   test.slow()
   const language = await i18n.language({
     code: 'ql',
     nativeName: 'Protected QL',
   })
+  languageIds['ql'] = String(language.id)
   const country = await i18n.country({
     code: 'qq',
     currencySymbol: '¤',
     currencyCode: 'XQQ',
   })
+  countryIds['qq'] = String(country.id)
   await i18n.locale({ languageId: language.id, enabled: true })
   await i18n.locale({ languageId: language.id, countryId: country.id })
   const frames = watchDeliveryFrames(page)
   i18n.defer(async () => frames.stop())
   const switchOff = countSentFrames(page, 'hilos_i18n_locale_switch_off')
   await grantAdminToSelf(expect, page)
+  languageIds['en'] = await readI18nRowId(expect, page, 'language', 'en')
 
   await test.step('Explain the default countryless lock and reject real Enter without a switch-off request', async () => {
-    await gotoPage(expect, page, LOCALES_PATH, PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['en'] ??= await readI18nRowId(expect, page, 'language', 'en'))}/locales`,
+      PAGE_READY,
+    )
     await clickSubmit(
       expect,
       i18nLocaleRow(page, 'en').getByTestId('i18n-locales-view-en'),
@@ -492,7 +546,12 @@ test('locale.protected-defaults', async ({ page, i18n }) => {
   })
 
   await test.step('Keep switched-on deletion refusal in its reserved room and permit an explicit second request', async () => {
-    await gotoPage(expect, page, '/hilos/i18n/languages/ql/locales', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['ql'] ??= await readI18nRowId(expect, page, 'language', 'ql'))}/locales`,
+      PAGE_READY,
+    )
     await clickSubmit(expect, shownByTestId(page, 'i18n-locales-delete-ql'))
     const window = page.getByTestId('i18n-locale-delete-window')
     const room = await watchHeight(window)
@@ -561,7 +620,12 @@ test('locale.protected-defaults', async ({ page, i18n }) => {
   })
 
   await test.step('Select a country default through UI and preserve that pointer after a real deletion refusal while the country is off', async () => {
-    await gotoPage(expect, page, '/hilos/i18n/countries/qq', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/country/${(countryIds['qq'] ??= await readI18nRowId(expect, page, 'country', 'qq'))}`,
+      PAGE_READY,
+    )
     await expect(page.getByTestId('country-card-enabled')).toHaveText(
       'Country switched off',
     )
@@ -574,7 +638,12 @@ test('locale.protected-defaults', async ({ page, i18n }) => {
     await expect(page.getByTestId('country-card-default-locale')).toHaveText(
       'ql-QQ',
     )
-    await gotoPage(expect, page, '/hilos/i18n/languages/ql/locales', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['ql'] ??= await readI18nRowId(expect, page, 'language', 'ql'))}/locales`,
+      PAGE_READY,
+    )
     await clickSubmit(expect, shownByTestId(page, 'i18n-locales-delete-ql-QQ'))
     const before = frames.sent.length
     const confirm = page.getByTestId('i18n-locale-delete-confirm')
@@ -597,7 +666,12 @@ test('locale.protected-defaults', async ({ page, i18n }) => {
     ).not.toBeChecked()
     await clickSubmit(expect, page.getByTestId('i18n-locale-delete-cancel'))
     await expect(page.getByTestId('i18n-locale-delete-window')).toHaveCount(0)
-    await gotoPage(expect, page, '/hilos/i18n/countries/qq', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/country/${(countryIds['qq'] ??= await readI18nRowId(expect, page, 'country', 'qq'))}`,
+      PAGE_READY,
+    )
     await expect(page.getByTestId('country-card-default-locale')).toHaveText(
       'ql-QQ',
     )
@@ -608,10 +682,12 @@ test('locale.protected-defaults', async ({ page, i18n }) => {
 })
 
 test('locale.live-occupation', async ({ page, context, i18n }) => {
+  const languageIds: Record<string, string> = {}
   // Four sequential occupation episodes share one session and keep both subscriptions alive.
   test.slow()
   await i18n.ownLocale('en-GB')
   await grantAdminToSelf(expect, page)
+  languageIds['en'] = await readI18nRowId(expect, page, 'language', 'en')
   const observer = await context.newPage()
   i18n.defer(() => observer.close())
   const writerFrames = watchDeliveryFrames(page)
@@ -621,8 +697,18 @@ test('locale.live-occupation', async ({ page, context, i18n }) => {
   const adds = countSentFrames(observer, 'hilos_i18n_locale_add')
   const updates = countSentFrames(observer, 'hilos_i18n_locale_update')
   const actions = countSentFrames(observer, '"type":"action"')
-  await gotoPage(expect, page, LOCALES_PATH, PAGE_READY)
-  await gotoPage(expect, observer, LOCALES_PATH, PAGE_READY)
+  await gotoPage(
+    expect,
+    page,
+    `/hilos/i18n/language/${(languageIds['en'] ??= await readI18nRowId(expect, page, 'language', 'en'))}/locales`,
+    PAGE_READY,
+  )
+  await gotoPage(
+    expect,
+    observer,
+    `/hilos/i18n/language/${(languageIds['en'] ??= await readI18nRowId(expect, observer, 'language', 'en'))}/locales`,
+    PAGE_READY,
+  )
   const live = await watchI18nLivePages(expect, [page, observer])
   await Promise.all([page, observer].map(markDocument))
 

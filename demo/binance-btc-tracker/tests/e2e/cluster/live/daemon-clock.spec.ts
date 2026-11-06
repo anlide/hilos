@@ -22,6 +22,8 @@ import {
   nodeHost,
 } from '../../helpers/cluster.js'
 
+// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
+
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 test.use({ timezoneId: 'Asia/Kuala_Lumpur' })
 
@@ -123,7 +125,7 @@ test('daemon clock gap reaches a follower browser and recovers after the slave s
     await gotoPage(
       expect,
       page,
-      `${DAEMON_ROOT_PATH}/${shiftedNode}`,
+      `${DAEMON_ROOT_PATH}/node/${shiftedNode}`,
       PAGE_READY,
     )
     const warning = page.getByTestId('hilos-daemon-node-clock-warning')

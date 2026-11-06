@@ -53,7 +53,7 @@ function harness(showLogLinks?: boolean) {
   })
   const router = {
     currentRoute,
-    currentPath: createSignal('/hilos/daemon/n1/agents'),
+    currentPath: createSignal('/hilos/daemon/node/n1/agents'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),

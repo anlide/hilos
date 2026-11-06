@@ -319,7 +319,7 @@ function harness(section: unknown = BOT) {
 /** Address the page as the application's route map does. */
 function tablePath(params: Record<string, string>): string {
   const record = params.record
-  return `/hilos/change-log/tables/${encodeURIComponent(params.tableId ?? '')}/history${
+  return `/hilos/change-log/table/${encodeURIComponent(params.tableId ?? '')}/history${
     record === undefined ? '' : `/${encodeURIComponent(record)}`
   }`
 }
@@ -341,7 +341,7 @@ function router(params: Record<string, string>, built = true) {
     dashboardSections: createSignal(undefined),
     resolvePath: vi.fn((page: string, to: Record<string, string> = {}) => {
       if (!built) return undefined
-      const base = `/hilos/change-log/tables/${encodeURIComponent(to.tableId ?? '')}`
+      const base = `/hilos/change-log/table/${encodeURIComponent(to.tableId ?? '')}`
       if (page === HilosPages.CHANGE_LOG_TABLE) return base
       if (page === HilosPages.CHANGE_LOG_TABLE_COLUMNS) return `${base}/columns`
       if (page === HilosPages.CHANGE_LOG_TABLE_TRIGGERS)

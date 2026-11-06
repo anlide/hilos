@@ -30,8 +30,8 @@ use ReflectionMethod;
 /**
  * A country page names its row by primary id (HIL-1600).
  *
- * The address stays the country code. Overview and Names share one declaration.
- * An unknown code refuses before the frame. A language page names no row.
+ * The address carries the country primary id. Overview and Names share one declaration.
+ * An unknown id refuses before the frame. A language page names no row.
  */
 final class I18nCountryPageResourceTest extends TestCase
 {
@@ -41,7 +41,7 @@ final class I18nCountryPageResourceTest extends TestCase
 
     private const int COUNTRY_ID = 141;
 
-    private const string UNKNOWN_CODE = 'zz';
+    private const int UNKNOWN_ID = 999999;
 
     private const string LANGUAGE_CODE = 'en';
 
@@ -62,8 +62,8 @@ final class I18nCountryPageResourceTest extends TestCase
         $this->previousDb = Hilos::$db;
         $this->previousRouter = Hilos::$sr;
         $this->previousBrowser = Hilos::$browser;
-        $this->countries = new I18nCountryPageResourceTestRows([self::COUNTRY_CODE => self::COUNTRY_ID]);
-        $this->languages = new I18nCountryPageResourceTestRows([self::LANGUAGE_CODE => self::LANGUAGE_ID]);
+        $this->countries = new I18nCountryPageResourceTestRows([self::COUNTRY_ID => self::COUNTRY_ID]);
+        $this->languages = new I18nCountryPageResourceTestRows([self::LANGUAGE_ID => self::LANGUAGE_ID]);
         Hilos::$db = new I18nCountryPageResourceTestDb($this->countries, $this->languages);
         Hilos::$sr = new SignalRouter();
         Hilos::$browser = null;
@@ -90,9 +90,9 @@ final class I18nCountryPageResourceTest extends TestCase
             (new ReflectionMethod($page, 'onSubscribeBeforeResponse'))->getDeclaringClass()->getName(),
         );
 
-        $page->onSubscribe(self::ACCEPT_KEY, $this->countryAddress(self::COUNTRY_CODE));
+        $page->onSubscribe(self::ACCEPT_KEY, $this->countryAddress(self::COUNTRY_ID));
 
-        $this->assertLookedUpCode($this->countries, self::COUNTRY_CODE);
+        $this->assertLookedUpId($this->countries, self::COUNTRY_ID);
         $this->assertPageResponse(AbstractHilosI18nCountryPage::PAGE);
         $this->assertBoundCountry();
     }
@@ -109,9 +109,9 @@ final class I18nCountryPageResourceTest extends TestCase
             (new ReflectionMethod($page, 'resolvePageResource'))->getDeclaringClass()->getName(),
         );
 
-        $page->onSubscribe(self::ACCEPT_KEY, $this->countryAddress(self::COUNTRY_CODE));
+        $page->onSubscribe(self::ACCEPT_KEY, $this->countryAddress(self::COUNTRY_ID));
 
-        $this->assertLookedUpCode($this->countries, self::COUNTRY_CODE);
+        $this->assertLookedUpId($this->countries, self::COUNTRY_ID);
         $this->assertPageResponse(AbstractHilosI18nCountryNamesPage::PAGE);
         $this->assertBoundCountry();
     }
@@ -121,15 +121,15 @@ final class I18nCountryPageResourceTest extends TestCase
         $page = new I18nCountryPageResourceTestOverviewPage(new I18nCountryPageResourceTestAgent());
 
         try {
-            $page->onSubscribe(self::ACCEPT_KEY, $this->countryAddress(self::UNKNOWN_CODE));
+            $page->onSubscribe(self::ACCEPT_KEY, $this->countryAddress(self::UNKNOWN_ID));
             self::fail('Expected an unknown country to refuse the subscription');
         } catch (PageResourceNotFoundException $e) {
-            self::assertSame('Unknown country: ' . self::UNKNOWN_CODE, $e->getMessage());
+            self::assertSame('Unknown country: ' . self::UNKNOWN_ID, $e->getMessage());
             self::assertSame(404, $e->httpCode);
             self::assertSame('not_found', $e->errorCode);
         }
 
-        self::assertSame([self::UNKNOWN_CODE], $this->countries->lookups);
+        self::assertSame([self::UNKNOWN_ID], $this->countries->lookups);
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
         self::assertNull(Hilos::$sr?->pageResource(self::ACCEPT_KEY));
     }
@@ -142,9 +142,9 @@ final class I18nCountryPageResourceTest extends TestCase
             (new ReflectionMethod($page, 'resolvePageResource'))->getDeclaringClass()->getName(),
         );
 
-        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams(['languageCode' => self::LANGUAGE_CODE]));
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams(['languageId' => (string)self::LANGUAGE_ID]));
 
-        self::assertSame([self::LANGUAGE_CODE], $this->languages->lookups);
+        self::assertSame([self::LANGUAGE_ID], $this->languages->lookups);
         self::assertSame([], $this->countries->lookups);
         $this->assertPageResponse(AbstractHilosI18nLanguagePage::PAGE);
         self::assertNull(Hilos::$sr?->pageResource(self::ACCEPT_KEY));
@@ -153,7 +153,7 @@ final class I18nCountryPageResourceTest extends TestCase
     public function testUpdateSubscriptionRebindsTheSameCountry(): void
     {
         $page = new I18nCountryPageResourceTestOverviewPage(new I18nCountryPageResourceTestAgent());
-        $address = $this->countryAddress(self::COUNTRY_CODE);
+        $address = $this->countryAddress(self::COUNTRY_ID);
 
         $page->onSubscribe(self::ACCEPT_KEY, $address);
         $this->assertPageResponse(AbstractHilosI18nCountryPage::PAGE);
@@ -162,29 +162,29 @@ final class I18nCountryPageResourceTest extends TestCase
         $page->onUpdateSubscription(self::ACCEPT_KEY, $address);
 
         self::assertSame($lookupsAfterSubscribe * 2, count($this->countries->lookups));
-        $this->assertLookedUpCode($this->countries, self::COUNTRY_CODE);
+        $this->assertLookedUpId($this->countries, self::COUNTRY_ID);
         $this->assertPageResponse(AbstractHilosI18nCountryPage::PAGE);
         $this->assertBoundCountry();
     }
 
     /**
-     * @param string $countryCode Country code to address
+     * @param int $countryId Country id to address
      * @return PageRouteParams Route parameters
      */
-    private function countryAddress(string $countryCode): PageRouteParams
+    private function countryAddress(int $countryId): PageRouteParams
     {
-        return new PageRouteParams(['countryCode' => $countryCode]);
+        return new PageRouteParams(['countryId' => (string)$countryId]);
     }
 
     /**
      * @param I18nCountryPageResourceTestRows $rows Collection the page read
-     * @param string $code Code every lookup must have been
+     * @param int $id Primary id every lookup must have been
      */
-    private function assertLookedUpCode(I18nCountryPageResourceTestRows $rows, string $code): void
+    private function assertLookedUpId(I18nCountryPageResourceTestRows $rows, int $id): void
     {
         self::assertNotSame([], $rows->lookups);
         foreach ($rows->lookups as $lookup) {
-            self::assertSame($code, $lookup);
+            self::assertSame($id, $lookup);
         }
     }
 
@@ -216,8 +216,8 @@ final class I18nCountryPageResourceTest extends TestCase
 final class I18nCountryPageResourceTestDb extends HilosDbContext
 {
     /**
-     * @param I18nCountryPageResourceTestRows $countries Country rows by code
-     * @param I18nCountryPageResourceTestRows $languages Language rows by code
+     * @param I18nCountryPageResourceTestRows $countries Country rows by id
+     * @param I18nCountryPageResourceTestRows $languages Language rows by id
      */
     public function __construct(
         private readonly I18nCountryPageResourceTestRows $countries,
@@ -241,26 +241,26 @@ final class I18nCountryPageResourceTestDb extends HilosDbContext
 }
 
 /**
- * Code-keyed rows.
+ * Primary-id-keyed rows.
  *
  * offsetExists asks offsetGet, the way the countries collection does, so a
- * missing code and a present one both pass through the same read.
+ * missing id and a present one both pass through the same read.
  */
 final class I18nCountryPageResourceTestRows implements ArrayAccess
 {
-    /** @var list<string> Offsets read, in order */
+    /** @var list<int|string> Offsets read, in order */
     public array $lookups = [];
 
     /**
-     * @param array<string, int> $ids Primary id by code
+     * @param array<int, int> $ids Primary ids
      */
     public function __construct(private readonly array $ids)
     {
     }
 
     /**
-     * @param mixed $offset Code the page asked for
-     * @return bool Whether that code is present
+     * @param mixed $offset Primary id the page asked for
+     * @return bool Whether that id is present
      */
     public function offsetExists(mixed $offset): bool
     {
@@ -268,13 +268,13 @@ final class I18nCountryPageResourceTestRows implements ArrayAccess
     }
 
     /**
-     * @param mixed $offset Code the page asked for
-     * @return ?I18nCountryPageResourceTestRow Row, or null when the code is unknown
+     * @param mixed $offset Primary id the page asked for
+     * @return ?I18nCountryPageResourceTestRow Row, or null when the id is unknown
      */
     public function offsetGet(mixed $offset): mixed
     {
-        $this->lookups[] = is_string($offset) ? $offset : 'not-a-string';
-        if (!is_string($offset) || !isset($this->ids[$offset])) {
+        $this->lookups[] = is_int($offset) ? $offset : 'not-an-int';
+        if (!is_int($offset) || !isset($this->ids[$offset])) {
             return null;
         }
 

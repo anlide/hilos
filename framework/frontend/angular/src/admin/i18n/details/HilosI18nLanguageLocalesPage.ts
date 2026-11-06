@@ -290,14 +290,23 @@ export class HilosI18nLanguageLocalesPage {
   // The language the address names now — read live, never a snapshot of the
   // first mount: navigating to another language is a new subject.
   private readonly language = computedSignal(() =>
-    String(this.router.currentRoute.get().params['languageCode'] ?? ''),
+    String(this.router.currentRoute.get().params['languageId'] ?? ''),
   )
-  private readonly languageCode = hilosSignal(this.language)
+  private readonly languageId = hilosSignal(this.language)
 
   /** The card, the format lists and the locales table, bound to one context. */
   protected readonly binding = computed(() => {
     const context = this.context()
-    const card = createHilosI18nLanguageCard(context)
+    this.languageId()
+    const rawCard = createHilosI18nLanguageCard(context)
+    const card = computedSignal(() => {
+      const current = rawCard.get()
+      return current !== null &&
+        String(current.languageId) ===
+          String(this.router.currentRoute.get().params['languageId'])
+        ? current
+        : null
+    })
 
     return {
       context,
@@ -306,7 +315,7 @@ export class HilosI18nLanguageLocalesPage {
       locales: createHilosI18nLanguageLocalesTable(
         context,
         computedSignal(() =>
-          card.get()?.code === this.language.get()
+          String(card.get()?.languageId) === this.language.get()
             ? (card.get()?.languageId ?? null)
             : null,
         ),
@@ -318,7 +327,7 @@ export class HilosI18nLanguageLocalesPage {
     const { context, locales } = this.binding()
 
     return {
-      languageCode: this.languageCode(),
+      languageId: this.languageId(),
       locales,
       deletion: createHilosI18nLocaleDelete(context),
     }
@@ -424,7 +433,7 @@ export class HilosI18nLanguageLocalesPage {
     if (
       this.opened() !== null ||
       this.deleteTarget() !== null ||
-      this.card()?.code !== this.language.get()
+      String(this.card()?.languageId) !== this.language.get()
     )
       return
     this.opened.set({
@@ -445,7 +454,8 @@ export class HilosI18nLanguageLocalesPage {
       fresh === null ||
       fresh.localeCode === null ||
       fresh.formats === null ||
-      subject?.code !== this.language.get()
+      subject === null ||
+      String(subject.languageId) !== this.language.get()
     ) {
       locales.controller.releaseFocus()
       return

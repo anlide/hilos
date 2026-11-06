@@ -426,20 +426,29 @@ export class HilosI18nLanguagePage {
   private readonly identity = hilosSignal(this.router.pageIdentity)
   // The language the address names now — read live, never a snapshot of the
   // first mount: navigating to another language is a new subject.
-  private readonly languageCode = hilosSignal(
+  private readonly languageId = hilosSignal(
     computedSignal(() =>
-      String(this.router.currentRoute.get().params['languageCode'] ?? ''),
+      String(this.router.currentRoute.get().params['languageId'] ?? ''),
     ),
   )
 
   /** The card and its edit session, bound to one context and one language. */
   protected readonly binding = computed(() => {
     const context = this.context()
-    const card = createHilosI18nLanguageCard(context)
+    this.languageId()
+    const rawCard = createHilosI18nLanguageCard(context)
+    const card = computedSignal(() => {
+      const current = rawCard.get()
+      return current !== null &&
+        String(current.languageId) ===
+          String(this.router.currentRoute.get().params['languageId'])
+        ? current
+        : null
+    })
 
     return {
       context,
-      languageCode: this.languageCode(),
+      languageId: this.languageId(),
       card,
       window: createHilosI18nLanguageCardWindow(card, context),
     }
@@ -452,7 +461,7 @@ export class HilosI18nLanguagePage {
       ? []
       : hilosTabLinks(
           this.identity()?.pageTabs ?? [],
-          { languageCode: current.code },
+          { languageId: String(current.languageId) },
           this.router.resolvePath,
         )
   })

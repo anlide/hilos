@@ -2,6 +2,7 @@ import { expect, test } from '../test.js'
 
 import {
   ANALYTICS_SESSION_LIST_PATH,
+  analyticsBrowserSessionPath,
   PASSWORD,
   uniqueEmail,
   login,
@@ -27,6 +28,8 @@ import { createCommandChannel } from '../../../../../framework/frontend/scripts/
 import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/index.js'
+
+// spec-owner: demo — carries Polls' Angular browser journeys for these shared pages
 
 // What the Analytics section proves, the same on every kit: a person's card leads
 // to their browser sessions, a session lists its actions in source order, and no
@@ -92,7 +95,7 @@ test('shows real session actions in source order without bodies or another sessi
     await gotoPage(expect, admin, `/hilos/user/${user.userId}`)
     await admin.getByTestId('hilos-user-analytics-link').click()
     await expect(admin).toHaveURL(
-      new RegExp(`/hilos/analytics/people/${user.userId}$`),
+      new RegExp(`/hilos/analytics/person/${user.userId}$`),
     )
     await expectPageReady(expect, admin)
     await expectAnalyticsPersonSession(
@@ -111,7 +114,7 @@ test('shows real session actions in source order without bodies or another sessi
     await analyticsSessionLink(admin, userSession.browserSessionId!).click()
     await expect(admin).toHaveURL(
       new RegExp(
-        `/hilos/analytics/browser-sessions/${userSession.browserSessionId}$`,
+        `${analyticsBrowserSessionPath(userSession.browserSessionId!)}$`,
       ),
     )
     await expectPageReady(expect, admin)
@@ -154,7 +157,9 @@ test('shows real session actions in source order without bodies or another sessi
     // screens legitimately carried these bodies earlier, in the other context.
     await expectNoAnalyticsBodies(expect, admin, frames, bodies)
 
-    const adminSessionPath = `${ANALYTICS_SESSION_LIST_PATH}/${adminSession.browserSessionId}`
+    const adminSessionPath = analyticsBrowserSessionPath(
+      adminSession.browserSessionId!,
+    )
     const adminSessionLabel = `Browser session #${adminSession.browserSessionId}`
     await gotoPage(expect, admin, adminSessionPath)
     await expectAnalyticsBrowserSessionHead(expect, admin, adminSessionLabel)

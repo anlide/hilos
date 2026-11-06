@@ -47,10 +47,10 @@ function router(scopes: ScopeManager, childrenBuilt = false): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.I18N_LANGUAGE,
-      params: { languageCode: 'qx' },
+      params: { languageId: '46' },
       admin: true,
     }),
-    currentPath: createSignal('/hilos/i18n/languages/qx'),
+    currentPath: createSignal('/hilos/i18n/language/46'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(true),
@@ -59,7 +59,7 @@ function router(scopes: ScopeManager, childrenBuilt = false): HilosRouter {
     resolvePath: (page, params) => {
       if (page === HilosPages.I18N_LANGUAGES) return '/hilos/i18n/languages'
       if (!childrenBuilt && page !== HilosPages.I18N_LANGUAGE) return undefined
-      const base = `/hilos/i18n/languages/${params?.languageCode}`
+      const base = `/hilos/i18n/language/${params?.languageId}`
       if (page === HilosPages.I18N_LANGUAGE) return base
       if (page === HilosPages.I18N_LANGUAGE_NAMES) return `${base}/names`
       if (page === HilosPages.I18N_LANGUAGE_LOCALES) return `${base}/locales`
@@ -414,12 +414,12 @@ describe('HilosI18nLanguagePage', () => {
         h.view
           .get('[data-id="language-overview-name-count"]')
           .attributes('href'),
-      ).toBe('/hilos/i18n/languages/qx/names')
+      ).toBe('/hilos/i18n/language/46/names')
       expect(
         h.view
           .get('[data-id="language-overview-countryless-state"]')
           .attributes('href'),
-      ).toBe('/hilos/i18n/languages/qx/locales')
+      ).toBe('/hilos/i18n/language/46/locales')
       h.scope.data.set(LANGUAGE_CARD_DATA, {
         ...initialCard,
         summary: {
@@ -529,9 +529,9 @@ describe('HilosI18nLanguagePage', () => {
     ).toBe('page')
     const links = h.view.findAll('[data-id="hilos-page-tabs"] a')
     expect(links.map((link) => link.attributes('href'))).toEqual([
-      '/hilos/i18n/languages/qx',
-      '/hilos/i18n/languages/qx/names',
-      '/hilos/i18n/languages/qx/locales',
+      '/hilos/i18n/language/46',
+      '/hilos/i18n/language/46/names',
+      '/hilos/i18n/language/46/locales',
     ])
     h.view.unmount()
   })

@@ -419,7 +419,7 @@ describe('HilosCommunicationsChannelConfigurationPage shared head', () => {
         fixture,
         `hilos-page-tab-${HilosPages.COMMUNICATIONS_CHANNEL}`,
       )?.getAttribute('href'),
-    ).toBe('/hilos/communications/sms')
+    ).toBe('/hilos/communications/channel/sms')
     expect(el(fixture, 'hilos-viewport-table')).not.toBeNull()
   })
 })

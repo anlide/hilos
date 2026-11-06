@@ -342,7 +342,7 @@ function harness(section: unknown = BOT) {
 /** Address the page as the application's route map does. */
 function tablePath(params: Record<string, string>): string {
   const record = params.record
-  return `/hilos/change-log/tables/${encodeURIComponent(params.tableId ?? '')}/history${
+  return `/hilos/change-log/table/${encodeURIComponent(params.tableId ?? '')}/history${
     record === undefined ? '' : `/${encodeURIComponent(record)}`
   }`
 }
@@ -372,7 +372,7 @@ function router(params: Record<string, string>, built = true) {
     resolvePath: vi.fn((page: string, to: Record<string, string> = {}) => {
       if (!built) return undefined
       if (page === HilosPages.CHANGE_LOG_TABLE_HISTORY) return tablePath(to)
-      const root = `/hilos/change-log/tables/${encodeURIComponent(to.tableId ?? '')}`
+      const root = `/hilos/change-log/table/${encodeURIComponent(to.tableId ?? '')}`
       if (page === HilosPages.CHANGE_LOG_TABLE) return root
       if (page === HilosPages.CHANGE_LOG_TABLE_COLUMNS) return `${root}/columns`
       if (page === HilosPages.CHANGE_LOG_TABLE_TRIGGERS)
@@ -544,7 +544,7 @@ describe('HilosChangeLogTableHistoryPage', () => {
     const link = element('hilos-change-log-history-record-101', row)
     expect(text(link)).toBe('#57')
     expect(link.getAttribute('href')).toBe(
-      '/hilos/change-log/tables/bot/history/57',
+      '/hilos/change-log/table/bot/history/57',
     )
     expect(r.value.resolvePath).toHaveBeenCalledWith(
       HilosPages.CHANGE_LOG_TABLE_HISTORY,
@@ -552,7 +552,7 @@ describe('HilosChangeLogTableHistoryPage', () => {
     )
     link.click()
     expect(r.value.navigate).toHaveBeenCalledWith(
-      '/hilos/change-log/tables/bot/history/57',
+      '/hilos/change-log/table/bot/history/57',
     )
     expect(row.textContent).toContain('updated')
     const changes = row.querySelectorAll('td')[3]!
@@ -975,13 +975,13 @@ describe('HilosChangeLogTableHistoryPage', () => {
     expect(document.body.textContent).not.toContain('All records of this table')
     const clear = element('hilos-change-log-record-filter-clear', plate)
     expect(clear.getAttribute('href')).toBe(
-      '/hilos/change-log/tables/bot/history',
+      '/hilos/change-log/table/bot/history',
     )
     expect(clear.getAttribute('aria-label')).toBe('Show all records')
     expect(get('i', clear).getAttribute('aria-hidden')).toBe('true')
     clear.click()
     expect(r.value.navigate).toHaveBeenCalledWith(
-      '/hilos/change-log/tables/bot/history',
+      '/hilos/change-log/table/bot/history',
     )
   })
 

@@ -263,7 +263,7 @@ final class I18nCountrySwitchOffTest extends IntegrationTestCase
 
     private function subscribe(string $acceptKey, string $code): void
     {
-        $params = ['countryCode' => $code];
+        $params = ['countryId' => (string)Hilos::$db->countries[$code]->id];
         Hilos::$sr->subscribeToPage(
             CountryDetailPage::PAGE,
             new WebSocketPageSubscribeSignalDTO($acceptKey, CountryDetailPage::PAGE, $params),

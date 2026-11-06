@@ -11,6 +11,7 @@ import {
   expectLanguagePageHead,
   expectPageReady,
   gotoPage,
+  readI18nRowId,
   grantAdminToSelf,
   I18N_LOCALE_FIELDS,
   i18nLocaleRow,
@@ -32,7 +33,6 @@ import {
 } from '../../../../../framework/frontend/scripts/i18nFixtures.mjs'
 
 const test = base.extend<{ i18n: I18nFixtureScope }>({ i18n: i18nFixtures })
-const LOCALES_PATH = '/hilos/i18n/languages/en/locales'
 const ADD_TITLE = 'Add locale · English in United Kingdom'
 const WINDOW = 'i18n-locale-window'
 const SUBMIT = 'i18n-locale-submit'
@@ -56,15 +56,25 @@ const EDITED_FORMATS = {
   collation: 'und',
 } as const
 test('locale.life', async ({ page, context, i18n }) => {
+  const languageIds: Record<string, string> = {}
   // One admin grant covers the long lifecycle; its baseline group took 41.798s including hooks.
   test.slow()
   await i18n.ownLocale('en-GB')
-  await i18n.language({ code: 'pt', nativeName: 'Português', enabled: true })
+  languageIds['pt'] = String(
+    (
+      await i18n.language({
+        code: 'pt',
+        nativeName: 'Português',
+        enabled: true,
+      })
+    ).id,
+  )
   await i18n.ownLocale('pt')
   const language = await i18n.language({
     code: 'qy',
     nativeName: 'Scope QY',
   })
+  languageIds['qy'] = String(language.id)
   await i18n.locale({ languageId: language.id, enabled: true })
 
   const other = await context.newPage()
@@ -72,11 +82,18 @@ test('locale.life', async ({ page, context, i18n }) => {
   const frames = watchDeliveryFrames(page)
   i18n.defer(async () => frames.stop())
   await grantAdminToSelf(expect, page)
+  languageIds['en'] = await readI18nRowId(expect, page, 'language', 'en')
 
   await test.step('Read the default language locales and its shared owner head', async () => {
-    await gotoPage(expect, page, LOCALES_PATH, PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['en'] ??= await readI18nRowId(expect, page, 'language', 'en'))}/locales`,
+      PAGE_READY,
+    )
     await expectLanguagePageHead(expect, page, {
       code: 'en',
+      id: languageIds['en']!,
       nativeName: 'English',
       currentPage: 'hilos_i18n_language_locales',
       appName: 'Hilos Polls',
@@ -103,22 +120,27 @@ test('locale.life', async ({ page, context, i18n }) => {
     await expect(localesTab).toHaveAttribute('aria-current', 'page')
     await expect(localesTab).toHaveAttribute(
       'href',
-      '/hilos/i18n/languages/en/locales',
+      `/hilos/i18n/language/${languageIds['en']}/locales`,
     )
     const overviewTab = page.getByTestId('hilos-page-tab-hilos_i18n_language')
     await expect(overviewTab).toHaveAttribute(
       'href',
-      '/hilos/i18n/languages/en',
+      `/hilos/i18n/language/${languageIds['en']}`,
     )
     await overviewTab.click()
     await expectPageReady(expect, page)
-    await expect(page).toHaveURL(/\/hilos\/i18n\/languages\/en$/)
+    await expect(page).toHaveURL(
+      new RegExp(`/hilos/i18n/language/${languageIds['en']}$`),
+    )
     await expect(page.getByTestId('language-card-main')).toBeVisible()
     await page.getByTestId('hilos-page-tab-hilos_i18n_language_locales').click()
     await expectPageReady(expect, page)
-    await expect(page).toHaveURL(/\/hilos\/i18n\/languages\/en\/locales$/)
+    await expect(page).toHaveURL(
+      new RegExp(`/hilos/i18n/language/${languageIds['en']}/locales$`),
+    )
     await expectLanguagePageHead(expect, page, {
       code: 'en',
+      id: languageIds['en']!,
       nativeName: 'English',
       currentPage: 'hilos_i18n_language_locales',
       appName: 'Hilos Polls',
@@ -294,17 +316,23 @@ test('locale.life', async ({ page, context, i18n }) => {
   })
 
   await test.step('Create, switch and delete the countryless locale while Overview stays live and isolated', async () => {
-    await gotoPage(expect, page, '/hilos/i18n/languages/pt/locales', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['pt'] ??= await readI18nRowId(expect, page, 'language', 'pt'))}/locales`,
+      PAGE_READY,
+    )
     await gotoPage(
       expect,
       other,
-      '/hilos/i18n/languages/pt/locales',
+      `/hilos/i18n/language/${(languageIds['pt'] ??= await readI18nRowId(expect, other, 'language', 'pt'))}/locales`,
       PAGE_READY,
     )
     const tabs = [page, other]
     for (const tab of tabs)
       await expectLanguagePageHead(expect, tab, {
         code: 'pt',
+        id: languageIds['pt']!,
         nativeName: 'Português',
         currentPage: 'hilos_i18n_language_locales',
         appName: 'Hilos Polls',
@@ -313,21 +341,28 @@ test('locale.life', async ({ page, context, i18n }) => {
     i18n.defer(() => languageCard.close())
     const otherLanguageCard = await context.newPage()
     i18n.defer(() => otherLanguageCard.close())
-    await gotoPage(expect, languageCard, '/hilos/i18n/languages/pt', PAGE_READY)
+    await gotoPage(
+      expect,
+      languageCard,
+      `/hilos/i18n/language/${(languageIds['pt'] ??= await readI18nRowId(expect, languageCard, 'language', 'pt'))}`,
+      PAGE_READY,
+    )
     await gotoPage(
       expect,
       otherLanguageCard,
-      '/hilos/i18n/languages/qy',
+      `/hilos/i18n/language/${(languageIds['qy'] ??= await readI18nRowId(expect, otherLanguageCard, 'language', 'qy'))}`,
       PAGE_READY,
     )
     await expectLanguagePageHead(expect, languageCard, {
       code: 'pt',
+      id: languageIds['pt']!,
       nativeName: 'Português',
       currentPage: 'hilos_i18n_language',
       appName: 'Hilos Polls',
     })
     await expectLanguagePageHead(expect, otherLanguageCard, {
       code: 'qy',
+      id: languageIds['qy']!,
       nativeName: 'Scope QY',
       currentPage: 'hilos_i18n_language',
       appName: 'Hilos Polls',
@@ -524,11 +559,14 @@ test('locale.life', async ({ page, context, i18n }) => {
         ).toHaveCount(0)
       await expectLanguagePageHead(expect, tab, {
         code: 'pt',
+        id: languageIds['pt']!,
         nativeName: 'Português',
         currentPage: 'hilos_i18n_language_locales',
         appName: 'Hilos Polls',
       })
-      await expect(tab).toHaveURL(/\/hilos\/i18n\/languages\/pt\/locales$/)
+      await expect(tab).toHaveURL(
+        new RegExp(`/hilos/i18n/language/${languageIds['pt']}/locales$`),
+      )
     }
     await expect(
       languageCard.getByTestId('language-overview-locale-count'),
@@ -550,7 +588,12 @@ test('locale.life', async ({ page, context, i18n }) => {
   })
 
   await test.step('Switch off a countryless locale under a disabled parent without a warning', async () => {
-    await gotoPage(expect, page, '/hilos/i18n/languages/qy/locales', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['qy'] ??= await readI18nRowId(expect, page, 'language', 'qy'))}/locales`,
+      PAGE_READY,
+    )
     await clickSubmit(
       expect,
       i18nLocaleRow(page, 'qy').getByTestId('i18n-locales-view-qy'),
@@ -582,7 +625,12 @@ test('locale.life', async ({ page, context, i18n }) => {
     await expect(
       i18nLocaleRow(page, 'qy').getByTestId('i18n-locales-enabled-qy'),
     ).not.toBeChecked()
-    await gotoPage(expect, page, '/hilos/i18n/languages/qy', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['qy'] ??= await readI18nRowId(expect, page, 'language', 'qy'))}`,
+      PAGE_READY,
+    )
     await expect(page.getByTestId('language-card-enabled')).toHaveText(
       'Language switched off',
     )
@@ -590,7 +638,12 @@ test('locale.life', async ({ page, context, i18n }) => {
 
   // The fixture's finally remains the fallback on any earlier setup/body failure.
   await i18n.cleanup()
-  await gotoPage(expect, page, '/hilos/i18n/languages/pt', PAGE_REFUSED)
+  await gotoPage(
+    expect,
+    page,
+    `/hilos/i18n/language/${(languageIds['pt'] ??= await readI18nRowId(expect, page, 'language', 'pt'))}`,
+    PAGE_REFUSED,
+  )
   await expect(page.getByTestId('page-error')).toHaveAttribute(
     'data-error-code',
     '404',
@@ -598,26 +651,36 @@ test('locale.life', async ({ page, context, i18n }) => {
 })
 
 test('locale.protected-defaults', async ({ page, i18n }) => {
+  const countryIds: Record<string, string> = {}
+  const languageIds: Record<string, string> = {}
   // Three protected paths share one grant; their baseline group took 15.061s including hooks.
   test.slow()
   const language = await i18n.language({
     code: 'ql',
     nativeName: 'Protected QL',
   })
+  languageIds['ql'] = String(language.id)
   const country = await i18n.country({
     code: 'qq',
     currencySymbol: '¤',
     currencyCode: 'XQQ',
   })
+  countryIds['qq'] = String(country.id)
   await i18n.locale({ languageId: language.id, enabled: true })
   await i18n.locale({ languageId: language.id, countryId: country.id })
   const frames = watchDeliveryFrames(page)
   i18n.defer(async () => frames.stop())
   const switchOff = countSentFrames(page, 'hilos_i18n_locale_switch_off')
   await grantAdminToSelf(expect, page)
+  languageIds['en'] = await readI18nRowId(expect, page, 'language', 'en')
 
   await test.step('Explain the default countryless lock and reject real Enter without a switch-off request', async () => {
-    await gotoPage(expect, page, LOCALES_PATH, PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['en'] ??= await readI18nRowId(expect, page, 'language', 'en'))}/locales`,
+      PAGE_READY,
+    )
     await clickSubmit(
       expect,
       i18nLocaleRow(page, 'en').getByTestId('i18n-locales-view-en'),
@@ -658,7 +721,12 @@ test('locale.protected-defaults', async ({ page, i18n }) => {
   })
 
   await test.step('Keep switched-on deletion refusal in its reserved room and permit an explicit second request', async () => {
-    await gotoPage(expect, page, '/hilos/i18n/languages/ql/locales', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['ql'] ??= await readI18nRowId(expect, page, 'language', 'ql'))}/locales`,
+      PAGE_READY,
+    )
     await clickSubmit(expect, shownByTestId(page, 'i18n-locales-delete-ql'))
     const window = page.getByTestId('i18n-locale-delete-window')
     const room = await watchHeight(window)
@@ -729,7 +797,12 @@ test('locale.protected-defaults', async ({ page, i18n }) => {
   })
 
   await test.step('Select a country default through UI and preserve that pointer after a real deletion refusal while the country is off', async () => {
-    await gotoPage(expect, page, '/hilos/i18n/countries/qq', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/country/${(countryIds['qq'] ??= await readI18nRowId(expect, page, 'country', 'qq'))}`,
+      PAGE_READY,
+    )
     await expect(page.getByTestId('country-card-enabled')).toHaveText(
       'Disabled',
     )
@@ -742,7 +815,12 @@ test('locale.protected-defaults', async ({ page, i18n }) => {
     await expect(page.getByTestId('country-card-default-locale')).toHaveText(
       'ql-QQ',
     )
-    await gotoPage(expect, page, '/hilos/i18n/languages/ql/locales', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/language/${(languageIds['ql'] ??= await readI18nRowId(expect, page, 'language', 'ql'))}/locales`,
+      PAGE_READY,
+    )
     await clickSubmit(expect, shownByTestId(page, 'i18n-locales-delete-ql-QQ'))
     const before = frames.sent.length
     const confirm = page.getByTestId('i18n-locale-delete-confirm')
@@ -765,7 +843,12 @@ test('locale.protected-defaults', async ({ page, i18n }) => {
     ).not.toBeChecked()
     await clickSubmit(expect, page.getByTestId('i18n-locale-delete-cancel'))
     await expect(page.getByTestId('i18n-locale-delete-window')).toHaveCount(0)
-    await gotoPage(expect, page, '/hilos/i18n/countries/qq', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/i18n/country/${(countryIds['qq'] ??= await readI18nRowId(expect, page, 'country', 'qq'))}`,
+      PAGE_READY,
+    )
     await expect(page.getByTestId('country-card-default-locale')).toHaveText(
       'ql-QQ',
     )
@@ -776,12 +859,14 @@ test('locale.protected-defaults', async ({ page, i18n }) => {
 })
 
 test('locale.live-occupation', async ({ page, context, i18n }) => {
+  const languageIds: Record<string, string> = {}
   // Four socket episodes share two pages; their baseline group took 50.727s including hooks.
   test.slow()
   await i18n.ownLocale('en-GB')
   const writerFrames = watchDeliveryFrames(page)
   i18n.defer(async () => writerFrames.stop())
   await grantAdminToSelf(expect, page)
+  languageIds['en'] = await readI18nRowId(expect, page, 'language', 'en')
   const observer = await context.newPage()
   i18n.defer(() => observer.close())
   const observerFrames = watchDeliveryFrames(observer)
@@ -789,8 +874,18 @@ test('locale.live-occupation', async ({ page, context, i18n }) => {
   const adds = countSentFrames(observer, 'hilos_i18n_locale_add')
   const updates = countSentFrames(observer, 'hilos_i18n_locale_update')
   const actions = countSentFrames(observer, '"type":"action"')
-  await gotoPage(expect, page, LOCALES_PATH, PAGE_READY)
-  await gotoPage(expect, observer, LOCALES_PATH, PAGE_READY)
+  await gotoPage(
+    expect,
+    page,
+    `/hilos/i18n/language/${(languageIds['en'] ??= await readI18nRowId(expect, page, 'language', 'en'))}/locales`,
+    PAGE_READY,
+  )
+  await gotoPage(
+    expect,
+    observer,
+    `/hilos/i18n/language/${(languageIds['en'] ??= await readI18nRowId(expect, observer, 'language', 'en'))}/locales`,
+    PAGE_READY,
+  )
   const live = await watchI18nLivePages(expect, [page, observer])
   await Promise.all([page, observer].map(markDocument))
 

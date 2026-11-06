@@ -281,14 +281,23 @@ export class HilosI18nCountryNamesPage {
   // The country the address names now — read live, never a snapshot of the
   // first mount: navigating to another country is a new subject.
   private readonly country = computedSignal(() =>
-    String(this.router.currentRoute.get().params['countryCode'] ?? ''),
+    String(this.router.currentRoute.get().params['countryId'] ?? ''),
   )
-  private readonly countryCode = hilosSignal(this.country)
+  private readonly countryId = hilosSignal(this.country)
 
   /** The card and the names table, bound to one context. */
   protected readonly binding = computed(() => {
     const context = this.context()
-    const card = createHilosI18nCountryCard(context)
+    this.countryId()
+    const rawCard = createHilosI18nCountryCard(context)
+    const card = computedSignal(() => {
+      const current = rawCard.get()
+      return current !== null &&
+        String(current.countryId) ===
+          String(this.router.currentRoute.get().params['countryId'])
+        ? current
+        : null
+    })
 
     return {
       context,
@@ -297,7 +306,7 @@ export class HilosI18nCountryNamesPage {
         context,
         HILOS_I18N_COUNTRY_NAMES,
         computedSignal(() =>
-          card.get()?.code === this.country.get()
+          String(card.get()?.countryId) === this.country.get()
             ? (card.get()?.countryId ?? null)
             : null,
         ),
@@ -308,15 +317,25 @@ export class HilosI18nCountryNamesPage {
   protected readonly windows = computed(() => {
     const { context, card, names } = this.binding()
 
+    const window = createHilosI18nCountryNameWindow(
+      names.controller,
+      card,
+      computedSignal((): string => {
+        const held = window.target.get()
+        return (
+          card.get()?.code ??
+          (String(held?.countryId) === this.country.get()
+            ? (held?.countryCode ?? '')
+            : '')
+        )
+      }),
+      context,
+    )
+
     return {
-      countryCode: this.countryCode(),
+      countryId: this.countryId(),
       names,
-      window: createHilosI18nCountryNameWindow(
-        names.controller,
-        card,
-        this.country,
-        context,
-      ),
+      window,
     }
   })
   protected readonly card = signal<HilosI18nCountryCard | null>(null)
@@ -333,7 +352,7 @@ export class HilosI18nCountryNamesPage {
 
     return target !== null &&
       this.card()?.countryId === target.countryId &&
-      this.countryCode() === target.countryCode &&
+      this.countryId() === String(target.countryId) &&
       row?.inLanguageId === target.inLanguageId
       ? row
       : null
@@ -425,15 +444,16 @@ export class HilosI18nCountryNamesPage {
     if (this.deleteOpen() || window.saving.get()) return
     window.close()
     const attempt = ++this.opening
-    const countryCode = this.country.get()
+    const countryId = this.country.get()
     const resolved = binding.names.controller.focusRow(row.rowKey)
     if (attempt !== this.opening) return
     const fresh = binding.names.controller.focusedRow.get()
     const subject = binding.card.get()
     if (
       resolved === null ||
-      this.country.get() !== countryCode ||
-      subject?.code !== countryCode ||
+      this.country.get() !== countryId ||
+      subject === null ||
+      String(subject.countryId) !== countryId ||
       fresh?.inLanguageId !== row.inLanguageId ||
       fresh.name === null
     ) {
@@ -454,7 +474,7 @@ export class HilosI18nCountryNamesPage {
       countryId: subject.countryId,
       inLanguageId: fresh.inLanguageId,
       nameId,
-      countryCode,
+      countryCode: subject.code,
       countryName: subject.summary.name || subject.code.toUpperCase(),
       inLanguageCode: fresh.code,
       inLanguageNativeName: fresh.nativeName,

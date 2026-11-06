@@ -756,8 +756,8 @@ country's display name comes from `hilosI18nCountryDisplayName(card)`: `null`
 and `''` produce `Unnamed country`, and any other name is returned unchanged,
 without trimming or translation. The country code stays separate from the name,
 in the block's tile and the mark beside the title. Country addresses use the
-unique, unchanging `countryCode` in `/hilos/i18n/countries/{countryCode}` and
-`/hilos/i18n/countries/{countryCode}/names`; renaming a country does not change
+unique, unchanging `countryId` in `/hilos/i18n/country/{countryId}` and
+`/hilos/i18n/country/{countryId}/names`; renaming a country does not change
 its URL, and equal display names do not share an address. Do not turn the legacy
 chain into the owner's chain on pages whose owner has not opted in.
 

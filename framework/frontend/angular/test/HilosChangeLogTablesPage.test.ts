@@ -166,7 +166,7 @@ function router(detailBuilt: boolean): HilosRouter {
     dashboardSections: createSignal(undefined),
     resolvePath: vi.fn((page, params) =>
       detailBuilt && page === HilosPages.CHANGE_LOG_TABLE
-        ? `/hilos/change-log/tables/${params.tableId}`
+        ? `/hilos/change-log/table/${params.tableId}`
         : undefined,
     ),
     clearPageError: () => {},
@@ -324,7 +324,7 @@ describe('HilosChangeLogTablesPage', () => {
         expect(text(links[0]!)).toBe('Open')
         expect(links[0]!.getAttribute('aria-label')).toBe('Open project_record')
         expect(links[0]!.getAttribute('href')).toBe(
-          '/hilos/change-log/tables/project_record',
+          '/hilos/change-log/table/project_record',
         )
         expect(r.resolvePath).toHaveBeenCalledWith(
           HilosPages.CHANGE_LOG_TABLE,
@@ -332,7 +332,7 @@ describe('HilosChangeLogTablesPage', () => {
         )
         links[0]!.click()
         expect(r.navigate).toHaveBeenCalledWith(
-          '/hilos/change-log/tables/project_record',
+          '/hilos/change-log/table/project_record',
         )
       }
     },

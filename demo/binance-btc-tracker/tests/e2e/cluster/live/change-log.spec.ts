@@ -41,6 +41,8 @@ import {
   type ClusterView,
 } from '../../helpers/cluster.js'
 
+// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
+
 interface ReceiptRead {
   master: string
   status: 'notRun' | 'reading' | 'passed'
@@ -110,7 +112,7 @@ test(
     try {
       const adminId = await createTestAdmin(expect, adminPage)
       const actorLabel = await adminPage.getByTestId('self-user').innerText()
-      const workersPath = `${DAEMON_ROOT_PATH}/${CLUSTER_LEADER}/workers`
+      const workersPath = `${DAEMON_ROOT_PATH}/node/${CLUSTER_LEADER}/workers`
       await gotoPage(expect, adminPage, workersPath)
       await expect(adminPage).toHaveURL(workersPath)
       await expect(adminPage.getByRole('heading', { level: 1 })).toHaveText(

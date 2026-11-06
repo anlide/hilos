@@ -823,10 +823,10 @@ stay with their marked leaves:
    Register the kind Overview with `AbstractHilosModerationKindPage`, mounted
    in `PAGES` by Chat's `ModerationKindPage` on `HILOS_INDEX`; bind
    `ChatTableContext::hilosModerationKinds` in `PAGE_TABLES`. Its route is
-   `/hilos/moderation/{kind}` and its page key is `hilos_moderation_kind`.
+   `/hilos/moderation/kind/{kind}` and its page key is `hilos_moderation_kind`.
    Register Chat's `ModerationKindRulesPage`, extending
    `AbstractHilosModerationKindRulesPage`, in `PAGES`, served by `HILOS_INDEX`;
-   its route is `/hilos/moderation/{kind}/rules` and its page key is
+   its route is `/hilos/moderation/kind/{kind}/rules` and its page key is
    `hilos_moderation_kind_rules`. In `PAGE_TABLES`, bind both
    `ChatTableContext::hilosModerationKinds => []` and
    `ChatTableContext::hilosModerationRules => []`, so the page receives its

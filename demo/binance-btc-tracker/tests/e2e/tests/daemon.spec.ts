@@ -84,6 +84,8 @@ import {
   typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
 
+// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
+
 // The live standalone Daemon section: navigation, placement, node reports,
 // keyboard access, themes, viewer privacy and the shared restart mark.
 // Vue alone submits a forged viewer restart request to check the server.
@@ -1271,7 +1273,7 @@ test.describe('daemon node pages', () => {
       const cron = page.getByTestId('hilos-page-tab-hilos_daemon_cron')
       await expect(cron).toHaveAttribute(
         'href',
-        '/hilos/daemon/standalone/cron',
+        '/hilos/daemon/node/standalone/cron',
       )
       await cron.focus()
       await cron.press('Enter')
@@ -1294,7 +1296,7 @@ test.describe('daemon node pages', () => {
         await gotoPage(
           expect,
           page,
-          '/hilos/daemon/standalone/websockets',
+          '/hilos/daemon/node/standalone/websockets',
           PAGE_READY,
         )
         await expectStandaloneWebsockets(expect, page, reports.frames, {
@@ -1333,7 +1335,7 @@ test.describe('daemon node pages', () => {
       const agents = page.getByTestId('hilos-page-tab-hilos_daemon_agents')
       await expect(agents).toHaveAttribute(
         'href',
-        '/hilos/daemon/standalone/agents',
+        '/hilos/daemon/node/standalone/agents',
       )
       await agents.focus()
       await agents.press('Enter')
@@ -1459,7 +1461,7 @@ test.describe('daemon node pages', () => {
       const http = page.getByTestId('hilos-page-tab-hilos_daemon_http_server')
       await expect(http).toHaveAttribute(
         'href',
-        '/hilos/daemon/standalone/http',
+        '/hilos/daemon/node/standalone/http',
       )
       await http.focus()
       await http.press('Enter')
@@ -1505,14 +1507,19 @@ test.describe('restarting an agent', () => {
   }) => {
     await grantAdminToSelf(expect, page)
     const worker = await readRestartWorker(expect, page)
-    await gotoPage(expect, page, '/hilos/daemon/standalone/agents', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      '/hilos/daemon/node/standalone/agents',
+      PAGE_READY,
+    )
     const observer = await context.newPage()
     const newcomer = await context.newPage()
     try {
       await gotoPage(
         expect,
         observer,
-        '/hilos/daemon/standalone/agents',
+        '/hilos/daemon/node/standalone/agents',
         PAGE_READY,
       )
       const button = shownByTestId(
@@ -1552,7 +1559,7 @@ test.describe('restarting an agent', () => {
         await gotoPage(
           expect,
           newcomer,
-          '/hilos/daemon/standalone/agents',
+          '/hilos/daemon/node/standalone/agents',
           PAGE_READY,
         )
         await expect(shownByTestId(newcomer, mark)).toHaveText('Restarting')
@@ -1598,7 +1605,7 @@ test.describe('restarting an agent', () => {
       await gotoPage(
         expect,
         page,
-        '/hilos/daemon/standalone/agents',
+        '/hilos/daemon/node/standalone/agents',
         PAGE_READY,
       )
       await expect(page.getByTestId('view-mode-banner')).toBeVisible()
@@ -1643,7 +1650,7 @@ test.describe('daemon environment', () => {
     await link.focus()
     await link.press('Enter')
     await expectDaemonPage(expect, page, 'hilos_daemon_env')
-    await expect(page).toHaveURL(/\/hilos\/daemon\/standalone\/env$/)
+    await expect(page).toHaveURL(/\/hilos\/daemon\/node\/standalone\/env$/)
     await page.setViewportSize({ width: 1440, height: 812 })
     await expectStandaloneEnvironment(expect, page)
     const count = await page.getByTestId('hilos-daemon-env-keys').innerText()
@@ -1746,7 +1753,9 @@ test.describe('daemon environment', () => {
     )
     await expectStandaloneEnvOrphans(expect, page)
     await page.reload()
-    await expect(page).toHaveURL(/\/hilos\/daemon\/standalone\/env\/orphans$/)
+    await expect(page).toHaveURL(
+      /\/hilos\/daemon\/node\/standalone\/env\/orphans$/,
+    )
     await expect(
       page.getByTestId('hilos-page-tab-hilos_daemon_env_orphans'),
     ).toHaveAttribute('aria-current', 'page')
@@ -1756,18 +1765,25 @@ test.describe('daemon environment', () => {
       nodeName: DAEMON_STANDALONE_NODE_NAME,
     })
     await page.goForward()
-    await expect(page).toHaveURL(/\/hilos\/daemon\/standalone\/env\/orphans$/)
+    await expect(page).toHaveURL(
+      /\/hilos\/daemon\/node\/standalone\/env\/orphans$/,
+    )
     await gotoPage(
       expect,
       page,
-      '/hilos/daemon/standalone/env/orphans',
+      '/hilos/daemon/node/standalone/env/orphans',
       PAGE_READY,
     )
     await expectDaemonPage(expect, page, 'hilos_daemon_env_orphans')
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
     await expect(page.getByRole('table')).toHaveCount(1)
     // A cold mount binds the catalog window with all keys selected.
-    await gotoPage(expect, page, '/hilos/daemon/standalone/env', PAGE_READY)
+    await gotoPage(
+      expect,
+      page,
+      '/hilos/daemon/node/standalone/env',
+      PAGE_READY,
+    )
     await expectDaemonPage(expect, page, 'hilos_daemon_env')
     await expect(page.getByTestId('hilos-table-search')).toHaveValue('')
     await expectStandaloneEnvironment(expect, page)
@@ -1989,7 +2005,7 @@ test.describe('Daemon section cold navigation', () => {
         await cold.getByTestId('hilos-daemon-entry-metrics').press('Enter')
         await expectDaemonPage(expect, cold, 'hilos_daemon_http_server')
         await expect(cold).toHaveURL(
-          `${DAEMON_ROOT_PATH}/${source.nodeId}/http`,
+          `${DAEMON_ROOT_PATH}/node/${source.nodeId}/http`,
         )
         await expect(cold.getByTestId('hilos-daemon-http-address')).toHaveText(
           new RegExp(`:${source.httpPort}\\s*$`),
@@ -2119,7 +2135,7 @@ for (const viewer of [false, true]) {
         nodeName: DAEMON_STANDALONE_NODE_NAME,
       })
       await room.unchanged()
-      await gotoPage(expect, page, '/hilos/daemon/unknown-node')
+      await gotoPage(expect, page, '/hilos/daemon/node/unknown-node')
       await expect(page.getByTestId('page-error')).toHaveAttribute(
         'data-error-code',
         '404',

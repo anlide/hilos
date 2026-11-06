@@ -45,7 +45,7 @@ describe('HilosDaemonPage', () => {
     expect(box.textContent).toContain('n1')
     expect(box.querySelector('b')).toBeNull()
     expect(box.getAttribute('aria-label')).toBe(`Node ${name} (n1)`)
-    expect(box.getAttribute('href')).toBe('/hilos/daemon/n1')
+    expect(box.getAttribute('href')).toBe('/hilos/daemon/node/n1')
     expect(
       h.el('hilos-daemon-consensus')?.textContent?.replace(/\s+/g, ' '),
     ).toContain(`Report: ${name} (n1) · Majority: 3`)
@@ -53,7 +53,7 @@ describe('HilosDaemonPage', () => {
       h.el('hilos-daemon-link-n2')?.textContent?.replace(/\s+/g, ' ').trim(),
     ).toBe(`${name} (n1) ↔ Запасной (n2) · Membership link`)
     box.click()
-    expect(h.router.navigate).toHaveBeenCalledWith('/hilos/daemon/n1')
+    expect(h.router.navigate).toHaveBeenCalledWith('/hilos/daemon/node/n1')
     expect(h.connection.sendAction).not.toHaveBeenCalled()
     h.fixture.destroy()
   })
@@ -75,7 +75,7 @@ describe('HilosDaemonPage', () => {
     update(null)
     expect(h.el('hilos-daemon-node-n1')).toBe(box)
     expect(box.getAttribute('aria-label')).toBe('Node n1')
-    expect(box.getAttribute('href')).toBe('/hilos/daemon/n1')
+    expect(box.getAttribute('href')).toBe('/hilos/daemon/node/n1')
     expect(box.textContent).not.toContain('Второй')
     expect(
       h.el('hilos-daemon-link-n2')?.textContent?.replace(/\s+/g, ' ').trim(),
@@ -102,7 +102,7 @@ describe('HilosDaemonPage', () => {
     )
     const box = h.el('hilos-daemon-node-n2')!
     expect(box.tagName).toBe('A')
-    expect(box.getAttribute('href')).toBe('/hilos/daemon/n2')
+    expect(box.getAttribute('href')).toBe('/hilos/daemon/node/n2')
     expect(box.getAttribute('aria-label')).toBe('Node n2')
     expect(box.getAttribute('aria-pressed')).toBeNull()
     expect(box.textContent).toContain('150%')
@@ -115,7 +115,7 @@ describe('HilosDaemonPage', () => {
     const requests = h.sendViewport.mock.calls.length
     box.click()
     h.detect()
-    expect(h.router.navigate).toHaveBeenCalledWith('/hilos/daemon/n2')
+    expect(h.router.navigate).toHaveBeenCalledWith('/hilos/daemon/node/n2')
     expect(h.sendViewport).toHaveBeenCalledTimes(requests)
     h.fixture.destroy()
     expect(h.listeners()).toBe(0)
@@ -145,7 +145,7 @@ describe('HilosDaemonPage', () => {
     const box = () => h.el('hilos-daemon-node-n1')!
     expect(box().textContent).toContain('Silent since')
     expect(h.el('hilos-daemon-silent-n1')?.textContent).not.toContain('—')
-    expect(box().getAttribute('href')).toBe('/hilos/daemon/n1')
+    expect(box().getAttribute('href')).toBe('/hilos/daemon/node/n1')
     expect(box().textContent).not.toContain('Daemon CPU')
     expect(box().textContent).not.toContain('Measured memory')
     expect(h.el('hilos-daemon-workers-n1')).toBeNull()
@@ -669,7 +669,7 @@ describe('HilosDaemonPage', () => {
       const link = h.el('hilos-daemon-entry-metrics')
       if (source)
         expect(link?.getAttribute('href')).toBe(
-          `/hilos/daemon/${source.nodeId}/http`,
+          `/hilos/daemon/node/${source.nodeId}/http`,
         )
       else expect(link).toBeNull()
       expect(h.register).not.toHaveBeenCalled()

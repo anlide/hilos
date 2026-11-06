@@ -171,7 +171,7 @@ describe('moderation Rules', () => {
       }),
     ).toEqual({ id: 0, kind: '', rule: '' })
     expect(moderationKindRulesPath('project/kind with spaces')).toBe(
-      '/hilos/moderation/project%2Fkind%20with%20spaces/rules',
+      '/hilos/moderation/kind/project%2Fkind%20with%20spaces/rules',
     )
   })
 

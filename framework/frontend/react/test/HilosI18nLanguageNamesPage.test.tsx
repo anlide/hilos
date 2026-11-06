@@ -63,7 +63,7 @@ describe('React language names page', () => {
     ).toBe('page')
     expect(
       el('hilos-page-tab-hilos_i18n_language_locales').getAttribute('href'),
-    ).toBe('/hilos/i18n/languages/uk/locales')
+    ).toBe('/hilos/i18n/language/19/locales')
     act(() =>
       h.card({
         ...languageCard,
@@ -234,7 +234,7 @@ describe('React language names page', () => {
       act(() => {
         h.route.set({
           page: HilosPages.I18N_LANGUAGE_NAMES,
-          params: { languageCode: 'fr' },
+          params: { languageId: '13' },
           admin: true,
         })
         h.card({ ...languageCard, languageId: 13, code: 'fr' })
@@ -262,7 +262,7 @@ describe('React language names page', () => {
       click('i18n-names-delete-en')
       h.route.set({
         page: HilosPages.I18N_LANGUAGE_NAMES,
-        params: { languageCode: 'fr' },
+        params: { languageId: '13' },
         admin: true,
       })
       h.card({

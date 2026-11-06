@@ -293,9 +293,9 @@ describe('HilosAnalyticsBrowserSessionsPage', () => {
             .findAll('[data-id="hilos-analytics-browser-session-list-session"]')
             .map((node) => node.attributes('href')),
         ).toEqual([
-          '/hilos/analytics/browser-sessions/64',
-          '/hilos/analytics/browser-sessions/71',
-          '/hilos/analytics/browser-sessions/72',
+          '/hilos/analytics/browser-session/64',
+          '/hilos/analytics/browser-session/71',
+          '/hilos/analytics/browser-session/72',
         ])
         const people = projection.findAll(
           '[data-id="hilos-analytics-browser-session-list-person"]',
@@ -306,11 +306,11 @@ describe('HilosAnalyticsBrowserSessionsPage', () => {
           'Deleted user #610',
         ])
         expect(people[0]!.get('a').attributes('href')).toBe(
-          '/hilos/analytics/people/12',
+          '/hilos/analytics/person/12',
         )
         expect(people[1]!.find('a').exists()).toBe(false)
         expect(people[2]!.get('a').attributes('href')).toBe(
-          '/hilos/analytics/people/610',
+          '/hilos/analytics/person/610',
         )
         for (const suffix of [
           'session',
@@ -390,7 +390,7 @@ describe('HilosAnalyticsBrowserSessionsPage', () => {
         projection
           .get('[data-id="hilos-analytics-browser-session-list-session"]')
           .attributes('href'),
-      ).toBe('/hilos/analytics/browser-sessions/64')
+      ).toBe('/hilos/analytics/browser-session/64')
       for (const suffix of ['browser', 'first-seen', 'last-seen', 'actions']) {
         expect(
           projection

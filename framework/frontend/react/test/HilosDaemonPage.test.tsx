@@ -308,7 +308,7 @@ describe('HilosDaemonPage', () => {
     }
     const fallback = content.getByRole('link', { name: 'Node unknown' })
     expect(within(fallback).getByText('unknown').textContent).toBe('unknown')
-    expect(fallback.getAttribute('href')).toBe('/hilos/daemon/unknown')
+    expect(fallback.getAttribute('href')).toBe('/hilos/daemon/node/unknown')
     fireEvent.click(
       content.getByRole('link', { name: `Node ${nodeName} (${nodeId})` }),
     )
@@ -718,7 +718,7 @@ describe('HilosDaemonPage', () => {
       'Browser connections: —',
     )
     expect(h.find('hilos-daemon-node-solo')?.getAttribute('href')).toBe(
-      '/hilos/daemon/solo',
+      '/hilos/daemon/node/solo',
     )
     expect(h.find('hilos-daemon-node-solo')?.textContent).toContain(
       'Single installation',
@@ -786,7 +786,7 @@ describe('HilosDaemonPage', () => {
         ]),
       ),
     )
-    expect(box().getAttribute('href')).toBe('/hilos/daemon/n1')
+    expect(box().getAttribute('href')).toBe('/hilos/daemon/node/n1')
     expect(box().textContent).toContain('Silent since')
     expect(h.find('hilos-daemon-silent-n1')?.textContent).not.toContain('—')
     expect(h.find('hilos-daemon-clock-n1')).toBeNull()
@@ -835,7 +835,7 @@ describe('HilosDaemonPage', () => {
     const h = harness(false, picture([node('n1')]), undefined, false)
     expect(h.find('hilos-daemon-inspector')).toBeNull()
     expect(h.find('hilos-daemon-node-n1')?.getAttribute('href')).toBe(
-      '/hilos/daemon/n1',
+      '/hilos/daemon/node/n1',
     )
     expect(h.find('hilos-daemon-node-n1')?.textContent).toContain('150%')
     expect(h.find('hilos-daemon-node-log')).toBeNull()
@@ -858,7 +858,7 @@ describe('HilosDaemonPage', () => {
       const link = h.find('hilos-daemon-entry-metrics')
       if (source)
         expect(link?.getAttribute('href')).toBe(
-          `/hilos/daemon/${source.nodeId}/http`,
+          `/hilos/daemon/node/${source.nodeId}/http`,
         )
       else expect(link).toBeNull()
       expect(h.register).not.toHaveBeenCalled()

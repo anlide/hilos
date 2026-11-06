@@ -27,7 +27,7 @@ function router(diagramBuilt = false, scopes: ScopeManager): HilosRouter {
       params: { nodeId: 'n1' },
       admin: true,
     }),
-    currentPath: createSignal('/hilos/daemon/n1/workers'),
+    currentPath: createSignal('/hilos/daemon/node/n1/workers'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),

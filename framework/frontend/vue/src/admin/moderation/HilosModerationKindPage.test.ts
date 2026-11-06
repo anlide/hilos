@@ -62,7 +62,7 @@ async function harness(
     createAppPageRouter({}),
     pages,
     {
-      pathname: () => `/hilos/moderation/${first.kind}`,
+      pathname: () => `/hilos/moderation/kind/${first.kind}`,
       pushState: () => {},
       replaceState: () => {},
       onPopState: () => () => {},
@@ -376,7 +376,7 @@ describe('HilosModerationKindPage', () => {
     answer()
     await nextTick()
     expect(view.get('h1').text()).toBe('Profile name')
-    navigation.navigate('/hilos/moderation/chat_message')
+    navigation.navigate('/hilos/moderation/kind/chat_message')
     await nextTick()
     expect(view.text()).not.toContain('Profile name')
     expect(
@@ -429,7 +429,7 @@ describe('HilosModerationKindPage', () => {
   it('lets the real outlet replace an unknown kind with the server 404', async () => {
     const { view, receive, navigation } = await harness({}, { outlet: true })
     expect(view.get('h1').text()).toBe('Profile name')
-    navigation.navigate('/hilos/moderation/unknown')
+    navigation.navigate('/hilos/moderation/kind/unknown')
     receive('subscription_page_error', {
       page: PAGE,
       httpCode: 404,
@@ -459,7 +459,7 @@ it('uses the supplied two-tab kind head without changing the Overview body', asy
     ['Rules', undefined],
   ])
   expect(tabs.findAll('a')[1].attributes('href')).toBe(
-    '/hilos/moderation/hilos_profile_name/rules',
+    '/hilos/moderation/kind/hilos_profile_name/rules',
   )
   expect(view.findAll('h1')).toHaveLength(1)
   expect(

@@ -490,12 +490,12 @@ describe('HilosSecuritySignInMethodsPage in the admin view mode', () => {
       wrapper
         .get('[data-id="hilos-sign-in-method-provider-oauth_github"]')
         .attributes('href'),
-    ).toBe('/hilos/security/oauth/github')
+    ).toBe('/hilos/security/oauth/provider/github')
     expect(
       wrapper
         .get('[data-id="hilos-sign-in-method-provider-oauth_google"]')
         .attributes('href'),
-    ).toBe('/hilos/security/oauth/google')
+    ).toBe('/hilos/security/oauth/provider/google')
   })
 
   it('an admin on a node in the mode dispatches a switch without the mode strip reference', async () => {

@@ -6,6 +6,7 @@ import {
   login,
   openSignIn,
   waitAnalyticsBrowserSession,
+  analyticsBrowserSessionPath,
   analyticsSessionLink,
   expectAnalyticsActionRows,
   expectAnalyticsActionsInOrder,
@@ -25,6 +26,8 @@ import { createCommandChannel } from '../../../../../framework/frontend/scripts/
 import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/index.js'
+
+// spec-owner: demo — carries Chat's Vue browser journeys for these shared pages
 
 // What the Analytics section proves, the same on every kit: a person's card leads
 // to their browser sessions, a session lists its actions in source order, and no
@@ -90,7 +93,7 @@ test('shows real session actions in source order without bodies or another sessi
     await gotoPage(expect, admin, `/hilos/user/${user.userId}`)
     await admin.getByTestId('hilos-page-head-action').click()
     await expect(admin).toHaveURL(
-      new RegExp(`/hilos/analytics/people/${user.userId}$`),
+      new RegExp(`/hilos/analytics/person/${user.userId}$`),
     )
     await expectPageReady(expect, admin)
     await expectAnalyticsPersonSession(
@@ -109,7 +112,7 @@ test('shows real session actions in source order without bodies or another sessi
     await analyticsSessionLink(admin, userSession.browserSessionId!).click()
     await expect(admin).toHaveURL(
       new RegExp(
-        `/hilos/analytics/browser-sessions/${userSession.browserSessionId}$`,
+        `${analyticsBrowserSessionPath(userSession.browserSessionId!)}$`,
       ),
     )
     await expectPageReady(expect, admin)
@@ -152,7 +155,7 @@ test('shows real session actions in source order without bodies or another sessi
     await gotoPage(
       expect,
       admin,
-      `/hilos/analytics/browser-sessions/${adminSession.browserSessionId}`,
+      analyticsBrowserSessionPath(adminSession.browserSessionId!),
     )
     const adminSessionLabel = `Browser session #${adminSession.browserSessionId}`
     await expectAnalyticsBrowserSessionHead(expect, admin, adminSessionLabel)

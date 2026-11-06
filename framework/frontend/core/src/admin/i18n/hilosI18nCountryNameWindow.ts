@@ -115,7 +115,7 @@ export interface HilosI18nCountryNameWindow extends Omit<
  *
  * @param controller The names table holding the writing language in focus.
  * @param card The live country card.
- * @param country The country code from the page's address.
+ * @param country The display code of the same country card.
  * @param context The tracked action dispatcher.
  */
 export function createHilosI18nCountryNameWindow(

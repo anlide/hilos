@@ -706,11 +706,11 @@ describe('bootHilos', () => {
     'subscribes exactly the completed i18n detail views in %s',
     (viewLayer) => {
       for (const [page, path] of [
-        [HilosPages.I18N_LANGUAGE, '/hilos/i18n/languages/en'],
-        [HilosPages.I18N_LANGUAGE_NAMES, '/hilos/i18n/languages/en/names'],
-        [HilosPages.I18N_LANGUAGE_LOCALES, '/hilos/i18n/languages/en/locales'],
-        [HilosPages.I18N_COUNTRY, '/hilos/i18n/countries/us'],
-        [HilosPages.I18N_COUNTRY_NAMES, '/hilos/i18n/countries/us/names'],
+        [HilosPages.I18N_LANGUAGE, '/hilos/i18n/language/11'],
+        [HilosPages.I18N_LANGUAGE_NAMES, '/hilos/i18n/language/11/names'],
+        [HilosPages.I18N_LANGUAGE_LOCALES, '/hilos/i18n/language/11/locales'],
+        [HilosPages.I18N_COUNTRY, '/hilos/i18n/country/102'],
+        [HilosPages.I18N_COUNTRY_NAMES, '/hilos/i18n/country/102/names'],
       ] as const) {
         const connection = fakeConnection()
         const hilosConnection = connection as unknown as HilosConnection
@@ -727,8 +727,8 @@ describe('bootHilos', () => {
           params:
             page === HilosPages.I18N_COUNTRY ||
             page === HilosPages.I18N_COUNTRY_NAMES
-              ? { countryCode: 'us' }
-              : { languageCode: 'en' },
+              ? { countryId: '102' }
+              : { languageId: '11' },
         })
         expect(connection.sent).toEqual([])
         connection.emitProjectSignal('handshake_response', {
@@ -740,8 +740,8 @@ describe('bootHilos', () => {
             page,
             page === HilosPages.I18N_COUNTRY ||
               page === HilosPages.I18N_COUNTRY_NAMES
-              ? { countryCode: 'us' }
-              : { languageCode: 'en' },
+              ? { countryId: '102' }
+              : { languageId: '11' },
           ),
         ).toBe(path)
         expect(connection.sent).toEqual([
@@ -751,8 +751,8 @@ describe('bootHilos', () => {
             params:
               page === HilosPages.I18N_COUNTRY ||
               page === HilosPages.I18N_COUNTRY_NAMES
-                ? { countryCode: 'us' }
-                : { languageCode: 'en' },
+                ? { countryId: '102' }
+                : { languageId: '11' },
           },
         ])
       }
@@ -863,8 +863,8 @@ describe('bootHilos', () => {
   })
 
   it.each([
-    [HilosPages.I18N_COUNTRY, '/hilos/i18n/countries/us', 'Demo'],
-    [HilosPages.I18N_COUNTRY_NAMES, '/hilos/i18n/countries/us/names', ''],
+    [HilosPages.I18N_COUNTRY, '/hilos/i18n/country/102', 'Demo'],
+    [HilosPages.I18N_COUNTRY_NAMES, '/hilos/i18n/country/102/names', ''],
   ])(
     'binds the live owner title on %s from one complete answer',
     (page, path, appName) => {
@@ -953,7 +953,7 @@ describe('bootHilos', () => {
         )
         expect(router.currentPath.get()).toBe(path)
       }
-      router.navigate('/hilos/i18n/countries/ie/names')
+      router.navigate('/hilos/i18n/country/140/names')
       expect(router.currentTitle.get()).toBe('')
       connection.emitProjectSignal('page_response', {
         page: HilosPages.I18N_COUNTRY_NAMES,

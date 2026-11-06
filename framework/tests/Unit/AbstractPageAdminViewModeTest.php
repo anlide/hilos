@@ -181,7 +181,7 @@ final class AbstractPageAdminViewModeTest extends TestCase
 
         $payload = $this->answer(
             new $pageClass(new PageViewerTestAgent()),
-            new PageRouteParams(['countryCode' => 'us']),
+            new PageRouteParams(['countryId' => '102']),
         );
 
         $this->assertSame([
@@ -219,7 +219,7 @@ final class AbstractPageAdminViewModeTest extends TestCase
         foreach ([[null, 401], [5, 403]] as [$userId, $httpCode]) {
             Hilos::$browser = new IdentityTestBrowser(userId: $userId, admin: false);
             $router->dispatchPageSubscribe(
-                new WebSocketPageSubscribeSignalDTO('ak-1', PageViewerHeadTestPage::PAGE, ['countryCode' => 'us']),
+                new WebSocketPageSubscribeSignalDTO('ak-1', PageViewerHeadTestPage::PAGE, ['countryId' => '102']),
                 SignalSource::WORKER,
                 PageViewerHeadTestPage::PAGE,
             );
@@ -514,7 +514,7 @@ final class PageViewerHeadNamesTestPage extends PageViewerTestPage
      */
     public static function isTabApplicable(PageRouteParams $ownerParams): bool
     {
-        return $ownerParams->getString('countryCode') === 'us';
+        return $ownerParams->getString('countryId') === '102';
     }
 }
 

@@ -1768,7 +1768,7 @@ describe('the card link to the person in Analytics (HIL-1420)', () => {
 
     scopes.page()?.data.set('analyticsEnabled', true)
     expect(enabled.get()).toBe(true)
-    expect(path()).toBe('/hilos/analytics/people/7')
+    expect(path()).toBe('/hilos/analytics/person/7')
 
     scopes.page()?.data.set('analyticsEnabled', false)
     expect(enabled.get()).toBe(false)

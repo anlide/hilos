@@ -42,7 +42,22 @@ import HilosI18nLanguageNameWindow from './HilosI18nLanguageNameWindow.vue'
 import HilosI18nNamesTable from './HilosI18nNamesTable.vue'
 
 const props = defineProps<{ context: HilosI18nLanguageContext }>()
-const liveCard = createHilosI18nLanguageCard(props.context)
+const router = inject(hilosRouterKey)
+if (!router) {
+  throw new Error(
+    'HilosI18nLanguageNamesPage requires a provided router: app.provide(hilosRouterKey, router).',
+  )
+}
+const routeId = computedSignal(() =>
+  String(router.currentRoute.get().params.languageId ?? ''),
+)
+const rawCard = createHilosI18nLanguageCard(props.context)
+const liveCard = computedSignal(() => {
+  const current = rawCard.get()
+  return current !== null && String(current.languageId) === routeId.get()
+    ? current
+    : null
+})
 const unbindName = bindPageInstanceName(
   props.context.scopes,
   HilosPages.I18N_LANGUAGE,
@@ -60,22 +75,14 @@ const unbindName = bindPageInstanceName(
 )
 onUnmounted(unbindName)
 const card = useSignal(liveCard)
-const router = inject(hilosRouterKey)
-if (!router) {
-  throw new Error(
-    'HilosI18nLanguageNamesPage requires a provided router: app.provide(hilosRouterKey, router).',
-  )
-}
+
 const loading = useSignal(router.pageLoading)
-const language = computedSignal(
-  () =>
-    (router.currentRoute.get().params.languageCode as string | undefined) ?? '',
-)
+
 const names = createHilosI18nNamesTable(
   props.context,
   HILOS_I18N_LANGUAGE_NAMES,
   computedSignal(() =>
-    liveCard.get()?.code === language.get()
+    String(liveCard.get()?.languageId) === routeId.get()
       ? (liveCard.get()?.languageId ?? null)
       : null,
   ),
@@ -83,7 +90,15 @@ const names = createHilosI18nNamesTable(
 const nameWindow = createHilosI18nLanguageNameWindow(
   names.controller,
   liveCard,
-  language,
+  computedSignal((): string => {
+    const held = nameWindow.target.get()
+    return (
+      liveCard.get()?.code ??
+      (String(held?.languageId) === routeId.get()
+        ? (held?.languageCode ?? '')
+        : '')
+    )
+  }),
   props.context,
 )
 const nameCopy = HILOS_I18N_LANGUAGE_NAME_COPY
@@ -91,10 +106,10 @@ const copy = HILOS_I18N_LANGUAGE_NAME_DELETE_COPY
 const deleteOpen = ref(false)
 const target = shallowRef<HilosI18nLanguageNameDeleteTarget | null>(null)
 const focused = useSignal(names.controller.focusedRow)
-const currentLanguage = useSignal(language)
+const currentLanguage = useSignal(routeId)
 const source = computed(() =>
   card.value?.languageId === target.value?.languageId &&
-  currentLanguage.value === target.value?.languageCode &&
+  currentLanguage.value === String(target.value?.languageId) &&
   focused.value?.inLanguageId === target.value?.inLanguageId
     ? (focused.value ?? null)
     : null,
@@ -120,15 +135,16 @@ async function openDelete(
   if (deleteOpen.value || nameWindow.saving.get()) return
   nameWindow.close()
   const attempt = ++opening
-  const languageCode = language.get()
+  const languageId = routeId.get()
   const resolved = await names.controller.focusRow(row.rowKey)
   if (attempt !== opening) return
   const fresh = names.controller.focusedRow.get()
   const subject = card.value
   if (
     resolved === null ||
-    language.get() !== languageCode ||
-    subject?.code !== languageCode ||
+    routeId.get() !== languageId ||
+    subject === null ||
+    String(subject.languageId) !== languageId ||
     fresh?.inLanguageId !== row.inLanguageId ||
     fresh.name === null
   ) {
@@ -149,7 +165,7 @@ async function openDelete(
     languageId: subject.languageId,
     inLanguageId: fresh.inLanguageId,
     nameId,
-    languageCode,
+    languageCode: subject.code,
     languageNativeName: subject.nativeName,
     inLanguageCode: fresh.code,
     inLanguageNativeName: fresh.nativeName,
@@ -167,7 +183,15 @@ async function openDelete(
   deleteOpen.value = true
 }
 
-watch(currentLanguage, closeDelete, { flush: 'sync' })
+watch(
+  currentLanguage,
+  () => {
+    nameWindow.close()
+    closeDelete()
+    target.value = null
+  },
+  { flush: 'sync' },
+)
 watch(
   deleteOpen,
   (open) => {

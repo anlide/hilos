@@ -2,6 +2,7 @@ import { expect, test } from '../test.js'
 
 import {
   ANALYTICS_SESSION_LIST_PATH,
+  analyticsBrowserSessionPath,
   analyticsPeopleViewports,
   analyticsPersonLink,
   analyticsSessionLink,
@@ -37,6 +38,8 @@ import {
 import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
 import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/index.js'
+
+// spec-owner: demo — carries Polls' Angular browser journeys for these shared pages
 
 const sendCommand = createStandCommandChannel({ timeoutMs: 5_000 })
 
@@ -277,7 +280,7 @@ test('People filters real sessions and opens the scoped Person through navigatio
       user.userId,
       AUTH_ACTION_LOGIN,
     )
-    const personPath = `/hilos/analytics/people/${user.userId}`
+    const personPath = `/hilos/analytics/person/${user.userId}`
     const label = `${user.name} (#${user.userId})`
     const bookmark = () => ({
       sent: frames.sent.length,
@@ -525,7 +528,7 @@ test('People filters real sessions and opens the scoped Person through navigatio
     })
 
     const id = session.browserSessionId!
-    const sessionPath = `${ANALYTICS_SESSION_LIST_PATH}/${id}`
+    const sessionPath = analyticsBrowserSessionPath(id)
     const sessionLabel = `Browser session #${id}`
     const expectListReturn = async () => {
       const returning = frames.sent.length

@@ -18,6 +18,8 @@ import {
   grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
+// spec-owner: demo — carries Chat's Vue browser journeys for these shared pages
+
 function expectMetadataEntry(
   frames: ReturnType<typeof watchDeliveryFrames>,
   packetStart: number,
@@ -80,7 +82,7 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   const open = shownByTestId(page, 'hilos-change-log-open-table-hilos_user')
   await expect(open).toHaveAttribute(
     'href',
-    '/hilos/change-log/tables/hilos_user',
+    '/hilos/change-log/table/hilos_user',
   )
   await open.click()
   await expectPageReady(expect, page)
@@ -88,7 +90,7 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   const columnsLink = page.getByTestId('hilos-change-log-table-link-columns')
   await expect(columnsLink).toHaveAttribute(
     'href',
-    '/hilos/change-log/tables/hilos_user/columns',
+    '/hilos/change-log/table/hilos_user/columns',
   )
   const columnsPacketStart = frames.packets.length
   const columnsSentStart = frames.sent.length
@@ -206,7 +208,7 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   await page.getByTestId('hilos-change-log-table-link-history').click()
   await expectTrackedTableWhole(expect, page, 'hilos_user')
 
-  const tablePath = `${CHANGE_LOG_TABLES_PATH}/hilos_user`
+  const tablePath = `/hilos/change-log/table/hilos_user`
   const tablePages = [
     { kind: 'overview', path: tablePath },
     {

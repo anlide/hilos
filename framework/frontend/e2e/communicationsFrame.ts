@@ -6,13 +6,18 @@ import {
   letterFrameSchema,
   type HilosLetterFrame,
 } from '../core/src/admin/communications/hilosCommunicationsChannelFrame.js'
+import { resolveHilosPath } from '../core/src/routing/hilosAdmin.js'
+import { HilosPages } from '../core/src/routing/hilosPages.js'
 import { communicationsChannelReplies } from './communications.js'
 import {
   deliveryObject as object,
   type DeliveryFrameLog,
 } from './deliveryFrames.js'
 
-export const COMMUNICATIONS_FRAME_PATH = '/hilos/communications/email/frame'
+export const COMMUNICATIONS_FRAME_PATH = resolveHilosPath(
+  HilosPages.COMMUNICATIONS_CHANNEL_FRAME,
+  { channelId: 'email' },
+)
 const FRAME_PAGE = 'hilos_communications_channel_frame'
 const FRAME_OWNER = 'hilos_communications_channel'
 const SET_ACTION = 'communications_channel_set'

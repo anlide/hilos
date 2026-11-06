@@ -27,9 +27,9 @@ final class CountryCardBrowserData
 
     public const array BINDING = [
         BrowserParamKey::PARAMS => [
-            HilosPageRouteParams::HILOS_I18N_COUNTRY_CODE => [
+            HilosPageRouteParams::HILOS_I18N_COUNTRY_ID => [
                 BrowserRefKey::TYPE => BrowserRefType::PAGE_PARAM,
-                BrowserRefKey::KEY => HilosPageRouteParams::HILOS_I18N_COUNTRY_CODE,
+                BrowserRefKey::KEY => HilosPageRouteParams::HILOS_I18N_COUNTRY_ID,
             ],
         ],
     ];
@@ -49,8 +49,8 @@ final class CountryCardBrowserData
 
     public const array BROWSER = [
         BrowserDataConfigKey::PARAMS => [
-            HilosPageRouteParams::HILOS_I18N_COUNTRY_CODE => [
-                BrowserParamKey::TYPE => BrowserParamType::STRING,
+            HilosPageRouteParams::HILOS_I18N_COUNTRY_ID => [
+                BrowserParamKey::TYPE => BrowserParamType::POSITIVE_INT,
                 BrowserParamKey::REQUIRED => true,
             ],
         ],
@@ -64,9 +64,9 @@ final class CountryCardBrowserData
                 BrowserDataFieldKey::SOURCE => self::COUNTRIES_SOURCE,
                 BrowserDataFieldKey::ROW_KEY => Country::id,
                 BrowserDataFieldKey::WHERE => [
-                    Country::code => [
+                    Country::id => [
                         BrowserRefKey::TYPE => BrowserRefType::TABLE_PARAM,
-                        BrowserRefKey::KEY => HilosPageRouteParams::HILOS_I18N_COUNTRY_CODE,
+                        BrowserRefKey::KEY => HilosPageRouteParams::HILOS_I18N_COUNTRY_ID,
                     ],
                 ],
                 BrowserDataFieldKey::FIELDS => [

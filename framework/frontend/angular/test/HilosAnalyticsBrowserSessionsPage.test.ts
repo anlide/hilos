@@ -374,9 +374,9 @@ describe('HilosAnalyticsBrowserSessionsPage', () => {
         '#72',
       ])
       expect(sessions.map((node) => node.getAttribute('href'))).toEqual([
-        `${ROOT}/64`,
-        `${ROOT}/71`,
-        `${ROOT}/72`,
+        '/hilos/analytics/browser-session/64',
+        '/hilos/analytics/browser-session/71',
+        '/hilos/analytics/browser-session/72',
       ])
       const people = column(projection, 'person')
       expect(people.map((node) => node.textContent?.trim())).toEqual([
@@ -389,9 +389,9 @@ describe('HilosAnalyticsBrowserSessionsPage', () => {
           node.querySelector<HTMLElement>('a')?.getAttribute('href'),
         ),
       ).toEqual([
-        '/hilos/analytics/people/12',
+        '/hilos/analytics/person/12',
         undefined,
-        '/hilos/analytics/people/610',
+        '/hilos/analytics/person/610',
       ])
       for (const suffix of SUFFIXES) {
         expect(
@@ -429,10 +429,12 @@ describe('HilosAnalyticsBrowserSessionsPage', () => {
       new Set(['64', '71', '72']),
     )
     click(h, column(table(h), 'session')[0]!)
-    expect(h.router.navigate).toHaveBeenLastCalledWith(`${ROOT}/64`)
+    expect(h.router.navigate).toHaveBeenLastCalledWith(
+      '/hilos/analytics/browser-session/64',
+    )
     click(h, get(column(table(h), 'person')[0]!, 'a'))
     expect(h.router.navigate).toHaveBeenLastCalledWith(
-      '/hilos/analytics/people/12',
+      '/hilos/analytics/person/12',
     )
   })
 
@@ -475,7 +477,11 @@ describe('HilosAnalyticsBrowserSessionsPage', () => {
       ).toBe(true)
       expect(
         column(projection, 'session').map((node) => node.getAttribute('href')),
-      ).toEqual([`${ROOT}/64`, `${ROOT}/65`, `${ROOT}/66`])
+      ).toEqual([
+        '/hilos/analytics/browser-session/64',
+        '/hilos/analytics/browser-session/65',
+        '/hilos/analytics/browser-session/66',
+      ])
       for (const suffix of ['browser', 'first-seen', 'last-seen', 'actions']) {
         expect(column(projection, suffix)[0]?.textContent?.trim()).toBe(
           'Hidden',

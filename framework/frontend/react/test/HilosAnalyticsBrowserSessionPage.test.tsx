@@ -155,7 +155,7 @@ function harness(
   })
   const router: HilosRouter = {
     currentRoute,
-    currentPath: createSignal('/hilos/analytics/browser-sessions/57'),
+    currentPath: createSignal('/hilos/analytics/browser-session/57'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),

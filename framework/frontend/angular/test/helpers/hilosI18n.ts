@@ -614,20 +614,20 @@ export function i18nBench(
     params: LIST_PAGES.includes(page)
       ? {}
       : COUNTRY_PAGES.includes(page)
-        ? { countryCode: 'us' }
-        : { languageCode: 'uk' },
+        ? { countryId: '102' }
+        : { languageId: '19' },
     admin: true,
   })
   const loading = createSignal(true)
   const navigate = vi.fn()
   const paths = {
     resolvePath: (key: string, params?: Record<string, string>) => {
-      const card = `/hilos/i18n/languages/${params?.['languageCode']}`
+      const card = `/hilos/i18n/language/${params?.['languageId']}`
       if (key === HilosPages.I18N_LANGUAGES) return '/hilos/i18n/languages'
       if (key === HilosPages.I18N_LANGUAGE) return card
       if (key === HilosPages.I18N_LANGUAGE_NAMES) return `${card}/names`
       if (key === HilosPages.I18N_LANGUAGE_LOCALES) return `${card}/locales`
-      const countryCard = `/hilos/i18n/countries/${params?.['countryCode']}`
+      const countryCard = `/hilos/i18n/country/${params?.['countryId']}`
       if (key === HilosPages.I18N_COUNTRIES) return '/hilos/i18n/countries'
       if (key === HilosPages.I18N_COUNTRY) return countryCard
       if (key === HilosPages.I18N_COUNTRY_NAMES) return `${countryCard}/names`
@@ -637,7 +637,7 @@ export function i18nBench(
   const router = {
     currentRoute: route,
     currentPath: createSignal(
-      paths.resolvePath(page, { languageCode: 'uk', countryCode: 'us' }) ?? '',
+      paths.resolvePath(page, { languageId: '19', countryId: '102' }) ?? '',
     ),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
@@ -844,7 +844,7 @@ export function liveCountryTab(
     },
     bench.scopes,
   )
-  let path = bench.paths.resolvePath(page, { countryCode: 'us' }) ?? ''
+  let path = bench.paths.resolvePath(page, { countryId: '102' }) ?? ''
   const navigation = createHilosRouter(createAppPageRouter({}), subscription, {
     pathname: () => path,
     pushState: (next) => {

@@ -92,7 +92,7 @@ function harness(projectTimeZone?: string) {
   })
   const router = {
     currentRoute,
-    currentPath: createSignal('/hilos/daemon/n1/cron'),
+    currentPath: createSignal('/hilos/daemon/node/n1/cron'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),

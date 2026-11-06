@@ -96,7 +96,7 @@ function harness(param: string | undefined = '57') {
     },
     scopes,
   )
-  let path = `/hilos/analytics/browser-sessions/${param ?? ''}`
+  let path = `/hilos/analytics/browser-session/${param ?? ''}`
   const router = createHilosRouter(createAppPageRouter({}), subscription, {
     pathname: () => path,
     pushState: (next) => {
@@ -127,7 +127,7 @@ function harness(param: string | undefined = '57') {
     sendTableViewport,
     unregisterTableWindow,
     navigate(id: string) {
-      router.navigate(`/hilos/analytics/browser-sessions/${id}`)
+      router.navigate(`/hilos/analytics/browser-session/${id}`)
     },
     header(
       value: unknown,

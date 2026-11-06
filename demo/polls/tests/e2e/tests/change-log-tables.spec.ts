@@ -14,6 +14,8 @@ import {
   grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
+// spec-owner: demo — carries Polls' Angular browser journeys for these shared pages
+
 test('opens Tracked tables from Change Log, filters journal labels and reads schema metadata', async ({
   page,
 }) => {
@@ -39,13 +41,13 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   const open = shownByTestId(page, 'hilos-change-log-open-table-hilos_user')
   await expect(open).toHaveAttribute(
     'href',
-    '/hilos/change-log/tables/hilos_user',
+    '/hilos/change-log/table/hilos_user',
   )
   await open.click()
   await expectPageReady(expect, page)
   await expectTrackedTableOverview(expect, page, 'hilos_user', 51)
 
-  const tablePath = `${CHANGE_LOG_TABLES_PATH}/hilos_user`
+  const tablePath = `/hilos/change-log/table/hilos_user`
   const tablePages = [
     { kind: 'overview', path: tablePath },
     {

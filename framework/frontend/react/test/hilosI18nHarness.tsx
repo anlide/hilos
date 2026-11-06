@@ -316,7 +316,7 @@ export function harness(
   const context: HilosI18nLanguageContext = { connection, scopes, actions }
   const route = createSignal<PageRouteMatch>({
     page,
-    params: isCountry ? { countryCode: 'gg' } : { languageCode: 'uk' },
+    params: isCountry ? { countryId: '143' } : { languageId: '19' },
     admin: true,
   })
   const loading = createSignal(true)
@@ -326,13 +326,13 @@ export function harness(
     pageError: createSignal(null),
     pageIdentity: pageIdentity(scopes),
     resolvePath: (key: string, params?: Record<string, string>) => {
-      const countryPath = `/hilos/i18n/countries/${params?.countryCode}`
+      const countryPath = `/hilos/i18n/country/${params?.countryId}`
       if (key === HilosPages.DASHBOARD) return '/hilos'
       if (key === HilosPages.I18N) return '/hilos/i18n'
       if (key === HilosPages.I18N_COUNTRIES) return '/hilos/i18n/countries'
       if (key === HilosPages.I18N_COUNTRY) return countryPath
       if (key === HilosPages.I18N_COUNTRY_NAMES) return `${countryPath}/names`
-      const path = `/hilos/i18n/languages/${params?.languageCode}`
+      const path = `/hilos/i18n/language/${params?.languageId}`
       if (key === HilosPages.I18N_LANGUAGES) return '/hilos/i18n/languages'
       if (key === HilosPages.I18N_LANGUAGE) return path
       if (key === HilosPages.I18N_LANGUAGE_NAMES) return `${path}/names`
@@ -447,8 +447,8 @@ export function liveCountryTab(
   )
   let path =
     page === HilosPages.I18N_COUNTRY_NAMES
-      ? '/hilos/i18n/countries/gg/names'
-      : '/hilos/i18n/countries/gg'
+      ? '/hilos/i18n/country/143/names'
+      : '/hilos/i18n/country/143'
   const navigation = createHilosRouter(createAppPageRouter({}), subscription, {
     pathname: () => path,
     pushState: (next) => {

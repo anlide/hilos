@@ -22,6 +22,8 @@ import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.m
 import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
 import { emitNotification } from '../../../../../framework/frontend/scripts/notifications.mjs'
 
+// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
+
 // Notification-center e2e (HIL-558), moved here from chat with the communications
 // section it drives (HIL-1224); chat keeps only the product half, a mention and a
 // rename raising a notification. A notification is emitted through the live
@@ -101,7 +103,11 @@ async function signInAddressableAdmin(
  */
 async function expectJournalSent(page: Page, title: string): Promise<void> {
   await expect(async () => {
-    await gotoPage(expect, page, '/hilos/communications/email/deliveries')
+    await gotoPage(
+      expect,
+      page,
+      '/hilos/communications/channel/email/deliveries',
+    )
     await typeInto(page.getByTestId('hilos-table-search'), title)
     const row = page.getByTestId(/^hilos-table-row-/)
     await expect(row).toHaveCount(1, { timeout: JOURNAL_READ_MS })
@@ -439,7 +445,7 @@ test("an operator reaches a channel's delivery journal by clicks alone", async (
   await shownByTestId(page, 'hilos-channel-configure-email').click()
   await expectCommunicationsChannelHead(expect, page, 'configuration')
   expect(new URL(page.url()).pathname).toBe(
-    '/hilos/communications/email/configuration',
+    '/hilos/communications/channel/email/configuration',
   )
 
   await page
@@ -447,7 +453,7 @@ test("an operator reaches a channel's delivery journal by clicks alone", async (
     .click()
   await expectCommunicationsChannelHead(expect, page, 'deliveries')
   expect(new URL(page.url()).pathname).toBe(
-    '/hilos/communications/email/deliveries',
+    '/hilos/communications/channel/email/deliveries',
   )
 })
 
@@ -459,7 +465,7 @@ test('paginates the delivery journal across windows when the count exceeds the c
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/communications/email/deliveries')
+  await gotoPage(expect, page, '/hilos/communications/channel/email/deliveries')
 
   const count = page.getByTestId('hilos-table-count')
   const prev = page.getByTestId('hilos-table-prev')
@@ -509,7 +515,7 @@ test('keeps an exact delivery window in place until Show after a live arrival ab
     expect(emitted.queuedChannels).toContain('email')
   }
 
-  await gotoPage(expect, page, '/hilos/communications/email/deliveries')
+  await gotoPage(expect, page, '/hilos/communications/channel/email/deliveries')
   await typeInto(page.getByTestId('hilos-table-search'), searchTerm)
   const count = page.getByTestId('hilos-table-count')
   const next = page.getByTestId('hilos-table-next')

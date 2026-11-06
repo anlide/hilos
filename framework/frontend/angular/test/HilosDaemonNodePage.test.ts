@@ -100,7 +100,7 @@ describe('HilosDaemonNodePage', () => {
       ),
     ).toEqual(['--hilos-progress: 100;', '--hilos-progress: 100;'])
     expect(el('environment-link')!.getAttribute('href')).toBe(
-      '/hilos/daemon/n1/env',
+      '/hilos/daemon/node/n1/env',
     )
     expect(el('mismatch-link')!.getAttribute('href')).toBe(
       h.router.resolvePath(HilosPages.DAEMON_ENV_MISMATCH, {}),
@@ -537,7 +537,7 @@ describe('HilosDaemonNodePage', () => {
     },
     {
       boundary: 'another node address',
-      change: (h) => h.router.navigate('/hilos/daemon/n2'),
+      change: (h) => h.router.navigate('/hilos/daemon/node/n2'),
       nodeId: 'n2',
     },
     {
@@ -558,7 +558,7 @@ describe('HilosDaemonNodePage', () => {
       expect(document.querySelector('[role="dialog"]')).toBeNull()
       h.act(() => {
         if (h.router.currentRoute.get().page !== HilosPages.DAEMON_NODE) {
-          h.router.navigate(`/hilos/daemon/${nodeId}`)
+          h.router.navigate(`/hilos/daemon/node/${nodeId}`)
         }
         if (h.scopes.page()?.key !== HilosPages.DAEMON_NODE) {
           h.scopes.openPage(HilosPages.DAEMON_NODE)

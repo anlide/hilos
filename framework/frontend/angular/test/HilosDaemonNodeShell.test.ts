@@ -513,7 +513,7 @@ describe('HilosDaemonNodeShell', () => {
     expect(h.root.textContent).not.toContain('Первый')
     expect(node('log')!.getAttribute('href')).toBe('/hilos/logs/view/n2/live')
     expect(el('hilos-daemon-environment-link')!.getAttribute('href')).toBe(
-      '/hilos/daemon/n2/env',
+      '/hilos/daemon/node/n2/env',
     )
     h.act(() => h.scopes.openPage(HilosPages.DAEMON_NODE))
     expect(document.querySelector('h1')).toBeNull()

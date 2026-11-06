@@ -269,7 +269,7 @@ export class HilosI18nLanguagesPage {
    */
   protected languagePath(row: HilosI18nLanguageRow): string | undefined {
     return this.router.resolvePath(HilosPages.I18N_LANGUAGE, {
-      languageCode: row.code,
+      languageId: String(row.languageId),
     })
   }
 

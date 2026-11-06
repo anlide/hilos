@@ -218,19 +218,13 @@ describe('HilosI18nLanguageNamesPage', () => {
   it('closes both windows on a route change and lets their row go', () => {
     const h = setup()
     h.click('i18n-names-delete-en')
-    h.act(() =>
-      h.route.set({ ...h.route.get(), params: { languageCode: 'ru' } }),
-    )
+    h.act(() => h.route.set({ ...h.route.get(), params: { languageId: '12' } }))
     expect(h.el('modal')).toBeNull()
     expect(h.focuses.at(-1)).toBe('')
-    h.act(() =>
-      h.route.set({ ...h.route.get(), params: { languageCode: 'uk' } }),
-    )
+    h.act(() => h.route.set({ ...h.route.get(), params: { languageId: '19' } }))
     h.click('i18n-language-name-edit-en')
     h.type('i18n-language-name-input', 'Draft')
-    h.act(() =>
-      h.route.set({ ...h.route.get(), params: { languageCode: 'ru' } }),
-    )
+    h.act(() => h.route.set({ ...h.route.get(), params: { languageId: '12' } }))
     expect(h.el('modal')).toBeNull()
     expect(h.focuses.at(-1)).toBe('')
   })
