@@ -34,6 +34,7 @@ use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\WebSocket\Liveness\WebSocketLivenessMoment;
 use Hilos\Utils\Logger;
+use Random\RandomException;
 
 /**
  * CommandClient - daemon-side representation of a CLI command connection.
@@ -88,6 +89,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
      * @throws SocketException When the read buffer or JSON depth exceeds limits
      * @throws HilosException When a decoded command line refuses to become a DTO at all
      * @throws InvalidArgumentException When the parked request carries a command that cannot be named
+     * @throws RandomException When secure cron pause entropy cannot be obtained
      */
     protected function processReadBuffer(): void
     {
@@ -371,6 +373,23 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 $this->heldCommand = $request->command;
                 $this->server->hold($request->correlationId, $this);
                 $door->requestNodeReport($request);
+                return;
+            }
+
+            if ($request->command === CliCommands::CRON_TEST_PAUSE || $request->command === CliCommands::CRON_TEST_CANCEL_PAUSE) {
+                $door = $this->server->cronFireTestDoor();
+                if ($door === null) {
+                    $this->writeBuffer .= CommandReplyDTO::error(
+                        $request->correlationId,
+                        'This daemon has no cron schedule door',
+                    )->toJson() . "\n";
+                    continue;
+                }
+                $this->heldCorrelationId = $request->correlationId;
+                $this->heldSince = microtime(true);
+                $this->heldCommand = $request->command;
+                $this->server->hold($request->correlationId, $this);
+                $door->requestCronSchedule($request);
                 return;
             }
 

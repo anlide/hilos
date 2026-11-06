@@ -36,6 +36,7 @@ use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFireDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFiredDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
 use LogicException;
@@ -282,6 +283,135 @@ final class CronFireTransportIntegrationTest extends FrameworkIntegrationTestCas
 
         self::assertSame([self::RULE], $this->probe->fired, 'Work already sent still runs');
         self::assertFalse($this->caller->hasPendingWrite());
+    }
+
+    public function testAgentSchedulePausesAreAppliedAndCanceledBeforeAnyTickOrReport(): void
+    {
+        $this->probe->rules = [new CronRule(self::RULE, '* * * * *')];
+        $this->probe->rules[0]->lastRun = 0.0;
+        $rule = $this->probe->rules[0];
+        $pauseId = $this->pauseSchedule();
+        self::assertFalse($rule->shouldRun());
+        self::assertNull($rule->lastFiredAt);
+        self::assertSame([], $this->reports);
+        self::assertSame([], $this->probe->ranAs, 'No agent tick was needed to answer');
+        self::assertSame([], $this->probe->fired);
+
+        $this->requestSchedule(CliCommands::CRON_TEST_CANCEL_PAUSE, ['pauseId' => $pauseId]);
+        $this->applyScheduleOnWorker();
+        $this->deliverToMaster();
+        $reply = $this->readReply();
+        self::assertTrue($reply->isOk());
+        self::assertSame([], $reply->payload);
+        self::assertSame(0, $this->pendingCount());
+        self::assertNull($rule->lastFiredAt);
+        self::assertFalse($rule->isArmedForNextCheck());
+        self::assertSame([], $this->reports);
+        self::assertTrue($rule->shouldRun(), 'The next natural check resumes');
+    }
+
+    public function testUnknownRepeatedAndReplacedRulePauseKeysAreRefused(): void
+    {
+        $this->probe->rules = [new CronRule(self::RULE, '* * * * *')];
+        $this->probe->rules[0]->lastRun = 0.0;
+        $firstId = $this->pauseSchedule();
+        $secondId = $this->pauseSchedule();
+        self::assertNotSame($firstId, $secondId);
+        $selector = json_decode(base64_decode(strtr($firstId, '-_', '+/'), true), true, flags: JSON_THROW_ON_ERROR);
+        $selector[2] = str_repeat('0', 32);
+        $unknownId = rtrim(strtr(base64_encode(json_encode($selector, JSON_THROW_ON_ERROR)), '+/', '-_'), '=');
+        $this->requestSchedule(CliCommands::CRON_TEST_CANCEL_PAUSE, ['pauseId' => $unknownId]);
+        $this->applyScheduleOnWorker();
+        $this->deliverToMaster();
+        $this->assertRefusal("No pause {$unknownId}");
+        self::assertFalse($this->probe->rules[0]->shouldRun());
+
+        $this->requestSchedule(CliCommands::CRON_TEST_CANCEL_PAUSE, ['pauseId' => $firstId]);
+        $this->applyScheduleOnWorker();
+        $this->deliverToMaster();
+        self::assertTrue($this->readReply()->isOk());
+        self::assertFalse($this->probe->rules[0]->shouldRun(), 'A different pause stays');
+        $this->requestSchedule(CliCommands::CRON_TEST_CANCEL_PAUSE, ['pauseId' => $firstId]);
+        $this->applyScheduleOnWorker();
+        $this->deliverToMaster();
+        $this->assertRefusal("No pause {$firstId}");
+
+        $this->probe->rules = [new CronRule(self::RULE, '* * * * *')];
+        $this->probe->rules[0]->lastRun = 0.0;
+        $currentId = $this->pauseSchedule();
+        $this->requestSchedule(CliCommands::CRON_TEST_CANCEL_PAUSE, ['pauseId' => $secondId]);
+        $this->applyScheduleOnWorker();
+        $this->deliverToMaster();
+        $this->assertRefusal("No pause {$secondId}");
+        self::assertFalse($this->probe->rules[0]->shouldRun(), 'An old instance key cannot clear the new instance pause');
+        $this->requestSchedule(CliCommands::CRON_TEST_CANCEL_PAUSE, ['pauseId' => $currentId]);
+        $this->applyScheduleOnWorker();
+        $this->deliverToMaster();
+        self::assertTrue($this->readReply()->isOk());
+        self::assertTrue($this->probe->rules[0]->shouldRun());
+    }
+
+    public function testTheWorkerRechecksEnvironmentForBothScheduleOperations(): void
+    {
+        $this->probe->rules = [new CronRule(self::RULE, '* * * * *')];
+        $this->probe->rules[0]->lastRun = 0.0;
+        $this->requestSchedule(CliCommands::CRON_TEST_PAUSE, ['agentId' => self::AGENT, 'ruleName' => self::RULE]);
+        $this->environment('prod');
+        $this->applyScheduleOnWorker();
+        $this->environment('test');
+        $this->deliverToMaster();
+        $this->assertRefusal(TestOnlyCommandOnProductionException::message(CliCommands::CRON_TEST_PAUSE));
+        self::assertTrue($this->probe->rules[0]->shouldRun(), 'The refused pause was never installed');
+
+        $this->probe->rules = [new CronRule(self::RULE, '* * * * *')];
+        $this->probe->rules[0]->lastRun = 0.0;
+        $pauseId = $this->pauseSchedule();
+        $this->requestSchedule(CliCommands::CRON_TEST_CANCEL_PAUSE, ['pauseId' => $pauseId]);
+        $this->environment('staging');
+        $this->applyScheduleOnWorker();
+        $this->environment('test');
+        $this->deliverToMaster();
+        $this->assertRefusal(TestOnlyCommandOnProductionException::message(CliCommands::CRON_TEST_CANCEL_PAUSE));
+        self::assertFalse($this->probe->rules[0]->shouldRun(), 'The refused cancellation left the pause in place');
+    }
+
+    /** @return string Pause key delivered over the command socket after the owner applied it */
+    private function pauseSchedule(): string
+    {
+        $this->requestSchedule(CliCommands::CRON_TEST_PAUSE, ['agentId' => self::AGENT, 'ruleName' => self::RULE]);
+        self::assertFalse($this->caller->hasPendingWrite());
+        self::assertSame(1, $this->pendingCount());
+        $this->applyScheduleOnWorker();
+        self::assertTrue($this->sender->hasPendingWrite(), 'The owner answers without a tick');
+        $this->deliverToMaster();
+        $reply = $this->readReply();
+        self::assertTrue($reply->isOk());
+        self::assertSame(['pauseId'], array_keys($reply->payload));
+        self::assertIsString($reply->payload['pauseId']);
+        self::assertSame(0, $this->pendingCount());
+        return $reply->payload['pauseId'];
+    }
+
+    /**
+     * @param string $command Test-only schedule command
+     * @param array<string, mixed> $payload Real command wire payload
+     */
+    private function requestSchedule(string $command, array $payload): void
+    {
+        $frame = new CommandRequestDTO('schedule-1', $command, $payload)->toJson() . "\n";
+        self::assertSame(strlen($frame), socket_write($this->terminal, $frame));
+        $this->caller->read();
+    }
+
+    /** Delivers the schedule frame to the real worker handler without ticking any agent. */
+    private function applyScheduleOnWorker(): void
+    {
+        $this->receiver->write();
+        $this->sender->read();
+        $frame = $this->sender->getNextMessage();
+        self::assertInstanceOf(WorkerTestCronScheduleDTO::class, $frame);
+        $this->worker->handleDaemonMessage($frame);
+        self::assertNull($this->sender->getNextMessage());
     }
 
     /** @param string $env Environment of the process being exercised */

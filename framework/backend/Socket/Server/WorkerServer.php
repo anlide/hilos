@@ -86,6 +86,7 @@ use LogicException;
 use Hilos\Core\Daemon\CronFireTestDoor;
 use Hilos\Core\Daemon\TestOrmForgetDoor;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFireDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgetDTO;
 
@@ -367,6 +368,16 @@ abstract class WorkerServer extends AbstractServer implements
      * @return ?WorkerClient Exact channel used, or null when no live target exists
      */
     public function sendTestCronFire(int $workerId, WorkerTestCronFireDTO $request): ?WorkerClient
+    {
+        return $this->sendToLiveWorker($workerId, $request);
+    }
+
+    /**
+     * @param int $workerId Signed id of the worker already running the agent
+     * @param WorkerTestCronScheduleDTO $request Pause mutation to queue without starting a worker
+     * @return ?WorkerClient Exact live registered channel, or null when unavailable
+     */
+    public function sendTestCronSchedule(int $workerId, WorkerTestCronScheduleDTO $request): ?WorkerClient
     {
         return $this->sendToLiveWorker($workerId, $request);
     }

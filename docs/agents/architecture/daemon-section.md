@@ -187,6 +187,18 @@ turning false, not from the run's moment, which a run earlier in the same second
 leaves unchanged, and answers after that tick's signals: the agent's cron report
 with the new run leaves first.
 
+A test-only schedule pause belongs to one current `CronRule` instance. While at
+least one pause id remains, natural schedule checks skip the rule without marking
+a run or retaining a missed expression match. `fireOnNextCheck()` takes
+precedence over that suppression, so an explicit test fire still runs and updates
+`lastRunAt` through the ordinary path. Removing a pause id removes only that id
+and does not run the rule; after the final id is removed, later checks follow the
+expression normally without catching up. The pause disappears with the rule
+instance and is not restored on replacement. It does not change the expression,
+the actual `lastRunAt`, or the calculation of `nextRunAt`, so the picture keeps
+showing those ordinary values without a pause marker. See
+[cron schedule pause commands](../cli/commands.md#pausing-a-cron-schedule-while-its-test-checks-the-rule).
+
 ## The HTTP Counters
 
 The master counts each completed HTTP request on its registered method and path,

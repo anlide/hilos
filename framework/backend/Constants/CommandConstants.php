@@ -137,6 +137,12 @@ final class CommandConstants
     /** @var string Request payload key: name of the cron rule a test firing names */
     public const string FIELD_RULE_NAME = 'ruleName';
 
+    /** @var string Request and reply payload key: exact cron schedule pause id */
+    public const string FIELD_PAUSE_ID = 'pauseId';
+
+    /** @var string Worker request key: cron schedule pause operation */
+    public const string FIELD_CRON_SCHEDULE_OPERATION = 'operation';
+
     /** @var string Reply payload key: moment a cron rule fired, in epoch milliseconds */
     public const string FIELD_FIRED_AT = 'firedAt';
 

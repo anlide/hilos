@@ -24,6 +24,8 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\CronScheduleTestOperation;
+use Hilos\Core\Daemon\Cron\Exception\CronException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
@@ -1383,6 +1385,37 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
         }
 
         return null;
+    }
+
+    /**
+     * Mutates only the current registered instance; an old pause never follows a replacement rule.
+     *
+     * @internal Called by WorkerManager after its test-only environment gate.
+     * @param string $ruleName Current rule to change
+     * @param CronScheduleTestOperation $operation Pause mutation
+     * @param string $pauseId Exact pause key
+     * @throws CronException When the rule or the exact pause is absent
+     */
+    final public function changeCronScheduleForTest(string $ruleName, CronScheduleTestOperation $operation, string $pauseId): void
+    {
+        foreach ($this->cronRules() as $rule) {
+            if ($rule->name !== $ruleName) {
+                continue;
+            }
+            if ($operation === CronScheduleTestOperation::Pause) {
+                $rule->pauseSchedule($pauseId);
+            } else {
+                try {
+                    $rule->resumeSchedule($pauseId);
+                } catch (CronException) {
+                    throw new CronException("No pause {$pauseId}");
+                }
+            }
+            Logger::info("Cron schedule {$operation->value} {$this->getId()}/{$ruleName}: pause {$pauseId}");
+            return;
+        }
+
+        throw new CronException("Agent {$this->getId()} holds no cron rule {$ruleName}.");
     }
 
     /**

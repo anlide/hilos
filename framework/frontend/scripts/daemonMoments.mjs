@@ -1,15 +1,17 @@
 // Test-only Daemon commands that bring a node report or a cron rule's run to now,
-// so a spec never waits the node's reporting interval or a cron schedule out.
+// or pause its schedule, so a spec never waits a reporting interval or schedule out.
 import { createStandCommandChannel } from './standCommand.mjs'
 
 // The middle of the command channel's nested windows, a hand-kept copy of
-// CommandChannelWindows::CALLER_WAIT_SECONDS. Both commands are parked for an
+// CommandChannelWindows::CALLER_WAIT_SECONDS. These commands are parked for an
 // agent whose own wait, AGENT_WAIT_SECONDS (13.0), runs out first and comes back
 // as the daemon's stated reason rather than as a socket timeout.
 const REPLY_TIMEOUT_MS = 15_000
 
 const NODE_REPORT_COMMAND = 'test:daemon:node:report'
 const CRON_FIRE_COMMAND = 'test:cron:fire'
+const CRON_PAUSE_COMMAND = 'test:cron:pause'
+const CRON_CANCEL_PAUSE_COMMAND = 'test:cron:cancel-pause'
 
 // The owner named for a rule of the daemon itself, sent as no agent on the wire.
 const DAEMON_OWNER = 'daemon'
@@ -65,22 +67,11 @@ export async function reportDaemonNode({ host } = {}) {
  *   it returns an invalid moment.
  */
 export async function fireCronRule(key, { host } = {}) {
-  const separator = key.indexOf(OWNER_SEPARATOR)
-  const owner = separator === -1 ? '' : key.slice(0, separator)
-  const ruleName = separator === -1 ? '' : key.slice(separator + 1)
-  if (owner === '' || ruleName === '') {
-    throw new Error(
-      `${CRON_FIRE_COMMAND} needs <owner>/<rule>, got ${JSON.stringify(key)}`,
-    )
-  }
-
+  const rule = parseCronRuleKey(key, CRON_FIRE_COMMAND)
   const reply = await createStandCommandChannel({
     timeoutMs: REPLY_TIMEOUT_MS,
     host,
-  })(CRON_FIRE_COMMAND, {
-    agentId: owner === DAEMON_OWNER ? null : owner,
-    ruleName,
-  })
+  })(CRON_FIRE_COMMAND, rule)
   if (!isMoment(reply.firedAt)) {
     throw new Error(
       `Invalid ${CRON_FIRE_COMMAND} reply: ${JSON.stringify(reply)}`,
@@ -88,6 +79,69 @@ export async function fireCronRule(key, { host } = {}) {
   }
 
   return { firedAt: /** @type {number} */ (reply.firedAt) }
+}
+
+/**
+ * Pauses scheduled runs of one current cron rule while explicit fires still run.
+ *
+ * @param {string} key The owner and the rule joined by "/": "daemon/<rule>" or
+ *   "<agentId>/<rule>".
+ * @param {object} [options] Where to send the command.
+ * @param {string} [options.host] Explicit cluster host instead of COMMAND_HOST.
+ * @returns {Promise<{pauseId: string}>} The key to cancel in awaited cleanup.
+ * @throws {Error} When the key names no owner or no rule, the command refuses, or
+ *   it returns an invalid pause key.
+ */
+export async function pauseCronRule(key, { host } = {}) {
+  const rule = parseCronRuleKey(key, CRON_PAUSE_COMMAND)
+  const reply = await createStandCommandChannel({
+    timeoutMs: REPLY_TIMEOUT_MS,
+    host,
+  })(CRON_PAUSE_COMMAND, rule)
+  if (typeof reply.pauseId !== 'string' || reply.pauseId.trim() === '') {
+    throw new Error(
+      `Invalid ${CRON_PAUSE_COMMAND} reply: ${JSON.stringify(reply)}`,
+    )
+  }
+
+  return { pauseId: reply.pauseId }
+}
+
+/**
+ * Cancels only the pause identified by the supplied key.
+ *
+ * @param {string} pauseId The key returned by pauseCronRule.
+ * @param {object} [options] Where to send the command.
+ * @param {string} [options.host] Explicit cluster host instead of COMMAND_HOST.
+ * @returns {Promise<void>}
+ * @throws {Error} When the command refuses, including an unknown or canceled key.
+ */
+export async function cancelCronPause(pauseId, { host } = {}) {
+  await createStandCommandChannel({
+    timeoutMs: REPLY_TIMEOUT_MS,
+    host,
+  })(CRON_CANCEL_PAUSE_COMMAND, { pauseId })
+}
+
+/**
+ * Splits the CLI's owner/rule address at its first separator.
+ *
+ * @param {string} key The owner and rule address.
+ * @param {string} command The command named in an invalid-address error.
+ * @returns {{agentId: string | null, ruleName: string}} The command's rule target.
+ * @throws {Error} When the key names no owner or no rule.
+ */
+function parseCronRuleKey(key, command) {
+  const separator = key.indexOf(OWNER_SEPARATOR)
+  const owner = separator === -1 ? '' : key.slice(0, separator)
+  const ruleName = separator === -1 ? '' : key.slice(separator + 1)
+  if (owner === '' || ruleName === '') {
+    throw new Error(
+      `${command} needs <owner>/<rule>, got ${JSON.stringify(key)}`,
+    )
+  }
+
+  return { agentId: owner === DAEMON_OWNER ? null : owner, ruleName }
 }
 
 /**

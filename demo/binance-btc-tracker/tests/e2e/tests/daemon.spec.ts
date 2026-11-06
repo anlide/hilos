@@ -4,7 +4,11 @@ import { EventEmitter } from 'node:events'
 
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
-import { fireCronRule } from '../../../../../framework/frontend/scripts/daemonMoments.mjs'
+import {
+  cancelCronPause,
+  fireCronRule,
+  pauseCronRule,
+} from '../../../../../framework/frontend/scripts/daemonMoments.mjs'
 import { PAGE_ERROR_NOT_FOUND } from '../../../../../framework/frontend/core/src/protocol/pageError.js'
 import { resolveHilosPath } from '../../../../../framework/frontend/core/src/routing/hilosAdmin.js'
 import { HilosPages } from '../../../../../framework/frontend/core/src/routing/hilosPages.js'
@@ -920,55 +924,76 @@ test.describe('Cron reader time zone', () => {
       expect(browserZone).not.toBe(projectZone)
       await gotoPage(expect, page, `${DAEMON_NODE_PATH}/cron`, PAGE_READY)
       await expectStandaloneCron(expect, page)
-      // The command runs the rule once now, so its row carries a real run moment
-      // without waiting for one; a 15-minute rule then stays put while zones change.
-      const { firedAt } = await fireCronRule(expireKey)
-      await reportDaemonNodeUntil(expect, () => {
-        expect(
-          readDaemonCronMoment(socket.frames, expireKey)?.rule.lastRunAt,
-        ).toBe(firedAt)
-      })
-      const display = await watchDaemonCronDisplay(expect, page, expireKey)
+      // Pause natural firing so lastRunAt stays fixed while zones change.
+      // nextRunAt still advances with the schedule; compare each current pair.
+      const failures: unknown[] = []
+      const { pauseId } = await pauseCronRule(expireKey)
       try {
-        const requests = (state: Awaited<ReturnType<typeof windows.read>>) =>
-          state.frames.filter((frame) => frame.direction === 'sent')
-        const baseline = await windows.read()
-        expect(baseline.application).toHaveLength(1)
-        expect(requests(baseline).length).toBeGreaterThan(0)
-        const connections = socket.sockets()
-        const expire = readDaemonCronMoment(socket.frames, expireKey)!.rule
-        let initial:
-          Awaited<ReturnType<typeof expectDaemonCronMoments>> | undefined
-        for (const own of [browserZone, 'Asia/Tokyo', null]) {
-          if (own !== browserZone) socket.replay(own)
-          const zone = own ?? browserZone
-          const times = await expectDaemonCronMoments(
-            expect,
-            page,
-            socket.frames,
-            expireKey,
-            zone,
-          )
-          if (own === browserZone) initial = times
-          else if (own === null) expect(times).toEqual(initial)
-          else expect(times).not.toEqual(initial)
-          expect(socket.sessions.at(-1)).toMatchObject({
-            data: { entities: { currentUser: { id: userId, timeZone: own } } },
-          })
-          await expect(
-            page.getByTestId('hilos-daemon-cron-project-time-zone'),
-          ).toHaveText(projectZone)
-          expect(readDaemonCronMoment(socket.frames, expireKey)!.rule).toEqual(
-            expire,
-          )
-          const current = await windows.read()
-          expect(requests(current)).toEqual(requests(baseline))
-          expect(current.application).toEqual(baseline.application)
-          expect(socket.sockets()).toBe(connections)
-          await display.unchanged()
+        const { firedAt } = await fireCronRule(expireKey)
+        await reportDaemonNodeUntil(expect, () => {
+          expect(
+            readDaemonCronMoment(socket.frames, expireKey)?.rule.lastRunAt,
+          ).toBe(firedAt)
+        })
+        const display = await watchDaemonCronDisplay(expect, page, expireKey)
+        try {
+          const requests = (state: Awaited<ReturnType<typeof windows.read>>) =>
+            state.frames.filter((frame) => frame.direction === 'sent')
+          const baseline = await windows.read()
+          expect(baseline.application).toHaveLength(1)
+          expect(requests(baseline).length).toBeGreaterThan(0)
+          const connections = socket.sockets()
+          const expire = readDaemonCronMoment(socket.frames, expireKey)!.rule
+          for (const own of [browserZone, 'Asia/Tokyo', null]) {
+            if (own !== browserZone) socket.replay(own)
+            const zone = own ?? browserZone
+            await expectDaemonCronMoments(
+              expect,
+              page,
+              socket.frames,
+              expireKey,
+              zone,
+              { timeOnly: true },
+            )
+            expect(socket.sessions.at(-1)).toMatchObject({
+              data: {
+                entities: { currentUser: { id: userId, timeZone: own } },
+              },
+            })
+            await expect(
+              page.getByTestId('hilos-daemon-cron-project-time-zone'),
+            ).toHaveText(projectZone)
+            const rule = readDaemonCronMoment(socket.frames, expireKey)!.rule
+            expect(rule.lastRunAt).toBe(firedAt)
+            expect({ ...rule, nextRunAt: expire.nextRunAt }).toEqual(expire)
+            expect(Number.isSafeInteger(rule.nextRunAt)).toBe(true)
+            expect(rule.nextRunAt).toBeGreaterThan(Date.UTC(2020, 0))
+            expect(rule.nextRunAt).toBeLessThan(Date.UTC(2100, 0))
+            const current = await windows.read()
+            expect(requests(current)).toEqual(requests(baseline))
+            expect(current.application).toEqual(baseline.application)
+            expect(socket.sockets()).toBe(connections)
+            await display.unchanged()
+          }
+        } finally {
+          await display.dispose()
         }
+      } catch (error) {
+        failures.push(error)
       } finally {
-        await display.dispose()
+        try {
+          await cancelCronPause(pauseId)
+        } catch (error) {
+          failures.push(error)
+        }
+      }
+      if (failures.length === 1) throw failures[0]
+      if (failures.length > 1) {
+        throw new AggregateError(
+          failures,
+          'Cron reader time zone and pause cleanup failed',
+          { cause: failures[0] },
+        )
       }
     } finally {
       socket.dispose()

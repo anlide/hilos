@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Closure;
-use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandChannelWindows;
 use Hilos\Constants\CommandConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
+use Hilos\Core\Daemon\Cron\CronScheduleTestOperation;
 use Hilos\Environment\NonProductionGate;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -17,6 +17,8 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFireDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFiredDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleResultDTO;
 use Throwable;
 
 /**
@@ -47,6 +49,9 @@ final class CronFireTestRequests
     /** @var array<string, string> Rule each pending ask fires, by console correlation */
     private array $ruleNames = [];
 
+    /** @var array<string, WorkerTestCronScheduleDTO> Schedule mutations sharing the same connection-bound wait */
+    private array $schedules = [];
+
     /** @var array<string, float> Last moment each pending ask may still be answered, by console correlation */
     private array $deadlines = [];
 
@@ -71,23 +76,30 @@ final class CronFireTestRequests
      * @param string $agentId Agent holding the rule
      * @param string $ruleName Rule to fire
      * @param ?float $now Current seconds, injectable for deadline tests
+     * @param ?WorkerTestCronScheduleDTO $schedule Immediate pause mutation instead of a firing request
      */
-    public function request(CommandRequestDTO $request, string $agentId, string $ruleName, ?float $now = null): void
+    public function request(
+        CommandRequestDTO $request,
+        string $agentId,
+        string $ruleName,
+        ?float $now = null,
+        ?WorkerTestCronScheduleDTO $schedule = null,
+    ): void
     {
         if (!NonProductionGate::admitted()) {
             ($this->reply)(CommandReplyDTO::error(
                 $request->correlationId,
-                TestOnlyCommandOnProductionException::message(CliCommands::CRON_TEST_FIRE),
+                TestOnlyCommandOnProductionException::message($request->command),
             ));
             return;
         }
 
         try {
             $workerId = $this->agents->getAgentWorkerId($agentId);
-            $worker = $workerId === null ? null : ($this->workerServer)()?->sendTestCronFire(
-                $workerId,
-                new WorkerTestCronFireDTO($request->correlationId, $agentId, $ruleName),
-            );
+            $server = ($this->workerServer)();
+            $worker = $workerId === null ? null : ($schedule === null
+                ? $server?->sendTestCronFire($workerId, new WorkerTestCronFireDTO($request->correlationId, $agentId, $ruleName))
+                : $server?->sendTestCronSchedule($workerId, $schedule));
             if ($worker === null) {
                 ($this->reply)(CommandReplyDTO::error($request->correlationId, "No agent {$agentId} runs on this node."));
                 return;
@@ -96,6 +108,9 @@ final class CronFireTestRequests
             $this->workers[$request->correlationId] = $worker;
             $this->agentIds[$request->correlationId] = $agentId;
             $this->ruleNames[$request->correlationId] = $ruleName;
+            if ($schedule !== null) {
+                $this->schedules[$request->correlationId] = $schedule;
+            }
             $this->deadlines[$request->correlationId] = $deadline;
             $this->nextDeadline = min($this->nextDeadline, $deadline);
         } catch (Throwable $failure) {
@@ -107,13 +122,18 @@ final class CronFireTestRequests
      * Unknown, duplicate and foreign-connection frames leave waiting untouched.
      *
      * @param WorkerClient $worker Actual sender connection
-     * @param WorkerTestCronFiredDTO $ack Parsed outcome
+     * @param WorkerTestCronFiredDTO|WorkerTestCronScheduleResultDTO $ack Parsed firing or schedule outcome
      * @param ?float $now Current seconds, injectable for deadline tests
      */
-    public function accept(WorkerClient $worker, WorkerTestCronFiredDTO $ack, ?float $now = null): void
+    public function accept(
+        WorkerClient $worker,
+        WorkerTestCronFiredDTO|WorkerTestCronScheduleResultDTO $ack,
+        ?float $now = null,
+    ): void
     {
         $correlationId = $ack->correlationId;
-        if (($this->workers[$correlationId] ?? null) !== $worker) {
+        if (($this->workers[$correlationId] ?? null) !== $worker
+            || (isset($this->schedules[$correlationId]) !== ($ack instanceof WorkerTestCronScheduleResultDTO))) {
             return;
         }
         if (($now ?? microtime(true)) >= $this->deadlines[$correlationId]) {
@@ -128,8 +148,16 @@ final class CronFireTestRequests
             $this->refuse($correlationId, $ack->error);
             return;
         }
+        if ($ack instanceof WorkerTestCronFiredDTO) {
+            $payload = [CommandConstants::FIELD_FIRED_AT => $ack->firedAt];
+        } else {
+            $schedule = $this->schedules[$correlationId];
+            $payload = $schedule->operation === CronScheduleTestOperation::Pause
+                ? [CommandConstants::FIELD_PAUSE_ID => $schedule->pauseId]
+                : [];
+        }
         $this->abandon($correlationId);
-        ($this->reply)(CommandReplyDTO::ok($correlationId, [CommandConstants::FIELD_FIRED_AT => $ack->firedAt]));
+        ($this->reply)(CommandReplyDTO::ok($correlationId, $payload));
     }
 
     /** @param WorkerClient $worker Original connection that closed */
@@ -139,7 +167,9 @@ final class CronFireTestRequests
             $correlationId = (string)$key;
             $this->refuse(
                 $correlationId,
-                "The worker running agent {$this->agentIds[$correlationId]} went down before the rule fired.",
+                isset($this->schedules[$correlationId])
+                    ? "The worker running agent {$this->agentIds[$correlationId]} went down before the schedule change was acknowledged."
+                    : "The worker running agent {$this->agentIds[$correlationId]} went down before the rule fired.",
             );
         }
     }
@@ -151,6 +181,7 @@ final class CronFireTestRequests
             $this->workers[$correlationId],
             $this->agentIds[$correlationId],
             $this->ruleNames[$correlationId],
+            $this->schedules[$correlationId],
             $this->deadlines[$correlationId],
         );
         if ($this->workers === []) {
@@ -180,6 +211,9 @@ final class CronFireTestRequests
      */
     private function lateRefusal(string $correlationId): string
     {
+        if (isset($this->schedules[$correlationId])) {
+            return "Agent {$this->agentIds[$correlationId]} did not acknowledge cron schedule {$this->ruleNames[$correlationId]} in time.";
+        }
         return "Agent {$this->agentIds[$correlationId]} did not check cron rule {$this->ruleNames[$correlationId]} in time.";
     }
 

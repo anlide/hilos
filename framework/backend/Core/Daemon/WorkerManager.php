@@ -187,7 +187,10 @@ use Hilos\Socket\Worker\DTO\WorkerTestOrmForgetDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgottenDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFireDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFiredDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleResultDTO;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\CronScheduleTestOperation;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Constants\CliCommands;
 
@@ -964,6 +967,14 @@ abstract class WorkerManager extends BaseManager implements PageResender
                     break;
                 }
                 $this->handleTestCronFire($data);
+                break;
+
+            case WorkerConstants::MESSAGE_TEST_CRON_SCHEDULE:
+                if (!$data instanceof WorkerTestCronScheduleDTO) {
+                    Logger::error('handleTestCronSchedule - unexpected type: ' . get_class($data));
+                    break;
+                }
+                $this->handleTestCronSchedule($data);
                 break;
 
             case WorkerConstants::MESSAGE_DB_REHYDRATE:
@@ -4429,6 +4440,39 @@ abstract class WorkerManager extends BaseManager implements PageResender
             $this->sendCronFired(
                 new WorkerTestCronFiredDTO((string)$correlationId, false, null, "Agent {$agentId} stopped before the rule fired."),
             );
+        }
+    }
+
+    /**
+     * Applies a pause mutation and answers immediately, without ticking or reporting cron.
+     *
+     * @param WorkerTestCronScheduleDTO $request Master's schedule request
+     * @throws InvalidFormatException When the acknowledgement cannot represent the outcome
+     */
+    private function handleTestCronSchedule(WorkerTestCronScheduleDTO $request): void
+    {
+        $error = null;
+        try {
+            $agent = $this->agentManager->getAgent($request->agentId);
+            if (!NonProductionGate::admitted()) {
+                $error = TestOnlyCommandOnProductionException::message(
+                    $request->operation === CronScheduleTestOperation::Pause ? CliCommands::CRON_TEST_PAUSE : CliCommands::CRON_TEST_CANCEL_PAUSE,
+                );
+            } elseif ($agent === null) {
+                $error = "No agent {$request->agentId} runs on this worker.";
+            } elseif (!$agent instanceof AbstractAgent) {
+                $error = "Agent {$request->agentId} holds no cron rule {$request->ruleName}.";
+            } else {
+                $agent->changeCronScheduleForTest($request->ruleName, $request->operation, $request->pauseId);
+            }
+        } catch (Throwable $failure) {
+            $error = $failure->getMessage();
+            if ($error === '') {
+                $error = "Agent {$request->agentId} could not change cron schedule {$request->ruleName}.";
+            }
+        }
+        if ($this->daemonClient !== null && $this->daemonClient->isConnected()) {
+            $this->daemonClient->send(new WorkerTestCronScheduleResultDTO($request->correlationId, $error === null, $error));
         }
     }
 

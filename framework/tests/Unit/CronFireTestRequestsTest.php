@@ -19,6 +19,9 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFireDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFiredDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleResultDTO;
+use Hilos\Core\Daemon\Cron\CronScheduleTestOperation;
 use LogicException;
 use PHPUnit\Framework\TestCase;
 use Socket;
@@ -245,6 +248,45 @@ final class CronFireTestRequestsTest extends TestCase
         $this->assertRefused('6543210987654321', 'The worker running agent mailer went down before the rule fired.');
     }
 
+    public function testScheduleAcknowledgementsRequireTheExactConnectionAndMatchingOutcomeKind(): void
+    {
+        $schedule = new WorkerTestCronScheduleDTO('s-1', self::AGENT, self::RULE, CronScheduleTestOperation::Pause, 'pause-1');
+        $this->requests->request($this->ask('s-1'), self::AGENT, self::RULE, 100.0, $schedule);
+        $worker = $this->transport->live[self::WORKER_ID];
+        self::assertSame($schedule, $this->transport->sent[0][1]);
+        $this->requests->accept($this->worker(), new WorkerTestCronScheduleResultDTO('s-1', true, null), 101.0);
+        $this->requests->accept($worker, new WorkerTestCronFiredDTO('s-1', true, 1000, null), 101.0);
+        self::assertSame([], $this->replies);
+        $this->requests->accept($worker, new WorkerTestCronScheduleResultDTO('s-1', true, null), 101.0);
+        self::assertSame(['pauseId' => 'pause-1'], $this->replies[0]->payload);
+        $this->requests->accept($worker, new WorkerTestCronScheduleResultDTO('s-1', true, null), 101.0);
+        $this->requests->tick(INF);
+        self::assertCount(1, $this->replies);
+    }
+
+    public function testScheduleWaitsShareDeadlineDisconnectAndAbandonCleanup(): void
+    {
+        $worker = $this->transport->live[self::WORKER_ID];
+        foreach (['timeout', 'disconnect', 'abandon'] as $end) {
+            $schedule = new WorkerTestCronScheduleDTO($end, self::AGENT, self::RULE, CronScheduleTestOperation::CancelPause, 'pause-1');
+            $this->requests->request($this->ask($end), self::AGENT, self::RULE, 100.0, $schedule);
+            if ($end === 'timeout') {
+                $this->requests->tick(100.0 + CommandChannelWindows::AGENT_WAIT_SECONDS);
+                $this->assertRefused($end, 'Agent mailer did not acknowledge cron schedule nightly-digest in time.');
+            } elseif ($end === 'disconnect') {
+                $this->requests->workerGone($worker);
+                $this->assertRefused($end, 'The worker running agent mailer went down before the schedule change was acknowledged.');
+            } else {
+                $this->requests->abandon($end);
+                self::assertSame([], $this->replies);
+            }
+            $this->replies = [];
+            $this->requests->accept($worker, new WorkerTestCronScheduleResultDTO($end, true, null), 101.0);
+            $this->requests->tick(INF);
+            self::assertSame([], $this->replies);
+        }
+    }
+
     /**
      * @param string $correlationId Console correlation
      * @return CommandRequestDTO The ask as the command channel hands it to the master
@@ -316,7 +358,7 @@ final class CronFireWorkerTransport extends WorkerServer
     /** @var array<int, WorkerClient> Live connection of each worker */
     public array $live = [];
 
-    /** @var list<array{int, WorkerTestCronFireDTO}> Every arming handed to the transport */
+    /** @var list<array{int, WorkerTestCronFireDTO|WorkerTestCronScheduleDTO}> Test control frames handed to the transport */
     public array $sent = [];
 
     public ?LogicException $failure = null;
@@ -338,6 +380,17 @@ final class CronFireWorkerTransport extends WorkerServer
         if ($this->failure !== null) {
             throw $this->failure;
         }
+        return $this->live[$workerId] ?? null;
+    }
+
+    /**
+     * @param int $workerId Signed worker id
+     * @param WorkerTestCronScheduleDTO $request Schedule change to queue
+     * @return ?WorkerClient Exact connection used
+     */
+    public function sendTestCronSchedule(int $workerId, WorkerTestCronScheduleDTO $request): ?WorkerClient
+    {
+        $this->sent[] = [$workerId, $request];
         return $this->live[$workerId] ?? null;
     }
 

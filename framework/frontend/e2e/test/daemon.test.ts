@@ -5,6 +5,7 @@ import {
   DAEMON_NODE_TABS,
   expectDaemonNodeAnswer,
   expectDaemonCronQuery,
+  expectDaemonCronMoments,
   readDaemonCronMoment,
   readDaemonNodeOverview,
   readDaemonSectionOverview,
@@ -14,12 +15,12 @@ import {
 import { createSocketFrameReader } from '../socket.js'
 
 const rowKey = 'hilos_sessions_library/hilos_sessions_expire'
-const ruleRow = (nextRunAt: number) => ({
+const ruleRow = (nextRunAt: number, lastRunAt: number | null = null) => ({
   rowKey,
   slots: {
     rule: {
       rowKey,
-      lastRunAt: null,
+      lastRunAt,
       nextRunAt,
       idleReason: null,
     },
@@ -544,6 +545,128 @@ describe('real Cron moment evidence', () => {
       ),
     )
     expect(readDaemonCronMoment(frames, rowKey)).toBeUndefined()
+  })
+
+  it('rechecks a row changed during the DOM read and refuses stale or mixed moment pairs', async () => {
+    for (const staysStale of [false, true]) {
+      const read = createSocketFrameReader(1)
+      const frames = read(
+        JSON.stringify({
+          ...initial,
+          data: {
+            ...initial.data,
+            payload: {
+              windows: {
+                hilosDaemonCron: {
+                  filter: {},
+                  rows: [
+                    ruleRow(
+                      Date.UTC(2030, 0, 1, 1),
+                      Date.UTC(2030, 0, 1, 0, 15),
+                    ),
+                  ],
+                },
+              },
+            },
+          },
+        }),
+      )
+      let observations = 0
+      let waits = 0
+      const checks = Object.assign((value: unknown) => expect(value), {
+        any: expect.any,
+        poll: (sample: () => Promise<unknown>) => {
+          waits++
+          return {
+            toMatchObject: async (wanted: unknown) => {
+              // A fixed delivery sequence, with no clock or polling delay.
+              for (let attempt = 0; attempt < 3; attempt++) {
+                const actual = await sample()
+                try {
+                  expect(actual).toMatchObject(wanted)
+                  return
+                } catch (error) {
+                  if (attempt === 2) throw error
+                }
+              }
+            },
+          }
+        },
+      }) as unknown as Expect
+      const browser = {
+        getByTestId: (id: string) => {
+          expect(id).toBe(`hilos-table-row-${rowKey}`)
+          return {
+            filter: (options: unknown) => {
+              expect(options).toEqual({ visible: true })
+              return {
+                getByRole: (role: string) => {
+                  expect(role).toBe('cell')
+                  return {
+                    evaluateAll: async <T, Arg>(
+                      callback: (cells: Element[], arg: Arg) => T,
+                      arg: Arg,
+                    ) => {
+                      observations++
+                      const texts =
+                        staysStale || observations === 1
+                          ? ['today, 09:15 AM', 'tomorrow, 10:00 AM']
+                          : observations === 2
+                            ? ['today, 09:15 AM', 'tomorrow, 12:45 PM']
+                            : ['today, 11:30 AM', 'tomorrow, 12:45 PM']
+                      const result = callback(
+                        texts.map(
+                          (textContent) => ({ textContent }) as Element,
+                        ),
+                        arg,
+                      )
+                      if (observations === 1) {
+                        frames.push(
+                          ...read(
+                            JSON.stringify({
+                              type: 'table_viewport_delta',
+                              data: {
+                                page: 'hilos_daemon_cron',
+                                tableKey: 'hilosDaemonCron',
+                                rowKey,
+                                kind: 'row_updated',
+                                row: ruleRow(
+                                  Date.UTC(2030, 0, 1, 3, 45),
+                                  Date.UTC(2030, 0, 1, 2, 30),
+                                ),
+                              },
+                            }),
+                          ),
+                        )
+                      }
+                      return result
+                    },
+                  }
+                },
+              }
+            },
+          }
+        },
+      } as unknown as Page
+      const comparison = expectDaemonCronMoments(
+        checks,
+        browser,
+        frames,
+        rowKey,
+        'Asia/Tokyo',
+        { timeOnly: true },
+      )
+      if (staysStale) await expect(comparison).rejects.toThrow()
+      else {
+        await expect(comparison).resolves.toEqual({
+          lastRun: '11:30 AM',
+          nextRun: '12:45 PM',
+        })
+      }
+      expect(waits).toBe(1)
+      expect(observations).toBe(3)
+      expect(frames).toHaveLength(2)
+    }
   })
 })
 

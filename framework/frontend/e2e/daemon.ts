@@ -686,81 +686,109 @@ export function readDaemonCronMoment(
   return current
 }
 
-/** Independent browser Intl oracle for the real wire moments, never the SDK formatter. */
+/**
+ * Compare both cells with one current wire row through independent browser Intl.
+ * Each attempt reads the cells together and discards its answer if that row
+ * changed during the read. One poll keeps the caller's delivery timeout.
+ * `timeOnly` checks hours and minutes; the default keeps full calendar labels.
+ */
 export async function expectDaemonCronMoments(
   expect: Expect,
   page: Page,
   frames: readonly SocketFrame[],
   rowKey: string,
   timeZone: string,
+  { timeOnly = false }: { timeOnly?: boolean } = {},
 ): Promise<{ lastRun: string; nextRun: string }> {
-  await expect.poll(() => readDaemonCronMoment(frames, rowKey)).toBeDefined()
-  expect(frames.filter((frame) => frame.failure !== undefined)).toEqual([])
-  const { frame, rule } = readDaemonCronMoment(frames, rowKey)!
-  expect(frame.raw).toEqual(expect.any(String))
-  expect(rule).toMatchObject({ rowKey, idleReason: null })
-  for (const value of [rule.lastRunAt, rule.nextRunAt]) {
-    if (value === null) continue
-    expect(Number.isSafeInteger(value)).toBe(true)
-    // Contemporary epoch milliseconds; epoch seconds and double conversion fail.
-    expect(value).toBeGreaterThan(Date.UTC(2020, 0))
-    expect(value).toBeLessThan(Date.UTC(2100, 0))
-  }
-  expect(rule.nextRunAt).not.toBeNull()
-  const expected = await page.evaluate(
-    ({ lastRunAt, nextRunAt, timeZone }) => {
-      const calendar = new Intl.DateTimeFormat('en-US', {
-        timeZone,
-        year: 'numeric',
-        month: 'numeric',
-        day: 'numeric',
-      })
-      const dayNumber = (at: number) => {
-        const parts = calendar.formatToParts(at)
-        const part = (type: string) =>
-          Number(parts.find((part) => part.type === type)!.value)
-        return (
-          Date.UTC(part('year'), part('month') - 1, part('day')) / 86_400_000
-        )
-      }
-      const now = dayNumber(Date.now())
-      const moment = (at: number) => {
-        const days = dayNumber(at) - now
-        const date =
-          Math.abs(days) <= 1
-            ? new Intl.RelativeTimeFormat('en-US', { numeric: 'auto' }).format(
-                days,
-                'day',
-              )
-            : new Intl.DateTimeFormat('en-US', {
-                timeZone,
-                dateStyle: 'medium',
-              }).format(at)
-        const time = new Intl.DateTimeFormat('en-US', {
-          timeZone,
-          hour: '2-digit',
-          minute: '2-digit',
-        }).format(at)
-        return `${date}, ${time}`
-      }
-      return {
-        lastRun: lastRunAt === null ? 'Not yet' : moment(lastRunAt),
-        nextRun: moment(nextRunAt),
-      }
-    },
-    {
-      lastRunAt: rule.lastRunAt as number | null,
-      nextRunAt: rule.nextRunAt as number,
-      timeZone,
-    },
-  )
   const row = shownByTestId(page, `hilos-table-row-${rowKey}`)
-  await expect(row).toBeVisible()
-  await expect(row.getByRole('cell')).toContainText([
-    expected.lastRun,
-    expected.nextRun,
-  ])
-  return expected
+  let accepted: { lastRun: string; nextRun: string } | undefined
+  await expect
+    .poll(async () => {
+      expect(frames.filter((frame) => frame.failure !== undefined)).toEqual([])
+      const current = readDaemonCronMoment(frames, rowKey)
+      if (current === undefined) return { current: false, matches: false }
+      const { frame, rule } = current
+      expect(frame.raw).toEqual(expect.any(String))
+      expect(rule).toMatchObject({ rowKey, idleReason: null })
+      for (const value of [rule.lastRunAt, rule.nextRunAt]) {
+        if (value === null) continue
+        expect(Number.isSafeInteger(value)).toBe(true)
+        // Contemporary epoch milliseconds; seconds and double conversion fail.
+        expect(value).toBeGreaterThan(Date.UTC(2020, 0))
+        expect(value).toBeLessThan(Date.UTC(2100, 0))
+      }
+      expect(rule.nextRunAt).not.toBeNull()
+      const observation = await row.getByRole('cell').evaluateAll(
+        (cells, { lastRunAt, nextRunAt, timeZone, timeOnly }) => {
+          const calendar = new Intl.DateTimeFormat('en-US', {
+            timeZone,
+            year: 'numeric',
+            month: 'numeric',
+            day: 'numeric',
+          })
+          const dayNumber = (at: number) => {
+            const parts = calendar.formatToParts(at)
+            const part = (type: string) =>
+              Number(parts.find((part) => part.type === type)!.value)
+            return (
+              Date.UTC(part('year'), part('month') - 1, part('day')) /
+              86_400_000
+            )
+          }
+          const now = timeOnly ? 0 : dayNumber(Date.now())
+          const moment = (at: number) => {
+            const time = new Intl.DateTimeFormat('en-US', {
+              timeZone,
+              hour: '2-digit',
+              minute: '2-digit',
+            }).format(at)
+            if (timeOnly) return time
+            const days = dayNumber(at) - now
+            const date =
+              Math.abs(days) <= 1
+                ? new Intl.RelativeTimeFormat('en-US', {
+                    numeric: 'auto',
+                  }).format(days, 'day')
+                : new Intl.DateTimeFormat('en-US', {
+                    timeZone,
+                    dateStyle: 'medium',
+                  }).format(at)
+            return `${date}, ${time}`
+          }
+          const expected = {
+            lastRun: lastRunAt === null ? 'Not yet' : moment(lastRunAt),
+            nextRun: moment(nextRunAt),
+          }
+          const normalize = (text: string) => text.replace(/\s+/g, ' ').trim()
+          const displayed = cells.map((cell) =>
+            normalize(cell.textContent ?? ''),
+          )
+          // Preserve toContainText's ordered, distinct-cell comparison.
+          let previous = -1
+          const matches = [expected.lastRun, expected.nextRun].every((text) => {
+            const index = displayed.findIndex(
+              (cell, index) =>
+                index > previous && cell.includes(normalize(text)),
+            )
+            previous = index
+            return index !== -1
+          })
+          return { expected, displayed, matches }
+        },
+        {
+          lastRunAt: rule.lastRunAt as number | null,
+          nextRunAt: rule.nextRunAt as number,
+          timeZone,
+          timeOnly,
+        },
+      )
+      expect(frames.filter((frame) => frame.failure !== undefined)).toEqual([])
+      const unchanged = readDaemonCronMoment(frames, rowKey)?.frame === frame
+      if (unchanged && observation.matches) accepted = observation.expected
+      return { ...observation, current: unchanged }
+    })
+    .toMatchObject({ current: true, matches: true })
+  return accepted!
 }
 
 /** Retain the actual document, table and row while the session restates its zone. */

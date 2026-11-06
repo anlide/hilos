@@ -283,6 +283,118 @@ final class DaemonManagerCronTest extends TestCase
         $this->assertRefusedWithoutFiring($manager, $console, 'c-6', CronFireTestRequests::INVALID_PAYLOAD);
     }
 
+    public function testDaemonPausesUseTheCurrentRuleAndNeverRunItOnMutation(): void
+    {
+        $this->environment('test');
+        $leadership = new DaemonManagerCronTestLeadership();
+        $leadership->leader = true;
+        Hilos::$cluster = new ClusterContext();
+        Hilos::$cluster->registerLeadership($leadership);
+        $manager = new DaemonManagerCronTestManager();
+        $console = $manager->addConsole();
+        $manager->markWorkersReady();
+        $manager->addRule('cleanup/history', '* * * * *');
+        $manager->getCronRules()['cleanup/history']->lastRun = 0.0;
+        $manager->markFrameClean();
+        $rule = $manager->getCronRules()['cleanup/history'];
+        $pause = new CommandRequestDTO('pause-1', CliCommands::CRON_TEST_PAUSE, [
+            'agentId' => null, 'ruleName' => 'cleanup/history',
+        ]);
+        $manager->requestCronSchedule($pause);
+        $manager->requestCronSchedule($pause);
+        self::assertTrue($console->replies[0]->isOk());
+        self::assertTrue($console->replies[1]->isOk());
+        $firstId = $console->replies[0]->payload['pauseId'];
+        $secondId = $console->replies[1]->payload['pauseId'];
+        self::assertNotSame($firstId, $secondId);
+        self::assertMatchesRegularExpression('/^[A-Za-z0-9_-]+$/D', $firstId);
+        $selector = json_decode(base64_decode(strtr($firstId, '-_', '+/'), true), true, flags: JSON_THROW_ON_ERROR);
+        self::assertCount(3, $selector);
+        self::assertSame([null, 'cleanup/history'], array_slice($selector, 0, 2));
+        self::assertMatchesRegularExpression('/^[a-f0-9]{32}$/D', $selector[2]);
+        self::assertFalse($rule->shouldRun());
+        self::assertNull($rule->lastFiredAt);
+        self::assertFalse($rule->isArmedForNextCheck());
+        self::assertFalse($manager->frameDirty());
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+
+        $cancel = new CommandRequestDTO('cancel-1', CliCommands::CRON_TEST_CANCEL_PAUSE, ['pauseId' => $firstId]);
+        $manager->requestCronSchedule($cancel);
+        self::assertTrue($console->replies[2]->isOk());
+        self::assertSame([], $console->replies[2]->payload);
+        self::assertFalse($rule->shouldRun(), 'The second pause is still present');
+        $manager->requestCronSchedule($cancel);
+        self::assertFalse($console->replies[3]->isOk());
+        self::assertSame(['message' => "No pause {$firstId}"], $console->replies[3]->payload);
+        $manager->requestCronSchedule(new CommandRequestDTO('cancel-2', CliCommands::CRON_TEST_CANCEL_PAUSE, ['pauseId' => $secondId]));
+        self::assertTrue($console->replies[4]->isOk());
+        self::assertSame([], $console->replies[4]->payload);
+        self::assertSame($rule, $manager->getCronRules()['cleanup/history']);
+        self::assertNull($rule->lastFiredAt, 'Final cancellation did not run the rule');
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+        self::assertTrue($rule->shouldRun(), 'The ordinary next check is allowed');
+
+        $manager->requestCronSchedule($pause);
+        $oldId = $console->replies[5]->payload['pauseId'];
+        $manager->addRule('cleanup/history', '* * * * *');
+        $manager->getCronRules()['cleanup/history']->lastRun = 0.0;
+        $manager->requestCronSchedule(new CommandRequestDTO('cancel-old', CliCommands::CRON_TEST_CANCEL_PAUSE, ['pauseId' => $oldId]));
+        self::assertSame(['message' => "No pause {$oldId}"], $console->replies[6]->payload);
+        self::assertTrue($manager->getCronRules()['cleanup/history']->shouldRun());
+    }
+
+    public function testScheduleMutationsKeepTheMasterEnvironmentLeadershipAndReadinessGates(): void
+    {
+        foreach (['prod', 'follower', 'unready', 'unknown'] as $condition) {
+            $this->environment($condition === 'prod' ? 'prod' : 'test');
+            $leadership = new DaemonManagerCronTestLeadership();
+            $leadership->leader = $condition !== 'follower';
+            Hilos::$cluster = new ClusterContext();
+            Hilos::$cluster->registerLeadership($leadership);
+            $manager = new DaemonManagerCronTestManager();
+            $console = $manager->addConsole();
+            $manager->addRule('cleanup', '* * * * *');
+            $manager->getCronRules()['cleanup']->lastRun = 0.0;
+            if ($condition !== 'unready') {
+                $manager->markWorkersReady();
+            }
+            $manager->requestCronSchedule(new CommandRequestDTO('pause-1', CliCommands::CRON_TEST_PAUSE, [
+                'agentId' => null, 'ruleName' => $condition === 'unknown' ? 'missing' : 'cleanup',
+            ]));
+            self::assertFalse($console->replies[0]->isOk());
+            self::assertSame(['message' => match ($condition) {
+                'prod' => TestOnlyCommandOnProductionException::message(CliCommands::CRON_TEST_PAUSE),
+                'follower' => 'Daemon cron rules run on the leader; this node is not the leader.',
+                'unready' => "The daemon's workers are not ready yet.",
+                'unknown' => 'The daemon has no cron rule missing.',
+            }], $console->replies[0]->payload);
+            self::assertTrue($manager->getCronRules()['cleanup']->shouldRun(), 'Refusal changed no pause set');
+        }
+    }
+
+    public function testCancellationStrictlyRejectsMalformedKeysWithoutChangingTheRule(): void
+    {
+        $this->environment('test');
+        $manager = new DaemonManagerCronTestManager();
+        $console = $manager->addConsole();
+        $manager->markWorkersReady();
+        $manager->addRule('cleanup', '* * * * *');
+        $manager->getCronRules()['cleanup']->lastRun = 0.0;
+        $encode = static fn (mixed $value): string => rtrim(strtr(base64_encode(json_encode($value, JSON_THROW_ON_ERROR)), '+/', '-_'), '=');
+        $valid = $encode([null, 'cleanup', str_repeat('a', 32)]);
+        foreach ([
+            '', 'broken', $valid . '=', $valid . "\n", $encode([null, 'cleanup']),
+            $encode([null, 'cleanup', str_repeat('a', 31)]), $encode([null, 'cleanup', 123]),
+            $encode(['', 'cleanup', str_repeat('a', 32)]), $encode([null, '', str_repeat('a', 32)]),
+            $encode((object)[null, 'cleanup', str_repeat('a', 32)]),
+            $encode([null, 'cleanup', str_repeat('a', 32), 'extra']), $valid,
+        ] as $id) {
+            $manager->requestCronSchedule(new CommandRequestDTO('cancel', CliCommands::CRON_TEST_CANCEL_PAUSE, ['pauseId' => $id]));
+            self::assertSame(['message' => "No pause {$id}"], $console->replies[array_key_last($console->replies)]->payload);
+        }
+        self::assertTrue($manager->getCronRules()['cleanup']->shouldRun());
+    }
+
     /**
      * @param string $correlationId Console correlation
      * @param string $ruleName Rule of the daemon to fire

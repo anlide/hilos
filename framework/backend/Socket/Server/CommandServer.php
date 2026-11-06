@@ -314,7 +314,7 @@ class CommandServer extends AbstractServer
         return $this->daemonNodeReportTestDoor;
     }
 
-    /** @param CronFireTestDoor $door Master handling the asks to fire a cron rule now */
+    /** @param CronFireTestDoor $door Master handling test cron firing and schedule mutations */
     public function setCronFireTestDoor(CronFireTestDoor $door): void
     {
         $this->cronFireTestDoor = $door;

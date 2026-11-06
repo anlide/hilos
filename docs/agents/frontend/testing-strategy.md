@@ -964,6 +964,11 @@ for the state that arrives over the socket. Try that shape first:
 `test:verification:end-pause` ages the resend gate and stamps the browser's line
 at now (HIL-1186), so the step after the pause runs at once and the production
 cooldown stays what it is. A missing command is the leaf's contract work.
+If a cron rule's natural run can invalidate the spec's own checks, pause that
+rule before `test:cron:fire` and remove the pause in awaited `finally` cleanup;
+do not work around the race by choosing a less frequent rule.
+See
+[cron schedule pause commands](../cli/commands.md#pausing-a-cron-schedule-while-its-test-checks-the-rule).
 
 A setup that avoids waiting for the clock is also allowed when it catches the
 same regression and leaves the stand's timer unchanged — for example,
@@ -1366,11 +1371,72 @@ the restart is answered the helper sends one report for the waits on recovery.
 directly (the toolbox index does not export it), runs one rule once now by its
 ordinary path — `daemon/<rule>` for a rule of the daemon,
 `<agentId>/<rule>` for an agent's — and returns `{ firedAt }`, the `lastRunAt`
-its row then carries; the rule's schedule does not move. Fire a rule whose own
-schedule will not move its row during the test: binance's Cron zone test fires
-the 15-minute `hilos_sessions_library/hilos_sessions_expire`, not the minute
-`hilos_account_deletion_sweep`, because the test checks that a zone change
-leaves the row alone and a minute rule moves its row every minute.
+its row then carries; its expression stays unchanged. When natural firing of
+that rule could change what the spec is checking, use `pauseCronRule` before
+`fireCronRule` and cancel its returned id with `await cancelCronPause(pauseId)`
+in `finally`. Both helpers are in `daemonMoments.mjs`; the pause suppresses only
+natural checks, so the explicit test fire still runs. The pause is local to the
+current rule instance and does not alter the expression or run history. Each
+report calculates `nextRunAt` from the expression at its report time, so it may
+advance as time passes without a run. Follow the command contract in
+[cron schedule pause commands](../cli/commands.md#pausing-a-cron-schedule-while-its-test-checks-the-rule).
+
+After the report confirms `lastRunAt === firedAt`, compare the displayed pair
+with the row in one current delivered frame. `expectDaemonCronMoments` reads both
+cells together using independent browser `Intl`; if that row's frame changes
+during the DOM read, it discards the observation and repeats within the same
+delivery timeout. Use the current pair on each check because `nextRunAt` may
+advance without a run. In the Binance zone spec, pass the selected display zone
+(`browserZone` for Automatic) and `{ timeOnly: true }`: both moments are checked
+by hour and minute, while component tests cover the full calendar labels. The
+spec also keeps the original `lastRunAt` and every row field other than
+`nextRunAt` fixed, plus its document, table, row, connection, applied window and
+no-new-request checks.
+
+Collect a test failure and a cleanup failure so cancellation cannot hide the
+original assertion failure. The Binance Cron zone spec uses this shape around
+its fire, report, and zone checks:
+
+```ts
+const failures: unknown[] = []
+const { pauseId } = await pauseCronRule(expireKey)
+try {
+  const { firedAt } = await fireCronRule(expireKey)
+  await reportDaemonNodeUntil(expect, () => {
+    expect(
+      readDaemonCronMoment(socket.frames, expireKey)?.rule.lastRunAt,
+    ).toBe(firedAt)
+  })
+  await expectDaemonCronMoments(
+    expect,
+    page,
+    socket.frames,
+    expireKey,
+    browserZone,
+    { timeOnly: true },
+  )
+} catch (error) {
+  failures.push(error)
+} finally {
+  try {
+    await cancelCronPause(pauseId)
+  } catch (error) {
+    failures.push(error)
+  }
+}
+if (failures.length === 1) throw failures[0]
+if (failures.length > 1) {
+  throw new AggregateError(
+    failures,
+    'Cron reader time zone and pause cleanup failed',
+    { cause: failures[0] },
+  )
+}
+```
+
+This preserves a lone failure as-is and reports both failures together, with the
+test failure as `cause`. Keep observer disposal and socket closure in their own
+`finally` blocks, as the full spec does.
 
 On a cluster, name the node. The report and firing helpers and
 `readMonopolisticWorker` take `{ host }`, because the command asks the node

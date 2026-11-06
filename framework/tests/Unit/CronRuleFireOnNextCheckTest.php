@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\Exception\CronException;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
@@ -107,6 +108,97 @@ final class CronRuleFireOnNextCheckTest extends TestCase
         $this->assertSame(strtotime('2026-10-09 03:00:10 UTC'), $rule->lastFiredAt);
     }
 
+    /** A matching minute stays unmarked while the pause belongs only to this rule instance. */
+    public function testAPauseSuppressesTheScheduleWithoutReadingTimeOrMarkingARun(): void
+    {
+        $rule = $this->ruleAt('*/15 * * * *', '2026-10-08 10:15:00 UTC');
+        $rule->pauseSchedule('pause-a');
+
+        $this->assertFalse($rule->shouldRun());
+        $this->assertSame(0.0, $rule->lastRun);
+        $this->assertNull($rule->lastFiredAt);
+        $this->assertSame(0, $rule->clockReads);
+        $this->assertSame(0, $rule->matchChecks);
+        $this->assertFalse($rule->isArmedForNextCheck());
+        $this->assertSame('*/15 * * * *', $rule->expression);
+        $this->assertSame(
+            strtotime('2026-10-08 10:30:00 UTC'),
+            CronRule::nextRunAfter($rule->expression, $rule->now),
+        );
+        $this->assertTrue($this->ruleAt('*/15 * * * *', '2026-10-08 10:15:00 UTC')->shouldRun());
+    }
+
+    /** Arming wins once; the pause still suppresses later matching minutes. */
+    public function testAnArmedPausedRuleFiresExactlyOnce(): void
+    {
+        $rule = $this->ruleAt('*/15 * * * *', '2026-10-08 10:15:00 UTC');
+        $rule->pauseSchedule('pause-a');
+        $rule->fireOnNextCheck();
+
+        $this->assertTrue($rule->isArmedForNextCheck());
+        $this->assertTrue($rule->shouldRun());
+        $this->assertFalse($rule->isArmedForNextCheck());
+        $this->assertSame(1_791_454_500, $rule->lastFiredAt);
+        $this->assertSame(29_857_575.0, $rule->lastRun);
+        $this->assertFalse($rule->shouldRun());
+
+        $rule->now = strtotime('2026-10-08 10:30:00 UTC');
+        $this->assertFalse($rule->shouldRun());
+        $this->assertSame(1_791_454_500, $rule->lastFiredAt);
+        $this->assertSame(29_857_575.0, $rule->lastRun);
+        $this->assertSame(1, $rule->clockReads);
+        $this->assertSame(0, $rule->matchChecks);
+    }
+
+    /** Removing one key, again or unknown, cannot remove another caller's pause. */
+    public function testIndependentPauseKeysMustEachBeRemoved(): void
+    {
+        $rule = $this->ruleAt('*/15 * * * *', '2026-10-08 10:15:00 UTC');
+        $rule->pauseSchedule('pause-a');
+        $rule->pauseSchedule('pause-b');
+        $rule->pauseSchedule('pause-a');
+        $rule->resumeSchedule('pause-a');
+        $this->assertFalse($rule->shouldRun());
+
+        foreach (['pause-a', 'unknown-pause'] as $pauseId) {
+            try {
+                $rule->resumeSchedule($pauseId);
+                $this->fail('Removing an absent pause must be refused.');
+            } catch (CronException) {
+                $this->assertFalse($rule->shouldRun());
+            }
+        }
+
+        $this->assertSame(0.0, $rule->lastRun);
+        $this->assertNull($rule->lastFiredAt);
+        $rule->resumeSchedule('pause-b');
+        $this->assertTrue($rule->shouldRun());
+    }
+
+    /** The last removal preserves a cached miss and lets the next matching minute run normally. */
+    public function testRemovingTheLastPauseRestoresOrdinaryScheduledChecks(): void
+    {
+        $rule = $this->ruleAt('*/15 * * * *', '2026-10-08 10:14:30 UTC');
+        $this->assertFalse($rule->shouldRun());
+        $this->assertSame(1, $rule->matchChecks);
+        $rule->pauseSchedule('pause-a');
+        $this->assertFalse($rule->shouldRun());
+        $this->assertSame(1, $rule->clockReads);
+        $rule->resumeSchedule('pause-a');
+
+        $this->assertSame(0.0, $rule->lastRun);
+        $this->assertNull($rule->lastFiredAt);
+        $this->assertFalse($rule->isArmedForNextCheck());
+        $this->assertFalse($rule->shouldRun());
+        $this->assertSame(1, $rule->matchChecks);
+
+        $rule->now = strtotime('2026-10-08 10:15:00 UTC');
+        $this->assertTrue($rule->shouldRun());
+        $this->assertSame(1_791_454_500, $rule->lastFiredAt);
+        $this->assertSame(29_857_575.0, $rule->lastRun);
+        $this->assertFalse($rule->shouldRun());
+    }
+
     /**
      * @param string $expression Cron expression of the rule
      * @param string $moment The rule's first "now", a time string naming its own zone
@@ -128,8 +220,24 @@ final class FireOnNextCheckClockRule extends CronRule
 {
     public int $now = 0;
 
+    public int $clockReads = 0;
+
+    public int $matchChecks = 0;
+
+    /** @return int Fixed moment, counting checks that reach the clock */
     protected function currentTimestamp(): int
     {
+        $this->clockReads++;
         return $this->now;
+    }
+
+    /**
+     * @param int $timestamp Fixed check moment
+     * @return bool Actual expression match, counting calculations that bypass the cache
+     */
+    protected function matchesAt(int $timestamp): bool
+    {
+        $this->matchChecks++;
+        return parent::matchesAt($timestamp);
     }
 }

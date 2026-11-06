@@ -208,6 +208,12 @@ final class CliCommands
     /** @var string Command: Fire one cron rule once now by its ordinary path; the schedule does not move (test-only) */
     public const string CRON_TEST_FIRE = 'test:cron:fire';
 
+    /** @var string Command: Pause the natural schedule of a current cron rule (test-only) */
+    public const string CRON_TEST_PAUSE = 'test:cron:pause';
+
+    /** @var string Command: Cancel one exact cron schedule pause (test-only) */
+    public const string CRON_TEST_CANCEL_PAUSE = 'test:cron:cancel-pause';
+
     /** @var string Command: Hold table windows and facet counts back by an artificial lag (test-only) */
     public const string TABLE_TEST_LAG = 'test:table:lag';
 

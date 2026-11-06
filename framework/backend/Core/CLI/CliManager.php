@@ -53,6 +53,8 @@ use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\CLI\Commands\ConnectionTestDropCommand;
 use Hilos\Core\CLI\Commands\ConnectionTestLivenessCommand;
 use Hilos\Core\CLI\Commands\CronTestFireCommand;
+use Hilos\Core\CLI\Commands\CronTestPauseCommand;
+use Hilos\Core\CLI\Commands\CronTestCancelPauseCommand;
 use Hilos\Core\CLI\Commands\DaemonTestNodeReportCommand;
 use Hilos\Core\CLI\Commands\DatabaseFreeCommand;
 use Hilos\Core\CLI\Commands\DbSchemaStatusCommand;
@@ -299,6 +301,8 @@ class CliManager
         $this->commands[CliCommands::CONNECTION_TEST_LIVENESS] = new ConnectionTestLivenessCommand();
         $this->commands[CliCommands::DAEMON_TEST_NODE_REPORT] = new DaemonTestNodeReportCommand();
         $this->commands[CliCommands::CRON_TEST_FIRE] = new CronTestFireCommand();
+        $this->commands[CliCommands::CRON_TEST_PAUSE] = new CronTestPauseCommand();
+        $this->commands[CliCommands::CRON_TEST_CANCEL_PAUSE] = new CronTestCancelPauseCommand();
         $this->commands[CliCommands::TABLE_TEST_LAG] = new TableTestLagCommand();
         $this->commands[CliCommands::TABLE_TEST_REFUSE] = new TableTestRefuseCommand();
         $this->commands[CliCommands::ADMIN_VIEW_MODE_TEST] = new AdminViewModeTestCommand();

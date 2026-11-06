@@ -7,6 +7,7 @@ namespace Hilos\Core\Daemon\Cron;
 use DateTimeImmutable;
 use DateTimeZone;
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\Daemon\Cron\Exception\CronException;
 use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\Exception\EnvException;
@@ -93,6 +94,9 @@ class CronRule
 
     /** Armed by {@see fireOnNextCheck()} and taken by the next {@see shouldRun()}. */
     private bool $fireOnNextCheck = false;
+
+    /** @var array<string, true> Test-only pause ids, owned and lost with this rule instance */
+    private array $schedulePauses = [];
 
     /** Last absolute minute whose expression did not match; private to this rule instance. */
     private ?float $lastUnmatchedMinute = null;
@@ -325,6 +329,9 @@ class CronRule
      * A rule armed by {@see fireOnNextCheck()} fires at this check before either test, once, and
      * its run is marked as a scheduled one is, so the schedule does not fire again that minute.
      *
+     * Schedule pauses suppress unarmed checks before reading time, leaving run history and the
+     * negative cache untouched. An armed check takes precedence and leaves the pauses in place.
+     *
      * @return bool True if should run
      * @throws EnvException When the project time zone cannot be read
      */
@@ -337,6 +344,10 @@ class CronRule
             $this->lastRun = floor($now / self::SECONDS_PER_MINUTE);
             $this->lastFiredAt = $now;
             return true;
+        }
+
+        if ($this->schedulePauses !== []) {
+            return false;
         }
 
         $currentTime = $this->currentTimestamp();
@@ -398,7 +409,36 @@ class CronRule
     }
 
     /**
-     * Read the current Unix time, once per {@see shouldRun()}.
+     * Suppress scheduled checks until this key and every other pause key have been removed.
+     * Adding the same key again has no additional effect; an armed check still fires once.
+     *
+     * @internal Test-only schedule control, never application configuration.
+     * @param string $pauseId Independent pause key supplied by the caller
+     */
+    public function pauseSchedule(string $pauseId): void
+    {
+        $this->schedulePauses[$pauseId] = true;
+    }
+
+    /**
+     * Remove only this pause key without arming or running the rule. The next ordinary check
+     * follows the schedule if no pause keys remain.
+     *
+     * @internal Test-only schedule control, never application configuration.
+     * @param string $pauseId Pause key to remove
+     * @throws CronException When this rule has no pause with the supplied key
+     */
+    public function resumeSchedule(string $pauseId): void
+    {
+        if (!isset($this->schedulePauses[$pauseId])) {
+            throw new CronException("Cron rule {$this->name} has no schedule pause {$pauseId}.");
+        }
+
+        unset($this->schedulePauses[$pauseId]);
+    }
+
+    /**
+     * Read the current Unix time for a check that is not suppressed.
      *
      * The seam a test overrides to place the check at a fixed moment.
      *

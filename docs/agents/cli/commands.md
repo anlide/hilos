@@ -320,11 +320,15 @@ the master or the worker running the agent for the rule.
 | Command | Site | Description |
 |---|---|---|
 | `test:daemon:node:report` | `daemon` | Have this node's Daemon agent publish its picture now, with fresh master frames |
-| `test:cron:fire` | `daemon` | Fire one cron rule once now by its ordinary path; the schedule does not move |
+| `test:cron:fire` | `daemon` | Fire one cron rule once now by its ordinary path; leave its expression unchanged |
+| `test:cron:pause` | `daemon` | Pause natural checks on one current rule; an explicit test fire still runs |
+| `test:cron:cancel-pause` | `daemon` | Cancel one exact schedule pause without running the rule |
 
 ```text
 test:daemon:node:report
 test:cron:fire <owner>/<rule>
+test:cron:pause <owner>/<rule>
+test:cron:cancel-pause <id>
 ```
 
 `test:daemon:node:report` takes no argument. The master raises every frame it owes its node
@@ -342,12 +346,15 @@ of the agent that holds the rule. A daemon rule is fired by the leader's master 
 agent's rule is armed by the worker running the agent and fires at the agent's next check; the
 answer leaves after that tick's cron report, so the node agent is sent the new run before the
 console has its answer. Only a rule the agent returns from `cronRules()` — the set the Cron page
-shows — can be armed. Either way the rule runs by the path its schedule takes: the expression and
-the next scheduled run stay as they were, and the schedule does not fire it again in the same
-minute ([daemon-section.md](../architecture/daemon-section.md#the-schedule)).
+shows — can be armed. Either way the rule runs by the path its schedule takes: its expression
+stays unchanged and the schedule does not fire it again in the same minute
+([daemon-section.md](../architecture/daemon-section.md#the-schedule)). Each report calculates
+`nextRunAt` from that expression and the report time, so a later report may carry a later
+`nextRunAt` without another run.
 
-Both ask the node whose command socket they reach: the report is that node's; a daemon rule
-fires there only if that node is the leader, and an agent's rule only if the agent runs there.
+The report and firing commands ask the node whose command socket they reach: the report is
+that node's; a daemon rule fires there only if that node is the leader, and an agent's rule only
+if the agent runs there.
 Each prints one line with the moment, in epoch milliseconds, and exits 0:
 
 ```text
@@ -372,9 +379,10 @@ and `Agent <agentId> holds no cron rule <rule>.` by the worker, and with
 `Agent <agentId> stopped before the rule fired.` when it was armed but never fired. Every
 refusal exits 1.
 
-The e2e helpers are `reportDaemonNode` and `fireCronRule` in
-`framework/frontend/scripts/daemonMoments.mjs`, each taking an optional `{host}`; `fireCronRule`
-takes the same `<owner>/<rule>` key. Which one a spec calls, and when it repeats the report, is in
+The e2e helpers are `reportDaemonNode`, `fireCronRule`, `pauseCronRule` and `cancelCronPause` in
+`framework/frontend/scripts/daemonMoments.mjs`, each taking an optional `{host}`.
+`fireCronRule` and `pauseCronRule` take the `<owner>/<rule>` key; `pauseCronRule` returns the id
+that `cancelCronPause` removes. Which helper a spec calls, and when it repeats the report, is in
 [The Daemon section](../frontend/testing-strategy.md#the-daemon-section--names-and-checks) of the
 testing strategy.
 
@@ -387,6 +395,41 @@ lasts until reset or master restart. On the current leader, fire
 existing picture chain. This is a controlled probe answer, not a clock override: browser and
 system clocks do not change. The command refuses on production, outside a cluster, for a
 non-integer `--ms`, or when its absolute value exceeds 86,400,000 milliseconds.
+
+#### Pausing a cron schedule while its test checks the rule
+
+The pause and cancellation commands are test-only and refuse on a production-like node.
+The `test:cron:pause` owner and address checks match `test:cron:fire`:
+`daemon/<rule>` addresses a daemon rule, and `<agentId>/<rule>` addresses a rule held by that
+agent. The address is split at its first slash, so the rule name may contain further slashes.
+A daemon rule is changed by the leader's master after its workers are ready; an agent rule is
+changed by the current worker running that agent.
+
+`test:cron:pause <owner>/<rule>` applies a pause to that current rule instance and prints:
+
+```text
+Paused <owner>/<rule>: pause <id>
+```
+
+`test:cron:cancel-pause <id>` removes only the pause identified by that id and prints:
+
+```text
+Canceled pause <id>
+```
+
+An unknown or already canceled id is refused with the reason `No pause <id>`. Each successful
+pause or cancellation is logged by the daemon.
+
+While any pause id remains on a rule, natural schedule checks skip it without marking a run
+or remembering a missed match. An explicitly armed `test:cron:fire` run is checked before the
+pause and still runs by the ordinary path. A spec whose checks could be changed by the rule's
+own natural firing pauses it before arming that run, then cancels its id in awaited `finally`
+cleanup. Cancellation removes only its own id and does not run the rule; after the last id is
+removed, later ordinary checks follow the expression without a catch-up run. The pause belongs
+to the current rule instance and disappears when that instance is replaced. The pause itself
+changes neither the expression nor run history. Reports keep the ordinary expression and
+`lastRunAt`; `nextRunAt` is recalculated from the expression at each report and may advance as
+time passes without a run.
 
 ### Time-based features: no universal clock
 
@@ -410,7 +453,11 @@ writes beside them: see
 Daemon node report and a cron rule's run have theirs in
 [Daemon node report and cron firing commands](#daemon-node-report-and-cron-firing-commands).
 Running a rule once is not a time machine: `test:cron:fire` serves every cron rule, yet it runs
-the one rule now by its ordinary path, and the schedule does not move.
+the one rule now by its ordinary path without changing its expression. A reported `nextRunAt`
+is calculated from that expression at the report time and may advance as time passes without a
+run. When the test's own assertions can be changed by that rule's natural firing, use its
+test-only schedule pause and cancel it in awaited cleanup
+([Pausing a cron schedule while its test checks the rule](#pausing-a-cron-schedule-while-its-test-checks-the-rule)).
 
 **The command also stamps the moved moment where its reader reads it.** A browser counts down
 from the moment the server sent it, and a pause shortened in advance kills the very state the

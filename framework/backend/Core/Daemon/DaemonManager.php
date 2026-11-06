@@ -81,6 +81,8 @@ use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Core\Daemon\DaemonMeasurements;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\CronScheduleTestOperation;
+use Hilos\Core\Daemon\Cron\Exception\CronException;
 use Hilos\Core\Daemon\Cron\CronRuleOrigin;
 use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Daemon\Master\DaemonStatus;
@@ -251,9 +253,12 @@ use Hilos\Status\DTO\StatusFilesChangedSignalData;
 use Hilos\Utils\ClientReadFailureLog;
 use Hilos\Utils\Logger;
 use Random\RandomException;
+use JsonException;
 use Throwable;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgottenDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFiredDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleResultDTO;
 
 /**
  * Abstract base for daemon processes. run() owns the main loop: it drains ready
@@ -399,6 +404,12 @@ abstract class DaemonManager extends BaseManager implements
 
     /** Random bytes distinguishing one upload ledger master boot from every other. */
     private const int UPLOAD_MASTER_ID_BYTES = 16;
+
+    /** Random entropy carried in one opaque schedule pause id. */
+    private const int CRON_PAUSE_NONCE_BYTES = 16;
+
+    /** JSON tuple: agent id, rule name, nonce hex. */
+    private const int CRON_PAUSE_SELECTOR_FIELDS = 3;
 
     /** @var list<ServerInterface> registered servers */
     protected array $servers = [];
@@ -2307,6 +2318,77 @@ abstract class DaemonManager extends BaseManager implements
      * @param WorkerTestCronFiredDTO $ack Parsed acknowledgement
      */
     public function acceptCronFired(WorkerClient $worker, WorkerTestCronFiredDTO $ack): void
+    {
+        $this->cronFireTestRequests->accept($worker, $ack);
+    }
+
+    /**
+     * Routes a test-only pause mutation to the current rule owner without starting or ticking it.
+     *
+     * @param CommandRequestDTO $request Held pause or cancellation request
+     * @throws RandomException When secure pause entropy cannot be obtained
+     * @throws InvalidFormatException When a worker request cannot represent the selector
+     */
+    public function requestCronSchedule(CommandRequestDTO $request): void
+    {
+        if (!NonProductionGate::admitted()) {
+            $this->findCommandServer()?->deliver($request->correlationId, CommandReplyDTO::error(
+                $request->correlationId,
+                TestOnlyCommandOnProductionException::message($request->command),
+            ));
+            return;
+        }
+        try {
+            if ($request->command === CliCommands::CRON_TEST_PAUSE) {
+                $operation = CronScheduleTestOperation::Pause;
+                $agentId = $request->payload[CommandConstants::FIELD_AGENT_ID] ?? null;
+                $ruleName = $request->payload[CommandConstants::FIELD_RULE_NAME] ?? null;
+                if (!array_key_exists(CommandConstants::FIELD_AGENT_ID, $request->payload)
+                    || ($agentId !== null && (!is_string($agentId) || $agentId === ''))
+                    || !is_string($ruleName) || $ruleName === '') {
+                    throw new InvalidFormatException('test:cron:pause needs agentId (string or null) and ruleName');
+                }
+                $pauseId = rtrim(strtr(base64_encode(json_encode(
+                    [$agentId, $ruleName, RandomHelper::secureHex(self::CRON_PAUSE_NONCE_BYTES)],
+                    JSON_THROW_ON_ERROR,
+                )), '+/', '-_'), '=');
+            } elseif ($request->command === CliCommands::CRON_TEST_CANCEL_PAUSE) {
+                $operation = CronScheduleTestOperation::CancelPause;
+                $pauseId = $request->payload[CommandConstants::FIELD_PAUSE_ID] ?? null;
+                if (!is_string($pauseId)) {
+                    throw new InvalidFormatException('test:cron:cancel-pause needs pauseId (string)');
+                }
+                [$agentId, $ruleName] = $this->decodeCronPauseId($pauseId);
+            } else {
+                throw new InvalidFormatException('Unknown cron schedule command');
+            }
+        } catch (InvalidFormatException|JsonException $failure) {
+            $this->findCommandServer()?->deliver(
+                $request->correlationId,
+                CommandReplyDTO::error($request->correlationId, $failure->getMessage()),
+            );
+            return;
+        }
+        if ($agentId !== null) {
+            $this->cronFireTestRequests->request(
+                $request,
+                $agentId,
+                $ruleName,
+                schedule: new WorkerTestCronScheduleDTO($request->correlationId, $agentId, $ruleName, $operation, $pauseId),
+            );
+            return;
+        }
+        $this->findCommandServer()?->deliver(
+            $request->correlationId,
+            $this->changeDaemonCronScheduleForTest($request->correlationId, $ruleName, $operation, $pauseId),
+        );
+    }
+
+    /**
+     * @param WorkerClient $worker Exact channel delivering the acknowledgement
+     * @param WorkerTestCronScheduleResultDTO $ack Immediate mutation outcome
+     */
+    public function acceptCronScheduleResult(WorkerClient $worker, WorkerTestCronScheduleResultDTO $ack): void
     {
         $this->cronFireTestRequests->accept($worker, $ack);
     }
@@ -9301,6 +9383,70 @@ abstract class DaemonManager extends BaseManager implements
         return CommandReplyDTO::ok($correlationId, [
             CommandConstants::FIELD_FIRED_AT => $rule->lastFiredAt === null ? null : $rule->lastFiredAt * TimeConstants::MS_PER_SECOND,
         ]);
+    }
+
+    /**
+     * The decoded selector addresses cancellation only; the current rule owns the exact key.
+     *
+     * @param string $pauseId Unpadded base64url JSON tuple received from the command channel
+     * @return array{?string, string} Owner and rule at this serialization boundary
+     * @throws InvalidFormatException When the key is not a complete canonical pause id
+     */
+    private function decodeCronPauseId(string $pauseId): array
+    {
+        if (preg_match('/^[A-Za-z0-9_-]+$/D', $pauseId) !== 1) {
+            throw new InvalidFormatException("No pause {$pauseId}");
+        }
+        $json = base64_decode(strtr($pauseId, '-_', '+/'), true);
+        if ($json === false || rtrim(strtr(base64_encode($json), '+/', '-_'), '=') !== $pauseId) {
+            throw new InvalidFormatException("No pause {$pauseId}");
+        }
+        $selector = json_decode($json);
+        if (!is_array($selector) || !array_is_list($selector) || count($selector) !== self::CRON_PAUSE_SELECTOR_FIELDS
+            || ($selector[0] !== null && (!is_string($selector[0]) || $selector[0] === ''))
+            || !is_string($selector[1]) || $selector[1] === ''
+            || !is_string($selector[2]) || preg_match('/^[a-f0-9]{32}$/D', $selector[2]) !== 1) {
+            throw new InvalidFormatException("No pause {$pauseId}");
+        }
+        return [$selector[0], $selector[1]];
+    }
+
+    /**
+     * @param string $correlationId Held command correlation
+     * @param string $ruleName Current registered daemon rule
+     * @param CronScheduleTestOperation $operation Pause mutation
+     * @param string $pauseId Exact pause key
+     * @return CommandReplyDTO Applied mutation or owner refusal
+     */
+    private function changeDaemonCronScheduleForTest(
+        string $correlationId,
+        string $ruleName,
+        CronScheduleTestOperation $operation,
+        string $pauseId,
+    ): CommandReplyDTO {
+        $rule = $this->cronRules[$ruleName] ?? null;
+        if ($rule === null) {
+            return CommandReplyDTO::error($correlationId, "The daemon has no cron rule {$ruleName}.");
+        }
+        if (!$this->amLeader()) {
+            return CommandReplyDTO::error($correlationId, 'Daemon cron rules run on the leader; this node is not the leader.');
+        }
+        if (!$this->workersReady) {
+            return CommandReplyDTO::error($correlationId, "The daemon's workers are not ready yet.");
+        }
+        if ($operation === CronScheduleTestOperation::Pause) {
+            $rule->pauseSchedule($pauseId);
+        } else {
+            try {
+                $rule->resumeSchedule($pauseId);
+            } catch (CronException) {
+                return CommandReplyDTO::error($correlationId, "No pause {$pauseId}");
+            }
+        }
+        Logger::info("Cron schedule {$operation->value} daemon/{$ruleName}: pause {$pauseId}");
+        return $operation === CronScheduleTestOperation::Pause
+            ? CommandReplyDTO::ok($correlationId, [CommandConstants::FIELD_PAUSE_ID => $pauseId])
+            : CommandReplyDTO::ok($correlationId);
     }
 
     /**

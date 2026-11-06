@@ -67,6 +67,8 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Utils\Logger;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFireDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFiredDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleResultDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgetDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgottenDTO;
 
@@ -159,6 +161,8 @@ abstract class WorkerDTO extends BaseDTO
             WorkerTestOrmForgottenDTO::MESSAGE_TYPE => WorkerTestOrmForgottenDTO::fromArray($data),
             WorkerTestCronFireDTO::MESSAGE_TYPE => WorkerTestCronFireDTO::fromArray($data),
             WorkerTestCronFiredDTO::MESSAGE_TYPE => WorkerTestCronFiredDTO::fromArray($data),
+            WorkerTestCronScheduleDTO::MESSAGE_TYPE => WorkerTestCronScheduleDTO::fromArray($data),
+            WorkerTestCronScheduleResultDTO::MESSAGE_TYPE => WorkerTestCronScheduleResultDTO::fromArray($data),
             WorkerDbReHydratedDTO::MESSAGE_TYPE => WorkerDbReHydratedDTO::fromArray($data),
             DbReHydrateCompleteDTO::MESSAGE_TYPE => DbReHydrateCompleteDTO::fromArray($data),
             WorkerRtSyncCreatedMessageDTO::MESSAGE_TYPE => WorkerRtSyncCreatedMessageDTO::fromArray($data),
