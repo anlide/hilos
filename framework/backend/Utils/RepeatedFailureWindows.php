@@ -101,6 +101,12 @@ class RepeatedFailureWindows
         return false;
     }
 
+    /** @return bool Whether open or replaced windows still await their owner's sweep */
+    public function hasPendingWindows(): bool
+    {
+        return $this->windows !== [] || $this->replaced !== [];
+    }
+
     /**
      * Hands over every window whose length has run out, and forgets it.
      *

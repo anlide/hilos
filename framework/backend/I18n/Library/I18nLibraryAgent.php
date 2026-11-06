@@ -72,6 +72,9 @@ final class I18nLibraryAgent extends AbstractHilosAgent
         CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR,
     ];
 
+    /** Catalog reflow finishes on start; subsequent work arrives in frames. */
+    protected const MAX_IDLE_SLEEP_SECONDS = 600;
+
     private const string LANGUAGE_NAMES_TARGET_CODE = 'qv';
     private const string LANGUAGE_NAMES_WRITING_CODE = 'qw';
     private const string LANGUAGE_NAMES_REVERSE_COUNTRY_CODE = 'gb';

@@ -655,6 +655,12 @@ final class AnalyticsCollector
         return is_string($value) && preg_match(AnalyticsJournalRecord::SESSION_KEY_PATTERN, $value) === 1 ? $value : null;
     }
 
+    /** @return bool Whether buffered data or stops held by the freeze need another tick */
+    public function hasPendingData(): bool
+    {
+        return $this->heldStops !== [] || $this->outbox->hasPendingData();
+    }
+
     /**
      * Sends the gathered batch once a second.
      *

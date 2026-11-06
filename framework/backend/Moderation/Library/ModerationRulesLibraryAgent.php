@@ -60,6 +60,9 @@ final class ModerationRulesLibraryAgent extends AbstractHilosAgent
         HilosSignalConstants::MODERATION_RULE_UPDATE => ModerationRuleUpdateSignalData::class,
     ];
 
+    /** Each rule write finishes in its signal handler; no queue or timer needs a tick. */
+    protected const MAX_IDLE_SLEEP_SECONDS = 600;
+
     /**
      * @param AgentSignalData $data Gatekeeper's wrapped ask
      * @param string $sender Sending agent identity (unused)

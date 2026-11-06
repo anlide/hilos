@@ -49,6 +49,12 @@ trait DirectoryWatchTrait
     /** @var ?FsRescanSchedule Policy deciding when a re-read is due, alive with the watch */
     private ?FsRescanSchedule $directoryRescanSchedule = null;
 
+    /** @return bool The trait and every inherited carrier require directory polling */
+    final public function usesDirectoryWatch(): bool
+    {
+        return true;
+    }
+
     /**
      * Takes exactly these directories under watch, opening the watch on the first call.
      *

@@ -1,6 +1,24 @@
 ---
 name: hilos-agent-system
-description: Add, modify, or review Hilos agents, AgentDaemon classes, AgentType constants, AgentManager factories, onStart/onTick/onStop hooks, signal handlers, truth sources, monopolistic agents, and long-running agent workflows. Use when creating a new agent type or changing agent lifecycle behavior, when declaring an agent that answers for a whole set of an entity rather than for one instance, where how many of it run and which node runs it are two separate questions, and when an agent serves one instance of something — a user, a document, a room — and you do not want one of them alive for every instance that was ever opened. Use it too when the agent answers for a table rather than for an entity — the surface a page draws over a set or over one instance, with the viewers' windows inside it. Use it too when you are about to move long or blocking work out of an agent — a child process, a background script, a process of your own — and need to know which shapes this framework allows. Use it too when the agent owns not a whole table but one set of its rows — everything that belongs to the one instance it answers for — and you are choosing the width of its claim.
+description: >
+  Add, modify, or review Hilos agents, AgentDaemon classes, AgentType constants,
+  AgentManager factories, onStart/onTick/onStop hooks, signal handlers, truth
+  sources, monopolistic agents, and long-running agent workflows. Use when
+  creating a new agent type or changing agent lifecycle behavior, when declaring
+  an agent that answers for a whole set of an entity rather than for one
+  instance, where how many of it run and which node runs it are two separate
+  questions, and when an agent serves one instance of something — a user, a
+  document, a room — and you do not want one of them alive for every instance
+  that was ever opened. Use it too when the agent answers for a table rather
+  than for an entity — the surface a page draws over a set or over one instance,
+  with the viewers' windows inside it. Use it too when you are about to move
+  long or blocking work out of an agent — a child process, a background script,
+  a process of your own — and need to know which shapes this framework allows.
+  Use it too when the agent owns not a whole table but one set of its rows —
+  everything that belongs to the one instance it answers for — and you are
+  choosing the width of its claim. Use it when declaring or auditing
+  MAX_IDLE_SLEEP_SECONDS and the inherited hooks, traits, timers, retries, or
+  queues that bound an agent's worker idle wait.
 ---
 
 # Hilos Agent System
@@ -10,7 +28,8 @@ Use this skill for agent business logic and registration work. Start by reading 
 ## Read First
 
 - Adding a new agent type: `docs/agents/agent-system/adding-agent.md`
-- Writing or reviewing `onTick()`: `docs/agents/agent-system/ontick-rule.md`
+- Writing or reviewing `onTick()`, or auditing a longer worker idle wait:
+  `docs/agents/agent-system/ontick-rule.md`
 - Truth sources, shared state, long operations: `docs/agents/agent-system/monopolistic-agent.md`
 - Work spread over several ticks — what the screen sees meanwhile and what a new attempt does after a failure: `docs/agents/signals/work-in-portions.md`
 - Declaring what an agent owns and what it reads, the operations a claim
@@ -47,7 +66,7 @@ Use this skill for agent business logic and registration work. Start by reading 
    `AGENT_SIGNALS[$signal][AgentSignalConfigKey::INDEX_FIELD]` to route by
    payload field declaratively — do not override `SignalRouter::getDestinations()`
    for this case.
-3. Keep `onStart()` for registration/initialization, `onTick()` for tiny incremental work, and `onStop()` for cleanup.
+3. Keep `onStart()` for registration/initialization, `onTick()` for tiny incremental work, and `onStop()` for cleanup. A longer idle wait requires the complete audit in the canonical onTick rule; do not add a dummy tick to opt in.
 4. Move long or blocking work out of `onTick()` and signal handlers.
 5. In named signal handlers, omit empty `default` branches for intentionally
    ignored shared-broadcast names and document the ignore contract in PHPDoc.
@@ -125,6 +144,7 @@ Use this skill for agent business logic and registration work. Start by reading 
 
 - Never run `git commit` or `git push`.
 - Never add routing logic directly inside agents; use topology declarations or `SignalRouter`.
+- Keep every `onTick()` under 0.1 seconds regardless of the idle allowance; a longer wait requires the canonical full audit.
 - Routing for indexed multi-instance agents must stay declarative in `AGENT_SIGNALS` with `AgentSignalConfigKey::INDEX_FIELD`; do not add `switch` by signal name inside agents or routers for this purpose.
 - Never let non-truth-source agents write to a DB/RT collection they do not own.
 - Never let an agent declared `AgentScope::NODE` own an RT collection; a

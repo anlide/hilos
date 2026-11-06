@@ -39,6 +39,9 @@ final class LibraryAgent extends AbstractAgent
         ChatCommandConstants::BOT_TEST_ANSWER_NOW => BotAnswerNowCommandData::class,
     ];
 
+    /** Catalog actions and commands arrive in frames; there is no periodic work. */
+    protected const MAX_IDLE_SLEEP_SECONDS = 600;
+
     /**
      * Answers the test-only command that has one active bot answer now.
      *

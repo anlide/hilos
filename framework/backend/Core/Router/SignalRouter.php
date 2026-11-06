@@ -607,6 +607,12 @@ class SignalRouter
         return $this->rtSelfBroadcast->consume($collectionKey, $stateId);
     }
 
+    /** @return bool Whether a later dispatch must deliver queued signals, without consuming them */
+    public function hasQueuedSignals(): bool
+    {
+        return !$this->queuedSignals->isEmpty();
+    }
+
     /**
      * Get next queued signal
      *

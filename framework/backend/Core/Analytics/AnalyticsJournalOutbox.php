@@ -130,6 +130,12 @@ final class AnalyticsJournalOutbox
         );
     }
 
+    /** @return bool Whether descriptions, records or loss counts still need a flush */
+    public function hasPendingData(): bool
+    {
+        return $this->descriptions !== [] || $this->records !== [] || $this->losses !== [];
+    }
+
     /**
      * @param int $nowMs Moment of the check, in milliseconds
      * @return bool True when the interval since the last flush has elapsed

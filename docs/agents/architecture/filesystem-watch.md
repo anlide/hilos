@@ -111,6 +111,17 @@ An event never causes a read of its own:
 constructor. That is why the one-second window and the five-minute period are
 tested in microseconds, with no sleep and no seam over the clock.
 
+## Idle Wait
+
+`DirectoryWatchTrait` declares `usesDirectoryWatch()` as true, and every class
+using the trait inherits that marker. `AbstractAgent` defaults the marker to
+false. A directory observer must keep `MAX_IDLE_SLEEP_SECONDS` at `0.1`: its
+watch is not daemon-socket readiness, and it must not add a file descriptor to
+the worker's socket wait. `AbstractAgent` rejects both an invalid allowance and
+an allowance above `0.1` for a directory watcher with `AgentException` through
+the ordinary `start_failed` path, before registration and `onStart()`, and
+releases the start interest.
+
 ## A Log Line Per Pass Is Noise
 
 A consumer that re-reads on a period must log only when something moved. An

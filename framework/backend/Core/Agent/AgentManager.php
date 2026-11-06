@@ -6,6 +6,7 @@ namespace Hilos\Core\Agent;
 
 use Hilos\Constants\AgentConstants;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
+use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\HilosException;
 
 /**
@@ -117,6 +118,7 @@ abstract class AgentManager
      * @param ?string $agentIndex Agent index (optional)
      * @return AgentInterface Created or existing agent instance
      * @throws AgentCreationFailedException If agent cannot be created
+     * @throws AgentException When the idle allowance declaration is invalid
      * @throws HilosException Whatever the project's factory raises, a missing agent index among it
      */
     public function createAndAddAgent(string $agentType, ?string $agentIndex): AgentInterface
@@ -130,6 +132,9 @@ abstract class AgentManager
 
         // Create agent
         $agent = $this->createAgent($agentType, $agentIndex);
+        if ($agent instanceof AbstractAgent) {
+            $agent->getMaxIdleSleepSeconds();
+        }
         $this->addAgent($agentId, $agent);
 
         return $agent;

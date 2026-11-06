@@ -102,7 +102,7 @@ final class AgentIdleTracker
     }
 
     /**
-     * Whether the agent has been silent longer than its window with nobody subscribed to it.
+     * Whether the agent's silence has reached its window with nobody subscribed to it.
      *
      * An agent this tracker has never heard of is not idle: the answer would otherwise be "yes"
      * for one that started before the tracker did, and the first tick after a deploy would take
@@ -115,12 +115,24 @@ final class AgentIdleTracker
      */
     public function isIdle(string $agentId, int $timeoutSec, float $now): bool
     {
+        $deadline = $this->getIdleDeadline($agentId, $timeoutSec);
+
+        return $deadline !== null && $now >= $deadline;
+    }
+
+    /**
+     * @param string $agentId Agent being judged
+     * @param int $timeoutSec Declared idle window in seconds
+     * @return float|null Window end in epoch seconds, or null for an unknown agent or a live subscriber
+     */
+    public function getIdleDeadline(string $agentId, int $timeoutSec): ?float
+    {
         if (($this->subscribers[$agentId] ?? []) !== []) {
-            return false;
+            return null;
         }
 
         $lastEventAt = $this->lastEventAt[$agentId] ?? null;
 
-        return $lastEventAt !== null && $now - $lastEventAt > $timeoutSec;
+        return $lastEventAt === null ? null : $lastEventAt + $timeoutSec;
     }
 }

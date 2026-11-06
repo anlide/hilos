@@ -45,3 +45,11 @@ the trigger-written case is its
 Regular agents run in regular workers, multiple instances can exist.
 They handle per-connection or per-page logic.
 They must not write to collections owned by a monopolistic truth source.
+
+## Timing in a Dedicated Worker
+
+A monopolistic worker follows the same tick and idle-wait rules as every other
+worker: each `onTick()` must finish in under 0.1 seconds. A longer idle wait is
+an explicit class allowance, granted only after the full obligation audit in
+the [onTick rule](ontick-rule.md). A dedicated worker does not make blocking
+tick work safe.

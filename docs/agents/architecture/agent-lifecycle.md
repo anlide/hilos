@@ -18,11 +18,15 @@ Agent ID: `"type"` or `"type:index"` for multi-instance agents.
 | Method | When called | Notes |
 |---|---|---|
 | `onStart()` | After agent created in worker, and after its claims are laid | Seed runtime state; the claims are declared on the class, not registered here |
-| `onTick()` | Every worker loop iteration | **Must complete in < 0.1s** |
+| `onTick()` | Every worker loop iteration | **Must complete in < 0.1s**; idle wait is separate |
 | `onStop()` | Before removal | Cleanup while truth-source rights are still active |
 
 After `onStop()` returns or throws, `WorkerManager` unregisters the agent from
 both DB and RT truth-source registries in a `finally` block.
+
+An explicit longer worker idle wait never raises the `onTick()` time budget.
+Declare one only after the audit in the canonical
+[onTick rule](../agent-system/ontick-rule.md).
 
 ## Signal handler methods
 

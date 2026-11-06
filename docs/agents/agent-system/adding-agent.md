@@ -17,10 +17,12 @@ class MyAgent extends AbstractAgent {
     public const string AGENT_TYPE = AgentType::MY_AGENT;
 
     public function onStart(): void { /* initialize */ }
-    public function onTick(): void  { /* < 0.1s work */ }
     public function onStop(): void  { /* cleanup */ }
 }
 ```
+
+Leave `onTick()` inherited when the agent has no periodic work. Do not add an
+empty tick to change how long its worker may wait.
 
 ## 3. Create AgentDaemon (daemon-side stub)
 
@@ -151,4 +153,20 @@ class MyPage extends AbstractPage {
 - [ ] Static source/type routes declared in `SignalRouter` when needed (not covered by topology)
 - [ ] Every collection the agent writes is one it owns, declared as [truth-source.md](../architecture/truth-source.md) says; `onStop()` cleans owned state, and the claims end with the agent — `WorkerManager` takes them back after the hook
 - [ ] `defaultTruthSourceOperations()` overridden when this kind of agent may not do all of add / update / remove to the rows it owns
-- [ ] `onTick()` completes in < 0.1s
+- [ ] Any `onTick()` work completes in < 0.1s; this budget is separate from the worker's idle wait
+- [ ] Keep `MAX_IDLE_SLEEP_SECONDS` at its `0.1`-second default unless the complete obligations have been audited as described in [onTick rule](ontick-rule.md)
+
+## Optional: Longer Idle Wait
+
+Only after the full audit in the [onTick rule](ontick-rule.md), an agent may
+declare its own maximum idle wait. The declaration is explicit even when the
+agent inherits an empty `onTick()`; the absence of a tick is not an automatic
+opt-in. Do not put this constant on a family until its descendants have also
+been checked.
+
+```php
+final class AuditedAgent extends AbstractAgent
+{
+    protected const MAX_IDLE_SLEEP_SECONDS = 600;
+}
+```

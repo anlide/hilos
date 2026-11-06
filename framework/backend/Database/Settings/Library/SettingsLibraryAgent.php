@@ -190,6 +190,9 @@ final class SettingsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_SETTING_COMMAND_DONE => HandoverAnswerSignalData::class,
     ];
 
+    /** Writes and their replies arrive in frames; this library has no periodic work. */
+    protected const MAX_IDLE_SLEEP_SECONDS = 600;
+
     /** Texts a yes-or-no setting reads as no, after trimming and lowering ({@see SettingValue::bool()}). */
     private const array OFF_TEXTS = ['0', 'false'];
 

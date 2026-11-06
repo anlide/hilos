@@ -213,12 +213,34 @@ send SIGTERM. After an exited daemon has been observed and closed, `OrphanReaper
 collects leftover children before a new start; it does not collect a live
 supervised daemon.
 
-A worker has no event loop of its own and does not sleep on a clock while it is
-idle. A pass that handled a message, left bytes for the daemon, or has a
-tick-driven operation in flight keeps the 10 ms tick. Any other pass waits on the
-daemon socket (`WorkerDaemonClient::awaitReadable()`) until the daemon sends
-something, at most 100 ms (`WorkerManager::waitForWork()`). A worker that woke a
-hundred times a second for nothing cost about 1 % of a core per process.
+A worker runs its ordinary work pass, then waits on the daemon socket when no
+short work is due. Its maximum wait is the earliest of the live agents'
+validated `MAX_IDLE_SLEEP_SECONDS` allowances, prepared cron/report deadlines,
+and any declared instance idle-stop deadline. With no agents, or for a direct
+`AgentInterface` implementation without an allowance API, the fallback is
+100 ms. The allowance is measured from the pass start, so work in that pass
+already spends it; see the canonical
+[onTick rule](../agent-system/ontick-rule.md#idle-wait-permission). This bounds
+idle waiting, not hook duration or a promised tick frequency.
+
+A handled daemon message, pending daemon write, or in-flight
+`TickDrivenIoRegistry` operation keeps the active 10 ms path. The worker-level
+`onTick()` and existing maintenance guards cap the wait at 100 ms. These guards
+include worker frames and upload receipts, cron-fire waits and acknowledgements,
+deferred page-router work, held facet counts, analytics data, failure-log
+windows, and queued `SignalRouter` output. Reading those guards does not drain
+their queues. An already-due healthy cron deadline skips sleep, even when a
+short-work guard is also set. A failed agent unit gets a short retry without
+reusing its stale cron deadline, so an overdue schedule does not spin.
+
+The wait wakes for daemon socket readability, including EOF, and for worker
+`SIGTERM`, `SIGINT`, or `SIGHUP`. One receiver on the worker's `EventBase`
+handles those signals; callbacks only record the signal, and the manager
+applies lifecycle work outside the callback. The one-second parent/`ppid`
+fallback is checked inside the wait without running agent or project ticks,
+and each service wait remains bounded by the final deadline. These are service
+wakeups, not an `onTick()` cadence. Master and watchdog timing above is
+unchanged.
 
 That wait is libevent's, like the master's, and never `socket_select()`: a select
 cut short by a signal raises a warning of its own, PHP calls the error handler for

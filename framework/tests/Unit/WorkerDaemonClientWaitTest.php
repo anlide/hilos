@@ -9,6 +9,7 @@ use EventBase;
 use Hilos\Socket\Worker\DaemonConnectionState;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
+use Hilos\Socket\Worker\WorkerReadWake;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
@@ -44,12 +45,12 @@ final class WorkerDaemonClientWaitTest extends TestCase
         $wire = $message->toJson() . "\n";
         $this->assertSame(strlen($wire), socket_write($daemonEnd, $wire));
 
-        $client->awaitReadable(60.0);
+        $this->assertSame(WorkerReadWake::READABLE, $client->awaitReadable(600.0));
         $readEvent = $this->event($client, 'waitEvent');
         $this->assertInstanceOf(Event::class, $readEvent);
         $this->assertTrue($readEvent->pending(Event::READ));
 
-        $client->awaitReadable(60.0);
+        $this->assertSame(WorkerReadWake::READABLE, $client->awaitReadable(600.0));
 
         $this->assertSame($readEvent, $this->event($client, 'waitEvent'));
         $this->assertTrue($readEvent->pending(Event::READ));
@@ -129,6 +130,23 @@ final class WorkerDaemonClientWaitTest extends TestCase
         $timer = $this->event($client, 'waitTimer');
         $this->assertInstanceOf(Event::class, $timer);
         $this->assertFalse($timer->pending(Event::TIMEOUT));
+    }
+
+    /** EOF is readiness too; waiting leaves its detection to the next read. */
+    public function testEofEndsALongWaitAndCancelsItsTimer(): void
+    {
+        [$client, $daemonEnd] = $this->connectedClient();
+        socket_close($daemonEnd);
+        unset($this->daemonEnds[spl_object_id($daemonEnd)]);
+
+        $this->assertSame(WorkerReadWake::READABLE, $client->awaitReadable(600.0));
+        $this->assertFalse($this->event($client, 'waitTimer')->pending(Event::TIMEOUT));
+        $this->assertTrue($client->isConnected());
+        $client->read();
+        $this->assertTrue($client->isConnectionLost());
+        $this->assertNull($this->event($client, 'waitEvent'));
+        $this->assertNull($this->event($client, 'waitTimer'));
+        $this->assertSame(WorkerReadWake::UNAVAILABLE, $client->awaitReadable(600.0));
     }
 
     /**

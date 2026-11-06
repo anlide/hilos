@@ -128,4 +128,23 @@ final class AgentIdleTrackerTest extends TestCase
         $this->assertTrue($tracker->isIdle(self::AGENT_ID, self::WINDOW_SEC, 1241.0));
         $this->assertFalse($tracker->isIdle('unit_idle_agent:8', self::WINDOW_SEC, 1241.0));
     }
+
+    public function testDeadlineAndExpiryAgreeAtTheExactBoundary(): void
+    {
+        $tracker = new AgentIdleTracker();
+        $this->assertNull($tracker->getIdleDeadline(self::AGENT_ID, self::WINDOW_SEC));
+        $tracker->noteStarted(self::AGENT_ID, 1000.25);
+        $this->assertSame(1240.25, $tracker->getIdleDeadline(self::AGENT_ID, self::WINDOW_SEC));
+        $this->assertFalse($tracker->isIdle(self::AGENT_ID, self::WINDOW_SEC, 1240.249));
+        $this->assertTrue($tracker->isIdle(self::AGENT_ID, self::WINDOW_SEC, 1240.25));
+        $tracker->noteAddressed(self::AGENT_ID, 1240.25);
+        $this->assertSame(1480.25, $tracker->getIdleDeadline(self::AGENT_ID, self::WINDOW_SEC));
+        $tracker->noteSubscriber(self::AGENT_ID, 'accept-1', 1300.0);
+        $this->assertNull($tracker->getIdleDeadline(self::AGENT_ID, self::WINDOW_SEC));
+        $tracker->dropSubscriber(self::AGENT_ID, 'accept-1', 1500.0);
+        $this->assertSame(1740.0, $tracker->getIdleDeadline(self::AGENT_ID, self::WINDOW_SEC));
+        $this->assertTrue($tracker->isIdle(self::AGENT_ID, self::WINDOW_SEC, 1740.0));
+        $tracker->forget(self::AGENT_ID);
+        $this->assertNull($tracker->getIdleDeadline(self::AGENT_ID, self::WINDOW_SEC));
+    }
 }

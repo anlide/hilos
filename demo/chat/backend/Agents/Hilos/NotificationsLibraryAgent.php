@@ -24,4 +24,6 @@ use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
  */
 final class NotificationsLibraryAgent extends AbstractNotificationsLibraryAgent
 {
+    /** Delivery-log pruning declares its cron deadline; other work arrives in frames. */
+    protected const MAX_IDLE_SLEEP_SECONDS = 600;
 }

@@ -80,6 +80,12 @@ class WorkerTickFailureLog
         }
     }
 
+    /** @return bool Whether this worker has failure windows awaiting a later sweep, without creating the limiter */
+    public static function hasPendingWindows(): bool
+    {
+        return self::$windows?->hasPendingWindows() ?? false;
+    }
+
     /**
      * Writes the summary of every window whose length has run out, and forgets it.
      *

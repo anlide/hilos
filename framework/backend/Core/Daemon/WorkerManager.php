@@ -43,6 +43,7 @@ use Hilos\Core\Daemon\Worker\WorkerTickUnit;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
+use Hilos\Core\Exception\ProcessException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -170,6 +171,7 @@ use Hilos\Socket\WebSocket\Delivery\DeliverySettingsReporter;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
+use Hilos\Socket\Worker\WorkerReadWake;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Utils\Helpers\ArgumentHelper;
@@ -197,11 +199,17 @@ use Hilos\Constants\CliCommands;
  */
 abstract class WorkerManager extends BaseManager implements PageResender
 {
+    /** The worker receives POSIX signals exclusively through its socket's event base. */
+    protected const array SIGNAL_FUNCTIONS = ['pcntl_sigprocmask'];
+
     /** Seconds between parent-process checks; a busy loop turns every 10 ms, an idle one waits on its socket. */
     private const float PARENT_CHECK_INTERVAL_SECONDS = 1.0;
 
-    /** Longest wait of an idle pass on the daemon socket: the "about every 100 ms" an agent's onTick is promised. */
+    /** Maximum pass duration while worker-owned maintenance needs ticks. */
     private const float IDLE_WAIT_SECONDS = 0.1;
+
+    /** Active work retains the existing 10 ms pass duration. */
+    private const int ACTIVE_PASS_MICROSECONDS = 10000;
 
     /** What a wait with no consumer of its own is parked under: the daemon link, waiting for the framework's own rows. */
     private const string PARKED_LINK_KEY = 'link';
@@ -224,7 +232,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
     /** Whether this worker handles monopolistic agents only. */
     protected bool $isMonopolistic;
 
-    /** Daemon client connection, or null before connect/after cleanup. */
+    /** Daemon client and POSIX receiver, or null before process setup/after cleanup. */
     protected ?WorkerDaemonClient $daemonClient = null;
 
     /** @var ?ProtectedModeSettingsReporter Subscriber registered once for this worker process */
@@ -253,6 +261,15 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
     /** Loop timestamp of the last parent-process check. */
     private float $lastParentCheckAt = 0.0;
+
+    /** Cached comparison of this worker's hook with the empty framework hook. */
+    private ?bool $hasOwnTick = null;
+
+    /** @var array<string, true> Failed agent units in this pass; their stale cron snapshots must not drive the wait */
+    private array $failedAgentTicks = [];
+
+    /** @var array<string, true> Expired idle stops blocked by work or freeze in this pass, without a second lifetime clock */
+    private array $blockedIdleStops = [];
 
     /**
      * Last Database::returnsAfterLoss() this worker saw.
@@ -340,7 +357,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
      *
      * Sets up process handlers, opens the daemon connection, handles daemon
      * messages, ticks worker-local agents, and drains queued signals until a
-     * shutdown condition requests exit.
+     * shutdown condition requests exit. Pumps POSIX events before connecting and
+     * once before each work pass, including passes following a short active pause.
      *
      * A tick is made of units of work - one daemon message, one agent, the project's
      * hook, the signal dispatch, the analytics tick - and a failure that belongs to one
@@ -382,7 +400,10 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
         // Start connection to daemon (non-blocking)
         try {
-            $this->connectToDaemon();
+            $this->dispatchProcessSignals();
+            if (!$this->shouldExit) {
+                $this->connectToDaemon();
+            }
         } catch (Throwable $e) {
             $this->logError("Failed to start daemon connection: " . $e->getMessage());
             $this->cleanup();
@@ -391,7 +412,11 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
         // Main loop
         while (!$this->shouldExit) {
-            $loopStartTime = microtime(true);
+            $this->dispatchProcessSignals();
+            if ($this->shouldExit) {
+                break;
+            }
+            $loopStartTime = $this->waitTime();
             $handledMessage = false;
 
             // Check connection status if not yet connected
@@ -504,10 +529,12 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 break;
             }
 
-            $this->waitForWork($loopStartTime, $handledMessage);
-
-            // Process signals
-            pcntl_signal_dispatch();
+            try {
+                $this->waitForWork($loopStartTime, $handledMessage);
+            } catch (SocketException|AgentException $e) {
+                $this->logError('Worker wait failed: ' . $e->getMessage());
+                $this->shouldExit = true;
+            }
         }
 
         // Cleanup
@@ -517,29 +544,184 @@ abstract class WorkerManager extends BaseManager implements PageResender
     }
 
     /**
-     * Ends a loop pass: the short pause while there is work, otherwise a wait on the daemon socket.
-     *
-     * A pass that handled a message, left bytes for the daemon, or has a tick-driven operation in
-     * flight ({@see TickDrivenIoRegistry}) keeps the 10 ms rhythm: the next pass has something to
-     * read, flush or drive. Any other pass waits until the daemon sends something, no longer than
-     * IDLE_WAIT_SECONDS, so an idle worker no longer wakes a hundred times a second. A link with no
-     * socket to wait on - a stand-in for the daemon in a test - keeps the short pause too.
+     * Bounds the socket wait by current agents, maintenance and prepared deadlines.
+     * All pass allowances start before work; elapsed work spends that budget. An already due
+     * healthy cron takes precedence over short-work guards. Failed units retry shortly without
+     * consulting their stale calendar or report snapshots. The pass already pumped
+     * POSIX events; a socket wait dispatches new callbacks on the same event base.
      *
      * @param float $loopStartTime Timestamp of the current loop iteration
      * @param bool $handledMessage Whether this pass handled a message from the daemon
+     * @throws SocketException When the daemon socket wait fails
+     * @throws AgentException When a live agent has an invalid idle allowance
      */
     private function waitForWork(float $loopStartTime, bool $handledMessage): void
     {
-        $client = $this->daemonClient;
-        if ($client === null || !$client->isConnected() || $client->getSocket() === null || $handledMessage
-            || $client->hasPendingWrite() || TickDrivenIoRegistry::anyInFlight()) {
-            $this->sleepWithPreciseTiming($loopStartTime);
+        if ($this->shouldExit) {
+            return;
+        }
+        $now = $this->waitTime();
+        $deadline = $this->idleWaitDeadline($loopStartTime, $now);
+        if ($deadline <= $now) {
             return;
         }
 
-        $remaining = self::IDLE_WAIT_SECONDS - (microtime(true) - $loopStartTime);
-        if ($remaining > 0) {
-            $client->awaitReadable($remaining);
+        $client = $this->daemonClient;
+        if ($client === null || !$client->isConnected() || $client->getSocket() === null || $handledMessage
+            || $client->hasPendingWrite() || TickDrivenIoRegistry::anyInFlight()) {
+            $this->sleepWithPreciseTiming($loopStartTime, min(
+                self::ACTIVE_PASS_MICROSECONDS,
+                (int)floor(($deadline - $loopStartTime) * TimeConstants::US_PER_SECOND),
+            ));
+            return;
+        }
+
+        if ($this->waitTime() < $deadline) {
+            $this->awaitDaemonWork($deadline);
+        }
+    }
+
+    /**
+     * Reads only existing owners: no router creation, calendar search, queue drain or freeze copy.
+     * Prepared agent deadlines are always read; maintenance predicates are needed
+     * only while they can still shorten the result to the ordinary 100 ms cap.
+     *
+     * @param float $loopStartTime Work pass start in epoch seconds
+     * @param float $now Current epoch seconds after the pass
+     * @return float Final epoch deadline, possibly already due
+     * @throws AgentException When a live agent has an invalid idle allowance
+     */
+    private function idleWaitDeadline(float $loopStartTime, float $now): float
+    {
+        $agents = $this->agentManager->getAgents();
+        $deadline = $agents === [] ? $loopStartTime + AbstractAgent::DEFAULT_IDLE_SLEEP_SECONDS : INF;
+        $shortDeadline = $loopStartTime + self::IDLE_WAIT_SECONDS;
+        foreach ($agents as $agentId => $agent) {
+            $deadline = min($deadline, $loopStartTime + ($agent instanceof AbstractAgent
+                ? $agent->getMaxIdleSleepSeconds()
+                : AbstractAgent::DEFAULT_IDLE_SLEEP_SECONDS));
+            if (isset($this->failedAgentTicks[$agentId])) {
+                $deadline = min($deadline, $shortDeadline);
+            } elseif ($agent instanceof AbstractAgent) {
+                foreach ([$agent->getCronDeadline(), $agent->getCronReportDeadline()] as $cronDeadline) {
+                    if ($cronDeadline !== null) {
+                        $deadline = min($deadline, $cronDeadline);
+                    }
+                }
+            }
+
+            $timeout = AgentRegistry::idleTimeout(Hilos::appClass()::AGENTS[$agent->getType()] ?? null);
+            $idleDeadline = $timeout === null ? null : $this->agentIdleTracker->getIdleDeadline($agentId, $timeout);
+            // Ignore a past candidate only when this pass could not stop it. A window that
+            // expires after its unit was checked still owes an immediate pass for the stop.
+            if ($idleDeadline !== null && ($idleDeadline > $now
+                || (!isset($this->blockedIdleStops[$agentId]) && !isset($this->failedAgentTicks[$agentId])))) {
+                $deadline = min($deadline, $idleDeadline);
+            }
+        }
+
+        if ($deadline <= $shortDeadline || $deadline <= $now) {
+            return $deadline;
+        }
+        if (($this->hasOwnTick ??= ($this->onTick(...) != self::onTick(...)))
+            || $this->parkedFrames !== []
+            || $this->pendingUploadReceiptIds !== []
+            || $this->cronFireWaits !== []
+            || $this->cronFiredAcks !== []
+            || (Hilos::$sr?->hasQueuedSignals() ?? false)
+            || (Hilos::$ac?->hasPendingData() ?? false)
+            || WorkerTickFailureLog::hasPendingWindows()) {
+            return $shortDeadline;
+        }
+        foreach ($this->pageSignalRouters as $router) {
+            if ($router->hasDeferredWork()) {
+                return $shortDeadline;
+            }
+        }
+        foreach ($agents as $agentId => $agent) {
+            if (Hilos::$browser?->hasHeldFacetCounts($agentId) ?? false) {
+                return $shortDeadline;
+            }
+        }
+        return $deadline;
+    }
+
+    /**
+     * Waits within one caller budget, servicing only process signals and the
+     * existing parent check. Service timeouts never enter worker or agent units.
+     * Native waits dispatch callbacks themselves; drain their marks without
+     * another nonblocking poll, including when READ and a signal arrive together.
+     *
+     * @param float $deadline Final caller deadline in epoch seconds
+     * @throws SocketException When the daemon socket wait fails
+     */
+    protected function awaitDaemonWork(float $deadline): void
+    {
+        while (!$this->shouldExit) {
+            $now = $this->waitTime();
+            if ($now >= $deadline) {
+                return;
+            }
+            $this->checkDaemonLiveness($now);
+            $now = $this->waitTime();
+            if ($this->shouldExit || $this->daemonClient === null || $now >= $deadline) {
+                return;
+            }
+            $remaining = min($deadline, $this->lastParentCheckAt + self::PARENT_CHECK_INTERVAL_SECONDS) - $now;
+            $wake = $this->daemonClient->awaitReadable($remaining);
+            $this->dispatchProcessSignals(poll: false);
+            if ($wake !== WorkerReadWake::TIMEOUT) {
+                return;
+            }
+        }
+    }
+
+    /** @return float Epoch seconds on the same clock as lastParentCheckAt */
+    protected function waitTime(): float
+    {
+        return microtime(true);
+    }
+
+    /**
+     * Installs one receiver before connect(), retaining the same client and base.
+     * A failed installation requests exit before connecting. The base manager's
+     * PCNTL receiver is deliberately not installed for workers.
+     */
+    protected function setupSignalHandlers(): void
+    {
+        $this->daemonClient ??= new WorkerDaemonClient();
+        try {
+            $this->daemonClient->installProcessSignalHandlers();
+        } catch (ProcessException $failure) {
+            $this->logError($failure->getMessage());
+            $this->shouldExit = true;
+        }
+    }
+
+    /**
+     * Applies POSIX marks outside callbacks. The ordinary pass pumps once before
+     * work; connection and cleanup paths pump explicitly while no native read wait runs.
+     *
+     * @param bool $poll Pump ready OS events, or only drain callbacks a native wait already ran
+     */
+    private function dispatchProcessSignals(bool $poll = true): void
+    {
+        try {
+            if ($poll) {
+                $this->daemonClient?->pollProcessSignals();
+            }
+            $signals = $this->daemonClient?->consumeProcessSignals() ?? [];
+        } catch (ProcessException $failure) {
+            $this->logError($failure->getMessage());
+            $this->shouldExit = true;
+            return;
+        }
+        foreach ($signals as $signal) {
+            if ($signal === SIGHUP) {
+                $this->handleRestart();
+            } else {
+                $this->handleShutdown();
+            }
         }
     }
 
@@ -597,7 +779,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
     protected function connectToDaemon(): void
     {
         $this->pendingUploadReceiptIds = [];
-        $this->daemonClient = new WorkerDaemonClient();
+        $this->daemonClient ??= new WorkerDaemonClient();
         $this->daemonClient->connect();
 
         // Send worker registration message (will be sent when connection is established)
@@ -1068,10 +1250,6 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 return;
             }
             if (!$this->sourcesReady($reads)) {
-                // Nothing has been created yet, so nothing has to be unwound but the interest: an
-                // agent that never started must not leave this worker asking for frames on its behalf.
-                $this->releaseSourceInterest(SourceConsumer::agent($agentId));
-
                 throw new AgentCreationFailedException($agentType, $agentIndex);
             }
 
@@ -1102,13 +1280,15 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 // minus onStop() - a hook that opened nothing has nothing to close.
                 TruthSourceRegistry::unregisterAgent($agentId);
                 RtTruthSourceRegistry::unregisterAgent($agentId);
-                $this->releaseSourceInterest(SourceConsumer::agent($agentId));
                 $this->agentManager->removeAgent($agentId);
                 $this->agentIdleTracker->forget($agentId);
 
                 throw $refusal;
             }
         } catch (Throwable $failure) {
+            // Includes factory and pre-registration declaration failures: their read interest
+            // already stands even though no instance, claim or idle window has been registered.
+            $this->releaseSourceInterest(SourceConsumer::agent($agentId));
             $this->notifyAgentStartFailed($agentId, $agentType, $agentIndex, $failure->getMessage());
 
             throw $failure;
@@ -3375,10 +3555,12 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * Sending is an attempt: the wait for the write ends on facts only - the buffer
      * is empty, the socket broke, the master killed the worker, or the worker is an
      * orphan. A failed send is contained like the tick's, and a master that went
-     * first costs one warning line.
+     * first costs one warning line. Pump POSIX events at cleanup boundaries: the
+     * native read wait no longer runs here, including after daemon EOF.
      */
     protected function cleanup(): void
     {
+        $this->dispatchProcessSignals();
         $stoppedAgentIds = [];
         // Stop all agents
         foreach ($this->agentManager->getAgents() as $agentId => $agent) {
@@ -3413,6 +3595,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             } catch (Throwable $failure) {
                 $this->containFailure(WorkerTickUnit::SIGNAL_DISPATCH, self::ADDRESS_DISPATCH_SIGNALS, $failure);
             }
+            $this->dispatchProcessSignals();
             if ($this->leavingOnStopSignal) {
                 foreach ($stoppedAgentIds as $agentId) {
                     $this->notifyAgentStopped($agentId);
@@ -3429,6 +3612,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
         }
 
         // Close daemon connection
+        $this->dispatchProcessSignals();
         if ($this->daemonClient !== null) {
             try {
                 $this->daemonClient->close();
@@ -3469,18 +3653,21 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * Keeps no clock of its own: the wait slice is how often the orphan fact is
      * polled, not a deadline. A master that died without EOF (HIL-520) would
      * otherwise hold the worker forever on a full buffer, with nobody left to
-     * kill it; an orphan writes nothing and leaves.
+     * kill it; an orphan writes nothing and leaves. The writable select does not
+     * dispatch EventBase callbacks, so pump and drain signals on both sides of it.
      *
      * @throws SocketException When the socket fails while the buffer is written
      */
     private function flushDaemonClient(): void
     {
         while ($this->daemonClient !== null && $this->daemonClient->isConnected() && $this->daemonClient->hasPendingWrite()) {
+            $this->dispatchProcessSignals();
             if ($this->daemonPid !== null && $this->currentParentPid() !== $this->daemonPid) {
                 Logger::info("Worker #{$this->workerIndex}: daemon parent gone, the stop hooks' frames are dropped");
                 return;
             }
             $this->daemonClient->awaitWritable(self::PARENT_CHECK_INTERVAL_SECONDS);
+            $this->dispatchProcessSignals();
             $this->daemonClient->write();
         }
     }
@@ -3498,6 +3685,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
      */
     private function tickAgents(): void
     {
+        $this->failedAgentTicks = [];
+        $this->blockedIdleStops = [];
         foreach ($this->agentManager->getAgents() as $agentId => $agent) {
             $hasOwnTick = !($agent instanceof AbstractAgent) || $agent->hasOwnTick();
             if ($agent instanceof AbstractAgent
@@ -3516,11 +3705,12 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
             Database::handlerStart();
             try {
+                $tickStartedAt = $this->waitTime();
                 if ($hasOwnTick) {
                     $agent->onTick();
                 }
                 if ($agent instanceof AbstractAgent) {
-                    $agent->reportCronRulesIfDue(microtime(true));
+                    $agent->completeCronTick($tickStartedAt, $this->waitTime());
                 }
                 $this->collectFiredCronRules($agentId);
                 $this->releaseDeferredWork($agentId);
@@ -3539,6 +3729,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 // The agent stays in the manager: it is not a connection, dropping it
                 // would lose the truth sources it owns and the work it had started, and
                 // the decision to stop belongs to the agent and its owner, not here.
+                $this->failedAgentTicks[$agentId] = true;
                 $this->endUnit(WorkerTickUnit::AGENT, $agent->getId(), $failure);
             }
         }
@@ -3595,11 +3786,12 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return null;
         }
 
-        if (!$this->agentIdleTracker->isIdle($agentId, $idleTimeout, microtime(true))) {
+        if (!$this->agentIdleTracker->isIdle($agentId, $idleTimeout, $this->waitTime())) {
             return null;
         }
 
         if ($agent->hasWorkInFlight() || $this->protectedModeHoldsNode()) {
+            $this->blockedIdleStops[$agentId] = true;
             return null;
         }
 

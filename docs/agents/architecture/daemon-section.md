@@ -123,9 +123,15 @@ the outcome changes, not on each frame, following the third rule in
 
 Two producers fill one cron section of the node picture. The master sends its
 whole set of daemon rules to its own node agent on change and once a minute.
-Each agent holding its own `CronRule` reports its current set after its tick,
-on change and once a minute while non-empty. A project without the Daemon
-feature sends no such agent reports. An empty report withdraws a former set.
+An agent's schedule report derives from the `cronRules()` snapshot the worker
+uses to plan its next wake, taken once after `onTick()`. With the Daemon feature
+enabled, a published non-empty agent schedule is re-reported on change and
+every 60 seconds. Without the feature, agents send no report but cron wakes
+still work. An empty report withdraws a former set once, with no periodic
+empty-report repair. The worker keeps the report ahead of a cron-fire
+acknowledgement. See the canonical
+[onTick rule](../agent-system/ontick-rule.md#idle-wait-permission) for the
+allowance audit and [schedule deadline](../agent-system/ontick-rule.md#a-schedule-the-agent-keeps-itself).
 
 The node agent combines these reports into flat rows: `agentId` is null for a
 daemon rule and names its agent otherwise. Each row carries the rule's name,

@@ -189,6 +189,12 @@ class PageSignalRouter
         $this->throttleGate = new ThrottleGate();
     }
 
+    /** @return bool Whether actions, bulk runs or parked frames need another worker pass */
+    public function hasDeferredWork(): bool
+    {
+        return $this->deferredActions !== [] || $this->bulkRuns !== [] || $this->pendingFrames !== [];
+    }
+
     /**
      * Dispatch page subscribe signal to page handler
      *

@@ -13,4 +13,6 @@ use Hilos\Core\Agent\Hilos\AbstractHilosAnalyticsAgent;
  */
 final class DemoHilosAnalyticsAgent extends AbstractHilosAnalyticsAgent
 {
+    /** Section reads arrive in frames; journal maintenance runs in separate agents. */
+    protected const MAX_IDLE_SLEEP_SECONDS = 600;
 }

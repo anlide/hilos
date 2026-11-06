@@ -46,8 +46,10 @@ final class AgentCronReportTest extends TestCase
     public function testNoRulesProduceNoFrame(): void
     {
         $agent = new CronReportProbeAgent();
-        $agent->reportCronRulesIfDue(100.0);
+        self::assertNull($agent->getCronReportDeadline());
+        $agent->completeCronTick(100.0, 100.0);
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+        self::assertNull($agent->getCronReportDeadline());
     }
 
     public function testChangeFiringRepairAndWithdrawal(): void
@@ -56,35 +58,41 @@ final class AgentCronReportTest extends TestCase
         $first = new CronReportFixedClockRule('z-last', '* * * * *');
         $second = new CronRule('a-first', '0 3 * * *');
         $agent->rules = [$first, $second];
-        $agent->reportCronRulesIfDue(100.0);
+        $agent->completeCronTick(100.0, 100.0);
         $reported = $this->takeReport();
         self::assertSame('cron_probe', $reported->agentId);
         self::assertSame(['a-first', 'z-last'], array_map(static fn ($rule): string => $rule->name, $reported->rules));
         self::assertEquals($reported, DaemonAgentCronSignalData::fromArray($reported->toArray()));
         self::assertNull($reported->rules[0]->lastRunAt);
         self::assertNull($reported->rules[1]->lastRunAt);
+        self::assertSame(160.0, $agent->getCronReportDeadline());
 
-        $agent->reportCronRulesIfDue(101.0);
+        $agent->completeCronTick(101.0, 101.0);
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+        self::assertSame(160.0, $agent->getCronReportDeadline());
         $first->lastRun = 0.0;
         self::assertTrue($first->shouldRun());
         self::assertSame(1_767_225_600, $first->lastFiredAt);
         self::assertFalse($first->shouldRun());
-        $agent->reportCronRulesIfDue(102.0);
+        $agent->completeCronTick(102.0, 102.0);
         $fired = $this->takeReport();
         self::assertSame(1_767_225_600_000, $fired->rules[1]->lastRunAt);
         self::assertSame($fired->toArray(), DaemonAgentCronSignalData::fromArray($fired->toArray())->toArray());
+        self::assertSame(162.0, $agent->getCronReportDeadline());
 
-        $agent->reportCronRulesIfDue(161.0);
+        $agent->completeCronTick(161.0, 161.0);
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
-        $agent->reportCronRulesIfDue(162.0);
+        $agent->completeCronTick(162.0, 162.0);
         self::assertCount(2, $this->takeReport()->rules);
+        self::assertSame(222.0, $agent->getCronReportDeadline());
 
         $agent->rules = [];
-        $agent->reportCronRulesIfDue(163.0);
+        $agent->completeCronTick(163.0, 163.0);
         self::assertSame([], $this->takeReport()->rules);
-        $agent->reportCronRulesIfDue(300.0);
+        self::assertNull($agent->getCronReportDeadline());
+        $agent->completeCronTick(300.0, 300.0);
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+        self::assertNull($agent->getCronReportDeadline());
     }
 
     /** A retained mutable rule must be compared with the values observed before the mutation. */
@@ -93,7 +101,7 @@ final class AgentCronReportTest extends TestCase
         $agent = new CronReportProbeAgent();
         $rule = new CronRule('daily', '0 3 * * *');
         $agent->rules = [$rule];
-        $agent->reportCronRulesIfDue(100.0);
+        $agent->completeCronTick(100.0, 100.0);
         $this->takeReport();
         $observed = new ReflectionProperty(AbstractAgent::class, 'observedCronRules');
         $initial = $observed->getValue($agent);
@@ -101,31 +109,31 @@ final class AgentCronReportTest extends TestCase
         self::assertSame($rule, $initial[0]->rule);
         self::assertSame('daily', $initial[0]->name);
 
-        $agent->reportCronRulesIfDue(101.0);
+        $agent->completeCronTick(101.0, 101.0);
         self::assertSame($initial, $observed->getValue($agent));
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
 
         $rule->expression = '30 4 * * *';
-        $agent->reportCronRulesIfDue(102.0);
+        $agent->completeCronTick(102.0, 102.0);
         self::assertSame('30 4 * * *', $this->takeReport()->rules[0]->expression);
         self::assertSame('0 3 * * *', $initial[0]->expression);
 
         $rule->lastFiredAt = 1_767_225_600;
-        $agent->reportCronRulesIfDue(103.0);
+        $agent->completeCronTick(103.0, 103.0);
         self::assertSame(1_767_225_600_000, $this->takeReport()->rules[0]->lastRunAt);
         $fired = $observed->getValue($agent);
         self::assertSame(1_767_225_600, $fired[0]->lastFiredAt);
         self::assertNull($initial[0]->lastFiredAt);
 
-        $agent->reportCronRulesIfDue(162.0);
+        $agent->completeCronTick(162.0, 162.0);
         self::assertSame($fired, $observed->getValue($agent));
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
-        $agent->reportCronRulesIfDue(163.0);
+        $agent->completeCronTick(163.0, 163.0);
         self::assertSame(1_767_225_600_000, $this->takeReport()->rules[0]->lastRunAt);
         self::assertNotSame($fired[0], $observed->getValue($agent)[0]);
 
         $rule->lastFiredAt = null;
-        $agent->reportCronRulesIfDue(164.0);
+        $agent->completeCronTick(164.0, 164.0);
         self::assertNull($this->takeReport()->rules[0]->lastRunAt);
     }
 
@@ -136,37 +144,37 @@ final class AgentCronReportTest extends TestCase
         $first = new CronRule('z-last', '0 3 * * *');
         $second = new CronRule('a-first', '30 * * * *');
         $agent->rules = [$first, $second];
-        $agent->reportCronRulesIfDue(100.0);
+        $agent->completeCronTick(100.0, 100.0);
         $this->takeReport();
         $observed = new ReflectionProperty(AbstractAgent::class, 'observedCronRules');
 
         $agent->rules = [$second, $first];
-        $agent->reportCronRulesIfDue(101.0);
+        $agent->completeCronTick(101.0, 101.0);
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
         $reordered = $observed->getValue($agent);
         self::assertSame([$second, $first], array_map(static fn ($snapshot): CronRule => $snapshot->rule, $reordered));
-        $agent->reportCronRulesIfDue(102.0);
+        $agent->completeCronTick(102.0, 102.0);
         self::assertSame($reordered, $observed->getValue($agent));
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
 
         $replacement = new CronRule('a-first', '30 * * * *');
         $agent->rules = [$replacement, $first];
-        $agent->reportCronRulesIfDue(103.0);
+        $agent->completeCronTick(103.0, 103.0);
         self::assertSame($replacement, $observed->getValue($agent)[0]->rule);
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
         $replaced = $observed->getValue($agent);
-        $agent->reportCronRulesIfDue(104.0);
+        $agent->completeCronTick(104.0, 104.0);
         self::assertSame($replaced, $observed->getValue($agent));
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
 
         $agent->rules = [$first];
-        $agent->reportCronRulesIfDue(105.0);
+        $agent->completeCronTick(105.0, 105.0);
         self::assertSame(['z-last'], array_map(static fn ($rule): string => $rule->name, $this->takeReport()->rules));
         $agent->rules = [$first, new CronRule('b-added', '* * * * *')];
-        $agent->reportCronRulesIfDue(106.0);
+        $agent->completeCronTick(106.0, 106.0);
         self::assertSame(['b-added', 'z-last'], array_map(static fn ($rule): string => $rule->name, $this->takeReport()->rules));
         $agent->rules = [new CronRule('renamed', '0 3 * * *'), $replacement];
-        $agent->reportCronRulesIfDue(107.0);
+        $agent->completeCronTick(107.0, 107.0);
         self::assertSame(['a-first', 'renamed'], array_map(static fn ($rule): string => $rule->name, $this->takeReport()->rules));
     }
 
@@ -191,13 +199,13 @@ final class AgentCronReportTest extends TestCase
         $first = new CronRule('daily', '0 3 * * *');
         if ($reportBefore) {
             $agent->rules = [$first, new CronRule('other', '0 3 * * *')];
-            $agent->reportCronRulesIfDue(100.0);
+            $agent->completeCronTick(100.0, 100.0);
             $this->takeReport();
         }
         $agent->rules = [$first, $repeatReference ? $first : new CronRule('daily', '0 3 * * *')];
         foreach ([101.0, 102.0] as $now) {
             try {
-                $agent->reportCronRulesIfDue($now);
+                $agent->completeCronTick($now, $now);
                 self::fail('Duplicate names must be refused before caching an observation');
             } catch (InvalidFormatException $exception) {
                 self::assertStringContainsString('unique sorted names', $exception->getMessage());
@@ -212,7 +220,7 @@ final class AgentCronReportTest extends TestCase
         $nightly = new CronReportFixedClockRule('nightly', '0 3 * * *');
         $hourly = new CronReportFixedClockRule('hourly', '30 * * * *');
         $agent->rules = [$nightly, $hourly];
-        $agent->reportCronRulesIfDue(100.0);
+        $agent->completeCronTick(100.0, 100.0);
         self::assertNull($this->takeReport()->rules[1]->lastRunAt);
 
         self::assertNull($agent->armCronRuleForTest('weekly'));
@@ -222,7 +230,7 @@ final class AgentCronReportTest extends TestCase
         self::assertSame($nightly, $agent->armCronRuleForTest('nightly'));
         self::assertFalse($hourly->shouldRun());
         self::assertTrue($nightly->shouldRun());
-        $agent->reportCronRulesIfDue(101.0);
+        $agent->completeCronTick(101.0, 101.0);
         $fired = $this->takeReport();
         self::assertSame(['hourly', 'nightly'], array_map(static fn ($rule): string => $rule->name, $fired->rules));
         self::assertNull($fired->rules[0]->lastRunAt);
@@ -235,8 +243,10 @@ final class AgentCronReportTest extends TestCase
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, CronReportDisabledHilos::class);
         $agent = new CronReportProbeAgent();
         $agent->rules = [new CronRule('daily', '0 3 * * *')];
-        $agent->reportCronRulesIfDue(100.0);
+        $agent->completeCronTick(100.0, 100.0);
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+        self::assertNull($agent->getCronReportDeadline());
+        self::assertNotNull($agent->getCronDeadline());
     }
 
     public function testProjectStartRefusesReservedNameBeforeAReportEvenWithoutDaemonFeature(): void

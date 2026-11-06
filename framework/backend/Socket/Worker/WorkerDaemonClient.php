@@ -9,12 +9,14 @@ use EventBase;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\ProcessException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
+use Throwable;
 
 /**
  * WorkerDaemonClient - Client for worker to connect to daemon.
@@ -27,6 +29,9 @@ use Hilos\Socket\SocketOperation;
  */
 class WorkerDaemonClient extends AbstractSocket
 {
+    /** @var list<int> Signals received only by this worker's event base */
+    private const array PROCESS_SIGNALS = [SIGTERM, SIGINT, SIGHUP];
+
     /** Bytes requested per socket read while draining the daemon connection. */
     private const int READ_CHUNK_BYTES = 65536;
 
@@ -42,7 +47,7 @@ class WorkerDaemonClient extends AbstractSocket
     /** @var array<WorkerDTO> Message queue for received messages */
     private array $messageQueue = [];
 
-    /** Event base of the idle wait, built at the first wait. */
+    /** One base for socket waits and process signals, available before connect(). */
     private ?EventBase $waitBase = null;
 
     /** Read watch on the daemon socket for the idle wait; off the watch before the socket closes. */
@@ -50,6 +55,83 @@ class WorkerDaemonClient extends AbstractSocket
 
     /** Reusable timer armed only for the current idle wait. */
     private ?Event $waitTimer = null;
+
+    /** Whether the persistent read watch fired during the current wait. */
+    private bool $waitReadable = false;
+
+    /** @var list<Event> Process signal watches, kept through connection loss and final sending */
+    private array $processSignalEvents = [];
+
+    /** @var array<int, true> Process signals awaiting ordinary manager code */
+    private array $pendingProcessSignals = [];
+
+    /**
+     * Installs the worker's only POSIX receiver before connecting. Callbacks only
+     * remember signals; the same base wakes a socket wait without lifecycle work.
+     *
+     * @throws ProcessException When a signal watch or its installation mask fails
+     */
+    public function installProcessSignalHandlers(): void
+    {
+        if ($this->processSignalEvents !== []) {
+            return;
+        }
+        if (!pcntl_sigprocmask(SIG_BLOCK, self::PROCESS_SIGNALS, $originalMask)) {
+            throw new ProcessException('Cannot block signals while installing the worker wait.');
+        }
+
+        try {
+            $this->waitBase ??= new EventBase();
+            foreach (self::PROCESS_SIGNALS as $signal) {
+                $event = Event::signal($this->waitBase, $signal, function (int $receivedSignal): void {
+                    $this->pendingProcessSignals[$receivedSignal] = true;
+                });
+                if ($event === false) {
+                    throw new ProcessException("Cannot create worker signal event for signal $signal.");
+                }
+                $this->processSignalEvents[] = $event;
+                if (!$event->add()) {
+                    throw new ProcessException("Cannot install worker signal event for signal $signal.");
+                }
+            }
+        } catch (Throwable $failure) {
+            $this->close();
+            throw $failure;
+        } finally {
+            if (!pcntl_sigprocmask(SIG_SETMASK, $originalMask)) {
+                $this->close();
+                throw new ProcessException('Cannot restore the signal mask after installing the worker wait.');
+            }
+        }
+    }
+
+    /**
+     * Dispatches one ready batch without waiting, even before connection or after
+     * EOF. LOOP_ONCE prevents an unread persistent socket from spinning here.
+     * Retains process signal marks for consumeProcessSignals(); a completed native
+     * awaitReadable() has already dispatched callbacks and needs only that drain.
+     *
+     * @throws ProcessException When the event base cannot dispatch ready signals
+     */
+    public function pollProcessSignals(): void
+    {
+        if ($this->processSignalEvents !== [] && !$this->waitBase->loop(EventBase::LOOP_ONCE | EventBase::LOOP_NONBLOCK)) {
+            throw new ProcessException('Cannot dispatch worker process signals.');
+        }
+    }
+
+    /**
+     * Takes already dispatched marks without pumping the event base. Call after
+     * awaitReadable(), or pollProcessSignals() on paths without a native read wait.
+     *
+     * @return list<int> Signals to apply outside event callbacks
+     */
+    public function consumeProcessSignals(): array
+    {
+        $signals = array_keys($this->pendingProcessSignals);
+        $this->pendingProcessSignals = [];
+        return $signals;
+    }
 
     /**
      * Connect to daemon WorkerServer (non-blocking)
@@ -282,38 +364,50 @@ class WorkerDaemonClient extends AbstractSocket
     /**
      * Wait until the daemon sends something, no longer than the given time.
      *
-     * Returns either way - data waiting or out of time - and reads nothing: the caller reads
-     * on its next pass. Does nothing unless connected and holding a socket: a stand-in for the
-     * daemon link that reports itself connected without one has nothing to wait on.
-     *
-     * The wait is libevent's, as the master's loop is, and not `socket_select()`: a select cut
-     * short by a signal raises its own warning, PHP calls the error handler for it even under
-     * `@`, and an asynchronous signal handler then runs inside that call, where a warning of its
-     * own no longer reaches the handler. libevent takes the interruption in silence and waits
-     * on; a signal is handled once the wait is over, at most the given time later.
-     *
-     * The read watch stays registered for the socket's lifetime. A separate reusable timer
-     * bounds this call and is removed even when readiness or a callback failure ends it early.
+     * Reads nothing. READABLE includes EOF; the caller reads on its next pass.
+     * The persistent read watch shares its base with the process signal receiver.
+     * Every early return removes the reusable one-shot timer, leaving signals
+     * marked for consumeProcessSignals() and bytes for read(). Drain those marks
+     * without pollProcessSignals(): this native loop already ran the callbacks.
      *
      * @param float $timeoutSeconds Longest wait, in seconds
+     * @return WorkerReadWake Readiness, elapsed bound, interruption, or no socket
+     * @throws SocketException When a watch, timer, or event loop cannot run
      */
-    public function awaitReadable(float $timeoutSeconds): void
+    public function awaitReadable(float $timeoutSeconds): WorkerReadWake
     {
         if (!$this->isConnected() || $this->socket === null) {
-            return;
+            return WorkerReadWake::UNAVAILABLE;
+        }
+        if ($this->pendingProcessSignals !== []) {
+            return WorkerReadWake::INTERRUPTED;
         }
 
         $this->waitBase ??= new EventBase();
         if ($this->waitEvent === null) {
-            $this->waitEvent = new Event($this->waitBase, $this->socket, Event::READ | Event::PERSIST, static function (): void {
+            $this->waitEvent = new Event($this->waitBase, $this->socket, Event::READ | Event::PERSIST, function (): void {
+                $this->waitReadable = true;
             });
-            $this->waitEvent->add();
+            if (!$this->waitEvent->add()) {
+                $this->waitEvent->free();
+                $this->waitEvent = null;
+                throw new SocketException('Cannot watch the daemon socket for worker input.');
+            }
         }
         $this->waitTimer ??= new Event($this->waitBase, -1, Event::TIMEOUT, static function (): void {
         });
+        $this->waitReadable = false;
         try {
-            $this->waitTimer->add($timeoutSeconds);
-            $this->waitBase->loop(EventBase::LOOP_ONCE);
+            if (!$this->waitTimer->add(max(0.0, $timeoutSeconds))) {
+                throw new SocketException('Cannot arm the worker socket wait timer.');
+            }
+            if (!$this->waitBase->loop(EventBase::LOOP_ONCE)) {
+                throw new SocketException('Cannot wait for worker socket input.');
+            }
+            if ($this->waitReadable) {
+                return WorkerReadWake::READABLE;
+            }
+            return $this->waitTimer->pending(Event::TIMEOUT) ? WorkerReadWake::INTERRUPTED : WorkerReadWake::TIMEOUT;
         } finally {
             $this->waitTimer->del();
         }
@@ -375,10 +469,17 @@ class WorkerDaemonClient extends AbstractSocket
     }
 
     /**
-     * Close connection and return the client to its initial state.
+     * Release process signal ownership, close the connection and reset its buffers.
+     * The empty event base remains reusable when a caller adopts another socket.
      */
     public function close(): void
     {
+        foreach ($this->processSignalEvents as $event) {
+            $event->del();
+            $event->free();
+        }
+        $this->processSignalEvents = [];
+        $this->pendingProcessSignals = [];
         $this->closeSocket();
         $this->state = DaemonConnectionState::IDLE;
         $this->readBuffer = '';

@@ -11,6 +11,7 @@ use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Auth\Verification\CodeDeliveryAvailability;
 use Hilos\Constants\AgentConstants;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -18,6 +19,7 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\ActionHostInterface;
 use Hilos\Core\Action\ActionReply;
 use Hilos\Core\Action\LookOnlyActions;
+use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Daemon\WorkerManager;
@@ -63,6 +65,7 @@ use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\DataExport\DataExportGroup;
 use Hilos\DaemonSection\DaemonCronRuleReport;
 use Hilos\DaemonSection\DTO\DaemonAgentCronSignalData;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Files\HilosFiles;
 use Hilos\Files\Upload\ProfilePhotoUploadTarget;
@@ -291,6 +294,14 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     /** Each parking agent owns a distinct verdict signal carrying ThrottleVerdictSignalData. */
     public const string THROTTLE_VERDICT_SIGNAL = HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT;
 
+    /** Worker fallback for agents without an explicit longer idle allowance, in seconds. */
+    public const float DEFAULT_IDLE_SLEEP_SECONDS = 0.1;
+
+    /** Override beside onTick() to permit longer waits; validated before registration. */
+    protected const MAX_IDLE_SLEEP_SECONDS = self::DEFAULT_IDLE_SLEEP_SECONDS;
+
+    private const float MAX_ALLOWED_IDLE_SLEEP_SECONDS = 600.0;
+
     private const float CRON_REPORT_REANNOUNCE_SECONDS = 60.0;
 
     /** @var ?string Agent index for multi-instance agents (null for singletons) */
@@ -322,6 +333,16 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     private array $observedCronRules = [];
 
     private float $cronReportedAt = 0.0;
+
+    /** Next cron wake in epoch seconds; zero requests an initial tick, null means no rules. */
+    private ?float $cronDeadline = 0.0;
+
+    /** An unsearchable schedule keeps a short wake without repeating the calendar search. */
+    private bool $cronDeadlineFallback = true;
+
+    private ?float $cronDeadlineBasis = null;
+    private ?EnvAccessor $cronDeadlineEnv = null;
+    private ?string $cronDeadlineZone = null;
 
     /**
      * Resolves DB read declarations before an instance or its start hook exists.
@@ -1237,15 +1258,42 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     }
 
     /**
-     * Reports a changed schedule after this agent's tick, with a whole-frame minute repair.
+     * @internal Read by the worker; validation also runs before the instance is registered.
+     * @return float Explicit maximum idle wait in seconds
+     * @throws AgentException When the declaration is invalid or a directory watcher permits a longer wait
+     */
+    final public function getMaxIdleSleepSeconds(): float
+    {
+        $seconds = static::MAX_IDLE_SLEEP_SECONDS;
+        if ((!is_int($seconds) && !is_float($seconds)) || !is_finite($seconds)
+            || $seconds < self::DEFAULT_IDLE_SLEEP_SECONDS || $seconds > self::MAX_ALLOWED_IDLE_SLEEP_SECONDS) {
+            throw new AgentException(static::class . ': MAX_IDLE_SLEEP_SECONDS must be a finite int or float from 0.1 to 600 seconds');
+        }
+        if ($seconds > self::DEFAULT_IDLE_SLEEP_SECONDS && $this->usesDirectoryWatch()) {
+            throw new AgentException(static::class . ': directory watching requires MAX_IDLE_SLEEP_SECONDS of 0.1 seconds');
+        }
+
+        return $seconds;
+    }
+
+    /** @return bool Whether this agent requires the directory watch polling cadence */
+    public function usesDirectoryWatch(): bool
+    {
+        return false;
+    }
+
+    /**
+     * Observes the schedule once after the tick for both wake planning and whole-frame reports.
      * An empty set withdraws a previously reported schedule once, then stays silent.
      *
      * @internal Called by WorkerManager after onTick(), never by application code.
+     * @param float $tickStartedAt Wall clock immediately before onTick(), preserving a minute crossed by the hook
      * @param float $now Wall clock of the completed tick
      * @throws InvalidArgumentException When the report cannot be routed
      * @throws InvalidFormatException When two current rules have the same name
+     * @throws EnvException When the project time zone cannot be read
      */
-    final public function reportCronRulesIfDue(float $now): void
+    final public function completeCronTick(float $tickStartedAt, float $now): void
     {
         $rules = $this->cronRules();
         $changed = count($rules) !== count($this->observedCronRules);
@@ -1259,6 +1307,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
                 }
             }
         }
+        $this->prepareCronDeadline($rules, $changed, $tickStartedAt, $now);
         if (!$changed && ($rules === [] || $now - $this->cronReportedAt < self::CRON_REPORT_REANNOUNCE_SECONDS)) {
             return;
         }
@@ -1274,9 +1323,11 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
             );
         }
         if ($rows === [] && $this->reportedCronRows === null) {
+            $this->observedCronRules = $snapshots;
             return;
         }
         if (!Hilos::hasFeature(HilosFeature::DAEMON)) {
+            $this->observedCronRules = $snapshots;
             return;
         }
 
@@ -1291,6 +1342,26 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
             $this->cronReportedAt = $now;
         }
         $this->observedCronRules = $snapshots;
+    }
+
+    /**
+     * @internal Reads prepared state without calling cronRules() or searching the calendar.
+     * @return float|null Epoch-second wake, including a short fallback, or null when the last observation had no rules
+     */
+    final public function getCronDeadline(): ?float
+    {
+        return $this->hasCronRulesHook() ? $this->cronDeadline : null;
+    }
+
+    /**
+     * @internal Uses the existing publication clock; a withdrawal needs no periodic repair.
+     * @return float|null Epoch-second repair deadline for a published non-empty report with Daemon enabled, else null
+     */
+    final public function getCronReportDeadline(): ?float
+    {
+        return $this->reportedCronRows !== null && Hilos::hasFeature(HilosFeature::DAEMON)
+            ? $this->cronReportedAt + self::CRON_REPORT_REANNOUNCE_SECONDS
+            : null;
     }
 
     /**
@@ -1938,6 +2009,56 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     public function onSignalRtSyncDeleted(RtSyncDeletedSignalData $data, string $source, string $name): void
     {
         // Default: do nothing
+    }
+
+    /**
+     * Keep an elapsed deadline when the tick crossed it: the following tick must check that minute.
+     * Once a tick starts at or after it, its own check precedes a search strictly forward from that start.
+     *
+     * @param list<CronRule> $rules The one post-tick schedule observation
+     * @param bool $changed Whether rule identity or observed values changed
+     * @param float $tickStartedAt Epoch seconds immediately before the agent tick
+     * @param float $now Epoch seconds after the agent tick
+     * @throws EnvException When the project time zone cannot be read
+     */
+    private function prepareCronDeadline(array $rules, bool $changed, float $tickStartedAt, float $now): void
+    {
+        if ($rules === []) {
+            $this->cronDeadline = null;
+            $this->cronDeadlineFallback = false;
+            $this->cronDeadlineBasis = null;
+            $this->cronDeadlineEnv = null;
+            $this->cronDeadlineZone = null;
+            return;
+        }
+
+        $cachedDeadline = $this->cronDeadline;
+        $this->cronDeadline = $now + self::DEFAULT_IDLE_SLEEP_SECONDS;
+        $zone = Hilos::$env === null ? null : Hilos::$env[EnvConstants::HILOS_PROJECT_TIME_ZONE]->string();
+        if ($changed || $this->cronDeadlineBasis === null || $this->cronDeadlineEnv !== Hilos::$env
+            || $this->cronDeadlineZone !== $zone || $tickStartedAt < $this->cronDeadlineBasis
+            || (!$this->cronDeadlineFallback && $cachedDeadline <= $tickStartedAt)) {
+            $cachedDeadline = null;
+            $fallback = $zone === null;
+            foreach ($rules as $rule) {
+                if ($fallback) {
+                    break;
+                }
+                $nextRunAt = $rule::nextRunAfter($rule->expression, (int)floor($tickStartedAt));
+                if ($nextRunAt === null) {
+                    $fallback = true;
+                    break;
+                }
+                $cachedDeadline = $cachedDeadline === null ? (float)$nextRunAt : min($cachedDeadline, $nextRunAt);
+            }
+            $this->cronDeadlineFallback = $fallback;
+            $this->cronDeadlineBasis = $tickStartedAt;
+            $this->cronDeadlineEnv = Hilos::$env;
+            $this->cronDeadlineZone = $zone;
+        }
+        if (!$this->cronDeadlineFallback) {
+            $this->cronDeadline = $cachedDeadline;
+        }
     }
 
     /**
