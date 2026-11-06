@@ -23,6 +23,7 @@ import {
   bindSessionScope,
   bindSignOut,
   bindThemeState,
+  hilosAccessLossReason,
   hilosToasts,
   IMPERSONATION_ACTION_STOP,
   PROTECTED_MODE_INACTIVE,
@@ -3253,4 +3254,171 @@ describe('HilosLayout public Status exception (HIL-1690)', () => {
     await shell.update(() => action.click())
     expect(shell.mutate).toHaveBeenCalledTimes(1)
   })
+
+  /**
+   * The real shell, the real outlet and the public reader on one router.
+   * `publicShell` paints the reader straight into the layout slot, so it cannot
+   * see a session end that the outlet would have replaced.
+   *
+   * @param feed The shell's connection.
+   */
+  function mountStatusOutlet(feed: ReturnType<typeof shellFeed>) {
+    const actions = new ActionLifecycle(feed.connection)
+    function StatusOutlet() {
+      return <HilosStatusPage connection={feed.connection} actions={actions} />
+    }
+    function OrdinaryPage() {
+      return <p data-id="ordinary-page">Ordinary</p>
+    }
+    function TestAuthSurface() {
+      return <form data-id="test-sign-in" />
+    }
+    const currentRoute = createSignal<PageRouteMatch>({
+      page: HilosPages.PUBLIC_STATUS,
+      params: {},
+      admin: false,
+    })
+    const router: HilosRouter = {
+      ...routerOn(HilosPages.PUBLIC_STATUS),
+      currentRoute,
+      resolvePath: (page) =>
+        page === HilosPages.PUBLIC_STATUS ? '/status' : '/',
+    }
+    const session = bindSession(router)
+    unbind = session.unbind
+    const view = render(
+      <HilosRouterContext.Provider value={router}>
+        <HilosLayout connection={feed.connection}>
+          <HilosView
+            pages={{
+              [HilosPages.PUBLIC_STATUS]: StatusOutlet,
+              main: OrdinaryPage,
+            }}
+            authSurface={TestAuthSurface}
+          />
+        </HilosLayout>
+      </HilosRouterContext.Provider>,
+    )
+    const query = (id: string): HTMLElement | null =>
+      view.container.querySelector<HTMLElement>(`[data-id="${id}"]`)
+
+    return { session, currentRoute, query }
+  }
+
+  it.each([
+    'blocked',
+    'frozen',
+    'stale',
+    'takeover',
+    'session_ended',
+    'account_blocked',
+  ] as const)(
+    'keeps the public reader mounted under %s and preserves the other route policy',
+    async (state) => {
+      const feed = shellFeed()
+      const shell = mountStatusOutlet(feed)
+      act(() => {
+        shell.session.handshake({
+          entities: { currentUser: { id: 2, name: 'Bob' } },
+          data: { accountBlocked: null },
+        })
+      })
+      await act(async () => {
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      const banner = shell.query('public-status-banner')
+      expect(banner).not.toBeNull()
+      expect(banner!.textContent).toContain('All systems operational')
+      const stale = { stale: true, since: Date.now() }
+      act(() => {
+        if (state === 'blocked') shell.session.handshake(BLOCKED)
+        if (state === 'frozen') {
+          shell.session.handshake(
+            reconsentHandshake({ frozen: true, shown: 'frozen' }),
+          )
+        }
+        if (state === 'stale') {
+          feed.push({ rtStaleness: stale }, 'rtStaleness')
+        }
+        if (state === 'takeover') shell.session.handshake(TAKEOVER)
+        if (state === 'session_ended' || state === 'account_blocked') {
+          shell.session.handshake({
+            entities: { currentUser: null },
+            data: {
+              accessLossReason: state,
+              accountBlocked:
+                state === 'account_blocked'
+                  ? BLOCKED.data.accountBlocked
+                  : null,
+            },
+          })
+        }
+      })
+      expect(banner!.isConnected).toBe(true)
+      expect(banner!.textContent).toContain('All systems operational')
+      expect(shell.query('account-blocked')).toBeNull()
+      expect(shell.query('legal-frozen-screen')).toBeNull()
+      expect(shell.query('access-loss-notice')).toBeNull()
+      expect(shell.query('test-sign-in')).toBeNull()
+      const guest =
+        state === 'blocked' ||
+        state === 'session_ended' ||
+        state === 'account_blocked'
+      expect(shell.query('nav-logout') !== null).toBe(!guest)
+      if (state === 'stale') {
+        expect(shell.query('conn-stale-line')?.textContent?.trim()).toBe(
+          rtStalenessCompactLabel(stale),
+        )
+      }
+      if (state === 'takeover') {
+        expect(shell.query('impersonation-banner')).not.toBeNull()
+      }
+      if (state === 'session_ended' || state === 'account_blocked') {
+        expect(hilosAccessLossReason.get()).toBe(state)
+        expect(document.activeElement).toBe(document.body)
+      }
+      // The page key changes alone. A path change would clear session_ended.
+      await act(async () => {
+        shell.currentRoute.set({ page: 'main', params: {}, admin: false })
+        await Promise.resolve()
+      })
+      expect(banner!.isConnected).toBe(false)
+      expect(shell.query('public-status-banner')).toBeNull()
+      if (state === 'blocked' || state === 'account_blocked') {
+        expect(shell.query('account-blocked')).not.toBeNull()
+        expect(shell.query('test-sign-in')).toBeNull()
+      }
+      if (state === 'frozen') {
+        expect(shell.query('legal-frozen-screen')).not.toBeNull()
+      }
+      if (state === 'session_ended') {
+        expect(hilosAccessLossReason.get()).toBe('session_ended')
+        expect(shell.query('access-loss-notice')?.textContent).toBe(
+          'Your session has ended. Any unsaved changes were lost.',
+        )
+        expect(shell.query('test-sign-in')).not.toBeNull()
+        expect(shell.query('ordinary-page')).toBeNull()
+      }
+      if (state === 'stale' || state === 'takeover') {
+        expect(
+          shell
+            .query('page-interaction-scope')
+            ?.querySelector('[data-id="ordinary-page"]'),
+        ).not.toBeNull()
+        expect(shell.query('access-loss-notice')).toBeNull()
+        expect(shell.query('test-sign-in')).toBeNull()
+      }
+      if (state === 'stale') {
+        expect(shell.query('conn-stale-line')?.textContent?.trim()).toBe(
+          rtStalenessCompactLabel(stale),
+        )
+      }
+      if (state === 'takeover') {
+        expect(shell.query('impersonation-banner')).not.toBeNull()
+      }
+    },
+  )
 })

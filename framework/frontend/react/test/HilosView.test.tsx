@@ -27,6 +27,7 @@ import {
   createSignal,
   DEFAULT_SKELETON_DELAY_MS,
   lazyPage,
+  hilosAccessLossReason,
   HilosPages,
   ScopeManager,
   sessionUserId,
@@ -1855,12 +1856,10 @@ describe('HilosView live access loss', () => {
     },
   )
 
-  it.each(['loading', 'error', 'retained', 'public'] as const)(
+  it.each(['loading', 'error', 'retained'] as const)(
     'gives live session end priority over a %s page and a later guest answer',
     async (state) => {
-      const session = liveSession(
-        state === 'retained' ? '/lazy/1' : state === 'public' ? '/status' : '/',
-      )
+      const session = liveSession(state === 'retained' ? '/lazy/1' : '/')
       session.handshake(7)
       if (state !== 'loading') session.answer()
       const page =
@@ -1900,6 +1899,33 @@ describe('HilosView live access loss', () => {
       ).not.toBeNull()
     },
   )
+
+  it('keeps the public status page when the session ends and a later guest answer arrives', async () => {
+    const session = liveSession('/status')
+    session.handshake(7)
+    session.answer()
+    const { container } = session.render(true, DirtyLossPage)
+    await settleCode()
+
+    session.handshake(null, { accessLossReason: 'session_ended' })
+    outlast(DEFAULT_SKELETON_DELAY_MS)
+    expect(hilosAccessLossReason.get()).toBe('session_ended')
+    expect(container.querySelector('[data-id="private-page"]')).not.toBeNull()
+    expect(container.querySelector('[data-id="access-loss-notice"]')).toBeNull()
+    expect(container.querySelector('[data-id="auth-surface"]')).toBeNull()
+    for (const id of [
+      'page-error',
+      'hilos-page-skeleton',
+      'hilos-admin-page',
+    ]) {
+      expect(container.querySelector(`[data-id="${id}"]`)).toBeNull()
+    }
+    session.answer()
+    await settleCode()
+    expect(container.querySelector('[data-id="private-page"]')).not.toBeNull()
+    expect(container.querySelector('[data-id="access-loss-notice"]')).toBeNull()
+    expect(container.querySelector('[data-id="auth-surface"]')).toBeNull()
+  })
 
   it('removes the old page and explains the loss without an auth surface', async () => {
     const session = liveSession()

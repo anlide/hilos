@@ -31,10 +31,11 @@ the `authGate`'s modal shows the same surface over the live page for a gated
 action. Both dismiss and resume through the core gate — no navigation. Omit the
 pair and behavior is unchanged: a 401 renders ErrorPage like any status.
 
-A live session end (HIL-1572) takes precedence over every page outcome, even a
-public page's later answer. The core latch supplies the explanation and also
-prevents departure copies. Its permanent polite region and the in-place auth
-surface share a focusable container, independent of the copy slot's display:contents.
+A live session end (HIL-1572) takes precedence over every page outcome except
+the public status page, which keeps its reader. The core latch supplies the
+explanation and also prevents departure copies. Its permanent polite region
+and the in-place auth surface share a focusable container, independent of the
+copy slot's display:contents.
 
 A page shell may take over the refusal of its own deleted resource (HIL-1603):
 the outlet provides its retainForResourceDeletion to what it mounts
@@ -115,7 +116,11 @@ const modalOpen = useSignal(props.authGate?.modalOpen ?? modalClosed)
 
 const accessLossReason = useSignal(hilosAccessLossReason)
 const accessLost = computedSignal(() => hilosAccessLossReason.get() !== null)
-const sessionEnded = computed(() => accessLossReason.value === 'session_ended')
+const sessionEnded = computed(
+  () =>
+    route.value.page !== HilosPages.PUBLIC_STATUS &&
+    accessLossReason.value === 'session_ended',
+)
 
 const skeletonFlag = createDeferredFlagState(DEFAULT_SKELETON_DELAY_MS)
 const showSkeleton = useSignal(skeletonFlag.shown)

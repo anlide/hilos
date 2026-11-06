@@ -33,10 +33,10 @@
 // action. Both dismiss and resume through the core gate — no navigation. Omit
 // the pair and behavior is unchanged: a 401 renders ErrorPage like any status.
 //
-// A live session end (HIL-1572) takes precedence over every page outcome, even
-// a public page's later answer. The core latch supplies the explanation and
-// prevents departure copies. Its permanent polite region and the in-place auth
-// surface share a focusable container.
+// A live session end (HIL-1572) takes precedence over every page outcome except
+// the public status page, which keeps its reader. The core latch supplies the
+// explanation and prevents departure copies. Its permanent polite region and
+// the in-place auth surface share a focusable container.
 //
 // A page shell may take over the refusal of its own deleted resource (HIL-1603):
 // the outlet provides its retainForResourceDeletion to what it mounts
@@ -148,7 +148,8 @@ export function HilosView({
   )
   const modalOpen = useSignal(authGate?.modalOpen ?? MODAL_CLOSED)
   const accessLossReason = useSignal(hilosAccessLossReason)
-  const sessionEnded = accessLossReason === 'session_ended'
+  const sessionEnded =
+    page !== HilosPages.PUBLIC_STATUS && accessLossReason === 'session_ended'
   const AuthSurface = authSurface
 
   const skeletonFlagRef = useRef<DeferredFlagState | null>(null)

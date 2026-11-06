@@ -32,6 +32,7 @@ import {
   bindImpersonation,
   bindSessionScope,
   bindSignOut,
+  hilosAccessLossReason,
   hilosToasts,
   IMPERSONATION_ACTION_STOP,
   PROTECTED_MODE_INACTIVE,
@@ -749,6 +750,196 @@ describe('HilosLayout public Status exception (HIL-1690)', () => {
     action.click()
     expect(shell.mutate).toHaveBeenCalledTimes(1)
   })
+
+  /**
+   * The real shell, the real outlet and the public reader on one router.
+   * `publicShell` paints the reader straight into the layout slot, so it cannot
+   * see a session end that the outlet would have replaced.
+   */
+  function mountStatusOutlet(feed: ReturnType<typeof shellFeed>) {
+    const currentRoute = createSignal<PageRouteMatch>({
+      page: HilosPages.PUBLIC_STATUS,
+      params: {},
+      admin: false,
+    })
+    const router: HilosRouter = {
+      ...routerOn(HilosPages.PUBLIC_STATUS),
+      currentRoute,
+      resolvePath: (page) =>
+        page === HilosPages.PUBLIC_STATUS ? '/status' : '/',
+    }
+    const session = bindSession(router)
+    unbind = session.unbind
+    const actions = new ActionLifecycle(feed.connection)
+    const statusPage = markRaw(
+      defineComponent(
+        () => () =>
+          h(HilosStatusPage, { connection: feed.connection, actions }),
+      ),
+    )
+    const ordinaryPage = markRaw(
+      defineComponent(
+        () => () => h('p', { 'data-id': 'ordinary-page' }, 'Ordinary'),
+      ),
+    )
+    const authSurface = markRaw(
+      defineComponent(() => () => h('form', { 'data-id': 'test-sign-in' })),
+    )
+    const wrapper = mount(HilosLayout, {
+      props: { connection: feed.connection },
+      attachTo: document.body,
+      slots: {
+        default: () =>
+          h(HilosView, {
+            pages: {
+              [HilosPages.PUBLIC_STATUS]: statusPage,
+              main: ordinaryPage,
+            },
+            authSurface,
+          }),
+      },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router },
+      },
+    })
+    dispose = () => wrapper.unmount()
+    return { wrapper, session, currentRoute }
+  }
+
+  it.each([
+    'blocked',
+    'frozen',
+    'stale',
+    'takeover',
+    'session_ended',
+    'account_blocked',
+  ] as const)(
+    'keeps the public reader mounted under %s and preserves the other route policy',
+    async (state) => {
+      const feed = shellFeed()
+      const shell = mountStatusOutlet(feed)
+      shell.session.handshake({
+        entities: { currentUser: { id: 2, name: 'Bob' } },
+        data: { accountBlocked: null },
+      })
+      await flushPromises()
+      const banner = shell.wrapper.get(
+        '[data-id="public-status-banner"]',
+      ).element
+      expect(banner.textContent).toContain('All systems operational')
+      const stale = { stale: true, since: Date.now() }
+      if (state === 'blocked') shell.session.handshake(BLOCKED)
+      if (state === 'frozen') {
+        shell.session.handshake(
+          reconsentHandshake({ frozen: true, shown: 'frozen' }),
+        )
+      }
+      if (state === 'stale') {
+        feed.push({ rtStaleness: stale }, 'rtStaleness')
+      }
+      if (state === 'takeover') shell.session.handshake(TAKEOVER)
+      if (state === 'session_ended' || state === 'account_blocked') {
+        shell.session.handshake({
+          entities: { currentUser: null },
+          data: {
+            accessLossReason: state,
+            accountBlocked:
+              state === 'account_blocked' ? BLOCKED.data.accountBlocked : null,
+          },
+        })
+      }
+      await flushPromises()
+      expect(banner.isConnected).toBe(true)
+      expect(banner.textContent).toContain('All systems operational')
+      expect(shell.wrapper.find('[data-id="account-blocked"]').exists()).toBe(
+        false,
+      )
+      expect(
+        shell.wrapper.find('[data-id="legal-frozen-screen"]').exists(),
+      ).toBe(false)
+      expect(
+        shell.wrapper.find('[data-id="access-loss-notice"]').exists(),
+      ).toBe(false)
+      expect(shell.wrapper.find('[data-id="test-sign-in"]').exists()).toBe(
+        false,
+      )
+      const guest =
+        state === 'blocked' ||
+        state === 'session_ended' ||
+        state === 'account_blocked'
+      expect(shell.wrapper.find('[data-id="nav-logout"]').exists()).toBe(!guest)
+      if (state === 'stale') {
+        expect(shell.wrapper.get('[data-id="conn-stale-line"]').text()).toBe(
+          rtStalenessCompactLabel(stale),
+        )
+      }
+      if (state === 'takeover') {
+        expect(
+          shell.wrapper.find('[data-id="impersonation-banner"]').exists(),
+        ).toBe(true)
+      }
+      if (state === 'session_ended' || state === 'account_blocked') {
+        expect(hilosAccessLossReason.get()).toBe(state)
+        expect(document.activeElement).toBe(document.body)
+      }
+      // The page key changes alone. A path change would clear session_ended.
+      shell.currentRoute.set({ page: 'main', params: {}, admin: false })
+      await flushPromises()
+      expect(banner.isConnected).toBe(false)
+      expect(
+        shell.wrapper.find('[data-id="public-status-banner"]').exists(),
+      ).toBe(false)
+      if (state === 'blocked' || state === 'account_blocked') {
+        expect(shell.wrapper.find('[data-id="account-blocked"]').exists()).toBe(
+          true,
+        )
+        expect(shell.wrapper.find('[data-id="test-sign-in"]').exists()).toBe(
+          false,
+        )
+      }
+      if (state === 'frozen') {
+        expect(
+          shell.wrapper.find('[data-id="legal-frozen-screen"]').exists(),
+        ).toBe(true)
+      }
+      if (state === 'session_ended') {
+        expect(hilosAccessLossReason.get()).toBe('session_ended')
+        expect(shell.wrapper.get('[data-id="access-loss-notice"]').text()).toBe(
+          'Your session has ended. Any unsaved changes were lost.',
+        )
+        expect(shell.wrapper.find('[data-id="test-sign-in"]').exists()).toBe(
+          true,
+        )
+        expect(shell.wrapper.find('[data-id="ordinary-page"]').exists()).toBe(
+          false,
+        )
+      }
+      if (state === 'stale' || state === 'takeover') {
+        expect(
+          shell.wrapper
+            .get('[data-id="page-interaction-scope"]')
+            .find('[data-id="ordinary-page"]')
+            .exists(),
+        ).toBe(true)
+        expect(
+          shell.wrapper.find('[data-id="access-loss-notice"]').exists(),
+        ).toBe(false)
+        expect(shell.wrapper.find('[data-id="test-sign-in"]').exists()).toBe(
+          false,
+        )
+      }
+      if (state === 'stale') {
+        expect(shell.wrapper.get('[data-id="conn-stale-line"]').text()).toBe(
+          rtStalenessCompactLabel(stale),
+        )
+      }
+      if (state === 'takeover') {
+        expect(
+          shell.wrapper.find('[data-id="impersonation-banner"]').exists(),
+        ).toBe(true)
+      }
+    },
+  )
 })
 
 /** One day, in ms. */
