@@ -1,20 +1,19 @@
-import { ActionError } from '@hilos/core/base'
+// The Vue entry of HilosActionError's shared cases
+// (../../test-support/actionErrorCases.ts): the steps and expectations live
+// there, and this file only mounts the real component and drives Vue's
+// lifecycle for them.
+import type { ActionError } from '@hilos/core/base'
 import { flushPromises, mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
-import { ref, type Ref } from 'vue'
+import { describe, expect, it } from 'vitest'
+import { nextTick, ref, type Ref } from 'vue'
 
+import {
+  registerActionErrorCases,
+  type ActionErrorInput,
+  type ActionErrorView,
+} from '../../test-support/actionErrorCases.js'
 import HilosActionError from './HilosActionError.vue'
 import type { TrackedAction } from './useTrackedAction.js'
-
-// The detail modal teleports to <body>, so assertions query the document.
-afterEach(() => {
-  document.body.innerHTML = ''
-  document.body.classList.remove('modal-open')
-})
-
-function byId(id: string): HTMLElement | null {
-  return document.querySelector(`[data-id="${id}"]`)
-}
 
 /** The state of a tracked action, with the two fields a test drives by hand. */
 interface FakeAction extends TrackedAction {
@@ -27,10 +26,11 @@ interface FakeAction extends TrackedAction {
  *
  * @param error The failure message, or null for an action that has not failed.
  * @param failure The failure itself, or null when what was thrown was not one.
+ * @returns The fake action.
  */
 function fakeAction(
   error: string | null,
-  failure: ActionError | null = null,
+  failure: ActionError | null,
 ): FakeAction {
   return {
     loading: ref(false),
@@ -42,204 +42,78 @@ function fakeAction(
   }
 }
 
-/** What the mounting place says its action failed to do. */
-const DETAILS_TITLE = "Couldn't save"
-
-describe('HilosActionError', () => {
-  it('draws the slot and no plate while nothing has failed', () => {
-    // The regression this file exists to hold: the message is a ref sitting on
-    // a plain object, and a template expression does not unwrap it — so the
-    // plate was drawn, red and empty, before any action had failed.
-    const wrapper = mount(HilosActionError, {
-      props: {
-        action: fakeAction(null),
-        detailsTitle: DETAILS_TITLE,
-      },
-    })
-    const slot = wrapper.find('[data-id="hilos-action-error-slot"]')
-    expect(slot.exists()).toBe(true)
-    expect(slot.attributes('role')).toBe('alert')
-    expect(slot.attributes('aria-live')).toBe('assertive')
-    expect(wrapper.find('[data-id="hilos-action-error"]').exists()).toBe(false)
+/**
+ * Mount the component into a host already on the body, and hand back its view.
+ *
+ * The action's outcome is the action's refs, the rest are props: an update
+ * writes each where the component reads it from.
+ *
+ * @param host The element the component is attached to.
+ * @param input What the component is mounted with.
+ * @returns The mounted view.
+ */
+function attach(host: HTMLElement, input: ActionErrorInput): ActionErrorView {
+  const action = fakeAction(input.error, input.failure)
+  const wrapper = mount(HilosActionError, {
+    attachTo: host,
+    props: {
+      action,
+      suppressed: input.suppressed,
+      detailsTitle: input.detailsTitle,
+    },
   })
 
-  it('holds the room with an invisible twin while nothing has failed', () => {
-    const wrapper = mount(HilosActionError, {
-      props: {
-        action: fakeAction(null),
-        detailsTitle: DETAILS_TITLE,
-      },
-    })
-    const twin = wrapper.find(
-      '[data-id="hilos-action-error-slot"] [data-id="hilos-action-error-idle"]',
-    )
-    expect(twin.exists()).toBe(true)
-    // Hidden from the eye and from the reader both: the room is all it is for.
-    expect(twin.classes()).toContain('invisible')
-    expect(twin.attributes('aria-hidden')).toBe('true')
-  })
+  return {
+    root: document.body,
+    async update(patch) {
+      if (patch.error !== undefined) {
+        action.error.value = patch.error
+      }
+      if (patch.failure !== undefined) {
+        action.failure.value = patch.failure
+      }
+      const props: { suppressed?: boolean; detailsTitle?: string } = {}
+      if (patch.suppressed !== undefined) {
+        props.suppressed = patch.suppressed
+      }
+      if (patch.detailsTitle !== undefined) {
+        props.detailsTitle = patch.detailsTitle
+      }
+      await wrapper.setProps(props)
+    },
+    async click(target) {
+      target.click()
+      await nextTick()
+    },
+    async flush() {
+      await flushPromises()
+    },
+    async unmount() {
+      // The details panel teleports to <body>; unmounting the app takes it,
+      // and its scroll lock, away with the row.
+      wrapper.unmount()
+      host.remove()
+    },
+  }
+}
 
-  it('draws the refusal on one line, and says it only once', () => {
-    const wrapper = mount(HilosActionError, {
-      props: {
-        action: fakeAction('Value must be an integer of 0 or more'),
-        detailsTitle: DETAILS_TITLE,
-      },
-    })
-    const plate = wrapper.find('[data-id="hilos-action-error"]')
-    expect(plate.exists()).toBe(true)
-    expect(plate.text()).toContain('Value must be an integer of 0 or more')
-    // The slot is the live region; a role here too and the reader says it twice.
-    expect(plate.attributes('role')).toBeUndefined()
-    expect(plate.find('span.flex-grow-1').classes()).toContain('text-truncate')
-  })
+/**
+ * Mount the real component on a host of its own; a mount that throws takes
+ * its host away with it.
+ *
+ * @param input What the component is mounted with.
+ * @returns The mounted view.
+ */
+async function mountActionError(
+  input: ActionErrorInput,
+): Promise<ActionErrorView> {
+  const host = document.body.appendChild(document.createElement('div'))
+  try {
+    return attach(host, input)
+  } catch (error) {
+    host.remove()
+    throw error
+  }
+}
 
-  it('keeps the room and drops the voice when suppressed', () => {
-    const wrapper = mount(HilosActionError, {
-      props: {
-        action: fakeAction('Not applied'),
-        suppressed: true,
-        detailsTitle: DETAILS_TITLE,
-      },
-    })
-    expect(wrapper.find('[data-id="hilos-action-error-slot"]').exists()).toBe(
-      true,
-    )
-    expect(wrapper.find('[data-id="hilos-action-error-idle"]').exists()).toBe(
-      true,
-    )
-    expect(wrapper.find('[data-id="hilos-action-error"]').exists()).toBe(false)
-  })
-
-  it('offers the details button on every refusal, named for a reader', () => {
-    // Nothing was held back here — no type, no original text — and the button
-    // is still the way to the whole of a truncated sentence.
-    const plain = mount(HilosActionError, {
-      props: {
-        action: fakeAction('Something went wrong'),
-        detailsTitle: DETAILS_TITLE,
-      },
-    })
-    const button = plain.find('[data-id="hilos-action-error-details"]')
-    expect(button.exists()).toBe(true)
-    expect(button.attributes('aria-label')).toBe('Show error details')
-    expect(plain.find('[data-id="hilos-action-error-type"]').exists()).toBe(
-      false,
-    )
-
-    const withType = mount(HilosActionError, {
-      props: {
-        action: fakeAction(
-          'Something went wrong',
-          new ActionError(
-            'settings::apply',
-            'fail',
-            'Something went wrong',
-            'RuntimeException',
-            'SQLSTATE[HY000]: lock wait timeout',
-          ),
-        ),
-        detailsTitle: DETAILS_TITLE,
-      },
-    })
-    const type = withType.find(
-      '[data-id="hilos-action-error-details"] [data-id="hilos-action-error-type"]',
-    )
-    expect(type.exists()).toBe(true)
-    expect(type.text()).toBe('RuntimeException')
-  })
-
-  it('opens the panel on the message and closes it when the message goes', async () => {
-    const action = fakeAction('The connection dropped before it answered')
-    const wrapper = mount(HilosActionError, {
-      props: {
-        action,
-        detailsTitle: DETAILS_TITLE,
-      },
-    })
-
-    await wrapper
-      .find('[data-id="hilos-action-error-details"]')
-      .trigger('click')
-    expect(byId('hilos-action-error-full')?.textContent).toContain(
-      'The connection dropped before it answered',
-    )
-
-    // Nothing was thrown as an ActionError, so the failure is null — the old
-    // guard watched that and would have closed the panel in the same frame.
-    await flushPromises()
-    expect(byId('hilos-action-error-full')).not.toBeNull()
-
-    action.error.value = null
-    await flushPromises()
-    expect(byId('hilos-action-error-full')).toBeNull()
-  })
-
-  it('draws the compact row of the form refusal, not a plate of its own', () => {
-    const wrapper = mount(HilosActionError, {
-      props: {
-        action: fakeAction('Not applied'),
-        detailsTitle: DETAILS_TITLE,
-      },
-    })
-    const row = wrapper.find('[data-id="hilos-action-error"]')
-    expect(row.classes()).toContain('small')
-    expect(row.classes()).toContain('py-1')
-    expect(
-      wrapper.find('[data-id="hilos-action-error-details"]').classes(),
-    ).toContain('btn-link')
-    expect(wrapper.find('.rounded-pill').exists()).toBe(false)
-  })
-
-  it('closes an open panel when the action turns suppressed', async () => {
-    const wrapper = mount(HilosActionError, {
-      props: {
-        action: fakeAction('Not applied'),
-        detailsTitle: DETAILS_TITLE,
-      },
-    })
-    await wrapper
-      .find('[data-id="hilos-action-error-details"]')
-      .trigger('click')
-    expect(byId('hilos-action-error-full')).not.toBeNull()
-
-    await wrapper.setProps({ suppressed: true })
-    await flushPromises()
-    expect(byId('hilos-action-error-full')).toBeNull()
-    expect(wrapper.find('[data-id="hilos-action-error-idle"]').exists()).toBe(
-      true,
-    )
-  })
-
-  it('treats an empty message as no refusal', () => {
-    const wrapper = mount(HilosActionError, {
-      props: {
-        action: fakeAction(''),
-        detailsTitle: DETAILS_TITLE,
-      },
-    })
-    expect(wrapper.find('[data-id="hilos-action-error-idle"]').exists()).toBe(
-      true,
-    )
-    expect(wrapper.find('[data-id="hilos-action-error"]').exists()).toBe(false)
-  })
-
-  it('heads the details panel with what the place says failed', async () => {
-    const wrapper = mount(HilosActionError, {
-      props: {
-        action: fakeAction('Value must be an integer of 0 or more'),
-        detailsTitle: "Couldn't delete the backup",
-      },
-    })
-    await wrapper
-      .find('[data-id="hilos-action-error-details"]')
-      .trigger('click')
-
-    expect(document.querySelector('.modal-title')?.textContent).toBe(
-      "Couldn't delete the backup",
-    )
-    expect(
-      document.querySelector('[role="dialog"]')?.getAttribute('aria-label'),
-    ).toBe("Couldn't delete the backup")
-  })
-})
+registerActionErrorCases('Vue', { describe, it, expect }, mountActionError)

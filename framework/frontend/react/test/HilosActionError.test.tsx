@@ -1,29 +1,29 @@
-import { ActionError } from '@hilos/core'
-import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+// The React entry of HilosActionError's shared cases
+// (../../test-support/actionErrorCases.ts): the steps and expectations live
+// there, and this file only renders the real component and drives React's
+// lifecycle for them.
+import type { ActionError } from '@hilos/core/base'
+import { act, fireEvent, render } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
 
+import {
+  registerActionErrorCases,
+  type ActionErrorInput,
+  type ActionErrorView,
+} from '../../test-support/actionErrorCases.js'
 import { HilosActionError } from '../src/HilosActionError.js'
 import type { TrackedAction } from '../src/useTrackedAction.js'
-
-// The detail modal portals to <body>, so assertions query the document.
-afterEach(() => {
-  cleanup()
-  document.body.classList.remove('modal-open')
-})
-
-function byId(id: string): HTMLElement | null {
-  return document.querySelector(`[data-id="${id}"]`)
-}
 
 /**
  * A tracked action holding one outcome: what the driver would have left behind.
  *
  * @param error The failure message, or null for an action that has not failed.
  * @param failure The failure itself, or null when what was thrown was not one.
+ * @returns The fake action.
  */
 function fakeAction(
   error: string | null,
-  failure: ActionError | null = null,
+  failure: ActionError | null,
 ): TrackedAction {
   return {
     loading: false,
@@ -35,198 +35,63 @@ function fakeAction(
   }
 }
 
-/** What the mounting place says its action failed to do. */
-const DETAILS_TITLE = "Couldn't save"
+/**
+ * The component as one render draws it, over a plain action of its own.
+ *
+ * @param input What the component is drawn with.
+ * @returns The element to render.
+ */
+function draw(input: ActionErrorInput) {
+  return (
+    <HilosActionError
+      action={fakeAction(input.error, input.failure)}
+      suppressed={input.suppressed}
+      detailsTitle={input.detailsTitle}
+    />
+  )
+}
 
-describe('HilosActionError', () => {
-  it('draws the slot and no plate while nothing has failed', () => {
-    render(
-      <HilosActionError
-        detailsTitle={DETAILS_TITLE}
-        action={fakeAction(null)}
-      />,
-    )
-    const slot = byId('hilos-action-error-slot')
-    expect(slot).not.toBeNull()
-    expect(slot?.getAttribute('role')).toBe('alert')
-    expect(slot?.getAttribute('aria-live')).toBe('assertive')
-    expect(byId('hilos-action-error')).toBeNull()
-  })
+/**
+ * Render the real component into a container of its own on the body; a render
+ * that throws takes its container away with it.
+ *
+ * @param input What the component is rendered with.
+ * @returns The mounted view.
+ */
+async function mountActionError(
+  input: ActionErrorInput,
+): Promise<ActionErrorView> {
+  const container = document.body.appendChild(document.createElement('div'))
+  try {
+    let current = input
+    const { rerender, unmount } = render(draw(current), { container })
 
-  it('holds the room with an invisible twin while nothing has failed', () => {
-    render(
-      <HilosActionError
-        detailsTitle={DETAILS_TITLE}
-        action={fakeAction(null)}
-      />,
-    )
-    const twin = document.querySelector(
-      '[data-id="hilos-action-error-slot"] [data-id="hilos-action-error-idle"]',
-    )
-    expect(twin).not.toBeNull()
-    // Hidden from the eye and from the reader both: the room is all it is for.
-    expect(twin?.classList.contains('invisible')).toBe(true)
-    expect(twin?.getAttribute('aria-hidden')).toBe('true')
-  })
+    return {
+      root: document.body,
+      async update(patch) {
+        current = { ...current, ...patch }
+        // Every update renders again, even with the message it already had: a
+        // tracked action is a new plain object on every render of its owner,
+        // and the case of a message that stays is about exactly that render.
+        rerender(draw(current))
+      },
+      async click(target) {
+        fireEvent.click(target)
+      },
+      async flush() {
+        await act(async () => {})
+      },
+      async unmount() {
+        // The details panel portals to <body>; unmounting the root takes it,
+        // and its scroll lock, away with the row.
+        unmount()
+        container.remove()
+      },
+    }
+  } catch (error) {
+    container.remove()
+    throw error
+  }
+}
 
-  it('draws the refusal on one line, and says it only once', () => {
-    render(
-      <HilosActionError
-        detailsTitle={DETAILS_TITLE}
-        action={fakeAction('Value must be an integer of 0 or more')}
-      />,
-    )
-    const plate = byId('hilos-action-error')
-    expect(plate).not.toBeNull()
-    expect(plate?.textContent).toContain(
-      'Value must be an integer of 0 or more',
-    )
-    // The slot is the live region; a role here too and the reader says it twice.
-    expect(plate?.getAttribute('role')).toBeNull()
-    const sentence = plate?.querySelector('span.flex-grow-1')
-    expect(sentence?.classList.contains('text-truncate')).toBe(true)
-  })
-
-  it('keeps the room and drops the voice when suppressed', () => {
-    render(
-      <HilosActionError
-        detailsTitle={DETAILS_TITLE}
-        action={fakeAction('Not applied')}
-        suppressed
-      />,
-    )
-    expect(byId('hilos-action-error-slot')).not.toBeNull()
-    expect(byId('hilos-action-error-idle')).not.toBeNull()
-    expect(byId('hilos-action-error')).toBeNull()
-  })
-
-  it('offers the details button on every refusal, named for a reader', () => {
-    // Nothing was held back here — no type, no original text — and the button
-    // is still the way to the whole of a truncated sentence.
-    const { unmount } = render(
-      <HilosActionError
-        detailsTitle={DETAILS_TITLE}
-        action={fakeAction('Something went wrong')}
-      />,
-    )
-    const button = byId('hilos-action-error-details')
-    expect(button).not.toBeNull()
-    expect(button?.getAttribute('aria-label')).toBe('Show error details')
-    expect(byId('hilos-action-error-type')).toBeNull()
-    unmount()
-
-    render(
-      <HilosActionError
-        detailsTitle={DETAILS_TITLE}
-        action={fakeAction(
-          'Something went wrong',
-          new ActionError(
-            'settings::apply',
-            'fail',
-            'Something went wrong',
-            'RuntimeException',
-            'SQLSTATE[HY000]: lock wait timeout',
-          ),
-        )}
-      />,
-    )
-    const type = document.querySelector(
-      '[data-id="hilos-action-error-details"] [data-id="hilos-action-error-type"]',
-    )
-    expect(type).not.toBeNull()
-    expect(type?.textContent).toBe('RuntimeException')
-  })
-
-  it('opens the panel on the message and closes it when the message goes', () => {
-    const message = 'The connection dropped before it answered'
-    const { rerender } = render(
-      <HilosActionError
-        detailsTitle={DETAILS_TITLE}
-        action={fakeAction(message)}
-      />,
-    )
-
-    fireEvent.click(byId('hilos-action-error-details') as HTMLElement)
-    expect(byId('hilos-action-error-full')?.textContent).toContain(message)
-
-    // Nothing was thrown as an ActionError, so the failure is null — the old
-    // guard watched that and would have closed the panel in the same frame.
-    rerender(
-      <HilosActionError
-        detailsTitle={DETAILS_TITLE}
-        action={fakeAction(message)}
-      />,
-    )
-    expect(byId('hilos-action-error-full')).not.toBeNull()
-
-    rerender(
-      <HilosActionError
-        detailsTitle={DETAILS_TITLE}
-        action={fakeAction(null)}
-      />,
-    )
-    expect(byId('hilos-action-error-full')).toBeNull()
-  })
-
-  it('draws the compact row of the form refusal, not a plate of its own', () => {
-    render(
-      <HilosActionError
-        detailsTitle={DETAILS_TITLE}
-        action={fakeAction('Not applied')}
-      />,
-    )
-    const row = byId('hilos-action-error')
-    expect(row?.classList.contains('small')).toBe(true)
-    expect(row?.classList.contains('py-1')).toBe(true)
-    const button = byId('hilos-action-error-details')
-    expect(button?.classList.contains('btn-link')).toBe(true)
-    expect(document.querySelector('.rounded-pill')).toBeNull()
-  })
-
-  it('closes an open panel when the action turns suppressed', () => {
-    const message = 'Not applied'
-    const { rerender } = render(
-      <HilosActionError
-        detailsTitle={DETAILS_TITLE}
-        action={fakeAction(message)}
-      />,
-    )
-    fireEvent.click(byId('hilos-action-error-details') as HTMLElement)
-    expect(byId('hilos-action-error-full')).not.toBeNull()
-
-    rerender(
-      <HilosActionError
-        detailsTitle={DETAILS_TITLE}
-        action={fakeAction(message)}
-        suppressed
-      />,
-    )
-    expect(byId('hilos-action-error-full')).toBeNull()
-    expect(byId('hilos-action-error-idle')).not.toBeNull()
-  })
-
-  it('treats an empty message as no refusal', () => {
-    render(
-      <HilosActionError detailsTitle={DETAILS_TITLE} action={fakeAction('')} />,
-    )
-    expect(byId('hilos-action-error-idle')).not.toBeNull()
-    expect(byId('hilos-action-error')).toBeNull()
-  })
-
-  it('heads the details panel with what the place says failed', () => {
-    render(
-      <HilosActionError
-        action={fakeAction('Value must be an integer of 0 or more')}
-        detailsTitle="Couldn't delete the backup"
-      />,
-    )
-    fireEvent.click(byId('hilos-action-error-details') as HTMLElement)
-
-    expect(document.querySelector('.modal-title')?.textContent).toBe(
-      "Couldn't delete the backup",
-    )
-    expect(
-      document.querySelector('[role="dialog"]')?.getAttribute('aria-label'),
-    ).toBe("Couldn't delete the backup")
-  })
-})
+registerActionErrorCases('React', { describe, it, expect }, mountActionError)
