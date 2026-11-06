@@ -308,7 +308,7 @@ export function createStatusSubscription(
           continueToken()
         }
         teardown.push(address.onChange(consumeAddress))
-        consumeAddress()
+        queueMicrotask(consumeAddress)
       }
       continueToken()
     },

@@ -145,7 +145,10 @@ describe('Angular Status subscription over the real modal and lifecycle', () => 
   })
 
   it('previews a scrubbed unsubscribe capability without spending it and Keep leaves it unspent', async () => {
-    const h = mount(`#status-unsubscribe=${token}`)
+    const fragment = `#status-unsubscribe=${token}`
+    const h = mount(fragment)
+    expect(window.location.hash).toBe(fragment)
+    expect(h.sent).toEqual([])
     await h.settle()
     expect(window.location.hash).toBe('')
     expect(h.sent.map((request) => request.action)).toEqual([

@@ -235,12 +235,11 @@ describe('public Angular Status over the real core reader', () => {
   })
 
   it('scrubs a confirmation fragment while waiting and never replays it after a late reply on a replaced input', async () => {
-    window.history.replaceState(
-      {},
-      '',
-      `/status#status-confirm=${'ab'.repeat(32)}`,
-    )
+    const fragment = `#status-confirm=${'ab'.repeat(32)}`
+    window.history.replaceState({}, '', `/status${fragment}`)
     const h = mountPublicStatus(HilosStatusPage, publicStatusFile(), false)
+    expect(window.location.hash).toBe(fragment)
+    expect(h.sent).toEqual([])
     await h.settle()
     expect(window.location.hash).toBe('')
     expect(query('modal')).toBeNull()

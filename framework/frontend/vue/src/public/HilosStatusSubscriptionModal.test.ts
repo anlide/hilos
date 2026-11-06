@@ -346,6 +346,7 @@ describe('public Status subscription with real modal, form error and LoadingButt
     expect(keep.controller.success.get()).toBeNull()
     const explicit = harness(`#status-unsubscribe=${token}`)
     explicit.controller.start()
+    await settle()
     explicit.reply({ maskedEmail: 'r***@example.net' })
     await settle()
     explicit.freeze(true)

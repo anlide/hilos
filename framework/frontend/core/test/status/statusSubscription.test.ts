@@ -21,16 +21,21 @@ function setup(hash = '') {
     ),
   }
   const addressListeners = new Set<() => void>()
-  const offAddress = vi.fn(() => addressListeners.clear())
+  const offAddress = vi.fn(() => {})
   const onChange = vi.fn((listener: () => void) => {
     addressListeners.add(listener)
-    return offAddress
+    return () => {
+      addressListeners.delete(listener)
+      offAddress()
+    }
   })
+  const address = { location, history, onChange }
   const controller = createStatusSubscription(h.context, {
-    address: { location, history, onChange },
+    address,
   })
   return {
     ...h,
+    address,
     controller,
     history,
     location,
@@ -258,6 +263,42 @@ describe('public Status subscription', () => {
     h.dispose()
   })
 
+  it.each(['confirm', 'unsubscribe'] as const)(
+    'preserves the %s fragment across an immediate remount and dispatches only from the surviving controller',
+    async (kind) => {
+      const h = setup(fragment(kind))
+      const surviving = createStatusSubscription(h.context, {
+        address: h.address,
+      })
+      h.controller.start()
+      h.controller.dispose()
+      surviving.start()
+      expect(h.location.hash).toBe(fragment(kind))
+      expect(h.history.replaceState).not.toHaveBeenCalled()
+      expect(h.sent).toEqual([])
+      await h.flush()
+      expect(h.location.hash).toBe('')
+      expect(h.history.replaceState).toHaveBeenCalledExactlyOnceWith(
+        { entry: 1 },
+        '',
+        '/status?theme=system',
+      )
+      const action =
+        kind === 'confirm'
+          ? 'status_subscription_confirm'
+          : 'status_unsubscribe_preview'
+      expect(h.sent).toEqual([
+        {
+          action,
+          data: { token },
+          requestId: '1',
+        },
+      ])
+      surviving.dispose()
+      h.dispose()
+    },
+  )
+
   it.each(['offline', 'frozen'])(
     'scrubs the fragment immediately while %s and sends confirm once on first usable connection',
     async (mode) => {
@@ -266,6 +307,7 @@ describe('public Status subscription', () => {
       else h.freeze(true)
       h.controller.start()
       h.controller.start()
+      await h.flush()
       expect(h.history.replaceState).toHaveBeenCalledExactlyOnceWith(
         { entry: 1 },
         '',
@@ -310,10 +352,11 @@ describe('public Status subscription', () => {
     '#status-confirm=%ZZ',
   ])(
     'rejects malformed or ambiguous own fragments without publishing a token: %s',
-    (hash) => {
+    async (hash) => {
       const h = setup(hash)
       const toast = vi.spyOn(hilosToasts, 'push')
       h.controller.start()
+      await h.flush()
       expect(h.history.replaceState).toHaveBeenCalledOnce()
       expect(h.sent).toEqual([])
       expect(h.controller.step.get()).toBe('error')
@@ -328,15 +371,17 @@ describe('public Status subscription', () => {
     },
   )
 
-  it('leaves unrelated fragments alone and retains unrelated fragment entries when scrubbing', () => {
+  it('leaves unrelated fragments alone and retains unrelated fragment entries when scrubbing', async () => {
     const h = setup('#history')
     h.controller.start()
+    await h.flush()
     expect(h.history.replaceState).not.toHaveBeenCalled()
     expect(h.controller.operation.get()).toBeNull()
     h.dispose()
     const own = setup(`${fragment('unsubscribe')}&section=history`)
     own.connect('disconnected')
     own.controller.start()
+    await own.flush()
     expect(own.history.replaceState).toHaveBeenCalledWith(
       { entry: 1 },
       '',
@@ -348,6 +393,7 @@ describe('public Status subscription', () => {
   it('preview and Keep never delete; only explicit unsubscribe sends the token', async () => {
     const h = setup(fragment('unsubscribe'))
     h.controller.start()
+    await h.flush()
     expect(h.sent[0]?.action).toBe('status_unsubscribe_preview')
     expect(await h.controller.submit()).toBe(false)
     h.answer({ maskedEmail: 'r***@example.net' })
@@ -362,6 +408,7 @@ describe('public Status subscription', () => {
 
     const explicit = setup(fragment('unsubscribe'))
     explicit.controller.start()
+    await explicit.flush()
     explicit.answer({ maskedEmail: 'r***@example.net' })
     await explicit.flush()
     const submit = explicit.controller.submit()
@@ -384,6 +431,7 @@ describe('public Status subscription', () => {
     const h = setup(fragment('unsubscribe'))
     h.freeze(true)
     h.controller.start()
+    await h.flush()
     h.connect('disconnected')
     h.freeze(false)
     expect(h.sent).toEqual([])
@@ -406,6 +454,7 @@ describe('public Status subscription', () => {
     const h = setup(fragment('confirm'))
     h.connect('disconnected')
     h.controller.start()
+    await h.flush()
     expect(h.controller.step.get()).toBe('waiting')
     expect(h.controller.dialog.get()).toBe(false)
     h.connect('connected')
@@ -439,6 +488,7 @@ describe('public Status subscription', () => {
     async (operation, reply) => {
       const h = setup(fragment(operation as string))
       h.controller.start()
+      await h.flush()
       h.answer(reply)
       await h.flush()
       expect(h.controller.success.get()).toBeNull()
@@ -457,6 +507,7 @@ describe('public Status subscription', () => {
   it('keeps an unsubscribe dialog after a malformed delete reply and ignores the stale reply during an explicit retry', async () => {
     const h = setup(fragment('unsubscribe'))
     h.controller.start()
+    await h.flush()
     h.answer({ maskedEmail: 'r***@example.net' })
     await h.flush()
     const first = h.controller.submit()
@@ -543,6 +594,7 @@ describe('public Status subscription', () => {
     async (outcome) => {
       const h = setup(fragment('confirm'))
       h.controller.start()
+      await h.flush()
       if (outcome === 'timeout') vi.advanceTimersByTime(1000)
       else if (outcome === 'disconnect') h.connect('disconnected')
       else
@@ -579,6 +631,7 @@ describe('public Status subscription', () => {
   it('blocks new sends during disconnection and freeze without losing a ready unsubscribe', async () => {
     const h = setup(fragment('unsubscribe'))
     h.controller.start()
+    await h.flush()
     h.answer({ maskedEmail: 'r***@example.net' })
     await h.flush()
     h.freeze(true)
@@ -600,7 +653,10 @@ describe('public Status subscription', () => {
     async (phase) => {
       const h = setup(fragment('unsubscribe'))
       if (phase === 'waiting') h.connect('disconnected')
-      if (phase !== 'before-start') h.controller.start()
+      if (phase !== 'before-start') {
+        h.controller.start()
+        await h.flush()
+      }
       if (phase === 'previewed') {
         h.answer({ maskedEmail: 'r***@example.net' })
         await h.flush()

@@ -1138,6 +1138,7 @@ describe('public HilosStatusPage', () => {
         true,
         mode === 'frozen',
       )
+      await settle()
       expect(replace).toHaveBeenCalledExactlyOnceWith(
         { entry: 1 },
         '',
@@ -1145,7 +1146,6 @@ describe('public HilosStatusPage', () => {
       )
       expect(window.location.hash).toBe('')
       expect(h.send).not.toHaveBeenCalled()
-      await settle()
       const body = new DOMWrapper(document.body)
       expect(body.find('[data-id="modal"]').exists()).toBe(false)
       expect(

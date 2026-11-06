@@ -1095,6 +1095,7 @@ describe('public HilosStatusPage', () => {
         live: mode !== 'offline',
         frozen: mode === 'frozen',
       })
+      await settle()
       expect(replace).toHaveBeenCalledExactlyOnceWith(
         { entry: 1 },
         '',
@@ -1102,7 +1103,6 @@ describe('public HilosStatusPage', () => {
       )
       expect(window.location.hash).toBe('')
       expect(h.sent).toEqual([])
-      await settle()
       expect(find('modal')).toBeNull()
       expect(text('public-status-subscription-notice')).toBe(
         STATUS_SUBSCRIPTION_COPY.waiting,
