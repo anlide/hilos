@@ -21,6 +21,7 @@ import {
   expectAnalyticsBrowserSessionHead,
   expectAnalyticsOverview,
   expectAnalyticsPeopleAccessibility,
+  expectAnalyticsPeoplePerson,
   expectAnalyticsPeopleWindow,
   expectAnalyticsPersonNavigation,
   expectAnalyticsSessionListAccessibility,
@@ -738,6 +739,28 @@ test.describe('Analytics accessibility', () => {
         'ascending',
         'react',
       )
+      await expect(sort).toBeFocused()
+
+      const descendingSort = frames.sent.length
+      await sort.press('Enter')
+      const descending = await expectAnalyticsPeopleWindow(
+        expect,
+        page,
+        frames,
+        'today',
+        descendingSort,
+      )
+      expect(descending.request.sort).toEqual([
+        { field: 'lastSeenTs', direction: 'desc' },
+      ])
+      expect(descending.request.filter).toEqual(today.request.filter)
+      await expectAnalyticsPeopleAccessibility(
+        expect,
+        page,
+        'descending',
+        'react',
+      )
+      await expectAnalyticsPeoplePerson(expect, page, descending, user)
       await expect(sort).toBeFocused()
 
       const person = analyticsPersonLink(page, user.userId)
