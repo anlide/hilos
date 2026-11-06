@@ -66,6 +66,61 @@ async function expectCountryBreadcrumb(page: Page): Promise<void> {
   `)
 }
 
+test('country.overview', async ({ page, i18n }) => {
+  await grantAdminToSelf(expect, page)
+  const country = await i18n.country({
+    code: 'xz',
+    currencySymbol: '¤',
+    currencyCode: 'XXZ',
+  })
+  await gotoPage(expect, page, `/hilos/i18n/country/${country.id}`, PAGE_READY)
+
+  await expect(page.getByTestId('country-overview-name-count')).toHaveText('0')
+  await expect(page.getByTestId('country-overview-locale-count')).toHaveText(
+    '0',
+  )
+  await expect(
+    page.getByTestId('country-overview-enabled-locale-count'),
+  ).toHaveText('0')
+  await expect(page.getByTestId('country-card-editable')).toContainText(
+    'edit freely',
+  )
+  await expect(page.getByTestId('country-card-enabled')).toHaveText(
+    'Country switched off',
+  )
+
+  const names = page.getByTestId('country-overview-name-count')
+  await names.focus()
+  await names.press('Enter')
+  await expect(page).toHaveURL(
+    new RegExp(`/hilos/i18n/country/${country.id}/names$`),
+  )
+  await expect(page.getByTestId(`hilos-page-tab-${NAMES}`)).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+
+  await page.goBack()
+  await expect(page).toHaveURL(new RegExp(`/hilos/i18n/country/${country.id}$`))
+  await expect(page.getByTestId(`hilos-page-tab-${OVERVIEW}`)).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+
+  await clickSubmit(expect, page.getByTestId('country-card-switch-on'))
+  await clickSubmit(expect, page.getByTestId('country-card-switch-on-confirm'))
+  await expect(page.getByTestId('country-card-switch-on-confirm')).toHaveCount(
+    0,
+  )
+
+  await expect(page.getByTestId('country-card-frozen')).toContainText('frozen')
+  await expect(page.getByTestId('country-card-view')).toBeVisible()
+  await expect(page.getByTestId('country-card-editable')).toHaveCount(0)
+  await expect(page.getByTestId('country-card-enabled')).toHaveText(
+    'Country switched on',
+  )
+})
+
 // FIXME(F-057, 31.10.2026): кнопка Delete country QR не получает фокус после focus · свой · попытка 3 · HIL-1729
 test('country.life', { tag: '@quarantine:F-057' }, async ({ page, i18n }) => {
   const countryIds: Record<string, string> = {}
@@ -186,7 +241,12 @@ test('country.life', { tag: '@quarantine:F-057' }, async ({ page, i18n }) => {
       await expectCountryBreadcrumb(page)
       await expect(page.getByTestId(tab.body)).toBeVisible()
       if (tab.key === OVERVIEW)
-        await expectBuiltInCountryCard(expect, page, deletes)
+        await expectBuiltInCountryCard(
+          expect,
+          page,
+          deletes,
+          'Country switched off',
+        )
       await page.reload()
       await expectPageReady(expect, page)
       await expect(page).toHaveURL(new RegExp(`${tab.path}$`))
@@ -260,7 +320,7 @@ test('country.life', { tag: '@quarantine:F-057' }, async ({ page, i18n }) => {
       PAGE_READY,
     )
     await expect(page.getByTestId('country-card-enabled')).toHaveText(
-      'Disabled',
+      'Country switched off',
     )
     await expect(page.getByTestId('country-card-default-locale')).toHaveText(
       'not chosen',
@@ -273,7 +333,9 @@ test('country.life', { tag: '@quarantine:F-057' }, async ({ page, i18n }) => {
       expect,
       page.getByTestId('country-card-switch-on-confirm'),
     )
-    await expect(page.getByTestId('country-card-enabled')).toHaveText('Enabled')
+    await expect(page.getByTestId('country-card-enabled')).toHaveText(
+      'Country switched on',
+    )
     await expect(page.getByTestId('country-card-frozen')).toBeVisible()
     await clickSubmit(expect, page.getByTestId('country-card-view'))
     for (const field of [
@@ -293,7 +355,7 @@ test('country.life', { tag: '@quarantine:F-057' }, async ({ page, i18n }) => {
       page.getByTestId('country-card-switch-off-confirm'),
     )
     await expect(page.getByTestId('country-card-enabled')).toHaveText(
-      'Disabled',
+      'Country switched off',
     )
     await expect(page.getByTestId('country-card-frozen')).toHaveCount(0)
   })
@@ -404,7 +466,9 @@ test('country.life', { tag: '@quarantine:F-057' }, async ({ page, i18n }) => {
     await expect(
       page.getByTestId('country-card-switch-on-confirm'),
     ).toHaveCount(0)
-    await expect(page.getByTestId('country-card-enabled')).toHaveText('Enabled')
+    await expect(page.getByTestId('country-card-enabled')).toHaveText(
+      'Country switched on',
+    )
     await expect(page.getByTestId('country-card-frozen')).toBeVisible()
     await clickSubmit(expect, page.getByTestId('country-card-view'))
     await expect(page.getByTestId('i18n-country-title')).toHaveText(
@@ -438,7 +502,7 @@ test('country.life', { tag: '@quarantine:F-057' }, async ({ page, i18n }) => {
       page.getByTestId('country-card-switch-off-confirm'),
     )
     await expect(page.getByTestId('country-card-enabled')).toHaveText(
-      'Disabled',
+      'Country switched off',
     )
     await expect(page.getByTestId('country-card-frozen')).toHaveCount(0)
     await expect(page.getByTestId('country-card-switch-on')).toBeVisible()
@@ -504,7 +568,9 @@ test('country.life', { tag: '@quarantine:F-057' }, async ({ page, i18n }) => {
       expect,
       page.getByTestId('country-card-switch-on-confirm'),
     )
-    await expect(page.getByTestId('country-card-enabled')).toHaveText('Enabled')
+    await expect(page.getByTestId('country-card-enabled')).toHaveText(
+      'Country switched on',
+    )
     await clickSubmit(expect, page.getByTestId('country-card-switch-off'))
     await expect(
       page.getByTestId('country-card-switch-off-counts'),
@@ -520,7 +586,7 @@ test('country.life', { tag: '@quarantine:F-057' }, async ({ page, i18n }) => {
       page.getByTestId('country-card-switch-off-confirm'),
     )
     await expect(page.getByTestId('country-card-enabled')).toHaveText(
-      'Disabled',
+      'Country switched off',
     )
     await clearLocale(locale.code)
     await expect(page.getByTestId('country-card-currency')).toHaveText('€ EUR')
@@ -588,7 +654,7 @@ test('country.life', { tag: '@quarantine:F-057' }, async ({ page, i18n }) => {
       'not chosen',
     )
     await expect(page.getByTestId('country-card-enabled')).toHaveText(
-      'Disabled',
+      'Country switched off',
     )
     await expect(page.getByTestId('country-card-delete')).toHaveAttribute(
       'aria-disabled',

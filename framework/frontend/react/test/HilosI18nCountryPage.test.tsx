@@ -108,6 +108,24 @@ describe('React country card', () => {
     expect(el('country-card-code').textContent).toBe('gg')
     expect(el('country-card-currency').textContent).toBe('£ GBP')
     expect(el('country-card-default-locale').textContent).toBe('not chosen')
+    expect(el('country-card-editable').textContent).toContain(
+      'Country switched off — edit freely',
+    )
+    expect(el('country-card-frozen')).toBeNull()
+    expect(el('country-card-enabled').textContent).toBe('Country switched off')
+    expect(el('country-card-delete-verdict')).not.toBeNull()
+    expect(el('country-card-delete-reason').id).toBe(
+      'country-card-delete-reason',
+    )
+    expect(el('country-card-delete-reason').getAttribute('data-id')).toBe(
+      'country-card-delete-reason',
+    )
+    expect(el('country-card-delete').getAttribute('aria-label')).toBe(
+      'Delete country',
+    )
+    expect(el('country-card-delete').getAttribute('aria-describedby')).toBe(
+      'country-card-delete-reason',
+    )
     act(() =>
       h.card({
         ...countryCard,
@@ -131,6 +149,11 @@ describe('React country card', () => {
     )
     expect(el('country-head-own')).not.toBeNull()
     expect(el('country-card-frozen')).not.toBeNull()
+    expect(el('country-card-frozen').textContent).toContain(
+      'Country switched on — frozen',
+    )
+    expect(el('country-card-editable')).toBeNull()
+    expect(el('country-card-enabled').textContent).toBe('Country switched on')
     expect(el('country-card-edit')).toBeNull()
     act(() =>
       h.card({
@@ -167,9 +190,19 @@ describe('React country card', () => {
       expect(el('country-card-delete').getAttribute('aria-disabled')).toBe(
         'true',
       )
+      expect(el('country-card-delete').getAttribute('aria-label')).toBe(
+        'Delete country',
+      )
       click('country-card-delete')
       expect(el('modal')).toBeNull()
+      expect(el('country-card-delete-verdict')).not.toBeNull()
       expect(el('country-card-delete').getAttribute('aria-describedby')).toBe(
+        'country-card-delete-reason',
+      )
+      expect(el('country-card-delete-reason').id).toBe(
+        'country-card-delete-reason',
+      )
+      expect(el('country-card-delete-reason').getAttribute('data-id')).toBe(
         'country-card-delete-reason',
       )
       expect(el('country-card-delete-reason').textContent).toBe(
@@ -177,6 +210,68 @@ describe('React country card', () => {
       )
     },
   )
+  it('draws overview counts from the card, follows live summary changes down to zero, and clears with the card', () => {
+    const h = setup()
+    expect(el('country-overview-names')).toBeNull()
+    expect(el('country-overview-locales')).toBeNull()
+
+    act(() =>
+      h.card({
+        ...countryCard,
+        summary: {
+          ...countryCard.summary,
+          nameCount: 0,
+          localeCount: 3,
+          locales: [
+            { localeId: 1, code: 'en-GG', enabled: true },
+            { localeId: 2, code: 'fr-GG', enabled: false },
+            { localeId: 3, code: 'es-GG', enabled: true },
+          ],
+        },
+      }),
+    )
+
+    const names = el('country-overview-name-count')
+    expect(names.tagName.toLowerCase()).toBe('a')
+    expect(names.textContent).toBe('0')
+    expect(names.getAttribute('aria-label')).toBe('Names: 0')
+    expect(names.getAttribute('href')).toBe('/hilos/i18n/country/143/names')
+
+    expect(el('country-overview-locale-count').textContent).toBe('3')
+    expect(el('country-overview-enabled-locale-count').textContent).toBe('2')
+    const locales = el('country-overview-locales')
+    expect(locales.querySelector('a')).toBeNull()
+    expect(locales.querySelector('button')).toBeNull()
+
+    act(() =>
+      h.card({
+        ...countryCard,
+        summary: {
+          ...countryCard.summary,
+          nameCount: 7,
+          localeCount: 5,
+          locales: [
+            { localeId: 1, code: 'en-GG', enabled: true },
+            { localeId: 2, code: 'fr-GG', enabled: true },
+            { localeId: 3, code: 'es-GG', enabled: true },
+            { localeId: 4, code: 'de-GG', enabled: true },
+            { localeId: 5, code: 'it-GG', enabled: false },
+          ],
+        },
+      }),
+    )
+
+    expect(el('country-overview-name-count').textContent).toBe('7')
+    expect(el('country-overview-name-count').getAttribute('aria-label')).toBe(
+      'Names: 7',
+    )
+    expect(el('country-overview-locale-count').textContent).toBe('5')
+    expect(el('country-overview-enabled-locale-count').textContent).toBe('4')
+
+    act(() => h.card([]))
+    expect(el('country-overview-names')).toBeNull()
+    expect(el('country-overview-locales')).toBeNull()
+  })
   it('sends the card edit action and keeps a deleted draft until the window closes', () => {
     const h = setup()
     act(() => h.card())
@@ -282,6 +377,11 @@ describe('React country card', () => {
     h.navigation.resolvePath = (key, params) =>
       key === HilosPages.I18N_COUNTRY_NAMES ? undefined : resolve(key, params)
     act(() => h.card({ ...countryCard, enabled: true }))
+    expect(el('country-overview-name-count').tagName.toLowerCase()).toBe('span')
+    expect(el('country-overview-name-count').textContent).toBe(
+      String(countryCard.summary.nameCount),
+    )
+    expect(el('country-overview-names').querySelector('a')).toBeNull()
     expect(el('hilos-page-tab-hilos_i18n_country_names')).toBeNull()
     expect(el('hilos-page-tabs')).toBeNull()
     expect(el('hilos-page-head-title').textContent).toBe('Guernsey')

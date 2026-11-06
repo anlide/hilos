@@ -637,6 +637,7 @@ describe('HilosSettingPresetsPage in the admin view mode', () => {
   const releases: (() => void)[] = []
 
   afterEach(() => {
+    cleanup()
     for (const release of releases.splice(0)) release()
   })
 

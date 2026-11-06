@@ -14,6 +14,7 @@ import {
 } from '@hilos/core/admin/i18n'
 import { computedSignal, HilosPages } from '@hilos/core/base'
 import { HilosAdminPage } from '../../../HilosAdminPage.js'
+import { HilosLink } from '../../../HilosLink.js'
 import { HilosRouterContext } from '../../../hilosRouterContext.js'
 import { usePageInstanceName } from '../../../usePageInstanceName.js'
 import { useSignal } from '../../../useSignal.js'
@@ -93,6 +94,15 @@ function CountryCard({ context }: HilosI18nCountryPageProps) {
   )
   const source = hilosI18nCountryDeleteFromCard(card),
     copy = HILOS_I18N_COUNTRY_WINDOW_COPY
+  const namesPath =
+    card === null
+      ? undefined
+      : router.resolvePath(HilosPages.I18N_COUNTRY_NAMES, {
+          countryCode: card.code,
+          countryId: String(card.countryId),
+        })
+  const enabledLocaleCount =
+    card?.summary.locales.filter((locale) => locale.enabled).length ?? 0
   // A country deleted elsewhere under the open card turns it into the shell's
   // 404 (HIL-1603): head and body go, and the edit window stays in modals with
   // its draft, its live source now empty, so it says Deleted.
@@ -156,12 +166,80 @@ function CountryCard({ context }: HilosI18nCountryPageProps) {
     >
       {card ? (
         <>
+          <div className="row row-cols-1 row-cols-sm-2 g-3 mb-4">
+            <div className="col">
+              <section
+                className="border rounded-3 p-3 h-100"
+                data-id="country-overview-names"
+              >
+                <h2 className="small text-body-secondary">Names</h2>
+                <div className="fs-4 fw-semibold lh-sm my-1">
+                  {namesPath !== undefined ? (
+                    <HilosLink
+                      to={namesPath}
+                      aria-label={`Names: ${card.summary.nameCount}`}
+                      data-id="country-overview-name-count"
+                    >
+                      {card.summary.nameCount}
+                    </HilosLink>
+                  ) : (
+                    <span data-id="country-overview-name-count">
+                      {card.summary.nameCount}
+                    </span>
+                  )}
+                </div>
+                <p className="small text-body-secondary mb-0">
+                  Non-empty base names in other languages; corrections do not
+                  count.
+                </p>
+              </section>
+            </div>
+            <div className="col">
+              <section
+                className="border rounded-3 p-3 h-100"
+                data-id="country-overview-locales"
+              >
+                <h2 className="small text-body-secondary">Locales</h2>
+                <div
+                  className="fs-4 fw-semibold lh-sm my-1"
+                  data-id="country-overview-locale-count"
+                >
+                  {card.summary.localeCount}
+                </div>
+                <p className="small text-body-secondary mb-0">
+                  Switched on:{' '}
+                  <span data-id="country-overview-enabled-locale-count">
+                    {enabledLocaleCount}
+                  </span>{' '}
+                  · Edited in their language cards.
+                </p>
+              </section>
+            </div>
+          </div>
+
           <section className="mb-4" data-id="country-card-main">
-            <div className="d-flex align-items-center gap-2 mb-2">
-              <h2 className="h5 mb-0">Main</h2>
+            <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+              <h2 className="h5 mb-0 me-auto">Main</h2>
+              {card.enabled ? (
+                <span
+                  className="badge bg-warning-subtle text-warning-emphasis"
+                  data-id="country-card-frozen"
+                >
+                  <i className="bi bi-lock me-1" aria-hidden="true" />
+                  Country switched on — frozen
+                </span>
+              ) : (
+                <span
+                  className="badge bg-info-subtle text-info-emphasis"
+                  data-id="country-card-editable"
+                >
+                  <i className="bi bi-pencil me-1" aria-hidden="true" />
+                  Country switched off — edit freely
+                </span>
+              )}
               <button
                 type="button"
-                className={`btn btn-sm ms-auto ${card.enabled ? 'btn-outline-secondary' : 'btn-outline-primary'}`}
+                className={`btn btn-sm ${card.enabled ? 'btn-outline-secondary' : 'btn-outline-primary'}`}
                 title={card.enabled ? copy.open.view : copy.open.edit}
                 aria-label={card.enabled ? copy.open.view : copy.open.edit}
                 data-id={
@@ -177,94 +255,111 @@ function CountryCard({ context }: HilosI18nCountryPageProps) {
                 />
               </button>
             </div>
-            <div className="border rounded-3 p-3">
-              {card.enabled && (
-                <p
-                  className="badge text-bg-warning mb-3"
-                  data-id="country-card-frozen"
-                >
-                  Country enabled — frozen
-                </p>
-              )}
-              <dl className="row mb-0">
-                <dt className="col-sm-4">Code</dt>
-                <dd className="col-sm-8">
-                  <span className="text-uppercase" data-id="country-card-code">
+            <dl className="border rounded-3 p-3 mb-0">
+              <div className="row align-items-baseline g-2 py-2 border-bottom">
+                <dt className="col-sm-3 small text-body-secondary fw-normal">
+                  Code
+                </dt>
+                <dd className="col-sm-3 small fw-semibold mb-0">
+                  <span
+                    className="font-monospace text-uppercase"
+                    data-id="country-card-code"
+                  >
                     {card.code}
                   </span>
-                  <span className="d-block small text-body-secondary">
-                    ISO 3166-1 alpha-2, unique. Never changes: locales and names
-                    refer to it.
-                  </span>
                 </dd>
-                <dt className="col-sm-4">Currency</dt>
-                <dd className="col-sm-8">
-                  <span data-id="country-card-currency">
-                    {card.currencySymbol} {card.currencyCode}
-                  </span>
-                  <span className="d-block small text-body-secondary">
-                    The symbol is for display, the ISO 4217 code is for
-                    calculations.
-                  </span>
+                <dd className="col-sm-6 small text-body-secondary mb-0">
+                  ISO 3166-1 alpha-2, unique. Never changes: locales and names
+                  refer to it.
                 </dd>
-                <dt className="col-sm-4">Default locale</dt>
-                <dd className="col-sm-8 mb-0">
-                  <span data-id="country-card-default-locale">
-                    {card.summary.defaultLocaleCode ?? 'not chosen'}
-                  </span>
-                  <span className="d-block small text-body-secondary">
-                    Formats used when the country is known but the language is
-                    not. Empty takes the formats from the language.
-                  </span>
+              </div>
+              <div className="row align-items-baseline g-2 py-2 border-bottom">
+                <dt className="col-sm-3 small text-body-secondary fw-normal">
+                  Currency
+                </dt>
+                <dd
+                  className="col-sm-3 small fw-semibold mb-0"
+                  data-id="country-card-currency"
+                >
+                  {card.currencySymbol}{' '}
+                  <span className="font-monospace">{card.currencyCode}</span>
                 </dd>
-              </dl>
-            </div>
+                <dd className="col-sm-6 small text-body-secondary mb-0">
+                  The symbol is for display, the ISO 4217 code is for
+                  calculations.
+                </dd>
+              </div>
+              <div className="row align-items-baseline g-2 py-2">
+                <dt className="col-sm-3 small text-body-secondary fw-normal">
+                  Default locale
+                </dt>
+                <dd
+                  className="col-sm-3 small fw-semibold mb-0"
+                  data-id="country-card-default-locale"
+                >
+                  {card.summary.defaultLocaleCode ?? 'not chosen'}
+                </dd>
+                <dd className="col-sm-6 small text-body-secondary mb-0">
+                  Formats used when the country is known but the language is
+                  not. You choose the locale.
+                </dd>
+              </div>
+            </dl>
           </section>
+
           <section className="mb-4" data-id="country-card-state">
             <h2 className="h5">State</h2>
-            <dl className="row mb-0 border rounded-3 p-3">
-              <dt className="col-sm-4">Availability</dt>
-              <dd className="col-sm-8">
-                <span data-id="country-card-enabled">
-                  {card.enabled ? 'Enabled' : 'Disabled'}
-                </span>
-                <span className="d-block small text-body-secondary">
-                  {card.enabled
-                    ? 'Values are frozen; switch the country off to edit them.'
-                    : 'Values can be edited; the code never changes.'}
-                </span>
-                <div className="mt-2">
+            <div className="border rounded-3 p-3">
+              <div className="d-flex flex-wrap align-items-center gap-2 py-2 border-bottom">
+                <div className="flex-grow-1">
+                  <div
+                    className="fw-semibold small"
+                    data-id="country-card-enabled"
+                  >
+                    {card.enabled
+                      ? 'Country switched on'
+                      : 'Country switched off'}
+                  </div>
+                  <p className="small text-body-secondary mb-0">
+                    {card.enabled
+                      ? 'Values are frozen; switch the country off to edit them.'
+                      : 'Values can be edited; the code never changes.'}
+                  </p>
+                </div>
+                <div className="text-nowrap">
                   <HilosI18nCountrySwitchOn context={context} card={card} />
                   <HilosI18nCountrySwitchOff context={context} card={card} />
                 </div>
-              </dd>
-              <dt className="col-sm-4">Delete country</dt>
-              <dd
-                className="col-sm-8 mb-0"
+              </div>
+              <div
+                className="d-flex flex-wrap align-items-center gap-2 py-2"
                 data-id="country-card-delete-verdict"
               >
-                <span
-                  id="country-card-delete-reason"
-                  data-id="country-card-delete-reason"
-                >
-                  {hilosI18nCountryDeleteReason(source)}
-                </span>
-                <div className="mt-2">
-                  <button
-                    type="button"
-                    className={`btn btn-sm ${card.summary.canDelete ? 'btn-outline-danger' : 'border border-secondary text-body-secondary'}`}
-                    aria-disabled={!card.summary.canDelete || undefined}
-                    aria-describedby="country-card-delete-reason"
-                    data-id="country-card-delete"
-                    onClick={() => {
-                      if (source?.canDelete) setTarget(source)
-                    }}
+                <div className="flex-grow-1">
+                  <div className="fw-semibold small">Delete country</div>
+                  <p
+                    id="country-card-delete-reason"
+                    className="small text-body-secondary mb-0"
+                    data-id="country-card-delete-reason"
                   >
-                    {HILOS_I18N_COUNTRY_DELETE_COPY.open}
-                  </button>
+                    {hilosI18nCountryDeleteReason(source)}
+                  </p>
                 </div>
-              </dd>
-            </dl>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${card.summary.canDelete ? 'btn-outline-danger' : 'border border-secondary text-body-secondary'}`}
+                  aria-label={HILOS_I18N_COUNTRY_DELETE_COPY.open}
+                  aria-disabled={!card.summary.canDelete || undefined}
+                  aria-describedby="country-card-delete-reason"
+                  data-id="country-card-delete"
+                  onClick={() => {
+                    if (source?.canDelete) setTarget(source)
+                  }}
+                >
+                  <i className="bi bi-trash" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
           </section>
         </>
       ) : loading ? (

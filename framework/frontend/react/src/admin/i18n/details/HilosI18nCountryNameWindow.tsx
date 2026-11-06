@@ -48,7 +48,8 @@ function NameForm({
     saving = useSignal(window.saving),
     canSave = useSignal(window.canSave),
     saveAvailable = useSignal(window.saveAvailable),
-    saveLabel = useSignal(window.saveLabel)
+    saveLabel = useSignal(window.saveLabel),
+    mode = useSignal(window.mode)
   const action = useTrackedAction(),
     { locked } = useLookOnly()
   const titleKey =
@@ -59,7 +60,9 @@ function NameForm({
         : 'editCorrection'
   const title = `${copy.title[titleKey]} · ${target.countryName}`
   const hint =
-    target.localeCode === null ? copy.hints.base : copy.hints.correction
+    target.localeCode === null
+      ? `${mode === 'add' ? copy.hints.baseAdd : copy.hints.baseEdit} ${copy.hints.base}`
+      : copy.hints.correction
   function submit(): void {
     if (!locked && canSave) void window.save(action.run)
   }

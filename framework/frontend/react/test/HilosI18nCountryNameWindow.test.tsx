@@ -1,6 +1,7 @@
 import { act, fireEvent } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  HILOS_I18N_COUNTRY_NAME_COPY,
   HilosPages,
   createHilosI18nCountryNameWindow,
   createSignal,
@@ -109,10 +110,18 @@ describe('React country name window', () => {
       expect(el('i18n-country-name-window').textContent).toContain(
         'English (en)',
       )
-      expect(
-        document.getElementById(input.getAttribute('aria-describedby')!)
-          ?.textContent,
-      ).toContain(locale ? 'own correction' : 'own value')
+      const copy = HILOS_I18N_COUNTRY_NAME_COPY
+      const hint = document.getElementById(
+        input.getAttribute('aria-describedby')!,
+      )?.textContent
+      if (locale === null) {
+        expect(hint).toContain(
+          name === null ? copy.hints.baseAdd : copy.hints.baseEdit,
+        )
+        expect(hint).toContain(copy.hints.base)
+      } else {
+        expect(hint).toContain(copy.hints.correction)
+      }
       expect(el<HTMLButtonElement>('i18n-country-name-submit').disabled).toBe(
         name !== null,
       )
@@ -129,6 +138,14 @@ describe('React country name window', () => {
     'adds empty text at %s and preserves literal spaces on duplicate refusal',
     async (localeCode) => {
       const h = setup(null, localeCode)
+      const copy = HILOS_I18N_COUNTRY_NAME_COPY
+      const input = el<HTMLInputElement>('i18n-country-name-input')
+      if (localeCode === null) {
+        expect(
+          document.getElementById(input.getAttribute('aria-describedby')!)
+            ?.textContent,
+        ).toContain(copy.hints.baseAdd)
+      }
       enter()
       expect(h.calls[0]).toMatchObject({
         action: 'hilos_i18n_country_name_add',
@@ -148,8 +165,18 @@ describe('React country name window', () => {
         'A name already exists',
       )
       expect(h.window.mode.get()).toBe('edit')
+      if (localeCode === null) {
+        expect(
+          document.getElementById(input.getAttribute('aria-describedby')!)
+            ?.textContent,
+        ).toContain(copy.hints.baseEdit)
+      }
       expect(h.window.target.get()).toBe(target)
       expect(el('modal').getAttribute('aria-label')).toBe(accessibleName)
+      expect(input.value).toBe(localeCode === null ? 'Ukrainian' : 'Correction')
+      expect(el<HTMLButtonElement>('i18n-country-name-submit').disabled).toBe(
+        true,
+      )
       change('i18n-country-name-input', '  My value  ')
       click('i18n-country-name-submit')
       expect(h.calls[1]).toMatchObject({

@@ -488,12 +488,17 @@ export async function expectI18nPageHead(
  * @param expect The spec's expect.
  * @param page The country Overview page.
  * @param deletes The number of country delete requests sent by the browser.
+ * @param disabledLabel The expected disabled state label (default 'Country switched off').
  */
 export async function expectBuiltInCountryCard(
   expect: Expect,
   page: Page,
   deletes: () => number,
+  disabledLabel: string = 'Country switched off',
 ): Promise<void> {
+  await expect(page.getByTestId('country-card-enabled')).toHaveText(
+    disabledLabel,
+  )
   await expect(page.getByTestId('country-card-code')).toHaveText('us')
   await expect(page.getByTestId('country-card-currency')).toHaveText('$ USD')
   await expect(page.getByTestId('country-card-default-locale')).toHaveText(
