@@ -230,7 +230,6 @@ final class AdminViewModeOperationsTest extends IntegrationTestCase
                 'label' => 'Maintenance',
                 'lead' => 'Node freeze under a destructive operation and manual maintenance: '
                     . 'its state, the verifier circle, closing the system to visitors, and the way out of the window.',
-                'icon' => 'bi-tools',
             ], $overviewData[PageCatalogConstants::WIRE_PAGE_HEAD_OWNER]);
             self::assertSame([
                 ['page' => 'hilos', 'label' => 'Hilos'],

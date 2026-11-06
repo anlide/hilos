@@ -26,7 +26,7 @@ final class PageCatalog implements PageCatalogProviderInterface
 {
     /**
      * @return array<string, array{
-     *     label: string, lead: string, parent?: string, icon?: string,
+     *     label: string, lead: string, parent?: string,
      *     breadcrumb?: string, entity?: bool, pageHead?: bool
      * }> The chat demo's admin pages and adopted framework owners
      */
@@ -107,7 +107,6 @@ final class PageCatalog implements PageCatalogProviderInterface
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Bots',
                 PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Library bots: profiles, status, and behavior.',
                 PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-                PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-robot',
                 PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Bots',
                 PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
             ],

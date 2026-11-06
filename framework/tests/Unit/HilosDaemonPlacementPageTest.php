@@ -211,7 +211,7 @@ final class HilosDaemonPlacementPageTest extends TestCase
         self::assertSame('Agent placement', $response->payload->data[PageCatalogConstants::WIRE_PAGE_LABEL]);
         self::assertSame([
             'page' => HilosPageConstants::HILOS_DAEMON, 'label' => 'Daemon',
-            'lead' => 'Nodes and their processes, with agent placement across them.', 'icon' => 'bi-cpu',
+            'lead' => 'Nodes and their processes, with agent placement across them.',
         ], $response->payload->data[PageCatalogConstants::WIRE_PAGE_HEAD_OWNER]);
         self::assertSame([
             ['page' => HilosPageConstants::HILOS_DAEMON, 'label' => 'Overview'],

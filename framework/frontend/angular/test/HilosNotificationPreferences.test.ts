@@ -67,7 +67,6 @@ function emailAndSms(mandatoryNote = false): HilosNotificationPreferencesStore {
         allowed: true,
         hasAddress: true,
         address: 'you@example.com',
-        icon: 'bi-envelope',
       },
       { channel: 'sms', label: 'SMS', allowed: false, hasAddress: false },
     ],
@@ -116,7 +115,6 @@ function emailAndPush(): HilosNotificationPreferencesStore {
       label: 'Push',
       allowed: true,
       hasAddress: true,
-      icon: 'bi-broadcast',
       config: { vapid_public: 'vapid-public-key' },
     },
   ])
@@ -292,7 +290,6 @@ describe('HilosNotificationPreferences (Angular)', () => {
               label: 'Project channel',
               allowed: true,
               hasAddress: true,
-              icon: 'bi-chat-dots',
               address,
             },
           ]),
@@ -405,7 +402,6 @@ describe('HilosNotificationPreferences (Angular)', () => {
       expect(text(describedBy(root, toggle))).toBe('you@example.com')
       expect(store.channels.get()[0]).toMatchObject({
         address: 'you@example.com',
-        icon: 'bi-envelope',
       })
     })
 

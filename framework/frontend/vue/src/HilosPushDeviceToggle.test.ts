@@ -366,7 +366,6 @@ describe('HilosPushDeviceToggle', () => {
           label: 'Project push',
           allowed: false,
           hasAddress: false,
-          icon: 'bi-phone',
           config: { vapid_public: 'project-vapid-key' },
         },
         {
@@ -396,7 +395,7 @@ describe('HilosPushDeviceToggle', () => {
     expect(toggle.attributes('disabled')).toBeUndefined()
     expect(
       row.get('[data-id="hilos-notification-preference-icon-web"]').classes(),
-    ).toContain('bi-phone')
+    ).toContain('bi-bell')
     expect(row.get('label').text()).toBe('Project push')
     expect(
       row.get(`[id="${toggle.attributes('aria-describedby')}"]`).text(),

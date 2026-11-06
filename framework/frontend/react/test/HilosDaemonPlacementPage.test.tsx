@@ -133,7 +133,7 @@ function harness(
     sendTableRendered: vi.fn(() => true),
     sendAction,
   } as unknown as HilosConnection
-  const router = {
+  const sourceRouter: HilosRouter = {
     currentRoute: createSignal({
       page,
       params: {},
@@ -145,6 +145,25 @@ function harness(
     resolvePath: createAppPageRouter({}).path,
     navigate: vi.fn(),
   } as unknown as HilosRouter
+  const router: HilosRouter = {
+    ...sourceRouter,
+    pageIdentity: createHilosRouter(
+      createAppPageRouter({}),
+      {
+        ...sourceRouter,
+        pageError: createSignal(null),
+        subscribe: () => {},
+        unsubscribe: () => {},
+        refuseUnbuilt: () => {},
+      },
+      {
+        pathname: () => sourceRouter.currentPath.get(),
+        pushState: () => {},
+        replaceState: () => {},
+        onPopState: () => () => {},
+      },
+    ).pageIdentity,
+  }
   const context = { scopes, connection }
   const Component =
     page === HilosPages.DAEMON

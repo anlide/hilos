@@ -64,13 +64,12 @@ final class MailDeliveryChannelTest extends TestCase
         parent::tearDown();
     }
 
-    /** Checks the mail descriptor's identity and DB-free icon metadata. */
+    /** Checks the mail descriptor's identity and pooled routing. */
     public function testChannelIdentityIsEmailAndPooled(): void
     {
         $channel = new MailDeliveryChannel();
 
         self::assertSame('email', $channel->name());
-        self::assertSame('bi-envelope', $channel->icon());
         self::assertSame(HilosSignalConstants::HILOS_MAIL_DELIVER, $channel->deliverSignalName());
         self::assertTrue($channel->isPooled());
         self::assertSame(NotificationDeliverSignalData::shardKey, $channel->indexField());
@@ -121,7 +120,6 @@ final class MailDeliveryChannelTest extends TestCase
                     'allowed' => true,
                     'hasAddress' => true,
                     'address' => null,
-                    'icon' => 'bi-broadcast',
                     'config' => ['vapid_public' => 'BPk...'],
                 ],
                 [
@@ -130,7 +128,6 @@ final class MailDeliveryChannelTest extends TestCase
                     'allowed' => true,
                     'hasAddress' => true,
                     'address' => 'project@example.test',
-                    'icon' => 'bi-envelope',
                 ],
                 [
                     'channel' => 'sms',
@@ -138,7 +135,6 @@ final class MailDeliveryChannelTest extends TestCase
                     'allowed' => true,
                     'hasAddress' => false,
                     'address' => null,
-                    'icon' => 'bi-bell',
                 ],
             ],
             'mandatoryNote' => true,

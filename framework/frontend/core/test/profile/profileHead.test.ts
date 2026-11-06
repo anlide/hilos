@@ -173,7 +173,7 @@ describe('profile head store', () => {
         page: HilosPages.PROFILE,
         label: 'Ann',
         lead: 'Your account',
-        icon: 'bi-person',
+        icon: null,
       },
       breadcrumb: [{ page: HilosPages.PROFILE, label: 'Ann' }],
       pageTabs: [tabs[0], tabs[1], tabs[3], tabs[4], tabs[5]],

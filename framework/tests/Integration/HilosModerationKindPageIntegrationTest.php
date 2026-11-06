@@ -152,8 +152,8 @@ final class HilosModerationKindPageIntegrationTest extends FrameworkIntegrationT
             'page' => HilosPageConstants::HILOS_MODERATION_KIND,
             'label' => 'Kind',
             'lead' => 'One declared check and the rules in force.',
-            'icon' => 'bi-shield-check',
         ], $data['pageHeadOwner']);
+        self::assertArrayNotHasKey('icon', $data['pageHeadOwner']);
         self::assertSame('Kind', $data['pageLabel']);
         self::assertSame('One declared check and the rules in force.', $data['pageLead']);
         self::assertSame([

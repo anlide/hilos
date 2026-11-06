@@ -193,7 +193,6 @@ final class AnalyticsPeoplePageIntegrationTest extends IntegrationTestCase
                 'page' => HilosPageConstants::HILOS_ANALYTICS,
                 'label' => 'Analytics',
                 'lead' => 'What a browser session did, in order, and which sessions a person signed into.',
-                'icon' => 'bi-bar-chart',
             ],
             PageCatalogConstants::WIRE_PAGE_TABS => [
                 ['page' => HilosPageConstants::HILOS_ANALYTICS, 'label' => 'Overview'],

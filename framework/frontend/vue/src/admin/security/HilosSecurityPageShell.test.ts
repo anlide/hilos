@@ -2,6 +2,7 @@ import { enableAutoUnmount, mount } from '@vue/test-utils'
 import {
   bindAdminAccess,
   createAppPageRouter,
+  createHilosRouter,
   createSignal,
   HilosPages,
   pageIdentity,
@@ -55,7 +56,7 @@ function harness(page: string = HilosPages.SECURITY_2FA, viewer = false) {
   releases.push(bindAdminAccess(scopes))
   const routes = createAppPageRouter({})
   const route = createSignal<PageRouteMatch>({ page, params: {}, admin: true })
-  const navigation: HilosRouter = {
+  const sourceRouter: HilosRouter = {
     currentRoute: route,
     currentPath: createSignal(routes.path(page, {}) ?? '/hilos/security'),
     currentTitle: createSignal(''),
@@ -72,6 +73,25 @@ function harness(page: string = HilosPages.SECURITY_2FA, viewer = false) {
     replacePath: () => {},
     start: () => {},
     stop: () => {},
+  }
+  const navigation: HilosRouter = {
+    ...sourceRouter,
+    pageIdentity: createHilosRouter(
+      routes,
+      {
+        ...sourceRouter,
+        pageError: createSignal(null),
+        subscribe: () => {},
+        unsubscribe: () => {},
+        refuseUnbuilt: () => {},
+      },
+      {
+        pathname: () => sourceRouter.currentPath.get(),
+        pushState: () => {},
+        replaceState: () => {},
+        onPopState: () => () => {},
+      },
+    ).pageIdentity,
   }
   const answer = (): void => {
     scope.data.set(

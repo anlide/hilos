@@ -34,11 +34,11 @@ final class HilosPageCatalog
      * Admin page identity, keyed by page key.
      *
      * The dashboard is the root of the tree and declares no parent; every other entry names one,
-     * and the chain from any page up to the dashboard is what the breadcrumb walks. `icon` marks
-     * a top-level section, which is the only place a card is drawn.
+     * and the chain from any page up to the dashboard is what the breadcrumb walks.
+     * Dashboard sections below select which page keys become cards.
      *
      * @var array<string, array{
-     *     label: string, lead: string, parent?: string, icon?: string,
+     *     label: string, lead: string, parent?: string,
      *     breadcrumb?: string, entity?: bool, pageHead?: bool
      * }> Catalog metadata per page key
      */
@@ -112,7 +112,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Users',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Application users and panel operators: presence, roles, and access.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-people',
         ],
         HilosPageConstants::HILOS_USER => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'User',
@@ -144,7 +143,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Legal',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'What the project declares, and who accepted it.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-file-earmark-check',
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Legal',
         ],
         HilosPageConstants::HILOS_LEGAL_DOCUMENTS => [
@@ -158,7 +156,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'The standard set, project deviations, and declared revisions.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LEGAL_DOCUMENTS,
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Document',
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-file-earmark-text',
             PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
         ],
         HilosPageConstants::HILOS_LEGAL_DOCUMENT_SET => [
@@ -184,7 +181,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'The exact text, its changes, and its acceptances.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LEGAL_DOCUMENT_REVISIONS,
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Revision',
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-file-earmark-text',
             PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
         ],
         HilosPageConstants::HILOS_LEGAL_REVISION_TEXT => [
@@ -211,13 +207,11 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Roles',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Role catalog and the permission groups assigned to users.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-person-badge',
         ],
         HilosPageConstants::HILOS_MODERATION => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Moderation',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'What is checked before it is shown, and by which rules.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-shield-check',
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Moderation',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ],
@@ -225,7 +219,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Kind',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'One declared check and the rules in force.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_MODERATION,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-shield-check',
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Kind',
             PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
@@ -240,7 +233,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Internationalization',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Languages, countries, locales, and translation screens.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-translate',
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Internationalization',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ],
@@ -371,7 +363,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Communications',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Email, SMS, push, and chat delivery channels.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-envelope-paper',
         ],
         HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Channel',
@@ -379,7 +370,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_COMMUNICATIONS,
             PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Channel',
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-envelope-paper',
         ],
         HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL_CONFIGURATION => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Configuration',
@@ -402,7 +392,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Security Center',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Sign-in methods, two-factor authentication and OAuth login providers.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-shield-lock',
         ],
         HilosPageConstants::HILOS_SECURITY_2FA => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Two-factor',
@@ -442,7 +431,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Billing',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Payment providers, payments, and refunds.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-credit-card',
         ],
         HilosPageConstants::HILOS_BILLING_PROVIDER => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Provider',
@@ -466,20 +454,17 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Settings',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Application setting catalog: catalog defaults, overrides, and references.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-sliders',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ],
         HilosPageConstants::HILOS_APPEARANCE => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Appearance',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Theme switching and the default theme.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-palette',
         ],
         HilosPageConstants::HILOS_DAEMON => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Daemon',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Nodes and their processes, with agent placement across them.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-cpu',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ],
         HilosPageConstants::HILOS_DAEMON_PLACEMENT => [
@@ -493,7 +478,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Node',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'One node: processor, memory, environment summary, and maintenance.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DAEMON,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-hdd-network',
             PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ],
@@ -542,7 +526,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Logs',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Rotation stats, log keys, workers, and the viewer.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-journal-text',
         ],
         HilosPageConstants::HILOS_LOGS_KEYS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'By key',
@@ -573,7 +556,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Change Log',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Who changed what in the tracked tables, and through which action.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-clock-history',
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Change Log',
         ],
         HilosPageConstants::HILOS_CHANGE_LOG_FEED => [
@@ -598,7 +580,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Tracked table',
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Tracked table',
             PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-table',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'One table: its journal label, columns and triggers.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_CHANGE_LOG_TABLES,
         ],
@@ -624,14 +605,12 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Backups',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Database and file backup jobs and their history.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-safe2',
         ],
         HilosPageConstants::HILOS_MAINTENANCE => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Maintenance',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Node freeze under a destructive operation and manual maintenance: '
                 . 'its state, the verifier circle, closing the system to visitors, and the way out of the window.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-tools',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ],
         HilosPageConstants::HILOS_MAINTENANCE_CIRCLE => [
@@ -654,7 +633,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Status',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A public status page: service health, incidents, and planned work.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-activity',
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Status',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ],
@@ -688,7 +666,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Analytics',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'What a browser session did, in order, and which sessions a person signed into.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-bar-chart',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ],
         HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS => [
@@ -705,7 +682,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Browser session',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Actions recorded in one browser session, in source-time order.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-window',
             PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
         ],
         HilosPageConstants::HILOS_ANALYTICS_PERSON => [
@@ -719,7 +695,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'MCP & Skills',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'MCP servers, skills, and their usage logs.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-boxes',
         ],
         HilosPageConstants::HILOS_MCP_SKILLS_MCP => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'MCP server',
@@ -740,7 +715,6 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'System Intelligence Layer',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'SIL dashboard, requests, and elevated automation.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-lightning-charge',
         ],
         HilosPageConstants::HILOS_SIL_REQUESTS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Requests',

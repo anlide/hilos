@@ -1740,11 +1740,11 @@ export async function expectDaemonNodeAnswer(
   )
   const data = deliveryObject(first.data)
   expect(data.pageLabel).toBe('Node')
+  expect(Object.hasOwn(deliveryObject(data.pageHeadOwner), 'icon')).toBe(false)
   expect(data.pageHeadOwner).toEqual({
     page: 'hilos_daemon_node',
     label: 'Node',
     lead: 'One node: processor, memory, environment summary, and maintenance.',
-    icon: 'bi-hdd-network',
   })
   expect(data.pageTabs).toEqual(
     DAEMON_NODE_TABS.map(({ key, label }) => ({ page: key, label })),
@@ -1890,11 +1890,11 @@ export async function expectDaemonPlacementAnswer(
     deliveryObject(deliveryObject(first.wire).data).payload,
   )
   const data = deliveryObject(payload.data)
+  expect(Object.hasOwn(deliveryObject(data.pageHeadOwner), 'icon')).toBe(false)
   expect(data.pageHeadOwner).toEqual({
     page: 'hilos_daemon',
     label: 'Daemon',
     lead: 'Nodes and their processes, with agent placement across them.',
-    icon: 'bi-cpu',
   })
   expect(data.pageBreadcrumb).toEqual([
     { page: 'hilos', label: 'Hilos' },

@@ -45,7 +45,7 @@ final class StatusOverviewPageTest extends StatusPageTestCase
         self::assertNull($reply->payload->data['status']['maintenance']);
         self::assertSame(['confirmedCount' => 0, 'pendingCount' => 0], $reply->payload->data['status']['subscribers']);
         self::assertSame('Status', $reply->payload->data['pageHeadOwner']['label']);
-        self::assertSame('bi-activity', $reply->payload->data['pageHeadOwner']['icon']);
+        self::assertArrayNotHasKey('icon', $reply->payload->data['pageHeadOwner']);
         self::assertSame([
             ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
             ['page' => HilosPageConstants::HILOS_STATUS, 'label' => 'Status'],

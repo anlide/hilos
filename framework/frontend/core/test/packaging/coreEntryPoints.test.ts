@@ -56,6 +56,7 @@ import * as restoreProgress from '../../src/connection/restoreProgress.js'
 import * as tableFocusReturn from '../../src/dom/tableFocusReturn.js'
 import * as core from '../../src/index.js'
 import * as publicStatus from '../../src/status/index.js'
+import * as notificationPreferences from '../../src/notifications/notificationPreferences.js'
 import * as publicStatusDerived from '../../src/status/derivedStatus.js'
 import * as accountDeletion from '../../src/profile/accountDeletion.js'
 import * as timeZonePicker from '../../src/timeZone/timeZonePicker.js'
@@ -160,6 +161,8 @@ const licenseDependenciesTypes = [
   'HilosLicenseDependenciesController',
   'HilosTableAuxiliaryAction',
 ]
+/** Channel icons belong to base without extending the compatibility root. */
+const notificationChannelValues = ['notificationChannelIcon']
 /** Public legal document APIs added for the Privacy page and shared SDK reader. */
 const publicLegalValues = [
   'LEGAL_PRIVACY_SECTION',
@@ -1037,7 +1040,17 @@ describe('core public entries', () => {
     for (const [entry, api] of Object.entries(publicEntries)) {
       for (const [name, value] of Object.entries(api)) {
         names.add(name)
-        if (entry === './status' && publicStatusDerivedValues.includes(name)) {
+        if (entry === './base' && notificationChannelValues.includes(name)) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(value, name).toBe(
+            notificationPreferences[
+              name as keyof typeof notificationPreferences
+            ],
+          )
+        } else if (
+          entry === './status' &&
+          publicStatusDerivedValues.includes(name)
+        ) {
           expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(value, name).toBe(
@@ -1362,6 +1375,7 @@ describe('core public entries', () => {
     expect([...names].sort()).toEqual(
       [
         ...expectedValues,
+        ...notificationChannelValues,
         ...publicStatusDerivedValues,
         ...analyticsOverviewValues,
         ...analyticsPeriodValues,
@@ -1962,9 +1976,23 @@ describe('core public entries', () => {
       ...changeLogPresentationValues,
       ...changeLogPresentationTypes,
     ]
+    const notificationChannelExports = exportsOf(
+      'notifications/notificationPreferences.ts',
+    )
     for (const entry of entries.slice(1)) {
       for (const [name, symbol] of exportsOf(entry)) {
-        if (entry === 'status/index.ts' && publicDerivedNames.includes(name)) {
+        if (
+          entry === 'base/index.ts' &&
+          notificationChannelValues.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(
+            notificationChannelExports.get(name),
+          )
+        } else if (
+          entry === 'status/index.ts' &&
+          publicDerivedNames.includes(name)
+        ) {
           expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(
@@ -2196,6 +2224,7 @@ describe('core public entries', () => {
     expect([...names].sort()).toEqual(
       [
         ...root.keys(),
+        ...notificationChannelValues,
         ...publicDerivedNames,
         ...overviewNames,
         ...periodNames,

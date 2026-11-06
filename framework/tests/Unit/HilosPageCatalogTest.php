@@ -46,7 +46,7 @@ final class HilosPageCatalogTest extends TestCase
     {
         $owner = HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_CHANGE_LOG_TABLE];
         self::assertTrue($owner[PageCatalogConstants::CATALOG_ENTRY_ENTITY]);
-        self::assertSame('bi-table', $owner[PageCatalogConstants::CATALOG_ENTRY_ICON]);
+        self::assertArrayNotHasKey('icon', $owner);
         self::assertSame('One table: its journal label, columns and triggers.', $owner[PageCatalogConstants::CATALOG_ENTRY_LEAD]);
         self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD, $owner);
         $children = [];
@@ -200,7 +200,7 @@ final class HilosPageCatalogTest extends TestCase
         $document = HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LEGAL_DOCUMENT];
         self::assertSame(HilosPageConstants::HILOS_LEGAL_DOCUMENTS, $document[PageCatalogConstants::CATALOG_ENTRY_PARENT]);
         self::assertSame('Document', $document[PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB]);
-        self::assertSame('bi-file-earmark-text', $document[PageCatalogConstants::CATALOG_ENTRY_ICON]);
+        self::assertArrayNotHasKey('icon', $document);
         self::assertTrue($document[PageCatalogConstants::CATALOG_ENTRY_ENTITY]);
         self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD, $document);
         $children = [];
@@ -225,7 +225,6 @@ final class HilosPageCatalogTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'The exact text, its changes, and its acceptances.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LEGAL_DOCUMENT_REVISIONS,
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Revision',
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-file-earmark-text',
             PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
         ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_LEGAL_REVISION]);
         self::assertSame([
@@ -248,7 +247,7 @@ final class HilosPageCatalogTest extends TestCase
         self::assertSame(HilosPageConstants::HILOS_COMMUNICATIONS, $channel[PageCatalogConstants::CATALOG_ENTRY_PARENT]);
         self::assertTrue($channel[PageCatalogConstants::CATALOG_ENTRY_ENTITY]);
         self::assertSame('Channel', $channel[PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB]);
-        self::assertSame('bi-envelope-paper', $channel[PageCatalogConstants::CATALOG_ENTRY_ICON]);
+        self::assertArrayNotHasKey('icon', $channel);
         self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD, $channel);
         self::assertArrayNotHasKey(
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD,
@@ -352,7 +351,7 @@ final class HilosPageCatalogTest extends TestCase
         self::assertSame('Moderation', $entry[PageCatalogConstants::CATALOG_ENTRY_LABEL]);
         self::assertSame('What is checked before it is shown, and by which rules.', $entry[PageCatalogConstants::CATALOG_ENTRY_LEAD]);
         self::assertSame(HilosPageConstants::HILOS_DASHBOARD, $entry[PageCatalogConstants::CATALOG_ENTRY_PARENT]);
-        self::assertSame('bi-shield-check', $entry[PageCatalogConstants::CATALOG_ENTRY_ICON]);
+        self::assertArrayNotHasKey('icon', $entry);
         self::assertSame('Moderation', $entry[PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB]);
         self::assertTrue($entry[PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD]);
         self::assertArrayNotHasKey(PageCatalogConstants::CATALOG_ENTRY_ENTITY, $entry);
@@ -402,7 +401,6 @@ final class HilosPageCatalogTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Browser session',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Actions recorded in one browser session, in source-time order.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSIONS,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-window',
             PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
         ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION]);
         self::assertArrayNotHasKey(
@@ -494,7 +492,6 @@ final class HilosPageCatalogTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Node freeze under a destructive operation and manual maintenance: '
                 . 'its state, the verifier circle, closing the system to visitors, and the way out of the window.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-tools',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_MAINTENANCE]);
     }
@@ -627,7 +624,6 @@ final class HilosPageCatalogTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Settings',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Application setting catalog: catalog defaults, overrides, and references.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-sliders',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_SETTINGS]);
     }

@@ -27,9 +27,6 @@ final class PageCatalogConstants
     /** @var string Catalog entry: one-line description under the heading and on the dashboard card */
     public const string CATALOG_ENTRY_LEAD = 'lead';
 
-    /** @var string Catalog entry: Bootstrap icon name (`bi-*`) for the dashboard card */
-    public const string CATALOG_ENTRY_ICON = 'icon';
-
     /** @var string Catalog entry: breadcrumb and tab caption; an empty caption omits the breadcrumb link */
     public const string CATALOG_ENTRY_BREADCRUMB = 'breadcrumb';
 

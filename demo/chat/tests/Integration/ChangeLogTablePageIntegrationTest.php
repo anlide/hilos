@@ -310,7 +310,6 @@ final class ChangeLogTablePageIntegrationTest extends IntegrationTestCase
                 'page' => ChangeLogTablePage::PAGE,
                 'label' => 'Tracked table',
                 'lead' => 'One table: its journal label, columns and triggers.',
-                'icon' => 'bi-table',
             ], $wire['pageHeadOwner']);
             self::assertSame([
                 ['page' => ChangeLogTablePage::PAGE, 'label' => 'Overview'],

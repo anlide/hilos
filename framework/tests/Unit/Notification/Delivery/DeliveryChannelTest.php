@@ -80,12 +80,11 @@ final class DeliveryChannelTest extends TestCase
         self::assertNull($channel->shardKeyFor(7, 42));
         self::assertSame('tg-7', $channel->resolveAddress(7));
         self::assertNull($channel->resolveAddress(99));
-        self::assertSame('bi-bell', $channel->icon());
         self::assertNull($channel->displayAddress(null));
         self::assertNull($channel->displayAddress('tg-7'));
     }
 
-    /** Checks a project's explicit icon and public address projection. */
+    /** Checks a project's public address projection. */
     public function testProjectChannelCanOverridePublicMetadata(): void
     {
         $channel = new class extends AbstractDeliveryChannel {
@@ -110,12 +109,6 @@ final class DeliveryChannelTest extends TestCase
                 return 'internal-' . $userId;
             }
 
-            /** @return string Project channel icon token */
-            public function icon(): string
-            {
-                return 'bi-chat';
-            }
-
             /**
              * @param ?string $resolvedAddress Internal project token, or null when unreachable
              * @return ?string Public recipient label, without the internal token
@@ -126,7 +119,6 @@ final class DeliveryChannelTest extends TestCase
             }
         };
 
-        self::assertSame('bi-chat', $channel->icon());
         self::assertSame('@recipient', $channel->displayAddress($channel->resolveAddress(7)));
         self::assertNull($channel->displayAddress(null));
     }

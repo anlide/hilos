@@ -45,14 +45,13 @@ final class PushDeliveryChannelTest extends TestCase
         parent::tearDown();
     }
 
-    /** Checks the push descriptor's identity and DB-free icon metadata. */
+    /** Checks the push descriptor's identity and pooled routing. */
     public function testChannelIdentityIsPushAndPooled(): void
     {
         $channel = new PushDeliveryChannel();
 
         self::assertSame('push', $channel->name());
         self::assertSame('webpush', $channel->driver());
-        self::assertSame('bi-broadcast', $channel->icon());
         self::assertSame(HilosSignalConstants::HILOS_PUSH_DELIVER, $channel->deliverSignalName());
         self::assertTrue($channel->isPooled());
         self::assertSame(NotificationDeliverSignalData::shardKey, $channel->indexField());

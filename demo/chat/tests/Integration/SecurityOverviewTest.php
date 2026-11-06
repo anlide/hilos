@@ -200,7 +200,6 @@ final class SecurityOverviewTest extends IntegrationTestCase
                 'page' => HilosPageConstants::HILOS_SECURITY,
                 'label' => 'Security Center',
                 'lead' => 'Sign-in methods, two-factor authentication and OAuth login providers.',
-                'icon' => 'bi-shield-lock',
             ], $response->payload->data[PageCatalogConstants::WIRE_PAGE_HEAD_OWNER]);
             self::assertSame([
                 ['page' => HilosPageConstants::HILOS_SECURITY, 'label' => 'Overview'],

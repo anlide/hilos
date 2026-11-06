@@ -1,6 +1,7 @@
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import { type ProjectSignal } from '../../src/protocol/parseSignal.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
+import { notificationChannelIcon } from '../../src/base/index.js'
 import { describe, expect, it } from 'vitest'
 import {
   createHilosNotificationPreferencesStore,
@@ -21,6 +22,21 @@ function sampleSection(): HilosNotificationPreferencesSection {
     mandatoryNote: true,
   }
 }
+
+describe('notification channel icons', () => {
+  it.each([
+    ['email', 'bi-envelope'],
+    ['push', 'bi-broadcast'],
+    ['sms', 'bi-phone'],
+    ['custom', 'bi-bell'],
+    ['', 'bi-bell'],
+    ['toString', 'bi-bell'],
+    ['constructor', 'bi-bell'],
+    ['__proto__', 'bi-bell'],
+  ])('maps %s to %s', (channel, icon) => {
+    expect(notificationChannelIcon(channel)).toBe(icon)
+  })
+})
 
 describe('notification preferences store', () => {
   it('applies a section snapshot to the reactive rows and note', () => {
@@ -128,7 +144,7 @@ describe('notification preferences store', () => {
     expect(parsed.mandatoryNote).toBe(false)
   })
 
-  it('parses optional icon and address metadata, including a null address', () => {
+  it('parses optional address metadata, including a null address', () => {
     const parsed = notificationPreferencesSectionSchema.parse({
       channels: [
         {
@@ -136,35 +152,51 @@ describe('notification preferences store', () => {
           label: 'Email',
           allowed: true,
           hasAddress: true,
-          icon: 'bi-envelope',
           address: null,
         },
       ],
       mandatoryNote: false,
     })
 
-    expect(parsed.channels[0].icon).toBe('bi-envelope')
     expect(parsed.channels[0].address).toBeNull()
     expect(parsed.channels[0].hasAddress).toBe(true)
   })
 
-  it('rejects non-string icon and non-string non-null address metadata', () => {
-    for (const metadata of [{ icon: 7 }, { address: 7 }]) {
-      expect(
-        notificationPreferencesSectionSchema.safeParse({
-          channels: [
-            {
-              channel: 'email',
-              label: 'Email',
-              allowed: true,
-              hasAddress: true,
-              ...metadata,
-            },
-          ],
-          mandatoryNote: false,
-        }).success,
-      ).toBe(false)
-    }
+  it.each(['bi-server', 7, null])(
+    'preserves a legacy icon %j as an extra channel field',
+    (icon) => {
+      const parsed = notificationPreferencesSectionSchema.parse({
+        channels: [
+          {
+            channel: 'email',
+            label: 'Email',
+            allowed: true,
+            hasAddress: true,
+            icon,
+          },
+        ],
+        mandatoryNote: false,
+      })
+
+      expect(parsed.channels[0].icon).toBe(icon)
+    },
+  )
+
+  it('rejects non-string non-null address metadata', () => {
+    expect(
+      notificationPreferencesSectionSchema.safeParse({
+        channels: [
+          {
+            channel: 'email',
+            label: 'Email',
+            allowed: true,
+            hasAddress: true,
+            address: 7,
+          },
+        ],
+        mandatoryNote: false,
+      }).success,
+    ).toBe(false)
   })
 
   it('preserves metadata through section application and changed-map updates', () => {
@@ -176,7 +208,6 @@ describe('notification preferences store', () => {
           label: 'Email',
           allowed: true,
           hasAddress: true,
-          icon: 'bi-envelope',
           address: 'person@example.test',
         },
       ],
@@ -192,7 +223,6 @@ describe('notification preferences store', () => {
         label: 'Email',
         allowed: false,
         hasAddress: true,
-        icon: 'bi-envelope',
         address: 'person@example.test',
       },
     ])
@@ -281,15 +311,17 @@ describe('notification preferences page binding', () => {
           label: 'Email',
           allowed: true,
           hasAddress: true,
-          icon: 'bi-envelope',
           address: 'new@example.test',
         },
       ],
       mandatoryNote: false,
     })
 
-    expect(store.channels.get()[0]).toMatchObject({
-      icon: 'bi-envelope',
+    expect(store.channels.get()[0]).toEqual({
+      channel: 'email',
+      label: 'Email',
+      allowed: true,
+      hasAddress: true,
       address: 'new@example.test',
     })
     stop()

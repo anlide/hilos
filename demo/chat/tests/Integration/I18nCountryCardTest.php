@@ -752,7 +752,6 @@ final class I18nCountryCardTest extends IntegrationTestCase
                 'page' => HilosPageConstants::HILOS_I18N,
                 'label' => 'Internationalization',
                 'lead' => 'Languages, countries, locales, and translation screens.',
-                'icon' => 'bi-translate',
             ], $response->payload->data[PageCatalogConstants::WIRE_PAGE_HEAD_OWNER]);
             self::assertSame([
                 ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],

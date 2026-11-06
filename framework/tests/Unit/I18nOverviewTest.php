@@ -231,7 +231,6 @@ final class I18nOverviewTest extends TestCase
                 'page' => HilosPageConstants::HILOS_I18N,
                 'label' => 'Internationalization',
                 'lead' => 'Languages, countries, locales, and translation screens.',
-                'icon' => 'bi-translate',
             ],
             'pageTabs' => [
                 ['page' => HilosPageConstants::HILOS_I18N, 'label' => 'Overview'],

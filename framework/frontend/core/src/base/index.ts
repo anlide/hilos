@@ -533,6 +533,7 @@ export {
   PROFILE_NOTIFICATION_ADDRESS_SECTION,
   hilosNotificationAddressSection,
   HILOS_NOTIFICATION_PREFERENCES_COPY,
+  notificationChannelIcon,
   type HilosProfileNotificationsContext,
   hilosNotificationPreferences,
   notificationPreferencesSectionSchema,

@@ -19,7 +19,7 @@ final class PageCatalogStub implements PageCatalogProviderInterface
 {
     /**
      * @return array<string, array{
-     *     label: string, lead: string, parent?: string, icon?: string,
+     *     label: string, lead: string, parent?: string,
      *     breadcrumb?: string, entity?: bool, pageHead?: bool
      * }> No project pages
      */

@@ -26,7 +26,7 @@ const APP_ROUTES: Record<string, HilosRouteDeclaration> = {
   [PAGE_MAIN]: { path: '/', admin: false },
   [PAGE_USER]: { path: '/user/{id}', admin: false },
   [PAGE_BOT]: { path: '/bot/{id}', admin: false },
-  [PAGE_ADMIN_BOTS]: { path: '/hilos/app/bots', admin: true },
+  [PAGE_ADMIN_BOTS]: { path: '/hilos/app/bots', admin: true, icon: 'bi-robot' },
 }
 
 /**

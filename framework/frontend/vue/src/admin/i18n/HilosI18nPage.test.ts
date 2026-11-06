@@ -6,6 +6,7 @@ import {
 import {
   bindAdminAccess,
   createPageRouter,
+  createHilosRouter,
   createSignal,
   HilosPages,
   pageIdentity,
@@ -52,7 +53,11 @@ function harness(viewer = false, unresolvedPage?: string) {
   releases.push(bindAdminAccess(scopes))
   const paths = createPageRouter({
     [HilosPages.DASHBOARD]: { path: '/admin/{project}', admin: true },
-    [HilosPages.I18N]: { path: '/admin/{project}/i18n', admin: true },
+    [HilosPages.I18N]: {
+      path: '/admin/{project}/i18n',
+      admin: true,
+      icon: 'bi-translate',
+    },
     [HilosPages.I18N_LANGUAGES]: {
       path: '/admin/{project}/languages',
       admin: true,
@@ -62,7 +67,7 @@ function harness(viewer = false, unresolvedPage?: string) {
       admin: true,
     },
   })
-  const navigation: HilosRouter = {
+  const sourceRouter: HilosRouter = {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.I18N,
       params: { project: 'demo' },
@@ -84,6 +89,25 @@ function harness(viewer = false, unresolvedPage?: string) {
     replacePath: () => {},
     start: () => {},
     stop: () => {},
+  }
+  const navigation: HilosRouter = {
+    ...sourceRouter,
+    pageIdentity: createHilosRouter(
+      paths,
+      {
+        ...sourceRouter,
+        pageError: createSignal(null),
+        subscribe: () => {},
+        unsubscribe: () => {},
+        refuseUnbuilt: () => {},
+      },
+      {
+        pathname: () => sourceRouter.currentPath.get(),
+        pushState: () => {},
+        replaceState: () => {},
+        onPopState: () => () => {},
+      },
+    ).pageIdentity,
   }
   const answer = (): void => {
     scope.data.set('pageLabel', 'Internationalization')

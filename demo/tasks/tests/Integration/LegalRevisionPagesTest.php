@@ -313,7 +313,7 @@ final class LegalRevisionPagesTest extends IntegrationTestCase
         $data = $response->payload->data;
         self::assertSame([
             'page' => 'hilos_legal_revision', 'label' => 'Revision',
-            'lead' => 'The exact text, its changes, and its acceptances.', 'icon' => 'bi-file-earmark-text',
+            'lead' => 'The exact text, its changes, and its acceptances.',
         ], $data['pageHeadOwner']);
         self::assertSame([
             ['page' => 'hilos', 'label' => 'Hilos'],

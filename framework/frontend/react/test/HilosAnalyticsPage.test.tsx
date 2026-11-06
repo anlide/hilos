@@ -7,6 +7,8 @@ import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   bindTimeZoneState,
+  createHilosRouter,
+  createAppPageRouter,
   createSignal,
   HilosPages,
   hilosTimeZone,
@@ -60,7 +62,7 @@ function harness(
     params: {},
     admin: true,
   })
-  const router: HilosRouter = {
+  const sourceRouter: HilosRouter = {
     currentRoute,
     currentPath: createSignal('/hilos/analytics'),
     currentTitle: createSignal(''),
@@ -77,6 +79,25 @@ function harness(
     replacePath: () => {},
     start: () => {},
     stop: () => {},
+  }
+  const router: HilosRouter = {
+    ...sourceRouter,
+    pageIdentity: createHilosRouter(
+      createAppPageRouter({}),
+      {
+        ...sourceRouter,
+        pageError: createSignal(null),
+        subscribe: () => {},
+        unsubscribe: () => {},
+        refuseUnbuilt: () => {},
+      },
+      {
+        pathname: () => sourceRouter.currentPath.get(),
+        pushState: () => {},
+        replaceState: () => {},
+        onPopState: () => () => {},
+      },
+    ).pageIdentity,
   }
   const connection = {
     projectTimeZone: 'UTC',

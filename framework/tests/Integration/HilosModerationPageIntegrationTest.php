@@ -150,7 +150,7 @@ final class HilosModerationPageIntegrationTest extends FrameworkIntegrationTestC
         self::assertSame(HilosPageConstants::HILOS_MODERATION, $data['pageHeadOwner']['page']);
         self::assertSame('Moderation', $data['pageHeadOwner']['label']);
         self::assertSame('What is checked before it is shown, and by which rules.', $data['pageHeadOwner']['lead']);
-        self::assertSame('bi-shield-check', $data['pageHeadOwner']['icon']);
+        self::assertArrayNotHasKey('icon', $data['pageHeadOwner']);
         self::assertSame([
             ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
             ['page' => HilosPageConstants::HILOS_MODERATION, 'label' => 'Moderation'],

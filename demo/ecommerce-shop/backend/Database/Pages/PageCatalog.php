@@ -14,7 +14,7 @@ final class PageCatalog implements PageCatalogProviderInterface
 {
     /**
      * @return array<string, array{
-     *     label: string, lead: string, parent?: string, icon?: string,
+     *     label: string, lead: string, parent?: string,
      *     breadcrumb?: string, entity?: bool, pageHead?: bool
      * }> Complete framework entries with head adoption enabled
      */

@@ -907,7 +907,6 @@ final class PollsTopologyRegistryTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Legal',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'What the project declares, and who accepted it.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-file-earmark-check',
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Legal',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], PageCatalog::pages()[HilosPageConstants::HILOS_LEGAL]);

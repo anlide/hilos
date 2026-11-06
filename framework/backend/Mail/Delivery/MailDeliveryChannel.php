@@ -67,14 +67,6 @@ class MailDeliveryChannel extends AbstractDeliveryChannel
     }
 
     /**
-     * @return string Bootstrap Icons token for email
-     */
-    public function icon(): string
-    {
-        return 'bi-envelope';
-    }
-
-    /**
      * @return string The `smtp` transport name shown in the admin channels hub (HIL-200)
      */
     public function driver(): string

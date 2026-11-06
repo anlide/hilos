@@ -24,6 +24,7 @@ import {
   HILOS_NOTIFICATION_PREFERENCES_COPY as COPY,
   hilosNotificationPreferences,
   hilosPushSubscription,
+  notificationChannelIcon,
   NOTIFICATION_ACTION_CHANNEL_SET,
   type HilosConnection,
   type HilosNotificationChannelState,
@@ -129,7 +130,7 @@ export function HilosNotificationPreferences({
               vapidPublicKey={vapidPublicKey}
               store={pushStore}
               channelRow={true}
-              icon={row.icon}
+              icon={notificationChannelIcon(row.channel)}
             />
           )
         }
@@ -143,7 +144,7 @@ export function HilosNotificationPreferences({
             data-id={`hilos-notification-preference-${row.channel}`}
           >
             <i
-              className={`bi ${row.icon ?? 'bi-bell'} fs-5 text-body-secondary flex-shrink-0`}
+              className={`bi ${notificationChannelIcon(row.channel)} fs-5 text-body-secondary flex-shrink-0`}
               aria-hidden="true"
               data-id={`hilos-notification-preference-icon-${row.channel}`}
             />

@@ -6,8 +6,11 @@ import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import {
+  createAppPageRouter,
+  createHilosRouter,
   createSignal,
   formatAnalyticsTime,
+  HILOS_ROUTE_DECLARATIONS,
   HilosPages,
   pageIdentity,
   resolveHilosPath,
@@ -144,16 +147,20 @@ function harness(
   {
     strictMode = false,
     buffered = false,
-  }: { strictMode?: boolean; buffered?: boolean } = {},
+    icon = OWNER.icon,
+  }: { strictMode?: boolean; buffered?: boolean; icon?: string } = {},
 ) {
   const scopes = new ScopeManager()
   scopes.openPage(PAGE)
+  const routes = createAppPageRouter({
+    [PAGE]: { ...HILOS_ROUTE_DECLARATIONS[PAGE], icon },
+  })
   const currentRoute = createSignal<PageRouteMatch>({
     page: PAGE,
     params: param === undefined ? {} : { browserSessionId: param },
     admin: true,
   })
-  const router: HilosRouter = {
+  const sourceRouter: HilosRouter = {
     currentRoute,
     currentPath: createSignal('/hilos/analytics/browser-session/57'),
     currentTitle: createSignal(''),
@@ -170,6 +177,25 @@ function harness(
     replacePath: () => {},
     start: () => {},
     stop: () => {},
+  }
+  const router: HilosRouter = {
+    ...sourceRouter,
+    pageIdentity: createHilosRouter(
+      routes,
+      {
+        ...sourceRouter,
+        pageError: createSignal(null),
+        subscribe: () => {},
+        unsubscribe: () => {},
+        refuseUnbuilt: () => {},
+      },
+      {
+        pathname: () => sourceRouter.currentPath.get(),
+        pushState: () => {},
+        replaceState: () => {},
+        onPopState: () => () => {},
+      },
+    ).pageIdentity,
   }
   const wire = fakeConnection()
   if (buffered) {
@@ -447,7 +473,7 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
   })
 
   it('takes the description from the catalog identity and its name from the permitted label', () => {
-    const h = harness()
+    const h = harness('57', { icon: 'bi-browser-firefox' })
     const owner = {
       ...OWNER,
       lead: 'Catalog description for this browser session.',

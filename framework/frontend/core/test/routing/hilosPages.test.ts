@@ -556,11 +556,15 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
 
   it('addresses both Status admin pages without parameters and keeps their unbuilt views honest', () => {
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS)
-    for (const [page, path] of [
-      [HilosPages.STATUS, '/hilos/status'],
-      [HilosPages.STATUS_COMPONENTS, '/hilos/status/components'],
+    for (const [page, path, icon] of [
+      [HilosPages.STATUS, '/hilos/status', 'bi-activity'],
+      [HilosPages.STATUS_COMPONENTS, '/hilos/status/components', undefined],
     ] as const) {
-      expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: true })
+      expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
+        path,
+        admin: true,
+        ...(icon === undefined ? {} : { icon }),
+      })
       expect(resolveHilosPath(page)).toBe(path)
       expect(router.match(path)).toEqual({ page, params: {}, admin: true })
       expect(hilosUnbuiltPages('react').has(page)).toBe(false)
@@ -656,7 +660,11 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
 
     expect(page).toBe('hilos_moderation')
     expect(php).toContain(`HILOS_MODERATION = '${page}';`)
-    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: true })
+    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
+      path,
+      admin: true,
+      icon: 'bi-shield-check',
+    })
     expect(resolveHilosPath(page)).toBe(path)
     expect(router.match(path)).toEqual({ page, params: {}, admin: true })
     expect(hilosUnbuiltPages('react').has(page)).toBe(false)
@@ -685,6 +693,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
       path: '/hilos/moderation/kind/{kind}',
       admin: true,
+      icon: 'bi-shield-check',
     })
     expect(resolveHilosPath(page, { kind: 'project/kind with spaces' })).toBe(
       '/hilos/moderation/kind/project%2Fkind%20with%20spaces',
@@ -823,6 +832,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(HILOS_ROUTE_DECLARATIONS[HilosPages.DAEMON_NODE]).toEqual({
       path: '/hilos/daemon/node/{nodeId}',
       admin: true,
+      icon: 'bi-hdd-network',
     })
     const nodeId = 'node / east%?'
     const path = resolveHilosPath(HilosPages.DAEMON_NODE, { nodeId })!
@@ -942,6 +952,7 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       path: '/hilos/analytics/browser-session/{browserSessionId}',
       admin: true,
       paramPatterns: { browserSessionId: '\\+?\\d+' },
+      icon: 'bi-window',
     })
     expect(resolveHilosPath(page, { browserSessionId: '57' })).toBe(
       '/hilos/analytics/browser-session/57',
@@ -1145,28 +1156,47 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
   })
 
   it.each([
-    [HilosPages.LEGAL_DOCUMENT, '/hilos/legal/document/{documentKey}'],
-    [HilosPages.LEGAL_DOCUMENT_SET, '/hilos/legal/document/{documentKey}/set'],
+    [
+      HilosPages.LEGAL_DOCUMENT,
+      '/hilos/legal/document/{documentKey}',
+      'bi-file-earmark-text',
+    ],
+    [
+      HilosPages.LEGAL_DOCUMENT_SET,
+      '/hilos/legal/document/{documentKey}/set',
+      undefined,
+    ],
     [
       HilosPages.LEGAL_DOCUMENT_DEVIATIONS,
       '/hilos/legal/document/{documentKey}/deviations',
+      undefined,
     ],
     [
       HilosPages.LEGAL_DOCUMENT_REVISIONS,
       '/hilos/legal/document/{documentKey}/revisions',
+      undefined,
     ],
     [
       HilosPages.LEGAL_REVISION,
       '/hilos/legal/document/{documentKey}/revision/{revisionId}',
+      'bi-file-earmark-text',
     ],
     [
       HilosPages.LEGAL_REVISION_TEXT,
       '/hilos/legal/document/{documentKey}/revision/{revisionId}/text',
+      undefined,
     ],
-  ])('declares the explicit Legal entity address for %s', (page, path) => {
-    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({ path, admin: true })
-    expect(HILOS_PAGE_ROUTES[page]).toBe(path)
-  })
+  ])(
+    'declares the explicit Legal entity address for %s',
+    (page, path, icon) => {
+      expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
+        path,
+        admin: true,
+        ...(icon === undefined ? {} : { icon }),
+      })
+      expect(HILOS_PAGE_ROUTES[page]).toBe(path)
+    },
+  )
 
   it.each([
     ['terms', 'terms'],

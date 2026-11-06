@@ -1262,7 +1262,6 @@ final class ChatTopologyRegistryTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Communications',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Email, SMS, push, and chat delivery channels.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-envelope-paper',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], $pages[HilosPageConstants::HILOS_COMMUNICATIONS]);
         self::assertSame([
@@ -1271,14 +1270,12 @@ final class ChatTopologyRegistryTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_COMMUNICATIONS,
             PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Channel',
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-envelope-paper',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], $pages[HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL]);
         self::assertSame([
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Appearance',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Theme switching and the default theme.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-palette',
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Appearance',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], $pages[HilosPageConstants::HILOS_APPEARANCE]);
@@ -1293,7 +1290,6 @@ final class ChatTopologyRegistryTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Legal',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'What the project declares, and who accepted it.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-file-earmark-check',
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Legal',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], $pages[HilosPageConstants::HILOS_LEGAL]);
@@ -1320,7 +1316,6 @@ final class ChatTopologyRegistryTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Bots',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Library bots: profiles, status, and behavior.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-robot',
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Bots',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], $pages[PageConstants::ADMIN_BOTS]);

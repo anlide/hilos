@@ -32,6 +32,7 @@ import {
   hilosNotificationPreferences,
   hilosPushSubscription,
   NOTIFICATION_ACTION_CHANNEL_SET,
+  notificationChannelIcon as resolveNotificationChannelIcon,
   type HilosConnection,
   type HilosNotificationChannelState,
   type HilosNotificationPreferencesStore,
@@ -86,7 +87,7 @@ let preferencesSeq = 0
             [vapidPublicKey]="vapidPublicKey"
             [store]="pushStore()"
             [channelRow]="true"
-            [icon]="row.icon"
+            [icon]="notificationChannelIcon(row.channel)"
           />
         } @else {
           <div
@@ -95,7 +96,7 @@ let preferencesSeq = 0
           >
             <i
               class="bi fs-5 text-body-secondary flex-shrink-0"
-              [class]="row.icon ?? 'bi-bell'"
+              [class]="notificationChannelIcon(row.channel)"
               aria-hidden="true"
               [attr.data-id]="
                 'hilos-notification-preference-icon-' + row.channel
@@ -201,6 +202,7 @@ export class HilosNotificationPreferences {
   /** The path of that section; without it the hint stays plain text. */
   readonly addressTo = input<string | undefined>(undefined)
   protected readonly copy = HILOS_NOTIFICATION_PREFERENCES_COPY
+  protected readonly notificationChannelIcon = resolveNotificationChannelIcon
 
   protected readonly channels = signal<
     readonly HilosNotificationChannelState[]

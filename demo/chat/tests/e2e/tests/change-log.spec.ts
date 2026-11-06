@@ -32,6 +32,7 @@ import {
   expectPageReady,
   clickSubmit,
   typeInto,
+  deliveryObject,
   gotoPage,
   signUpAdmin,
   createTestAdmin,
@@ -93,13 +94,14 @@ function expectFirstSectionReply(
 ): void {
   const first = replies.find((reply) => reply.page === key)
   expect(first).toBeDefined()
+  const data = deliveryObject(deliveryObject(first!.payload).data)
+  expect(Object.hasOwn(deliveryObject(data.pageHeadOwner), 'icon')).toBe(false)
   expect(first!.payload).toMatchObject({
     data: {
       pageHeadOwner: {
         page: 'hilos_change_log',
         label: 'Change Log',
         lead: 'Who changed what in the tracked tables, and through which action.',
-        icon: 'bi-clock-history',
       },
       pageBreadcrumb: [
         { page: 'hilos', label: 'Hilos' },

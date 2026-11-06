@@ -25,6 +25,8 @@ export interface HilosRouteDeclaration {
   admin: boolean
   /** Regexp sources that must match each decoded parameter value in full. */
   paramPatterns?: Readonly<Record<string, string>>
+  /** Frontend presentation metadata: the page's Bootstrap icon name (`bi-*`). */
+  icon?: string
 }
 
 /**
@@ -70,6 +72,13 @@ export interface PageRouter {
    * @param params The route params to fill the slots from, defaulting to none.
    */
   path(page: string, params?: Record<string, string>): string | undefined
+  /**
+   * The icon declared for this page, or `undefined` for an unknown key or a
+   * declaration without an icon. Optional for custom matching-only routers.
+   *
+   * @param page The page key to resolve.
+   */
+  icon?(page: string): string | undefined
 }
 
 /** A compiled static route: the page key it names and its surface type. */
@@ -265,5 +274,7 @@ export function createPageRouter(
         return undefined
       }
     },
+    icon: (page) =>
+      Object.hasOwn(routes, page) ? routes[page].icon : undefined,
   }
 }

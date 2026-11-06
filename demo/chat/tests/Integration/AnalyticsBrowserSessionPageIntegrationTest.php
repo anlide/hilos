@@ -135,7 +135,6 @@ final class AnalyticsBrowserSessionPageIntegrationTest extends IntegrationTestCa
             'page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION,
             'label' => 'Browser session',
             'lead' => 'Actions recorded in one browser session, in source-time order.',
-            'icon' => 'bi-window',
         ], $response->payload->data[PageCatalogConstants::WIRE_PAGE_HEAD_OWNER]);
         self::assertSame([
             ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION, 'label' => 'Overview'],
@@ -222,7 +221,6 @@ final class AnalyticsBrowserSessionPageIntegrationTest extends IntegrationTestCa
                 'page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION,
                 'label' => 'Browser session',
                 'lead' => 'Actions recorded in one browser session, in source-time order.',
-                'icon' => 'bi-window',
             ], $response->payload->data[PageCatalogConstants::WIRE_PAGE_HEAD_OWNER]);
             self::assertSame([
                 ['page' => HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION, 'label' => 'Overview'],

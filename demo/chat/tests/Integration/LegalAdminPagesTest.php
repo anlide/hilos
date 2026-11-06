@@ -188,7 +188,6 @@ final class LegalAdminPagesTest extends IntegrationTestCase
                 'page' => 'hilos_legal_revision',
                 'label' => 'Revision',
                 'lead' => 'The exact text, its changes, and its acceptances.',
-                'icon' => 'bi-file-earmark-text',
             ], $data['pageHeadOwner']);
             self::assertSame([
                 ['page' => 'hilos_legal_revision', 'label' => 'Overview'],
@@ -354,7 +353,6 @@ final class LegalAdminPagesTest extends IntegrationTestCase
                 'page' => 'hilos_legal',
                 'label' => 'Legal',
                 'lead' => 'What the project declares, and who accepted it.',
-                'icon' => 'bi-file-earmark-check',
             ], $data['pageHeadOwner']);
             self::assertSame([
                 ['page' => 'hilos', 'label' => 'Hilos'],
@@ -381,7 +379,6 @@ final class LegalAdminPagesTest extends IntegrationTestCase
                 'page' => 'hilos_legal_document',
                 'label' => 'Document',
                 'lead' => 'The standard set, project deviations, and declared revisions.',
-                'icon' => 'bi-file-earmark-text',
             ], $data['pageHeadOwner']);
             self::assertSame([
                 ['page' => 'hilos', 'label' => 'Hilos'],

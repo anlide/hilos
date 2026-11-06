@@ -569,7 +569,6 @@ describe('cold Node answer and its delivered live overview', () => {
       page: 'hilos_daemon_node',
       label: 'Node',
       lead: 'One node: processor, memory, environment summary, and maintenance.',
-      icon: 'bi-hdd-network',
     },
     pageTabs: DAEMON_NODE_TABS.map(({ key, label }) => ({ page: key, label })),
     node: {

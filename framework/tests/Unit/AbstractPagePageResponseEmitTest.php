@@ -128,7 +128,6 @@ final class AbstractPagePageResponseEmitTest extends TestCase
             'page' => HilosPageConstants::HILOS_ANALYTICS,
             'label' => 'Analytics',
             'lead' => 'What a browser session did, in order, and which sessions a person signed into.',
-            'icon' => 'bi-bar-chart',
         ], $wire['payload']['data']['pageHeadOwner']);
         self::assertSame([
             ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -278,7 +277,6 @@ final class AbstractPagePageResponseEmitTest extends TestCase
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Users',
                 PageCatalogConstants::CATALOG_ENTRY_LEAD =>
                     'Application users and panel operators: presence, roles, and access.',
-                PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-people',
             ],
             $sections[0][PageCatalogConstants::SECTION_ITEMS][0],
         );

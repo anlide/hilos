@@ -9,6 +9,7 @@ import {
   HilosPages,
   ScopeManager,
   createAppPageRouter,
+  createHilosRouter,
   createSignal,
   ingest,
   pageIdentity,
@@ -28,7 +29,7 @@ const TABLE = 'hilosCommunicationsChannels'
 function router(scopes: ScopeManager): HilosRouter {
   const routes = createAppPageRouter({})
 
-  return {
+  const sourceRouter: HilosRouter = {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.COMMUNICATIONS,
       params: {},
@@ -49,6 +50,25 @@ function router(scopes: ScopeManager): HilosRouter {
     replacePath: () => {},
     start: () => {},
     stop: () => {},
+  }
+  return {
+    ...sourceRouter,
+    pageIdentity: createHilosRouter(
+      routes,
+      {
+        ...sourceRouter,
+        pageError: createSignal(null),
+        subscribe: () => {},
+        unsubscribe: () => {},
+        refuseUnbuilt: () => {},
+      },
+      {
+        pathname: () => sourceRouter.currentPath.get(),
+        pushState: () => {},
+        replaceState: () => {},
+        onPopState: () => () => {},
+      },
+    ).pageIdentity,
   }
 }
 

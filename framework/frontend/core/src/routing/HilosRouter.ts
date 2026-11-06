@@ -118,8 +118,9 @@ export interface HilosRouter {
   /**
    * The current page's catalog identity: its own heading and lead, its breadcrumb
    * chain, subsection cards and optional shared head owner. Bound instance names
-   * project onto the matching breadcrumb keys and owner. `undefined` while the
-   * page's answer is still on the wire — which is what the admin shell
+   * project onto the matching breadcrumb keys and owner. Card and owner icons
+   * come from the frontend route declarations by their own page keys.
+   * `undefined` while the page's answer is still on the wire — what the admin shell
    * draws its skeleton for — and `undefined` for a page the catalog carries no
    * entry for, which the shell draws as no heading rather than as a raw page key.
    * {@link HilosRouter.pageLoading} tells the two apart.
@@ -305,8 +306,37 @@ export function createHilosRouter(
     pageLoading: computedSignal<boolean>(() =>
       withoutSubscription() ? false : pages.pageLoading.get(),
     ),
-    pageIdentity: pages.pageIdentity,
-    dashboardSections: pages.dashboardSections,
+    pageIdentity: computedSignal(() => {
+      const identity = pages.pageIdentity.get()
+      if (identity === undefined) {
+        return undefined
+      }
+      const owner = identity.pageHeadOwner
+      return {
+        ...identity,
+        children: identity.children.map((child) => ({
+          ...child,
+          icon: router.icon?.(child.page) ?? null,
+        })),
+        ...(owner === undefined
+          ? {}
+          : {
+              pageHeadOwner: {
+                ...owner,
+                icon: router.icon?.(owner.page) ?? null,
+              },
+            }),
+      }
+    }),
+    dashboardSections: computedSignal(() =>
+      pages.dashboardSections.get()?.map((section) => ({
+        ...section,
+        items: section.items.map((item) => ({
+          ...item,
+          icon: router.icon?.(item.page) ?? null,
+        })),
+      })),
+    ),
     resolvePath: (page, params) =>
       unbuilt.has(page) ? undefined : router.path(page, params),
     clearPageError: () => {

@@ -1,7 +1,63 @@
 import { describe, expect, it } from 'vitest'
 import { createPageRouter } from '../../src/routing/PageRouter.js'
+import {
+  HILOS_ROUTE_DECLARATIONS,
+  HilosPages,
+} from '../../src/routing/hilosPages.js'
 
 describe('createPageRouter', () => {
+  it('reads only own page declarations for icons, including prototype-shaped keys', () => {
+    const routes = {
+      ...HILOS_ROUTE_DECLARATIONS,
+      main: { path: '/', admin: false, icon: 'bi-house' },
+      plain: { path: '/plain', admin: false },
+    }
+    Object.setPrototypeOf(routes, {
+      inherited: { path: '/inherited', admin: false, icon: 'bi-bug' },
+      constructor: { path: '/constructor', admin: false, icon: 'bi-bug' },
+      toString: { path: '/to-string', admin: false, icon: 'bi-bug' },
+    })
+    const router = createPageRouter(routes)
+
+    for (const [page, icon] of [
+      [HilosPages.USERS, 'bi-people'],
+      [HilosPages.LEGAL, 'bi-file-earmark-check'],
+      [HilosPages.LEGAL_DOCUMENT, 'bi-file-earmark-text'],
+      [HilosPages.LEGAL_REVISION, 'bi-file-earmark-text'],
+      [HilosPages.ROLES, 'bi-person-badge'],
+      [HilosPages.MODERATION, 'bi-shield-check'],
+      [HilosPages.MODERATION_KIND, 'bi-shield-check'],
+      [HilosPages.I18N, 'bi-translate'],
+      [HilosPages.COMMUNICATIONS, 'bi-envelope-paper'],
+      [HilosPages.COMMUNICATIONS_CHANNEL, 'bi-envelope-paper'],
+      [HilosPages.SECURITY, 'bi-shield-lock'],
+      [HilosPages.BILLING, 'bi-credit-card'],
+      [HilosPages.SETTINGS, 'bi-sliders'],
+      [HilosPages.APPEARANCE, 'bi-palette'],
+      [HilosPages.DAEMON, 'bi-cpu'],
+      [HilosPages.DAEMON_NODE, 'bi-hdd-network'],
+      [HilosPages.LOGS, 'bi-journal-text'],
+      [HilosPages.CHANGE_LOG, 'bi-clock-history'],
+      [HilosPages.CHANGE_LOG_TABLE, 'bi-table'],
+      [HilosPages.BACKUP, 'bi-safe2'],
+      [HilosPages.MAINTENANCE, 'bi-tools'],
+      [HilosPages.STATUS, 'bi-activity'],
+      [HilosPages.ANALYTICS, 'bi-bar-chart'],
+      [HilosPages.ANALYTICS_BROWSER_SESSION, 'bi-window'],
+      [HilosPages.MCP_SKILLS, 'bi-boxes'],
+      [HilosPages.SIL, 'bi-lightning-charge'],
+      ['main', 'bi-house'],
+      ['plain', undefined],
+      ['unknown', undefined],
+      ['inherited', undefined],
+      ['constructor', undefined],
+      ['toString', undefined],
+      ['__proto__', undefined],
+    ] as const) {
+      expect(router.icon?.(page)).toBe(icon)
+    }
+  })
+
   it('matches a static path whole with no params', () => {
     const router = createPageRouter({
       main: { path: '/', admin: false },

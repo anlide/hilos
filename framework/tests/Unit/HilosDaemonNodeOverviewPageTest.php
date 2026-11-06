@@ -258,7 +258,6 @@ final class HilosDaemonNodeOverviewPageTest extends TestCase
             'page' => HilosPageConstants::HILOS_DAEMON_NODE,
             'label' => 'Node',
             'lead' => 'One node: processor, memory, environment summary, and maintenance.',
-            'icon' => 'bi-hdd-network',
         ], $response->payload->data['pageHeadOwner']);
         self::assertSame([
             ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],

@@ -32,7 +32,7 @@ final class PageCatalogResolver
      * own answer instead of the first one's.
      *
      * @var array<string, array<string, array{
-     *     label: string, lead: string, parent?: string, icon?: string,
+     *     label: string, lead: string, parent?: string,
      *     breadcrumb?: string, entity?: bool, pageHead?: bool
      * }>> Immutable catalog metadata per provider class
      */
@@ -42,7 +42,7 @@ final class PageCatalogResolver
      * Returns the merged catalog, keyed by page key.
      *
      * @return array<string, array{
-     *     label: string, lead: string, parent?: string, icon?: string,
+     *     label: string, lead: string, parent?: string,
      *     breadcrumb?: string, entity?: bool, pageHead?: bool
      * }> Catalog metadata per page key
      */
@@ -59,7 +59,7 @@ final class PageCatalogResolver
      *
      * @param class-string<PageCatalogProviderInterface> $provider Page catalog provider class
      * @return array<string, array{
-     *     label: string, lead: string, parent?: string, icon?: string,
+     *     label: string, lead: string, parent?: string,
      *     breadcrumb?: string, entity?: bool, pageHead?: bool
      * }> Catalog metadata per page key
      */
@@ -69,14 +69,14 @@ final class PageCatalogResolver
     }
 
     /**
-     * Returns one page's own identity - its label, its lead, and its icon where it has one.
+     * Returns one page's own label and lead.
      *
      * Null for a page the catalog does not carry, which is not an error: the public footer pages
      * and any project page outside the admin tree have no entry, and their subscription simply
      * answers without identity.
      *
      * @param string $page Page key
-     * @return ?array{label: string, lead: string, icon?: string} Page identity, or null when the catalog carries no entry
+     * @return ?array{label: string, lead: string} Page identity, or null when the catalog carries no entry
      */
     public static function identity(string $page): ?array
     {
@@ -85,15 +85,10 @@ final class PageCatalogResolver
             return null;
         }
 
-        $identity = [
+        return [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => $entry[PageCatalogConstants::CATALOG_ENTRY_LABEL],
             PageCatalogConstants::CATALOG_ENTRY_LEAD => $entry[PageCatalogConstants::CATALOG_ENTRY_LEAD],
         ];
-        if (isset($entry[PageCatalogConstants::CATALOG_ENTRY_ICON])) {
-            $identity[PageCatalogConstants::CATALOG_ENTRY_ICON] = $entry[PageCatalogConstants::CATALOG_ENTRY_ICON];
-        }
-
-        return $identity;
     }
 
     /**
@@ -211,7 +206,7 @@ final class PageCatalogResolver
      * states: a parent naming no entry is refused by topology validation at startup.
      *
      * @param string $page Page key
-     * @return list<array{page: string, label: string, lead: string, icon?: string}> Cards of this page's children in catalog order
+     * @return list<array{page: string, label: string, lead: string}> Cards of this page's children in catalog order
      */
     public static function children(string $page): array
     {

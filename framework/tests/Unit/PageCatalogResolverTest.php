@@ -134,7 +134,6 @@ final class PageCatalogResolverTest extends TestCase
                     'page' => HilosPageConstants::HILOS_LEGAL_DOCUMENT,
                     'label' => 'Document',
                     'lead' => 'The standard set, project deviations, and declared revisions.',
-                    'icon' => 'bi-file-earmark-text',
                 ], $head->pageHeadOwner, $facade . ': ' . $page);
                 self::assertSame([
                     ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -184,7 +183,6 @@ final class PageCatalogResolverTest extends TestCase
                     'page' => HilosPageConstants::HILOS_LEGAL_REVISION,
                     'label' => 'Revision',
                     'lead' => 'The exact text, its changes, and its acceptances.',
-                    'icon' => 'bi-file-earmark-text',
                 ], $head->pageHeadOwner);
                 self::assertSame([
                     ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -229,7 +227,6 @@ final class PageCatalogResolverTest extends TestCase
                 'page' => HilosPageConstants::HILOS_LEGAL_REVISION,
                 'label' => 'Revision',
                 'lead' => 'The exact text, its changes, and its acceptances.',
-                'icon' => 'bi-file-earmark-text',
             ], $head->pageHeadOwner);
             self::assertSame([
                 ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -438,7 +435,6 @@ final class PageCatalogResolverTest extends TestCase
                         'page' => HilosPageConstants::HILOS_CHANGE_LOG,
                         'label' => 'Change Log',
                         'lead' => 'Who changed what in the tracked tables, and through which action.',
-                        'icon' => 'bi-clock-history',
                     ],
                     'pageBreadcrumb' => [
                         ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -499,7 +495,6 @@ final class PageCatalogResolverTest extends TestCase
                         'page' => HilosPageConstants::HILOS_CHANGE_LOG,
                         'label' => 'Change Log',
                         'lead' => 'Who changed what in the tracked tables, and through which action.',
-                        'icon' => 'bi-clock-history',
                     ],
                     'pageBreadcrumb' => [
                         ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -616,7 +611,7 @@ final class PageCatalogResolverTest extends TestCase
             $head = PageCatalogResolver::head($page, new PageRouteParams([]));
             self::assertSame([
                 'page' => HilosPageConstants::HILOS_STATUS, 'label' => 'Status',
-                'lead' => 'A public status page: service health, incidents, and planned work.', 'icon' => 'bi-activity',
+                'lead' => 'A public status page: service health, incidents, and planned work.',
             ], $head->pageHeadOwner);
             self::assertSame([
                 ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -661,7 +656,6 @@ final class PageCatalogResolverTest extends TestCase
             [
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Languages of the product',
                 PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Product copy in every language it ships in.',
-                PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-translate',
             ],
             PageCatalogResolver::identity(HilosPageConstants::HILOS_I18N),
         );
@@ -837,7 +831,6 @@ final class PageCatalogResolverTest extends TestCase
                 'page' => HilosPageConstants::HILOS_DAEMON_NODE,
                 'label' => 'Node',
                 'lead' => 'One node: processor, memory, environment summary, and maintenance.',
-                'icon' => 'bi-hdd-network',
             ],
             'pageBreadcrumb' => [
                 ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -874,7 +867,7 @@ final class PageCatalogResolverTest extends TestCase
             self::assertSame([
                 'pageHeadOwner' => [
                     'page' => HilosPageConstants::HILOS_DAEMON, 'label' => 'Daemon',
-                    'lead' => 'Nodes and their processes, with agent placement across them.', 'icon' => 'bi-cpu',
+                    'lead' => 'Nodes and their processes, with agent placement across them.',
                 ],
                 'pageBreadcrumb' => [
                     ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -939,7 +932,6 @@ final class PageCatalogResolverTest extends TestCase
                     'page' => HilosPageConstants::HILOS_USERS,
                     'label' => 'Users',
                     'lead' => 'Application users and panel operators: presence, roles, and access.',
-                    'icon' => 'bi-people',
                 ],
                 'pageBreadcrumb' => [
                     ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -1002,7 +994,6 @@ final class PageCatalogResolverTest extends TestCase
                         'page' => HilosPageConstants::HILOS_LOGS,
                         'label' => 'Logs',
                         'lead' => 'Rotation stats, log keys, workers, and the viewer.',
-                        'icon' => 'bi-journal-text',
                     ],
                     'pageBreadcrumb' => [
                         ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -1035,7 +1026,6 @@ final class PageCatalogResolverTest extends TestCase
                     'page' => HilosPageConstants::HILOS_LOGS,
                     'label' => 'Logs',
                     'lead' => 'Rotation stats, log keys, workers, and the viewer.',
-                    'icon' => 'bi-journal-text',
                 ],
                 'pageBreadcrumb' => [
                     ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -1102,7 +1092,6 @@ final class PageCatalogResolverTest extends TestCase
                     'page' => HilosPageConstants::HILOS_APPEARANCE,
                     'label' => 'Appearance',
                     'lead' => 'Theme switching and the default theme.',
-                    'icon' => 'bi-palette',
                 ],
                 'pageBreadcrumb' => [
                     ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -1140,7 +1129,6 @@ final class PageCatalogResolverTest extends TestCase
                     'page' => HilosPageConstants::HILOS_BACKUP,
                     'label' => 'Backups',
                     'lead' => 'Database and file backup jobs and their history.',
-                    'icon' => 'bi-safe2',
                 ],
                 'pageBreadcrumb' => [
                     ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -1224,7 +1212,6 @@ final class PageCatalogResolverTest extends TestCase
                     'label' => 'Maintenance',
                     'lead' => 'Node freeze under a destructive operation and manual maintenance: '
                         . 'its state, the verifier circle, closing the system to visitors, and the way out of the window.',
-                    'icon' => 'bi-tools',
                 ],
                 'pageBreadcrumb' => [
                     ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -1315,7 +1302,6 @@ final class PageCatalogResolverTest extends TestCase
                 'page' => HilosPageConstants::HILOS_SETTINGS,
                 'label' => 'Settings',
                 'lead' => 'Application setting catalog: catalog defaults, overrides, and references.',
-                'icon' => 'bi-sliders',
             ],
             'pageBreadcrumb' => [
                 ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -1338,7 +1324,6 @@ final class PageCatalogResolverTest extends TestCase
                 'page' => HilosPageConstants::HILOS_ANALYTICS,
                 'label' => 'Analytics',
                 'lead' => 'What a browser session did, in order, and which sessions a person signed into.',
-                'icon' => 'bi-bar-chart',
             ],
             'pageBreadcrumb' => [
                 ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -1409,7 +1394,6 @@ final class PageCatalogResolverTest extends TestCase
                     'page' => $overviewPage,
                     'label' => 'Analytics',
                     'lead' => 'What a browser session did, in order, and which sessions a person signed into.',
-                    'icon' => 'bi-bar-chart',
                 ],
                 'pageBreadcrumb' => [
                     ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -1488,7 +1472,6 @@ final class PageCatalogResolverTest extends TestCase
                     'page' => $sessionPage,
                     'label' => 'Browser session',
                     'lead' => 'Actions recorded in one browser session, in source-time order.',
-                    'icon' => 'bi-window',
                 ],
                 'pageBreadcrumb' => [
                     ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -1555,7 +1538,6 @@ final class PageCatalogResolverTest extends TestCase
                     'page' => $sessionPage,
                     'label' => 'Browser session',
                     'lead' => 'Actions recorded in one browser session, in source-time order.',
-                    'icon' => 'bi-window',
                 ],
                 'pageBreadcrumb' => [
                     ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -1623,7 +1605,6 @@ final class PageCatalogResolverTest extends TestCase
                     'page' => $browserSessionPage,
                     'label' => 'Browser session',
                     'lead' => 'Actions recorded in one browser session, in source-time order.',
-                    'icon' => 'bi-window',
                 ],
                 'pageBreadcrumb' => [
                     ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -1662,7 +1643,6 @@ final class PageCatalogResolverTest extends TestCase
                     'page' => $overviewPage,
                     'label' => 'Analytics',
                     'lead' => 'What a browser session did, in order, and which sessions a person signed into.',
-                    'icon' => 'bi-bar-chart',
                 ],
                 'pageBreadcrumb' => [
                     ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -1727,7 +1707,6 @@ final class PageCatalogResolverTest extends TestCase
                     'page' => HilosPageConstants::HILOS_I18N,
                     'label' => 'Internationalization',
                     'lead' => 'Languages, countries, locales, and translation screens.',
-                    'icon' => 'bi-translate',
                 ],
                 'pageBreadcrumb' => [
                     ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -1830,7 +1809,6 @@ final class PageCatalogResolverTest extends TestCase
                 'page' => HilosPageConstants::HILOS_MODERATION_KIND,
                 'label' => 'Kind',
                 'lead' => 'One declared check and the rules in force.',
-                'icon' => 'bi-shield-check',
             ],
             'pageBreadcrumb' => [
                 ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -1866,7 +1844,6 @@ final class PageCatalogResolverTest extends TestCase
                     'page' => HilosPageConstants::HILOS_MODERATION_KIND,
                     'label' => 'Kind',
                     'lead' => 'One declared check and the rules in force.',
-                    'icon' => 'bi-shield-check',
                 ],
                 'pageBreadcrumb' => [
                     ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -1986,7 +1963,6 @@ final class PageCatalogResolverTest extends TestCase
                         'page' => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
                         'label' => 'Channel',
                         'lead' => 'A single communication channel and its configuration.',
-                        'icon' => 'bi-envelope-paper',
                     ],
                     'pageBreadcrumb' => [
                         ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -2010,7 +1986,6 @@ final class PageCatalogResolverTest extends TestCase
                     'page' => HilosPageConstants::HILOS_COMMUNICATIONS,
                     'label' => 'Communications',
                     'lead' => 'Email, SMS, push, and chat delivery channels.',
-                    'icon' => 'bi-envelope-paper',
                 ],
                 'pageBreadcrumb' => [
                     ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -2099,7 +2074,6 @@ final class PageCatalogResolverTest extends TestCase
             'page' => HilosPageConstants::HILOS_I18N,
             'label' => 'Translation workspace',
             'lead' => 'Translation workspace lead.',
-            'icon' => 'bi-translate',
         ], $head->pageHeadOwner);
         self::assertSame([
             ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -2470,7 +2444,6 @@ final class PageCatalogResolverTest extends TestCase
                 'page' => HilosPageConstants::HILOS_LEGAL,
                 'label' => 'Legal',
                 'lead' => 'What the project declares, and who accepted it.',
-                'icon' => 'bi-file-earmark-check',
             ], $head->pageHeadOwner, $facade);
             self::assertSame([
                 ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
@@ -2515,7 +2488,7 @@ final class PageCatalogResolverTestCatalog implements PageCatalogProviderInterfa
 
     /**
      * @return array<string, array{
-     *     label: string, lead: string, parent?: string, icon?: string,
+     *     label: string, lead: string, parent?: string,
      *     breadcrumb?: string, entity?: bool, pageHead?: bool
      * }> Pages of the fixture project
      */
@@ -2526,7 +2499,6 @@ final class PageCatalogResolverTestCatalog implements PageCatalogProviderInterfa
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Moderation',
                 PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Reported messages and the operators who judge them.',
                 PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-                PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-shield-exclamation',
             ],
             self::MODERATION_QUEUE => [
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Queue',
@@ -2539,7 +2511,6 @@ final class PageCatalogResolverTestCatalog implements PageCatalogProviderInterfa
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Languages of the product',
                 PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Product copy in every language it ships in.',
                 PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-                PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-translate',
                 PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Workspace',
                 PageCatalogConstants::CATALOG_ENTRY_ENTITY => false,
                 PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => false,
@@ -2643,7 +2614,7 @@ final class CommunicationsPageHeadTestCatalog implements PageCatalogProviderInte
 {
     /**
      * @return array<string, array{
-     *     label: string, lead: string, parent?: string, icon?: string,
+     *     label: string, lead: string, parent?: string,
      *     breadcrumb?: string, entity?: bool, pageHead?: bool
      * }> Both Communications owners opted in
      */
@@ -3027,7 +2998,7 @@ final class PageHeadTestCatalog implements PageCatalogProviderInterface
 
     /**
      * @return array<string, array{
-     *     label: string, lead: string, parent?: string, icon?: string,
+     *     label: string, lead: string, parent?: string,
      *     breadcrumb?: string, entity?: bool, pageHead?: bool
      * }> Fixture catalog metadata
      */
@@ -3036,7 +3007,7 @@ final class PageHeadTestCatalog implements PageCatalogProviderInterface
         return [
             HilosPageConstants::HILOS_I18N => self::entry(
                 'Translation workspace', HilosPageConstants::HILOS_DASHBOARD, breadcrumb: '', pageHead: true,
-            ) + [PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-translate'],
+            ),
             HilosPageConstants::HILOS_ROLES => self::entry('Roles', HilosPageConstants::HILOS_DASHBOARD, pageHead: true),
             self::ROLES_LIST => self::entry('Roles', HilosPageConstants::HILOS_ROLES),
             self::ROLE => self::entry('Role title', self::ROLES_LIST, breadcrumb: 'Role', entity: true, pageHead: true),

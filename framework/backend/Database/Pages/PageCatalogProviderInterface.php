@@ -29,7 +29,7 @@ interface PageCatalogProviderInterface
      * Entity boundaries and owner head adoption both default to false.
      *
      * @return array<string, array{
-     *     label: string, lead: string, parent?: string, icon?: string,
+     *     label: string, lead: string, parent?: string,
      *     breadcrumb?: string, entity?: bool, pageHead?: bool
      * }> Catalog metadata per page key
      */

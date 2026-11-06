@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { createAppPageRouter } from '../../src/routing/appPageRouter.js'
 import {
   createHilosRouter,
   type NavigablePages,
@@ -963,10 +964,14 @@ describe('createHilosRouter', () => {
     expect(navigator.resolvePath('user')).toBeUndefined()
   })
 
-  it('re-exports the page identity and the dashboard sections as they arrive', () => {
+  it('reads page models through a custom router with only match and path', () => {
     const { env } = fakeEnvironment('/')
     const { pages, pageIdentity, dashboardSections } = fakePages()
-    const navigator = createHilosRouter(router, pages, env)
+    const navigator = createHilosRouter(
+      { match: router.match, path: router.path },
+      pages,
+      env,
+    )
 
     expect(navigator.pageIdentity.get()).toBeUndefined()
     expect(navigator.dashboardSections.get()).toBeUndefined()
@@ -975,12 +980,115 @@ describe('createHilosRouter', () => {
       label: 'Logs',
       lead: 'Rotation stats.',
       breadcrumb: [{ page: 'dash', label: 'Hilos' }],
-      children: [],
+      children: [{ page: 'user', label: 'User', lead: '', icon: null }],
+      pageHeadOwner: { page: 'dash', label: 'Hilos', lead: '', icon: null },
     })
-    dashboardSections.set([{ title: 'Access', description: '', items: [] }])
+    dashboardSections.set([
+      {
+        title: 'Access',
+        description: '',
+        items: [{ page: 'user', label: 'User', lead: '', icon: null }],
+      },
+    ])
 
-    expect(navigator.pageIdentity.get()?.label).toBe('Logs')
-    expect(navigator.dashboardSections.get()?.[0].title).toBe('Access')
+    expect(navigator.pageIdentity.get()).toStrictEqual(pageIdentity.get())
+    expect(navigator.dashboardSections.get()).toStrictEqual(
+      dashboardSections.get(),
+    )
+  })
+
+  it('projects owner, child and dashboard icons by their own keys without changing source models', () => {
+    const { env } = fakeEnvironment('/hilos/moderation/kind/profile_name/rules')
+    const { pages, pageIdentity, dashboardSections } = fakePages()
+    const navigator = createHilosRouter(
+      createAppPageRouter({
+        project: { path: '/project', admin: true, icon: 'bi-robot' },
+        [HilosPages.MODERATION_KIND_RULES]: {
+          path: '/hilos/moderation/kind/{kind}/rules',
+          admin: true,
+          icon: 'bi-list',
+        },
+      }),
+      pages,
+      env,
+    )
+    const owner = {
+      page: HilosPages.MODERATION_KIND,
+      label: 'Profile name',
+      lead: 'Owner lead',
+      icon: null,
+    }
+    pageIdentity.set({
+      label: 'Rules',
+      lead: 'Tab lead',
+      breadcrumb: [{ page: HilosPages.MODERATION_KIND, label: 'Profile name' }],
+      children: [
+        { page: 'project', label: 'Project', lead: 'Project lead', icon: null },
+        { page: HilosPages.PROFILE, label: 'Profile', lead: '', icon: null },
+      ],
+      pageHeadOwner: owner,
+      pageTabs: [
+        { page: HilosPages.MODERATION_KIND, label: 'Overview' },
+        { page: HilosPages.MODERATION_KIND_RULES, label: 'Rules' },
+      ],
+    })
+    dashboardSections.set([
+      {
+        title: 'Project',
+        description: 'Section description',
+        items: [
+          { page: 'project', label: 'Project', lead: 'Card lead', icon: null },
+          { page: 'constructor', label: 'Unknown', lead: '', icon: null },
+        ],
+      },
+    ])
+    const sourceIdentity = structuredClone(pageIdentity.get())
+    const sourceSections = structuredClone(dashboardSections.get())
+
+    expect(navigator.pageIdentity.get()).toStrictEqual({
+      ...sourceIdentity,
+      pageHeadOwner: { ...owner, icon: 'bi-shield-check' },
+      children: [
+        {
+          page: 'project',
+          label: 'Project',
+          lead: 'Project lead',
+          icon: 'bi-robot',
+        },
+        { page: HilosPages.PROFILE, label: 'Profile', lead: '', icon: null },
+      ],
+    })
+    expect(navigator.dashboardSections.get()).toStrictEqual([
+      {
+        title: 'Project',
+        description: 'Section description',
+        items: [
+          {
+            page: 'project',
+            label: 'Project',
+            lead: 'Card lead',
+            icon: 'bi-robot',
+          },
+          { page: 'constructor', label: 'Unknown', lead: '', icon: null },
+        ],
+      },
+    ])
+    expect(pageIdentity.get()).toStrictEqual(sourceIdentity)
+    expect(dashboardSections.get()).toStrictEqual(sourceSections)
+
+    pageIdentity.set({
+      label: 'Profile',
+      lead: '',
+      breadcrumb: [],
+      children: [],
+      pageHeadOwner: { ...owner, page: HilosPages.PROFILE },
+      pageTabs: [],
+    })
+    expect(navigator.pageIdentity.get()?.pageHeadOwner?.icon).toBeNull()
+    pageIdentity.set(undefined)
+    dashboardSections.set(undefined)
+    expect(navigator.pageIdentity.get()).toBeUndefined()
+    expect(navigator.dashboardSections.get()).toBeUndefined()
   })
 
   it('passes the access re-decision controls to the page subscription', () => {

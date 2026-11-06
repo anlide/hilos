@@ -225,6 +225,34 @@ build resolving the SDK to source emits and rewrites those font URLs, so no
 per-project font wiring is needed. An icon name is required to exist in the set,
 and this is verified by machine (`ICON-NAME-EXISTS`).
 
+**Resolve profile channel and page icons in the frontend core.** When adding or
+changing profile notification channel rows or page identity and its shared
+heads, child cards and dashboard cards, send the `channel` or `page` key and
+domain data from the server. Let `@hilos/core` choose the Bootstrap icon and the
+SDK render that choice:
+
+- For pages, put optional `icon` metadata on the existing frontend route
+  declarations: `HILOS_ROUTE_DECLARATIONS` overlaid with the project's
+  `APP_ROUTES` through `createAppPageRouter`. Preserve project precedence; use
+  `PageRouter.icon`, not a second page icon catalog. `HilosRouter` projects the
+  icon into the SDK model by the owner's `page` key for a shared head, and by
+  each child or dashboard item's `page` key for its card.
+- For profile channels, use the shared `notificationChannelIcon(channel)` in
+  core in all three SDKs, including the Push row. Unknown channel keys use its
+  bell fallback.
+
+Do not copy these icon names or maps into PHP DTOs or catalogs, or distribute
+separate maps among the SDKs; use the core lookup and render its result. Keep
+the server's existing ownership of names, labels, availability, ordering and
+navigation data. Pure icon-name lookup strings in core do not import CSS or
+render anything, so core remains CSS-free.
+
+This rule covers those profile channel and page identity/head/children/dashboard
+carriers. Standalone decorative icon props and other UI metadata outside them
+keep their own contracts: for example, `HilosPushDeviceToggle`'s standalone
+icon prop, public static-page presentation, tables, toasts, the journal and
+sign-in surfaces.
+
 **Angular is the exception** to "the consumer never declares Bootstrap": the
 Angular CLI delivers global CSS through `angular.json` `styles`, with no
 transitive-stylesheet mechanism a library can drive (and an ng-packagr FESM

@@ -1441,6 +1441,10 @@ function expectBotsPageResponse(
     deliveryObject(deliveryObject(replies[0].wire).data).payload,
   )
   const data = deliveryObject(payload.data)
+  const pageHeadOwner = deliveryObject(data.pageHeadOwner)
+  expect(Object.prototype.hasOwnProperty.call(pageHeadOwner, 'icon')).toBe(
+    false,
+  )
   expect(data).toMatchObject({
     pageLabel: 'Bots',
     pageLead: 'Library bots: profiles, status, and behavior.',
@@ -1448,7 +1452,6 @@ function expectBotsPageResponse(
       page: 'admin_bots',
       label: 'Bots',
       lead: 'Library bots: profiles, status, and behavior.',
-      icon: 'bi-robot',
     },
     pageBreadcrumb: [
       { page: 'hilos', label: 'Hilos' },

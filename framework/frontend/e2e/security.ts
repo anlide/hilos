@@ -235,12 +235,12 @@ export function expectSecurityIdentity(
   expect: Expect,
   reply: SecurityPageReply,
 ): void {
+  expect(Object.hasOwn(object(reply.data.pageHeadOwner), 'icon')).toBe(false)
   expect(reply.data).toMatchObject({
     pageHeadOwner: {
       page: 'hilos_security',
       label: 'Security Center',
       lead: SECURITY_LEAD,
-      icon: 'bi-shield-lock',
     },
     pageTabs: SECURITY_SECTIONS.map(({ key, label }) => ({ page: key, label })),
     pageChildren: [],

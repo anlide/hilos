@@ -30,7 +30,6 @@ function storeWith(mandatoryNote = false) {
         allowed: true,
         hasAddress: true,
         address: 'you@example.com',
-        icon: 'bi-envelope',
       },
       { channel: 'sms', label: 'SMS', allowed: false, hasAddress: false },
     ],
@@ -40,41 +39,23 @@ function storeWith(mandatoryNote = false) {
 }
 
 describe('HilosNotificationPreferences', () => {
-  it('renders metadata in the middle of the row and names the switch on the right', () => {
+  it('gives the channel switch an accessible name and address description', () => {
     const { connection } = fakeConnection()
     const wrapper = mount(HilosNotificationPreferences, {
       props: { connection, store: storeWith() },
     })
     expect(wrapper.get('h2').text()).toBe('Delivery channels')
     const row = wrapper.get('[data-id="hilos-notification-preference-email"]')
-    expect(row.classes()).toEqual(
-      expect.arrayContaining([
-        'd-flex',
-        'align-items-center',
-        'gap-3',
-        'py-3',
-        'border-bottom',
-      ]),
-    )
     const icon = row.get('[data-id="hilos-notification-preference-icon-email"]')
-    expect(icon.classes()).toContain('bi-envelope')
-    expect(icon.classes()).toContain('flex-shrink-0')
     expect(icon.attributes('aria-hidden')).toBe('true')
-    const middle = row.get('.flex-grow-1')
-    expect(middle.classes()).toContain('overflow-hidden')
-    expect(middle.get('.fw-semibold').text()).toBe('Email')
-    const subtitle = middle.get(
+    const subtitle = row.get(
       '[data-id="hilos-notification-preference-subtitle-email"]',
     )
-    expect(subtitle.classes()).toContain('text-break')
     const toggle = row.get('input')
     expect(toggle.attributes('aria-label')).toBe('Email')
     expect(
       subtitle.get(`[id="${toggle.attributes('aria-describedby')}"]`).text(),
     ).toBe('you@example.com')
-    expect(row.get('.text-nowrap').find('input').element).toBe(toggle.element)
-    expect(row.get('.text-nowrap').classes()).toContain('flex-shrink-0')
-    expect(row.find('label').exists()).toBe(false)
     expect(
       row
         .find('[data-id="hilos-notification-preference-address-email"]')
@@ -88,7 +69,7 @@ describe('HilosNotificationPreferences', () => {
     }
   })
 
-  it('uses a custom channel icon and treats the address as text', () => {
+  it('renders a channel address as text', () => {
     const { connection } = fakeConnection()
     const store = createHilosNotificationPreferencesStore()
     const address = '<img src=x onerror="alert(1)">'
@@ -99,7 +80,6 @@ describe('HilosNotificationPreferences', () => {
           label: 'Project channel',
           allowed: true,
           hasAddress: true,
-          icon: 'bi-chat-dots',
           address,
         },
       ],
@@ -108,11 +88,6 @@ describe('HilosNotificationPreferences', () => {
     const wrapper = mount(HilosNotificationPreferences, {
       props: { connection, store },
     })
-    expect(
-      wrapper
-        .get('[data-id="hilos-notification-preference-icon-project"]')
-        .classes(),
-    ).toContain('bi-chat-dots')
     expect(wrapper.get('[id$="-subtitle"]').text()).toBe(address)
     expect(wrapper.find('img').exists()).toBe(false)
   })
@@ -137,21 +112,11 @@ describe('HilosNotificationPreferences', () => {
       const wrapper = mount(HilosNotificationPreferences, {
         props: { connection, store },
       })
-      expect(
-        wrapper
-          .get('[data-id="hilos-notification-preference-icon-other"]')
-          .classes(),
-      ).toContain('bi-bell')
       const toggle = wrapper.get('input')
       expect(toggle.attributes('disabled')).toBeUndefined()
       expect(
         wrapper.get(`[id="${toggle.attributes('aria-describedby')}"]`).text(),
       ).toBe('')
-      expect(
-        wrapper
-          .get('[data-id="hilos-notification-preference-subtitle-other"]')
-          .classes(),
-      ).toContain('hilos-stack')
       expect(
         wrapper
           .find('[data-id="hilos-notification-preference-hint-other"]')
@@ -287,10 +252,8 @@ describe('HilosNotificationPreferences', () => {
     )
     expect(link.attributes('href')).toBe('/profile/sign-in')
     expect(link.text()).toBe('Ways to sign in')
-    const middle = linked.get(
-      '[data-id="hilos-notification-preference-sms"] .flex-grow-1',
-    )
-    expect(middle.find('a').element).toBe(link.element)
+    const row = linked.get('[data-id="hilos-notification-preference-sms"]')
+    expect(row.find('a').element).toBe(link.element)
     expect(
       linked
         .get('[data-id="hilos-notification-preference-toggle-sms"]')

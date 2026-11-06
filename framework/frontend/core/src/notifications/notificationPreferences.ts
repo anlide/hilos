@@ -13,6 +13,27 @@ import {
   type WritableSignal,
 } from '../state/signal.js'
 
+const NOTIFICATION_CHANNEL_ICONS: Readonly<Record<string, string>> =
+  Object.freeze({
+    email: 'bi-envelope',
+    push: 'bi-broadcast',
+    sms: 'bi-phone',
+  })
+
+/**
+ * Return the channel's Bootstrap icon, with a bell for unknown names.
+ *
+ * @param channel The channel's registry name.
+ */
+export function notificationChannelIcon(channel: string): string {
+  return Object.prototype.hasOwnProperty.call(
+    NOTIFICATION_CHANNEL_ICONS,
+    channel,
+  )
+    ? NOTIFICATION_CHANNEL_ICONS[channel]
+    : 'bi-bell'
+}
+
 /**
  * Server→client signal `type` carrying the full channel → allowed map after a
  * toggle (PHP `NotificationSignalName::PREFERENCES_CHANGED`). Fanned to every one
@@ -35,7 +56,7 @@ export const NOTIFICATION_ACTION_CHANNEL_SET =
  * One channel's row in the profile section (PHP `NotificationChannelState`): the
  * channel's registry name, its human label, whether the recipient currently allows
  * it (sparse opt-out — no muted row means allowed), and whether they have a
- * resolvable address for it. Optional `address` and `icon` carry display metadata;
+ * resolvable address for it. Optional `address` carries display metadata;
  * `address` may be null when the channel does not publish an address. A row with
  * no address is shown disabled with an "add an address" hint rather than hidden.
  * `config` carries the channel's public frontend opt-in config keyed by field —
@@ -47,7 +68,6 @@ const channelStateSchema = z.looseObject({
   label: z.string(),
   allowed: z.boolean(),
   hasAddress: z.boolean(),
-  icon: z.string().optional(),
   address: z.string().nullable().optional(),
   config: z.record(z.string(), z.string()).optional(),
 })

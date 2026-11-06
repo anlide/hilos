@@ -1,6 +1,8 @@
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import {
   bindTimeZoneState,
+  createHilosRouter,
+  createAppPageRouter,
   createSignal,
   HilosPages,
   hilosTimeZone,
@@ -45,7 +47,7 @@ function harness(
   const scopes = new ScopeManager()
   const page = scopes.openPage(PAGE)
   if (initial !== undefined) page.data.set(ANALYTICS_OVERVIEW_SECTION, initial)
-  const router: HilosRouter = {
+  const sourceRouter: HilosRouter = {
     currentRoute: createSignal({ page: PAGE, params: {}, admin: true }),
     currentPath: createSignal('/hilos/analytics'),
     currentTitle: createSignal(''),
@@ -62,6 +64,25 @@ function harness(
     replacePath: () => {},
     start: () => {},
     stop: () => {},
+  }
+  const router: HilosRouter = {
+    ...sourceRouter,
+    pageIdentity: createHilosRouter(
+      createAppPageRouter({}),
+      {
+        ...sourceRouter,
+        pageError: createSignal(null),
+        subscribe: () => {},
+        unsubscribe: () => {},
+        refuseUnbuilt: () => {},
+      },
+      {
+        pathname: () => sourceRouter.currentPath.get(),
+        pushState: () => {},
+        replaceState: () => {},
+        onPopState: () => () => {},
+      },
+    ).pageIdentity,
   }
   const view = mount(HilosAnalyticsPage, {
     props: { context: { connection: {} as HilosConnection, scopes } },

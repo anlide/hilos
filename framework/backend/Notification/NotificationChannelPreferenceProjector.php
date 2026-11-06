@@ -93,7 +93,6 @@ final class NotificationChannelPreferenceProjector
                 hasAddress: $address !== null,
                 config: $descriptor->frontendSubscribeConfig(),
                 address: $descriptor->displayAddress($address),
-                icon: $descriptor->icon(),
             );
         }
 

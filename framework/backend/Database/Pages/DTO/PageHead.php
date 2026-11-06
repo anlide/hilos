@@ -10,7 +10,7 @@ use Hilos\Database\Pages\PageCatalogConstants;
 final readonly class PageHead
 {
     /**
-     * @param array{page: string, label: string, lead: string, icon?: string} $pageHeadOwner Owner's catalog identity
+     * @param array{page: string, label: string, lead: string} $pageHeadOwner Owner's catalog identity
      * @param list<array{page: string, label: string}> $pageBreadcrumb Root-to-owner breadcrumb links
      * @param list<array{page: string, label: string}> $pageTabs Eligible tabs, owner first
      */
@@ -22,7 +22,7 @@ final readonly class PageHead
 
     /**
      * @return array{
-     *     pageHeadOwner: array{page: string, label: string, lead: string, icon?: string},
+     *     pageHeadOwner: array{page: string, label: string, lead: string},
      *     pageBreadcrumb: list<array{page: string, label: string}>,
      *     pageTabs: list<array{page: string, label: string}>,
      *     pageChildren: list<never>

@@ -71,7 +71,7 @@ describe('pageIdentity', () => {
     expect(identity.get()?.children).toEqual([])
   })
 
-  it('keeps the card icon the catalog gave it', () => {
+  it('ignores a legacy wire card icon until the frontend resolves the page key', () => {
     const scopes = new ScopeManager()
     const scope = scopes.openPage('hilos')
     const identity = pageIdentity(scopes)
@@ -85,7 +85,7 @@ describe('pageIdentity', () => {
       },
     ])
 
-    expect(identity.get()?.children[0].icon).toBe('bi-people')
+    expect(identity.get()?.children[0].icon).toBeNull()
   })
 
   it('switches to the new page on navigation, dropping the old name', () => {
@@ -146,7 +146,7 @@ describe('pageIdentity', () => {
         page: 'country',
         label: 'Ireland',
         lead: 'Owner lead',
-        icon: 'bi-flag',
+        icon: null,
       },
       pageTabs: [
         { page: 'country', label: 'Overview' },
@@ -483,5 +483,9 @@ describe('dashboardSections', () => {
       'Chat administration',
     ])
     expect(sections.get()?.[1].items[0].page).toBe('admin_users')
+    expect(sections.get()?.map((section) => section.items[0].icon)).toEqual([
+      null,
+      null,
+    ])
   })
 })

@@ -20,6 +20,7 @@ import {
   hilosNotificationPreferences,
   hilosPushSubscription,
   NOTIFICATION_ACTION_CHANNEL_SET,
+  notificationChannelIcon,
   type HilosConnection,
   type HilosNotificationChannelState,
   type HilosNotificationPreferencesStore,
@@ -115,7 +116,7 @@ function toggle(row: HilosNotificationChannelState, enabled: boolean): void {
         :vapid-public-key="pushKey(row)!"
         :store="pushStore"
         :channel-row="true"
-        :icon="row.icon"
+        :icon="notificationChannelIcon(row.channel)"
       />
       <div
         v-else
@@ -124,7 +125,7 @@ function toggle(row: HilosNotificationChannelState, enabled: boolean): void {
       >
         <i
           class="bi fs-5 text-body-secondary flex-shrink-0"
-          :class="row.icon ?? 'bi-bell'"
+          :class="notificationChannelIcon(row.channel)"
           aria-hidden="true"
           :data-id="`hilos-notification-preference-icon-${row.channel}`"
         />

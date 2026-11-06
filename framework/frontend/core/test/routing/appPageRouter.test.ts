@@ -3,6 +3,30 @@ import { createAppPageRouter } from '../../src/routing/appPageRouter.js'
 import { HilosPages } from '../../src/routing/hilosPages.js'
 
 describe('createAppPageRouter', () => {
+  it('reads icons from the same merged declarations as paths, with project precedence', () => {
+    const router = createAppPageRouter({
+      project: { path: '/project', admin: true, icon: 'bi-robot' },
+      [HilosPages.SETTINGS]: {
+        path: '/configuration',
+        admin: false,
+        icon: 'bi-wrench',
+      },
+      [HilosPages.USERS]: { path: '/people', admin: true },
+    })
+
+    for (const [page, path, admin, icon] of [
+      ['project', '/project', true, 'bi-robot'],
+      [HilosPages.SETTINGS, '/configuration', false, 'bi-wrench'],
+      [HilosPages.USERS, '/people', true, undefined],
+      [HilosPages.LOGS, '/hilos/logs', true, 'bi-journal-text'],
+    ] as const) {
+      expect(router.path(page)).toBe(path)
+      expect(router.match(path)).toEqual({ page, params: {}, admin })
+      expect(router.icon?.(page)).toBe(icon)
+    }
+    expect(router.icon?.('unknown')).toBeUndefined()
+  })
+
   it('splits Analytics session identities from list periods in the real catalog', () => {
     const router = createAppPageRouter({})
     for (const [path, page, params] of [

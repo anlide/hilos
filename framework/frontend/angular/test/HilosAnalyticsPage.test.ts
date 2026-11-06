@@ -5,6 +5,8 @@ import {
   bindAdminAccess,
   bindTimeZoneState,
   computedSignal,
+  createHilosRouter,
+  createAppPageRouter,
   createSignal,
   HilosPages,
   hilosAdminAccess,
@@ -81,7 +83,7 @@ function harness(
   scopes.openPage(PAGE)
   if (initial !== undefined) answer(scopes, initial)
   const identity = createSignal(pageIdentity(scopes))
-  const router: HilosRouter = {
+  const sourceRouter: HilosRouter = {
     currentRoute: createSignal<PageRouteMatch>({
       page: PAGE,
       params: {},
@@ -102,6 +104,25 @@ function harness(
     replacePath: () => {},
     start: () => {},
     stop: () => {},
+  }
+  const router: HilosRouter = {
+    ...sourceRouter,
+    pageIdentity: createHilosRouter(
+      createAppPageRouter({}),
+      {
+        ...sourceRouter,
+        pageError: createSignal(null),
+        subscribe: () => {},
+        unsubscribe: () => {},
+        refuseUnbuilt: () => {},
+      },
+      {
+        pathname: () => sourceRouter.currentPath.get(),
+        pushState: () => {},
+        replaceState: () => {},
+        onPopState: () => () => {},
+      },
+    ).pageIdentity,
   }
   const connection = {
     projectTimeZone: 'UTC',

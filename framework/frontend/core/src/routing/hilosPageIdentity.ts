@@ -4,6 +4,7 @@
 // a screen's name is text in the visitor's language, and only the backend knows
 // the language, so the catalog lives in PHP (Database/Pages/HilosPageCatalog) and
 // travels in the `data` section of the page's own page_response.
+// Icons stay null here; HilosRouter resolves them from frontend declarations.
 //
 // There is no catalog store: the normalizer lays plain data into the page scope
 // as it arrives, and these selectors are the typed read over it. That the scope
@@ -12,7 +13,7 @@
 // signals underneath (the page scope and the data slot), so a computed over a
 // selector recomputes both when the page changes and when its answer lands.
 
-import { readString, readStringOrNull } from '../state/fieldReaders.js'
+import { readString } from '../state/fieldReaders.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { computedSignal, type ReadonlySignal } from '../state/signal.js'
 import { pageInstanceName } from './hilosPageInstanceName.js'
@@ -44,9 +45,6 @@ const ENTRY_LABEL_KEY = 'label'
 /** Element key of the one-line description under a card's caption. */
 const ENTRY_LEAD_KEY = 'lead'
 
-/** Element key of a card's Bootstrap icon name (`bi-*`). */
-const ENTRY_ICON_KEY = 'icon'
-
 /** Section key of the group heading. */
 const SECTION_TITLE_KEY = 'title'
 
@@ -71,7 +69,7 @@ export interface HilosPageCrumb {
 export interface HilosPageChild extends HilosPageCrumb {
   /** The card's one-line description. */
   lead: string
-  /** Bootstrap icon name (`bi-*`), or null for a card the catalog gives none. */
+  /** Frontend Bootstrap icon name (`bi-*`), null until locally resolved. */
   icon: string | null
 }
 
@@ -79,7 +77,7 @@ export interface HilosPageChild extends HilosPageCrumb {
 export interface HilosPageHeadOwner extends HilosPageCrumb {
   /** The owner's one-line description. */
   lead: string
-  /** Bootstrap icon name (`bi-*`), or null when the catalog gives none. */
+  /** Frontend Bootstrap icon name (`bi-*`), null until locally resolved. */
   icon: string | null
 }
 
@@ -172,7 +170,7 @@ function readChildren(value: unknown): HilosPageChild[] {
             page: readString(fields, ENTRY_PAGE_KEY),
             label: readString(fields, ENTRY_LABEL_KEY),
             lead: readString(fields, ENTRY_LEAD_KEY),
-            icon: readStringOrNull(fields, ENTRY_ICON_KEY),
+            icon: null,
           },
         ]
   })
@@ -216,7 +214,7 @@ function readHeadOwner(value: unknown): HilosPageHeadOwner | undefined {
     page: fields[ENTRY_PAGE_KEY],
     label: fields[ENTRY_LABEL_KEY],
     lead: fields[ENTRY_LEAD_KEY],
-    icon: readStringOrNull(fields, ENTRY_ICON_KEY),
+    icon: null,
   }
 }
 

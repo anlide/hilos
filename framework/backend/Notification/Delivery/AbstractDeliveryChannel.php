@@ -50,14 +50,6 @@ abstract class AbstractDeliveryChannel
     }
 
     /**
-     * @return string Bootstrap Icons token (bi-*) for the channel, without reading the database
-     */
-    public function icon(): string
-    {
-        return 'bi-bell';
-    }
-
-    /**
      * The channel's transport/driver name for the admin channels hub row (HIL-200).
      *
      * The framework default is the channel name; a channel whose transport differs

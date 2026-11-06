@@ -16,11 +16,12 @@
 //
 // What a page is CALLED is not here and cannot be: a heading is text in the
 // visitor's language, and only the backend knows the language. The label, the
-// lead, the icon and the place in the admin tree live in the PHP catalog
+// lead and the place in the admin tree live in the PHP catalog
 // (Database/Pages/HilosPageCatalog) and reach the page in its own page_response;
-// the frontend reads them through routing/hilosPageIdentity. A URL is not
-// translated, and a cold load has to resolve a path to a page key before the
-// socket is up, which is why the addresses stay here.
+// the frontend reads them through routing/hilosPageIdentity. Icons are frontend
+// metadata on the declarations below, resolved by page key in HilosRouter.
+// A URL is not translated, and a cold load has to resolve a path to a page key
+// before the socket is up, which is why the addresses stay here.
 
 import { type HilosRouteDeclaration } from './PageRouter.js'
 
@@ -166,7 +167,7 @@ export type HilosPageKey = (typeof HilosPages)[keyof typeof HilosPages]
  * the admin section, false for the profile and the public footer pages. A
  * project overlays this with its own declarations to mount the admin. The table
  * is declared total over {@link HilosPageKey}, so a page key that forgets its
- * route is a compile error.
+ * route is a compile error. Optional icons belong to this frontend registry.
  */
 export const HILOS_ROUTE_DECLARATIONS: Record<
   HilosPageKey,
@@ -191,9 +192,21 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     admin: false,
   },
   [HilosPages.PROFILE_DATA]: { path: '/profile/data', admin: false },
-  [HilosPages.SETTINGS]: { path: '/hilos/settings', admin: true },
-  [HilosPages.APPEARANCE]: { path: '/hilos/appearance', admin: true },
-  [HilosPages.ANALYTICS]: { path: '/hilos/analytics', admin: true },
+  [HilosPages.SETTINGS]: {
+    path: '/hilos/settings',
+    admin: true,
+    icon: 'bi-sliders',
+  },
+  [HilosPages.APPEARANCE]: {
+    path: '/hilos/appearance',
+    admin: true,
+    icon: 'bi-palette',
+  },
+  [HilosPages.ANALYTICS]: {
+    path: '/hilos/analytics',
+    admin: true,
+    icon: 'bi-bar-chart',
+  },
   [HilosPages.ANALYTICS_PEOPLE]: {
     path: '/hilos/analytics/people',
     admin: true,
@@ -202,6 +215,7 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     path: '/hilos/analytics/browser-session/{browserSessionId}',
     admin: true,
     paramPatterns: { browserSessionId: '\\+?\\d+' },
+    icon: 'bi-window',
   },
   [HilosPages.ANALYTICS_BROWSER_SESSIONS]: {
     path: '/hilos/analytics/browser-sessions/{period?}',
@@ -212,18 +226,31 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     path: '/hilos/analytics/person/{userId}',
     admin: true,
   },
-  [HilosPages.ROLES]: { path: '/hilos/roles', admin: true },
-  [HilosPages.MODERATION]: { path: '/hilos/moderation', admin: true },
+  [HilosPages.ROLES]: {
+    path: '/hilos/roles',
+    admin: true,
+    icon: 'bi-person-badge',
+  },
+  [HilosPages.MODERATION]: {
+    path: '/hilos/moderation',
+    admin: true,
+    icon: 'bi-shield-check',
+  },
   [HilosPages.MODERATION_KIND]: {
     path: '/hilos/moderation/kind/{kind}',
     admin: true,
+    icon: 'bi-shield-check',
   },
   [HilosPages.MODERATION_KIND_RULES]: {
     path: '/hilos/moderation/kind/{kind}/rules',
     admin: true,
   },
-  [HilosPages.BACKUP]: { path: '/hilos/backup', admin: true },
-  [HilosPages.MAINTENANCE]: { path: '/hilos/maintenance', admin: true },
+  [HilosPages.BACKUP]: { path: '/hilos/backup', admin: true, icon: 'bi-safe2' },
+  [HilosPages.MAINTENANCE]: {
+    path: '/hilos/maintenance',
+    admin: true,
+    icon: 'bi-tools',
+  },
   [HilosPages.MAINTENANCE_CIRCLE]: {
     path: '/hilos/maintenance/circle',
     admin: true,
@@ -236,7 +263,11 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     path: '/hilos/maintenance/nodes',
     admin: true,
   },
-  [HilosPages.STATUS]: { path: '/hilos/status', admin: true },
+  [HilosPages.STATUS]: {
+    path: '/hilos/status',
+    admin: true,
+    icon: 'bi-activity',
+  },
   [HilosPages.STATUS_COMPONENTS]: {
     path: '/hilos/status/components',
     admin: true,
@@ -252,7 +283,7 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     path: '/hilos/superfan/{agentId}',
     admin: true,
   },
-  [HilosPages.I18N]: { path: '/hilos/i18n', admin: true },
+  [HilosPages.I18N]: { path: '/hilos/i18n', admin: true, icon: 'bi-translate' },
   [HilosPages.I18N_LANGUAGES]: { path: '/hilos/i18n/languages', admin: true },
   [HilosPages.I18N_COUNTRIES]: { path: '/hilos/i18n/countries', admin: true },
   [HilosPages.I18N_ENTITIES]: { path: '/hilos/i18n/entities', admin: true },
@@ -325,7 +356,11 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     path: '/hilos/i18n/translate/email/{emailId}',
     admin: true,
   },
-  [HilosPages.CHANGE_LOG]: { path: '/hilos/change-log', admin: true },
+  [HilosPages.CHANGE_LOG]: {
+    path: '/hilos/change-log',
+    admin: true,
+    icon: 'bi-clock-history',
+  },
   [HilosPages.CHANGE_LOG_FEED]: { path: '/hilos/change-log/feed', admin: true },
   [HilosPages.CHANGE_LOG_NOISY]: {
     path: '/hilos/change-log/noisy',
@@ -338,6 +373,7 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   [HilosPages.CHANGE_LOG_TABLE]: {
     path: '/hilos/change-log/table/{tableId}',
     admin: true,
+    icon: 'bi-table',
   },
   [HilosPages.CHANGE_LOG_TABLE_COLUMNS]: {
     path: '/hilos/change-log/table/{tableId}/columns',
@@ -351,7 +387,7 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     path: '/hilos/change-log/table/{tableId}/history/{record?}',
     admin: true,
   },
-  [HilosPages.DAEMON]: { path: '/hilos/daemon', admin: true },
+  [HilosPages.DAEMON]: { path: '/hilos/daemon', admin: true, icon: 'bi-cpu' },
   [HilosPages.DAEMON_PLACEMENT]: {
     path: '/hilos/daemon/placement',
     admin: true,
@@ -359,6 +395,7 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   [HilosPages.DAEMON_NODE]: {
     path: '/hilos/daemon/node/{nodeId}',
     admin: true,
+    icon: 'bi-hdd-network',
   },
   [HilosPages.DAEMON_WORKERS]: {
     path: '/hilos/daemon/node/{nodeId}/workers',
@@ -392,7 +429,11 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     path: '/hilos/daemon/env-mismatch',
     admin: true,
   },
-  [HilosPages.LOGS]: { path: '/hilos/logs', admin: true },
+  [HilosPages.LOGS]: {
+    path: '/hilos/logs',
+    admin: true,
+    icon: 'bi-journal-text',
+  },
   [HilosPages.LOGS_KEYS]: { path: '/hilos/logs/keys', admin: true },
   [HilosPages.LOGS_WORKERS]: { path: '/hilos/logs/workers', admin: true },
   [HilosPages.LOGS_ROTATIONS]: {
@@ -406,7 +447,11 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   },
   // The optional tail narrows the list to the people past one legal document's
   // deadline (HIL-945): the legal section's root links its count here.
-  [HilosPages.USERS]: { path: '/hilos/users/{lapsed?}', admin: true },
+  [HilosPages.USERS]: {
+    path: '/hilos/users/{lapsed?}',
+    admin: true,
+    icon: 'bi-people',
+  },
   [HilosPages.USER]: { path: '/hilos/user/{userId}', admin: true },
   [HilosPages.USER_ROLES]: {
     path: '/hilos/user/{userId}/roles',
@@ -420,7 +465,11 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     path: '/hilos/user/{userId}/sessions',
     admin: true,
   },
-  [HilosPages.MCP_SKILLS]: { path: '/hilos/mcp-skills', admin: true },
+  [HilosPages.MCP_SKILLS]: {
+    path: '/hilos/mcp-skills',
+    admin: true,
+    icon: 'bi-boxes',
+  },
   [HilosPages.MCP_SKILLS_MCP]: {
     path: '/hilos/mcp-skills/server/{mcpId}',
     admin: true,
@@ -433,16 +482,25 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     path: '/hilos/mcp-skills/server/{mcpId}/logs/view',
     admin: true,
   },
-  [HilosPages.SIL]: { path: '/hilos/sil', admin: true },
+  [HilosPages.SIL]: {
+    path: '/hilos/sil',
+    admin: true,
+    icon: 'bi-lightning-charge',
+  },
   [HilosPages.SIL_REQUESTS]: { path: '/hilos/sil/requests', admin: true },
   [HilosPages.SIL_USER_HISTORY]: {
     path: '/hilos/sil/users/{userId}',
     admin: true,
   },
-  [HilosPages.COMMUNICATIONS]: { path: '/hilos/communications', admin: true },
+  [HilosPages.COMMUNICATIONS]: {
+    path: '/hilos/communications',
+    admin: true,
+    icon: 'bi-envelope-paper',
+  },
   [HilosPages.COMMUNICATIONS_CHANNEL]: {
     path: '/hilos/communications/channel/{channelId}',
     admin: true,
+    icon: 'bi-envelope-paper',
   },
   [HilosPages.COMMUNICATIONS_CHANNEL_CONFIGURATION]: {
     path: '/hilos/communications/channel/{channelId}/configuration',
@@ -456,7 +514,11 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     path: '/hilos/communications/channel/{channelId}/frame',
     admin: true,
   },
-  [HilosPages.SECURITY]: { path: '/hilos/security', admin: true },
+  [HilosPages.SECURITY]: {
+    path: '/hilos/security',
+    admin: true,
+    icon: 'bi-shield-lock',
+  },
   [HilosPages.SECURITY_2FA]: { path: '/hilos/security/2fa', admin: true },
   [HilosPages.SECURITY_STEP_UP]: {
     path: '/hilos/security/step-up',
@@ -475,7 +537,11 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     path: '/hilos/security/impersonation',
     admin: true,
   },
-  [HilosPages.LEGAL]: { path: '/hilos/legal', admin: true },
+  [HilosPages.LEGAL]: {
+    path: '/hilos/legal',
+    admin: true,
+    icon: 'bi-file-earmark-check',
+  },
   [HilosPages.LEGAL_DOCUMENTS]: {
     path: '/hilos/legal/documents',
     admin: true,
@@ -483,6 +549,7 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   [HilosPages.LEGAL_DOCUMENT]: {
     path: '/hilos/legal/document/{documentKey}',
     admin: true,
+    icon: 'bi-file-earmark-text',
   },
   [HilosPages.LEGAL_DOCUMENT_SET]: {
     path: '/hilos/legal/document/{documentKey}/set',
@@ -499,6 +566,7 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   [HilosPages.LEGAL_REVISION]: {
     path: '/hilos/legal/document/{documentKey}/revision/{revisionId}',
     admin: true,
+    icon: 'bi-file-earmark-text',
   },
   [HilosPages.LEGAL_REVISION_TEXT]: {
     path: '/hilos/legal/document/{documentKey}/revision/{revisionId}/text',
@@ -509,7 +577,11 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     admin: true,
   },
   [HilosPages.LEGAL_SETTINGS]: { path: '/hilos/legal/settings', admin: true },
-  [HilosPages.BILLING]: { path: '/hilos/billing', admin: true },
+  [HilosPages.BILLING]: {
+    path: '/hilos/billing',
+    admin: true,
+    icon: 'bi-credit-card',
+  },
   [HilosPages.BILLING_PROVIDER]: {
     path: '/hilos/billing/provider/{providerId}',
     admin: true,

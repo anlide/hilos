@@ -2,6 +2,7 @@ import { enableAutoUnmount, mount } from '@vue/test-utils'
 import {
   createAppPageRouter,
   createHilosRouter,
+  HILOS_ROUTE_DECLARATIONS,
   HilosPages,
   PageSubscription,
   ScopeManager,
@@ -54,7 +55,7 @@ const ACTION = {
 }
 type Listener = (signal: { type?: string; data: unknown }) => void
 
-function harness(param: string | undefined = '57') {
+function harness(param: string | undefined = '57', icon = OWNER.icon) {
   const scopes = new ScopeManager()
   const listeners = new Map<string, Set<Listener>>()
   const registered = new Map<
@@ -97,7 +98,10 @@ function harness(param: string | undefined = '57') {
     scopes,
   )
   let path = `/hilos/analytics/browser-session/${param ?? ''}`
-  const router = createHilosRouter(createAppPageRouter({}), subscription, {
+  const routes = createAppPageRouter({
+    [PAGE]: { ...HILOS_ROUTE_DECLARATIONS[PAGE], icon },
+  })
+  const router = createHilosRouter(routes, subscription, {
     pathname: () => path,
     pushState: (next) => {
       path = next
@@ -337,7 +341,7 @@ describe('HilosAnalyticsBrowserSessionPage', () => {
   })
 
   it('takes the icon and description from the owner identity', async () => {
-    const h = harness()
+    const h = harness('57', 'bi-browser-firefox')
     const owner = {
       ...OWNER,
       lead: 'Catalog description for this browser session.',

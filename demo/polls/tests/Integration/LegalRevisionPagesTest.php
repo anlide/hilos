@@ -277,7 +277,6 @@ final class LegalRevisionPagesTest extends IntegrationTestCase
             'page' => HilosPageConstants::HILOS_LEGAL_REVISION,
             'label' => 'Revision',
             'lead' => 'The exact text, its changes, and its acceptances.',
-            'icon' => 'bi-file-earmark-text',
         ], $response->payload->data['pageHeadOwner']);
         self::assertSame([
             ['page' => HilosPageConstants::HILOS_DASHBOARD, 'label' => 'Hilos'],
