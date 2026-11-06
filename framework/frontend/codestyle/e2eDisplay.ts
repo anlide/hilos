@@ -50,6 +50,9 @@ const DOC =
 /** The narrowest viewport width a spec may set: the desktop width, itself allowed. */
 const DESKTOP_MIN_WIDTH = 1024
 
+/** The shared guest-theme scenario is scanned alongside its local demo entries. */
+const GUEST_THEME_SCENARIOS = 'framework/frontend/e2e/themeGuestScenarios.ts'
+
 /**
  * The theme feature's own specs (HIL-1442, HIL-1443), the one place a spec may
  * choose the dark theme. Exact paths: a file of the same name in another demo or
@@ -72,6 +75,7 @@ const THEME_SPEC_PATHS = [
   'demo/tasks/tests/e2e/tests/appearance.spec.ts',
   'demo/tasks/tests/e2e/tests/theme-account.spec.ts',
   'demo/tasks/tests/e2e/tests/theme-guest.spec.ts',
+  GUEST_THEME_SCENARIOS,
 ]
 
 /** Reason for a viewport narrower than the desktop. */
@@ -270,8 +274,8 @@ export function checkSource(relativePath: string, source: string): string[] {
 }
 
 /**
- * Reports every narrowed or darkened screen in the demos' e2e roots, in path
- * order.
+ * Reports every narrowed or darkened screen in the demos' e2e roots and the
+ * shared guest-theme scenario, in path order.
  *
  * @param repositoryRoot Absolute path of the repository root
  * @returns One finished report line per offending site
@@ -284,6 +288,16 @@ export function checkRepository(repositoryRoot: string): string[] {
       const relativePath = relative(repositoryRoot, file).split(sep).join('/')
       lines.push(...checkSource(relativePath, readFileSync(file, 'utf8')))
     }
+  }
+
+  const guestThemeScenarios = join(repositoryRoot, GUEST_THEME_SCENARIOS)
+  if (existsSync(guestThemeScenarios)) {
+    lines.push(
+      ...checkSource(
+        GUEST_THEME_SCENARIOS,
+        readFileSync(guestThemeScenarios, 'utf8'),
+      ),
+    )
   }
 
   return lines

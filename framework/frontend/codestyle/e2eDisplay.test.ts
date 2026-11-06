@@ -71,6 +71,7 @@ const THEME_SPECS = [
   'demo/tasks/tests/e2e/tests/appearance.spec.ts',
   'demo/tasks/tests/e2e/tests/theme-account.spec.ts',
   'demo/tasks/tests/e2e/tests/theme-guest.spec.ts',
+  'framework/frontend/e2e/themeGuestScenarios.ts',
 ]
 
 /** A dark page on line 1 and a narrow one on line 2. */
@@ -151,7 +152,7 @@ it('stays silent on light, desktop, inherited, data and unreadable screens, and 
   expect(reportFixture('goodE2eDisplay.ts')).toEqual([])
 })
 
-it('lets the sixteen theme specs choose dark and still judges their width', () => {
+it('lets the seventeen theme sources choose dark and still judges their width', () => {
   for (const path of THEME_SPECS) {
     expect(checkSource(path, DARK_THEN_NARROW)).toEqual([
       `E2E-LIGHT-DESKTOP ${path}:2${NARROW}`,
@@ -159,7 +160,7 @@ it('lets the sixteen theme specs choose dark and still judges their width', () =
   }
 })
 
-it('lets the sixteen theme specs walk the palettes and refuses their width loops', () => {
+it('lets the seventeen theme sources walk the palettes and refuses their width loops', () => {
   for (const path of THEME_SPECS) {
     expect(checkSource(path, PALETTES_THEN_WIDTHS)).toEqual([
       `E2E-LIGHT-DESKTOP ${path}:5${LOOP}`,
@@ -211,7 +212,7 @@ it('reads the dark the privacy sweep seeds as stored data, and exempts nothing e
   ).toEqual([`E2E-LIGHT-DESKTOP ${path}:7${DARK}`])
 })
 
-it('scans every demo e2e root with its helpers, configs and cluster, and nothing else', () => {
+it('scans every demo e2e root and the shared guest-theme scenario, and nothing else', () => {
   const repositoryRoot = mkdtempSync(join(tmpdir(), 'hilos-e2e-display-'))
   const scanned = [
     'demo/binance-btc-tracker/tests/e2e/cluster/live/size.spec.ts',
@@ -220,6 +221,7 @@ it('scans every demo e2e root with its helpers, configs and cluster, and nothing
     'demo/chat/tests/e2e/playwright.config.ts',
     'demo/chat/tests/e2e/tests/room.spec.ts',
     'demo/tasks/tests/e2e/global-setup.ts',
+    'framework/frontend/e2e/themeGuestScenarios.ts',
   ]
   const excluded = [
     'framework/frontend/e2e/theme.ts',
