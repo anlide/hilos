@@ -57,7 +57,6 @@ use Hilos\Auth\StepUp\StepUpConfirmations;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\Verification\DTO\CodeDeliverySignalData;
 use Hilos\Backup\Agent\BackupAgent;
-use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Backup\Agent\DTO\DeferredNoticesSentSignalData;
 use Hilos\Backup\Agent\DTO\DeferredSessionsCarriedSignalData;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
@@ -1195,17 +1194,6 @@ final class HilosSignalConstants
      * source of truth about where it runs.
      */
     public const string BACKUP_RESTORE = 'backup_restore';
-
-    /**
-     * Client → server: end the verification window a restore left the node in (HIL-676).
-     *
-     * Payload-less on purpose. The freeze it ends is named by the runtime row on the server,
-     * and the one browser allowed to end it is named there too, so a client has nothing left
-     * to say about it — the empty payload IS the gate. It is the page's half of what
-     * `php cli.php protected-mode:open` does from a terminal, and it reaches the same agent
-     * by the same road.
-     */
-    public const string BACKUP_REOPEN = 'backup_reopen';
 
     // ── Hilos maintenance section: the verifier circle (client → server) ──
     /**
@@ -2980,17 +2968,6 @@ final class HilosSignalConstants
      * backstop: between the page's answer and this signal the agent may have taken work on.
      */
     public const string BACKUP_AGENT_RESTORE = 'backup_agent_restore';
-
-    /**
-     * Page → BackupAgent: end the verification window this node stands in (HIL-676).
-     *
-     * The page has already checked the runtime row and answered the browser, so this frame is
-     * a request to act, not to decide; the agent re-checks the row all the same, because
-     * between the page's answer and this signal a terminal may have opened the system already.
-     * The accept key rides along only so the agent can name whose click it is carrying out or
-     * refusing in its log. Carried by {@see BackupReopenSignalData}.
-     */
-    public const string BACKUP_AGENT_REOPEN = 'backup_agent_reopen';
 
     /**
      * Sessions library → BackupAgent: the batch of deferred logins is mine now (HIL-846).

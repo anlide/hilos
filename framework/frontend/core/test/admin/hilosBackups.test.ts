@@ -16,10 +16,6 @@ import {
   formatBackupSize,
   formatRestoreCliCommand,
   formatRestoreOutcomeLine,
-  createHilosBackupsActions,
-  HILOS_BACKUP_CIRCLE_POINTER_PATH,
-  HILOS_BACKUP_CIRCLE_POINTER_COPY,
-  HILOS_BACKUP_REOPEN_COPY,
   HILOS_BACKUP_VERIFICATION_COPY,
   HILOS_BACKUP_MAINTENANCE_PATH,
   HILOS_BACKUP_CIRCLE_TAB_POINTER_COPY,
@@ -1041,19 +1037,6 @@ describe('createHilosBackupsReopenGate', () => {
   })
 })
 
-describe('createHilosBackupsActions', () => {
-  it('sends the reopen action with an empty payload', () => {
-    // The empty payload is the gate: the freeze and the browser allowed to end it are
-    // both named on the server, so there is nothing here to name either with.
-    const sent: Array<{ action: string; payload: unknown }> = []
-    const actions = createHilosBackupsActions(dispatchContext(sent))
-
-    actions.sendBackupReopen()
-
-    expect(sent).toEqual([{ action: 'backup_reopen', payload: {} }])
-  })
-})
-
 describe('createHilosBackupsTable', () => {
   // The one seam between the view and the core this leaf adds: the create button is
   // declared on the frame, and its press is the opener the view lent. Drawing the
@@ -1523,12 +1506,6 @@ describe('hasBackupFailureDetail', () => {
   })
 })
 
-describe('HILOS_BACKUP_CIRCLE_POINTER_PATH', () => {
-  it('resolves the Maintenance address from the Hilos route map', () => {
-    expect(HILOS_BACKUP_CIRCLE_POINTER_PATH).toBe('/hilos/maintenance')
-  })
-})
-
 describe('backup verification and circle pointers', () => {
   it('offers the verification exit through Maintenance', () => {
     expect(HILOS_BACKUP_MAINTENANCE_PATH).toBe('/hilos/maintenance')
@@ -1551,28 +1528,6 @@ describe('backup verification and circle pointers', () => {
         'The verifier circle is kept at /hilos/maintenance/circle. Set it up before you press Restore: ' +
         'only members with a tab open at that moment are let into the verification window.',
       open: 'Open Maintenance',
-    })
-  })
-
-  it('retains the legacy pointer and reopen confirmation for other views', () => {
-    expect(HILOS_BACKUP_CIRCLE_POINTER_COPY).toEqual({
-      title: 'Who can check the system after a restore',
-      body:
-        'The verifier circle is kept in the Maintenance section. Set it up before you press Restore: ' +
-        'only members with a tab open at that moment are let into the verification window.',
-      open: 'Open Maintenance',
-    })
-    expect(HILOS_BACKUP_REOPEN_COPY).toEqual({
-      title: 'Verification window open',
-      body:
-        'The restore finished and this installation is closed to everyone but this browser. ' +
-        'Check what you need to check, then reopen it - every open page reloads itself when you do.',
-      button: 'Reopen the system',
-      modalTitle: 'Reopen the system',
-      refusalTitle: "Couldn't reopen the system",
-      modalBody:
-        'This ends the verification window and lets everyone back in. Every connected page ' +
-        'reloads itself, this one included. Closing the system again is a CLI command.',
     })
   })
 })

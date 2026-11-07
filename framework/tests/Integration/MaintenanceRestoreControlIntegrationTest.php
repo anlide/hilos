@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Backup\Agent\BackupAgent;
-use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Backup\RestoreReleaseGate;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\CliCommands;
@@ -264,11 +263,7 @@ final class MaintenanceRestoreControlIntegrationTest extends TestCase
         $gate = (new ReflectionProperty(BackupAgent::class, 'restoreReleaseGate'))->getValue($this->operator);
         $this->assertInstanceOf(RestoreReleaseGate::class, $gate);
         $gate->noteSessionsDeferred(2);
-        $this->operator->onSignalAgent(
-            new AgentSignalData(new BackupReopenSignalData(self::ACCEPT_KEY)),
-            'test',
-            HilosSignalConstants::BACKUP_AGENT_REOPEN,
-        );
+        $this->assertTrue($gate->holdRelease(microtime(true), true));
         $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'A release owed logins stays parked');
 
         $this->dispatch(HilosSignalConstants::MAINTENANCE_RESTORE_CLOSE);
@@ -287,9 +282,48 @@ final class MaintenanceRestoreControlIntegrationTest extends TestCase
         $ack = $this->success(HilosSignalConstants::MAINTENANCE_RESTORE_CLOSE);
         $this->assertSame('The window is closed again', $ack->message);
 
+        $gate->noteSessionsCarriedOver(2, 0, 0);
         $release = new ReflectionMethod(BackupAgent::class, 'releaseProtectedModeIfDue');
         $release->invoke($this->operator);
+        $this->tick();
         $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'The close dropped the parked release');
+    }
+
+    public function testALateOpenIsRefusedWhileAnAcceptedCloseStillWaitsForActive(): void
+    {
+        $this->dispatch(HilosSignalConstants::MAINTENANCE_RESTORE_CLOSE);
+        $this->deliverAsk();
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_REFREEZE, $this->nextNamed(
+            SignalTypeConstants::PROTECTED_MODE_REFREEZE,
+        )->signalName->getName());
+
+        $this->dispatch(HilosSignalConstants::MAINTENANCE_RESTORE_OPEN, 'late-open');
+        $this->deliverAsk();
+        $refusal = $this->takeDone();
+        $this->assertSame('another protected-mode command is still in flight', $refusal->answer->error);
+        $this->assertNull($refusal->pass);
+        $this->giveToPage($refusal);
+        $error = $this->failure();
+        $this->assertSame(HilosSignalConstants::MAINTENANCE_RESTORE_OPEN, $error->action);
+        $this->assertSame('late-open', $error->requestId);
+        $this->assertSame('another protected-mode command is still in flight', $error->reason);
+        $this->tick();
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'The late open cannot send a freeze-lift');
+
+        $this->row->phase = StateProtectedModeRuntime::PHASE_ACTIVE;
+        $this->tick();
+        $done = $this->takeDone();
+        $this->assertNull($done->answer->error);
+        $this->assertNull($done->pass);
+        $this->giveToPage($done);
+        $ack = $this->success(HilosSignalConstants::MAINTENANCE_RESTORE_CLOSE);
+        $this->assertSame('The window is closed again', $ack->message);
+        $this->assertNull($ack->reply);
+
+        $release = new ReflectionMethod(BackupAgent::class, 'releaseProtectedModeIfDue');
+        $release->invoke($this->operator);
+        $this->tick();
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'Only the close answers, once, without a late freeze-lift');
     }
 
     public function testTheDiagnosticTupleReachesTheInitiatorsFrame(): void
@@ -316,13 +350,13 @@ final class MaintenanceRestoreControlIntegrationTest extends TestCase
         $this->assertFalse($wire[HilosMaintenanceStateSignalData::manual]);
     }
 
-    private function dispatch(string $action): void
+    private function dispatch(string $action, string $requestId = self::REQUEST_ID): void
     {
         $this->pages->dispatchAction(new WebSocketActionSignalDTO(
             self::ACCEPT_KEY,
             $action,
             [],
-            self::REQUEST_ID,
+            $requestId,
         ), 'websocket');
     }
 

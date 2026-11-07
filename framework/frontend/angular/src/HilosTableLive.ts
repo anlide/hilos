@@ -298,6 +298,10 @@ export class HilosTableLive<R> {
   readonly tableProgress = input<
     TemplateRef<ViewportTableProgressContext> | undefined
   >()
+  /** The full phrase announced when table progress is the room's main message. */
+  readonly tableProgressAnnouncement = input<
+    ((progress: HilosTableProgressState) => string) | undefined
+  >()
   /** The project's own control for that work, standing where a button stands. */
   readonly tableProgressAction = input<
     TemplateRef<ViewportTableProgressContext> | undefined
@@ -423,6 +427,12 @@ export class HilosTableLive<R> {
     if (top === null) {
       return ''
     }
+    const tableProgress = top === 'progress' ? this.tableBar() : null
+    const progressSentence =
+      tableProgress === null
+        ? 'Work is running on this table.'
+        : (this.tableProgressAnnouncement()?.(tableProgress) ??
+          'Work is running on this table.')
     const sentences: Record<HilosTableLiveKind, string> = {
       report: `${this.reportTitle()}.`,
       bulk: `${this.bulkBarCaption()}.`,
@@ -430,7 +440,7 @@ export class HilosTableLive<R> {
       announce: `${this.announceLabel()}.`,
       frozen: this.frozenLabel() ?? '',
       stale: this.staleLabel() ?? '',
-      progress: 'Work is running on this table.',
+      progress: progressSentence,
     }
     const rest = this.live().rest.map((kind) => REST_WORDS[kind])
 

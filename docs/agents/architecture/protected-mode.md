@@ -735,10 +735,16 @@ automatically, the human path out has to actually work.
   with the reason named — reading a damaged freeze as "no freeze" opens the node
   on the strength of a parse failure. A missing file is the ordinary startup.
   Every accept key is dropped: it was minted on a 101 that died with the daemon.
-  `restoreFromDisk()` keeps the restore initiator's session hash: the legacy
-  Backups reopen button in Angular uses `belongsToInitiator()`, which refuses
-  null, so losing it would lock out the restore operator. Vue, React and Angular
-  now send restore control from Maintenance. Passes, admitted sessions
+  `restoreFromDisk()` keeps the restore initiator's session hash so the initiating
+  browser can use the Maintenance restore controls after restart.
+  `AbstractHilosMaintenancePage::assertRestoreAdmission()` compares the
+  server-resolved session hash with the row through
+  `StateProtectedModeRuntime::belongsToInitiator()`, which refuses null.
+  `BackupAgent::assertMaintenanceRestoreControl()` separately checks
+  `isProtectedModeOperatorInitiator()` to confirm that the recorded initiating
+  agent handles the ask. Without the session hash, the browser loses its
+  Maintenance control path after restart; the operator command path remains
+  available. Passes, admitted sessions
   and the circle are cleared by choice: a code lasts minutes, and a verifier asks
   for a new one. The restored window admits only the initiating browser. A restored row is still frozen even
   before this node remembers its leader. It accepts the current leader's frames
@@ -1484,14 +1490,16 @@ connection takes the Maintenance page and the modal on it together. Open's
 lift can reload the browser before the action ack, as a manual disable already
 does.
 
-Vue, React and Angular draw the ladder and send the reopen control from
+Vue, React and Angular draw the ladder and send restore control from
 Maintenance. The React and Angular Overviews give the initiating browser the
 three actions, each confirmed in its own window, and show every other admitted
-administrator the one status line instead. React Backups links to the
-Maintenance verification window and directly to the Maintenance Circle; it has
-no local Reopen action. Angular Backups remains the only page consumer of the
-legacy `backup_reopen` action, whose SDK API and compatibility exports remain
-for that consumer.
+administrator the one status line instead. Each SDK's Backups page links to the
+Maintenance verification window (`/hilos/maintenance`) and the Maintenance
+Circle (`/hilos/maintenance/circle`); none offers a local Reopen action.
+`data.backupReopen.offered` and `createHilosBackupsReopenGate()` still decide
+whether the pointer panel appears. The former `backup_reopen` browser action
+and `backup_agent_reopen` signal, their DTOs, `sendBackupReopen()` and the old
+compatibility exports have been removed.
 
 ## This Node's Live Hold (HIL-1679)
 

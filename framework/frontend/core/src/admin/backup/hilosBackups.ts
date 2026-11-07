@@ -214,7 +214,6 @@ const BACKUP_DELETE_ACTION = 'backup_delete'
 const BACKUP_BULK_DELETE_ACTION = 'backup_bulk_delete'
 const BACKUP_SET_KEEP_ACTION = 'backup_set_keep'
 const BACKUP_RESTORE_ACTION = 'backup_restore'
-const BACKUP_REOPEN_ACTION = 'backup_reopen'
 /** The page's own actions, so an addressed failure notice for one is recognized as ours. */
 const BACKUP_ACTIONS = new Set<string>([
   BACKUP_CREATE_ACTION,
@@ -222,7 +221,6 @@ const BACKUP_ACTIONS = new Set<string>([
   BACKUP_BULK_DELETE_ACTION,
   BACKUP_SET_KEEP_ACTION,
   BACKUP_RESTORE_ACTION,
-  BACKUP_REOPEN_ACTION,
 ])
 
 /** Page-data section saying what this installation offers for restoring (backend `RESTORE_SECTION`). */
@@ -402,12 +400,6 @@ export interface HilosBackupsActions {
    * @param id The backup id (also the table row key).
    */
   sendBackupRestore(id: string): ActionHandle
-  /**
-   * End the verification window the node stands in after a restore, as a tracked
-   * action. The ack answers acceptance only: the outcome is that the system reopens,
-   * which reloads every connected page including this one.
-   */
-  sendBackupReopen(): ActionHandle
 }
 
 /** What this installation offers for restoring, from the page-data section. */
@@ -972,59 +964,6 @@ export function createHilosBackupsReopenGate(
   })
 }
 
-/**
- * The words of the reopen block and of its confirmation, owned here rather than by the
- * three view shells.
- *
- * Same rule the panel formatters above stand on: a sentence copied into a Vue, a React
- * and an Angular template is three sentences that drift, and the one that drifts is
- * always the one nobody opened this month. Here it is one string with one owner, and a
- * shell that renders it cannot disagree with the other two.
- *
- * The modal says what the click costs before it is paid — everyone comes back in, every
- * page reloads including this one — and says the one thing that is not undoable from
- * this screen: closing the system again is a CLI command, not a button.
- */
-export const HILOS_BACKUP_REOPEN_COPY = {
-  /** Heading of the block offered to the browser that started the restore. */
-  title: 'Verification window open',
-  /** The block's body: what state the installation is in, and what the button ends. */
-  body:
-    'The restore finished and this installation is closed to everyone but this browser. ' +
-    'Check what you need to check, then reopen it - every open page reloads itself when you do.',
-  /** Label of the button in the block. */
-  button: 'Reopen the system',
-  /** Heading of the confirmation modal. */
-  modalTitle: 'Reopen the system',
-  /** Heading of the refusal details when reopening is refused: what failed. */
-  refusalTitle: "Couldn't reopen the system",
-  /** The modal's body: the cost of the click, and the way back. */
-  modalBody:
-    'This ends the verification window and lets everyone back in. Every connected page ' +
-    'reloads itself, this one included. Closing the system again is a CLI command.',
-} as const
-
-/**
- * The verifier circle belongs to the freeze and lives in Maintenance (HIL-1119,
- * HIL-1120, HIL-1121). The backup page keeps this pointer because an operator
- * prepares the circle immediately before restoring and must learn about it here.
- */
-export const HILOS_BACKUP_CIRCLE_POINTER_COPY = {
-  /** The pointer heading. */
-  title: 'Who can check the system after a restore',
-  /** Where to prepare the circle and when its members enter the verification window. */
-  body:
-    'The verifier circle is kept in the Maintenance section. Set it up before you press Restore: ' +
-    'only members with a tab open at that moment are let into the verification window.',
-  /** The link label. */
-  open: 'Open Maintenance',
-} as const
-
-/** The Maintenance route shared by all three backup views. */
-export const HILOS_BACKUP_CIRCLE_POINTER_PATH = resolveHilosPath(
-  HilosPages.MAINTENANCE,
-)
-
 /** The verification notice linking to the Maintenance controls. */
 export const HILOS_BACKUP_VERIFICATION_COPY = {
   /** Heading of the open verification window notice. */
@@ -1045,13 +984,13 @@ export const HILOS_BACKUP_MAINTENANCE_PATH = resolveHilosPath(
 /** The pointer for views that have adopted the dedicated verifier circle tab. */
 export const HILOS_BACKUP_CIRCLE_TAB_POINTER_COPY = {
   /** The pointer heading. */
-  title: HILOS_BACKUP_CIRCLE_POINTER_COPY.title,
+  title: 'Who can check the system after a restore',
   /** Where to prepare the circle and when its members enter the verification window. */
   body:
     'The verifier circle is kept at /hilos/maintenance/circle. Set it up before you press Restore: ' +
     'only members with a tab open at that moment are let into the verification window.',
   /** The link label. */
-  open: HILOS_BACKUP_CIRCLE_POINTER_COPY.open,
+  open: 'Open Maintenance',
 } as const
 
 /** The dedicated verifier circle tab, for views that have adopted it. */
@@ -1396,9 +1335,6 @@ export function createHilosBackupsActions(
       return context.actions.dispatch(BACKUP_RESTORE_ACTION, {
         backupId: id,
       })
-    },
-    sendBackupReopen() {
-      return context.actions.dispatch(BACKUP_REOPEN_ACTION, {})
     },
   }
 }

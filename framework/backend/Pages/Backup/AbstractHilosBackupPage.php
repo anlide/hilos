@@ -9,7 +9,6 @@ use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteDoneSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
-use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Backup\BackupScope;
@@ -44,7 +43,6 @@ use Hilos\HilosException;
 use Hilos\Pages\Backup\DTO\BackupBulkDeleteActionDTO;
 use Hilos\Pages\Backup\DTO\BackupCreateActionDTO;
 use Hilos\Pages\Backup\DTO\BackupDeleteActionDTO;
-use Hilos\Pages\Backup\DTO\BackupReopenActionDTO;
 use Hilos\Pages\Backup\DTO\BackupRestoreActionDTO;
 use Hilos\Pages\Backup\DTO\BackupSetKeepActionDTO;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -91,7 +89,6 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
         HilosSignalConstants::BACKUP_BULK_DELETE => BackupBulkDeleteActionDTO::class,
         HilosSignalConstants::BACKUP_SET_KEEP => BackupSetKeepActionDTO::class,
         HilosSignalConstants::BACKUP_RESTORE => BackupRestoreActionDTO::class,
-        HilosSignalConstants::BACKUP_REOPEN => BackupReopenActionDTO::class,
     ];
 
     /**
@@ -127,7 +124,7 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
     public const string REOPEN_OFFERED = 'offered';
 
     /**
-     * Routes backup create, delete, set-keep, restore and reopen actions.
+     * Routes backup create, delete, set-keep and restore actions.
      *
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name from the WebSocket envelope
@@ -184,14 +181,6 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
                     throw new InvalidActionPayloadException($action, BackupRestoreActionDTO::class, $dto);
                 }
                 $this->handleRestore($acceptKey, $dto);
-
-                break;
-
-            case HilosSignalConstants::BACKUP_REOPEN:
-                if (!$dto instanceof BackupReopenActionDTO) {
-                    throw new InvalidActionPayloadException($action, BackupReopenActionDTO::class, $dto);
-                }
-                $this->handleReopen($acceptKey);
 
                 break;
 
@@ -450,42 +439,6 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
                 $acceptKey,
                 Hilos::$browser?->resolveActionUserId($acceptKey),
             ),
-        );
-    }
-
-    /**
-     * Ends the verification window this node stands in, on behalf of the browser that asked.
-     *
-     * The gate is recomputed here and is not read back from the subscription payload: the section
-     * that drew the button was answered once, at subscribe, and between that frame and this click
-     * a terminal may have run `protected-mode:open` already. The two refusals are the two ways
-     * this can be wrong, and no more - a node standing in no verification window at all reads the
-     * same to an operator as one standing in somebody else's, so "the row is not mounted" and
-     * "the phase is not verifying" say one sentence between them.
-     *
-     * Nothing is written from here. The row belongs to {@see BackupAgent}, so the passed gate
-     * turns into a signal on the same road `protected-mode:open` takes, and the outcome comes
-     * back to every tab as the frame that lifts the mode - not as this action's ack, which only
-     * says the request was taken.
-     *
-     * @param string $acceptKey Accept key of the connection that pressed the button
-     * @throws TableActionException When this node is in no verification window, or the asking
-     *     browser is not the one that started the restore
-     */
-    private function handleReopen(string $acceptKey): void
-    {
-        $protectedMode = Hilos::$rt?->hilosProtectedModeRuntime;
-        if ($protectedMode === null || $protectedMode->phase !== StateProtectedModeRuntime::PHASE_VERIFYING) {
-            throw new TableActionException('The system is not standing in a verification window');
-        }
-
-        if (!$protectedMode->belongsToInitiator($this->subscriberSessionTokenHash($acceptKey))) {
-            throw new TableActionException('Only the browser that started the restore can reopen the system');
-        }
-
-        $this->agent->sendToAgent(
-            HilosSignalConstants::BACKUP_AGENT_REOPEN,
-            new BackupReopenSignalData($acceptKey),
         );
     }
 

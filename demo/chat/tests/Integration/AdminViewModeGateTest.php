@@ -99,7 +99,6 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         'backup_bulk_delete',
         'backup_create',
         'backup_delete',
-        'backup_reopen',
         'backup_restore',
         'backup_set_keep',
         'bot_create',

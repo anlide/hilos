@@ -14,6 +14,7 @@ import type {
   HilosTableBulkAction,
   HilosTableColumn,
 } from '@hilos/core'
+import type { HilosTableProgress } from '@hilos/core/base'
 
 import { HilosTableLive } from '../src/HilosTableLive.js'
 import {
@@ -153,10 +154,17 @@ class TableLiveNamedHost {
 
 function mountLive(
   controller: TableViewportController<Row>,
+  tableProgressAnnouncement?: (progress: HilosTableProgress) => string,
 ): ComponentFixture<HilosTableLive<Row>> {
   const fixture = TestBed.createComponent<HilosTableLive<Row>>(HilosTableLive)
   fixture.componentRef.setInput('controller', controller)
   fixture.componentRef.setInput('columns', COLUMNS)
+  if (tableProgressAnnouncement !== undefined) {
+    fixture.componentRef.setInput(
+      'tableProgressAnnouncement',
+      tableProgressAnnouncement,
+    )
+  }
   fixture.detectChanges()
 
   return fixture
@@ -400,6 +408,102 @@ describe('HilosTableLive', () => {
     expect(query(fixture, '[data-id="hilos-table-frozen"]')).not.toBeNull()
     expect(query(fixture, '[data-id="hilos-table-stale"]')).toBeNull()
     expect(query(fixture, '[data-id="hilos-table-live-rest"]')).toBeNull()
+  })
+
+  it('announces the supplied table progress phrase from the current bar', () => {
+    const controller = makeController()
+    const announcement = vi.fn(
+      (progress: HilosTableProgress) =>
+        `${String(progress.detail['title'])}: ${progress.current} of ${progress.total}`,
+    )
+    const fixture = mountLive(controller, announcement)
+    expect(announcement).not.toHaveBeenCalled()
+    expect(
+      query(fixture, '[data-id="hilos-table-live-status"]')?.textContent,
+    ).toBe('')
+
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 3,
+      total: 12,
+      detail: { title: 'Nightly check' },
+    })
+    fixture.detectChanges()
+
+    expect(announcement).toHaveBeenLastCalledWith({
+      progressKey: 'nightly',
+      current: 3,
+      total: 12,
+      fraction: 0.25,
+      detail: { title: 'Nightly check' },
+    })
+    expect(
+      query(fixture, '[data-id="hilos-table-live-status"]')?.getAttribute(
+        'role',
+      ),
+    ).toBe('status')
+    expect(
+      query(fixture, '[data-id="hilos-table-live-status"]')?.textContent,
+    ).toBe('Nightly check: 3 of 12')
+
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 6,
+      total: 12,
+      detail: { title: 'Nightly check' },
+    })
+    fixture.detectChanges()
+    expect(
+      query(fixture, '[data-id="hilos-table-live-status"]')?.textContent,
+    ).toBe('Nightly check: 6 of 12')
+
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 12,
+      ended: true,
+    })
+    fixture.detectChanges()
+    expect(
+      query(fixture, '[data-id="hilos-table-live-status"]')?.textContent,
+    ).toBe('')
+  })
+
+  it('keeps the standard progress announcement when the page supplies none', () => {
+    const controller = makeController()
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 3,
+    })
+    const fixture = mountLive(controller)
+
+    expect(
+      query(fixture, '[data-id="hilos-table-live-status"]')?.textContent,
+    ).toBe('Work is running on this table.')
+  })
+
+  it('preserves higher priority messages and the Also queue without calling the progress announcer', () => {
+    const controller = makeController()
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 3,
+    })
+    liveThree(controller)
+    const announcement = vi.fn(() => 'Nightly check is running')
+    const fixture = mountLive(controller, announcement)
+
+    expect(query(fixture, '[data-id="hilos-table-pending-row"]')).not.toBeNull()
+    expect(query(fixture, '[data-id="hilos-table-progress"]')).toBeNull()
+    expect(
+      query(fixture, '[data-id="hilos-table-live-status"]')?.textContent,
+    ).toBe(
+      '1 row will move or leave. Also: new rows, a source is behind, work running.',
+    )
+    expect(announcement).not.toHaveBeenCalled()
   })
 
   // The placing classes sit on the track's own element, the way an Angular component

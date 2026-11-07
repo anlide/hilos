@@ -218,6 +218,7 @@ class HilosViewportTableRecord {
         [controller]="controller()"
         [columns]="frameColumns()"
         [tableProgress]="tableProgress()"
+        [tableProgressAnnouncement]="tableProgressAnnouncement()"
         [tableProgressAction]="tableProgressAction()"
         [bulkUntouched]="bulkUntouched()"
       />
@@ -1373,6 +1374,10 @@ export class HilosViewportTable<R> {
    * the two can be told apart from outside.
    */
   readonly dataId = input('hilos-viewport-table')
+  /** The full phrase announced when table progress is the room's main message. */
+  readonly tableProgressAnnouncement = input<
+    ((progress: HilosTableProgressState) => string) | undefined
+  >()
 
   private readonly geometryRoot =
     viewChild<ElementRef<HTMLElement>>('geometryRoot')

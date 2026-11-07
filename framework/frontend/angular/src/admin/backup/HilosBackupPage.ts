@@ -12,9 +12,9 @@
 // typing the archive id, and while it runs the addressed progress frames are the
 // only live thing on the page — the node is frozen and the table sends nothing.
 // Once it ends, the node stands in a verification window, and the one browser that
-// started the restore is offered the block that closes it — the backend answers
-// that personally in the page-data section, so a second admin looking at the same
-// page sees nothing. A pointer leads to the verifier circle in Maintenance. All
+// started the restore is offered a link to Maintenance — the backend answers that
+// personally in the page-data section, so a second admin looking at the same page
+// sees nothing. A pointer leads to the verifier circle in Maintenance. All
 // table logic, the row view-model, and what the backup list declares about its
 // frame — its search, the scope and period filters, the create button as its main
 // action, its columns — are the core headless's too; this view owns only the markup
@@ -29,9 +29,10 @@ import {
   signal,
 } from '@angular/core'
 import {
-  HILOS_BACKUP_CIRCLE_POINTER_COPY,
-  HILOS_BACKUP_CIRCLE_POINTER_PATH,
-  HILOS_BACKUP_REOPEN_COPY,
+  HILOS_BACKUP_CIRCLE_TAB_POINTER_COPY,
+  HILOS_BACKUP_CIRCLE_TAB_POINTER_PATH,
+  HILOS_BACKUP_MAINTENANCE_PATH,
+  HILOS_BACKUP_VERIFICATION_COPY,
   HILOS_BACKUP_SCOPES,
   backupMigrationBehind,
   backupMigrationNotes,
@@ -44,6 +45,7 @@ import {
   formatBackupOutOfReach,
   formatBackupShipping,
   formatBackupRunCaption,
+  formatBackupRunTitle,
   formatBackupSize,
   formatRestoreCliCommand,
   hasBackupFailureDetail,
@@ -118,7 +120,7 @@ import {
     HilosSwitch,
   ],
   template: `
-    <hilos-admin-page [page]="page">
+    <hilos-admin-page [page]="page" headKind="section">
       @if (restoreStatus(); as status) {
         <div
           class="alert"
@@ -144,7 +146,10 @@ import {
               @if (!status.rehydrateComplete) {
                 <div>
                   The system stays closed: not every process re-read the
-                  replaced database. Reopen it from the CLI with
+                  replaced database. Open it in Maintenance (<code>{{
+                    maintenancePath
+                  }}</code
+                  >) or from the CLI with
                   <code>php cli.php protected-mode:open</code>.
                 </div>
               }
@@ -177,16 +182,16 @@ import {
           role="status"
           data-id="hilos-backup-reopen-panel"
         >
-          <div class="fw-semibold">{{ reopenCopy.title }}</div>
-          <div class="small">{{ reopenCopy.body }}</div>
-          <button
-            type="button"
+          <div class="fw-semibold">{{ verificationCopy.title }}</div>
+          <div class="small">{{ verificationCopy.body }}</div>
+          <a
+            [hilosLink]="maintenancePath"
             class="btn btn-warning btn-sm mt-2"
             data-id="hilos-backup-reopen"
-            (click)="openReopen()"
           >
-            {{ reopenCopy.button }}
-          </button>
+            {{ verificationCopy.button }}
+            <i class="bi bi-box-arrow-up-right ms-1" aria-hidden="true"></i>
+          </a>
         </div>
       }
 
@@ -197,25 +202,33 @@ import {
             aria-hidden="true"
           ></i>
           <div class="flex-grow-1">
-            <div class="fw-semibold">{{ circlePointerCopy.title }}</div>
+            <div class="fw-semibold">{{ circleTabPointerCopy.title }}</div>
             <div class="small text-body-secondary">
-              {{ circlePointerCopy.body }}
+              {{ circleTabPointerCopy.body }}
             </div>
           </div>
           <a
-            [hilosLink]="circlePointerPath"
+            [hilosLink]="circleTabPointerPath"
             class="btn btn-outline-primary btn-sm text-nowrap"
             data-id="hilos-backup-circle-pointer-open"
-            >{{ circlePointerCopy.open
+            >{{ circleTabPointerCopy.open
             }}<i class="bi bi-box-arrow-up-right ms-1" aria-hidden="true"></i
           ></a>
         </div>
       </div>
 
-      <hilos-viewport-table [controller]="backups().controller">
-        <ng-template #tableProgress let-progress>{{
-          formatBackupRunCaption(progress)
-        }}</ng-template>
+      <hilos-viewport-table
+        [controller]="backups().controller"
+        [tableProgressAnnouncement]="formatBackupRunCaption"
+      >
+        <ng-template #tableProgress let-progress>
+          @if (formatBackupRunTitle(progress); as title) {
+            <strong>{{ title }}</strong> —
+            {{ formatBackupRunCaption(progress, false) }}
+          } @else {
+            {{ formatBackupRunCaption(progress, false) }}
+          }
+        </ng-template>
         <!-- An archive another node holds stays in the list, muted cell by
         cell: the row and its cells belong to the table, so the mark is worn by a
         wrapper this page draws inside each cell. The controls take none: a button
@@ -462,40 +475,6 @@ import {
             (click)="submitDelete()"
           >
             Delete
-          </button>
-        </ng-template>
-      </hilos-modal>
-
-      <hilos-modal
-        [open]="reopenOpen()"
-        (openChange)="reopenOpen.set($event)"
-        [title]="reopenCopy.modalTitle"
-        [busy]="reopen.busy()"
-        initialFocus="dialog"
-      >
-        <hilos-action-error
-          [action]="reopen"
-          [detailsTitle]="reopenCopy.refusalTitle"
-        />
-        <p class="mb-0 text-body-secondary">{{ reopenCopy.modalBody }}</p>
-        <ng-template #modalActions let-requestClose="requestClose">
-          <button
-            type="button"
-            class="btn btn-secondary"
-            [disabled]="reopen.busy()"
-            data-id="hilos-backup-reopen-cancel"
-            (click)="requestClose()"
-          >
-            Cancel
-          </button>
-          <button
-            hilosLoadingButton
-            class="btn-warning"
-            [loading]="reopen.busy()"
-            data-id="hilos-backup-reopen-confirm"
-            (click)="submitReopen()"
-          >
-            Reopen
           </button>
         </ng-template>
       </hilos-modal>
@@ -772,8 +751,10 @@ export class HilosBackupPage {
 
   protected readonly page = HilosPages.BACKUP
   private readonly timeZone = hilosSignal(hilosTimeZone)
-  protected readonly circlePointerCopy = HILOS_BACKUP_CIRCLE_POINTER_COPY
-  protected readonly circlePointerPath = HILOS_BACKUP_CIRCLE_POINTER_PATH
+  protected readonly circleTabPointerCopy = HILOS_BACKUP_CIRCLE_TAB_POINTER_COPY
+  protected readonly circleTabPointerPath = HILOS_BACKUP_CIRCLE_TAB_POINTER_PATH
+  protected readonly maintenancePath = HILOS_BACKUP_MAINTENANCE_PATH
+  protected readonly verificationCopy = HILOS_BACKUP_VERIFICATION_COPY
   protected readonly scopes = HILOS_BACKUP_SCOPES
   protected readonly isKeepable = isBackupKeepable
   protected readonly isDeletable = isBackupDeletable
@@ -786,6 +767,7 @@ export class HilosBackupPage {
   protected readonly formatOutOfReach = formatBackupOutOfReach
   protected readonly formatNodeLabel = formatHilosNodeLabel
   protected readonly formatBackupRunCaption = formatBackupRunCaption
+  protected readonly formatBackupRunTitle = formatBackupRunTitle
 
   /** Format an absolute backup moment in the reader's current time zone. */
   protected formatTime(moment: string | null | undefined): string {
@@ -834,13 +816,6 @@ export class HilosBackupPage {
 
     return row ? `Delete · ${row.id}` : 'Delete backup'
   })
-
-  // Reopen dialog: ending the verification window. Confirmation is the modal itself and
-  // nothing more — typing the archive id guards restore against picking the WRONG target,
-  // and reopening has no target to miss; the only mistake left is the click.
-  protected readonly reopenOpen = signal(false)
-  protected readonly reopen = createHilosTrackedAction()
-  protected readonly reopenCopy = HILOS_BACKUP_REOPEN_COPY
 
   // Failure-detail dialog: a read-only view of a failed backup's stored reason. It
   // holds a snapshot of the row it opened on, so a parallel delete or rotation does
@@ -1013,20 +988,6 @@ export class HilosBackupPage {
     this.del.clearError()
     this.deleteRow.set(row)
     this.deleteOpen.set(true)
-  }
-
-  protected openReopen(): void {
-    this.reopen.clearError()
-    this.reopenOpen.set(true)
-  }
-
-  protected async submitReopen(): Promise<void> {
-    if (this.reopen.busy()) {
-      return
-    }
-    if (await this.reopen.run(this.actions().sendBackupReopen())) {
-      this.reopenOpen.set(false)
-    }
   }
 
   protected openDetails(row: HilosBackupRow): void {

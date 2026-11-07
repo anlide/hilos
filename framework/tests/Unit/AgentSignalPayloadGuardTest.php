@@ -18,7 +18,6 @@ use Hilos\Auth\Throttle\DTO\ThrottleSuccessSignalData;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
-use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Constants\HilosSignalConstants;
@@ -218,11 +217,6 @@ final class AgentSignalPayloadGuardTest extends TestCase
                 BackupAgent::class,
                 HilosSignalConstants::BACKUP_AGENT_RESTORE,
                 BackupRestoreSignalData::class,
-            ],
-            'BACKUP_AGENT_REOPEN' => [
-                BackupAgent::class,
-                HilosSignalConstants::BACKUP_AGENT_REOPEN,
-                BackupReopenSignalData::class,
             ],
             'DAEMON_CLUSTER_PICTURE_PORTION' => [
                 PayloadGuardHilosDaemonAgent::class,

@@ -7,7 +7,6 @@ namespace Hilos\Tests\Unit;
 use DateTimeImmutable;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
-use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Backup\BackupConstants;
@@ -472,42 +471,6 @@ final class BackupAgentTest extends TestCase
 
         $this->assertTrue($this->restoreRow()->running);
         $this->assertSame(100, $this->restoreRow()->estimatedSeconds);
-    }
-
-    public function testAReopenInTheWindowAsksForTheLiftAtOnceWhenNoLoginsAreOwed(): void
-    {
-        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING);
-        $agent = new BackupAgent();
-
-        $agent->onSignalAgent(
-            new AgentSignalData(new BackupReopenSignalData('accept-key-of-the-tab')),
-            'test',
-            HilosSignalConstants::BACKUP_AGENT_REOPEN,
-        );
-
-        $this->assertNotNull($this->nextSignalOfType(SignalTypeConstants::PROTECTED_MODE_DISABLE));
-    }
-
-    public function testAReopenArrivingWhileACloseIsInFlightLeavesTheFreezeStanding(): void
-    {
-        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING);
-        $agent = new BackupAgent();
-
-        $agent->onSignalCommand(
-            new CommandRequestDTO(correlationId: 'corr-1', command: CliCommands::PROTECTED_MODE_CLOSE, payload: []),
-            'test',
-            'test',
-        );
-
-        $this->assertNotNull($this->nextSignalOfType(SignalTypeConstants::PROTECTED_MODE_REFREEZE));
-
-        $agent->onSignalAgent(
-            new AgentSignalData(new BackupReopenSignalData('accept-key-of-the-tab')),
-            'test',
-            HilosSignalConstants::BACKUP_AGENT_REOPEN,
-        );
-
-        $this->assertNull($this->nextSignalOfType(SignalTypeConstants::PROTECTED_MODE_DISABLE));
     }
 
     public function testRotationCountsItsYearsOnTheProjectClockAndNotOnTheProcessOne(): void
