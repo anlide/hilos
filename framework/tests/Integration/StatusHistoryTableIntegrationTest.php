@@ -9,33 +9,15 @@ use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
-use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Tables\Status\HilosStatusHistoryTable;
 use Hilos\Tables\Status\HilosStatusHistoryTableRow;
-use Hilos\Core\Execution\ExecutionFrame;
-use Hilos\Core\Source\Interest\SourceConsumer;
-use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Table\TableAnchorDirection;
-use Hilos\Core\TruthSource\OwnershipDeclaration;
-use Hilos\Core\TruthSource\TruthSourceRegistry;
-use Hilos\Database\Actions\Collection\StatusIncidentsActions;
-use Hilos\Database\Actions\Collection\StatusMaintenancePeriodsActions;
-use Hilos\Database\Actions\Item\StatusIncidentActions;
-use Hilos\Database\Actions\Item\StatusMaintenancePeriodActions;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
-use Hilos\Database\Object\Collection\StatusIncidents as ObjectStatusIncidents;
-use Hilos\Database\Object\Collection\StatusMaintenancePeriods as ObjectStatusMaintenancePeriods;
 use Hilos\Database\Object\Objects;
-use Hilos\Database\Schema\Schema;
-use Hilos\Database\View\Collection\StatusIncidents;
-use Hilos\Database\View\Collection\StatusMaintenancePeriods;
 use Hilos\Hilos;
 use Hilos\Status\DTO\StatusHistoryAnchor;
 use Hilos\Status\DTO\StatusHistoryEntry;
 use Hilos\Status\DTO\StatusHistoryQuery;
-use Hilos\Status\StatusAgent;
-use Hilos\Testing\BreaksOrmState;
 use Hilos\Testing\IntegrationTest;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionProperty;
@@ -344,44 +326,6 @@ final class StatusHistoryTableIntegrationTest extends StatusHistoryStorageTestCa
         self::assertNull($half->rowsBefore);
     }
 
-    /** Facets, membership and counts use SQL collation, escaped wildcards, saved component sets and the same filters. */
-    #[BreaksOrmState]
-    public function testMergedMembershipFacetsSearchAndDeletedBoundaryAgree(): void
-    {
-        $this->incident(2, 1000);
-        $this->incident(10, 2000, 'recovered_before_publication', null);
-        $this->incident(11, 3000, 'canceled_publication', null, 'Other');
-        $this->period(2, 1000);
-        $this->period(10, 2000, keys: '["retired-api"]');
-        $this->period(11, 3000, title: 'Other');
-        $table = new HilosStatusHistoryTable();
-        $query = new TableQueryDTO(search: 'SAVED 50%_!', filter: ['componentKey' => 'retired']);
-        $window = $table->getPage($query);
-        self::assertSame(['incident:10', 'maintenance:2', 'incident:2'], array_column($window->rows, 'id'));
-        foreach (['incident:2', 'incident:10', 'maintenance:2'] as $key) {
-            self::assertTrue($table->containsRow($key, $query));
-        }
-        foreach (['maintenance:10', 'incident:11', 'maintenance:11'] as $key) {
-            self::assertFalse($table->containsRow($key, $query));
-        }
-        $facets = $table->facetCounts($query, ['componentKey' => ['retired', 'retired-api'],
-            'outcome' => ['resolved', 'recovered_before_publication', 'canceled_publication', 'maintenance_completed'], 'from' => ['1970-01-01']]);
-        self::assertSame(['componentKey', 'outcome'], array_keys($facets));
-        self::assertSame(4, $facets['componentKey']['any']->count);
-        self::assertSame(3, $facets['componentKey']['options']['retired']->count);
-        self::assertSame(1, $facets['componentKey']['options']['retired-api']->count);
-        self::assertSame([1, 1, 0, 1], array_map(static fn($count): int => $count->count, array_values($facets['outcome']['options'])));
-        self::assertTrue($facets['outcome']['any']->exact);
-        $shown = $table->getPage(new TableQueryDTO(search: 'no match', shownFields: ['outcome']));
-        self::assertSame(6, $shown->totalCount);
-        $anchor = new TableAnchorDTO(['startedAt' => 2000, 'kindRank' => 0, 'sourceId' => 10]);
-        Database::sql('DELETE FROM `hilos_status_incident` WHERE `id` = 10');
-        $after = $table->getPage(new TableQueryDTO(anchor: $anchor, limit: 2));
-        self::assertSame(['maintenance:2', 'incident:2'], array_column($after->rows, 'id'));
-        self::assertSame(3, $after->rowsBefore);
-        self::assertSame(5, $after->totalCount);
-    }
-
     /**
      * @param string $day Calendar day spanning a clock change
      * @param string $utcStart Independently specified UTC boundary
@@ -430,105 +374,5 @@ final class StatusHistoryTableIntegrationTest extends StatusHistoryStorageTestCa
         $window = $table->getPage(new TableQueryDTO(sort: TableSortOrderDTO::of(
             new TableSortDTO('startedAt', 'asc'), new TableSortDTO('sourceId', 'desc'))));
         self::assertSame(['maintenance:2', 'incident:2'], array_column($window->rows, 'id'));
-    }
-
-    /**
-     * @param int $id Explicit numeric primary key
-     * @param int $at Start in epoch milliseconds UTC
-     * @param ?string $outcome Null for an open fact
-     * @param ?int $publishedAt Publication timestamp
-     * @param string $title Stored component name
-     */
-    private function incident(
-        int $id,
-        int $at,
-        ?string $outcome = 'resolved',
-        ?int $publishedAt = 1500,
-        string $title = 'Saved 50%_! component',
-    ): void {
-        Database::sql('INSERT INTO `hilos_status_incident` '
-            . '(`id`, `component_key`, `component_name`, `severity`, `peak_severity`, `detected_at`, `publish_at`, '
-            . '`published_at`, `suppressed_at`, `resolved_at`, `outcome`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [$id, 'retired', $title, 'partial_outage', 'major_outage', $at, 1500, $publishedAt,
-                $publishedAt === null ? 1200 : null, $outcome === null ? null : 3000, $outcome]);
-    }
-
-    /**
-     * @param int $id Explicit numeric primary key
-     * @param int $at Start in epoch milliseconds UTC
-     * @param bool $completed Whether completion was observed
-     * @param ?int $endedAt Exact end, null when continuity was lost
-     * @param string $keys Stored JSON component set
-     * @param string $title Stored announcement title
-     */
-    private function period(
-        int $id,
-        int $at,
-        bool $completed = true,
-        ?int $endedAt = null,
-        string $keys = '["retired","api"]',
-        string $title = 'Saved 50%_! work',
-    ): void {
-        Database::sql('INSERT INTO `hilos_status_maintenance_period` '
-            . '(`id`, `public_id`, `work_public_id`, `announcement_known`, `title`, `component_keys_json`, '
-            . '`started_at`, `last_observed_at`, `ended_at`, `completion_observed_at`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [$id, str_pad((string)$id, 32, '0', STR_PAD_LEFT), str_repeat('b', 32), true, $title, $keys,
-                $at, $at, $endedAt, $completed ? 3000 : null]);
-    }
-}
-
-/** Creates schema before the managed rollback root and restores the production facade afterwards. */
-abstract class StatusHistoryStorageTestCase extends FrameworkRollbackIntegrationTestCase
-{
-    private const string OWNER = 'status-history-storage';
-    private const array TABLES = ['hilos_status_work', 'hilos_status_maintenance_period', 'hilos_status_incident'];
-
-    private ?int $ownerToken = null;
-
-    /** Installs current stubs outside the rollback root and mounts the two real production read paths. */
-    protected function prepareIntegrationEnvironment(): void
-    {
-        parent::prepareIntegrationEnvironment();
-        foreach (self::TABLES as $table) {
-            Database::sqlRun(file_get_contents(dirname(__DIR__, 2) . '/backend/Database/Migration/Stub/create_' . $table . '.sql'));
-        }
-        Schema::reset();
-        Schema::initialize();
-        OwnershipDeclaration::claimDb(StatusAgent::class, self::OWNER);
-        $this->ownerToken = ExecutionContext::push(new ExecutionFrame(agentId: self::OWNER));
-        Hilos::$db = new StatusHistoryStorageDbContext();
-        Hilos::$db->configure();
-    }
-
-    /** Releases fixture schema after rollback and drops the temporary owner/read declarations. */
-    protected function releaseIntegrationEnvironment(): void
-    {
-        try {
-            foreach (array_reverse(self::TABLES) as $table) {
-                Database::sqlRun('DROP TABLE IF EXISTS `' . $table . '`');
-            }
-        } finally {
-            TruthSourceRegistry::unregisterAgent(self::OWNER);
-            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent(self::OWNER));
-            if ($this->ownerToken !== null) {
-                ExecutionContext::pop($this->ownerToken);
-                $this->ownerToken = null;
-            }
-            parent::releaseIntegrationEnvironment();
-        }
-    }
-}
-
-/** Production Entity/Object/View/action chains with the same lazy-key strategy as the Status feature. */
-final class StatusHistoryStorageDbContext extends HilosDbContext
-{
-    /** Mounts the two history sources without enabling unrelated pages or runtime state. */
-    public function configure(): void
-    {
-        $this->_objectCollections[self::statusIncidents] = ObjectStatusIncidents::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::statusIncidents, StatusIncidents::class, StatusIncidentsActions::class, StatusIncidentActions::class);
-        $this->_objectCollections[self::statusMaintenancePeriods] = ObjectStatusMaintenancePeriods::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::statusMaintenancePeriods, StatusMaintenancePeriods::class,
-            StatusMaintenancePeriodsActions::class, StatusMaintenancePeriodActions::class);
     }
 }

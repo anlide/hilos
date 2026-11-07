@@ -11,8 +11,7 @@ use Hilos\Testing\IntegrationTest;
 
 /** Exercises the unchanged action's own transaction; persisted expectations bypass its ORM readers. */
 #[IntegrationTest]
-#[BreaksOrmState]
-final class SecondFactorTrustsRollbackIntegrationTest extends FrameworkRollbackIntegrationTestCase
+final class SecondFactorTrustsRollbackIntegrationTest extends FrameworkRollbackIntegrationTestCase implements BreaksOrmState
 {
     /** Case data is inserted only after the rollback scope starts. All SQL datetimes are fixed UTC. */
     protected function setUpInTransaction(): void

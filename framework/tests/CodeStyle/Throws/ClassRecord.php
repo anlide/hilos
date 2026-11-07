@@ -8,8 +8,8 @@ namespace Hilos\Tests\CodeStyle\Throws;
  * One class, interface, trait or enum as the index read it, with the links a call
  * target is resolved through, the property types a receiver is resolved through and
  * the declarations a rule judges the class itself by — its constants, the qualified
- * class names stored beside their raw value text, whether it is abstract, and where
- * it stands.
+ * class names stored beside their raw value text, whether it is abstract, which
+ * keyword declared it, and where it stands.
  *
  * The types a class-level `@property-read` or `@property` tag writes down are kept
  * apart from the real declarations rather than merged into them: a declaration inside
@@ -33,6 +33,7 @@ final readonly class ClassRecord
      * @param bool $isAbstract True when the declaration carries the `abstract` modifier
      * @param int $line Line the declaration sits on, which is where a hit about the class as a whole is reported
      * @param list<array{name: string, line: int}> $attributes Explicit attributes, resolved without loading their classes
+     * @param int $declarationKind Token of the declaration kind, T_CLASS, T_INTERFACE, T_TRAIT or T_ENUM
      */
     public function __construct(
         public string $name,
@@ -49,6 +50,7 @@ final readonly class ClassRecord
         public bool $isAbstract,
         public int $line,
         public array $attributes = [],
+        public int $declarationKind = T_CLASS,
     ) {
     }
 

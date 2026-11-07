@@ -1116,8 +1116,8 @@ admission or bypassing the environment gate. Ordinary restore and `reHydrate()`
 remain governed by their own contracts; this restriction is on the test-only
 forget operation.
 
-Rollback-scoped integration cases request a cold ORM reset after rollback with
-`#[BreaksOrmState]`; see [Rollback-scoped integration tests](testing/integration-tests.md#cold-orm-reset-after-rollback).
+Rollback-scoped integration cases request a cold ORM reset after rollback by
+implementing `Hilos\Testing\BreaksOrmState`; see [Rollback-scoped integration tests](testing/integration-tests.md#cold-orm-reset-after-rollback).
 
 **Choose the process whose memory the test needs to forget.** In the current
 PHP test process, use the mounted context:

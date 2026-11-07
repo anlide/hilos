@@ -8,16 +8,15 @@ use Hilos\Database\Database as Db;
 use Hilos\Testing\{BreaksOrmState as Breaks, IntegrationTest as CaseMarker};
 use Hilos\Tests\CodeStyle\Fixtures\ThrowsTree\Integration\Backend\Product;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\TestCase;
 use stdClass;
 
 /** @property-read stdClass $observation Attribute groups must not hide this docblock. */
 #[Group('integration'), CaseMarker]
-#[Breaks]
-final class HelperCase extends MiddleEnvironment
+final class HelperCase extends MiddleEnvironment implements Breaks
 {
     use OuterHelper;
 
-    #[Breaks]
     public function exercise(LocalHelper $helper): void
     {
         $this->inheritedHelper();
@@ -77,9 +76,8 @@ final class ManagedLifecycleCase extends MiddleEnvironment
 }
 
 #[\Hilos\Testing\IntegrationTest]
-final class QualifiedCase extends MiddleEnvironment
+final class QualifiedCase extends MiddleEnvironment implements \Hilos\Testing\BreaksOrmState
 {
-    #[\Hilos\Testing\BreaksOrmState]
     public function exercise(): void
     {
         Db::transactionCommit();
@@ -87,7 +85,7 @@ final class QualifiedCase extends MiddleEnvironment
 }
 
 #[Group(['nested' => [new stdClass(), CaseMarker::class]])]
-final class ArgumentLookAlike extends MiddleEnvironment
+final class ArgumentLookAlike extends TestCase
 {
     #[Group('method'), Breaks]
     public string $property = 'not a method attribute';

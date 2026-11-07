@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Tests\CodeStyle\Fixtures\Good;
 
 use Hilos\Database\Database;
+use Hilos\Testing\BreaksOrmState;
+use Hilos\Testing\BreaksOrmState as OrmReset;
 use Hilos\Testing\IntegrationTest;
 use Hilos\Testing\RollbackIntegrationTestCase;
+use Hilos\Tests\CodeStyle\Fixtures\ThrowsTree\Integration\Tests\DerivedOrmReset;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Vendor\IntegrationTest as ForeignIntegrationTest;
@@ -42,4 +45,29 @@ final class SafeIntegration extends RollbackIntegrationTestCase
         Database::transactionStart();
         Database::transactionRollback();
     }
+}
+
+#[IntegrationTest]
+final class DirectOrmReset extends RollbackIntegrationTestCase implements BreaksOrmState
+{
+}
+
+#[IntegrationTest]
+final class AliasedOrmReset extends RollbackIntegrationTestCase implements OrmReset
+{
+}
+
+#[IntegrationTest]
+class MarkedOrmCarrier extends RollbackIntegrationTestCase implements BreaksOrmState
+{
+}
+
+#[IntegrationTest]
+final class InheritedOrmReset extends MarkedOrmCarrier
+{
+}
+
+#[IntegrationTest]
+final class InheritedInterfaceReset extends RollbackIntegrationTestCase implements DerivedOrmReset
+{
 }

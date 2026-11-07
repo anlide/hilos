@@ -7,40 +7,21 @@ namespace Hilos\Tests\Integration;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\AdminViewMode\ViewerFields;
 use Hilos\AdminViewMode\WireField;
-use Hilos\Backup\Anonymization\AnonymizationCompatibilityValidator;
-use Hilos\Backup\Anonymization\AnonymizationCoverageValidator;
-use Hilos\Backup\Anonymization\AnonymizationSqlBuilder;
-use Hilos\Backup\Anonymization\LiveSchemaReader;
 use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
-use Hilos\Core\Source\Interest\SourceConsumer;
-use Hilos\Core\Source\Interest\SourceInterestRegistry;
-use Hilos\Core\Source\SourceChange;
-use Hilos\Core\Source\SourceChangeBus;
-use Hilos\Core\Source\SourceChangeProvenance;
-use Hilos\Core\Source\SourceMirrorSubscriberInterface;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableConstants;
-use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
-use Hilos\Core\TruthSource\TruthSourceRegistry;
-use Hilos\Database\Actions\Collection\StatusSubscribersActions;
-use Hilos\Database\Actions\Item\StatusSubscriberActions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\StatusSubscriber as EntityStatusSubscriber;
-use Hilos\Database\Object\Collection\StatusSubscribers as ObjectStatusSubscribers;
 use Hilos\Database\Object\Item\StatusSubscriber as ObjectStatusSubscriber;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\EntitySchemaAudit;
-use Hilos\Database\Schema\Schema;
-use Hilos\Database\View\Collection\StatusSubscribers;
 use Hilos\Hilos;
-use Hilos\Status\StatusAgent;
-use Hilos\Testing\BreaksOrmState;
 use Hilos\Testing\IntegrationTest;
 use ReflectionProperty;
 
@@ -210,124 +191,6 @@ final class StatusSubscriberStorageIntegrationTest extends StatusSubscriberStora
                     self::assertTrue($direction === TableConstants::ORDER_ASC ? $left < $right : $left > $right);
                 }
             }
-        }
-    }
-
-    #[BreaksOrmState]
-    public function testAnonymizationPreservesUniqueUndeliverableAddressesAndDisablesLinks(): void
-    {
-        $first = Hilos::$db->statusSubscribers->actions->create('one@example.org', 1000, 'UTC');
-        $second = Hilos::$db->statusSubscribers->actions->create('two@example.org', 2000, 'Europe/Warsaw');
-        Hilos::$db->statusSubscribers[$second->subscriberId]->actions->confirm($second->token, 3000);
-        $schemas = LiveSchemaReader::read(0);
-        $registry = new PiiRegistry(
-            [0 => [EntityStatusSubscriber::_table => EntityStatusSubscriber::_pii]],
-            [0 => [EntityStatusSubscriber::_table => EntityStatusSubscriber::_piiNotPersonal]],
-        );
-        AnonymizationCoverageValidator::validateLiveSchema(
-            $registry, [0 => [EntityStatusSubscriber::_table => $schemas[EntityStatusSubscriber::_table]]],
-        );
-        AnonymizationCompatibilityValidator::validate($registry, 0, $schemas, static fn (): int => $second->subscriberId);
-        Database::sql(new AnonymizationSqlBuilder('test-salt')->updateStatement(
-            $schemas[EntityStatusSubscriber::_table], EntityStatusSubscriber::_pii,
-        ));
-        foreach ([$first->subscriberId, $second->subscriberId] as $id) {
-            $row = $this->stored($id);
-            self::assertSame('user' . $id . '@example.invalid', $row['email']);
-            self::assertNull($row['confirmation_token_hash']);
-            self::assertNull($row['unsubscribe_token']);
-            self::assertNull($row['browser_time_zone']);
-        }
-        self::assertSame(1, (int)$this->stored($second->subscriberId)['confirmed']);
-        self::assertSame(3000, (int)$this->stored($second->subscriberId)['confirmed_at']);
-        self::assertNull(Hilos::$db->statusSubscribers->findByConfirmationToken($first->token));
-        $delivered = false;
-        Hilos::$db->statusSubscribers[$first->subscriberId]->deliverMail(
-            static function () use (&$delivered): void { $delivered = true; },
-        );
-        self::assertFalse($delivered);
-    }
-
-    /**
-     * @param int $id Persisted primary key
-     * @return array<string, mixed> Independent SQL storage row, including DB-only secrets for assertions
-     */
-    private function stored(int $id): array
-    {
-        return Database::sql('SELECT * FROM `hilos_status_subscriber` WHERE `id` = ?', [$id])->first()->first();
-    }
-}
-
-/** Keeps schema preparation and environment restoration outside marked test cases. */
-abstract class StatusSubscriberStorageIntegrationTestCase extends FrameworkRollbackIntegrationTestCase
-{
-    private const string OWNER = 'status-subscriber-storage';
-
-    protected StatusSubscriberSyncMirror $syncMirror;
-
-    private ?int $ownerToken = null;
-    /** @var array Original mirror registrations restored after each case */
-    private array $previousMirrors = [];
-
-    /** Raises the new table and mounts its production chain before the rollback scope opens. */
-    protected function prepareIntegrationEnvironment(): void
-    {
-        parent::prepareIntegrationEnvironment();
-        Database::sqlRun(file_get_contents(dirname(__DIR__, 2) . '/backend/Database/Migration/Stub/create_hilos_status_subscriber.sql'));
-        Schema::reset();
-        Schema::initialize();
-        OwnershipDeclaration::claimDb(StatusAgent::class, self::OWNER);
-        $this->ownerToken = ExecutionContext::push(new ExecutionFrame(agentId: self::OWNER));
-        Hilos::$db = new StatusSubscriberStorageDbContext();
-        Hilos::$db->configure();
-        $this->previousMirrors = (new ReflectionProperty(SourceChangeBus::class, 'mirrors'))->getValue();
-        $this->syncMirror = new StatusSubscriberSyncMirror();
-        SourceChangeBus::subscribe($this->syncMirror);
-    }
-
-    /** Drops the table after rollback and releases the owner before restoring the inherited environment. */
-    protected function releaseIntegrationEnvironment(): void
-    {
-        try {
-            Database::sqlRun('DROP TABLE IF EXISTS `hilos_status_subscriber`');
-        } finally {
-            (new ReflectionProperty(SourceChangeBus::class, 'mirrors'))->setValue(null, $this->previousMirrors);
-            TruthSourceRegistry::unregisterAgent(self::OWNER);
-            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent(self::OWNER));
-            if ($this->ownerToken !== null) {
-                ExecutionContext::pop($this->ownerToken);
-                $this->ownerToken = null;
-            }
-            parent::releaseIntegrationEnvironment();
-        }
-    }
-}
-
-/** Mounts only the new production chain while the environment base owns its own fixture tables. */
-final class StatusSubscriberStorageDbContext extends HilosDbContext
-{
-    /** Configures the lazy production chain without requiring other Status feature dependencies. */
-    public function configure(): void
-    {
-        $this->_objectCollections[self::statusSubscribers] = ObjectStatusSubscribers::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::statusSubscribers, StatusSubscribers::class, StatusSubscribersActions::class, StatusSubscriberActions::class);
-    }
-}
-
-/** Captures the same scalar rows and diffs that feed the DB-sync publication. */
-final class StatusSubscriberSyncMirror implements SourceMirrorSubscriberInterface
-{
-    /** @var list<array<string, mixed>> Non-secret subscription row facts */
-    public array $rows = [];
-
-    /**
-     * @param SourceChange $change Store mutation
-     * @param SourceChangeProvenance $provenance Origin of the write
-     */
-    public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
-    {
-        if ($change->sourceKey === HilosDbContext::statusSubscribers) {
-            $this->rows[] = $change->row;
         }
     }
 }

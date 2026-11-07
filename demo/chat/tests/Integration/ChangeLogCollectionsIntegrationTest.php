@@ -188,8 +188,7 @@ abstract class ChangeLogCollectionsMetadataEnvironment extends ChangeLogCollecti
 
 /** Actual facade reads share the trigger writer's connection, without applying journal DB-sync frames. */
 #[IntegrationTest]
-#[BreaksOrmState]
-final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMetadataEnvironment
+final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMetadataEnvironment implements BreaksOrmState
 {
     private const array JOURNAL_TABLES = [
         'hilos_change_log_value', 'hilos_change_log_change', 'hilos_change_log',

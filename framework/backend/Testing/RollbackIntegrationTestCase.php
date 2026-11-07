@@ -5,13 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Testing;
 
 use Hilos\Database\Database;
-use Hilos\Database\Exception\TestRollbackRefusedException;
 use Hilos\Database\Transaction\TestRollbackScope;
 use PHPUnit\Event\Code\ThrowableBuilder;
 use PHPUnit\Event\Facade;
 use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\TestCase;
-use ReflectionClass;
 use Throwable;
 
 /** Explicitly marked cases own one handler and one rollback scope; legacy tests keep their lifecycle. */
@@ -24,21 +22,15 @@ abstract class RollbackIntegrationTestCase extends TestCase
     private bool $scopeStarted = false;
 
     /**
-     * Validates the concrete declaration before environment setup; case fixtures start inside the scope.
+     * Records a class-level cold-reset opt-in before environment setup; case fixtures start inside the scope.
      * Setup failures clean up here because a runner need not call tearDown after failed setup.
      *
-     * @throws Throwable When declaration, environment or transactional setup fails
+     * @throws Throwable When environment or transactional setup fails
      */
     final protected function setUp(): void
     {
         parent::setUp();
-        // The declaration is the opt-in: PHP has no non-Reflection reader for class/method attributes.
-        $class = new ReflectionClass($this);
-        if ($class->getAttributes(IntegrationTest::class) === []) {
-            throw new TestRollbackRefusedException('The concrete rollback test class must declare #[IntegrationTest]');
-        }
-        $this->resetRequired = $class->getAttributes(BreaksOrmState::class) !== []
-            || $class->getMethod($this->name())->getAttributes(BreaksOrmState::class) !== [];
+        $this->resetRequired = $this instanceof BreaksOrmState;
 
         try {
             $this->environmentPrepared = true;

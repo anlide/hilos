@@ -107,16 +107,16 @@ final class RollbackHarnessIntegrationTest extends TestCase
         self::assertSame([], $next->trace->settingsAfterRollback);
     }
 
-    /** A method-only marker resets that method; its unmarked sibling never even asks for targets. */
-    public function testMethodMarkerAndUnmarkedCase(): void
+    /** A class-level opt-in resets that class; its unmarked sibling never even asks for targets. */
+    public function testClassMarkerAndUnmarkedCase(): void
     {
-        $plain = new RollbackHarnessMethodCase('plain');
+        $plain = new RollbackHarnessPlainCase('plain');
         $plainResult = $this->runFixture($plain);
         self::assertSame(0, $plainResult->numberOfTestFailedEvents(), $this->messages($plainResult));
         self::assertSame(0, $plainResult->numberOfTestErroredEvents(), $this->messages($plainResult));
         self::assertSame(['prepare', 'setup', 'body', 'rollback:0', 'rollback:1', 'release'], $plain->trace->events);
 
-        $marked = new RollbackHarnessMethodCase('marked');
+        $marked = new RollbackHarnessMarkedCase('marked');
         $markedResult = $this->runFixture($marked);
         self::assertSame(0, $markedResult->numberOfTestFailedEvents(), $this->messages($markedResult));
         self::assertSame(0, $markedResult->numberOfTestErroredEvents(), $this->messages($markedResult));
@@ -352,8 +352,7 @@ final class RollbackHarnessDbContext extends HilosDbContext
 }
 
 #[IntegrationTest]
-#[BreaksOrmState]
-final class RollbackHarnessCase extends RollbackHarnessEnvironment
+final class RollbackHarnessCase extends RollbackHarnessEnvironment implements BreaksOrmState
 {
     /** Runner-invoked body, deliberately named without the test prefix to avoid suite discovery. */
     public function exercise(): void
@@ -376,17 +375,20 @@ final class RollbackHarnessCase extends RollbackHarnessEnvironment
 }
 
 #[IntegrationTest]
-final class RollbackHarnessMethodCase extends RollbackHarnessEnvironment
+final class RollbackHarnessPlainCase extends RollbackHarnessEnvironment
 {
-    /** This body has no ORM-breaking marker and must never request reset targets. */
+    /** This class does not opt into a cold ORM reset and must never request targets. */
     public function plain(): void
     {
         $this->trace->events[] = 'body';
         self::assertTrue(Database::hasOpenTransactions());
     }
+}
 
-    /** The same concrete class may mark just one body. */
-    #[BreaksOrmState]
+#[IntegrationTest]
+final class RollbackHarnessMarkedCase extends RollbackHarnessEnvironment implements BreaksOrmState
+{
+    /** This class opts into a cold ORM reset for its only body. */
     public function marked(): void
     {
         $this->trace->events[] = 'body';

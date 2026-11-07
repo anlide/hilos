@@ -12,6 +12,11 @@ The class must extend `Hilos\Testing\RollbackIntegrationTestCase`, directly or
 through an environment base. The example here uses
 `FrameworkRollbackIntegrationTestCase`.
 
+The requirement runs the other way as well. A concrete class that extends the
+rollback base, directly or through an environment base, must declare its own
+`#[IntegrationTest]`. A marker on an ancestor does not replace that
+declaration. An unmarked abstract environment is allowed.
+
 Unmarked integration classes and their existing base classes keep their current
 lifecycle. Do not convert legacy tests as part of an unrelated change.
 
@@ -41,7 +46,9 @@ failure.
 
 **Checked automatically: `INTEGRATION-TEST`.** The source guard recognizes the
 explicit marker, requires the rollback base, and rejects marked cases that take
-over the managed lifecycle.
+over the managed lifecycle. It also requires the concrete class's own marker;
+a marker on an ancestor does not satisfy that check. Absence of the marker is
+reported by the source guard and is not checked at runtime.
 
 ## Rollback Scope
 
@@ -98,11 +105,14 @@ those stubs to make them transactional.
 
 ## Cold ORM Reset After Rollback
 
-Add `#[Hilos\Testing\BreaksOrmState]` to a marked class or one of its test
-methods only when the test deliberately invalidates already-loaded ORM memory,
-such as by changing a warmed row with raw SQL. Correct database writes through
-the normal write APIs do not need this marker. Without it, the reset hook is not
-called.
+Implement the empty interface `Hilos\Testing\BreaksOrmState` on a marked class
+only when the test deliberately invalidates already-loaded ORM memory, such as
+by changing a warmed row with raw SQL. Correct database writes through the
+normal write APIs do not need the interface. Without the interface,
+`ormResetTargets()` is not called.
+
+There is no method-level mark. A case that invalidates loaded memory only in
+part lives in its own class. An ordinary case does not implement the interface.
 
 The default `ormResetTargets()` returns a list containing
 `OrmResetTarget::forCurrentProcess()`. Override it only to name every process
@@ -155,6 +165,16 @@ procedural mysqli calls, and known unsafe executed SQL in marked cases. It
 follows indexed test-local calls through `self`, `parent`, and `static`, traits,
 static helpers, and declared receivers. Production callees retain their own
 transaction behavior.
+
+The guard recognizes `Hilos\Testing\BreaksOrmState` from an `implements`
+clause, an import alias, a parent class, and the parents of that interface. A
+class or method attribute whose resolved name is `Hilos\Testing\BreaksOrmState`
+is refused even on a class that already carries `#[IntegrationTest]`. An
+abstract class that implements the interface is not a way around the marker:
+a concrete descendant still needs its own `#[IntegrationTest]`, and the
+abstract class is reported whether or not it carries one. The interface itself
+needs no marker. An unmarked abstract environment that does not implement the
+interface is outside this finding.
 
 The index does not resolve dynamic calls, free-function helpers, returned
 receivers, trait adaptations, or interprocess effects. SQL extraction covers

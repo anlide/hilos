@@ -14,7 +14,12 @@ use Hilos\Tests\CodeStyle\Throws\SourceIndex;
 use Hilos\Tests\CodeStyle\Violation;
 
 /**
- * Judges explicit Hilos attributes, without loading any analyzed class.
+ * Judges the rollback opt-in from source, without loading any analyzed class.
+ *
+ * A concrete class that reaches the rollback harness needs its own IntegrationTest
+ * attribute. BreaksOrmState is an interface on that class: an attribute spelling the
+ * old name is refused, and a class that implements the interface needs the same marker.
+ * Interfaces themselves are not cases.
  *
  * Follows indexed calls into test roots (self/parent/static, traits, static helpers and
  * declared receivers). Production callees retain their own transactions. Environment
@@ -75,8 +80,12 @@ final readonly class IntegrationTestRule implements CrossFileRule
         foreach ($index->classes() as $class) {
             $marked = $this->hasAttribute($class->attributes, self::MARK);
             foreach ($class->attributes as $attribute) {
-                if (!$marked && strcasecmp($attribute['name'], self::BREAKS) === 0) {
-                    $hits[] = $this->hit($class, $attribute['line'], 'BreaksOrmState requires explicit IntegrationTest on its class');
+                if (strcasecmp($attribute['name'], self::BREAKS) === 0) {
+                    $hits[] = $this->hit(
+                        $class,
+                        $attribute['line'],
+                        'BreaksOrmState is an interface; implement it on the integration class',
+                    );
                 }
             }
             foreach ($class->methods as $method) {
@@ -84,10 +93,21 @@ final readonly class IntegrationTestRule implements CrossFileRule
                     if (strcasecmp($attribute['name'], self::MARK) === 0) {
                         $hits[] = $this->hit($class, $attribute['line'], 'IntegrationTest is a class attribute, not a method attribute');
                     }
-                    if (!$marked && strcasecmp($attribute['name'], self::BREAKS) === 0) {
-                        $hits[] = $this->hit($class, $attribute['line'], 'BreaksOrmState requires explicit IntegrationTest on its class');
+                    if (strcasecmp($attribute['name'], self::BREAKS) === 0) {
+                        $hits[] = $this->hit(
+                            $class,
+                            $attribute['line'],
+                            'BreaksOrmState is an interface; implement it on the integration class',
+                        );
                     }
                 }
+            }
+            if ($class->declarationKind === T_CLASS && !$class->isAbstract
+                && !$marked && $this->extendsHarness($index, $class)) {
+                $hits[] = $this->hit($class, $class->line, 'Concrete rollback test class must declare #[IntegrationTest]');
+            }
+            if ($class->declarationKind === T_CLASS && !$marked && $this->implementsBreaks($index, $class)) {
+                $hits[] = $this->hit($class, $class->line, 'BreaksOrmState requires explicit IntegrationTest on its class');
             }
             if (!$marked) {
                 continue;
@@ -130,7 +150,7 @@ final readonly class IntegrationTestRule implements CrossFileRule
 
     /**
      * @param SourceIndex $index Source declarations
-     * @param ClassRecord $class Marked class
+     * @param ClassRecord $class Class whose parent chain is followed
      * @return bool Whether its transitive parent chain reaches the rollback harness
      */
     private function extendsHarness(SourceIndex $index, ClassRecord $class): bool
@@ -144,6 +164,50 @@ final readonly class IntegrationTestRule implements CrossFileRule
             $class = $index->find($class->parent);
             if ($class === null) {
                 break;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Walks interfaces, parent classes and indexed interface parents the way instanceof
+     * would. A direct name match counts when the index never declared that interface.
+     * The visited set lives for this call and ends a cycle; a missing declaration ends
+     * that branch. No class is loaded.
+     *
+     * @param SourceIndex $index Source declarations
+     * @param ClassRecord $class Class whose interfaces are judged
+     * @return bool Whether BreaksOrmState is implemented, directly or through a parent
+     */
+    private function implementsBreaks(SourceIndex $index, ClassRecord $class): bool
+    {
+        $pending = [$class];
+        $seen = [];
+        while ($pending !== []) {
+            $current = array_pop($pending);
+            $key = strtolower($current->name);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            foreach ($current->interfaces as $interface) {
+                if (strcasecmp($interface, self::BREAKS) === 0) {
+                    return true;
+                }
+                $declared = $index->find($interface);
+                if ($declared !== null && !isset($seen[strtolower($declared->name)])) {
+                    $pending[] = $declared;
+                }
+            }
+            if ($current->parent !== null) {
+                if (strcasecmp($current->parent, self::BREAKS) === 0) {
+                    return true;
+                }
+                $parent = $index->find($current->parent);
+                if ($parent !== null && !isset($seen[strtolower($parent->name)])) {
+                    $pending[] = $parent;
+                }
             }
         }
 

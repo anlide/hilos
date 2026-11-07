@@ -844,9 +844,9 @@ final class RuleFixtureTest extends TestCase
                 'VIEW-WRAPPER-BIND Runtime/View/Collection/ByRefFactorySamples.php:47 — $state is declared by '
                     . 'reference in the wrapper layer; take the value, so no caller has to hand over a '
                     . 'variable (see docs/agents/orm/collection-iteration.md)',
-                'CODE-FQN ThrowsTree/Integration/tests/Cases.php:79 — \Hilos\Testing\IntegrationTest is written out in code; '
+                'CODE-FQN ThrowsTree/Integration/tests/Cases.php:78 — \Hilos\Testing\IntegrationTest is written out in code; '
                     . 'import it and use the short name (see docs/agents/code-style/qualified-names.md)',
-                'CODE-FQN ThrowsTree/Integration/tests/Cases.php:82 — \Hilos\Testing\BreaksOrmState is written out in code; '
+                'CODE-FQN ThrowsTree/Integration/tests/Cases.php:79 — \Hilos\Testing\BreaksOrmState is written out in code; '
                     . 'import it and use the short name (see docs/agents/code-style/qualified-names.md)',
                 'EMPTY-STRING-SENTINEL WholeRoot/Playground/JudgedAnyway.php:22 — ?? \'\' turns a missing '
                     . 'value into an empty string; keep it null or make the field required '

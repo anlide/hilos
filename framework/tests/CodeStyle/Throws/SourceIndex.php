@@ -365,7 +365,7 @@ final class SourceIndex
             return;
         }
 
-        $this->readBody($name, $parent, $interfaces, $isAbstract, $line, $doc, $attributes);
+        $this->readBody($name, $parent, $interfaces, $isAbstract, $line, $doc, $attributes, $keyword);
     }
 
     /**
@@ -488,6 +488,7 @@ final class SourceIndex
      * @param int $line Line the declaration sits on
      * @param ?string $classDoc Docblock standing in front of the declaration
      * @param list<array{name: string, line: int}> $attributes Explicit class attributes
+     * @param int $declarationKind Token of the declaration kind, T_CLASS, T_INTERFACE, T_TRAIT or T_ENUM
      */
     private function readBody(
         string $name,
@@ -497,6 +498,7 @@ final class SourceIndex
         int $line,
         ?string $classDoc,
         array $attributes,
+        int $declarationKind,
     ): void
     {
         $this->cursor++;
@@ -607,6 +609,7 @@ final class SourceIndex
             $isAbstract,
             $line,
             $attributes,
+            $declarationKind,
         );
     }
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\CodeStyle\Fixtures\ThrowsTree\Integration\Tests;
 
 use Hilos\Database\Database;
+use Hilos\Testing\BreaksOrmState;
 use Hilos\Testing\RollbackIntegrationTestCase;
 
 abstract class Environment extends RollbackIntegrationTestCase
@@ -40,4 +41,20 @@ final class SchemaHelper
     {
         Database::sqlRun('CREATE TABLE fixture (id INT)');
     }
+}
+
+interface DerivedOrmReset extends BreaksOrmState
+{
+}
+
+interface CycleLeft extends CycleRight
+{
+}
+
+interface CycleRight extends CycleLeft, BreaksOrmState
+{
+}
+
+enum DeclarationKindSample
+{
 }

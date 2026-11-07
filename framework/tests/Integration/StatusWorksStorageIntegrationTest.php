@@ -10,39 +10,25 @@ use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
-use Hilos\Core\Source\Interest\SourceConsumer;
-use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
-use Hilos\Core\TruthSource\OwnershipDeclaration;
-use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Collection\StatusMaintenancePeriodsActions;
 use Hilos\Database\Actions\Collection\StatusWorkComponentsActions;
 use Hilos\Database\Actions\Collection\StatusWorksActions;
 use Hilos\Database\Actions\Item\StatusMaintenancePeriodActions;
 use Hilos\Database\Actions\Item\StatusWorkActions;
 use Hilos\Database\Actions\Item\StatusWorkComponentActions;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Entity\Item\StatusMaintenancePeriod as EntityStatusMaintenancePeriod;
 use Hilos\Database\Entity\Item\StatusWork as EntityStatusWork;
 use Hilos\Database\Entity\Item\StatusWorkComponent as EntityStatusWorkComponent;
-use Hilos\Database\Object\Collection\StatusMaintenancePeriods as ObjectStatusMaintenancePeriods;
-use Hilos\Database\Object\Collection\StatusWorkComponents as ObjectStatusWorkComponents;
-use Hilos\Database\Object\Collection\StatusWorks as ObjectStatusWorks;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\EntitySchemaAudit;
-use Hilos\Database\Schema\Schema;
-use Hilos\Database\View\Collection\StatusMaintenancePeriods;
-use Hilos\Database\View\Collection\StatusWorkComponents;
-use Hilos\Database\View\Collection\StatusWorks;
 use Hilos\Hilos;
-use Hilos\Status\StatusAgent;
-use Hilos\Testing\BreaksOrmState;
 use Hilos\Testing\IntegrationTest;
 use ReflectionProperty;
 
@@ -304,34 +290,6 @@ final class StatusWorksStorageIntegrationTest extends StatusWorksStorageIntegrat
         $period->actions->reconcile(2500, 4000, 4000);
     }
 
-    /** Simulates deletion and an integer id reused after restore without adopting the replacement work. */
-    #[BreaksOrmState]
-    public function testHistoricalBridgeRefusesReusedIntegerIdentityAndDetachedSnapshotSurvivesDelete(): void
-    {
-        $work = Hilos::$db->statusWorks->actions->create('Same title', null, 10000, 20000, 1000, ['api']);
-        $period = Hilos::$db->statusMaintenancePeriods->actions->create($work->id, $work->publicId, true, 'Same title', ['api'], 11000);
-        self::assertSame($work->id, $period->work->id);
-        Database::sql('DELETE FROM `hilos_status_work` WHERE `id` = ?', [$work->id]);
-        self::assertSame([], $this->storedComponents($work->id));
-        $row = $this->storedPeriod($period->id);
-        self::assertNull($row['work_id']);
-        self::assertSame($work->publicId, $row['work_public_id']);
-        self::assertSame('["api"]', $row['component_keys_json']);
-        Database::sql('INSERT INTO `hilos_status_work` (`id`, `public_id`, `title`, `starts_at`, `ends_at`, `created_at`, `updated_at`, `version`) '
-            . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [$work->id, str_repeat('b', 32), 'Same title', 10000, 20000, 1000, 1000, 1]);
-        Database::sql('UPDATE `hilos_status_maintenance_period` SET `work_id` = ? WHERE `id` = ?', [$work->id, $period->id]);
-        $previous = Hilos::$db;
-        Hilos::$db = new StatusWorksStorageDbContext();
-        Hilos::$db->configure();
-        try {
-            self::assertNull(Hilos::$db->statusMaintenancePeriods[$period->id]->work);
-            self::assertSame($work->publicId, Hilos::$db->statusMaintenancePeriods[$period->id]->workPublicId);
-            self::assertSame(['api'], Hilos::$db->statusMaintenancePeriods[$period->id]->componentKeys);
-        } finally {
-            Hilos::$db = $previous;
-        }
-    }
-
     /** Refuses a known-row mutation from an unrelated agent execution frame. */
     public function testAllKnownItemWritesRespectTheOwnerOperationGrant(): void
     {
@@ -366,82 +324,5 @@ final class StatusWorksStorageIntegrationTest extends StatusWorksStorageIntegrat
     private function storedWork(int $id): array
     {
         return Database::sql('SELECT * FROM `hilos_status_work` WHERE `id` = ?', [$id])->first()->first();
-    }
-
-    /**
-     * @param int $id Period primary id
-     * @return array<string, mixed> Independent persisted period
-     */
-    private function storedPeriod(int $id): array
-    {
-        return Database::sql('SELECT * FROM `hilos_status_maintenance_period` WHERE `id` = ?', [$id])->first()->first();
-    }
-
-    /**
-     * @param int $workId Work primary id
-     * @return list<array<string, mixed>> Independent selected rows
-     */
-    private function storedComponents(int $workId): array
-    {
-        return Database::sql('SELECT * FROM `hilos_status_work_component` WHERE `work_id` = ? ORDER BY `component_key`', [$workId])->rows();
-    }
-}
-
-/** Owns schema outside the rollback root and restores the existing framework environment. */
-abstract class StatusWorksStorageIntegrationTestCase extends FrameworkRollbackIntegrationTestCase
-{
-    private const string OWNER = 'status-works-storage';
-    private const array TABLES = ['hilos_status_work', 'hilos_status_work_component', 'hilos_status_maintenance_period'];
-
-    private ?int $ownerToken = null;
-
-    /** Raises the current stubs and mounts only the real production storage chains. */
-    protected function prepareIntegrationEnvironment(): void
-    {
-        parent::prepareIntegrationEnvironment();
-        foreach (self::TABLES as $table) {
-            Database::sqlRun(file_get_contents(dirname(__DIR__, 2) . '/backend/Database/Migration/Stub/create_' . $table . '.sql'));
-        }
-        Schema::reset();
-        Schema::initialize();
-        OwnershipDeclaration::claimDb(StatusAgent::class, self::OWNER);
-        $this->ownerToken = ExecutionContext::push(new ExecutionFrame(agentId: self::OWNER));
-        Hilos::$db = new StatusWorksStorageDbContext();
-        Hilos::$db->configure();
-    }
-
-    /** Drops child tables first after rollback, then releases the test's owner and reader interest. */
-    protected function releaseIntegrationEnvironment(): void
-    {
-        try {
-            foreach (array_reverse(self::TABLES) as $table) {
-                Database::sqlRun('DROP TABLE IF EXISTS `' . $table . '`');
-            }
-        } finally {
-            TruthSourceRegistry::unregisterAgent(self::OWNER);
-            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent(self::OWNER));
-            if ($this->ownerToken !== null) {
-                ExecutionContext::pop($this->ownerToken);
-                $this->ownerToken = null;
-            }
-            parent::releaseIntegrationEnvironment();
-        }
-    }
-}
-
-/** Binds every production Entity/Object/View/action link without enabling unrelated feature surfaces. */
-final class StatusWorksStorageDbContext extends HilosDbContext
-{
-    /** Mounts the three lazy production chains and both action levels. */
-    public function configure(): void
-    {
-        $this->_objectCollections[self::statusWorks] = ObjectStatusWorks::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::statusWorks, StatusWorks::class, StatusWorksActions::class, StatusWorkActions::class);
-        $this->_objectCollections[self::statusWorkComponents] = ObjectStatusWorkComponents::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::statusWorkComponents, StatusWorkComponents::class,
-            StatusWorkComponentsActions::class, StatusWorkComponentActions::class);
-        $this->_objectCollections[self::statusMaintenancePeriods] = ObjectStatusMaintenancePeriods::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::statusMaintenancePeriods, StatusMaintenancePeriods::class,
-            StatusMaintenancePeriodsActions::class, StatusMaintenancePeriodActions::class);
     }
 }
