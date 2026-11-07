@@ -37,6 +37,8 @@ class FileVariant extends Entity
         self::created_at,
     ];
 
+    public const array _moments = [self::created_at];
+
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::file_id => PhpType::INTEGER->value,

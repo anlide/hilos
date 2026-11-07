@@ -36,6 +36,8 @@ class UserMerge extends Entity
         self::merged_at,
     ];
 
+    public const array _moments = [self::merged_at];
+
     // Column types
     public const array _types = [
         self::user_id => PhpType::INTEGER->value,

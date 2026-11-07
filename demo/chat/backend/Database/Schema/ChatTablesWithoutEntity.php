@@ -18,6 +18,18 @@ final class ChatTablesWithoutEntity implements TablesWithoutEntityProvider
         return array_keys(self::pii());
     }
 
+    /** @return array<string, list<string>> Declared tables with no physical moment columns */
+    public static function moments(): array
+    {
+        return [self::LEGACY_MODERATOR_PROMPT_PIECE => []];
+    }
+
+    /** @return array<string, array<string, string>> No project storage exceptions */
+    public static function momentStorage(): array
+    {
+        return [];
+    }
+
     /** @return array<string, array<string, AnonymizationStrategy>> Retired tables with no personal columns to rewrite */
     public static function pii(): array
     {

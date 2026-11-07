@@ -63,6 +63,8 @@ class Identity extends Entity
         self::provider_name,
     ];
 
+    public const array _moments = [self::password_changed_at, self::created_at, self::updated_at];
+
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::user_id => PhpType::INTEGER->value,

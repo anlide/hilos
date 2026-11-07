@@ -32,6 +32,16 @@ interface TablesWithoutEntityProvider
     public static function tables(): array;
 
     /**
+     * @return array<string, list<string>> Every declared table and its physical absolute moments, including explicit empty lists
+     */
+    public static function moments(): array;
+
+    /**
+     * @return array<string, array<string, string>> Project storage exceptions only, column to representation and reason per table
+     */
+    public static function momentStorage(): array;
+
+    /**
      * Returns the personal-data verdict of each of those tables.
      *
      * @return array<string, array<string, AnonymizationStrategy>|AnonymizationStrategy> Table name to its

@@ -60,6 +60,51 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
         return array_keys(self::pii());
     }
 
+    /** @return array<string, list<string>> Physical absolute moments, including tables without moments */
+    public static function moments(): array
+    {
+        return [
+            'migration' => [],
+            'hilos_analytics_user_agent' => ['created_ts'],
+            'hilos_analytics_accept_language' => ['created_ts'],
+            'hilos_analytics_page' => ['created_ts'],
+            'hilos_analytics_page_params' => ['created_ts'],
+            'hilos_analytics_action_name' => ['created_ts'],
+            'hilos_analytics_signal_name' => ['created_ts'],
+            'hilos_analytics_cron_name' => ['created_ts'],
+            'hilos_analytics_payload_json' => ['created_ts'],
+            'hilos_analytics_browser_session' => ['first_seen_ts', 'last_seen_ts'],
+            'hilos_analytics_browser_session_alias' => ['created_ts'],
+            'hilos_analytics_browser_session_user_agent_change' => ['changed_ts'],
+            'hilos_analytics_browser_session_accept_language_change' => ['changed_ts'],
+            'hilos_analytics_ws_connection' => ['opened_ts', 'closed_ts'],
+            'hilos_analytics_ws_connection_ipv4_change' => ['changed_ts'],
+            'hilos_analytics_ws_connection_ipv6_change' => ['changed_ts'],
+            'hilos_analytics_page_session' => ['opened_ts', 'closed_ts'],
+            'hilos_analytics_person_event' => ['created_ts'],
+            'hilos_analytics_worker_session' => ['started_ts', 'stopped_ts'],
+            'hilos_analytics_agent_session' => ['started_ts', 'stopped_ts'],
+            'hilos_analytics_user_action' => ['created_ts'],
+            'hilos_analytics_agent_user_action' => ['created_ts'],
+            'hilos_analytics_agent_system_signal' => ['created_ts'],
+            'hilos_analytics_agent_cron_signal' => ['created_ts'],
+            'hilos_analytics_worker_system_signal' => ['created_ts'],
+            'hilos_analytics_api_request' => ['started_ts', 'finished_ts'],
+            'hilos_analytics_api_agent_action' => ['created_ts'],
+            'hilos_analytics_journal_file' => ['loaded_ts'],
+            'hilos_analytics_loss' => ['from_ts', 'to_ts'],
+            MigrationClaim::TABLE => ['claimed_at'],
+            AdminViewModeLatchTable::TABLE => ['closed_at'],
+            DatabaseMarker::TABLE => ['written_at'],
+        ];
+    }
+
+    /** @return array<string, array<string, string>> Framework moments always require signed BIGINT epoch milliseconds */
+    public static function momentStorage(): array
+    {
+        return [];
+    }
+
     /**
      * @return list<string> Analytics tables from the existing verdict, excluding migration bootstrap tables
      */

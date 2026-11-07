@@ -52,6 +52,7 @@ class RegistrationReservation extends Entity
     public const string code_accepted_at = 'code_accepted_at';
     public const string accepted_revisions = 'accepted_revisions';
     public const string expires_at = 'expires_at';
+    public const string created_at = 'created_at';
 
     public const string _table = 'hilos_registration_reservation';
     public const string _primary = self::id;
@@ -64,6 +65,8 @@ class RegistrationReservation extends Entity
         self::accepted_revisions,
         self::expires_at,
     ];
+
+    public const array _moments = [self::code_accepted_at, self::expires_at, self::created_at];
 
     public const array _types = [
         self::id => PhpType::INTEGER->value,

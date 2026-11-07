@@ -713,8 +713,11 @@ storage guard is pending. `MOMENT-FORMAT` above checks display formatting, not
 database storage, and the existing integer-family schema audit proves neither
 physical signed `BIGINT` nor milliseconds.
 
-The semantic moment declaration and explicit project storage opt-out belong to
-HIL-1916 (not in the code yet — HIL-1916).
+`MomentColumns::forEntity()` and `MomentColumns::forProvider()` read and
+validate declaration shape and explicit project storage exceptions. The
+framework extension guard calls `forEntity()` and includes invalid Entity
+declarations in its existing findings. These metadata readers do not check the
+live physical schema.
 The physical signed-`BIGINT` check and detection of obvious direct seconds or
 SQL-text writers, including non-Entity and bootstrap sources, belong to HIL-1917
 (not in the code yet — HIL-1917). This promises neither arbitrary `int` dataflow

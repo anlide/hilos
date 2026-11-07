@@ -43,6 +43,8 @@ class StatusSubscriber extends Entity
         self::confirmation_expires_at,
         self::browser_time_zone,
     ];
+
+    public const array _moments = [self::subscribed_at, self::confirmed_at, self::confirmation_expires_at];
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::email => PhpType::STRING->value,

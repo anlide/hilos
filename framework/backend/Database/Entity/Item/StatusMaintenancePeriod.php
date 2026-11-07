@@ -46,6 +46,8 @@ class StatusMaintenancePeriod extends Entity
         self::ended_at,
         self::completion_observed_at,
     ];
+
+    public const array _moments = [self::started_at, self::last_observed_at, self::ended_at, self::completion_observed_at];
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::public_id => PhpType::STRING->value,

@@ -39,6 +39,8 @@ final class Guest extends Entity
         self::created_at,
     ];
 
+    public const array _moments = [self::created_at];
+
     // Column types
     public const array _types = [
         self::id => PhpType::INTEGER->value,

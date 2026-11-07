@@ -56,6 +56,8 @@ class SecondFactorReset extends Entity
         self::completed_at,
     ];
 
+    public const array _moments = [self::requested_at, self::effective_at, self::notified_at, self::canceled_at, self::completed_at];
+
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::user_id => PhpType::INTEGER->value,

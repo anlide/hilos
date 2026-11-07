@@ -51,6 +51,8 @@ class OAuthProvider extends Entity
         self::scope,
     ];
 
+    public const array _moments = [self::created_at, self::updated_at];
+
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::provider_key => PhpType::STRING->value,

@@ -78,7 +78,7 @@ schema audit does not prove physical signed `BIGINT` or milliseconds.
 
 | Work | Historical moments | Implementation owner and status |
 |---|---:|---|
-| Semantic moment declaration, inheritance/default and explicit project opt-out; numeric ORM/DB_SYNC path. Exact API belongs to its interview. | — | (not in the code yet — HIL-1916) |
+| Semantic moment metadata, inheritance/default and explicit project storage opt-out; [Entity and provider API](../orm/entity.md#persisted-moments). | — | Implemented |
 | Physical-type and obvious direct writer-error check; named, closed baseline of existing debt. Exact format and API belong to its interview. | — | (not in the code yet — HIL-1917) |
 | Bootstrap migration claim, admin-view latch and database marker | 3 | (not in the code yet — HIL-1918) |
 | Sessions and verifier circle | 6 | (not in the code yet — HIL-1919) |

@@ -108,6 +108,14 @@ class Session extends Entity
         self::browser_time_zone,
     ];
 
+    public const array _moments = [
+        self::created_at,
+        self::last_seen_at,
+        self::expires_at,
+        self::pending_registration_since,
+        self::pending_second_factor_until,
+    ];
+
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::token => PhpType::STRING->value,

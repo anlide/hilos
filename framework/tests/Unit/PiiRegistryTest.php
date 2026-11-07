@@ -471,6 +471,18 @@ final class ProjectTablesWithoutEntity implements TablesWithoutEntityProvider
         return array_keys(self::pii());
     }
 
+    /** @return array<string, list<string>> Declared tables with no physical moment columns */
+    public static function moments(): array
+    {
+        return ['project_probe' => []];
+    }
+
+    /** @return array<string, array<string, string>> No project storage exceptions */
+    public static function momentStorage(): array
+    {
+        return [];
+    }
+
     /**
      * @return array<string, array<string, AnonymizationStrategy>|AnonymizationStrategy> Verdict per table
      */
@@ -499,6 +511,18 @@ final class ContradictoryTablesWithoutEntity implements TablesWithoutEntityProvi
     public static function tables(): array
     {
         return array_keys(self::pii());
+    }
+
+    /** @return array<string, list<string>> Declared tables with no physical moment columns */
+    public static function moments(): array
+    {
+        return ['project_probe' => []];
+    }
+
+    /** @return array<string, array<string, string>> No project storage exceptions */
+    public static function momentStorage(): array
+    {
+        return [];
     }
 
     /**
@@ -631,6 +655,18 @@ final class SecondaryDatabaseTablesWithoutEntity implements TablesWithoutEntityP
     public static function tables(): array
     {
         return ['secondary_probe'];
+    }
+
+    /** @return array<string, list<string>> Declared tables with no physical moment columns */
+    public static function moments(): array
+    {
+        return ['secondary_probe' => []];
+    }
+
+    /** @return array<string, array<string, string>> No project storage exceptions */
+    public static function momentStorage(): array
+    {
+        return [];
     }
 
     /**

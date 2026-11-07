@@ -33,6 +33,7 @@ class AuthBlock extends Entity
     public const string action = 'action';
     public const string level = 'level';
     public const string blocked_until = 'blocked_until';
+    public const string updated_at = 'updated_at';
 
     public const string _table = 'hilos_auth_block';
     public const string _primary = self::id;
@@ -44,6 +45,8 @@ class AuthBlock extends Entity
         self::level,
         self::blocked_until,
     ];
+
+    public const array _moments = [self::blocked_until, self::updated_at];
 
     public const array _types = [
         self::id => PhpType::INTEGER->value,

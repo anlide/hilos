@@ -64,6 +64,8 @@ class PasskeyCredential extends Entity
         self::created_at,
     ];
 
+    public const array _moments = [self::last_used_at, self::created_at];
+
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::identity_id => PhpType::INTEGER->value,

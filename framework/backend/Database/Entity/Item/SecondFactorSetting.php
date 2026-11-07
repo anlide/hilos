@@ -50,6 +50,8 @@ class SecondFactorSetting extends Entity
         self::updated_at,
     ];
 
+    public const array _moments = [self::pending_reset_wait_from, self::app_code_misses_from, self::app_code_locked_until, self::updated_at];
+
     public const array _types = [
         self::user_id => PhpType::INTEGER->value,
         self::reset_wait_days => PhpType::INTEGER->value,

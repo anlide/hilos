@@ -2347,6 +2347,18 @@ final class FullPiiRestoreTestTables implements TablesWithoutEntityProvider
         return array_keys(self::pii());
     }
 
+    /** @return array<string, list<string>> Declared tables with no physical moment columns */
+    public static function moments(): array
+    {
+        return [BackupRestorerIntegrationTest::PROBE_TABLE => [], BackupRestorerIntegrationTest::TOKEN_TABLE => []];
+    }
+
+    /** @return array<string, array<string, string>> No project storage exceptions */
+    public static function momentStorage(): array
+    {
+        return [];
+    }
+
     /**
      * @return array<string, array<string, AnonymizationStrategy>|AnonymizationStrategy> Verdict per table
      */
@@ -2400,6 +2412,18 @@ final class MigratedPiiRestoreTestTables implements TablesWithoutEntityProvider
     public static function tables(): array
     {
         return array_keys(self::pii());
+    }
+
+    /** @return array<string, list<string>> Declared tables with no physical moment columns */
+    public static function moments(): array
+    {
+        return [BackupRestorerIntegrationTest::PROBE_TABLE => [], BackupRestorerIntegrationTest::TOKEN_TABLE => []];
+    }
+
+    /** @return array<string, array<string, string>> No project storage exceptions */
+    public static function momentStorage(): array
+    {
+        return [];
     }
 
     /**
@@ -2458,6 +2482,18 @@ final class TightenedPiiRestoreTestTables implements TablesWithoutEntityProvider
         return array_keys(self::pii());
     }
 
+    /** @return array<string, list<string>> Declared tables with no physical moment columns */
+    public static function moments(): array
+    {
+        return [BackupRestorerIntegrationTest::PROBE_TABLE => [], BackupRestorerIntegrationTest::TOKEN_TABLE => []];
+    }
+
+    /** @return array<string, array<string, string>> No project storage exceptions */
+    public static function momentStorage(): array
+    {
+        return [];
+    }
+
     /**
      * @return array<string, array<string, AnonymizationStrategy>|AnonymizationStrategy> Verdict per table
      */
@@ -2510,6 +2546,18 @@ final class PartialPiiRestoreTestTables implements TablesWithoutEntityProvider
     public static function tables(): array
     {
         return array_keys(self::pii());
+    }
+
+    /** @return array<string, list<string>> Declared tables with no physical moment columns */
+    public static function moments(): array
+    {
+        return [BackupRestorerIntegrationTest::PROBE_TABLE => []];
+    }
+
+    /** @return array<string, array<string, string>> No project storage exceptions */
+    public static function momentStorage(): array
+    {
+        return [];
     }
 
     /**

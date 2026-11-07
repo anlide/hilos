@@ -48,6 +48,8 @@ class StatusIncident extends Entity
         self::resolved_at,
         self::outcome,
     ];
+
+    public const array _moments = [self::detected_at, self::publish_at, self::published_at, self::suppressed_at, self::resolved_at];
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::component_key => PhpType::STRING->value,

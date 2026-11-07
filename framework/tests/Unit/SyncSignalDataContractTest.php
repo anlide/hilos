@@ -17,6 +17,8 @@ use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\SyncSignalDataKey;
+use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\PhpType;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncMessageInterface;
@@ -45,6 +47,49 @@ final class SyncSignalDataContractTest extends TestCase
 
     /** Agent address carried by metadata cases. */
     private const string WRITER_AGENT_ID = 'chat:7';
+
+    /** Numeric moments survive both signal readers and the worker JSON boundary. */
+    public function testCreatedNumericMomentsSurviveSignalAndWorkerReaders(): void
+    {
+        foreach ([null, 0, -1, -1234567890123, 2147483648001, 1767225600123] as $optional) {
+            $row = ['id' => 7, 'occurred_at' => 1767225600123, 'optional_at' => $optional];
+            $payload = new DbSyncCreatedSignalData(self::COLLECTION_KEY, '7', $row);
+            $worker = new WorkerDbSyncCreatedMessageDTO($payload);
+            foreach ([
+                DbSyncCreatedSignalData::fromArray($payload->toArray()),
+                DbSyncCreatedSignalData::fromJson($payload->toJson()),
+                WorkerDbSyncCreatedMessageDTO::fromArray(json_decode($worker->toJson(), true, flags: JSON_THROW_ON_ERROR))->signalData,
+            ] as $delivered) {
+                self::assertSame($row, $delivered->row);
+                $entity = SyncMomentContractEntity::fromRow($delivered->row);
+                $entity->applySyncPartialRow($delivered->row);
+                self::assertSame($row, $entity->toArray());
+            }
+        }
+    }
+
+    /** Previous zero and negative moments remain numbers when an optional moment is cleared. */
+    public function testUpdatedNumericMomentsSurviveSignalAndWorkerReaders(): void
+    {
+        foreach ([0, -1, -1234567890123, 2147483648001, 1767225600123] as $previousValue) {
+            $row = ['occurred_at' => 2147483648001, 'optional_at' => null];
+            $previous = ['occurred_at' => $previousValue, 'optional_at' => $previousValue];
+            $payload = new DbSyncUpdatedSignalData(self::COLLECTION_KEY, '7', $row, previous: $previous);
+            $worker = new WorkerDbSyncUpdatedMessageDTO($payload);
+            foreach ([
+                DbSyncUpdatedSignalData::fromArray($payload->toArray()),
+                DbSyncUpdatedSignalData::fromJson($payload->toJson()),
+                WorkerDbSyncUpdatedMessageDTO::fromArray(json_decode($worker->toJson(), true, flags: JSON_THROW_ON_ERROR))->signalData,
+            ] as $delivered) {
+                self::assertSame($row, $delivered->row);
+                self::assertSame($previous, $delivered->previous);
+                $entity = SyncMomentContractEntity::fromRow(['id' => 7] + $delivered->previous);
+                $entity->applySyncPartialRow($delivered->row);
+                $entity->applySyncPartialRow($delivered->row);
+                self::assertSame(['id' => 7, 'occurred_at' => 2147483648001, 'optional_at' => null], $entity->toArray());
+            }
+        }
+    }
 
     public function testUpdatedPayloadsRoundtripPreviousValues(): void
     {
@@ -279,4 +324,26 @@ final class SyncSignalDataContractTest extends TestCase
             ),
         ];
     }
+}
+
+/** Mapped numeric row at the receiving end of DB_SYNC. */
+final class SyncMomentContractEntity extends Entity
+{
+    public const string id = 'id';
+    public const string occurred_at = 'occurred_at';
+    public const string optional_at = 'optional_at';
+
+    public const string _table = 'sync_moment_contract_fixture';
+    public const string _primary = self::id;
+    public const array _columns = [self::id, self::occurred_at, self::optional_at];
+    public const array _types = [
+        self::id => PhpType::INTEGER->value,
+        self::occurred_at => PhpType::INTEGER->value,
+        self::optional_at => PhpType::INTEGER->value,
+    ];
+    public const array _moments = [self::occurred_at, self::optional_at];
+
+    public int $id;
+    public int $occurred_at;
+    public ?int $optional_at;
 }

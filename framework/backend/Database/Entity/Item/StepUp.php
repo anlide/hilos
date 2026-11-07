@@ -34,6 +34,8 @@ class StepUp extends Entity
         self::created_at,
     ];
 
+    public const array _moments = [self::confirmed_until, self::created_at];
+
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::session_token_hash => PhpType::STRING->value,

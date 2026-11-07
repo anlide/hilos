@@ -64,6 +64,8 @@ class UserVerification extends Entity
         self::consumed_at,
     ];
 
+    public const array _moments = [self::expires_at, self::consumed_at, self::created_at];
+
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::user_id => PhpType::INTEGER->value,

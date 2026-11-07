@@ -209,12 +209,60 @@ suite in silence, which is exactly what it used to do (HIL-605).
 
 For a persisted moment's type, unit, null semantics, writer and project storage
 choice, follow [Database Moment Storage](../architecture/time-zones.md#database-moment-storage).
-The declaration of moment semantics, physical storage and explicit project
-opt-out belongs to HIL-1916 (not in the code yet — HIL-1916); its physical-type
-and direct writer-error checks belong to HIL-1917
-(not in the code yet — HIL-1917). Their exact APIs remain with those leaves;
-the [transition table](../architecture/time-zones.md#transition-owners) owns
-the implementation map. Today's broad integer-family audit is not that check.
+An Entity declares its physical table's absolute moments with
+`Entity::META_MOMENTS` (`'_moments'`) and `public const array _moments`: a
+`list<string>` of column names. Include DB-only columns that are absent from
+`_columns`; this declaration describes the physical table, not ORM hydration.
+An absent `_momentStorage` entry means the column must use signed `BIGINT`
+epoch milliseconds. It does not assert that a legacy column already has that
+type.
+
+`Entity::META_MOMENT_STORAGE` (`'_momentStorage'`) and
+`public const array _momentStorage` are an `array<string, string>` of explicit
+project-owned exceptions, keyed by declared moment column. Each value describes
+the representation and why the project keeps it. Leave standard storage out of
+the map. A subclass composes both declarations:
+
+```php
+public const array _moments = [...parent::_moments, self::created_at];
+public const array _momentStorage = [
+    ...parent::_momentStorage,
+    self::created_at => 'Legacy SQL DATETIME retained until this project migrates the column',
+];
+```
+
+`MomentColumns::forEntity(string $entityClass)` returns an
+`array<string, MomentColumn>` keyed by column. Each final readonly
+`MomentColumn` exposes `column`, `frameworkOwned`, `mapped`, and nullable
+`projectStorage`; null means the required signed-`BIGINT` millisecond default,
+and a non-empty string carries the declared project exception. `mapped` is
+derived from the requested Entity's `_columns`; it is false for a DB-only
+moment, which remains declared without adding an ORM property, `_types` entry,
+or mapped column. The metadata reader does not prove that a physical column
+exists; the planned HIL-1917 schema check owns that proof.
+
+`MomentColumns::forProvider(string $providerClass)` reads a
+`TablesWithoutEntityProvider` directly and returns an
+`array<string, array<string, MomentColumn>>` keyed by table and column. Every
+table in `tables()` has an entry in `moments()`, including an explicit empty
+list; `momentStorage()` contains only that provider's project-owned exceptions.
+The framework provider supplies the framework-owned baseline. A project
+provider that names a framework table keeps its framework moments and cannot
+override their storage; added moments are project-owned. All provider
+descriptors have `mapped === false`. Neither reader needs an initialized
+database context; `forProvider()` reads the provider it receives, and the
+caller retains connection and schema identity. Both readers reject malformed
+lists/maps, duplicate or empty names, and storage entries without a declared
+moment and non-empty explanation. Invalid declarations raise
+`InvalidMomentDeclarationException`, an `HilosException`.
+
+The shared normalizer preserves inherited moment semantics and refuses a
+framework-owned moment's removal or project storage exception, and rejects a
+project storage entry for any framework-owned moment. The framework extension
+guard reports invalid Entity declarations through its existing findings.
+The [transition table](../architecture/time-zones.md#transition-owners) still
+owns the migration map; the physical-type and direct writer-error checks remain
+planned under HIL-1917. Today's broad integer-family audit is not that check.
 
 ### Who owns the value of a column with a DB-level DEFAULT
 

@@ -24,6 +24,8 @@ class LegalAcceptance extends Entity
     public const string _table = 'hilos_legal_acceptance';
     public const string _primary = self::id;
     public const array _columns = [self::id, self::user_id, self::document, self::revision_id, self::accepted_at];
+
+    public const array _moments = [self::accepted_at];
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::user_id => PhpType::INTEGER->value,

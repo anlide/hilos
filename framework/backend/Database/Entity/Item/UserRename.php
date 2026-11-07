@@ -42,6 +42,8 @@ class UserRename extends Entity
         self::renamed_at,
     ];
 
+    public const array _moments = [self::renamed_at];
+
     // Column types
     public const array _types = [
         self::id => PhpType::INTEGER->value,

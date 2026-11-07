@@ -76,12 +76,20 @@ abstract class Entity
     public const string META_JOURNALED = '_journaled';
     public const string META_JOURNAL_SECRETS = '_journalSecrets';
     public const string META_JOURNAL_NOISE = '_journalNoise';
+    public const string META_MOMENTS = '_moments';
+    public const string META_MOMENT_STORAGE = '_momentStorage';
 
     public const string _database = DatabaseNames::PRIMARY;
     public const bool _externalWriter = false;
     public const bool _journaled = false;
     public const array _journalSecrets = [];
     public const array _journalNoise = [];
+
+    /** @var list<string> Absolute moments of the physical table, including columns outside _columns */
+    public const array _moments = [];
+
+    /** @var array<string, string> Project-owned storage exceptions; absence requires signed BIGINT epoch milliseconds */
+    public const array _momentStorage = [];
 
     // The _setVia value of a table whose rows belong to nobody's set. The leading underscore
     // is what keeps it apart from a real column: column names in this project carry none.

@@ -39,6 +39,8 @@ class DataExport extends Entity
         self::size_bytes,
         self::time_zone,
     ];
+
+    public const array _moments = [self::requested_at, self::finished_at, self::expires_at];
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::user_id => PhpType::INTEGER->value,

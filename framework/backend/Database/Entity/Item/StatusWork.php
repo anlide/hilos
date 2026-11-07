@@ -49,6 +49,17 @@ class StatusWork extends Entity
         self::version,
         self::last_mail_queued_at,
     ];
+
+    public const array _moments = [
+        self::starts_at,
+        self::ends_at,
+        self::created_at,
+        self::updated_at,
+        self::canceled_at,
+        self::consumed_at,
+        self::expired_at,
+        self::last_mail_queued_at,
+    ];
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::public_id => PhpType::STRING->value,

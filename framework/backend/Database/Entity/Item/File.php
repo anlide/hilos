@@ -52,6 +52,8 @@ class File extends Entity
         self::created_at,
     ];
 
+    public const array _moments = [self::created_at];
+
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::stored_name => PhpType::STRING->value,

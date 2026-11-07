@@ -38,6 +38,8 @@ class StatusIncidentUpdate extends Entity
         self::at,
         self::request_id,
     ];
+
+    public const array _moments = [self::at];
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::incident_id => PhpType::INTEGER->value,

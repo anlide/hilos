@@ -47,6 +47,8 @@ class NotificationDelivery extends Entity
         self::delivered_at,
     ];
 
+    public const array _moments = [self::created_at, self::updated_at, self::delivered_at];
+
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::notification_id => PhpType::INTEGER->value,

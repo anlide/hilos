@@ -40,6 +40,8 @@ class ChangeLogChange extends Entity
         self::new_value,
     ];
 
+    public const array _moments = [self::created_at];
+
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::created_at => PhpType::DATETIME->value,

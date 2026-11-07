@@ -148,6 +148,25 @@ hand drifts from them on the base's next migration. The test chain over the
 verifier circle, `framework/tests/Unit/Database/Fixtures/Extension/`, is the
 worked example of the whole chain.
 
+Moment semantics follow the same composition rule:
+
+```php
+public const array _moments = [...parent::_moments, self::created_at];
+public const array _momentStorage = [
+    ...parent::_momentStorage,
+    self::created_at => 'Legacy SQL DATETIME retained until this project migrates the column',
+];
+```
+
+`MomentColumns::forEntity()` walks the Entity ancestry and normalizes the
+declaration. A descendant cannot remove an inherited moment; it may omit an
+inherited project storage exception to return that project-owned column to the
+signed-`BIGINT` millisecond default, while keeping its moment declaration.
+Framework-owned moments are protected by the same reader: descendants cannot
+remove them, reclassify framework columns as moments, or opt out of their
+storage. `MomentColumns::forProvider()` applies the corresponding inherited and
+framework-baseline checks to non-Entity provider declarations.
+
 `_database` is inherited with `_table` and `_primary`; changing it would move a
 framework table out of its declared identity. `_setVia` and `_setRoot` are
 inherited as they are: the table's set is a fact of the table, not of the

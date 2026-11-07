@@ -60,6 +60,8 @@ class SecondFactor extends Entity
         self::created_at,
     ];
 
+    public const array _moments = [self::confirmed_at, self::last_used_at, self::created_at];
+
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::user_id => PhpType::INTEGER->value,

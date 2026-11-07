@@ -53,6 +53,8 @@ class VerifierCircleMember extends Entity
         self::identifier,
     ];
 
+    public const array _moments = [self::created_at];
+
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::identity_type => PhpType::STRING->value,

@@ -47,6 +47,8 @@ class LegalAcceptanceExport extends Entity
         self::time_zone,
         self::records,
     ];
+
+    public const array _moments = [self::requested_at, self::finished_at, self::expires_at];
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::user_id => PhpType::INTEGER->value,

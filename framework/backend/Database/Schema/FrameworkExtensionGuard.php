@@ -14,6 +14,7 @@ use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseNames;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\IncompleteFrameworkExtensionException;
+use Hilos\Database\Exception\InvalidMomentDeclarationException;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
@@ -332,6 +333,12 @@ final class FrameworkExtensionGuard
     private static function declarationProblems(string $entity, string $base): array
     {
         $problems = [];
+        try {
+            MomentColumns::forEntity($entity);
+        } catch (InvalidMomentDeclarationException $failure) {
+            $problems[] = $failure->getMessage();
+        }
+
         foreach (self::KEPT_SCALARS as $constant) {
             if (defined("{$base}::{$constant}") && constant("{$entity}::{$constant}") !== constant("{$base}::{$constant}")) {
                 $problems[] = self::notKeptProblem($entity, $constant, $base);

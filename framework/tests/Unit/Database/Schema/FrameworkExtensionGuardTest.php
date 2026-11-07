@@ -143,6 +143,37 @@ final class FrameworkExtensionGuardTest extends TestCase
         FrameworkExtensionGuard::assertMountedExtensionsWhole();
     }
 
+    /** A mounted subclass cannot hide even an unmapped framework moment. */
+    public function testLostFrameworkMomentIsRefused(): void
+    {
+        $this->mountCircle(LostFrameworkMomentMembers::class);
+        $this->expectException(IncompleteFrameworkExtensionException::class);
+        $this->expectExceptionMessageMatches('/' . Entity::META_MOMENTS . '.*' . EntityVerifierCircleMember::created_at . '/');
+
+        FrameworkExtensionGuard::assertMountedExtensionsWhole();
+    }
+
+    /** A whole chain still cannot opt out of framework-owned storage. */
+    public function testCustomFrameworkMomentStorageIsRefused(): void
+    {
+        $this->mountCircle(CustomFrameworkMomentMembers::class);
+        $this->expectException(IncompleteFrameworkExtensionException::class);
+        $this->expectExceptionMessageMatches('/' . Entity::META_MOMENT_STORAGE . '.*' . EntityVerifierCircleMember::created_at . '/');
+
+        FrameworkExtensionGuard::assertMountedExtensionsWhole();
+    }
+
+    /** The project's added moment may carry its own explicit storage without changing the inherited moment. */
+    public function testOwnCustomMomentPassesInAWholeChain(): void
+    {
+        $this->mountCircle(OwnCustomMomentMembers::class);
+        FrameworkExtensionGuard::assertMountedExtensionsWhole();
+        self::assertSame(
+            [EntityVerifierCircleMember::created_at, OwnCustomMomentMemberEntity::reviewed_at],
+            OwnCustomMomentMemberEntity::_moments,
+        );
+    }
+
     /**
      * @throws HilosException When the context refuses to configure
      * @throws IncompleteFrameworkExtensionException When the guard refuses the chain, which is the point
@@ -1040,4 +1071,90 @@ final class MovedDatabaseObjects extends NotedMemberObjects
 final class MovedDatabaseMembers extends NotedMembers
 {
     public const string OBJECT_COLLECTION_CLASS = MovedDatabaseObjects::class;
+}
+
+final class LostFrameworkMomentMemberEntity extends NotedMemberEntity
+{
+    public const array _moments = [];
+}
+
+final class LostFrameworkMomentMemberEntities extends NotedMemberEntities
+{
+    public const string ENTITY_CLASS = LostFrameworkMomentMemberEntity::class;
+}
+
+final class LostFrameworkMomentMemberObject extends NotedMemberObject
+{
+    public const string ENTITY_CLASS = LostFrameworkMomentMemberEntity::class;
+}
+
+final class LostFrameworkMomentMemberObjects extends NotedMemberObjects
+{
+    public const string OBJECT_CLASS = LostFrameworkMomentMemberObject::class;
+    public const string ENTITY_COLLECTION_CLASS = LostFrameworkMomentMemberEntities::class;
+}
+
+final class LostFrameworkMomentMembers extends NotedMembers
+{
+    public const string OBJECT_COLLECTION_CLASS = LostFrameworkMomentMemberObjects::class;
+}
+
+final class CustomFrameworkMomentMemberEntity extends NotedMemberEntity
+{
+    public const array _momentStorage = [self::created_at => 'SQL UTC datetime; project convention'];
+}
+
+final class CustomFrameworkMomentMemberEntities extends NotedMemberEntities
+{
+    public const string ENTITY_CLASS = CustomFrameworkMomentMemberEntity::class;
+}
+
+final class CustomFrameworkMomentMemberObject extends NotedMemberObject
+{
+    public const string ENTITY_CLASS = CustomFrameworkMomentMemberEntity::class;
+}
+
+final class CustomFrameworkMomentMemberObjects extends NotedMemberObjects
+{
+    public const string OBJECT_CLASS = CustomFrameworkMomentMemberObject::class;
+    public const string ENTITY_COLLECTION_CLASS = CustomFrameworkMomentMemberEntities::class;
+}
+
+final class CustomFrameworkMomentMembers extends NotedMembers
+{
+    public const string OBJECT_COLLECTION_CLASS = CustomFrameworkMomentMemberObjects::class;
+}
+
+final class OwnCustomMomentMemberEntity extends NotedMemberEntity
+{
+    public const string reviewed_at = 'reviewed_at';
+
+    public const array _columns = [...parent::_columns, self::reviewed_at];
+    public const array _types = [...parent::_types, self::reviewed_at => PhpType::DATETIME->value];
+    public const array _piiNotPersonal = [...parent::_piiNotPersonal, self::reviewed_at];
+    public const array _moments = [...parent::_moments, self::reviewed_at];
+    public const array _momentStorage = [self::reviewed_at => 'SQL UTC datetime; external review contract'];
+
+    public ?string $reviewed_at = null;
+}
+
+final class OwnCustomMomentMemberEntities extends NotedMemberEntities
+{
+    public const string ENTITY_CLASS = OwnCustomMomentMemberEntity::class;
+}
+
+final class OwnCustomMomentMemberObject extends NotedMemberObject
+{
+    public const string ENTITY_CLASS = OwnCustomMomentMemberEntity::class;
+}
+
+final class OwnCustomMomentMemberObjects extends NotedMemberObjects
+{
+    public const string OBJECT_CLASS = OwnCustomMomentMemberObject::class;
+    public const string ENTITY_COLLECTION_CLASS = OwnCustomMomentMemberEntities::class;
+}
+
+final class OwnCustomMomentMembers extends NotedMembers
+{
+    public const string OBJECT_COLLECTION_CLASS = OwnCustomMomentMemberObjects::class;
 }

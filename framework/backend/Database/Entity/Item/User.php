@@ -45,6 +45,8 @@ class User extends Entity
         self::last_browser_time_zone,
     ];
 
+    public const array _moments = [self::last_activity];
+
     // Column types
     public const array _types = [
         self::id => PhpType::INTEGER->value,

@@ -38,6 +38,8 @@ class SecondFactorTrust extends Entity
         self::created_at,
     ];
 
+    public const array _moments = [self::trusted_until, self::created_at];
+
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::session_id => PhpType::INTEGER->value,

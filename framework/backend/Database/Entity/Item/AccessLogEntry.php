@@ -32,6 +32,8 @@ class AccessLogEntry extends Entity
         self::occurred_at,
     ];
 
+    public const array _moments = [self::occurred_at];
+
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::user_id => PhpType::INTEGER->value,

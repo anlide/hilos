@@ -23,6 +23,8 @@ class UserPhoto extends Entity
     public const string _table = 'hilos_user_photo';
     public const string _primary = self::user_id;
     public const array _columns = [self::user_id, self::file_id, self::set_at];
+
+    public const array _moments = [self::set_at];
     public const array _types = [
         self::user_id => PhpType::INTEGER->value,
         self::file_id => PhpType::INTEGER->value,

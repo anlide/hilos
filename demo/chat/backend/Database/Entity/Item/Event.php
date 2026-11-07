@@ -33,6 +33,8 @@ final class Event extends Entity
         self::timestamp,
     ];
 
+    public const array _moments = [self::timestamp];
+
     // Column types
     public const array _types = [
         self::id => PhpType::INTEGER->value,
