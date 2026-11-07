@@ -20,6 +20,7 @@ import {
 } from '@hilos/core/base'
 
 import { HilosLayout } from '../src/HilosLayout.js'
+import { HilosPageTemplate } from '../src/HilosPageTemplate.js'
 import { HilosModal } from '../src/HilosModal.js'
 import { LoadingButton } from '../src/LoadingButton.js'
 import {
@@ -198,40 +199,42 @@ class BusyHost {
 /** A custom body owns permanent field groups, keeping its sender outside them. */
 @Component({
   selector: 'test-modal-custom-body',
-  imports: [HilosLayout, HilosModal, LoadingButton],
+  imports: [HilosLayout, HilosPageTemplate, HilosModal, LoadingButton],
   template: `
     <hilos-layout [connection]="connection()">
-      <hilos-modal [open]="true" [busy]="busy()" title="Edit">
-        <ng-template #modalBody let-busy="busy">
-          <form
-            data-id="custom-form"
-            (submit)="send($event)"
-            (click)="clicked()"
-          >
-            <fieldset [disabled]="busy" data-id="custom-fields">
-              <input data-autofocus data-id="custom-field" />
-              <select data-id="custom-choice">
-                <option value="a">A</option>
-                <option value="b">B</option>
-              </select>
-            </fieldset>
-            <fieldset [disabled]="busy" data-id="custom-notes-group">
-              <textarea data-id="custom-notes"></textarea>
-              <button type="button" data-id="custom-action">Choose</button>
-            </fieldset>
-            <button
-              hilosLoadingButton
-              type="submit"
-              data-id="custom-send"
-              [loading]="busy"
-              [disabled]="disabled()"
-              (click)="senderClicked()"
+      <ng-template hilosPage>
+        <hilos-modal [open]="true" [busy]="busy()" title="Edit">
+          <ng-template #modalBody let-busy="busy">
+            <form
+              data-id="custom-form"
+              (submit)="send($event)"
+              (click)="clicked()"
             >
-              Save
-            </button>
-          </form>
-        </ng-template>
-      </hilos-modal>
+              <fieldset [disabled]="busy" data-id="custom-fields">
+                <input data-autofocus data-id="custom-field" />
+                <select data-id="custom-choice">
+                  <option value="a">A</option>
+                  <option value="b">B</option>
+                </select>
+              </fieldset>
+              <fieldset [disabled]="busy" data-id="custom-notes-group">
+                <textarea data-id="custom-notes"></textarea>
+                <button type="button" data-id="custom-action">Choose</button>
+              </fieldset>
+              <button
+                hilosLoadingButton
+                type="submit"
+                data-id="custom-send"
+                [loading]="busy"
+                [disabled]="disabled()"
+                (click)="senderClicked()"
+              >
+                Save
+              </button>
+            </form>
+          </ng-template>
+        </hilos-modal>
+      </ng-template>
     </hilos-layout>
   `,
 })
@@ -1339,87 +1342,89 @@ function modalFeed() {
 /** Projected content stays inside the real main fieldset and inherits the shell's DI. */
 @Component({
   selector: 'test-connected-modal',
-  imports: [HilosLayout, HilosModal, LoadingButton],
+  imports: [HilosLayout, HilosPageTemplate, HilosModal, LoadingButton],
   template: `
     <hilos-layout
       [connection]="connection()"
       [allowDisconnectedInteraction]="allow()"
     >
       <a nav href="#nav" data-id="modal-nav">Navigation</a>
-      <button
-        hilosLoadingButton
-        type="button"
-        [opensWindow]="true"
-        data-id="modal-open"
-        (click)="clicks()"
-      >
-        Open
-      </button>
-      @if (present()) {
-        <hilos-modal
-          [(open)]="open"
-          [busy]="busy()"
-          [confirmOnClose]="dirty()"
-          title="Edit"
-          copyText="technical details"
-          (cancel)="canceled()"
+      <ng-template hilosPage>
+        <button
+          hilosLoadingButton
+          type="button"
+          [opensWindow]="true"
+          data-id="modal-open"
+          (click)="clicks()"
         >
-          <a
-            modalHeader
-            href="#header"
-            data-id="header-action"
-            (click)="clicks()"
-            >Header action</a
+          Open
+        </button>
+        @if (present()) {
+          <hilos-modal
+            [(open)]="open"
+            [busy]="busy()"
+            [confirmOnClose]="dirty()"
+            title="Edit"
+            copyText="technical details"
+            (cancel)="canceled()"
           >
-          <form data-id="modal-form" (submit)="clicks()">
-            <input
-              data-autofocus
-              data-id="modal-draft"
-              [disabled]="disabled()"
-              [attr.aria-describedby]="description()"
-              (beforeinput)="clicks()"
-              (drop)="clicks()"
-            />
-            <input type="file" data-id="modal-file" />
-            <select data-id="modal-choice">
-              <option value="a">A</option>
-              <option value="b">B</option>
-            </select>
-            <button type="button" data-id="body-action" (click)="clicks()">
-              Body action
-            </button>
             <a
-              href="#action"
-              role="button"
-              data-id="body-link"
+              modalHeader
+              href="#header"
+              data-id="header-action"
               (click)="clicks()"
-              (keydown)="clicks()"
-              >Link action</a
+              >Header action</a
             >
-            <button
-              hilosLoadingButton
-              type="button"
-              [loading]="busy()"
-              data-id="modal-save"
-              (click)="clicks()"
-            >
-              Save
-            </button>
-          </form>
-          <ng-template #modalActions let-requestClose="requestClose">
-            <button
-              type="button"
-              data-id="modal-cancel"
-              (click)="requestClose()"
-            >
-              Cancel
-            </button>
-          </ng-template>
-        </hilos-modal>
-      }
-      @if (second()) {
-        <hilos-modal [open]="true" title="Second" [confirmOnClose]="true" />
-      }
+            <form data-id="modal-form" (submit)="clicks()">
+              <input
+                data-autofocus
+                data-id="modal-draft"
+                [disabled]="disabled()"
+                [attr.aria-describedby]="description()"
+                (beforeinput)="clicks()"
+                (drop)="clicks()"
+              />
+              <input type="file" data-id="modal-file" />
+              <select data-id="modal-choice">
+                <option value="a">A</option>
+                <option value="b">B</option>
+              </select>
+              <button type="button" data-id="body-action" (click)="clicks()">
+                Body action
+              </button>
+              <a
+                href="#action"
+                role="button"
+                data-id="body-link"
+                (click)="clicks()"
+                (keydown)="clicks()"
+                >Link action</a
+              >
+              <button
+                hilosLoadingButton
+                type="button"
+                [loading]="busy()"
+                data-id="modal-save"
+                (click)="clicks()"
+              >
+                Save
+              </button>
+            </form>
+            <ng-template #modalActions let-requestClose="requestClose">
+              <button
+                type="button"
+                data-id="modal-cancel"
+                (click)="requestClose()"
+              >
+                Cancel
+              </button>
+            </ng-template>
+          </hilos-modal>
+        }
+        @if (second()) {
+          <hilos-modal [open]="true" title="Second" [confirmOnClose]="true" />
+        }
+      </ng-template>
     </hilos-layout>
   `,
 })

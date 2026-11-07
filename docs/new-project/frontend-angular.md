@@ -94,11 +94,17 @@ The src root stays thin and the boot wiring lives in `src/app/bootstrap/`
   navigator provided as `HILOS_ROUTER` and the gate as `HILOS_AUTH_GATE`.
 - `src/app/pages/`: `keys.ts`, `routes.ts` (`createAppPageRouter`) and
   `pageTitles.ts` ([../agents/frontend/page-registry.md](../agents/frontend/page-registry.md)).
-- `src/app/app.ts`: `hilos-layout` with the `[brand]` and `[user]` slots (the
-  user region projected as ONE node through `ngProjectAs`) and a `hilos-view`
+- `src/app/app.ts`: import `HilosLayout` and `HilosPageTemplate` from
+  `@hilos/angular/base` and include both in the standalone component's `imports`.
+  Fill the `[brand]` and `[user]` slots (the user region projected as ONE node
+  through `ngProjectAs`) outside the page template. Put the entire page body in
+  one direct `<ng-template hilosPage>` child of `hilos-layout`: `hilos-view`
   over the page map, the page skeletons and the project's `AuthSurface` (a
   wrapper closing the project's `HilosAuthContext` over the framework
-  `HilosAuthSurface`).
+  `HilosAuthSurface`), together with any auth-route branches. The shell creates
+  this view only when the page is allowed and destroys it under maintenance,
+  account blocking or legal freeze. A disconnection keeps the mounted view.
+  The existing public `/status` and legal-freeze page exceptions still apply.
 - State in components via `hilosSignal(…)` and `connectionStateSignal(connection)`
   from `@hilos/angular/base` — call them in an injection context (e.g. a component
   field initializer) or pass `{ injector }`; they mirror `toSignal` semantics
@@ -107,6 +113,60 @@ The src root stays thin and the boot wiring lives in `src/app/bootstrap/`
   production `outputMode: "static"` with the `src/prerender/main.server.ts`
   server entry, which declares only those pages; every other path cold-loads
   the SPA shell `index.csr.html`, which the nginx template falls back to.
+
+The shell wiring in `App` includes the page marker alongside every component
+used inside its template. Keep magic-link, OAuth callback and second-factor
+cancellation pages inside that same template when the project mounts them:
+
+```ts
+import {
+  HilosLayout,
+  HilosPageTemplate,
+  HilosMagicLinkPage,
+  HilosOAuthCallbackPage,
+  HilosSecondFactorCancelPage,
+  HilosView,
+} from '@hilos/angular/base'
+
+// In App's @Component metadata, with its existing connection, auth and page bindings:
+imports: [
+  HilosLayout,
+  HilosPageTemplate,
+  HilosMagicLinkPage,
+  HilosOAuthCallbackPage,
+  HilosSecondFactorCancelPage,
+  HilosView,
+]
+```
+
+```html
+<hilos-layout [connection]="connection">
+  <span brand>My app</span>
+  <ng-container ngProjectAs="[user]">User controls</ng-container>
+  <ng-template hilosPage>
+    @if (currentPath() === AUTH_MAGIC_LINK_PATH) {
+      <hilos-magic-link-page [context]="authContext" />
+    } @else if (currentPath() === AUTH_OAUTH_CALLBACK_PATH) {
+      <hilos-oauth-callback-page [context]="authContext" />
+    } @else if (currentPath() === AUTH_SECOND_FACTOR_CANCEL_PATH) {
+      <hilos-second-factor-cancel-page [context]="authContext" />
+    } @else {
+      <hilos-view
+        [pages]="pages"
+        [pageSkeletons]="pageSkeletons"
+        [authSurface]="authSurfaceType"
+        [authGate]="authGate"
+      />
+    }
+  </ng-template>
+</hilos-layout>
+```
+
+The auth path constants come from `@hilos/core/base`. The template has no inputs,
+outputs or context variables; its bindings and injected router/interaction state
+retain their declaration context. The optional `[nav]` and `[banner]` regions,
+like `[brand]` and `[user]`, stay outside it. A shell without a page body can omit
+the template; direct unmarked page content is no longer a page outlet.
 
 ## Lazy admin bindings and the production graph
 

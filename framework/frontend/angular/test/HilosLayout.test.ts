@@ -39,7 +39,7 @@
 // The wiring these cases run on — the DOM environment, the TestBed platform, and
 // the module reset between cases — lives in the package's vitest.setup.ts and was
 // laid down by HIL-848; this file configures none of it.
-import { Component, inject, signal } from '@angular/core'
+import { Component, DestroyRef, inject, signal } from '@angular/core'
 import { By } from '@angular/platform-browser'
 import { TestBed } from '@angular/core/testing'
 import type { ComponentFixture } from '@angular/core/testing'
@@ -88,6 +88,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { THEME_SETTINGS_STORAGE_KEY } from '../../core/src/theme/themeBrowser.js'
 import { HilosLayout } from '../src/HilosLayout.js'
+import { HilosPageTemplate } from '../src/HilosPageTemplate.js'
 import { HilosView } from '../src/HilosView.js'
 import { HilosStatusPage as HilosPublicStatusPage } from '../src/public/HilosStatusPage.js'
 import { LoadingButton } from '../src/LoadingButton.js'
@@ -188,10 +189,12 @@ class LiveBlockedPage {
 
 @Component({
   selector: 'test-live-blocked-shell',
-  imports: [HilosLayout, LiveBlockedPage],
+  imports: [HilosLayout, HilosPageTemplate, LiveBlockedPage],
   template: `
     <hilos-layout [connection]="connection">
-      <test-live-blocked-page />
+      <ng-template hilosPage>
+        <test-live-blocked-page />
+      </ng-template>
     </hilos-layout>
   `,
 })
@@ -504,10 +507,12 @@ async function settle(): Promise<void> {
  */
 @Component({
   selector: 'test-page-action-host',
-  imports: [HilosLayout, LoadingButton],
+  imports: [HilosLayout, HilosPageTemplate, LoadingButton],
   template: `
     <hilos-layout [connection]="connection">
-      <button hilosLoadingButton data-id="page-action">Send</button>
+      <ng-template hilosPage>
+        <button hilosLoadingButton data-id="page-action">Send</button>
+      </ng-template>
     </hilos-layout>
   `,
 })
@@ -2175,11 +2180,13 @@ describe('HilosLayout view-mode strip (HIL-1260)', () => {
  */
 @Component({
   selector: 'test-themed-host',
-  imports: [HilosLayout],
+  imports: [HilosLayout, HilosPageTemplate],
   template: `
     <hilos-layout [connection]="connection">
       <span user data-id="user-slot">Ada</span>
-      <p data-id="page-body">Page</p>
+      <ng-template hilosPage>
+        <p data-id="page-body">Page</p>
+      </ng-template>
     </hilos-layout>
   `,
 })
@@ -2385,10 +2392,206 @@ function shellFeed(initialBuild?: string) {
   }
 }
 
+/** A page-local draft and an explicit destruction receipt for Angular's embedded view. */
+@Component({
+  selector: 'test-page-lifetime',
+  template: `<input
+    data-id="lifetime-draft"
+    [value]="draft()"
+    (input)="draft.set($any($event.target).value)"
+  />`,
+})
+class PageLifetimeProbe {
+  readonly draft = signal('')
+  readonly destroyed = vi.fn()
+  readonly router = inject(HILOS_ROUTER)
+
+  constructor() {
+    inject(PageLifetimeHost).instances.push(this)
+    inject(DestroyRef).onDestroy(this.destroyed)
+  }
+}
+
+@Component({
+  selector: 'test-page-lifetime-shell',
+  imports: [HilosLayout, HilosPageTemplate, PageLifetimeProbe],
+  template: `
+    <hilos-layout [connection]="connection">
+      <span brand data-id="lifetime-brand">Brand</span>
+      <span nav data-id="lifetime-nav">Navigation</span>
+      <span user data-id="lifetime-user">Person</span>
+      <span banner data-id="lifetime-banner">Notice</span>
+      <ng-template hilosPage>
+        <test-page-lifetime />
+      </ng-template>
+    </hilos-layout>
+  `,
+})
+class PageLifetimeHost {
+  connection = fakeConnection()
+  readonly instances: PageLifetimeProbe[] = []
+}
+
+// These are Angular lifecycle tests: the declaration's injector and the actual
+// embedded view must survive disconnection and end at each shell replacement.
+describe('HilosLayout page template lifetime', () => {
+  let fixture: ComponentFixture<PageLifetimeHost> | undefined
+  let session: ReturnType<typeof bindSession>
+  let feed: ReturnType<typeof shellFeed>
+  let router: HilosRouter
+
+  async function render(): Promise<void> {
+    fixture!.detectChanges()
+    await fixture!.whenStable()
+    fixture!.detectChanges()
+  }
+
+  beforeEach(() => {
+    router = routerOn('main')
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: router }],
+    })
+    session = bindSession(router)
+    session.handshake({
+      ...reconsentHandshake(null),
+      data: { accountBlocked: null, accountStanding: null },
+    })
+    feed = shellFeed()
+  })
+
+  afterEach(() => {
+    fixture?.destroy()
+    fixture = undefined
+    session.unbind()
+    hilosToasts.clear()
+  })
+
+  async function mount(): Promise<PageLifetimeProbe[]> {
+    fixture = TestBed.createComponent(PageLifetimeHost)
+    fixture.componentInstance.connection = feed.connection
+    await render()
+    return fixture.componentInstance.instances
+  }
+
+  it.each(['maintenance', 'blocked', 'frozen'] as const)(
+    'destroys the page under %s and restores a fresh local draft',
+    async (branch) => {
+      const instances = await mount()
+      expect(instances).toHaveLength(1)
+      const first = instances[0]!
+      expect(first.router).toBe(router)
+      const root = fixture!.nativeElement as HTMLElement
+      const draft = root.querySelector<HTMLInputElement>(
+        '[data-id="lifetime-draft"]',
+      )!
+      draft.value = 'Unsaved draft'
+      draft.dispatchEvent(new Event('input', { bubbles: true }))
+      await render()
+      expect(first.draft()).toBe('Unsaved draft')
+
+      if (branch === 'maintenance')
+        feed.push({ protectedMode: FROZEN }, 'protectedMode')
+      if (branch === 'blocked') session.handshake(BLOCKED)
+      if (branch === 'frozen')
+        session.handshake(reconsentHandshake({ frozen: true }))
+      await render()
+
+      expect(first.destroyed).toHaveBeenCalledTimes(1)
+      expect(instances).toHaveLength(1)
+      expect(root.querySelector('[data-id="lifetime-draft"]')).toBeNull()
+      expect(
+        root.querySelector(
+          `[data-id="${branch === 'maintenance' ? 'maintenance' : branch === 'blocked' ? 'account-blocked' : 'legal-frozen-screen'}"]`,
+        ),
+      ).not.toBeNull()
+
+      if (branch === 'maintenance')
+        feed.push({ protectedMode: PROTECTED_MODE_INACTIVE }, 'protectedMode')
+      if (branch === 'blocked')
+        session.handshake({ data: { accountBlocked: null } })
+      if (branch === 'frozen') session.handshake(reconsentHandshake(null))
+      await render()
+
+      expect(instances).toHaveLength(2)
+      expect(instances[1]).not.toBe(first)
+      expect(instances[1]!.destroyed).not.toHaveBeenCalled()
+      expect(instances[1]!.draft()).toBe('')
+      expect(
+        root.querySelector<HTMLInputElement>('[data-id="lifetime-draft"]')!
+          .value,
+      ).toBe('')
+    },
+  )
+
+  it('creates no intermediate page between maintenance, blocking and legal freeze', async () => {
+    const instances = await mount()
+    feed.push({ protectedMode: FROZEN }, 'protectedMode')
+    await render()
+    session.handshake(reconsentHandshake({ frozen: true }))
+    session.handshake(BLOCKED)
+    await render()
+    feed.push({ protectedMode: PROTECTED_MODE_INACTIVE }, 'protectedMode')
+    await render()
+    expect(
+      fixture!.nativeElement.querySelector('[data-id="account-blocked"]'),
+    ).not.toBeNull()
+    session.handshake({ data: { accountBlocked: null } })
+    await render()
+    expect(
+      fixture!.nativeElement.querySelector('[data-id="legal-frozen-screen"]'),
+    ).not.toBeNull()
+    expect(instances).toHaveLength(1)
+    expect(instances[0]!.destroyed).toHaveBeenCalledTimes(1)
+    session.handshake(reconsentHandshake(null))
+    await render()
+    expect(instances).toHaveLength(2)
+  })
+
+  it('leaves the first ordinary page uncreated while the first frame is held', async () => {
+    feed.push({ firstFrameHeld: true }, 'firstFrameHold')
+    const instances = await mount()
+    expect(instances).toHaveLength(0)
+    feed.push({ firstFrameHeld: false }, 'firstFrameHold')
+    await render()
+    expect(instances).toHaveLength(1)
+  })
+
+  it('retains the page, draft and named regions across a disconnection', async () => {
+    const instances = await mount()
+    const first = instances[0]!
+    first.draft.set('Keep this draft')
+    const root = fixture!.nativeElement as HTMLElement
+    const slots = ['brand', 'nav', 'user', 'banner'].map((slot) =>
+      root.querySelector(`[data-id="lifetime-${slot}"]`),
+    )
+    expect(slots.every((slot) => slot !== null)).toBe(true)
+    feed.push({ state: 'disconnected' }, 'state')
+    await render()
+    expect(instances).toEqual([first])
+    expect(first.destroyed).not.toHaveBeenCalled()
+    expect(first.draft()).toBe('Keep this draft')
+    expect(
+      root.querySelector<HTMLInputElement>('[data-id="lifetime-draft"]')!.value,
+    ).toBe('Keep this draft')
+    expect(root.querySelector('fieldset')!.disabled).toBe(true)
+    feed.push({ state: 'connected' }, 'state')
+    await render()
+    expect(instances).toEqual([first])
+    expect(first.destroyed).not.toHaveBeenCalled()
+    expect(first.draft()).toBe('Keep this draft')
+    expect(root.querySelector('fieldset')!.disabled).toBe(false)
+    expect(
+      ['brand', 'nav', 'user', 'banner'].map((slot) =>
+        root.querySelector(`[data-id="lifetime-${slot}"]`),
+      ),
+    ).toEqual(slots)
+  })
+})
+
 /** A conditional projection stays one nav slot, with no new project input. */
 @Component({
   selector: 'test-responsive-shell-host',
-  imports: [HilosLayout],
+  imports: [HilosLayout, HilosPageTemplate],
   template: `
     <hilos-layout [connection]="connection()">
       <ng-container ngProjectAs="[nav]">
@@ -2403,7 +2606,9 @@ function shellFeed(initialBuild?: string) {
         <span data-id="user-avatar">Avatar</span>
         <a href="/signin" data-id="user-signin">Sign in</a>
       </ng-container>
-      <p>Page</p>
+      <ng-template hilosPage>
+        <p>Page</p>
+      </ng-template>
     </hilos-layout>
   `,
 })
@@ -2845,6 +3050,7 @@ class ViewingAction {}
   ],
   imports: [
     HilosLayout,
+    HilosPageTemplate,
     LoadingButton,
     HilosModal,
     InteractionProbe,
@@ -2857,38 +3063,40 @@ class ViewingAction {}
     >
       <a nav href="/next">Next</a>
       <test-interaction-probe user />
-      <test-interaction-probe />
-      <test-viewing-action />
-      <input
-        data-id="draft"
-        [attr.aria-describedby]="description()"
-        [disabled]="disabled()"
-      />
-      <input type="file" data-id="file" />
-      <select data-id="choice">
-        <option value="a">A</option>
-        <option value="b">B</option>
-      </select>
-      <button
-        hilosLoadingButton
-        [opensWindow]="true"
-        data-id="page-open"
-        (click)="clicks()"
-      >
-        Open
-      </button>
-      <button hilosLoadingButton data-id="page-mutate" (click)="clicks()">
-        Save
-      </button>
-      <a href="/action" data-id="page-link" (click)="clicks()">Action</a>
-      <hilos-modal
-        title="Edit draft"
-        [open]="modalOpen()"
-        [confirmOnClose]="true"
-      >
-        <input data-id="modal-initial" data-autofocus />
-        <input data-id="modal-draft" />
-      </hilos-modal>
+      <ng-template hilosPage>
+        <test-interaction-probe />
+        <test-viewing-action />
+        <input
+          data-id="draft"
+          [attr.aria-describedby]="description()"
+          [disabled]="disabled()"
+        />
+        <input type="file" data-id="file" />
+        <select data-id="choice">
+          <option value="a">A</option>
+          <option value="b">B</option>
+        </select>
+        <button
+          hilosLoadingButton
+          [opensWindow]="true"
+          data-id="page-open"
+          (click)="clicks()"
+        >
+          Open
+        </button>
+        <button hilosLoadingButton data-id="page-mutate" (click)="clicks()">
+          Save
+        </button>
+        <a href="/action" data-id="page-link" (click)="clicks()">Action</a>
+        <hilos-modal
+          title="Edit draft"
+          [open]="modalOpen()"
+          [confirmOnClose]="true"
+        >
+          <input data-id="modal-initial" data-autofocus />
+          <input data-id="modal-draft" />
+        </hilos-modal>
+      </ng-template>
     </hilos-layout>
   `,
 })
@@ -3398,10 +3606,15 @@ class PublicStatusRoute {
 
 @Component({
   selector: 'test-public-status-shell',
-  imports: [HilosLayout, HilosView],
-  template: `<hilos-layout [connection]="connection"
-    ><span brand>Public test brand</span><hilos-view [pages]="pages"
-  /></hilos-layout>`,
+  imports: [HilosLayout, HilosPageTemplate, HilosView],
+  template: `
+    <hilos-layout [connection]="connection">
+      <span brand>Public test brand</span>
+      <ng-template hilosPage>
+        <hilos-view [pages]="pages" />
+      </ng-template>
+    </hilos-layout>
+  `,
 })
 class PublicStatusShellHost {
   connection = fakeConnection()
@@ -3510,6 +3723,33 @@ describe('public Status in the real Angular shell and outlet', () => {
     await settle()
     expect(get('maintenance')).not.toBeNull()
     expect(get('public-status-banner')).toBeNull()
+  })
+
+  it('retains an already opened public reader when maintenance starts and ends', async () => {
+    const feed = shellFeed()
+    mount(feed)
+    await settle()
+    const reader = fixture!.debugElement.query(
+      By.directive(HilosPublicStatusPage),
+    ).componentInstance as HilosPublicStatusPage
+    const destroyed = vi.fn()
+    fixture!.debugElement
+      .query(By.directive(HilosPublicStatusPage))
+      .injector.get(DestroyRef)
+      .onDestroy(destroyed)
+    for (const protectedMode of [FROZEN, PROTECTED_MODE_INACTIVE]) {
+      feed.push({ protectedMode }, 'protectedMode')
+      await settle()
+      expect(
+        fixture!.debugElement.query(By.directive(HilosPublicStatusPage))
+          .componentInstance,
+      ).toBe(reader)
+      expect(destroyed).not.toHaveBeenCalled()
+      expect(get('public-status-banner')?.textContent).toContain(
+        'All systems operational',
+      )
+      expect(get('maintenance')).toBeNull()
+    }
   })
 
   it.each([

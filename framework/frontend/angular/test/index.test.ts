@@ -34,6 +34,7 @@ import {
   HilosUploadFiles,
   HilosUploadPicker,
   HilosLayout,
+  HilosPageTemplate,
   HilosLink,
   HilosMagicLinkPage,
   HilosMaintenance,
@@ -91,6 +92,8 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosSwitch).toBeTypeOf('function')
   expect(ErrorPage).toBeTypeOf('function')
   expect(HilosLayout).toBeTypeOf('function')
+  expect(HilosPageTemplate).toBeTypeOf('function')
+  expect(HilosPageTemplate).toBe(base.HilosPageTemplate)
   expect(HilosThemeMenu).toBeTypeOf('function')
   expect(HilosProfileHead).toBeTypeOf('function')
   expect(HilosProfileTheme).toBeTypeOf('function')

@@ -10,6 +10,7 @@ import {
   HILOS_ROUTER,
   HilosAvatar,
   HilosLayout,
+  HilosPageTemplate,
   HilosLink,
   HilosMagicLinkPage,
   HilosSecondFactorCancelPage,
@@ -58,6 +59,7 @@ import { TermsHistory } from './views/terms-history/terms-history.js'
   imports: [
     HilosAvatar,
     HilosLayout,
+    HilosPageTemplate,
     HilosLink,
     HilosMagicLinkPage,
     HilosSecondFactorCancelPage,
@@ -107,20 +109,22 @@ import { TermsHistory } from './views/terms-history/terms-history.js'
         </button>
       }
     </ng-container>
-    @if (currentPath() === AUTH_MAGIC_LINK_PATH) {
-      <hilos-magic-link-page [context]="authContext" />
-    } @else if (currentPath() === AUTH_OAUTH_CALLBACK_PATH) {
-      <hilos-oauth-callback-page [context]="authContext" />
-    } @else if (currentPath() === AUTH_SECOND_FACTOR_CANCEL_PATH) {
-      <hilos-second-factor-cancel-page [context]="authContext" />
-    } @else {
-      <hilos-view
-        [pages]="pages"
-        [pageSkeletons]="pageSkeletons"
-        [authSurface]="authSurfaceType"
-        [authGate]="authGate"
-      />
-    }
+    <ng-template hilosPage>
+      @if (currentPath() === AUTH_MAGIC_LINK_PATH) {
+        <hilos-magic-link-page [context]="authContext" />
+      } @else if (currentPath() === AUTH_OAUTH_CALLBACK_PATH) {
+        <hilos-oauth-callback-page [context]="authContext" />
+      } @else if (currentPath() === AUTH_SECOND_FACTOR_CANCEL_PATH) {
+        <hilos-second-factor-cancel-page [context]="authContext" />
+      } @else {
+        <hilos-view
+          [pages]="pages"
+          [pageSkeletons]="pageSkeletons"
+          [authSurface]="authSurfaceType"
+          [authGate]="authGate"
+        />
+      }
+    </ng-template>
   </hilos-layout>`,
 })
 export class App {

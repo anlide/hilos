@@ -1,3 +1,5 @@
+import { Component, DestroyRef } from '@angular/core'
+import { By } from '@angular/platform-browser'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -35,9 +37,17 @@ import {
   HILOS_MAINTENANCE_WATCHDOG_COPY,
   hilosMaintenanceElapsed,
 } from '@hilos/core/admin/maintenance'
-import { HIDDEN_VALUE, formatMoment } from '@hilos/core/base'
+import {
+  HIDDEN_VALUE,
+  PROTECTED_MODE_INACTIVE,
+  RT_STALENESS_FRESH,
+  formatMoment,
+  type ProtectedModeStatus,
+} from '@hilos/core/base'
 
 import { HilosMaintenancePage } from '../src/admin/maintenance/HilosMaintenancePage.js'
+import { HilosLayout } from '../src/HilosLayout.js'
+import { HilosPageTemplate } from '../src/HilosPageTemplate.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 import { bindTestTimeZone } from './timeZoneTestHarness.js'
 
@@ -943,6 +953,80 @@ async function openRestore(id: RestoreId) {
   return { fixture, pushState, dispatched, opener }
 }
 
+/** The real shell owns the Overview's embedded view during a refreeze. */
+@Component({
+  selector: 'test-maintenance-shell',
+  imports: [HilosLayout, HilosPageTemplate, HilosMaintenancePage],
+  template: `
+    <hilos-layout [connection]="connection">
+      <ng-template hilosPage>
+        <hilos-maintenance-page [context]="context" />
+      </ng-template>
+    </hilos-layout>
+  `,
+})
+class MaintenanceShellHost {
+  connection!: HilosConnection
+  context!: HilosMaintenanceContext
+}
+
+/** A separately controlled transport snapshot, as in the shell's lifecycle tests. */
+function shellFeed() {
+  const listeners = new Map<string, Set<(payload: never) => void>>()
+  const state = {
+    state: 'connected',
+    protectedMode: PROTECTED_MODE_INACTIVE,
+    rtStaleness: RT_STALENESS_FRESH,
+    reconnectDragging: false,
+    firstFrameHeld: false,
+    on(event: string, listener: (payload: never) => void): () => void {
+      const set = listeners.get(event) ?? new Set()
+      listeners.set(event, set)
+      set.add(listener)
+      return () => {
+        set.delete(listener)
+      }
+    },
+  }
+  return {
+    connection: state as unknown as HilosConnection,
+    push(protectedMode: ProtectedModeStatus): void {
+      state.protectedMode = protectedMode
+      for (const listener of listeners.get('protectedMode') ?? [])
+        listener(protectedMode as never)
+    },
+  }
+}
+
+/** Open the restore pass on an admitted browser, keeping the shell alive over the freeze. */
+async function openRestoreInShell() {
+  const { actions, dispatched } = makeActions()
+  const { context, pushState } = seededContext(actions)
+  const feed = shellFeed()
+  TestBed.configureTestingModule({
+    providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+  })
+  const fixture = TestBed.createComponent(MaintenanceShellHost)
+  fixture.componentInstance.connection = feed.connection
+  fixture.componentInstance.context = context
+  // Fake timers drain promises and Angular render tasks without real-clock waits.
+  const render = async () => {
+    fixture.detectChanges()
+    await vi.advanceTimersByTimeAsync(0)
+    fixture.detectChanges()
+  }
+  await render()
+  pushState(restoreFrame())
+  await render()
+  const page = fixture.debugElement.query(By.directive(HilosMaintenancePage))
+  const destroyed = vi.fn()
+  page.injector.get(DestroyRef).onDestroy(destroyed)
+  byId<HTMLButtonElement>('hilos-maintenance-restore-pass')!.click()
+  await render()
+
+  return { fixture, feed, pushState, dispatched, render, page, destroyed }
+}
+
 /** The trimmed values of the watchdog thresholds card, in display order. */
 function thresholdValues(): (string | undefined)[] {
   return [
@@ -969,11 +1053,7 @@ function thresholdFacts(): Record<string, string> {
   )
 }
 
-/**
- * Leave the page as a route change, a reload or a refreeze does: the view is
- * destroyed and its element leaves the document — a destroyed root view alone
- * stays drawn.
- */
+/** Tear down the isolated fixture and remove its root view from the document. */
 function leavePage(): void {
   TestBed.resetTestingModule()
 }
@@ -1878,35 +1958,89 @@ describe('HilosMaintenancePage restore code', () => {
     expect(restoreModal('pass')).toBeNull()
   })
 
-  it('forgets a shown code when the page goes', async () => {
-    const { fixture, dispatched } = await openRestore('pass')
-    restoreButton('pass', 'confirm').click()
-    await settled(fixture)
-    dispatched[0]?.settle({ reply: { pass: 'departed-code' } })
-    await settled(fixture)
-    expect(restoreModal('pass')?.textContent).toContain('departed-code')
+  it('forgets a shown code when the shell refreezes the page', async () => {
+    vi.useFakeTimers()
+    const shell = await openRestoreInShell()
+    try {
+      restoreButton('pass', 'confirm').click()
+      await shell.render()
+      shell.dispatched[0]!.settle({ reply: { pass: 'departed-code' } })
+      await shell.render()
+      expect(restoreModal('pass')?.textContent).toContain('departed-code')
+      expect(document.body.classList.contains('modal-open')).toBe(true)
 
-    leavePage()
+      shell.feed.push({ ...PROTECTED_MODE_INACTIVE, active: true })
+      await shell.render()
 
-    expect(document.body.textContent).not.toContain('departed-code')
-    expect(restoreModal('pass')).toBeNull()
+      expect(shell.destroyed).toHaveBeenCalledTimes(1)
+      expect(byId('maintenance')).not.toBeNull()
+      expect(document.body.textContent).not.toContain('departed-code')
+      expect(restoreModal('pass')).toBeNull()
+      expect(document.body.classList.contains('modal-open')).toBe(false)
+
+      shell.feed.push(PROTECTED_MODE_INACTIVE)
+      await shell.render()
+      const freshPage = shell.fixture.debugElement.query(
+        By.directive(HilosMaintenancePage),
+      )
+      expect(freshPage.componentInstance).not.toBe(shell.page.componentInstance)
+      shell.pushState(restoreFrame())
+      await shell.render()
+      expect(byId('hilos-maintenance-restore-ladder')).not.toBeNull()
+      expect(restoreModal('pass')).toBeNull()
+      byId<HTMLButtonElement>('hilos-maintenance-restore-pass')!.click()
+      await shell.render()
+      expect(restoreModal('pass')).not.toBeNull()
+      expect(restoreModal('pass')?.textContent).not.toContain('departed-code')
+      expect(byId('hilos-maintenance-restore-pass-result')).toBeNull()
+      expect(restoreButton('pass', 'confirm').disabled).toBe(false)
+      expect(shell.dispatched).toHaveLength(1)
+    } finally {
+      shell.fixture.destroy()
+      vi.useRealTimers()
+    }
   })
 
-  it('cannot resurrect a code from a reply that arrives after the page went', async () => {
-    const { fixture, dispatched } = await openRestore('pass')
-    restoreButton('pass', 'confirm').click()
-    await settled(fixture)
-    leavePage()
+  it('cannot resurrect a code from a reply after the shell refroze the page', async () => {
+    vi.useFakeTimers()
+    const shell = await openRestoreInShell()
+    try {
+      restoreButton('pass', 'confirm').click()
+      await shell.render()
+      expect(document.body.classList.contains('modal-open')).toBe(true)
+      shell.feed.push({ ...PROTECTED_MODE_INACTIVE, active: true })
+      await shell.render()
+      expect(shell.destroyed).toHaveBeenCalledTimes(1)
+      expect(byId('maintenance')).not.toBeNull()
+      expect(restoreModal('pass')).toBeNull()
+      expect(document.body.classList.contains('modal-open')).toBe(false)
 
-    dispatched[0]?.settle({ reply: { pass: 'late-code' } })
-    await new Promise((resolve) => setTimeout(resolve))
+      shell.dispatched[0]!.settle({ reply: { pass: 'late-code' } })
+      await shell.render()
+      expect(document.body.textContent).not.toContain('late-code')
+      expect(restoreModal('pass')).toBeNull()
 
-    expect(document.body.textContent).not.toContain('late-code')
-    expect(restoreModal('pass')).toBeNull()
-    const reopened = await openRestore('pass')
-    expect(restoreModal('pass')?.textContent).not.toContain('late-code')
-    expect(byId('hilos-maintenance-restore-pass-result')).toBeNull()
-    expect(reopened.dispatched).toHaveLength(0)
+      shell.feed.push(PROTECTED_MODE_INACTIVE)
+      await shell.render()
+      expect(
+        shell.fixture.debugElement.query(By.directive(HilosMaintenancePage))
+          .componentInstance,
+      ).not.toBe(shell.page.componentInstance)
+      shell.pushState(restoreFrame())
+      await shell.render()
+      expect(byId('hilos-maintenance-restore-ladder')).not.toBeNull()
+      expect(restoreModal('pass')).toBeNull()
+      byId<HTMLButtonElement>('hilos-maintenance-restore-pass')!.click()
+      await shell.render()
+      expect(restoreModal('pass')).not.toBeNull()
+      expect(restoreModal('pass')?.textContent).not.toContain('late-code')
+      expect(byId('hilos-maintenance-restore-pass-result')).toBeNull()
+      expect(restoreButton('pass', 'confirm').disabled).toBe(false)
+      expect(shell.dispatched).toHaveLength(1)
+    } finally {
+      shell.fixture.destroy()
+      vi.useRealTimers()
+    }
   })
 
   it('a late success after timeout cannot replace a newly opened confirmation', async () => {

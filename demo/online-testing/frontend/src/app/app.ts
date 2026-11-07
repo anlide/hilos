@@ -9,6 +9,7 @@ import {
   HILOS_AUTH_GATE,
   HilosAvatar,
   HilosLayout,
+  HilosPageTemplate,
   HilosLink,
   HilosNotificationBell,
   HilosView,
@@ -44,6 +45,7 @@ import { TermsHistory } from './views/terms-history/terms-history.js'
   imports: [
     HilosAvatar,
     HilosLayout,
+    HilosPageTemplate,
     HilosLink,
     HilosNotificationBell,
     HilosView,
@@ -88,12 +90,14 @@ import { TermsHistory } from './views/terms-history/terms-history.js'
         </button>
       }
     </ng-container>
-    <hilos-view
-      [pages]="pages"
-      [pageSkeletons]="pageSkeletons"
-      [authSurface]="authSurfaceType"
-      [authGate]="authGate"
-    />
+    <ng-template hilosPage>
+      <hilos-view
+        [pages]="pages"
+        [pageSkeletons]="pageSkeletons"
+        [authSurface]="authSurfaceType"
+        [authGate]="authGate"
+      />
+    </ng-template>
   </hilos-layout>`,
 })
 export class App {

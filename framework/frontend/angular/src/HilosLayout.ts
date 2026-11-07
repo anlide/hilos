@@ -1,8 +1,9 @@
 // HilosLayout — the tier-1 application shell (sdk-packaging.md): a slot-first
 // app frame a project fills rather than re-implements. The brand and nav
-// regions are projected content and the routed page content is the default
-// slot. It renders the top navigation bar carrying the brand and nav, the
-// shell's theme icon first in the right-hand group (it disappears when
+// regions are projected content and the routed page content is an
+// ng-template marked hilosPage. It renders the top navigation bar carrying
+// the brand and nav, the shell's theme icon first in the right-hand group
+// (it disappears when
 // switching is off and under maintenance), the framework admin entry (the gear
 // linking to the Hilos dashboard, drawn for an admin and, in the admin view
 // mode, for a viewer), the live connection indicator the SDK owns
@@ -47,7 +48,7 @@
 // controls of what is projected into the shell stand disabled and the shell's
 // own do not (HILOS_TAKEOVER_VIEW_ONLY): the token reaches projected content
 // through `providers`, and the shell's view meets `false` first through
-// `viewProviders`. Angular cannot tell the default slot from the named ones by
+// `viewProviders`. Angular cannot tell the page template from the named slots by
 // injector, so a control a project projects into [brand], [nav], [user] or
 // [banner] reads the takeover too — in Vue and React only the page's area does.
 import { NgTemplateOutlet } from '@angular/common'
@@ -58,6 +59,7 @@ import {
   ElementRef,
   afterRenderEffect,
   viewChild,
+  contentChild,
   computed,
   effect,
   inject,
@@ -123,6 +125,7 @@ import {
 } from '@hilos/core/base'
 
 import { HilosLink } from './HilosLink.js'
+import { HilosPageTemplate } from './HilosPageTemplate.js'
 import { HilosAccountBlocked } from './HilosAccountBlocked.js'
 import { HilosMaintenance } from './HilosMaintenance.js'
 import { LoadingButton } from './LoadingButton.js'
@@ -526,7 +529,9 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                   </div>
                 </div>
               } @else {
-                <ng-content />
+                <ng-container
+                  [ngTemplateOutlet]="pageTemplate()?.template ?? null"
+                />
               }
             </fieldset>
           }
@@ -604,6 +609,8 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
   `,
 })
 export class HilosLayout {
+  protected readonly pageTemplate = contentChild(HilosPageTemplate)
+
   /** The connection whose live state the shell indicator mirrors. */
   readonly connection = input.required<HilosConnection>()
   /** Allow local page interaction without changing the availability of shell requests. */

@@ -47,6 +47,7 @@ export { HilosHideable, type HilosHideableContext } from '../HilosHideable.js'
 export { ErrorPage } from '../ErrorPage.js'
 export { HilosMaintenance } from '../HilosMaintenance.js'
 export { HilosLayout } from '../HilosLayout.js'
+export { HilosPageTemplate } from '../HilosPageTemplate.js'
 export {
   HILOS_CONNECTION_INTERACTION,
   injectConnectionInteraction,
