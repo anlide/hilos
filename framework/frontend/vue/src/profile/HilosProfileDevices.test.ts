@@ -17,6 +17,10 @@ import {
   registerProfileDeviceRemoveCases,
   type ProfileDeviceMountFn,
 } from '../../../test/profileDeviceRemoveCases.js'
+import {
+  registerProfileDevicePushPermissionCases,
+  type PushPermissionDeviceMount,
+} from '../../../test/pushPermissionCases.js'
 
 let releaseTimeZone: (() => void) | undefined
 
@@ -36,7 +40,188 @@ function createStubConnection(): HilosConnection {
   } as unknown as HilosConnection
 }
 
+function observedBrowser() {
+  const state = {
+    supported: true,
+    permission: 'granted' as HilosPushPermission,
+  }
+  const listeners = new Set<() => void>()
+  const stop = vi.fn()
+  const watch = vi.fn((listener: () => void) => {
+    listeners.add(listener)
+    return () => {
+      listeners.delete(listener)
+      stop()
+    }
+  })
+  const read = vi.fn(async () => null)
+  const store = createHilosPushSubscriptionStore({
+    isSupported: () => state.supported,
+    permission: () => state.permission,
+    userAgent: () => 'Test browser',
+    requestPermission: async () => 'granted',
+    getSubscription: read,
+    subscribe: async () => ({
+      endpoint: 'https://push.example/current',
+      p256dh: 'public-key',
+      auth: 'auth',
+    }),
+    unsubscribe: async () => {},
+    watchPermission: watch,
+  })
+  return {
+    state,
+    store,
+    read,
+    watch,
+    stop,
+    change() {
+      for (const listener of listeners) listener()
+    },
+  }
+}
+
 describe('HilosProfileDevices (Vue)', () => {
+  // Vue must rebind the parent itself before a channel can mount a child toggle.
+  it('moves observation and mirrors without a toggle when pushStore changes', async () => {
+    const first = observedBrowser()
+    const second = observedBrowser()
+    let finishRead!: (value: null) => void
+    second.read.mockImplementationOnce(
+      () =>
+        new Promise<null>((resolve) => {
+          finishRead = resolve
+        }),
+    )
+    const refresh = vi.spyOn(second.store, 'refresh')
+    const wrapper = mount(HilosProfileDevices, {
+      props: {
+        devices: [
+          {
+            id: 1,
+            deviceName: 'Other phone',
+            createdAt: 1767227400000,
+            current: false,
+            expired: false,
+          },
+        ],
+        actions: { removeDevice: vi.fn() },
+        connection: createStubConnection(),
+        pushChannel: null,
+        pushStore: first.store,
+      },
+    })
+    await flushPromises()
+    const remove = wrapper.get<HTMLButtonElement>(
+      '[data-id="profile-device-remove"]',
+    )
+    expect(remove.element.disabled).toBe(false)
+    expect(wrapper.find('input').exists()).toBe(false)
+    expect(first.watch).toHaveBeenCalledTimes(1)
+    expect(first.read).toHaveBeenCalledTimes(1)
+
+    await wrapper.setProps({ pushStore: second.store })
+    await flushPromises()
+    expect(first.stop).toHaveBeenCalledTimes(1)
+    expect(second.watch).toHaveBeenCalledTimes(1)
+    expect(second.read).toHaveBeenCalledTimes(1)
+    expect(remove.element.disabled).toBe(true)
+    expect(wrapper.find('input').exists()).toBe(false)
+    first.state.supported = false
+    await first.store.refresh()
+    await flushPromises()
+    expect(remove.element.disabled).toBe(true)
+    finishRead(null)
+    await flushPromises()
+    expect(remove.element.disabled).toBe(false)
+
+    await wrapper.setProps({
+      pushChannel: {
+        channel: 'push',
+        label: 'Push on this device',
+        vapidPublicKey: 'vapid-key',
+      },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-id="profile-device-none-this"]').exists()).toBe(
+      true,
+    )
+    expect(wrapper.get<HTMLInputElement>('input').element.disabled).toBe(false)
+    expect(second.watch).toHaveBeenCalledTimes(1)
+    expect(second.read).toHaveBeenCalledTimes(1)
+    second.state.supported = false
+    second.change()
+    await flushPromises()
+    expect(wrapper.find('[data-id="profile-device-none-this"]').exists()).toBe(
+      false,
+    )
+    expect(second.stop).not.toHaveBeenCalled()
+    first.state.supported = true
+    await first.store.refresh()
+    await flushPromises()
+    expect(wrapper.find('[data-id="profile-device-none-this"]').exists()).toBe(
+      false,
+    )
+
+    second.state.supported = true
+    second.state.permission = 'denied'
+    second.change()
+    await flushPromises()
+    const browser = wrapper.get('[data-id="profile-device-none-this"]')
+    expect(browser.get<HTMLInputElement>('input').element.disabled).toBe(true)
+    expect(
+      browser.get('[data-id="hilos-notification-preference-hint-push"]').text(),
+    ).toBe('Push notifications are blocked in your browser settings.')
+    expect(second.watch).toHaveBeenCalledTimes(1)
+    expect(second.read).toHaveBeenCalledTimes(1)
+    expect(refresh).not.toHaveBeenCalled()
+    wrapper.unmount()
+    expect(first.stop).toHaveBeenCalledTimes(1)
+    expect(second.stop).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes a replacement legacy store without a child toggle', async () => {
+    const first = observedBrowser()
+    const legacy = observedBrowser()
+    delete legacy.store.observePermission
+    const refresh = vi.spyOn(legacy.store, 'refresh')
+    const wrapper = mount(HilosProfileDevices, {
+      props: {
+        devices: [
+          {
+            id: 1,
+            deviceName: 'Other phone',
+            createdAt: 1767227400000,
+            current: false,
+            expired: false,
+          },
+        ],
+        actions: { removeDevice: vi.fn() },
+        connection: createStubConnection(),
+        pushChannel: null,
+        pushStore: first.store,
+      },
+    })
+    await flushPromises()
+    await wrapper.setProps({ pushStore: legacy.store })
+    await flushPromises()
+    expect(first.stop).toHaveBeenCalledTimes(1)
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(legacy.read).toHaveBeenCalledTimes(1)
+    expect(legacy.watch).not.toHaveBeenCalled()
+    const remove = wrapper.get<HTMLButtonElement>(
+      '[data-id="profile-device-remove"]',
+    )
+    expect(remove.element.disabled).toBe(false)
+    legacy.store.clear()
+    await nextTick()
+    expect(remove.element.disabled).toBe(true)
+    expect(refresh).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+    expect(first.stop).toHaveBeenCalledTimes(1)
+    expect(legacy.stop).not.toHaveBeenCalled()
+  })
+
   it('renders flat rows with Bootstrap Icons, heading h3, and proper statuses', async () => {
     const connection = createStubConnection()
     const subscription = {
@@ -175,12 +360,12 @@ describe('HilosProfileDevices (Vue)', () => {
       false,
     )
 
-    // Subscribed moment line
-    expect(rows[0]!.text()).toContain('Subscribed · added')
-    expect(rows[1]!.text()).toContain('Subscribed · added')
+    // Registered moment line
+    expect(rows[0]!.text()).toContain('Registered · added')
+    expect(rows[1]!.text()).toContain('Registered · added')
     expect(rows[2]!.text()).not.toContain('added')
-    expect(rows[3]!.text()).toContain('Subscribed · added')
-    expect(rows[4]!.text()).toContain('Subscribed · added')
+    expect(rows[3]!.text()).toContain('Registered · added')
+    expect(rows[4]!.text()).toContain('Registered · added')
 
     // Current row with pushChannel renders HilosPushDeviceToggle, not Remove button
     expect(rows[0]!.find('[data-id="profile-device-remove"]').exists()).toBe(
@@ -280,6 +465,20 @@ describe('HilosProfileDevices (Vue)', () => {
   }
 
   registerProfileDeviceRemoveCases({ it, expect, vi }, mountVue)
+  const mountPermissionVue: PushPermissionDeviceMount = async (props) => {
+    const view = await mountVue(props)
+    return {
+      ...view,
+      event: async (run) => {
+        run()
+        await view.flush()
+      },
+    }
+  }
+  registerProfileDevicePushPermissionCases(
+    { it, expect, vi },
+    mountPermissionVue,
+  )
 
   it('renders Remove button for current device when pushChannel is null', async () => {
     const connection = createStubConnection()
@@ -351,7 +550,7 @@ describe('HilosProfileDevices (Vue)', () => {
       vapidPublicKey: 'vapid-key',
     }
 
-    // Condition: !hasCurrent && refreshed && pushChannel !== null && supported && permission !== 'denied'
+    // Condition: !hasCurrent && refreshed && pushChannel !== null && supported
     // 1. All true -> placeholder is rendered with card class
     const wrapper = mount(HilosProfileDevices, {
       props: {
@@ -436,12 +635,13 @@ describe('HilosProfileDevices (Vue)', () => {
       true,
     )
 
-    // 6. permission is denied -> not rendered
+    // 6. Permission denied keeps the browser visible with its blocked explanation.
     permission.set('denied')
     await nextTick()
-    expect(wrapper.find('[data-id="profile-device-none-this"]').exists()).toBe(
-      false,
-    )
+    const blockedBrowser = wrapper.get('[data-id="profile-device-none-this"]')
+    expect(blockedBrowser.text()).toContain('This browser · Not subscribed')
+    expect(blockedBrowser.text()).toContain('blocked in your browser settings')
+    expect(blockedBrowser.get('input').attributes('disabled')).toBeDefined()
   })
 
   it('reformats the same numeric device moments without resetting push or removal state', async () => {
@@ -516,9 +716,9 @@ describe('HilosProfileDevices (Vue)', () => {
     await flushPromises()
     const originalDevices = wrapper.props('devices')
     const rows = wrapper.findAll('[data-id="profile-device-row"]')
-    expect(rows[0]!.text()).toContain('Subscribed · added 1/1/2026, 9:30:00 AM')
+    expect(rows[0]!.text()).toContain('Registered · added 1/1/2026, 9:30:00 AM')
     expect(rows[1]!.text()).toContain('Unknown device')
-    expect(rows[1]!.text()).toContain('Subscribed · added 1/1/2026, 9:31:00 AM')
+    expect(rows[1]!.text()).toContain('Registered · added 1/1/2026, 9:31:00 AM')
     const expired = rows[2]!.get('[data-id="profile-device-expired"]')
     expect(expired.text()).toBe('Subscription expired')
     expect(rows[2]!.text()).not.toContain('added')
@@ -550,10 +750,10 @@ describe('HilosProfileDevices (Vue)', () => {
 
     expect(wrapper.props('devices')).toBe(originalDevices)
     expect(rows[0]!.text()).toContain(
-      'Subscribed · added 12/31/2025, 7:30:00 PM',
+      'Registered · added 12/31/2025, 7:30:00 PM',
     )
     expect(rows[1]!.text()).toContain(
-      'Subscribed · added 12/31/2025, 7:31:00 PM',
+      'Registered · added 12/31/2025, 7:31:00 PM',
     )
     expect(
       rows[0]!.get('[data-id="hilos-notification-preference-toggle-push"]')

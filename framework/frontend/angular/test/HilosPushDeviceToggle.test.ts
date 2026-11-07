@@ -17,6 +17,10 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosPushDeviceToggle } from '../src/HilosPushDeviceToggle.js'
+import {
+  registerPushPermissionToggleCases,
+  type PushPermissionToggleMount,
+} from '../../test/pushPermissionCases.js'
 
 afterEach(() => {
   TestBed.resetTestingModule()
@@ -61,7 +65,7 @@ function fakeConnection(): HilosConnection {
 }
 
 // A store already reflecting the given device state, so the first render is
-// deterministic; the component's on-mount refresh re-reads the same values.
+// deterministic; the component's initial observation re-reads the same values.
 async function storeReflecting(
   options: FakeEnvironmentOptions = {},
 ): Promise<HilosPushSubscriptionStore> {
@@ -204,6 +208,30 @@ class TwoRowsHost {
 }
 
 describe('HilosPushDeviceToggle (Angular)', () => {
+  const mountPermissionAngular: PushPermissionToggleMount = async (props) => {
+    const fixture = TestBed.createComponent(HilosPushDeviceToggle)
+    fixture.componentRef.setInput('connection', props.connection)
+    fixture.componentRef.setInput('channel', props.channel)
+    fixture.componentRef.setInput('label', props.label)
+    fixture.componentRef.setInput('vapidPublicKey', props.vapidPublicKey)
+    fixture.componentRef.setInput('store', props.store)
+    fixture.componentRef.setInput('channelRow', props.channelRow)
+    fixture.detectChanges()
+    await settle(fixture)
+
+    return {
+      container: fixture.nativeElement as HTMLElement,
+      event: async (run) => {
+        run()
+        await settle(fixture)
+      },
+      flush: async () => settle(fixture),
+      unmount: async () => fixture.destroy(),
+    }
+  }
+
+  registerPushPermissionToggleCases({ it, expect, vi }, mountPermissionAngular)
+
   describe('compact switch', () => {
     it('reflects an existing device subscription as a checked, enabled switch', async () => {
       const store = await storeReflecting({

@@ -18,6 +18,10 @@ import {
   registerProfileDeviceRemoveCases,
   type ProfileDeviceMountFn,
 } from '../../test/profileDeviceRemoveCases.js'
+import {
+  registerProfileDevicePushPermissionCases,
+  type PushPermissionDeviceMount,
+} from '../../test/pushPermissionCases.js'
 
 afterEach(() => {
   cleanup()
@@ -180,19 +184,19 @@ describe('HilosProfileDevices (React)', () => {
       rows[4].querySelector('[data-id="profile-device-expired"]'),
     ).toBeNull()
 
-    // Subscribed moment line
+    // Registered moment line
     expect(rows[0].textContent).toContain(
-      `Subscribed · added ${formatProfileDateTime(1767227400000)}`,
+      `Registered · added ${formatProfileDateTime(1767227400000)}`,
     )
     expect(rows[1].textContent).toContain(
-      `Subscribed · added ${formatProfileDateTime(1767227460000)}`,
+      `Registered · added ${formatProfileDateTime(1767227460000)}`,
     )
     expect(rows[2].textContent).not.toContain('added')
     expect(rows[3].textContent).toContain(
-      `Subscribed · added ${formatProfileDateTime(1767227580000)}`,
+      `Registered · added ${formatProfileDateTime(1767227580000)}`,
     )
     expect(rows[4].textContent).toContain(
-      `Subscribed · added ${formatProfileDateTime(1767227640000)}`,
+      `Registered · added ${formatProfileDateTime(1767227640000)}`,
     )
 
     // Current row with pushChannel renders HilosPushDeviceToggle, not Remove button
@@ -320,6 +324,22 @@ describe('HilosProfileDevices (React)', () => {
   }
 
   registerProfileDeviceRemoveCases({ it, expect, vi }, mountReact)
+  const mountPermissionReact: PushPermissionDeviceMount = async (props) => {
+    const view = await mountReact(props)
+
+    return {
+      ...view,
+      event: async (run) => {
+        await act(async () => {
+          run()
+        })
+      },
+    }
+  }
+  registerProfileDevicePushPermissionCases(
+    { it, expect, vi },
+    mountPermissionReact,
+  )
 
   it('renders Remove button for current device when pushChannel is null', async () => {
     const connection = createStubConnection()
@@ -397,7 +417,7 @@ describe('HilosProfileDevices (React)', () => {
 
     const removeDevice = vi.fn()
 
-    // 1. Condition met: !hasCurrent, refreshed, pushChannel !== null, supported, permission !== 'denied'
+    // 1. Condition met: !hasCurrent, refreshed, pushChannel !== null, supported
     const { container, rerender } = render(
       <HilosProfileDevices
         devices={[
@@ -525,13 +545,22 @@ describe('HilosProfileDevices (React)', () => {
       container.querySelector('[data-id="profile-device-none-this"]'),
     ).not.toBeNull()
 
-    // 6. permission is denied -> not rendered
+    // 6. permission is denied -> still rendered with a blocked switch
     await act(async () => {
       permission.set('denied')
     })
     expect(
       container.querySelector('[data-id="profile-device-none-this"]'),
-    ).toBeNull()
+    ).not.toBeNull()
+    const toggle = container.querySelector<HTMLInputElement>(
+      '[data-id="hilos-notification-preference-toggle-push"]',
+    )
+    expect(toggle?.disabled).toBe(true)
+    expect(toggle?.getAttribute('aria-describedby')).toBe(
+      container.querySelector(
+        '[data-id="hilos-notification-preference-hint-push"]',
+      )?.id,
+    )
   })
 
   it('does not render placeholder before store is refreshed', () => {

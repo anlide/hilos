@@ -6,11 +6,19 @@ import {
   type HilosPushPermission,
   type HilosPushSubscriptionSnapshot,
 } from '@hilos/core/base'
-import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 import HilosNotificationPreferences from './HilosNotificationPreferences.vue'
 import HilosPushDeviceToggle from './HilosPushDeviceToggle.vue'
+import {
+  registerPushPermissionToggleCases,
+  type PushPermissionToggleMount,
+} from '../../test/pushPermissionCases.js'
+
+enableAutoUnmount(afterEach)
+afterEach(() => vi.restoreAllMocks())
 
 // A subscription snapshot the fake browser reports as this device's current one.
 const SNAPSHOT: HilosPushSubscriptionSnapshot = {
@@ -38,6 +46,33 @@ function fakeEnvironment(
     getSubscription: async () => options.existing ?? null,
     subscribe: async () => SNAPSHOT,
     unsubscribe: async () => {},
+  }
+}
+
+function observedBrowser(options: FakeEnvironmentOptions) {
+  const environment = fakeEnvironment(options)
+  const listeners = new Set<() => void>()
+  const stop = vi.fn()
+  const watch = vi.fn((listener: () => void) => {
+    listeners.add(listener)
+    return () => {
+      listeners.delete(listener)
+      stop()
+    }
+  })
+  environment.watchPermission = watch
+  const read = vi.spyOn(environment, 'getSubscription')
+  const store = createHilosPushSubscriptionStore(environment)
+  const refresh = vi.spyOn(store, 'refresh')
+  return {
+    store,
+    read,
+    refresh,
+    watch,
+    stop,
+    change() {
+      for (const listener of listeners) listener()
+    },
   }
 }
 
@@ -74,7 +109,124 @@ function mountToggle(
   })
 }
 
+const mountVue: PushPermissionToggleMount = async (props) => {
+  const wrapper = mount(HilosPushDeviceToggle, { props })
+  await flushPromises()
+  return {
+    container: wrapper.element as HTMLElement,
+    event: async (run) => {
+      run()
+      await flushPromises()
+      await nextTick()
+    },
+    flush: async () => {
+      await flushPromises()
+      await nextTick()
+    },
+    unmount: async () => {
+      wrapper.unmount()
+      await flushPromises()
+    },
+  }
+}
+
 describe('HilosPushDeviceToggle', () => {
+  registerPushPermissionToggleCases({ it, expect, vi }, mountVue)
+
+  // Prop replacement and effect-scope disposal belong to the Vue binding.
+  it('moves observation and signal mirrors to the replacement store', async () => {
+    vi.spyOn(crypto.subtle, 'digest').mockResolvedValue(
+      new Uint8Array(32).buffer,
+    )
+    const stateA: FakeEnvironmentOptions = { permission: 'granted' }
+    const stateB: FakeEnvironmentOptions = { permission: 'denied' }
+    const first = observedBrowser(stateA)
+    const second = observedBrowser(stateB)
+    const wrapper = mountToggle(first.store, fakeConnection())
+    await flushPromises()
+    const toggle = wrapper.get<HTMLInputElement>('input')
+    expect(toggle.element.checked).toBe(false)
+    expect(toggle.element.disabled).toBe(false)
+    expect(first.watch).toHaveBeenCalledTimes(1)
+    expect(first.read).toHaveBeenCalledTimes(1)
+    expect(second.watch).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ store: second.store })
+    await flushPromises()
+    expect(wrapper.get('input').element).toBe(toggle.element)
+    expect(first.stop).toHaveBeenCalledTimes(1)
+    expect(second.watch).toHaveBeenCalledTimes(1)
+    expect(second.stop).not.toHaveBeenCalled()
+    expect(second.store.refreshed.get()).toBe(true)
+    expect(toggle.element.checked).toBe(false)
+    expect(toggle.element.disabled).toBe(true)
+    const hint = wrapper.get(
+      '[data-id="hilos-notification-preference-hint-push"]',
+    )
+    expect(hint.text()).toBe(
+      'Push notifications are blocked in your browser settings.',
+    )
+    expect(toggle.attributes('aria-describedby')).toBe(hint.attributes('id'))
+
+    stateA.existing = SNAPSHOT
+    await first.store.refresh()
+    await flushPromises()
+    expect(first.store.subscribed.get()).toBe(true)
+    expect(toggle.element.checked).toBe(false)
+    stateA.supported = false
+    await first.store.refresh()
+    await flushPromises()
+    expect(hint.text()).toBe(
+      'Push notifications are blocked in your browser settings.',
+    )
+
+    stateB.permission = 'granted'
+    stateB.existing = SNAPSHOT
+    second.change()
+    await flushPromises()
+    expect(toggle.element.checked).toBe(true)
+    expect(toggle.element.disabled).toBe(false)
+    expect(
+      wrapper
+        .find('[data-id="hilos-notification-preference-hint-push"]')
+        .exists(),
+    ).toBe(false)
+    expect(second.read).toHaveBeenCalledTimes(1)
+    expect(second.watch).toHaveBeenCalledTimes(1)
+    expect(second.refresh).not.toHaveBeenCalled()
+    wrapper.unmount()
+    expect(first.stop).toHaveBeenCalledTimes(1)
+    expect(second.stop).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes and mirrors a replacement legacy store once', async () => {
+    const first = observedBrowser({ permission: 'granted' })
+    const legacy = createHilosPushSubscriptionStore(
+      fakeEnvironment({ permission: 'denied' }),
+    )
+    delete legacy.observePermission
+    const refresh = vi.spyOn(legacy, 'refresh')
+    const wrapper = mountToggle(first.store, fakeConnection())
+    await flushPromises()
+
+    await wrapper.setProps({ store: legacy })
+    await flushPromises()
+    expect(first.stop).toHaveBeenCalledTimes(1)
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(wrapper.get<HTMLInputElement>('input').element.disabled).toBe(true)
+    expect(
+      wrapper.get('[data-id="hilos-notification-preference-hint-push"]').text(),
+    ).toBe('Push notifications are blocked in your browser settings.')
+    legacy.clear()
+    await nextTick()
+    expect(
+      wrapper.get('[data-id="hilos-notification-preference-hint-push"]').text(),
+    ).toBe('Push notifications are not supported on this device.')
+    expect(refresh).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+    expect(first.stop).toHaveBeenCalledTimes(1)
+  })
+
   it('reflects an existing device subscription as a checked, enabled switch', async () => {
     const store = await storeReflecting({
       permission: 'granted',

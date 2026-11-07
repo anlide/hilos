@@ -49,7 +49,6 @@ export function HilosProfileDevices({
 }: HilosProfileDevicesProps) {
   const [target, setTarget] = useState<RemoveTarget | null>(null)
   const supported = useSignal(pushStore.supported)
-  const permission = useSignal(pushStore.permission)
   const refreshed = useSignal(pushStore.refreshed)
   const removeAction = useTrackedAction()
   const targetInDevices =
@@ -59,13 +58,13 @@ export function HilosProfileDevices({
     : 'This device has already been removed.'
   const hasCurrent = devices.some((device) => device.current)
   const showUnsubscribedCurrent =
-    !hasCurrent &&
-    refreshed &&
-    pushChannel !== null &&
-    supported &&
-    permission !== 'denied'
+    !hasCurrent && refreshed && pushChannel !== null && supported
 
   useEffect(() => {
+    if (pushStore.observePermission) {
+      return pushStore.observePermission()
+    }
+
     void pushStore.refresh()
   }, [pushStore])
 
@@ -128,7 +127,7 @@ export function HilosProfileDevices({
               </div>
             ) : (
               <div className="small text-body-secondary">
-                Subscribed · added {formatProfileDateTime(device.createdAt)}
+                Registered · added {formatProfileDateTime(device.createdAt)}
               </div>
             )}
           </div>

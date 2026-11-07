@@ -5,7 +5,6 @@ import {
   effect,
   input,
   signal,
-  type OnInit,
 } from '@angular/core'
 import {
   formatProfileDateTime,
@@ -78,7 +77,7 @@ const DEVICE_KIND_ICONS: Record<HilosProfileDeviceKind, string> = {
               </div>
             } @else {
               <div class="small text-body-secondary">
-                Subscribed · added {{ date(device.createdAt) }}
+                Registered · added {{ date(device.createdAt) }}
               </div>
             }
           </div>
@@ -163,7 +162,7 @@ const DEVICE_KIND_ICONS: Record<HilosProfileDeviceKind, string> = {
     </section>
   `,
 })
-export class HilosProfileDevices implements OnInit {
+export class HilosProfileDevices {
   readonly devices = input.required<readonly HilosProfileDevice[]>()
   readonly actions = input.required<HilosProfileDeviceActions>()
   readonly connection = input.required<HilosConnection>()
@@ -175,7 +174,6 @@ export class HilosProfileDevices implements OnInit {
   }
 
   protected readonly supported = signal(this.boundStore.supported.get())
-  protected readonly permission = signal(this.boundStore.permission.get())
   protected readonly refreshed = signal(this.boundStore.refreshed.get())
   protected readonly removeAction = createHilosTrackedAction()
   protected readonly target = signal<{
@@ -199,8 +197,7 @@ export class HilosProfileDevices implements OnInit {
       !this.devices().some((device) => device.current) &&
       this.refreshed() &&
       this.pushChannel() !== null &&
-      this.supported() &&
-      this.permission() !== 'denied',
+      this.supported(),
   )
   private readonly timeZone = hilosSignal(hilosTimeZone)
 
@@ -208,27 +205,23 @@ export class HilosProfileDevices implements OnInit {
     effect((onCleanup) => {
       const store = this.boundStore
       this.supported.set(store.supported.get())
-      this.permission.set(store.permission.get())
       this.refreshed.set(store.refreshed.get())
       const unsubSupported = subscribeSignal(store.supported, (value) =>
         this.supported.set(value),
       )
-      const unsubPermission = subscribeSignal(store.permission, (value) =>
-        this.permission.set(value),
-      )
       const unsubRefreshed = subscribeSignal(store.refreshed, (value) =>
         this.refreshed.set(value),
       )
+      const releasePermission = store.observePermission?.()
+      if (releasePermission === undefined) {
+        void store.refresh()
+      }
       onCleanup(() => {
+        releasePermission?.()
         unsubSupported()
-        unsubPermission()
         unsubRefreshed()
       })
     })
-  }
-
-  ngOnInit(): void {
-    void this.boundStore.refresh()
   }
 
   protected deviceIcon(deviceName: string | null): string {

@@ -471,17 +471,20 @@ describe('HilosNotificationPreferences (Angular)', () => {
       expect(switchesIn(root)).toHaveLength(0)
     })
 
-    it('mounts the push channel as one device row reading the passed push store', async () => {
+    it('mounts the push channel as one device row observing the passed push store', async () => {
       const { connection } = fakeConnection()
       const pushStore = await pushStoreReflectingDevice()
-      const refresh = vi.spyOn(pushStore, 'refresh')
+      const observePermission = vi.spyOn(pushStore, 'observePermission')
       const enable = vi.spyOn(pushStore, 'enable').mockResolvedValue(true)
-      const sharedRefresh = vi.spyOn(hilosPushSubscription, 'refresh')
+      const sharedObservePermission = vi.spyOn(
+        hilosPushSubscription,
+        'observePermission',
+      )
       const fixture = await mount(emailAndPush(), { connection, pushStore })
       const root = rootOf(fixture)
 
-      expect(refresh).toHaveBeenCalledTimes(1)
-      expect(sharedRefresh).not.toHaveBeenCalled()
+      expect(observePermission).toHaveBeenCalledTimes(1)
+      expect(sharedObservePermission).not.toHaveBeenCalled()
       expect(
         root.querySelectorAll(
           '[data-id="hilos-notification-preference-toggle-push"]',

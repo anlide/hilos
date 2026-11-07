@@ -5,8 +5,9 @@ import {
   type HilosPushPermission,
   type HilosPushSubscriptionSnapshot,
   type HilosPushSubscriptionStore,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -16,6 +17,10 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosPushDeviceToggle } from '../src/HilosPushDeviceToggle.js'
+import {
+  registerPushPermissionToggleCases,
+  type PushPermissionToggleMount,
+} from '../../test/pushPermissionCases.js'
 
 afterEach(() => cleanup())
 
@@ -109,6 +114,32 @@ function expectUniqueIdsAndInertTwins(): void {
 }
 
 describe('HilosPushDeviceToggle', () => {
+  const mountReact: PushPermissionToggleMount = async (props) => {
+    let renderResult!: ReturnType<typeof render>
+    await act(async () => {
+      renderResult = render(<HilosPushDeviceToggle {...props} />)
+    })
+
+    return {
+      container: renderResult.container,
+      event: async (run) => {
+        await act(async () => {
+          run()
+        })
+      },
+      flush: async () => {
+        await act(async () => {})
+      },
+      unmount: async () => {
+        await act(async () => {
+          renderResult.unmount()
+        })
+      },
+    }
+  }
+
+  registerPushPermissionToggleCases({ it, expect, vi }, mountReact)
+
   it('reflects an existing device subscription as a checked, enabled switch', async () => {
     const store = await storeReflecting({
       permission: 'granted',

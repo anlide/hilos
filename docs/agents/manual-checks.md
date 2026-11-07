@@ -145,7 +145,49 @@ Keep these numbers stable: hand-overs refer to them. These items have not been c
 - OAuth (stand gateway `/oauth`; `framework/backend/Auth/OAuth/HttpOAuthProvider.php`): the real provider's account chooser and consent screen; the redirect URI registered at the provider.
 - Local model (stand gateway `/model`; `framework/backend/LLM/Local/Chat/AsyncOllamaChatProvider.php`): a real model's own answer — the spec dictates the verdict.
 - Watchdog alert mail (`WATCHDOG_ALERT_SMTP_*` in `framework/backend/Environment/EnvCatalogStub.php`): the letter reaching an operator's inbox — no stand wires these settings.
-- Web Push (`framework/backend/Push/WebPushRequestFactory.php`, `framework/backend/Push/Delivery/PushEndpointSend.php`): a notification shown through a real browser push service — no double exists (HIL-918).
+- Web Push (`framework/backend/Push/WebPushRequestFactory.php`,
+  `framework/backend/Push/Delivery/PushEndpointSend.php`): a notification shown
+  through a real browser push service — no double exists (HIL-918); see
+  [Web Push permission](#web-push-permission) for permission checks.
+
+## Web Push permission
+
+These steps check the live permission state and subscription UI on the profile
+pages. They apply to Vue, React and Angular; no frontend/demo or platform/browser
+combination has been checked by hand yet. Record the frontend/demo, platform and
+browser for each acceptance; name failures and items not checked explicitly.
+
+1. In Firefox first (the browser of the original bug), then in an available
+   Chromium browser, open `/profile/notifications` and `/profile/devices` with a
+   push channel available. Keep both pages open for each browser.
+2. Start with this site's browser permission set to `granted`. On Notifications,
+   explicitly enable Push. On Devices, confirm the registration matching the
+   browser's current endpoint is marked `this one`; the current row and
+   `This browser · Not subscribed` placeholder do not appear together.
+3. With both pages open, use the browser's real site permission controls to
+   change `granted` → `denied` without reloading or navigating away from either
+   profile page. Observe both pages: Notifications disables the switch
+   immediately with `Push notifications are blocked in your browser settings.`;
+   Devices stops marking the old endpoint current, keeps its prior row as
+   `Registered · added` (or `Subscription expired` when already expired), and
+   shows `This browser · Not subscribed` with the same blocked hint. The current
+   row and placeholder do not appear together.
+4. Change `denied` → `default` → `granted` through the browser's real site
+   permission controls without refreshing or navigating away. Confirm the switch
+   becomes available and the page rereads the actual browser subscription.
+   Restoring permission does not subscribe again by itself; if the browser has no
+   current subscription, explicitly enable Push.
+5. Run steps 3–4 once with Notifications visible and once with Devices visible.
+   Before the second run, restore `granted`; if the browser has no current
+   subscription, explicitly enable Push. After explicit re-enabling, confirm the
+   registration matching the browser's current endpoint is marked `this one` and
+   the placeholder is gone. If the browser returns a different endpoint under
+   the same device name, its new registration is separate; earlier rows remain
+   available for Remove until manually removed. Do not expect automatic cleanup
+   or merging by device name or user agent.
+6. If the browser forces a reload or prevents a live transition, record that
+   transition as not checked; do not count a navigation or reload as success.
+   These steps check permission UI, not notification delivery or VAPID.
 
 ## Adding to this page
 

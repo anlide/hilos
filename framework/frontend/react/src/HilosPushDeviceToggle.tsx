@@ -60,9 +60,13 @@ export function HilosPushDeviceToggle({
   const subscribed = useSignal(store.subscribed)
   const busy = useSignal(store.busy)
 
-  // Read the live browser state (support, permission, subscription) on mount so
-  // the switch reflects this device; the store's defaults are safe until then.
+  // Observe permission changes while mounted; the store's defaults are safe
+  // until its first observation reads this device.
   useEffect(() => {
+    if (store.observePermission) {
+      return store.observePermission()
+    }
+
     void store.refresh()
   }, [store])
 
@@ -129,15 +133,21 @@ export function HilosPushDeviceToggle({
             {label}
           </label>
           {pending}
-          {hint && (
-            <div
-              id={hintId}
-              className="form-text mt-0"
-              data-id={`hilos-notification-preference-hint-${channel}`}
-            >
-              {hint}
-            </div>
-          )}
+          <div className="hilos-stack form-text mt-0">
+            {[COPY.pushBlocked, COPY.pushUnsupported].map((text) => (
+              <span key={text} className="invisible" aria-hidden="true" inert>
+                {text}
+              </span>
+            ))}
+            {hint && (
+              <div
+                id={hintId}
+                data-id={`hilos-notification-preference-hint-${channel}`}
+              >
+                {hint}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     )

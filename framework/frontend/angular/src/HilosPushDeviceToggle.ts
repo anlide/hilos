@@ -19,7 +19,6 @@ import {
   effect,
   input,
   signal,
-  type OnInit,
 } from '@angular/core'
 import {
   HILOS_NOTIFICATION_PREFERENCES_COPY as COPY,
@@ -139,13 +138,24 @@ let pushToggleSeq = 0
               >
             }
           </span>
-          @if (!channelRow() && hint()) {
-            <div
-              [id]="baseId + '-hint'"
-              class="form-text mt-0"
-              [attr.data-id]="'hilos-notification-preference-hint-' + channel()"
-            >
-              {{ hint() }}
+          @if (!channelRow()) {
+            <div class="hilos-stack form-text mt-0">
+              <span class="invisible" aria-hidden="true" inert>{{
+                copy.pushBlocked
+              }}</span>
+              <span class="invisible" aria-hidden="true" inert>{{
+                copy.pushUnsupported
+              }}</span>
+              @if (hint()) {
+                <div
+                  [id]="baseId + '-hint'"
+                  [attr.data-id]="
+                    'hilos-notification-preference-hint-' + channel()
+                  "
+                >
+                  {{ hint() }}
+                </div>
+              }
             </div>
           }
         </div>
@@ -153,7 +163,7 @@ let pushToggleSeq = 0
     </div>
   `,
 })
-export class HilosPushDeviceToggle implements OnInit {
+export class HilosPushDeviceToggle {
   /** The connection the subscribe/unsubscribe action is sent over. */
   readonly connection = input.required<HilosConnection>()
   /** The push channel's registry name, used for stable element ids. */
@@ -215,7 +225,12 @@ export class HilosPushDeviceToggle implements OnInit {
         mirrorHilosSignal(store.subscribed, this.subscribed),
         mirrorHilosSignal(store.busy, this.busy),
       ]
+      const releasePermission = store.observePermission?.()
+      if (releasePermission === undefined) {
+        void store.refresh()
+      }
       onCleanup(() => {
+        releasePermission?.()
         for (const unsubscribe of unsubscribes) {
           unsubscribe()
         }
@@ -226,14 +241,6 @@ export class HilosPushDeviceToggle implements OnInit {
   /** The store the input holds now — the one the view reads and calls. */
   private get boundStore(): HilosPushSubscriptionStore {
     return this.store()
-  }
-
-  /**
-   * Read the live browser state (support, permission, subscription) so the switch
-   * reflects this device; the store's default signals are safe until then.
-   */
-  ngOnInit(): void {
-    void this.boundStore.refresh()
   }
 
   // Per-device: subscribe or unsubscribe THIS browser rather than setting a

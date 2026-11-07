@@ -16,7 +16,16 @@ import {
   type HilosConnection,
   type HilosPushSubscriptionStore,
 } from '@hilos/core/base'
-import { computed, onMounted, useId } from 'vue'
+import {
+  computed,
+  effectScope,
+  onBeforeUnmount,
+  onMounted,
+  onScopeDispose,
+  shallowRef,
+  useId,
+  watch,
+} from 'vue'
 
 import { useSignal } from './useSignal.js'
 
@@ -44,16 +53,47 @@ const props = withDefaults(
   },
 )
 
-const supported = useSignal(props.store.supported)
-const permission = useSignal(props.store.permission)
-const subscribed = useSignal(props.store.subscribed)
-const busy = useSignal(props.store.busy)
+function mirrors() {
+  const store = props.store
+  return {
+    supported: useSignal(store.supported),
+    permission: useSignal(store.permission),
+    subscribed: useSignal(store.subscribed),
+    busy: useSignal(store.busy),
+  }
+}
+let mirrorScope = effectScope()
+const current = shallowRef(mirrorScope.run(mirrors)!)
+watch(
+  () => props.store,
+  () => {
+    mirrorScope.stop()
+    mirrorScope = effectScope()
+    current.value = mirrorScope.run(mirrors)!
+  },
+  { flush: 'sync' },
+)
+onScopeDispose(() => mirrorScope.stop())
+const supported = computed(() => current.value.supported.value)
+const permission = computed(() => current.value.permission.value)
+const subscribed = computed(() => current.value.subscribed.value)
+const busy = computed(() => current.value.busy.value)
 
-// Read the live browser state (support, permission, subscription) on mount so the
-// switch reflects this device; the store's default signals are safe until then.
+let stopPermission: (() => void) | undefined
 onMounted(() => {
-  void props.store.refresh()
+  stopPermission = watch(
+    () => props.store,
+    (store, _previous, onCleanup) => {
+      if (store.observePermission) {
+        onCleanup(store.observePermission())
+      } else {
+        void store.refresh()
+      }
+    },
+    { immediate: true },
+  )
 })
+onBeforeUnmount(() => stopPermission?.())
 
 const baseId = useId()
 const rowId = `${baseId}-${props.channel}`
@@ -178,13 +218,20 @@ function toggle(event: Event): void {
             ><span class="visually-hidden">Saving…</span></span
           >
         </span>
-        <div
-          v-if="!channelRow && hint"
-          :id="`${rowId}-hint`"
-          class="form-text mt-0"
-          :data-id="`hilos-notification-preference-hint-${channel}`"
-        >
-          {{ hint }}
+        <div v-if="!channelRow" class="hilos-stack form-text mt-0">
+          <span class="invisible" aria-hidden="true" inert>
+            {{ COPY.pushBlocked }}
+          </span>
+          <span class="invisible" aria-hidden="true" inert>
+            {{ COPY.pushUnsupported }}
+          </span>
+          <div
+            v-if="hint"
+            :id="`${rowId}-hint`"
+            :data-id="`hilos-notification-preference-hint-${channel}`"
+          >
+            {{ hint }}
+          </div>
         </div>
       </div>
     </div>

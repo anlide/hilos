@@ -11,7 +11,16 @@ import {
   type HilosProfilePushChannel,
   type HilosPushSubscriptionStore,
 } from '@hilos/core/base'
-import { computed, onMounted, ref } from 'vue'
+import {
+  computed,
+  effectScope,
+  onBeforeUnmount,
+  onMounted,
+  onScopeDispose,
+  ref,
+  shallowRef,
+  watch,
+} from 'vue'
 
 import HilosFormError from '../HilosFormError.vue'
 import HilosModal from '../HilosModal.vue'
@@ -44,9 +53,27 @@ const props = withDefaults(
 )
 
 const timeZone = useSignal(hilosTimeZone)
-const supported = useSignal(props.pushStore.supported)
-const permission = useSignal(props.pushStore.permission)
-const refreshed = useSignal(props.pushStore.refreshed)
+function mirrors() {
+  const store = props.pushStore
+  return {
+    supported: useSignal(store.supported),
+    refreshed: useSignal(store.refreshed),
+  }
+}
+let mirrorScope = effectScope()
+const current = shallowRef(mirrorScope.run(mirrors)!)
+watch(
+  () => props.pushStore,
+  () => {
+    mirrorScope.stop()
+    mirrorScope = effectScope()
+    current.value = mirrorScope.run(mirrors)!
+  },
+  { flush: 'sync' },
+)
+onScopeDispose(() => mirrorScope.stop())
+const supported = computed(() => current.value.supported.value)
+const refreshed = computed(() => current.value.refreshed.value)
 const removeAction = useTrackedAction()
 const removeBusy = computed(() => removeAction.busy.value)
 const hasCurrent = computed(() =>
@@ -57,8 +84,7 @@ const showUnsubscribedCurrent = computed(
     !hasCurrent.value &&
     refreshed.value &&
     props.pushChannel !== null &&
-    supported.value &&
-    permission.value !== 'denied',
+    supported.value,
 )
 
 interface RemoveTarget {
@@ -82,9 +108,21 @@ const removeError = computed(() => {
   return removeAction.error.value
 })
 
+let stopPermission: (() => void) | undefined
 onMounted(() => {
-  void props.pushStore.refresh()
+  stopPermission = watch(
+    () => props.pushStore,
+    (store, _previous, onCleanup) => {
+      if (store.observePermission) {
+        onCleanup(store.observePermission())
+      } else {
+        void store.refresh()
+      }
+    },
+    { immediate: true },
+  )
 })
+onBeforeUnmount(() => stopPermission?.())
 
 /** Format a device moment again when the reader's zone changes. */
 function dateTime(moment: number): string {
@@ -157,7 +195,7 @@ async function confirmRemove(): Promise<void> {
           Subscription expired
         </div>
         <div v-else class="small text-body-secondary">
-          Subscribed · added {{ dateTime(device.createdAt) }}
+          Registered · added {{ dateTime(device.createdAt) }}
         </div>
       </div>
       <HilosPushDeviceToggle

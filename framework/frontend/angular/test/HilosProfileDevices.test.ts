@@ -17,6 +17,10 @@ import {
   registerProfileDeviceRemoveCases,
   type ProfileDeviceMountFn,
 } from '../../test/profileDeviceRemoveCases.js'
+import {
+  registerProfileDevicePushPermissionCases,
+  type PushPermissionDeviceMount,
+} from '../../test/pushPermissionCases.js'
 import { HilosProfileDevices } from '../src/profile/HilosProfileDevices.js'
 import {
   bindTestTimeZone,
@@ -203,12 +207,12 @@ describe('HilosProfileDevices (Angular)', () => {
       rows[4].querySelector('[data-id="profile-device-expired"]'),
     ).toBeNull()
 
-    // Subscribed moment line
-    expect(rows[0].textContent).toContain('Subscribed · added')
-    expect(rows[1].textContent).toContain('Subscribed · added')
+    // Registered moment line
+    expect(rows[0].textContent).toContain('Registered · added')
+    expect(rows[1].textContent).toContain('Registered · added')
     expect(rows[2].textContent).not.toContain('added')
-    expect(rows[3].textContent).toContain('Subscribed · added')
-    expect(rows[4].textContent).toContain('Subscribed · added')
+    expect(rows[3].textContent).toContain('Registered · added')
+    expect(rows[4].textContent).toContain('Registered · added')
 
     // Current row with pushChannel renders HilosPushDeviceToggle, not Remove button
     expect(
@@ -367,6 +371,21 @@ describe('HilosProfileDevices (Angular)', () => {
   }
 
   registerProfileDeviceRemoveCases({ it, expect, vi }, mountAngular)
+  const mountPermissionAngular: PushPermissionDeviceMount = async (props) => {
+    const view = await mountAngular(props)
+
+    return {
+      ...view,
+      event: async (run) => {
+        run()
+        await view.flush()
+      },
+    }
+  }
+  registerProfileDevicePushPermissionCases(
+    { it, expect, vi },
+    mountPermissionAngular,
+  )
 
   it('renders Remove button for current device when pushChannel is null', async () => {
     const connection = createStubConnection()
@@ -424,7 +443,7 @@ describe('HilosProfileDevices (Angular)', () => {
     expect(removeButton!.classList.contains('btn-outline-secondary')).toBe(true)
   })
 
-  it('renders profile-device-none-this placeholder only when condition is met', async () => {
+  it('renders the placeholder based on device and browser support state', async () => {
     const connection = createStubConnection()
     const supported = createSignal(true)
     const permission = createSignal<HilosPushPermission>('granted')
@@ -449,7 +468,7 @@ describe('HilosProfileDevices (Angular)', () => {
       vapidPublicKey: 'vapid-key',
     }
 
-    // Condition: !hasCurrent && refreshed && pushChannel !== null && supported && permission !== 'denied'
+    // Condition: !hasCurrent && refreshed && pushChannel !== null && supported
     // 1. All true -> placeholder is rendered with card class
     const fixture = TestBed.createComponent(HilosProfileDevices)
     fixture.componentRef.setInput('devices', [
@@ -542,11 +561,11 @@ describe('HilosProfileDevices (Angular)', () => {
       root.querySelector('[data-id="profile-device-none-this"]'),
     ).not.toBeNull()
 
-    // 6. permission is denied -> not rendered
+    // 6. permission is denied -> still rendered with the blocked toggle hint
     permission.set('denied')
     await settle(fixture)
     expect(
       root.querySelector('[data-id="profile-device-none-this"]'),
-    ).toBeNull()
+    ).not.toBeNull()
   })
 })

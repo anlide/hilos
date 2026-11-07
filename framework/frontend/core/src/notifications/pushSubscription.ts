@@ -67,6 +67,13 @@ export interface HilosPushEnvironment {
   isSupported(): boolean
   /** The current permission state without prompting. */
   permission(): HilosPushPermission
+  /**
+   * Observe local permission changes without prompting or changing subscriptions.
+   *
+   * @param listener Re-read local browser facts when permission may have changed.
+   * @returns Synchronous, idempotent cleanup, even while observation is starting.
+   */
+  watchPermission?(listener: () => void): () => void
   /** The subscribing device's user agent, or null when unavailable. */
   userAgent(): string | null
   /**
@@ -125,9 +132,16 @@ export interface HilosPushSubscriptionStore {
   readonly busy: ReadonlySignal<boolean>
   /**
    * Read the live browser state into the store (support, permission, subscription).
-   * The view calls this on mount so the toggle reflects the device's real state.
+   * During an opt-in/out, defer subscription reading until that operation ends.
    */
   refresh(): Promise<void>
+  /**
+   * Share permission observation and an initial refresh with mounted consumers.
+   * The last release stops observation and invalidates that group's pending reads.
+   *
+   * @returns Idempotent release for this consumer, including after clear.
+   */
+  observePermission?(): () => void
   /**
    * Opt this device in: prompt for permission, subscribe with the VAPID public key,
    * and register the subscription server-side. A denied prompt or an empty key
@@ -178,6 +192,89 @@ export function createHilosPushSubscriptionStore(
   const endpointHash = createSignal<string | null>(null)
   const refreshed = createSignal(false)
   const busy = createSignal(false)
+  let readVersion = 0
+  let mutationVersion = 0
+  let refreshPending = false
+  let observation: { consumers: number; stop: (() => void) | null } | null =
+    null
+
+  function resetSubscription(): void {
+    subscribed.set(false)
+    endpointHash.set(null)
+  }
+
+  function readPermission(): HilosPushPermission {
+    const available = environment.isSupported()
+    const current = available ? environment.permission() : 'unsupported'
+    supported.set(available)
+    permission.set(current)
+    if (current === 'denied' || current === 'unsupported') {
+      resetSubscription()
+    }
+
+    return current
+  }
+
+  function isCurrentRead(
+    version: number,
+    initialPermission: HilosPushPermission,
+  ): boolean {
+    if (version !== readVersion) return false
+    if (readPermission() !== initialPermission) {
+      // Also reconcile a revocation before its optional browser event arrives.
+      void refresh()
+
+      return false
+    }
+
+    return true
+  }
+
+  async function refresh(): Promise<void> {
+    const version = ++readVersion
+    const currentPermission = readPermission()
+    if (busy.get()) {
+      refreshPending = true
+
+      return
+    }
+    refreshPending = false
+    if (currentPermission === 'unsupported' || currentPermission === 'denied') {
+      refreshed.set(true)
+
+      return
+    }
+    try {
+      const current = await environment.getSubscription()
+      if (!isCurrentRead(version, currentPermission)) return
+      subscribed.set(current !== null)
+      const hash =
+        current === null ? null : await pushEndpointHash(current.endpoint)
+      if (!isCurrentRead(version, currentPermission)) return
+      endpointHash.set(hash)
+      refreshed.set(true)
+    } catch {
+      // A rejected browser read cannot prove that a server registration is gone.
+      // Keep the safe local fallback and let a later refresh reconcile.
+      if (!isCurrentRead(version, currentPermission)) return
+      resetSubscription()
+      refreshed.set(true)
+    }
+  }
+
+  function stopObservation(): void {
+    const group = observation
+    observation = null
+    readVersion += 1
+    refreshPending = false
+    group?.stop?.()
+  }
+
+  function finishMutation(version: number): void {
+    if (version !== mutationVersion) return
+    busy.set(false)
+    if (refreshPending) void refresh()
+  }
 
   return {
     supported,
@@ -186,36 +283,31 @@ export function createHilosPushSubscriptionStore(
     endpointHash,
     refreshed,
     busy,
-    async refresh() {
-      refreshed.set(false)
-      if (!environment.isSupported()) {
-        supported.set(false)
-        permission.set('unsupported')
-        subscribed.set(false)
-        endpointHash.set(null)
-        refreshed.set(true)
-
-        return
+    refresh,
+    observePermission() {
+      if (observation === null) {
+        const group = { consumers: 0, stop: null as (() => void) | null }
+        observation = group
+        group.stop =
+          environment.watchPermission?.(() => {
+            if (observation === group) void refresh()
+          }) ?? null
+        void refresh()
       }
-      supported.set(true)
-      permission.set(environment.permission())
-      try {
-        const current = await environment.getSubscription()
-        subscribed.set(current !== null)
-        endpointHash.set(
-          current === null ? null : await pushEndpointHash(current.endpoint),
-        )
-      } catch {
-        // The browser's getSubscription() rejected (the push service is unreachable);
-        // report not-subscribed rather than leaking an unhandled rejection, and let a
-        // later refresh reconcile.
-        subscribed.set(false)
-        endpointHash.set(null)
-      } finally {
-        refreshed.set(true)
+      const group = observation
+      group.consumers += 1
+      let released = false
+
+      return () => {
+        if (released) return
+        released = true
+        if (observation !== group) return
+        group.consumers -= 1
+        if (group.consumers === 0) stopObservation()
       }
     },
     async enable(connection, vapidPublicKey) {
+      readVersion += 1
       if (!environment.isSupported()) {
         supported.set(false)
         permission.set('unsupported')
@@ -225,13 +317,20 @@ export function createHilosPushSubscriptionStore(
       if (vapidPublicKey === '') {
         return false
       }
+      const version = ++mutationVersion
       busy.set(true)
       try {
         const granted = await environment.requestPermission()
-        permission.set(granted)
+        if (version === mutationVersion) {
+          const currentPermission = readPermission()
+          if (currentPermission === 'default') permission.set(granted)
+          if (granted === 'denied') resetSubscription()
+        }
         if (granted !== 'granted') {
           return false
         }
+        // A snapshot can predate permission changes while subscribe is pending.
+        const snapshotVersion = readVersion
         const snapshot = await environment.subscribe(vapidPublicKey)
         const sent = connection.sendAction(PUSH_ACTION_SUBSCRIBE, {
           endpoint: snapshot.endpoint,
@@ -241,13 +340,21 @@ export function createHilosPushSubscriptionStore(
         })
         if (!sent) {
           await environment.unsubscribe()
-          subscribed.set(false)
-          endpointHash.set(null)
+          if (version === mutationVersion) resetSubscription()
 
           return false
         }
-        subscribed.set(true)
-        endpointHash.set(await pushEndpointHash(snapshot.endpoint))
+        const hash = await pushEndpointHash(snapshot.endpoint)
+        if (version === mutationVersion && snapshotVersion === readVersion) {
+          const currentPermission = readPermission()
+          if (
+            currentPermission !== 'denied' &&
+            currentPermission !== 'unsupported'
+          ) {
+            subscribed.set(true)
+            endpointHash.set(hash)
+          }
+        }
 
         return true
       } catch {
@@ -255,24 +362,24 @@ export function createHilosPushSubscriptionStore(
         // rollback unsubscribe) - e.g. the push service is unreachable or the key was
         // refused. Leave the device unsubscribed and report failure instead of surfacing
         // an unhandled rejection; a later refresh reconciles the real browser state.
-        subscribed.set(false)
-        endpointHash.set(null)
+        if (version === mutationVersion) resetSubscription()
 
         return false
       } finally {
-        busy.set(false)
+        finishMutation(version)
       }
     },
     async disable(connection) {
+      readVersion += 1
       if (!environment.isSupported()) {
         return false
       }
+      const version = ++mutationVersion
       busy.set(true)
       try {
         const current = await environment.getSubscription()
         await environment.unsubscribe()
-        subscribed.set(false)
-        endpointHash.set(null)
+        if (version === mutationVersion) resetSubscription()
         if (current !== null) {
           connection.sendAction(PUSH_ACTION_UNSUBSCRIBE, {
             endpoint: current.endpoint,
@@ -286,14 +393,15 @@ export function createHilosPushSubscriptionStore(
         // unknown) and reconciles on the next refresh.
         return false
       } finally {
-        busy.set(false)
+        finishMutation(version)
       }
     },
     clear() {
+      stopObservation()
+      mutationVersion += 1
       supported.set(false)
       permission.set('default')
-      subscribed.set(false)
-      endpointHash.set(null)
+      resetSubscription()
       refreshed.set(false)
       busy.set(false)
     },
@@ -382,6 +490,42 @@ export function createBrowserPushEnvironment(
       }
 
       return Notification.permission as HilosPushPermission
+    },
+    watchPermission(listener) {
+      let stopped = false
+      let permissionStatus: PermissionStatus | null = null
+      const stop = () => {
+        if (stopped) return
+        stopped = true
+        permissionStatus?.removeEventListener('change', listener)
+        permissionStatus = null
+      }
+      if (
+        !this.isSupported() ||
+        typeof navigator.permissions?.query !== 'function'
+      ) {
+        return stop
+      }
+      const initialPermission = this.permission()
+      const observe = async () => {
+        try {
+          const status = await navigator.permissions.query({
+            name: 'notifications',
+          })
+          if (stopped) return
+          permissionStatus = status
+          status.addEventListener('change', listener)
+          // PermissionStatus is only a trigger. Reconcile a change that happened
+          // while query was pending through the same Notification permission read.
+          if (this.permission() !== initialPermission) listener()
+        } catch {
+          // Some browsers expose Permissions but refuse notifications queries.
+          // Observation is optional; the ordinary push operations stay available.
+        }
+      }
+      void observe()
+
+      return stop
     },
     userAgent() {
       return typeof navigator === 'undefined' ? null : navigator.userAgent
