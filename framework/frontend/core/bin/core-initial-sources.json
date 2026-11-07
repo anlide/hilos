@@ -25,6 +25,8 @@
   "src/browser/browserValue.ts",
   "src/browser/browserValueChanges.ts",
   "src/browser/browserValues.ts",
+  "src/calendar/calendarDate.ts",
+  "src/calendar/monthMatrix.ts",
   "src/conflict/rowEdit.ts",
   "src/conflict/rowEditSession.ts",
   "src/conflict/textLineMerge.ts",

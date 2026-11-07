@@ -18,7 +18,7 @@ interface OffsetInterval {
 /**
  * Encode Gregorian fields as a numeric calendar coordinate, not a wire moment.
  * setUTCFullYear also preserves years 0 through 99 instead of adding 1900.
- * Shared within timeZone/ only; not exported from the package barrels.
+ * Shared internally by timeZone/ and calendar/; absent from package barrels.
  */
 export function calendarCoordinate(
   year: number,

@@ -51,6 +51,8 @@ import * as users from '../../src/admin/users/index.js'
 import * as userRows from '../../src/admin/users/hilosUsers.js'
 import * as userSessions from '../../src/admin/users/hilosUserSessions.js'
 import * as base from '../../src/base/index.js'
+import * as calendarDates from '../../src/calendar/calendarDate.js'
+import * as calendarMatrix from '../../src/calendar/monthMatrix.js'
 import * as textLineMerge from '../../src/conflict/textLineMerge.js'
 import * as restoreProgress from '../../src/connection/restoreProgress.js'
 import * as tableFocusReturn from '../../src/dom/tableFocusReturn.js'
@@ -160,6 +162,25 @@ const licenseDependenciesValues = [
 const licenseDependenciesTypes = [
   'HilosLicenseDependenciesController',
   'HilosTableAuxiliaryAction',
+]
+/** Gregorian math belongs to base without extending the compatibility root. */
+const calendarValues = [
+  'parseCalendarDate',
+  'createCalendarDate',
+  'calendarDaysInMonth',
+  'calendarDateWeekday',
+  'addCalendarDays',
+  'addCalendarMonths',
+  'addCalendarYears',
+  'calendarWeekStart',
+  'calendarWeekEnd',
+  'calendarMonthMatrix',
+]
+const calendarTypes = [
+  'CalendarDate',
+  'CalendarWeekday',
+  'CalendarDateParts',
+  'CalendarMonthMatrix',
 ]
 /** Channel icons belong to base without extending the compatibility root. */
 const notificationChannelValues = ['notificationChannelIcon']
@@ -1040,7 +1061,15 @@ describe('core public entries', () => {
     for (const [entry, api] of Object.entries(publicEntries)) {
       for (const [name, value] of Object.entries(api)) {
         names.add(name)
-        if (entry === './base' && notificationChannelValues.includes(name)) {
+        if (entry === './base' && calendarValues.includes(name)) {
+          expect(root, name).not.toHaveProperty(name)
+          const owner: Record<string, unknown> =
+            name === 'calendarMonthMatrix' ? calendarMatrix : calendarDates
+          expect(value, name).toBe(owner[name])
+        } else if (
+          entry === './base' &&
+          notificationChannelValues.includes(name)
+        ) {
           expect(root, name).not.toHaveProperty(name)
           expect(value, name).toBe(
             notificationPreferences[
@@ -1375,6 +1404,7 @@ describe('core public entries', () => {
     expect([...names].sort()).toEqual(
       [
         ...expectedValues,
+        ...calendarValues,
         ...notificationChannelValues,
         ...publicStatusDerivedValues,
         ...analyticsOverviewValues,
@@ -1979,9 +2009,17 @@ describe('core public entries', () => {
     const notificationChannelExports = exportsOf(
       'notifications/notificationPreferences.ts',
     )
+    const calendarExports = new Map([
+      ...exportsOf('calendar/calendarDate.ts'),
+      ...exportsOf('calendar/monthMatrix.ts'),
+    ])
+    const calendarNames = [...calendarValues, ...calendarTypes]
     for (const entry of entries.slice(1)) {
       for (const [name, symbol] of exportsOf(entry)) {
-        if (
+        if (entry === 'base/index.ts' && calendarNames.includes(name)) {
+          expect(root.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(calendarExports.get(name))
+        } else if (
           entry === 'base/index.ts' &&
           notificationChannelValues.includes(name)
         ) {
@@ -2224,6 +2262,7 @@ describe('core public entries', () => {
     expect([...names].sort()).toEqual(
       [
         ...root.keys(),
+        ...calendarNames,
         ...notificationChannelValues,
         ...publicDerivedNames,
         ...overviewNames,
@@ -2348,6 +2387,8 @@ describe('core public entries', () => {
   it.each([
     'base/index.ts',
     'bootstrap/bootHilos.ts',
+    'calendar/calendarDate.ts',
+    'calendar/monthMatrix.ts',
     'conflict/rowEditSession.ts',
     'profile/profileHead.ts',
     'profile/profileRoot.ts',

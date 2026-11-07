@@ -45,9 +45,10 @@ Use two independent axes, `kind` and `count`, for one component. A range is a
 pair of the same kind; it is not a string containing two formatted values.
 
 ```ts
+import type { CalendarDate } from '@hilos/core/base'
+
 type DateTimePickerKind = 'date' | 'time' | 'datetime'
 type DateTimePickerCount = 'single' | 'range'
-type CalendarDate = string // Strict Gregorian YYYY-MM-DD, years 0001..9999.
 type ClockTime = string // Strict 24-hour HH:mm:ss, no date, zone or fractions.
 interface DateTimePickerValueMap {
   date: CalendarDate
@@ -480,7 +481,82 @@ Share Gregorian date arithmetic and the month matrix so both the picker and
 the scheduler Calendar can use the same mathematics. Calendar's own
 period/navigation state and week/day time grid stay with Calendar; sharing
 math does not make it the picker's state machine.
-(not in the code yet — HIL-1966)
+
+The shared Gregorian API is available from `@hilos/core/base`:
+
+```ts
+export type CalendarDate = string
+export type CalendarWeekday = 0 | 1 | 2 | 3 | 4 | 5 | 6
+export interface CalendarDateParts {
+  readonly year: number
+  readonly month: number
+  readonly day: number
+}
+export interface CalendarMonthMatrix {
+  readonly weekdays: readonly CalendarWeekday[]
+  readonly weeks: readonly (readonly (CalendarDate | null)[])[]
+}
+export function parseCalendarDate(value: string): CalendarDateParts | null
+export function createCalendarDate(year: number, month: number, day: number): CalendarDate
+export function calendarDaysInMonth(year: number, month: number): number
+export function calendarDateWeekday(date: CalendarDate): CalendarWeekday
+export function addCalendarDays(date: CalendarDate, delta: number): CalendarDate
+export function addCalendarMonths(date: CalendarDate, delta: number): CalendarDate
+export function addCalendarYears(date: CalendarDate, delta: number): CalendarDate
+export function calendarWeekStart(date: CalendarDate, firstWeekday: CalendarWeekday): CalendarDate
+export function calendarWeekEnd(date: CalendarDate, firstWeekday: CalendarWeekday): CalendarDate
+export function calendarMonthMatrix(
+  year: number, month: number, firstWeekday: CalendarWeekday,
+): CalendarMonthMatrix
+```
+
+`CalendarDate` comes from this shared math, rather than the future picker
+types. It is strict Gregorian `YYYY-MM-DD` in years `0001..9999`.
+`parseCalendarDate()` returns `null` for invalid strings or impossible dates,
+without trimming, coercion or overflow normalization. Other operations throw
+`RangeError` on invalid inputs: year/month/day must be integers identifying
+an existing date, `delta` must be a safe integer and `firstWeekday` must be
+explicitly supplied as Sunday `0` through Saturday `6`.
+
+Day shifts cross month/year boundaries. Month/year shifts clamp only the day
+to the target month's last day; each call starts from its supplied date, with
+no retained preferred day. Thus January 31 → February 28 → March 28. A zero
+shift preserves the date. Results outside `0001..9999`, including a week
+start/end beyond an outer boundary, throw `RangeError`; the future consumer
+decides how to disable such a transition.
+
+The matrix has seven weekday columns starting at `firstWeekday` and the
+minimum four to six rows of seven cells. It contains every date of the chosen
+month exactly once in order, with `null` at unused edges. It includes dates
+skipped in an IANA zone, such as `2011-12-30`. There is no implicit current
+date, locale or time zone, and this pure API does not use `Intl`. Its UTC
+coordinates are calculation workspace, not absolute moments of the dates.
+Readonly is the TypeScript contract; runtime deep freezing is not required.
+
+```ts
+import {
+  addCalendarDays,
+  addCalendarMonths,
+  calendarMonthMatrix,
+  type CalendarWeekday,
+} from '@hilos/core/base'
+
+const matrix = calendarMonthMatrix(2026, 10, 1)
+const weekdayColumns = matrix.weekdays // [1, 2, 3, 4, 5, 6, 0]
+const firstWeek = matrix.weeks[0]
+// [null, null, null, '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04']
+const nextWeek = addCalendarDays('2026-10-17', 7) // '2026-10-24'
+const nextMonth = addCalendarMonths('2026-01-31', 1) // '2026-02-28'
+const weekendColumns = (weekendDays: readonly CalendarWeekday[]) =>
+  weekdayColumns.map((weekday) => weekendDays.includes(weekday))
+weekendColumns([0, 6]) // [false, false, false, false, false, true, true]
+weekendColumns([5, 6]) // [false, false, false, false, true, true, false]
+```
+
+Weekend marking reads `weekdays`; it does not change `weeks` or remove empty
+columns/cells. The future controller supplies the current month and owns
+navigation, focus, today, selection and bounds. This example only consumes
+the shared math.
 
 Compose the day/range selection and navigation model with the same picker
 controller. It owns selection policy and navigation, not a second copy of the
@@ -756,9 +832,10 @@ adoption, separate from the generic component:
 | React Schedule maintenance / Change scheduled maintenance | (not in the code yet — HIL-1981) |
 | Angular Schedule maintenance / Change scheduled maintenance | (not in the code yet — HIL-1982) |
 
-The markers in this document name the implementation owner at each boundary:
-HIL-1966 for shared Gregorian math; HIL-1967 for exact zone facts; HIL-1968
-for values, draft, factors, controller and core exports; HIL-1969 for calendar
+Shared Gregorian math and its `/base` exports are implemented by HIL-1966.
+The remaining markers name the implementation owner at each boundary:
+HIL-1967 for exact zone facts; HIL-1968 for picker values, draft, factors,
+controller and core exports; HIL-1969 for calendar
 selection/navigation; the SDK field/calendar/narrow sequences HIL-1970–1972,
 HIL-1973–1975 and HIL-1976–1978 for Vue, React and Angular; and HIL-1979–1982
 for maintenance integration and adoption. Do not invent new internal file

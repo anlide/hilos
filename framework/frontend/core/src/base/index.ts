@@ -845,6 +845,24 @@ export {
 } from '../auth/authSendProgress.js'
 export { formatCountdown } from '../format/duration.js'
 export { formatCalendarDate } from '../format/date.js'
+export {
+  type CalendarDate,
+  type CalendarWeekday,
+  type CalendarDateParts,
+  parseCalendarDate,
+  createCalendarDate,
+  calendarDaysInMonth,
+  calendarDateWeekday,
+  addCalendarDays,
+  addCalendarMonths,
+  addCalendarYears,
+  calendarWeekStart,
+  calendarWeekEnd,
+} from '../calendar/calendarDate.js'
+export {
+  type CalendarMonthMatrix,
+  calendarMonthMatrix,
+} from '../calendar/monthMatrix.js'
 export { formatMoment, type MomentFormatOptions } from '../format/moment.js'
 export { formatInitials } from '../format/initials.js'
 export {
