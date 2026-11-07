@@ -5,7 +5,7 @@ import {
   gotoMaintenance,
   gotoPage,
   expectPageReady,
-  expectMaintenancePageHead,
+  expectMaintenancePageCurrent,
   grantAdminToSelf,
   sessionToken,
   typeInto,
@@ -95,7 +95,7 @@ test('the verification window offers the reopen block to the operator, and to no
   await reopen.click()
   await expectPageReady(expect, page)
   await expect(page).toHaveURL(/\/hilos\/maintenance$/)
-  await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+  await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance')
   await expect(page.getByTestId('hilos-backup-reopen-modal')).toHaveCount(0)
   expect(frames.sent.some((frame) => frame.raw.includes('backup_reopen'))).toBe(
     false,

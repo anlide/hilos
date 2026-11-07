@@ -10,7 +10,7 @@ import {
   enterCalendarDate,
   expectBackupMoments,
   expectDataFreeDeparture,
-  expectMaintenancePageHead,
+  expectMaintenancePageCurrent,
   expectPageReady,
   expectTimeZoneEnvironment,
   leaveSecondAdmin,
@@ -606,7 +606,7 @@ test('points to the verifier circle in Maintenance', async ({ page }) => {
   await page.getByTestId('hilos-backup-circle-pointer-open').click()
   await expectPageReady(expect, page)
   await expect(page).toHaveURL(/\/hilos\/maintenance\/circle$/)
-  await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+  await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance_circle')
   await expect(page.getByTestId('hilos-maintenance-circle-table')).toBeVisible()
   await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
   await page.goBack()

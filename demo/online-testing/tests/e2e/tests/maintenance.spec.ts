@@ -11,9 +11,9 @@ import {
   clearMaintenanceCircle,
   confirmMaintenanceCircleRemoval,
   dismissToasts,
-  expectMaintenancePageHead,
+  expectMaintenancePageCurrent,
   expectMaintenanceWatchdogThresholds,
-  expectMaintenanceWordsInitial,
+  expectMaintenanceWords,
   expectPageReady,
   maintenanceCircleRow,
   shownByTestId,
@@ -66,7 +66,7 @@ test('an administrator walks Maintenance by its tabs, history, F5 and a direct a
     const thresholds =
       await test.step('Overview shows the thresholds of its state frame', async () => {
         await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
-        await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+        await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance')
         return expectMaintenanceWatchdogThresholds(expect, page, frames)
       })
 
@@ -77,7 +77,11 @@ test('an administrator walks Maintenance by its tabs, history, F5 and a direct a
       await circle.press('Enter')
       await expect(page).toHaveURL(CIRCLE_URL)
       await expectPageReady(expect, page)
-      await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+      await expectMaintenancePageCurrent(
+        expect,
+        page,
+        'hilos_maintenance_circle',
+      )
       await clearMaintenanceCircle(page)
     })
 
@@ -144,13 +148,12 @@ test('an administrator walks Maintenance by its tabs, history, F5 and a direct a
         await page.getByTestId('hilos-page-tab-hilos_maintenance_words').click()
         await expect(page).toHaveURL(WORDS_URL)
         await expectPageReady(expect, page)
-        await expectMaintenancePageHead(expect, page, 'hilos_maintenance_words')
-        const rows = await expectMaintenanceWordsInitial(
+        await expectMaintenancePageCurrent(
           expect,
           page,
-          frames,
-          after,
+          'hilos_maintenance_words',
         )
+        const rows = await expectMaintenanceWords(expect, page, frames, after)
         const byOperation = new Map(rows.map((row) => [row.operation, row]))
         for (const operation of [
           DEFAULT_OPERATION,
@@ -178,7 +181,11 @@ test('an administrator walks Maintenance by its tabs, history, F5 and a direct a
       await page.goBack()
       await expect(page).toHaveURL(CIRCLE_URL)
       await expectPageReady(expect, page)
-      await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+      await expectMaintenancePageCurrent(
+        expect,
+        page,
+        'hilos_maintenance_circle',
+      )
       await expect(
         page.getByTestId('hilos-maintenance-circle-table'),
       ).toBeVisible()
@@ -187,37 +194,49 @@ test('an administrator walks Maintenance by its tabs, history, F5 and a direct a
       await page.goForward()
       await expect(page).toHaveURL(WORDS_URL)
       await expectPageReady(expect, page)
-      await expectMaintenancePageHead(expect, page, 'hilos_maintenance_words')
-      expect(
-        await expectMaintenanceWordsInitial(expect, page, frames, after),
-      ).toEqual(words)
+      await expectMaintenancePageCurrent(
+        expect,
+        page,
+        'hilos_maintenance_words',
+      )
+      expect(await expectMaintenanceWords(expect, page, frames, after)).toEqual(
+        words,
+      )
     })
 
     await test.step('F5 on Words draws the same rows from a fresh answer', async () => {
       const after = frames.packets.length
       await page.reload()
       await expectPageReady(expect, page)
-      await expectMaintenancePageHead(expect, page, 'hilos_maintenance_words')
-      expect(
-        await expectMaintenanceWordsInitial(expect, page, frames, after),
-      ).toEqual(words)
+      await expectMaintenancePageCurrent(
+        expect,
+        page,
+        'hilos_maintenance_words',
+      )
+      expect(await expectMaintenanceWords(expect, page, frames, after)).toEqual(
+        words,
+      )
     })
 
     await test.step('the Overview tab keeps the thresholds, and a direct address opens Words', async () => {
       await page.getByTestId('hilos-page-tab-hilos_maintenance').click()
       await expect(page).toHaveURL(OVERVIEW_URL)
       await expectPageReady(expect, page)
-      await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+      await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance')
       expect(
         await expectMaintenanceWatchdogThresholds(expect, page, frames),
       ).toEqual(thresholds)
 
       const after = frames.packets.length
       await gotoPage(expect, page, MAINTENANCE_WORDS_PATH, PAGE_READY)
-      await expectMaintenancePageHead(expect, page, 'hilos_maintenance_words')
-      expect(
-        await expectMaintenanceWordsInitial(expect, page, frames, after),
-      ).toEqual(words)
+      await expectMaintenancePageCurrent(
+        expect,
+        page,
+        'hilos_maintenance_words',
+      )
+      expect(await expectMaintenanceWords(expect, page, frames, after)).toEqual(
+        words,
+      )
     })
   } finally {
     frames.stop()

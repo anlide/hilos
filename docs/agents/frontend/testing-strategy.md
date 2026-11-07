@@ -1136,37 +1136,20 @@ the shared framework form is driven.
 `MAINTENANCE_PATH` is the Overview address, `/hilos/maintenance`; the child
 Circle address is `MAINTENANCE_CIRCLE_PATH`, `/hilos/maintenance/circle`, and
 the Words address `MAINTENANCE_WORDS_PATH`, `/hilos/maintenance/words`.
-`expectMaintenancePageHead(expect, page, currentPage)` checks the shared
-Hilos › Maintenance head on Overview, Circle or Words: one h1, the breadcrumb
-with the section current, and the tabs' real links with only the rendered page
-current. The Nodes tab, drawn only on a cluster, is read where it stands and
-required nowhere.
+`expectMaintenancePageCurrent(expect, page, currentPage)` identifies the current
+Maintenance page by one level-1 `Maintenance` heading and the `currentPage` link
+(`hilos_maintenance`, `hilos_maintenance_circle` or `hilos_maintenance_words`) as
+the only link in the `Maintenance pages` navigation marked
+`aria-current="page"`. Page transitions and addresses stay in the spec; the helper
+does not constrain the head's other links or its drawing.
 
-`expectMaintenancePageCurrent(expect, page, currentPage)` tells which Maintenance
-page is on screen the way an assistive reader does: one level-1 heading, named
-Maintenance, and, among the links of the `Maintenance pages` navigation, only the
-one for `currentPage` (`hilos_maintenance`, `hilos_maintenance_circle` or
-`hilos_maintenance_words`) marked `aria-current="page"`. It holds nothing about how
-the head is drawn or in what order its links stand, so a redraw does not break it;
-following the links, with the keyboard or the pointer, stays in the spec.
-
-`expectMaintenanceWords(expect, page)` reads the Words table of a project that keeps
-the framework's words for the manual window and gives a restore none of its own:
-once the loading skeleton has left, the `manual_maintenance` row reads its operation
-and the stub's title and message (`MANUAL_STUB_TITLE`, `MANUAL_STUB_MESSAGE`) with
-no row message, and the `restore` row keeps its operation and reads the one phrase
-"No own entry — uses default" in place of the rest. Words is read only: the helper
-also expects the table to offer no search, filters, main action, actions or
-selection, and no row to carry a button, input, link or other control.
-
-`expectMaintenanceWordsInitial(expect, page, log, after)` proves the Words table
-against the page's own answer: it reads the window out of the first
-`page_response` to the Words subscription after the bookmark `after`, checks every
-row on screen with its words, or with the line saying it uses the default, and
-returns the rows, so a later Back, Forward, F5 or direct address can be compared
-with them. It requires a delivery log armed before the page's socket opens. The
-`maintenance.spec.ts` of online-testing (Angular) walks Overview, Circle and
-Words this way.
+`expectMaintenanceWords(expect, page, log, after)` reads the first Words
+`page_response` in the delivery log after bookmark `after`. Start the log before
+the page's first socket and take the bookmark before entering Words. It checks
+every response row against the visible table and returns `MaintenanceWordsRow[]`
+for the existing comparisons across navigation and reload. It also verifies the
+read-only table has no search, filters, main action, actions, selection or row
+controls.
 
 `addToMaintenanceCircle`, `confirmMaintenanceCircleRemoval` and
 `clearMaintenanceCircle` drive the circle dialogs and settle on their closing.

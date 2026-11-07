@@ -1813,9 +1813,12 @@ Refuse loudly and before any trace of entry, as above.
   close still holds the operator slot. The test driver's open does not lift a
   freeze that agent started.
 - `demo/binance-btc-tracker` e2e `maintenance-words.spec.ts` — displays the project's
-  protected-mode stub registry as a read-only table on the Words tab, verifying
-  `manual_maintenance` copy and `rowMessage` fallback for the default stub, direct
-  address entry, reload, and tab returns to Circle and Overview.
+  protected-mode stub registry on the Words tab. Its shared check reads the first
+  Words `page_response` after a delivery-log bookmark, compares its rows with the
+  table, and verifies the table has no search, filters, actions, selection or row
+  controls. The spec verifies `manual_maintenance` copy and `rowMessage` fallback for
+  the default stub, direct address entry, reload, and tab returns to Circle and
+  Overview.
 - `demo/ecommerce-shop` e2e `maintenance.spec.ts` and `demo/tasks` e2e `a11y.spec.ts` —
   walk the React Overview, Circle and Words by link, keyboard, history, reload and typed
   address, checking the page on screen with `expectMaintenancePageCurrent()`; the shop

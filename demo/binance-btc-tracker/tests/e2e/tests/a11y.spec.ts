@@ -39,7 +39,7 @@ import {
   expectDaemonSectionHead,
   expectDaemonSectionAccessibility,
   expectPageReady,
-  expectMaintenancePageHead,
+  expectMaintenancePageCurrent,
   gotoPage,
   readI18nRowId,
   gotoPublicStatus,
@@ -103,7 +103,7 @@ test('Maintenance Overview exposes one shared heading and five readable, read-on
   try {
     await grantAdminToSelf(expect, page)
     await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
-    await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+    await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance')
     await expectMaintenanceWatchdogThresholds(expect, page, frames)
     const slot = page.getByTestId('hilos-maintenance-watchdog-slot')
     await expect(slot).toHaveRole('status')
@@ -152,7 +152,7 @@ test('Backups names its table from one heading and exposes both Maintenance link
   await circle.press('Enter')
   await expectPageReady(expect, page)
   await expect(page).toHaveURL(/\/hilos\/maintenance\/circle$/)
-  await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+  await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance_circle')
   await expect(page.getByTestId('hilos-maintenance-circle-table')).toBeVisible()
 
   // The personal link exists only in a verification window. A test freeze is
@@ -172,7 +172,7 @@ test('Backups names its table from one heading and exposes both Maintenance link
     await reopen.press('Enter')
     await expectPageReady(expect, page)
     await expect(page).toHaveURL(/\/hilos\/maintenance$/)
-    await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+    await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance')
     await expect(page.getByTestId('hilos-backup-reopen-modal')).toHaveCount(0)
   } finally {
     await openProtectedModeIfAny()

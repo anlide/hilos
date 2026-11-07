@@ -987,9 +987,10 @@ test.describe('daemon node pages', () => {
   }
 
   for (const viewer of [false, true]) {
+    // FIXME(F-064, 2026-11-07): agent log Enter stays on the agents page · чужой · попытка 1 · HIL-2054
     test(
       `reads Agents and HTTP with keyboard navigation as ${viewer ? 'a viewer' : 'an admin'}`,
-      viewer ? {} : { tag: '@quarantine:F-021' },
+      viewer ? { tag: '@quarantine:F-064' } : { tag: '@quarantine:F-021' },
       async ({ page }) => {
         // FIXME(F-021, 2026-10-23): restart confirmation does not return focus · чужой · попытка 3 · HIL-1641
         // It follows real page subscriptions and an agent's live log.

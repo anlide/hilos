@@ -24,9 +24,9 @@ export const ROW_PREFIX = 'hilos-table-row-'
 /**
  * The rows of the window in the order they are drawn. The detail an expanded row
  * opens shares the prefix without being a row, and the card branch names its rows
- * differently, so reading the table's own body leaves exactly the rows.
+ * differently. Only tr elements count: a merged message cell shares the prefix too.
  */
-export const ROWS = `tbody [data-id^="${ROW_PREFIX}"]:not([data-id^="${ROW_PREFIX}detail-"])`
+export const ROWS = `tbody tr[data-id^="${ROW_PREFIX}"]:not([data-id^="${ROW_PREFIX}detail-"])`
 
 /** The footer's count: `${start} – ${end} of ${total}` (or `${total}+` at the ceiling). */
 const COUNT = 'hilos-table-count'

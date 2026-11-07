@@ -15,7 +15,7 @@ import {
   expectHeldByManualMaintenance,
   expectMaintenanceCodeIssued,
   expectMaintenanceOpen,
-  expectMaintenancePageHead,
+  expectMaintenancePageCurrent,
   expectMaintenanceMoment,
   expectMaintenanceWatchdogThresholds,
   expectManualMaintenanceOn,
@@ -225,7 +225,7 @@ test.describe('maintenance moments in the reader zone', () => {
   }
 })
 
-test('Maintenance Overview and Circle share one head through links, history, direct entry and reload', async ({
+test('Maintenance Overview and Circle stay current through links, history, direct entry and reload', async ({
   page,
 }) => {
   const frames = watchDeliveryFrames(page)
@@ -235,7 +235,7 @@ test('Maintenance Overview and Circle share one head through links, history, dir
     const circleRequests = countSentFrames(page, 'hilosVerifierCircle')
     await grantAdminToSelf(expect, page)
     await gotoPage(expect, page, MAINTENANCE_PATH, PAGE_READY)
-    await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+    await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance')
     await expectMaintenanceOpen(expect, page)
     const thresholds = await expectMaintenanceWatchdogThresholds(
       expect,
@@ -255,7 +255,7 @@ test('Maintenance Overview and Circle share one head through links, history, dir
     await circle.press('Enter')
     await expect(page).toHaveURL(/\/hilos\/maintenance\/circle$/)
     await expectPageReady(expect, page)
-    await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+    await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance_circle')
     const table = page.getByTestId('hilos-maintenance-circle-table')
     await expect(table).toBeVisible()
     await shownByTestId(table, 'hilos-table-loading').waitFor({
@@ -273,7 +273,7 @@ test('Maintenance Overview and Circle share one head through links, history, dir
 
     await page.reload()
     await expectPageReady(expect, page)
-    await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+    await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance_circle')
     await expect(table).toBeVisible()
     await expect(
       page.getByTestId('hilos-maintenance-watchdog-thresholds'),
@@ -283,7 +283,7 @@ test('Maintenance Overview and Circle share one head through links, history, dir
     await overview.click()
     await expect(page).toHaveURL(/\/hilos\/maintenance$/)
     await expectPageReady(expect, page)
-    await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+    await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance')
     await expectMaintenanceOpen(expect, page)
     expect(
       await expectMaintenanceWatchdogThresholds(expect, page, frames),
@@ -293,7 +293,7 @@ test('Maintenance Overview and Circle share one head through links, history, dir
     await page.goBack()
     await expect(page).toHaveURL(/\/hilos\/maintenance\/circle$/)
     await expectPageReady(expect, page)
-    await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+    await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance_circle')
     await expect(table).toBeVisible()
     await expect(
       page.getByTestId('hilos-maintenance-watchdog-thresholds'),
@@ -301,7 +301,7 @@ test('Maintenance Overview and Circle share one head through links, history, dir
     await page.goForward()
     await expect(page).toHaveURL(/\/hilos\/maintenance$/)
     await expectPageReady(expect, page)
-    await expectMaintenancePageHead(expect, page, 'hilos_maintenance')
+    await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance')
     expect(
       await expectMaintenanceWatchdogThresholds(expect, page, frames),
     ).toEqual(thresholds)
@@ -310,7 +310,7 @@ test('Maintenance Overview and Circle share one head through links, history, dir
     await reloadedDocument.dispose()
 
     await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
-    await expectMaintenancePageHead(expect, page, 'hilos_maintenance_circle')
+    await expectMaintenancePageCurrent(expect, page, 'hilos_maintenance_circle')
     await expect(table).toBeVisible()
     await expect(
       page.getByTestId('hilos-maintenance-watchdog-thresholds'),

@@ -2,8 +2,7 @@ import { typeInto } from './input.js'
 import type { Expect, Locator, Page } from '@playwright/test'
 
 import { deliveryObject, type DeliveryFrameLog } from './deliveryFrames.js'
-import { MAINTENANCE_NODES_PATH } from './maintenanceNodes.js'
-import { shownByTestId } from './table.js'
+import { ROW_PREFIX, ROWS, shownByTestId, tableRowKeys } from './table.js'
 
 // Maintenance section steps shared by all three SDKs, whose data-id controls match,
 // and the manual-window checks all three kits must meet alike; the scenarios stay
@@ -47,79 +46,6 @@ export const MAINTENANCE_CIRCLE_PATH = '/hilos/maintenance/circle'
 export const MAINTENANCE_WORDS_PATH = '/hilos/maintenance/words'
 
 /**
- * The section's pages as its tabs name them, copied verbatim from the Maintenance
- * entries of framework/backend/Database/Pages/HilosPageCatalog.php. Nodes is not
- * here: it answers only on a cluster, so a single node draws no tab for it.
- */
-const MAINTENANCE_TABS = [
-  ['hilos_maintenance', 'Overview', MAINTENANCE_PATH],
-  ['hilos_maintenance_circle', 'Circle', MAINTENANCE_CIRCLE_PATH],
-  ['hilos_maintenance_words', 'Words', MAINTENANCE_WORDS_PATH],
-] as const
-const MAINTENANCE_NODES_TAB = [
-  'hilos_maintenance_nodes',
-  'Nodes',
-  MAINTENANCE_NODES_PATH,
-] as const
-
-/**
- * Maintenance's navigation on Overview, Circle or Words: one h1 naming the section,
- * the trail's link back to Hilos with the section current, and the tabs' real links
- * with only the rendered page current. The Nodes tab, drawn only on a cluster, is
- * read where it stands and required nowhere.
- *
- * @param expect The spec's expect.
- * @param page A page on Maintenance Overview, Circle, or Words.
- * @param currentPage The key of the page on screen.
- */
-export async function expectMaintenancePageHead(
-  expect: Expect,
-  page: Page,
-  currentPage:
-    | 'hilos_maintenance'
-    | 'hilos_maintenance_circle'
-    | 'hilos_maintenance_words',
-): Promise<void> {
-  const heading = page.getByRole('heading', { level: 1 })
-  await expect(heading).toHaveCount(1)
-  await expect(heading).toHaveText('Maintenance')
-
-  const breadcrumb = page.getByRole('navigation', {
-    name: 'Breadcrumb',
-    exact: true,
-  })
-  await expect(
-    breadcrumb.getByRole('link', { name: 'Hilos', exact: true }),
-  ).toHaveAttribute('href', '/hilos')
-  const currentCrumb = breadcrumb.locator('[aria-current="page"]')
-  await expect(currentCrumb).toContainText('Maintenance')
-  await expect(currentCrumb.getByRole('link')).toHaveCount(0)
-
-  const tabs = page.getByTestId('hilos-page-tabs')
-  await expect(tabs).toHaveRole('navigation')
-  await expect(tabs).toHaveAccessibleName('Maintenance pages')
-  await expect(tabs.locator('[aria-current="page"]')).toHaveCount(1)
-  // The tabs are drawn together, so once one is current the Nodes tab is either
-  // there or not drawn on this installation.
-  const nodes = tabs.getByTestId(`hilos-page-tab-${MAINTENANCE_NODES_TAB[0]}`)
-  const shown =
-    (await nodes.count()) === 0
-      ? MAINTENANCE_TABS
-      : [...MAINTENANCE_TABS, MAINTENANCE_NODES_TAB]
-  for (const [key, name, path] of shown) {
-    const link = tabs.getByTestId(`hilos-page-tab-${key}`)
-    await expect(link).toHaveRole('link')
-    await expect(link).toHaveAccessibleName(name)
-    await expect(link).toHaveAttribute('href', path)
-    if (key === currentPage) {
-      await expect(link).toHaveAttribute('aria-current', 'page')
-    } else {
-      await expect(link).not.toHaveAttribute('aria-current')
-    }
-  }
-}
-
-/**
  * Which Maintenance page is on screen, read the way an assistive reader tells it: one
  * h1 naming the section, and among the section's own links only the rendered page's
  * marked current. Nothing here holds how the head is drawn or in what order its links
@@ -141,11 +67,13 @@ export async function expectMaintenancePageCurrent(
   await expect(heading).toHaveCount(1)
   await expect(heading).toHaveText('Maintenance')
 
-  const links = page.getByRole('navigation', { name: 'Maintenance pages' })
+  const links = page
+    .getByRole('navigation', { name: 'Maintenance pages' })
+    .getByRole('link')
   await expect(
-    links.getByTestId(`hilos-page-tab-${currentPage}`),
+    links.and(page.getByTestId(`hilos-page-tab-${currentPage}`)),
   ).toHaveAttribute('aria-current', 'page')
-  await expect(links.locator('[aria-current]')).toHaveCount(1)
+  await expect(links.and(page.locator('[aria-current="page"]'))).toHaveCount(1)
 }
 
 /**
@@ -163,13 +91,6 @@ const WORDS_TABLE_ID = 'hilos-maintenance-words-table'
  */
 const WORDS_NO_OWN_ENTRY = 'No own entry — uses default'
 
-/**
- * The restore's operation, copied verbatim from BackupAgent::RESTORE_OPERATION
- * (framework/backend/Backup/Agent/BackupAgent.php); Words lists it whether or not the
- * project gave it words.
- */
-const RESTORE_OPERATION = 'restore'
-
 /** One operation's words as the page's answer carried them. */
 export interface MaintenanceWordsRow {
   readonly operation: string
@@ -183,8 +104,9 @@ export interface MaintenanceWordsRow {
  * The Words table drawn from the page's own answer: the first reply to the Words
  * subscription after the bookmark carries the window, and every row of it is on
  * screen with its words — or, for an operation with no entry of its own, with the
- * line saying it uses the default instead. Requires a delivery log armed before
- * the page's socket opened.
+ * line saying it uses the default instead. The table offers no search, filters,
+ * actions or selection, and its rows carry no controls. Requires a delivery log
+ * armed before the page's socket opened.
  *
  * @param expect The spec's expect.
  * @param page A page on Maintenance Words.
@@ -192,11 +114,11 @@ export interface MaintenanceWordsRow {
  * @param after Packet bookmark taken before the navigation that opened Words.
  * @returns The rows of the window, as the reply carried them.
  */
-export async function expectMaintenanceWordsInitial(
+export async function expectMaintenanceWords(
   expect: Expect,
   page: Page,
   log: DeliveryFrameLog,
-  after = 0,
+  after: number,
 ): Promise<MaintenanceWordsRow[]> {
   const replies = () =>
     log.packets
@@ -236,25 +158,18 @@ export async function expectMaintenanceWordsInitial(
   })
 
   const table = page.getByTestId(WORDS_TABLE_ID)
-  await expect(shownByTestId(table, 'hilos-table-loading')).toHaveCount(0)
-  // Read through each row's own operation cell: a merged row message shares the
-  // row prefix the shared row-key reader goes by, and would be read as a row.
+  await expect(table).toBeVisible()
+  await expect(table.getByTestId('hilos-table-loading')).toHaveCount(0)
   await expect
-    .poll(async () =>
-      (
-        await shownByTestId(
-          table,
-          /^hilos-maintenance-words-row-/,
-        ).allInnerTexts()
-      )
-        .map((operation) => operation.trim())
-        .sort(),
-    )
+    .poll(async () => (await tableRowKeys(page, WORDS_TABLE_ID)).sort())
     .toEqual(rows.map((row) => row.operation).sort())
   for (const row of rows) {
-    const drawn = shownByTestId(table, `hilos-table-row-${row.operation}`)
+    const drawn = table
+      .locator(ROWS)
+      .and(table.getByTestId(`${ROW_PREFIX}${row.operation}`))
+    await expect(drawn).toBeVisible()
     await expect(
-      shownByTestId(drawn, `hilos-maintenance-words-row-${row.operation}`),
+      drawn.getByTestId(`hilos-maintenance-words-row-${row.operation}`),
     ).toHaveText(row.operation)
     const instead = drawn.getByTestId('hilos-table-row-message')
     if (row.usesDefault) {
@@ -266,6 +181,16 @@ export async function expectMaintenanceWordsInitial(
       if (words !== null) await expect(drawn).toContainText(words)
     }
   }
+  await expect(
+    table.getByTestId(
+      /^hilos-table-(search|filters-open|main-action|actions|selection)$/,
+    ),
+  ).toHaveCount(0)
+  await expect(
+    table
+      .getByTestId(/^hilos-table-row-/)
+      .locator('button, input, select, textarea, a, [contenteditable]'),
+  ).toHaveCount(0)
   return rows
 }
 
@@ -297,59 +222,6 @@ export const MANUAL_STUB_MESSAGE =
  */
 export const MAINTENANCE_ON_NOTICE =
   'Maintenance is on — the system is closed to visitors'
-
-/**
- * The Words window of a project that keeps the framework's words for the manual
- * window and gives a restore none of its own. The manual row reads its operation, the
- * stub's title and its message; the restore row keeps its operation and reads the one
- * fallback phrase in place of the rest. Words is read only: no row carries anything to
- * press or type into, and the table offers no search, filters or actions.
- *
- * @param expect The spec's expect.
- * @param page An administrator's page on Maintenance Words.
- */
-export async function expectMaintenanceWords(
-  expect: Expect,
-  page: Page,
-): Promise<void> {
-  const table = page.getByTestId('hilos-maintenance-words-table')
-  await expect(table).toBeVisible()
-  // The skeleton stands in the table and in the cards at once; both leave together
-  // when the first window arrives.
-  await shownByTestId(table, 'hilos-table-loading').waitFor({ state: 'hidden' })
-
-  const manual = shownByTestId(
-    table,
-    `hilos-table-row-${MANUAL_MAINTENANCE_OPERATION}`,
-  )
-  await expect(
-    manual.getByTestId(
-      `hilos-maintenance-words-row-${MANUAL_MAINTENANCE_OPERATION}`,
-    ),
-  ).toHaveText(MANUAL_MAINTENANCE_OPERATION)
-  await expect(manual).toContainText(MANUAL_STUB_TITLE)
-  await expect(manual).toContainText(MANUAL_STUB_MESSAGE)
-  await expect(manual.getByTestId('hilos-table-row-message')).toHaveCount(0)
-
-  const restore = shownByTestId(table, `hilos-table-row-${RESTORE_OPERATION}`)
-  await expect(
-    restore.getByTestId(`hilos-maintenance-words-row-${RESTORE_OPERATION}`),
-  ).toHaveText(RESTORE_OPERATION)
-  const fallback = restore.getByTestId('hilos-table-row-message')
-  await expect(fallback).toHaveCount(1)
-  await expect(fallback).toHaveText(WORDS_NO_OWN_ENTRY)
-
-  await expect(
-    table.getByTestId(
-      /^hilos-table-(search|filters-open|main-action|actions|selection)$/,
-    ),
-  ).toHaveCount(0)
-  await expect(
-    shownByTestId(table, /^hilos-table-row-/).locator(
-      'button, input, select, textarea, a, [contenteditable]',
-    ),
-  ).toHaveCount(0)
-}
 
 /**
  * Names one address to the verifier circle through the maintenance section's own modal.
