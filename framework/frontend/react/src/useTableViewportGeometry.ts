@@ -173,7 +173,6 @@ export function useTableViewportGeometry(
     revision,
     tracks: current?.tracks ?? null,
     trackWidths: current?.trackWidths ?? [],
-    reasonFloors: current?.reasonFloors ?? { wide: 0, card: 0, tiles: 0 },
     bind,
     recordPixels: (
       rowKey: string,
@@ -210,7 +209,6 @@ function createMount(
   let snapshots = new Map<string, TableRecordGeometry>()
   let tracks: TableColumnTracks | null = null
   let trackWidths: readonly number[] = []
-  let reasonFloors = { wide: 0, card: 0, tiles: 0 }
   let columnKeys: readonly string[] = []
   let frame: number | null = null
   let stopped = false
@@ -669,23 +667,6 @@ function createMount(
       if (table.current?.classList.contains('hilos-table-fixed')) return
       releasingTracks = false
     }
-    const floors = { wide: 0, card: 0, tiles: 0 }
-    for (const projection of ['wide', 'card', 'tiles'] as const) {
-      floors[projection] =
-        box(
-          probe(projection)?.querySelector<HTMLElement>(
-            '.hilos-table-reason-twins',
-          ) ?? undefined,
-        )?.height ?? 0
-    }
-    if (
-      floors.wide !== reasonFloors.wide ||
-      floors.card !== reasonFloors.card ||
-      floors.tiles !== reasonFloors.tiles
-    ) {
-      reasonFloors = floors
-      refresh()
-    }
     for (const record of elements.values()) {
       const measurement = owner.measurement(record.rowKey, record.projection)
       if (!measurement || measurement.record.occurrence !== record.occurrence)
@@ -851,9 +832,6 @@ function createMount(
     },
     get trackWidths() {
       return trackWidths
-    },
-    get reasonFloors() {
-      return reasonFloors
     },
     active: () => !stopped,
     rememberFocus,

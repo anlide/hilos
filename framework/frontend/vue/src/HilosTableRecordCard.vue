@@ -35,7 +35,6 @@ const props = defineProps<{
     ReturnType<typeof useTableViewportGeometry>,
     'bind' | 'recordReader' | 'recordPixels' | 'workPixels'
   >
-  reasonFloor: number
   selectionEnabled: boolean
   selectionEdge: HilosTableSelectionEdge
   progress?: TableProgressBar
@@ -202,10 +201,7 @@ function onSelectRow(rowKey: string, event: Event): void {
           </div>
         </slot>
       </div>
-      <div
-        class="card-body py-2 px-3"
-        :style="{ '--hilos-table-reason-px': reasonFloor }"
-      >
+      <div class="card-body py-2 px-3">
         <div class="d-flex flex-wrap align-items-start gap-2 mb-1">
           <!-- The mark sits on the edge the installation chose, the same
         edge it sits on in the row: one product disagreeing with itself
@@ -256,7 +252,9 @@ function onSelectRow(rowKey: string, event: Event): void {
               :row-key="view.rowKey"
             />
           </span>
-          <span class="hilos-table-card-marks d-flex justify-content-end">
+          <span
+            class="hilos-table-card-marks d-flex justify-content-end w-100 flex-shrink-0"
+          >
             <span class="hilos-stack">
               <span
                 class="hilos-table-marks invisible"

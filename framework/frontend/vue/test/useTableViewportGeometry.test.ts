@@ -510,11 +510,6 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
         total: 427,
       })
       expect(f.registration.record('a', 'card')?.live?.total).toBe(218.5)
-      expect(f.adapter.reasonFloors.value).toEqual({
-        wide: 22,
-        card: 18,
-        tiles: 20,
-      })
       expect(
         f.observed.has(f.wrapper.get('[data-box="tiles-main"]').element),
       ).toBe(true)
@@ -956,11 +951,6 @@ describe('useTableViewportGeometry (numeric DOM stubs)', () => {
         columnKeys: ['name', 'state'],
         widths: [125.25, 75.5],
         tableWidth: 200.75,
-      })
-      expect(f.adapter.reasonFloors.value).toEqual({
-        wide: 22,
-        card: 18,
-        tiles: 0,
       })
       f.depart()
       // The first replacement already has local numbers, before any observer.

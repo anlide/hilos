@@ -436,11 +436,6 @@ describe('Angular table geometry (numeric DOM seam)', () => {
         widths: [125.25, 75.5],
         tableWidth: 200.75,
       })
-      expect(f.adapter.reasonFloors()).toEqual({
-        wide: 22,
-        card: 18,
-        tiles: 20,
-      })
       f.boxes.set('wide-detail', rect(78.75, 90.5))
       f.boxes.set('tiles-main', rect(600, 310.25, 180))
       f.depart()

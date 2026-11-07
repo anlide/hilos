@@ -4932,20 +4932,6 @@ describe('HilosViewportTable connected geometry', () => {
     dom.flush()
     const tile = () =>
       container.querySelector<HTMLElement>('[data-id="hilos-table-tile-a"]')!
-    // The measured floor of the departure words is the tile's own, not the card's.
-    expect(
-      tile()
-        .querySelector<HTMLElement>(':scope > .card-body')
-        ?.style.getPropertyValue('--hilos-table-reason-px'),
-    ).toBe('20')
-    expect(
-      container
-        .querySelector<HTMLElement>(
-          '[data-id="hilos-table-card-a"] > .card-body',
-        )
-        ?.style.getPropertyValue('--hilos-table-reason-px'),
-    ).toBe('18')
-
     // The twin stands in a column of the same grid, framework-only and inert.
     const twin = container.querySelector<HTMLElement>(
       '.hilos-table-room-tiles',

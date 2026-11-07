@@ -294,7 +294,6 @@ watch(frameColumns, geometry.layoutChanged)
 watch(tableView, geometry.tilesLayoutChanged)
 const tracks = computed(() => geometry.tracks.value)
 const trackWidths = computed(() => geometry.trackWidths.value)
-const reasonFloors = computed(() => geometry.reasonFloors.value)
 
 /** One cell of a row bar's row: how many columns it spans, and whether the bar is under it. */
 type ProgressCell = { span: number; covered: boolean }
@@ -536,10 +535,7 @@ function onSelectPage(event: Event): void {
         ref="table"
         class="table table-striped table-hover align-middle mb-0"
         :class="{ 'hilos-table-fixed': tracks !== null }"
-        :style="{
-          '--hilos-table-width-px': tracks?.tableWidth,
-          '--hilos-table-reason-px': reasonFloors.wide,
-        }"
+        :style="{ '--hilos-table-width-px': tracks?.tableWidth }"
         :aria-labelledby="nameId"
       >
         <colgroup>
@@ -752,7 +748,7 @@ function onSelectPage(event: Event): void {
               <td
                 v-if="view.placeholder || view.row === null"
                 :colspan="bodyColspan"
-                class="hilos-table-placeholder-cell text-center text-body-secondary fst-italic"
+                class="hilos-table-placeholder-cell text-center text-body-secondary fst-italic p-0"
                 data-id="hilos-table-placeholder"
               >
                 <div
@@ -1001,7 +997,10 @@ function onSelectPage(event: Event): void {
               aria-hidden="true"
               inert
             >
-              <td :colspan="bodyColspan" class="hilos-table-placeholder-cell">
+              <td
+                :colspan="bodyColspan"
+                class="hilos-table-placeholder-cell p-0 border-0"
+              >
                 <div
                   class="hilos-table-work-space"
                   :style="{
@@ -1136,7 +1135,6 @@ function onSelectPage(event: Event): void {
           :detail-id="cardDetailId(view.rowKey)"
           projection="card"
           :geometry="geometry"
-          :reason-floor="reasonFloors.card"
           :selection-enabled="selectionEnabled"
           :selection-edge="selectionEdge"
           :progress="rowBar(view.rowKey)"
@@ -1242,7 +1240,6 @@ function onSelectPage(event: Event): void {
             :detail-id="`${tileDetailBaseId}-${record.rowKey}`"
             projection="tiles"
             :geometry="geometry"
-            :reason-floor="reasonFloors.tiles"
             :selection-enabled="selectionEnabled"
             :selection-edge="selectionEdge"
             :progress="rowBar(record.rowKey)"

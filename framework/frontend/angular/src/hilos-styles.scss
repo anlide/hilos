@@ -568,13 +568,6 @@ body.modal-open .toast-container > * {
   }
 }
 
-// WHY: the page badge and title must keep their line when pending marks arrive;
-// Bootstrap has no flex-basis:100% utility.
-// WHAT: the complete framework mark room always occupies its own card-head line.
-.hilos-table-card-marks {
-  flex-basis: 100%;
-}
-
 // WHY: Bootstrap has no utility that puts several children into one grid cell, and
 // a surface that steps through screens holds the room of its tallest step by
 // stacking invisible twins of its steps under the live one (styling-rules.md, "The
@@ -687,19 +680,11 @@ body.modal-open .toast-container > * {
 // WHAT: the complete colgroup and border-box width captured from the live table.
 .hilos-table-fixed {
   table-layout: fixed;
-  box-sizing: border-box;
   width: calc(var(--hilos-table-width-px) * 1px);
 }
 
 .hilos-table-fixed .hilos-table-track {
   width: calc(var(--hilos-table-track-px) * 1px);
-}
-
-// WHY: a full-span replacement must consume the captured occupied extent once;
-// Bootstrap's padded cells would add that padding to the numeric sizing block.
-// WHAT: a reason plus empty space replaces main/work/detail and their separation.
-.table > tbody > tr > .hilos-table-placeholder-cell {
-  padding: 0;
 }
 
 .hilos-table-record-space {
@@ -712,15 +697,8 @@ body.modal-open .toast-container > * {
   }
 }
 
-// WHY: progress payloads disappear before Apply, while their place must survive;
-// no Bootstrap utility can express a measured fractional block size.
-// WHAT: a data-free work reserve in a pending live row or card.
 .hilos-table-work-space {
   height: calc(var(--hilos-table-work-px) * 1px);
-}
-
-.table > tbody > .hilos-table-work-reserve > td {
-  border: 0;
 }
 
 // WHY: the static reason needs a measurable width before departure, and hidden
@@ -758,14 +736,4 @@ body.modal-open .toast-container > * {
 .hilos-table-fallback {
   position: absolute;
   height: 3rem;
-}
-
-// WHY: a reason that wraps must already fit before a live record leaves.
-// WHAT: a minimum main-row/card-body allocation, derived only from static copy.
-.hilos-table-main {
-  height: calc(var(--hilos-table-reason-px) * 1px);
-}
-
-.card-body[style*='--hilos-table-reason-px'] {
-  min-height: calc(var(--hilos-table-reason-px) * 1px);
 }

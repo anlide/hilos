@@ -640,16 +640,7 @@ export function HilosViewportTable<R>({
     const bar = rowBar(rowKey)
 
     return (
-      <div
-        className="card-body py-2 px-3"
-        style={
-          {
-            // The measured floor of a departure's words, each projection its
-            // own: a tile's body is narrower than a card's and wraps them anew.
-            '--hilos-table-reason-px': geometry.reasonFloors[projection],
-          } as CSSProperties
-        }
-      >
+      <div className="card-body py-2 px-3">
         <div className="d-flex flex-wrap align-items-start gap-2 mb-1">
           {selectionEdge === 'start' ? selectBox : null}
           {hasCell(layout.title) ? (
@@ -662,7 +653,7 @@ export function HilosViewportTable<R>({
               {cells?.[layout.badge.key]?.(record, rowKey)}
             </span>
           ) : null}
-          <span className="hilos-table-card-marks d-flex justify-content-end align-items-center gap-1">
+          <span className="hilos-table-card-marks d-flex justify-content-end align-items-center gap-1 w-100 flex-shrink-0">
             {frameworkMarks(view, panelId)}
             {selectionEdge === 'end' ? selectBox : null}
           </span>
@@ -1051,7 +1042,6 @@ export function HilosViewportTable<R>({
           style={
             {
               '--hilos-table-width-px': geometry.tracks?.tableWidth,
-              '--hilos-table-reason-px': geometry.reasonFloors.wide,
             } as CSSProperties
           }
           aria-labelledby={nameId}
@@ -1203,7 +1193,7 @@ export function HilosViewportTable<R>({
                       {view.placeholder || view.row === null ? (
                         <td
                           colSpan={bodyColspan}
-                          className="hilos-table-placeholder-cell text-center text-body-secondary fst-italic"
+                          className="hilos-table-placeholder-cell text-center text-body-secondary fst-italic p-0"
                           data-id="hilos-table-placeholder"
                         >
                           <div
@@ -1298,7 +1288,7 @@ export function HilosViewportTable<R>({
                       >
                         <td
                           colSpan={bodyColspan}
-                          className="hilos-table-placeholder-cell"
+                          className="hilos-table-placeholder-cell p-0 border-0"
                         >
                           <div
                             className="hilos-table-work-space"

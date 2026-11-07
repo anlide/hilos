@@ -260,7 +260,6 @@ class HilosViewportTableRecord {
           class="table table-striped table-hover align-middle mb-0"
           [class.hilos-table-fixed]="geometry()?.tracks() != null"
           [style.--hilos-table-width-px]="geometry()?.tracks()?.tableWidth"
-          [style.--hilos-table-reason-px]="geometry()?.reasonFloors()?.wide"
           [attr.aria-labelledby]="nameId()"
         >
           <!-- Used boundaries stay latched after the widest or last live row leaves. -->
@@ -479,7 +478,7 @@ class HilosViewportTableRecord {
                   @if (view.placeholder) {
                     <td
                       [attr.colspan]="bodyColspan()"
-                      class="hilos-table-placeholder-cell text-center text-body-secondary fst-italic"
+                      class="hilos-table-placeholder-cell p-0 text-center text-body-secondary fst-italic"
                       data-id="hilos-table-placeholder"
                     >
                       <div
@@ -721,7 +720,7 @@ class HilosViewportTableRecord {
                   >
                     <td
                       [attr.colspan]="bodyColspan()"
-                      class="hilos-table-placeholder-cell"
+                      class="hilos-table-placeholder-cell p-0 border-0"
                     >
                       <div
                         class="hilos-table-work-space"
@@ -1059,12 +1058,7 @@ class HilosViewportTableRecord {
                 }"
               />
             }
-            <div
-              class="card-body py-2 px-3"
-              [style.--hilos-table-reason-px]="
-                geometry()?.reasonFloors()?.[projection]
-              "
-            >
+            <div class="card-body py-2 px-3">
               <div class="d-flex flex-wrap align-items-start gap-2 mb-1">
                 <!-- The mark sits on the edge the installation chose, the
                 same edge it sits on in the row: one product disagreeing
@@ -1105,7 +1099,9 @@ class HilosViewportTableRecord {
                     />
                   }
                 </span>
-                <span class="hilos-table-card-marks d-flex justify-content-end">
+                <span
+                  class="hilos-table-card-marks d-flex justify-content-end w-100 flex-shrink-0"
+                >
                   <span class="hilos-stack">
                     <span
                       class="hilos-table-marks invisible"
@@ -1800,7 +1796,6 @@ export class HilosViewportTable<R> {
       this.body()
       adapter?.revision()
       adapter?.trackWidths()
-      adapter?.reasonFloors()
       if (adapter && root && table)
         untracked(() => {
           if (measured?.adapter === adapter && measured.view !== view)

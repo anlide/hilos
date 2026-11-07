@@ -799,7 +799,6 @@ describe('React table geometry commit boundary', () => {
         total: 426.5,
       })
       expect(owner.record('a', 'card')?.live?.total).toBe(268.75)
-      expect(geometry.reasonFloors).toEqual({ wide: 18, card: 18, tiles: 20 })
       // The tile grows with no observer pass before the record leaves.
       layout.tile = 448.25
       reads.length = 0
@@ -1188,16 +1187,7 @@ describe('React table geometry layout lifetime', () => {
     const events = observers()
     const target = controller(['a'])
     const source = instrument(target)
-    let geometry!: Geometry
-    render(
-      <Harness
-        target={target}
-        facade={source.facade}
-        onCommit={(value) => {
-          geometry = value
-        }}
-      />,
-    )
+    render(<Harness target={target} facade={source.facade} />)
     layout.cardHidden = true
     act(() =>
       target.ingestDelta({
@@ -1213,7 +1203,6 @@ describe('React table geometry layout lifetime', () => {
     events.resizes[0]!.fire()
     events.flush()
     expect(owner.record('a', 'card')?.retained).toBe(74)
-    expect(geometry.reasonFloors.card).toBe(18)
     layout.font = 32
     layout.fallback = 96
     act(() => events.fonts.dispatchEvent(new Event('loadingdone')))
@@ -1250,13 +1239,11 @@ describe('React table geometry layout lifetime', () => {
     const owner = source.registrations[0]!
     expect(owner.record('a', 'tiles')?.retained).toBeNull()
     expect(owner.record('a', 'card')?.retained).toBe(268.75)
-    expect(geometry.reasonFloors.tiles).toBe(0)
     layout.tilesHidden = false
     events.resizes[0]!.fire()
     events.flush()
     // The fallback allocation includes the tile shell and column gutter once.
     expect(owner.record('a', 'tiles')?.retained).toBe(82)
-    expect(geometry.reasonFloors.tiles).toBe(20)
     const occurrence = target.rows.get()[0]!.occurrence
     const tile = view.container.querySelector<HTMLElement>(
       '.tiles-projection [data-record="a"]',

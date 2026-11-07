@@ -122,7 +122,6 @@ export function createTableViewportGeometry(
   const revision = signal(0)
   const tracks = signal<TableColumnTracks | null>(null)
   const trackWidths = signal<readonly number[]>([])
-  const reasonFloors = signal({ wide: 0, card: 0, tiles: 0 })
   let root: HTMLElement | null = null
   let table: HTMLTableElement | null = null
   let columnKeys: readonly string[] = []
@@ -551,21 +550,6 @@ export function createTableViewportGeometry(
     if (root) observer?.observe(root)
     if (table?.parentElement) observer?.observe(table.parentElement)
     if (!checkLayout() || awaitingAutoLayout) return
-    const floors = { wide: 0, card: 0, tiles: 0 }
-    for (const projection of ['wide', 'card', 'tiles'] as const) {
-      floors[projection] =
-        box(
-          probe(projection)?.querySelector<HTMLElement>(
-            '.hilos-table-reason-twins',
-          ) ?? undefined,
-        )?.height ?? 0
-    }
-    if (
-      floors.wide !== reasonFloors().wide ||
-      floors.card !== reasonFloors().card ||
-      floors.tiles !== reasonFloors().tiles
-    )
-      reasonFloors.set(floors)
     for (const record of elements.values()) {
       const measurement = owner.measurement(record.rowKey, record.projection)
       if (!measurement || measurement.record.occurrence !== record.occurrence)
@@ -865,7 +849,6 @@ export function createTableViewportGeometry(
     revision: revision.asReadonly(),
     tracks: tracks.asReadonly(),
     trackWidths: trackWidths.asReadonly(),
-    reasonFloors: reasonFloors.asReadonly(),
     bind,
     recordReader,
     recordPixels,

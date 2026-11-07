@@ -1157,11 +1157,15 @@ departure the live image, slot values, work, details, and controls leave with
 the row. Only the reason and numeric allocation remain. A hidden or zero-size
 tile has no usable measurement and cannot overwrite the last allocation. The
 tile's inert generic fallback supplies the body reserve when no live
-measurement exists. React keeps the reason's measured floor per projection
-(`wide`, `card`, and `tiles`), taken from the static `room-<projection>` probes,
-so a tile's departure words wrap against the tile's own width. Its tile probe
-stands in a Bootstrap column of the same grid, holds no picture, row value, or
-control, and takes no identifier.
+measurement exists. In all three SDKs, hidden twins and projection probes
+remain for chrome measurement and the generic fallback/body reserve when a
+projection is first displayed, including one that was hidden. Each adapter
+measures the rendered `.hilos-table-record-space > span` and passes its height
+with chrome and gap as the allocation floor; the probes do not provide a
+preliminary floor for a live row. A tall reason can therefore make its
+placeholder taller when the row departs. React's tile probe stands in a
+Bootstrap column of the same grid, holds no picture, row value, or control, and
+takes no identifier.
 
 Vue, React, and Angular keep their wide/card state rooms and the full used wide
 colgroup under fixed layout; inert stale-mark holders in the header and
@@ -1183,8 +1187,11 @@ card's outside gap and the `.col`'s vertical `g-3` gutter are each included
 exactly once, and the image is never added a second time. A departed tile keeps
 that card in its column, holding only the reason and its numeric space. The
 inert probe in the tiles branch carries a tile-shaped twin (column, card, body
-with the reason twins and the fallback), which supplies the tile's reason floor
-and its body reserve when no live measurement exists.
+with the reason twins and the fallback) for chrome measurement and the generic
+body reserve when the projection is first displayed, including after being
+hidden. The rendered reason's measured height, with chrome and gap, remains the
+allocation floor; a tall reason can make the placeholder taller when the tile
+departs.
 
 A foreign departure removes row-progress content immediately. If work was still
 visible, pending state keeps only its numeric work reserve; Apply combines that

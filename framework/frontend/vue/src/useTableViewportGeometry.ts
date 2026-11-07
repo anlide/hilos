@@ -93,7 +93,6 @@ export function useTableViewportGeometry(
   const revision = shallowRef(0)
   const tracks = shallowRef<TableColumnTracks | null>(null)
   const trackWidths = shallowRef<readonly number[]>([])
-  const reasonFloors = shallowRef({ wide: 0, card: 0, tiles: 0 })
   const elements = new Map<string, RecordElements>()
   const shells = new Map<string, Shell>()
   let registration: TableGeometryRegistration | null = null
@@ -491,21 +490,6 @@ export function useTableViewportGeometry(
     if (root.value) observer?.observe(root.value)
     if (table.value?.parentElement) observer?.observe(table.value.parentElement)
     if (!checkLayout()) return
-    const floors = { wide: 0, card: 0, tiles: 0 }
-    for (const projection of ['wide', 'card', 'tiles'] as const) {
-      floors[projection] =
-        box(
-          probe(projection)?.querySelector<HTMLElement>(
-            '.hilos-table-reason-twins',
-          ) ?? undefined,
-        )?.height ?? 0
-    }
-    if (
-      floors.wide !== reasonFloors.value.wide ||
-      floors.card !== reasonFloors.value.card ||
-      floors.tiles !== reasonFloors.value.tiles
-    )
-      reasonFloors.value = floors
     for (const record of elements.values()) {
       const measurement = owner.measurement(record.rowKey, record.projection)
       if (!measurement || measurement.record.occurrence !== record.occurrence)
@@ -765,7 +749,6 @@ export function useTableViewportGeometry(
     revision,
     tracks,
     trackWidths,
-    reasonFloors,
     bind,
     recordReader,
     recordPixels,
