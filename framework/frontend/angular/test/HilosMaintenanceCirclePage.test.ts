@@ -38,6 +38,7 @@ import { HilosMaintenanceCirclePage as exportedPage } from '@hilos/angular/admin
 
 import { HilosMaintenanceCirclePage } from '../src/admin/maintenance/HilosMaintenanceCirclePage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
+import { registerMaintenanceCircleAddCases } from '../../test/maintenanceCircleAddCases.js'
 
 const CIRCLE_TABLE = 'hilosVerifierCircle'
 const MAINTENANCE_LEAD =
@@ -440,6 +441,36 @@ function openAndType(
   field.dispatchEvent(new Event('input', { bubbles: true }))
   fixture.detectChanges()
 }
+
+registerMaintenanceCircleAddCases({ it, expect }, async () => {
+  const { actions, dispatched } = makeActions()
+  const { context } = seededContext([], actions)
+  const fixture = mountPage(context)
+
+  return {
+    container: document.body,
+    dispatched,
+    async openAndType(identifier): Promise<void> {
+      openAndType(fixture, identifier)
+    },
+    async typeIdentifier(identifier): Promise<void> {
+      const field = addField() as HTMLInputElement
+      field.value = identifier
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+      fixture.detectChanges()
+      await settled(fixture)
+    },
+    addField,
+    addConfirm,
+    async change(change): Promise<void> {
+      change()
+      await settled(fixture)
+    },
+    async unmount(): Promise<void> {
+      leavePage()
+    },
+  }
+})
 
 describe('HilosMaintenanceCirclePage', () => {
   it('is exported by the maintenance entry and draws the first window of its own answer without asking for one', () => {
@@ -957,6 +988,11 @@ describe('HilosMaintenanceCirclePage and the admin view mode', () => {
     expect(addField()?.disabled).toBe(false)
     expect(addField()?.value).toBe('someone@example.test')
     expect(addConfirm().disabled).toBe(true)
+    const form = addField()?.form
+    expect(form?.id).toBe('hilos-maintenance-circle-add-form')
+    expect(addConfirm().type).toBe('submit')
+    expect(addConfirm().form).toBe(form)
+    expect(form?.contains(addConfirm())).toBe(false)
     expect(addConfirm().getAttribute('aria-describedby')).toContain(
       HILOS_VIEW_MODE_STRIP_TEXT_ID,
     )
@@ -970,6 +1006,7 @@ describe('HilosMaintenanceCirclePage and the admin view mode', () => {
     )
     expect(cancelButton).not.toBeNull()
     expect(cancelButton?.disabled).toBe(false)
+    expect(cancelButton?.type).toBe('button')
     cancelButton?.click()
     await settled(fixture)
     expect(addField()).toBeNull()

@@ -204,20 +204,25 @@ async function submitCircleRemove(): Promise<void> {
       <p class="mb-2 text-body-secondary">
         {{ HILOS_MAINTENANCE_CIRCLE_COPY.addLead }}
       </p>
-      <label class="form-label" for="hilos-maintenance-circle-add-field">
-        {{ HILOS_MAINTENANCE_CIRCLE_COPY.addField }}
-      </label>
-      <input
-        id="hilos-maintenance-circle-add-field"
-        v-model="circleAddIdentifier"
-        type="text"
-        class="form-control"
-        autocomplete="off"
-        :placeholder="HILOS_MAINTENANCE_CIRCLE_COPY.addPlaceholder"
-        :disabled="circleAddBusy"
-        data-id="hilos-maintenance-circle-add-field"
-        data-autofocus
-      />
+      <form
+        id="hilos-maintenance-circle-add-form"
+        @submit.prevent="submitCircleAdd"
+      >
+        <label class="form-label" for="hilos-maintenance-circle-add-field">
+          {{ HILOS_MAINTENANCE_CIRCLE_COPY.addField }}
+        </label>
+        <input
+          id="hilos-maintenance-circle-add-field"
+          v-model="circleAddIdentifier"
+          type="text"
+          class="form-control"
+          autocomplete="off"
+          :placeholder="HILOS_MAINTENANCE_CIRCLE_COPY.addPlaceholder"
+          :disabled="circleAddBusy"
+          data-id="hilos-maintenance-circle-add-field"
+          data-autofocus
+        />
+      </form>
       <template #actions="{ requestClose }">
         <button
           type="button"
@@ -230,10 +235,11 @@ async function submitCircleRemove(): Promise<void> {
         </button>
         <LoadingButton
           class="btn-primary"
+          type="submit"
+          form="hilos-maintenance-circle-add-form"
           :loading="circleAddBusy"
           :disabled="circleAddIdentifier.trim() === ''"
           data-id="hilos-maintenance-circle-add-confirm"
-          @click="submitCircleAdd"
         >
           {{ HILOS_MAINTENANCE_CIRCLE_COPY.addConfirm }}
         </LoadingButton>

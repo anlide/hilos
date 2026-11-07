@@ -1535,6 +1535,10 @@ test.describe('Tiles: public SDK at desktop width with synthetic ingress', () =>
         identities!,
       )
       await press(page, 'geometry-complete')
+      await settleTableLayout(page)
+      // Stop both recordings before either diagnostic screenshot changes layout.
+      await grid.stop()
+      await allocation.stop()
       await evidence(allocation, page, info, `tiles-${ingress}-used-allocation`)
       await evidence(grid, page, info, `tiles-${ingress}-grid`)
     })

@@ -3,7 +3,7 @@
 // Circle and shares Maintenance's section head. Each dialog closes only on its own
 // tracked answer, and no row is drawn ahead of the live table. Bootstrap classes
 // only (styling-rules.md).
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createHilosMaintenanceActions,
   createHilosMaintenanceCircleTable,
@@ -62,6 +62,8 @@ export function HilosMaintenanceCirclePage({
   const [circleAddOpen, setCircleAddOpen] = useState(false)
   const [circleAddIdentifier, setCircleAddIdentifier] = useState('')
   const circleAdd = useTrackedAction()
+  // Guard before creating the handle: tracked busy state follows the next render.
+  const circleAddSending = useRef(false)
   const clearCircleAddError = circleAdd.clearError
   const openCircleAdd = useCallback(() => {
     clearCircleAddError()
@@ -116,13 +118,20 @@ export function HilosMaintenanceCirclePage({
   }
 
   async function submitCircleAdd(): Promise<void> {
-    if (circleAdd.busy || circleAddIdentifier.trim() === '') {
+    if (circleAddSending.current || circleAddIdentifier.trim() === '') {
       return
     }
-    if (
-      await circleAdd.run(actions.sendMaintenanceCircleAdd(circleAddIdentifier))
-    ) {
-      closeCircleAdd()
+    circleAddSending.current = true
+    try {
+      if (
+        await circleAdd.run(
+          actions.sendMaintenanceCircleAdd(circleAddIdentifier),
+        )
+      ) {
+        closeCircleAdd()
+      }
+    } finally {
+      circleAddSending.current = false
     }
   }
 
@@ -214,41 +223,50 @@ export function HilosMaintenanceCirclePage({
             </button>
             <LoadingButton
               className="btn-primary"
+              type="submit"
+              form="hilos-maintenance-circle-add-form"
               loading={circleAdd.busy}
               disabled={circleAddIdentifier.trim() === ''}
               data-id="hilos-maintenance-circle-add-confirm"
-              onClick={() => void submitCircleAdd()}
             >
               {HILOS_MAINTENANCE_CIRCLE_COPY.addConfirm}
             </LoadingButton>
           </>
         )}
       >
-        <HilosActionError
-          action={circleAdd}
-          detailsTitle={HILOS_MAINTENANCE_CIRCLE_COPY.addRefusalTitle}
-        />
-        <p className="mb-2 text-body-secondary">
-          {HILOS_MAINTENANCE_CIRCLE_COPY.addLead}
-        </p>
-        <label
-          className="form-label"
-          htmlFor="hilos-maintenance-circle-add-field"
+        <form
+          id="hilos-maintenance-circle-add-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void submitCircleAdd()
+          }}
         >
-          {HILOS_MAINTENANCE_CIRCLE_COPY.addField}
-        </label>
-        <input
-          id="hilos-maintenance-circle-add-field"
-          type="text"
-          className="form-control"
-          autoComplete="off"
-          placeholder={HILOS_MAINTENANCE_CIRCLE_COPY.addPlaceholder}
-          disabled={circleAdd.busy}
-          data-id="hilos-maintenance-circle-add-field"
-          data-autofocus
-          value={circleAddIdentifier}
-          onChange={(event) => setCircleAddIdentifier(event.target.value)}
-        />
+          <HilosActionError
+            action={circleAdd}
+            detailsTitle={HILOS_MAINTENANCE_CIRCLE_COPY.addRefusalTitle}
+          />
+          <p className="mb-2 text-body-secondary">
+            {HILOS_MAINTENANCE_CIRCLE_COPY.addLead}
+          </p>
+          <label
+            className="form-label"
+            htmlFor="hilos-maintenance-circle-add-field"
+          >
+            {HILOS_MAINTENANCE_CIRCLE_COPY.addField}
+          </label>
+          <input
+            id="hilos-maintenance-circle-add-field"
+            type="text"
+            className="form-control"
+            autoComplete="off"
+            placeholder={HILOS_MAINTENANCE_CIRCLE_COPY.addPlaceholder}
+            disabled={circleAdd.busy}
+            data-id="hilos-maintenance-circle-add-field"
+            data-autofocus
+            value={circleAddIdentifier}
+            onChange={(event) => setCircleAddIdentifier(event.target.value)}
+          />
+        </form>
       </HilosModal>
 
       <HilosModal

@@ -105,21 +105,26 @@ import {
           [detailsTitle]="circleCopy.addRefusalTitle"
         />
         <p class="mb-2 text-body-secondary">{{ circleCopy.addLead }}</p>
-        <label class="form-label" for="hilos-maintenance-circle-add-field">{{
-          circleCopy.addField
-        }}</label>
-        <input
-          id="hilos-maintenance-circle-add-field"
-          type="text"
-          class="form-control"
-          autocomplete="off"
-          [placeholder]="circleCopy.addPlaceholder"
-          [disabled]="circleAdd.busy()"
-          data-id="hilos-maintenance-circle-add-field"
-          data-autofocus
-          [value]="circleAddIdentifier()"
-          (input)="onCircleAddIdentifier($event)"
-        />
+        <form
+          id="hilos-maintenance-circle-add-form"
+          (submit)="submitCircleAdd($event)"
+        >
+          <label class="form-label" for="hilos-maintenance-circle-add-field">{{
+            circleCopy.addField
+          }}</label>
+          <input
+            id="hilos-maintenance-circle-add-field"
+            type="text"
+            class="form-control"
+            autocomplete="off"
+            [placeholder]="circleCopy.addPlaceholder"
+            [disabled]="circleAdd.busy()"
+            data-id="hilos-maintenance-circle-add-field"
+            data-autofocus
+            [value]="circleAddIdentifier()"
+            (input)="onCircleAddIdentifier($event)"
+          />
+        </form>
         <ng-template #modalActions let-requestClose="requestClose">
           <button
             type="button"
@@ -133,10 +138,11 @@ import {
           <button
             hilosLoadingButton
             class="btn-primary"
+            type="submit"
+            form="hilos-maintenance-circle-add-form"
             [loading]="circleAdd.busy()"
             [disabled]="circleAddIdentifier().trim() === ''"
             data-id="hilos-maintenance-circle-add-confirm"
-            (click)="submitCircleAdd()"
           >
             {{ circleCopy.addConfirm }}
           </button>
@@ -291,7 +297,8 @@ export class HilosMaintenanceCirclePage {
     this.circleAddIdentifier.set((event.target as HTMLInputElement).value)
   }
 
-  protected async submitCircleAdd(): Promise<void> {
+  protected async submitCircleAdd(event: Event): Promise<void> {
+    event.preventDefault()
     if (this.circleAdd.busy() || this.circleAddIdentifier().trim() === '') {
       return
     }

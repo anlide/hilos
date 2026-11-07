@@ -29,6 +29,7 @@ import type { HilosMaintenanceContext } from '@hilos/core/admin/maintenance'
 
 import HilosMaintenanceCirclePage from './HilosMaintenanceCirclePage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { registerMaintenanceCircleAddCases } from '../../../../test/maintenanceCircleAddCases.js'
 
 const CIRCLE_TABLE = 'hilosVerifierCircle'
 
@@ -627,53 +628,6 @@ describe('HilosMaintenanceCirclePage', () => {
     expect(removeConfirm()).toBeNull()
   })
 
-  it('opens the add dialog with an empty field and holds Add until something is typed', async () => {
-    const { context } = seededContext([])
-    const wrapper = await mountPage(context)
-
-    await openAndType(wrapper, '   ')
-
-    expect(document.body.textContent).toContain(
-      HILOS_MAINTENANCE_CIRCLE_COPY.addLead,
-    )
-    expect(addField()?.placeholder).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.addPlaceholder,
-    )
-    expect(addConfirm().disabled).toBe(true)
-
-    const field = addField() as HTMLInputElement
-    field.value = 'ann@example.test'
-    field.dispatchEvent(new Event('input'))
-    await nextTick()
-
-    expect(addConfirm().disabled).toBe(false)
-  })
-
-  it("names the address as typed and closes only on the server's word", async () => {
-    const { actions, dispatched } = makeActions()
-    const { context } = seededContext([], actions)
-    const wrapper = await mountPage(context)
-
-    await openAndType(wrapper, '+7 900 000-00-00')
-    addConfirm().click()
-    await settled()
-
-    expect(dispatched).toMatchObject([
-      {
-        action: 'maintenance_circle_add',
-        payload: { identifier: '+7 900 000-00-00' },
-      },
-    ])
-    expect(addField()).not.toBeNull()
-    expect(wrapper.findAll('[data-id^="hilos-table-row-"]')).toHaveLength(0)
-
-    dispatched[0]?.settle({ action: 'maintenance_circle_add' } as ActionResult)
-    await settled()
-
-    expect(addField()).toBeNull()
-    expect(wrapper.findAll('[data-id^="hilos-table-row-"]')).toHaveLength(0)
-  })
-
   it('keeps the dialog open with the typed address and the refusal on it', async () => {
     const { actions, dispatched } = makeActions()
     const { context } = seededContext([], actions)
@@ -728,6 +682,37 @@ describe('HilosMaintenanceCirclePage', () => {
     expect(document.body.textContent).not.toContain(
       'Nobody has proven this address',
     )
+  })
+})
+
+describe('Maintenance Circle Add form (Vue)', () => {
+  registerMaintenanceCircleAddCases({ it, expect }, async () => {
+    const { actions, dispatched } = makeActions()
+    const { context } = seededContext([], actions)
+    const wrapper = await mountPage(context)
+
+    return {
+      container: document.body,
+      dispatched,
+      openAndType: (identifier) => openAndType(wrapper, identifier),
+      async typeIdentifier(identifier) {
+        const field = addField()!
+        field.value = identifier
+        field.dispatchEvent(new Event('input'))
+        await nextTick()
+      },
+      addField,
+      addConfirm,
+      async change(change) {
+        change()
+        await settled()
+      },
+      async unmount() {
+        wrapper.unmount()
+        mounted.splice(mounted.indexOf(wrapper), 1)
+        wrapper.element.remove()
+      },
+    }
   })
 })
 
@@ -851,6 +836,9 @@ describe('HilosMaintenanceCirclePage and the admin view mode', () => {
     expect(addField()?.disabled).toBe(false)
     expect(addField()?.value).toBe('someone@example.test')
     expect(addConfirm().disabled).toBe(true)
+    expect(addConfirm().type).toBe('submit')
+    expect(addField()?.form?.id).toBe('hilos-maintenance-circle-add-form')
+    expect(addConfirm().form).toBe(addField()?.form)
     expect(addConfirm().getAttribute('aria-describedby')).toContain(
       HILOS_VIEW_MODE_STRIP_TEXT_ID,
     )
@@ -864,6 +852,7 @@ describe('HilosMaintenanceCirclePage and the admin view mode', () => {
     )
     expect(cancelButton).not.toBeNull()
     expect(cancelButton?.disabled).toBe(false)
+    expect(cancelButton?.type).toBe('button')
     cancelButton?.click()
     await settled()
     expect(addField()).toBeNull()

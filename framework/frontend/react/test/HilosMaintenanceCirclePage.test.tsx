@@ -36,6 +36,7 @@ import { HilosMaintenanceCirclePage as exportedPage } from '@hilos/react/admin/m
 
 import { HilosMaintenanceCirclePage } from '../src/admin/maintenance/HilosMaintenanceCirclePage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
+import { registerMaintenanceCircleAddCases } from '../../test/maintenanceCircleAddCases.js'
 
 const CIRCLE_TABLE = 'hilosVerifierCircle'
 
@@ -383,6 +384,33 @@ function openAndType(typed: string): void {
   fireEvent.change(addField() as HTMLInputElement, { target: { value: typed } })
 }
 
+registerMaintenanceCircleAddCases({ it, expect }, async () => {
+  const { actions, dispatched } = makeActions()
+  const { context } = seededContext([], actions)
+  const view = mountPage(context)
+
+  return {
+    container: document.body,
+    dispatched,
+    async openAndType(identifier): Promise<void> {
+      openAndType(identifier)
+    },
+    async typeIdentifier(identifier): Promise<void> {
+      await settled(() =>
+        fireEvent.change(addField() as HTMLInputElement, {
+          target: { value: identifier },
+        }),
+      )
+    },
+    addField,
+    addConfirm,
+    change: settled,
+    async unmount(): Promise<void> {
+      await settled(() => view.unmount())
+    },
+  }
+})
+
 /**
  * Try every way a person closes the open dialog — its Cancel, its close button,
  * Escape and the backdrop; a busy dialog must refuse them all.
@@ -629,58 +657,6 @@ describe('HilosMaintenanceCirclePage', () => {
     expect(trash('ann@example.test')).not.toBeNull()
   })
 
-  it('opens the add dialog with an empty field and holds Add until something is typed', () => {
-    const { context } = seededContext([])
-    mountPage(context)
-
-    openAndType('   ')
-
-    expect(document.body.textContent).toContain(
-      HILOS_MAINTENANCE_CIRCLE_COPY.addLead,
-    )
-    expect(addField()?.placeholder).toBe(
-      HILOS_MAINTENANCE_CIRCLE_COPY.addPlaceholder,
-    )
-    expect(addConfirm().disabled).toBe(true)
-
-    fireEvent.change(addField() as HTMLInputElement, {
-      target: { value: 'ann@example.test' },
-    })
-
-    expect(addConfirm().disabled).toBe(false)
-  })
-
-  it("names the address as typed, draws no row of its own and closes only on the server's word", async () => {
-    const { actions, dispatched } = makeActions()
-    const { context } = seededContext([], actions)
-    const view = mountPage(context)
-
-    openAndType('+7 900 000-00-00')
-    fireEvent.click(addConfirm())
-
-    expect(dispatched).toMatchObject([
-      {
-        action: 'maintenance_circle_add',
-        payload: { identifier: '+7 900 000-00-00' },
-      },
-    ])
-    expect(addField()).not.toBeNull()
-    expect(
-      view.container.querySelectorAll('[data-id^="hilos-table-row-"]'),
-    ).toHaveLength(0)
-
-    await settled(() =>
-      dispatched[0]?.settle({
-        action: 'maintenance_circle_add',
-      } as ActionResult),
-    )
-
-    expect(addField()).toBeNull()
-    expect(
-      view.container.querySelectorAll('[data-id^="hilos-table-row-"]'),
-    ).toHaveLength(0)
-  })
-
   it('keeps the dialog open with the typed address and the refusal on it', async () => {
     const { actions, dispatched } = makeActions()
     const { context } = seededContext([], actions)
@@ -894,9 +870,18 @@ describe('HilosMaintenanceCirclePage and the admin view mode', () => {
     ).toBe(false)
 
     openAndType('someone@example.test')
-    expect(addField()?.disabled).toBe(false)
-    expect(addField()?.value).toBe('someone@example.test')
+    const field = addField()
+    expect(field?.disabled).toBe(false)
+    expect(field?.value).toBe('someone@example.test')
+    expect(field?.labels?.[0]?.textContent).toContain(
+      HILOS_MAINTENANCE_CIRCLE_COPY.addField,
+    )
+    const form = field?.form
+    expect(form?.id).toBe('hilos-maintenance-circle-add-form')
     expect(addConfirm().disabled).toBe(true)
+    expect(addConfirm().type).toBe('submit')
+    expect(addConfirm().form).toBe(form)
+    expect(form?.contains(addConfirm())).toBe(false)
     expect(addConfirm().getAttribute('aria-describedby')).toContain(
       HILOS_VIEW_MODE_STRIP_TEXT_ID,
     )
@@ -908,6 +893,7 @@ describe('HilosMaintenanceCirclePage and the admin view mode', () => {
       'hilos-maintenance-circle-add-cancel',
     ) as HTMLButtonElement | null
     expect(cancelButton?.disabled).toBe(false)
+    expect(cancelButton?.type).toBe('button')
     await settled(() => fireEvent.click(cancelButton as Element))
     expect(addField()).toBeNull()
   })
