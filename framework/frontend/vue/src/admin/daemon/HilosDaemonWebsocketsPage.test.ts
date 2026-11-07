@@ -3,6 +3,7 @@ import { bindAdminAccess, HilosPages } from '@hilos/core/base'
 import { afterEach, describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
 
+import { readTextWithoutAriaHidden } from '../../../../test/breadcrumb.js'
 import {
   nodeHarness,
   nodeHeading,
@@ -49,7 +50,9 @@ describe('HilosDaemonWebsocketsPage', () => {
     })
     const crumbs = h.view.get('nav[aria-label="Breadcrumb"]')
     expect(
-      crumbs.findAll('li').map((crumb) => crumb.text().replace('/', '').trim()),
+      crumbs
+        .findAll('li')
+        .map((crumb) => readTextWithoutAriaHidden(crumb.element)),
     ).toEqual(['Hilos', 'Daemon', nodeId])
     expect(crumbs.get('[aria-current="page"]').element.tagName).toBe('LI')
     const nav = h.view.get('nav[aria-label="Node pages"]')

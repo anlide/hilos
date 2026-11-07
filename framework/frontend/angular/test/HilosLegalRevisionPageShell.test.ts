@@ -9,6 +9,7 @@ import {
   type HilosLegalContext,
 } from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
 import { HilosAdminPage } from '../src/HilosAdminPage.js'
 import { HilosPageHead } from '../src/HilosPageHead.js'
 import { HilosViewportTable } from '../src/HilosViewportTable.js'
@@ -83,8 +84,8 @@ describe('HilosLegalRevisionPageShell', () => {
       expect(h.router.currentTitle.get()).toBe('Revision of 2026-01-01 · Polls')
       const crumbs = h.root.querySelector('nav[aria-label="Breadcrumb"]')!
       expect(
-        [...crumbs.querySelectorAll('li')].map((node) =>
-          node.textContent?.replace(/\//g, '').trim(),
+        [...crumbs.querySelectorAll('li')].map((crumb) =>
+          readTextWithoutAriaHidden(crumb),
         ),
       ).toEqual([
         'Hilos',
@@ -105,9 +106,11 @@ describe('HilosLegalRevisionPageShell', () => {
         '/hilos/legal/document/terms',
         '/hilos/legal/document/terms/revisions',
       ])
-      expect(text(crumbs, '[aria-current="page"]')?.replace(/^\/ /, '')).toBe(
-        'Revision of 2026-01-01',
-      )
+      expect(
+        readTextWithoutAriaHidden(
+          crumbs.querySelector('[aria-current="page"]')!,
+        ),
+      ).toBe('Revision of 2026-01-01')
       expect(crumbs.querySelector('[aria-current="page"] a')).toBeNull()
       const nav = h.root.querySelector('nav[aria-label="Revision pages"]')!
       const links = [...nav.querySelectorAll('a')]

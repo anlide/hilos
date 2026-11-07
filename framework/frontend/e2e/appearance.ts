@@ -1,3 +1,4 @@
+import { expectBreadcrumbLabels } from './breadcrumb.js'
 import type { Expect, Locator, Page } from '@playwright/test'
 
 import { shownByTestId, TABLE } from './table.js'
@@ -88,18 +89,10 @@ export async function expectAppearancePageHead(
   await expect(crumbs).toHaveCount(1)
   await expect(crumbs).toHaveRole('navigation')
   await expect(crumbs).toHaveAccessibleName('Breadcrumb')
-  await expect
-    .poll(() =>
-      crumbs.getByRole('listitem').evaluateAll((items) =>
-        items.map((item) => {
-          const words = item.cloneNode(true) as Element
-          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-            hidden.remove()
-          return words.textContent?.trim()
-        }),
-      ),
-    )
-    .toEqual(['Hilos', 'Appearance'])
+  await expectBreadcrumbLabels(expect, crumbs.getByRole('listitem'), [
+    'Hilos',
+    'Appearance',
+  ])
   await expect(crumbs.getByTestId('hilos-breadcrumb-hilos')).toHaveAttribute(
     'href',
     '/hilos',

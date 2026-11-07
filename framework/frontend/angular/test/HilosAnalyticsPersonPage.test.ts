@@ -21,6 +21,7 @@ import {
 } from '@hilos/core'
 import { describe, expect, it, vi } from 'vitest'
 
+import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
 import { HilosAnalyticsPersonPage } from '../src/admin/analytics/HilosAnalyticsPersonPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
@@ -284,9 +285,9 @@ describe('HilosAnalyticsPersonPage', () => {
     const crumbs = [
       ...h.root.querySelectorAll('nav[aria-label="Breadcrumb"] li'),
     ]
-    const lastCrumb = crumbs.at(-1)!.cloneNode(true) as HTMLElement
-    lastCrumb.querySelector('[aria-hidden="true"]')?.remove()
-    expect(lastCrumb.textContent?.trim()).toBe('Permitted label (#7)')
+    expect(readTextWithoutAriaHidden(crumbs.at(-1)!)).toBe(
+      'Permitted label (#7)',
+    )
     expect(crumbs.at(-1)?.getAttribute('aria-current')).toBe('page')
     expect(crumbs.at(-1)?.querySelector('a')).toBeNull()
     expect(

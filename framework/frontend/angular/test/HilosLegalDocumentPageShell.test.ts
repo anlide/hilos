@@ -8,6 +8,7 @@ import {
   type HilosLegalContext,
 } from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
 import { HilosLegalDocumentPageShell } from '../src/admin/legal/HilosLegalDocumentPageShell.js'
 import { HilosViewportTable } from '../src/HilosViewportTable.js'
 import {
@@ -78,8 +79,8 @@ describe('HilosLegalDocumentPageShell', () => {
     )
     const crumbs = h.root.querySelector('nav[aria-label="Breadcrumb"]')!
     expect(
-      [...crumbs.querySelectorAll('li')].map((node) =>
-        node.textContent?.replace(/\//g, '').trim(),
+      [...crumbs.querySelectorAll('li')].map((crumb) =>
+        readTextWithoutAriaHidden(crumb),
       ),
     ).toEqual(['Hilos', 'Legal', 'Documents', 'Terms of use'])
     expect(crumbs.querySelector('[aria-current="page"] a')).toBeNull()

@@ -21,6 +21,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { markRaw, nextTick } from 'vue'
 
+import { readTextWithoutAriaHidden } from '../../../../../test/breadcrumb.js'
 import HilosI18nLanguageLocalesPage from './HilosI18nLanguageLocalesPage.vue'
 import HilosI18nLocaleWindow from './HilosI18nLocaleWindow.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
@@ -366,11 +367,10 @@ describe('HilosI18nLanguageLocalesPage', () => {
     await nextTick()
     expect(s.wrapper.get('h1').text()).toBe('Live name')
     expect(
-      s.wrapper
-        .get('[data-id="hilos-breadcrumb"] [aria-current="page"]')
-        .text()
-        .replace('/', '')
-        .trim(),
+      readTextWithoutAriaHidden(
+        s.wrapper.get('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+          .element,
+      ),
     ).toBe('Live name')
     expect(s.wrapper.get('[data-id="language-head-direction"]').text()).toBe(
       'Right to left',

@@ -9,6 +9,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
+import { readTextWithoutAriaHidden } from '../../../../test/breadcrumb.js'
 import {
   nodeHarness,
   nodeHeading,
@@ -45,7 +46,9 @@ describe('HilosDaemonNodeShell', () => {
     expect(h.view.get(id('visual')).attributes('aria-hidden')).toBe('true')
     const crumbs = h.view.get('nav[aria-label="Breadcrumb"]')
     expect(
-      crumbs.findAll('li').map((crumb) => crumb.text().replace('/', '').trim()),
+      crumbs
+        .findAll('li')
+        .map((crumb) => readTextWithoutAriaHidden(crumb.element)),
     ).toEqual(['Hilos', 'Daemon', 'Главный узел 🌍'])
     expect(crumbs.findAll('a').map((link) => link.attributes('href'))).toEqual([
       '/hilos',
@@ -53,7 +56,12 @@ describe('HilosDaemonNodeShell', () => {
     ])
     expect(crumbs.get('[aria-current="page"]').element.tagName).toBe('LI')
     expect(
-      crumbs.findAll('a').some((link) => link.text() === 'Главный узел 🌍'),
+      crumbs
+        .findAll('a')
+        .some(
+          (link) =>
+            readTextWithoutAriaHidden(link.element) === 'Главный узел 🌍',
+        ),
     ).toBe(false)
     expect(h.router.pageIdentity.get()?.pageHeadOwner?.label).toBe(
       'Главный узел 🌍',
@@ -93,11 +101,10 @@ describe('HilosDaemonNodeShell', () => {
       expect(h.view.get('h1').text()).toBe('Узел <🌍>')
       expect(h.view.get('[data-id="hilos-page-head"]').text()).toContain(nodeId)
       expect(
-        h.view
-          .get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
-          .text()
-          .replace('/', '')
-          .trim(),
+        readTextWithoutAriaHidden(
+          h.view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
+            .element,
+        ),
       ).toBe('Узел <🌍>')
       expect(h.view.text()).not.toContain('hilos_daemon_')
       expect(h.send).not.toHaveBeenCalled()
@@ -287,9 +294,11 @@ describe('HilosDaemonNodeShell', () => {
     expect(
       h.view.get('[data-id="hilos-daemon-environment-unbuilt"]').text(),
     ).toBe('Environment page is not available yet')
-    expect(h.view.get('nav[aria-label="Breadcrumb"]').text()).toContain(
-      'Daemon',
-    )
+    expect(
+      readTextWithoutAriaHidden(
+        h.view.get('nav[aria-label="Breadcrumb"]').element,
+      ),
+    ).toContain('Daemon')
   })
 
   it.each([
@@ -537,11 +546,10 @@ describe('HilosDaemonNodeShell', () => {
     expect(h.registerTableWindow).toHaveBeenCalledTimes(1)
     expect(h.view.get('h1').text()).toBe('Renamed worker node')
     expect(
-      h.view
-        .get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
-        .text()
-        .replace('/', '')
-        .trim(),
+      readTextWithoutAriaHidden(
+        h.view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
+          .element,
+      ),
     ).toBe('Renamed worker node')
     expect(
       h.view.get('nav[aria-label="Node pages"] [aria-current="page"]').text(),
@@ -550,11 +558,10 @@ describe('HilosDaemonNodeShell', () => {
     await nextTick()
     expect(h.view.get('h1').text()).toBe('n1')
     expect(
-      h.view
-        .get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
-        .text()
-        .replace('/', '')
-        .trim(),
+      readTextWithoutAriaHidden(
+        h.view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
+          .element,
+      ),
     ).toBe('n1')
     expect(
       h.view.get('[data-id="hilos-page-head"]').text().match(/n1/g),

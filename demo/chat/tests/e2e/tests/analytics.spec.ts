@@ -1,6 +1,7 @@
 import { expect, test } from '../test.js'
 
 import {
+  expectBreadcrumbLabels,
   nameFromEmail,
   createTestUser,
   createTestAdmin,
@@ -709,18 +710,12 @@ test('Browser sessions viewer receives hidden personal values with only public s
     await expectPageReady(expect, viewer)
     await expectAnalyticsBrowserSessionHead(expect, viewer, 'Browser session')
     const crumbs = viewer.getByTestId('hilos-breadcrumb')
-    await expect
-      .poll(() =>
-        crumbs.locator('li').evaluateAll((items) =>
-          items.map((item) => {
-            const words = item.cloneNode(true) as Element
-            for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-              hidden.remove()
-            return words.textContent?.trim()
-          }),
-        ),
-      )
-      .toEqual(['Hilos', 'Analytics', 'Browser sessions', 'Browser session'])
+    await expectBreadcrumbLabels(expect, crumbs.locator('li'), [
+      'Hilos',
+      'Analytics',
+      'Browser sessions',
+      'Browser session',
+    ])
     await expect(
       viewer.getByTestId('hilos-analytics-browser-session-header'),
     ).toHaveText('Hidden')

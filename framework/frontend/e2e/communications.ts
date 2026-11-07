@@ -1,3 +1,4 @@
+import { expectBreadcrumbLabels } from './breadcrumb.js'
 import { typeInto } from './input.js'
 import type { Expect, Page } from '@playwright/test'
 import {
@@ -47,21 +48,12 @@ export async function expectCommunicationsChannelHead(
   const crumbs = page.getByTestId('hilos-breadcrumb').locator('li')
   // React and Angular draw decorative, aria-hidden separators inside each li.
   // Compare the exact ordered labels without counting that decoration as a name.
-  await expect
-    .poll(() =>
-      crumbs.evaluateAll((items) =>
-        items.map((item) => {
-          const copy = item.cloneNode(true) as HTMLElement
-          for (const decoration of copy.querySelectorAll(
-            '[aria-hidden="true"]',
-          )) {
-            decoration.remove()
-          }
-          return copy.textContent?.replace(/\s+/g, ' ').trim() ?? ''
-        }),
-      ),
-    )
-    .toEqual(['Hilos', 'Communications', label])
+  await expectBreadcrumbLabels(
+    expect,
+    crumbs,
+    ['Hilos', 'Communications', label],
+    (label) => label.replace(/\s+/g, ' '),
+  )
   await expect(
     page.getByTestId('hilos-breadcrumb').locator('[aria-current="page"]'),
   ).toHaveCount(1)

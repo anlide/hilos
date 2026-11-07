@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { HilosPages, pageIdentity } from '@hilos/core/base'
 import { HilosAdminPage } from '../src/HilosAdminPage.js'
 import { useHilosCommunicationsChannelHead } from '../src/admin/communications/hilosCommunicationsChannelHead.js'
+import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
 import {
   communicationsHarness,
   channelEl,
@@ -32,9 +33,10 @@ describe('channel head binding', () => {
     const view = h.mount(<Head context={h.context} page={page} />)
     expect(channelEl('hilos-page-head-title')?.textContent).toBe('Email')
     expect(
-      channelEl('hilos-breadcrumb')?.querySelector('[aria-current="page"]')
-        ?.textContent,
-    ).toBe('/Email')
+      readTextWithoutAriaHidden(
+        channelEl('hilos-breadcrumb')!.querySelector('[aria-current="page"]')!,
+      ),
+    ).toBe('Email')
     expect(
       channelEl('channel-head-icon')?.querySelector('.bi-envelope-paper'),
     ).not.toBeNull()

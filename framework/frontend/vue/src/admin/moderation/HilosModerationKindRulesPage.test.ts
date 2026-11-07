@@ -21,6 +21,7 @@ import {
   type HilosModerationRuleRow,
 } from '@hilos/core/admin/moderation'
 
+import { readTextWithoutAriaHidden } from '../../../../test/breadcrumb.js'
 import HilosModerationKindRulesPage from './HilosModerationKindRulesPage.vue'
 import HilosModerationRuleDelete from './HilosModerationRuleDelete.vue'
 import HilosModerationRuleEdit from './HilosModerationRuleEdit.vue'
@@ -273,10 +274,10 @@ describe('HilosModerationKindRulesPage', () => {
       'Profile name',
     ])
     const crumbs = view.get('[data-id="hilos-breadcrumb"]')
-    expect(crumbs.get('li:last-child').text().replace('/', '').trim()).toBe(
+    expect(readTextWithoutAriaHidden(crumbs.get('li:last-child').element)).toBe(
       'Profile name',
     )
-    expect(crumbs.text()).not.toContain('Rules')
+    expect(readTextWithoutAriaHidden(crumbs.element)).not.toContain('Rules')
     const tabs = view.get('[aria-label="Kind pages"]')
     expect(
       tabs
@@ -331,7 +332,7 @@ describe('HilosModerationKindRulesPage', () => {
     update({ ...first, title: 'New title', owner: 'project' })
     await nextTick()
     expect(view.get('h1').text()).toBe('New title')
-    expect(crumbs.get('li:last-child').text().replace('/', '').trim()).toBe(
+    expect(readTextWithoutAriaHidden(crumbs.get('li:last-child').element)).toBe(
       'New title',
     )
     expect(navigation.currentTitle.get()).toBe('New title · Chat')

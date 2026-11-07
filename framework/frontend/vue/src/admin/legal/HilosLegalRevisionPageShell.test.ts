@@ -1,6 +1,7 @@
 import { HilosPages, pageIdentity, resolvePageTitle } from '@hilos/core/base'
 import { describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
+import { readTextWithoutAriaHidden } from '../../../../test/breadcrumb.js'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosPageHead from '../../HilosPageHead.vue'
 import HilosLegalRevisionPageShell from './HilosLegalRevisionPageShell.vue'
@@ -38,9 +39,18 @@ describe('Revision shell', () => {
           ),
         ).toBe('Revision of 2026-01-01 · Chat')
         const crumbs = h.view.get('nav[aria-label="Breadcrumb"]')
-        expect(crumbs.text()).toBe(
-          'Hilos/Legal/Documents/Terms of use/Revisions/Revision of 2026-01-01',
-        )
+        expect(
+          crumbs
+            .findAll('li')
+            .map((crumb) => readTextWithoutAriaHidden(crumb.element)),
+        ).toEqual([
+          'Hilos',
+          'Legal',
+          'Documents',
+          'Terms of use',
+          'Revisions',
+          'Revision of 2026-01-01',
+        ])
         expect(
           crumbs.findAll('a').map((node) => node.attributes('href')),
         ).toEqual([
@@ -53,7 +63,7 @@ describe('Revision shell', () => {
         expect(
           crumbs
             .findAll('[aria-current="page"]')
-            .map((node) => node.text().replace('/', '').trim()),
+            .map((node) => readTextWithoutAriaHidden(node.element)),
         ).toEqual(['Revision of 2026-01-01'])
         const nav = h.view.get('nav[aria-label="Revision pages"]')
         expect(
@@ -169,9 +179,11 @@ describe('Revision shell', () => {
     )
     try {
       expect(h.view.get('h1').text()).toBe('Revision removed/revision')
-      expect(h.view.get('nav[aria-label="Breadcrumb"]').text()).toContain(
-        'retired/document',
-      )
+      expect(
+        readTextWithoutAriaHidden(
+          h.view.get('nav[aria-label="Breadcrumb"]').element,
+        ),
+      ).toContain('retired/document')
       expect(h.view.get('[data-id="hilos-page-head-block"]').text()).toContain(
         'Not in code',
       )

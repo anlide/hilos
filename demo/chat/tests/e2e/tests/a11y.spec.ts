@@ -4,6 +4,7 @@ import { test as base, expect } from '../test.js'
 
 import { logout } from '../helpers/session.js'
 import {
+  expectBreadcrumbLabels,
   enterIdentifierAndPassword,
   PASSWORD,
   ANALYTICS_SESSION_LIST_HANDLE,
@@ -401,18 +402,12 @@ test('Analytics Person has one entity heading naming its table and a decorative 
   const breadcrumb = head.getByTestId('hilos-breadcrumb')
   await expect(breadcrumb).toHaveRole('navigation')
   await expect(breadcrumb).toHaveAccessibleName('Breadcrumb')
-  await expect
-    .poll(() =>
-      breadcrumb.locator('li').evaluateAll((items) =>
-        items.map((item) => {
-          const words = item.cloneNode(true) as Element
-          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-            hidden.remove()
-          return words.textContent?.trim()
-        }),
-      ),
-    )
-    .toEqual(['Hilos', 'Analytics', 'People', label])
+  await expectBreadcrumbLabels(expect, breadcrumb.locator('li'), [
+    'Hilos',
+    'Analytics',
+    'People',
+    label,
+  ])
   const current = breadcrumb.locator('li').last()
   await expect(current).toHaveAttribute('aria-current', 'page')
   await expect(current.getByRole('link')).toHaveCount(0)
@@ -434,16 +429,7 @@ test('Security has one section heading, six named links and keyboard navigation 
   ).toHaveAccessibleName('Hilos')
   const currentCrumb = breadcrumb.locator('[aria-current="page"]')
   await expect(currentCrumb).toHaveCount(1)
-  await expect
-    .poll(() =>
-      currentCrumb.evaluate((crumb) => {
-        const words = crumb.cloneNode(true) as Element
-        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-          hidden.remove()
-        return words.textContent?.trim()
-      }),
-    )
-    .toBe('Security Center')
+  await expectBreadcrumbLabels(expect, currentCrumb, ['Security Center'])
   await expect(currentCrumb.locator('a')).toHaveCount(0)
   await expect(page.getByRole('heading', { level: 2 })).toHaveText([
     'Two-factor',
@@ -535,16 +521,7 @@ test('OAuth provider has one named entity head and table, decorative icons and k
     }
     const currentCrumb = breadcrumb.locator('[aria-current="page"]')
     await expect(currentCrumb).toHaveCount(1)
-    await expect
-      .poll(() =>
-        currentCrumb.evaluate((crumb) => {
-          const words = crumb.cloneNode(true) as Element
-          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-            hidden.remove()
-          return words.textContent?.trim()
-        }),
-      )
-      .toBe(provider.label)
+    await expectBreadcrumbLabels(expect, currentCrumb, [provider.label])
     await expect(currentCrumb.locator('a')).toHaveCount(0)
     expect(
       await page

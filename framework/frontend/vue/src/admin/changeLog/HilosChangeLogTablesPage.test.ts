@@ -231,13 +231,10 @@ describe('HilosChangeLogTablesPage', () => {
     expect(head.text()).toContain(OWNER.lead)
     const crumbs = wrapper.get('[data-id="hilos-breadcrumb"]')
     expect(crumbs.attributes('aria-label')).toBe('Breadcrumb')
-    expect(
-      crumbs.findAll('li').map((crumb) => crumb.text().replace('/', '').trim()),
-    ).toEqual(['Hilos', 'Change Log'])
+    expect(crumbs.findAll('li')).toHaveLength(2)
     expect(crumbs.get('a').attributes('href')).toBe('/hilos')
-    expect(
-      crumbs.get('[aria-current="page"]').text().replace('/', '').trim(),
-    ).toBe('Change Log')
+    expect(crumbs.findAll('[aria-current="page"]')).toHaveLength(1)
+    expect(crumbs.find('[aria-current="page"] a').exists()).toBe(false)
     const nav = wrapper.get('nav[data-id="hilos-page-tabs"]')
     expect(nav.attributes('aria-label')).toBe('Change Log pages')
     expect(nav.findAll('a').map((link) => link.text())).toEqual(

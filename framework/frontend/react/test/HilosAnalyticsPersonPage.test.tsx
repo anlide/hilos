@@ -19,6 +19,7 @@ import {
 
 import { HilosAnalyticsPersonPage } from '../src/admin/analytics/HilosAnalyticsPersonPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
+import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
 
 const PAGE = HilosPages.ANALYTICS_PERSON
 const TABLE = 'hilosAnalyticsBrowserSessions'
@@ -268,15 +269,12 @@ describe('HilosAnalyticsPersonPage', () => {
     expect(
       [
         ...h.view.container.querySelectorAll('[data-id="hilos-breadcrumb"] li'),
-      ].map((crumb) =>
-        (crumb.querySelector('a')?.textContent ?? crumb.lastChild?.textContent)
-          ?.trim()
-          .replace(/^\//, ''),
-      ),
+      ].map((crumb) => readTextWithoutAriaHidden(crumb)),
     ).toEqual(['Hilos', 'Analytics', 'People', 'Ada (#7)'])
     expect(
-      find(h.view, '[data-id="hilos-breadcrumb"] [aria-current="page"]')
-        ?.lastChild?.textContent,
+      readTextWithoutAriaHidden(
+        find(h.view, '[data-id="hilos-breadcrumb"] [aria-current="page"]')!,
+      ),
     ).toBe('Ada (#7)')
     expect(h.router.pageIdentity.get()?.pageHeadOwner).toEqual({
       page: PAGE,

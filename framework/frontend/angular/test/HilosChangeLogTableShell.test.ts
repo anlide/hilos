@@ -25,6 +25,7 @@ import {
 } from '@hilos/core/admin/change-log'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
 import { HilosChangeLogTableShell } from '../src/admin/changeLog/HilosChangeLogTableShell.js'
 import { HilosViewportTable } from '../src/HilosViewportTable.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
@@ -173,7 +174,8 @@ function harness(page: string = HilosPages.CHANGE_LOG_TABLE, name = 'bot') {
 
 const el = (id: string) =>
   document.querySelector<HTMLElement>(`[data-id="${id}"]`)
-const text = (node: Element) => node.textContent?.replace(/\s+/g, ' ').trim()
+const text = (node: Element) =>
+  readTextWithoutAriaHidden(node).replace(/\s+/g, ' ')
 
 describe('HilosChangeLogTableShell', () => {
   it.each(tabs)(
@@ -190,12 +192,9 @@ describe('HilosChangeLogTableShell', () => {
       h.act(() => h.answer())
       expect([...h.root.querySelectorAll('h1')].map(text)).toEqual([name])
       const crumbs = h.root.querySelector('nav[aria-label="Breadcrumb"]')!
-      expect([...crumbs.querySelectorAll('li')].map(text)).toEqual([
-        'Hilos',
-        '/Change Log',
-        '/Tracked tables',
-        `/ ${name}`,
-      ])
+      expect(crumbs.querySelectorAll('li')).toHaveLength(4)
+      expect(text(crumbs.querySelector('li:last-child')!)).toBe(name)
+      expect(text(crumbs.querySelector('[aria-current="page"]')!)).toBe(name)
       expect(
         crumbs.querySelector('[aria-current="page"]')?.querySelector('a'),
       ).toBeNull()

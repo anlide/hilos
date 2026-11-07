@@ -1,5 +1,6 @@
 import { expect, test as base } from '../test.js'
 import {
+  expectBreadcrumbLabels,
   DAEMON_NODE_PATH,
   DAEMON_STANDALONE_NODE_NAME,
   RESTART_MARK_TIMEOUT_MS,
@@ -211,18 +212,12 @@ test('Analytics Person has one entity heading naming its table and a decorative 
   const breadcrumb = head.getByTestId('hilos-breadcrumb')
   await expect(breadcrumb).toHaveRole('navigation')
   await expect(breadcrumb).toHaveAccessibleName('Breadcrumb')
-  await expect
-    .poll(() =>
-      breadcrumb.locator('li').evaluateAll((items) =>
-        items.map((item) => {
-          const words = item.cloneNode(true) as Element
-          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-            hidden.remove()
-          return words.textContent?.trim()
-        }),
-      ),
-    )
-    .toEqual(['Hilos', 'Analytics', 'People', label])
+  await expectBreadcrumbLabels(expect, breadcrumb.locator('li'), [
+    'Hilos',
+    'Analytics',
+    'People',
+    label,
+  ])
   const current = breadcrumb.locator('li').last()
   await expect(current).toHaveAttribute('aria-current', 'page')
   await expect(current.getByRole('link')).toHaveCount(0)

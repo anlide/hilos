@@ -13,6 +13,7 @@ import type {
 import { HilosPageHead } from '../src/HilosPageHead.js'
 import type { HilosPageHeadProps } from '../src/HilosPageHead.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
+import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
 
 /** Synthetic routes: no real owner is opted in by these tests. */
 const ROUTES: Record<string, string> = {
@@ -359,7 +360,7 @@ describe('HilosPageHead', () => {
     const current = crumbs?.querySelectorAll('[aria-current="page"]') ?? []
     expect(current).toHaveLength(1)
     expect(current[0].tagName).toBe('LI')
-    expect(current[0].textContent).toBe('/United States')
+    expect(readTextWithoutAriaHidden(current[0])).toBe('United States')
   })
 
   it('keeps an intermediate crumb without an address as text', () => {
@@ -375,10 +376,10 @@ describe('HilosPageHead', () => {
     })
 
     const items = findAll(head, '[data-id="hilos-breadcrumb"] li')
-    expect(items.map((item) => item.textContent)).toEqual([
+    expect(items.map((item) => readTextWithoutAriaHidden(item))).toEqual([
       'Hilos',
-      '/People',
-      '/Demo section',
+      'People',
+      'Demo section',
     ])
     expect(items[1].querySelector('a')).toBeNull()
     expect(findAll(head, '[data-id="hilos-breadcrumb"] a')).toHaveLength(1)

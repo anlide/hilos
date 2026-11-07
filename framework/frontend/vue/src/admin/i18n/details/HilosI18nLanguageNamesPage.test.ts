@@ -18,6 +18,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { markRaw, nextTick } from 'vue'
 
+import { readTextWithoutAriaHidden } from '../../../../../test/breadcrumb.js'
 import HilosI18nLanguageNamesPage from './HilosI18nLanguageNamesPage.vue'
 import HilosI18nLanguageNameDelete from './HilosI18nLanguageNameDelete.vue'
 import HilosI18nLanguageNameWindow from './HilosI18nLanguageNameWindow.vue'
@@ -206,11 +207,10 @@ describe('HilosI18nLanguageNamesPage', () => {
     await nextTick()
     expect(wrapper.get('h1').text()).toBe('Live name')
     expect(
-      wrapper
-        .get('[data-id="hilos-breadcrumb"] [aria-current="page"]')
-        .text()
-        .replace('/', '')
-        .trim(),
+      readTextWithoutAriaHidden(
+        wrapper.get('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+          .element,
+      ),
     ).toBe('Live name')
     expect(wrapper.get('[data-id="language-head-direction"]').text()).toBe(
       'Right to left',

@@ -21,6 +21,7 @@ import { formatAnalyticsTime } from '@hilos/core/admin/analytics'
 import { HilosLayout } from '@hilos/angular/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
 import { HilosAnalyticsBrowserSessionPage } from '../src/admin/analytics/HilosAnalyticsBrowserSessionPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
@@ -235,11 +236,8 @@ function find(h: Harness, selector: string): HTMLElement | null {
 }
 
 function text(h: Harness, selector: string): string | undefined {
-  const copy = find(h, selector)?.cloneNode(true) as HTMLElement | undefined
-  copy
-    ?.querySelectorAll('[aria-hidden="true"]')
-    .forEach((node) => node.remove())
-  return copy?.textContent?.trim()
+  const element = find(h, selector)
+  return element === null ? undefined : readTextWithoutAriaHidden(element)
 }
 
 describe('HilosAnalyticsBrowserSessionPage', () => {

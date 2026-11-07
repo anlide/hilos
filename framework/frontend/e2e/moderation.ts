@@ -1,3 +1,4 @@
+import { expectBreadcrumbLabels } from './breadcrumb.js'
 import type { Expect, Locator, Page } from '@playwright/test'
 
 import type { TestCleanup } from './cleanupFixtures.js'
@@ -363,25 +364,21 @@ export async function expectModerationKindHead(
   await expect(crumbs).toHaveAccessibleName('Breadcrumb')
   // React and Angular draw the separator as an aria-hidden span inside each
   // item: the labels are read without that decoration, the last one current.
+  await expectBreadcrumbLabels(
+    expect,
+    crumbs.locator('li'),
+    ['Hilos', 'Moderation', declared.title],
+    (label) => label.replace(/\s+/g, ' '),
+  )
   await expect
     .poll(() =>
-      crumbs.locator('li').evaluateAll((items) =>
-        items.map((item) => {
-          const words = item.cloneNode(true) as Element
-          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-            hidden.remove()
-          return {
-            label: words.textContent?.replace(/\s+/g, ' ').trim(),
-            current: item.getAttribute('aria-current'),
-          }
-        }),
-      ),
+      crumbs
+        .locator('li')
+        .evaluateAll((items) =>
+          items.map((item) => item.getAttribute('aria-current')),
+        ),
     )
-    .toEqual([
-      { label: 'Hilos', current: null },
-      { label: 'Moderation', current: null },
-      { label: declared.title, current: 'page' },
-    ])
+    .toEqual([null, null, 'page'])
   await expect(crumbs.getByRole('link')).toHaveText(['Hilos', 'Moderation'])
   await expect(crumbs.getByTestId('hilos-breadcrumb-hilos')).toHaveAttribute(
     'href',

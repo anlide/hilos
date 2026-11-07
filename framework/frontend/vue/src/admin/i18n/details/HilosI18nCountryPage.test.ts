@@ -26,6 +26,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, markRaw, nextTick, ref } from 'vue'
 
+import { readTextWithoutAriaHidden } from '../../../../../test/breadcrumb.js'
 import HilosI18nCountryPage from './HilosI18nCountryPage.vue'
 import ErrorPage from '../../../ErrorPage.vue'
 import HilosView from '../../../HilosView.vue'
@@ -586,11 +587,9 @@ describe('HilosI18nCountryPage', () => {
         },
       })
       const crumb = () =>
-        h.view
-          .get('[data-id="hilos-breadcrumb"] li:last-child')
-          .text()
-          .replace('/', '')
-          .trim()
+        readTextWithoutAriaHidden(
+          h.view.get('[data-id="hilos-breadcrumb"] li:last-child').element,
+        )
       expect(crumb()).toBe(expected)
       expect(h.view.findAll('h1')).toHaveLength(1)
       expect(h.view.get('[data-id="hilos-page-head-title"]').text()).toBe(

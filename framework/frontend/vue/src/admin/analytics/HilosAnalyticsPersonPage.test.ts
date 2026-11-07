@@ -20,6 +20,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { markRaw, nextTick } from 'vue'
 
+import { readTextWithoutAriaHidden } from '../../../../test/breadcrumb.js'
 import HilosAnalyticsPersonPage from './HilosAnalyticsPersonPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
@@ -240,7 +241,7 @@ describe('HilosAnalyticsPersonPage', () => {
     expect(
       breadcrumb
         .findAll('li')
-        .map((crumb) => crumb.text().replace('/', '').trim()),
+        .map((crumb) => readTextWithoutAriaHidden(crumb.element)),
     ).toEqual(['Hilos', 'Analytics', 'People', 'Ada (#7)'])
     expect(
       breadcrumb
@@ -252,7 +253,9 @@ describe('HilosAnalyticsPersonPage', () => {
       ['hilos-breadcrumb-hilos_analytics_people', '/hilos/analytics/people'],
     ])
     expect(
-      breadcrumb.find('[aria-current="page"]').text().replace('/', '').trim(),
+      readTextWithoutAriaHidden(
+        breadcrumb.find('[aria-current="page"]').element,
+      ),
     ).toBe('Ada (#7)')
     expect(breadcrumb.find('[aria-current="page"] a').exists()).toBe(false)
     expect(h.router.pageIdentity.get()?.pageHeadOwner).toEqual({
@@ -424,11 +427,10 @@ describe('HilosAnalyticsPersonPage', () => {
     await nextTick()
     expect(h.view.find('h1').text()).toBe('Deleted user #7')
     expect(
-      h.view
-        .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
-        .text()
-        .replace('/', '')
-        .trim(),
+      readTextWithoutAriaHidden(
+        h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+          .element,
+      ),
     ).toBe('Deleted user #7')
     expect(h.view.find('[data-id="analytics-person-head-avatar"]').text()).toBe(
       '',
@@ -463,11 +465,10 @@ describe('HilosAnalyticsPersonPage', () => {
     await nextTick()
     expect(h.view.find('h1').text()).toBe('Person')
     expect(
-      h.view
-        .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
-        .text()
-        .replace('/', '')
-        .trim(),
+      readTextWithoutAriaHidden(
+        h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+          .element,
+      ),
     ).toBe('Person')
     expect(h.view.html()).not.toContain('Session owner')
     expect(h.view.find('img').exists()).toBe(false)
@@ -575,11 +576,10 @@ describe('HilosAnalyticsPersonPage', () => {
     await nextTick()
     expect(h.view.find('h1').text()).toBe('Bob (#8)')
     expect(
-      h.view
-        .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
-        .text()
-        .replace('/', '')
-        .trim(),
+      readTextWithoutAriaHidden(
+        h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+          .element,
+      ),
     ).toBe('Bob (#8)')
     expect(h.view.text()).not.toContain('Old scope name')
     expect(h.view.html()).not.toContain('Old scope avatar name')
@@ -605,20 +605,18 @@ describe('HilosAnalyticsPersonPage', () => {
     h.identity('Renamed (#7)')
     await nextTick()
     expect(
-      h.view
-        .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
-        .text()
-        .replace('/', '')
-        .trim(),
+      readTextWithoutAriaHidden(
+        h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+          .element,
+      ),
     ).toBe('Renamed (#7)')
     h.identity('')
     await nextTick()
     expect(
-      h.view
-        .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
-        .text()
-        .replace('/', '')
-        .trim(),
+      readTextWithoutAriaHidden(
+        h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+          .element,
+      ),
     ).toBe('')
   })
 
@@ -629,18 +627,16 @@ describe('HilosAnalyticsPersonPage', () => {
     second.identity('Bob (#8)')
     await nextTick()
     expect(
-      first.view
-        .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
-        .text()
-        .replace('/', '')
-        .trim(),
+      readTextWithoutAriaHidden(
+        first.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+          .element,
+      ),
     ).toBe('Ada (#7)')
     expect(
-      second.view
-        .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
-        .text()
-        .replace('/', '')
-        .trim(),
+      readTextWithoutAriaHidden(
+        second.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+          .element,
+      ),
     ).toBe('Bob (#8)')
   })
 
@@ -659,11 +655,10 @@ describe('HilosAnalyticsPersonPage', () => {
     data.set('photo', '/another-page-avatar')
     await nextTick()
     expect(
-      h.view
-        .find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
-        .text()
-        .replace('/', '')
-        .trim(),
+      readTextWithoutAriaHidden(
+        h.view.find('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+          .element,
+      ),
     ).toBe('Person')
     expect(
       h.view.find('[data-id="analytics-person-head-avatar"]').exists(),

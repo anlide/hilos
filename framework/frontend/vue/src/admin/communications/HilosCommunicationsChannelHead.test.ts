@@ -16,6 +16,7 @@ import {
 import { afterEach, describe, expect, it } from 'vitest'
 import { markRaw, nextTick } from 'vue'
 
+import { readTextWithoutAriaHidden } from '../../../../test/breadcrumb.js'
 import HilosCommunicationsChannelHead from './HilosCommunicationsChannelHead.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
@@ -115,7 +116,7 @@ describe('HilosCommunicationsChannelHead', () => {
       const crumb = view.get(
         '[data-id="hilos-breadcrumb"] li[aria-current="page"]',
       )
-      expect(crumb.text().replace('/', '').trim()).toBe('Email')
+      expect(readTextWithoutAriaHidden(crumb.element)).toBe('Email')
       expect(crumb.find('a').exists()).toBe(false)
       expect(navigation.pageIdentity.get()?.breadcrumb.at(-1)?.page).toBe(
         HilosPages.COMMUNICATIONS_CHANNEL,

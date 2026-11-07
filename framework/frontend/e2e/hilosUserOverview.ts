@@ -1,3 +1,4 @@
+import { expectBreadcrumbLabels } from './breadcrumb.js'
 import type { Expect, Page } from '@playwright/test'
 
 /**
@@ -35,18 +36,11 @@ export async function expectHilosUserOverview(
   )
   const breadcrumb = page.getByTestId('hilos-breadcrumb')
   await expect(breadcrumb).toHaveAccessibleName('Breadcrumb')
-  await expect
-    .poll(() =>
-      breadcrumb.locator('li').evaluateAll((items) =>
-        items.map((item) => {
-          const words = item.cloneNode(true) as Element
-          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-            hidden.remove()
-          return words.textContent?.trim()
-        }),
-      ),
-    )
-    .toEqual(['Hilos', 'Users', name])
+  await expectBreadcrumbLabels(expect, breadcrumb.locator('li'), [
+    'Hilos',
+    'Users',
+    name,
+  ])
   await expect(
     breadcrumb.getByTestId('hilos-breadcrumb-hilos'),
   ).toHaveAttribute('href', '/hilos')
@@ -54,16 +48,7 @@ export async function expectHilosUserOverview(
     breadcrumb.getByTestId('hilos-breadcrumb-hilos_users'),
   ).toHaveAttribute('href', '/hilos/users')
   const currentCrumb = breadcrumb.locator('[aria-current="page"]')
-  await expect
-    .poll(() =>
-      currentCrumb.evaluate((crumb) => {
-        const words = crumb.cloneNode(true) as Element
-        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-          hidden.remove()
-        return words.textContent?.trim()
-      }),
-    )
-    .toBe(name)
+  await expectBreadcrumbLabels(expect, currentCrumb, [name])
   await expect(
     page.locator('a[href=""], a[href="#"], a:not([href])'),
   ).toHaveCount(0)

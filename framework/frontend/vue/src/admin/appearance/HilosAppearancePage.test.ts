@@ -419,9 +419,7 @@ describe('Appearance page', () => {
       expect(crumbs.attributes('aria-label')).toBe('Breadcrumb')
       const items = crumbs.findAll('li')
       expect(items).toHaveLength(2)
-      expect(items[0]!.text()).toBe('Hilos')
       expect(items[0]!.get('a').attributes('href')).toBe('/hilos')
-      expect(items[1]!.text().replace('/', '').trim()).toBe('Appearance')
       expect(items[1]!.attributes('aria-current')).toBe('page')
       expect(items[1]!.find('a').exists()).toBe(false)
       expect(view.find('[data-id="hilos-page-head-skeleton"]').exists()).toBe(

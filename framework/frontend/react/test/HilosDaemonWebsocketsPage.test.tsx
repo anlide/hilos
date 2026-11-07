@@ -2,6 +2,7 @@ import { act, cleanup } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { bindAdminAccess, HilosPages } from '@hilos/core/base'
 import { nodeHarness, nodeHeading } from './helpers/hilosDaemonNode.js'
+import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
 
 afterEach(cleanup)
 
@@ -60,13 +61,9 @@ describe('HilosDaemonWebsocketsPage', () => {
     })
     const crumbs = h.root.querySelector('nav[aria-label="Breadcrumb"]')!
     expect(
-      [...crumbs.querySelectorAll('li')].map((el) => {
-        const words = el.cloneNode(true) as Element
-        words
-          .querySelectorAll('[aria-hidden="true"]')
-          .forEach((hidden) => hidden.remove())
-        return words.textContent?.trim()
-      }),
+      [...crumbs.querySelectorAll('li')].map((el) =>
+        readTextWithoutAriaHidden(el),
+      ),
     ).toEqual(['Hilos', 'Daemon', nodeId])
     expect(crumbs.querySelector('[aria-current="page"]')?.tagName).toBe('LI')
     const nav = h.root.querySelector('nav[aria-label="Node pages"]')!

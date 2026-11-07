@@ -20,6 +20,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { markRaw, nextTick, ref } from 'vue'
 
+import { readTextWithoutAriaHidden } from '../../../../../test/breadcrumb.js'
 import HilosI18nLanguagePage from './HilosI18nLanguagePage.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { hilosAdminViewModeKey } from '../../../hilosAdminViewMode.js'
@@ -462,11 +463,10 @@ describe('HilosI18nLanguagePage', () => {
     expect(h.view.findAll('h1')).toHaveLength(1)
     expect(h.view.get('h1').text()).toBe('First name')
     expect(
-      h.view
-        .get('[data-id="hilos-breadcrumb"] [aria-current="page"]')
-        .text()
-        .replace('/', '')
-        .trim(),
+      readTextWithoutAriaHidden(
+        h.view.get('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+          .element,
+      ),
     ).toBe('First name')
     expect(
       h.view.get('[data-id="language-head-default"]').attributes('title'),
@@ -490,11 +490,10 @@ describe('HilosI18nLanguagePage', () => {
     await nextTick()
     expect(h.view.get('h1').text()).toBe('Renamed')
     expect(
-      h.view
-        .get('[data-id="hilos-breadcrumb"] [aria-current="page"]')
-        .text()
-        .replace('/', '')
-        .trim(),
+      readTextWithoutAriaHidden(
+        h.view.get('[data-id="hilos-breadcrumb"] [aria-current="page"]')
+          .element,
+      ),
     ).toBe('Renamed')
     const foreign = h.scopes.openPage(HilosPages.I18N_COUNTRY)
     answerAsLanguage(h.scopes)

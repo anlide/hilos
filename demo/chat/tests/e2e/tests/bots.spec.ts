@@ -2,6 +2,7 @@ import type { Page, TestInfo } from '@playwright/test'
 import { test, expect } from '../test.js'
 
 import {
+  expectBreadcrumbLabels,
   dismissToasts,
   expectDataFreeDeparture,
   expectTableRecordWrappingStress,
@@ -1392,16 +1393,7 @@ async function expectBotsPageHead(page: Page): Promise<void> {
   await expect(rootCrumb).toHaveText('Hilos')
   const currentCrumb = breadcrumbs.locator('[aria-current="page"]')
   await expect(currentCrumb).toHaveCount(1)
-  await expect
-    .poll(() =>
-      currentCrumb.evaluate((crumb) => {
-        const words = crumb.cloneNode(true) as Element
-        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-          hidden.remove()
-        return words.textContent?.trim()
-      }),
-    )
-    .toBe('Bots')
+  await expectBreadcrumbLabels(expect, currentCrumb, ['Bots'])
   await expect(currentCrumb.locator('a')).toHaveCount(0)
 
   await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)

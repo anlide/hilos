@@ -38,6 +38,7 @@ import {
   USER_ENTITY_TYPE,
   userFromFields,
 } from '@hilos/core/base'
+import { readTextWithoutAriaHidden } from '../../../../test/breadcrumb.js'
 import { readerTimeZone } from '../../../test/helpers/readerTimeZone.js'
 import type {
   HilosConnection,
@@ -581,7 +582,7 @@ describe('HilosUserPage Overview', () => {
     expect(
       wrapper
         .findAll('[data-id="hilos-breadcrumb"] li')
-        .map((crumb) => crumb.text().replace('/', '').trim()),
+        .map((crumb) => readTextWithoutAriaHidden(crumb.element)),
     ).toEqual(['Hilos', 'Users', 'Alice'])
     expect(
       wrapper.get('[data-id="hilos-breadcrumb"] a').attributes('href'),

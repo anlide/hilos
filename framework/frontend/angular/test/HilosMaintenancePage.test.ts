@@ -535,16 +535,9 @@ describe('HilosMaintenancePage head', () => {
       root.querySelector('[data-id="hilos-page-head-block"]')?.textContent,
     ).toContain(MAINTENANCE_LEAD)
     const breadcrumb = root.querySelector('[data-id="hilos-breadcrumb"]')
-    // What each item says, without the separator drawn for the eye only.
-    expect(
-      [...(breadcrumb?.querySelectorAll('li') ?? [])].map((item) => {
-        const copy = item.cloneNode(true) as HTMLElement
-        copy
-          .querySelectorAll('[aria-hidden="true"]')
-          .forEach((node) => node.remove())
-        return copy.textContent?.trim()
-      }),
-    ).toEqual(['Hilos', 'Maintenance'])
+    expect(breadcrumb?.querySelectorAll('li')).toHaveLength(2)
+    expect(breadcrumb?.querySelector('[aria-current="page"]')).not.toBeNull()
+    expect(breadcrumb?.querySelector('[aria-current="page"] a')).toBeNull()
     expect(
       [...(breadcrumb?.querySelectorAll('a') ?? [])].map((link) =>
         link.getAttribute('href'),

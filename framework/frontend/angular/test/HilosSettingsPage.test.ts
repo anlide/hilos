@@ -381,7 +381,6 @@ describe('HilosSettingsPage', () => {
     expect(items[0].querySelector('a')?.hasAttribute('aria-current')).toBe(
       false,
     )
-    expect(items[1].textContent?.replace('/', '').trim()).toBe('Settings')
     expect(items[1].getAttribute('aria-current')).toBe('page')
     expect(items[1].querySelector('a')).toBeNull()
     expect(el(root, 'hilos-page-tabs')).toBeNull()

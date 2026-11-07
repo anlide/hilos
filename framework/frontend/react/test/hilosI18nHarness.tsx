@@ -29,6 +29,7 @@ import {
 } from '@hilos/core'
 import { HilosView } from '../src/HilosView.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
+import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
 
 export const language: HilosI18nLanguageRow = {
   languageId: 19,
@@ -542,10 +543,7 @@ export function lastCrumb(): string | null | undefined {
     '[data-id="hilos-breadcrumb"] [aria-current="page"]',
   )
   if (current === null) return undefined
-  const text = current.cloneNode(true) as Element
-  for (const hidden of text.querySelectorAll('[aria-hidden="true"]'))
-    hidden.remove()
-  return text.textContent
+  return readTextWithoutAriaHidden(current, { trim: false })
 }
 
 /** The data-ids the manual country header carried; none of them stays. */

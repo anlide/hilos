@@ -1,3 +1,4 @@
+import { expectBreadcrumbLabels } from './breadcrumb.js'
 import type { Expect, Locator, Page } from '@playwright/test'
 import {
   statusOverviewSchema,
@@ -122,18 +123,10 @@ export async function expectStatusHead(
   await expect(page.getByTestId('hilos-page-head-title')).toHaveText('Status')
   await expect(page.getByTestId('hilos-page-head')).toContainText(STATUS_LEAD)
   const crumbs = page.getByTestId('hilos-breadcrumb')
-  await expect
-    .poll(() =>
-      crumbs.getByRole('listitem').evaluateAll((items) =>
-        items.map((item) => {
-          const words = item.cloneNode(true) as Element
-          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-            hidden.remove()
-          return words.textContent?.trim()
-        }),
-      ),
-    )
-    .toEqual(['Hilos', 'Status'])
+  await expectBreadcrumbLabels(expect, crumbs.getByRole('listitem'), [
+    'Hilos',
+    'Status',
+  ])
   const tabs = page.getByTestId('hilos-page-tabs')
   await expect(tabs).toHaveAccessibleName('Status pages')
   await expect(tabs.getByRole('link')).toHaveCount(5)

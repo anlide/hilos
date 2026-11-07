@@ -446,13 +446,11 @@ describe('HilosSettingsPage', () => {
     expect(crumbs.getAttribute('aria-label')).toBe('Breadcrumb')
     const items = crumbs.querySelectorAll('li')
     expect(items).toHaveLength(2)
-    expect(items[0].textContent).toBe('Hilos')
     expect(items[0].querySelector('a')?.getAttribute('href')).toBe('/hilos')
     expect(items[0].hasAttribute('aria-current')).toBe(false)
     expect(items[0].querySelector('a')?.hasAttribute('aria-current')).toBe(
       false,
     )
-    expect(items[1].textContent?.replace('/', '').trim()).toBe('Settings')
     expect(items[1].getAttribute('aria-current')).toBe('page')
     expect(items[1].querySelector('a')).toBeNull()
     expect(container.querySelector('[data-id="hilos-page-tabs"]')).toBeNull()

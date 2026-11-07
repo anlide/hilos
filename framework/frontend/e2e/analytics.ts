@@ -1,3 +1,4 @@
+import { expectBreadcrumbLabels } from './breadcrumb.js'
 import type { Expect, Locator, Page } from '@playwright/test'
 import { resolveHilosPath } from '../core/src/routing/hilosAdmin.js'
 import { HilosPages } from '../core/src/routing/hilosPages.js'
@@ -420,23 +421,12 @@ export async function expectAnalyticsSessionReturn(
     page.getByTestId('hilos-breadcrumb').getByRole('link'),
   ).toHaveText(['Hilos', 'Analytics', 'Browser sessions'])
   const crumbs = page.getByTestId('hilos-breadcrumb')
-  await expect
-    .poll(() =>
-      crumbs.locator('li').evaluateAll((items) =>
-        items.map((item) => {
-          const words = item.cloneNode(true) as Element
-          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-            hidden.remove()
-          return words.textContent?.trim()
-        }),
-      ),
-    )
-    .toEqual([
-      'Hilos',
-      'Analytics',
-      'Browser sessions',
-      `Browser session #${sessionId}`,
-    ])
+  await expectBreadcrumbLabels(expect, crumbs.locator('li'), [
+    'Hilos',
+    'Analytics',
+    'Browser sessions',
+    `Browser session #${sessionId}`,
+  ])
   await expect(
     page.getByTestId('hilos-breadcrumb-hilos_analytics_browser_sessions'),
   ).toHaveAttribute('href', ANALYTICS_SESSION_LIST_PATH)
@@ -1107,16 +1097,11 @@ export async function expectAnalyticsBrowserSessionHead(
   await expect(current.getByRole('link')).toHaveCount(0)
   // The crumb's own words, exactly: a kit may draw its divider as a decoration
   // hidden from assistive technology inside the crumb, and that is not the name.
-  await expect
-    .poll(() =>
-      current.evaluate((crumb) => {
-        const words = crumb.cloneNode(true) as Element
-        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-          hidden.remove()
-        return words.textContent?.trim()
-      }),
-    )
-    .toBe(label)
+  await expectBreadcrumbLabels(
+    expect,
+    breadcrumb.locator('[aria-current="page"]'),
+    [label],
+  )
   const list = breadcrumb.getByTestId(
     'hilos-breadcrumb-hilos_analytics_browser_sessions',
   )

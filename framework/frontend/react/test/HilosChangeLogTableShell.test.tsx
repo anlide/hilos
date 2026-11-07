@@ -1,6 +1,7 @@
 import { act, cleanup, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { HilosPages, resolvePageTitle } from '@hilos/core/base'
+import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
 import {
   BOT,
   TABLE_TABS,
@@ -19,13 +20,7 @@ function crumbLabels(): string[] {
     screen
       .getByRole('navigation', { name: 'Breadcrumb' })
       .querySelectorAll('li'),
-    (item) => {
-      const copy = item.cloneNode(true) as HTMLElement
-      copy
-        .querySelectorAll('[aria-hidden="true"]')
-        .forEach((node) => node.remove())
-      return copy.textContent!.trim()
-    },
+    (item) => readTextWithoutAriaHidden(item),
   )
 }
 

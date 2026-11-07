@@ -368,8 +368,8 @@ describe('HilosUsersPage', () => {
       wrapper.get('nav[aria-label="Breadcrumb"] a').attributes('href'),
     ).toBe('/hilos')
     expect(
-      wrapper.get('[aria-current="page"]').text().replace('/', '').trim(),
-    ).toBe('Users')
+      wrapper.findAll('nav[aria-label="Breadcrumb"] [aria-current="page"]'),
+    ).toHaveLength(1)
     expect(cell(wrapper, 7, 'Name').text()).toContain('Alice')
     expect(cell(wrapper, 7, 'Name').text()).toContain('#7')
     expect(

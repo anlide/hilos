@@ -1,3 +1,4 @@
+import { expectBreadcrumbLabels } from './breadcrumb.js'
 import { typeInto } from './input.js'
 import type { Expect, Locator, Page } from '@playwright/test'
 
@@ -60,16 +61,11 @@ export async function expectSettingsPageHead(
   await expect(current).toHaveAttribute('aria-current', 'page')
   await expect(current.locator('a')).toHaveCount(0)
   // React and Angular draw a decorative divider inside the current crumb.
-  await expect
-    .poll(() =>
-      current.evaluate((crumb) => {
-        const words = crumb.cloneNode(true) as Element
-        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-          hidden.remove()
-        return words.textContent?.trim()
-      }),
-    )
-    .toBe('Settings')
+  await expectBreadcrumbLabels(
+    expect,
+    crumbs.locator('[aria-current="page"]'),
+    ['Settings'],
+  )
   await expect(current.locator('xpath=following-sibling::*')).toHaveCount(0)
 
   await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)

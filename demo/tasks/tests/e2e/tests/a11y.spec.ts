@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test'
 import { test, expect } from '../test.js'
 
 import {
+  expectBreadcrumbLabels,
   clickSubmit,
   cleanupFixtures,
   type TestCleanup,
@@ -790,16 +791,9 @@ test.describe('Analytics accessibility', () => {
       await expect(breadcrumb).toHaveAccessibleName('Breadcrumb')
       const current = breadcrumb.locator('[aria-current="page"]')
       await expect(current).toHaveCount(1)
-      await expect
-        .poll(() =>
-          current.evaluate((crumb) => {
-            const words = crumb.cloneNode(true) as Element
-            for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-              hidden.remove()
-            return words.textContent?.replace(/\s+/g, ' ').trim() ?? ''
-          }),
-        )
-        .toBe(label)
+      await expectBreadcrumbLabels(expect, current, [label], (label) =>
+        label.replace(/\s+/g, ' '),
+      )
       await expect(current.getByRole('link')).toHaveCount(0)
 
       const sessionId = session.browserSessionId!

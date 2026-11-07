@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { bindAdminAccess, HilosPages } from '@hilos/core/base'
+import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
 import { nodeHarness, nodeHeading } from './helpers/hilosDaemonNode.js'
 
 function harness(options: Parameters<typeof nodeHarness>[0] = {}) {
@@ -52,13 +53,9 @@ describe('HilosDaemonWebsocketsPage', () => {
     })
     const crumbs = h.root.querySelector('nav[aria-label="Breadcrumb"]')!
     expect(
-      [...crumbs.querySelectorAll('li')].map((el) => {
-        const words = el.cloneNode(true) as Element
-        words
-          .querySelectorAll('[aria-hidden="true"]')
-          .forEach((hidden) => hidden.remove())
-        return words.textContent?.trim()
-      }),
+      [...crumbs.querySelectorAll('li')].map((crumb) =>
+        readTextWithoutAriaHidden(crumb),
+      ),
     ).toEqual(['Hilos', 'Daemon', nodeId])
     expect(crumbs.querySelector('[aria-current="page"]')?.tagName).toBe('LI')
     const nav = h.root.querySelector('nav[aria-label="Node pages"]')!

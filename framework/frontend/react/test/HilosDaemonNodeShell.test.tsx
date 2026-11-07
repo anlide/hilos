@@ -9,6 +9,7 @@ import {
   nodeTabs,
 } from './helpers/hilosDaemonNode.js'
 import { readerTimeZone } from './readerTimeZone.js'
+import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
 
 const el = (name: string) =>
   document.querySelector<HTMLElement>(`[data-id="${name}"]`)
@@ -123,12 +124,12 @@ describe('HilosDaemonNodeShell', () => {
       node('visual')!.querySelector('i')!.classList.contains('bi-hdd-network'),
     ).toBe(true)
     expect(node('visual')!.getAttribute('aria-hidden')).toBe('true')
-    expect(text('nav[aria-label="Breadcrumb"] li')).toEqual([
-      'Hilos',
-      '/Daemon',
-      '/n1',
-    ])
     const crumbs = document.querySelector('nav[aria-label="Breadcrumb"]')!
+    expect(
+      [...crumbs.querySelectorAll('li')].map((item) =>
+        readTextWithoutAriaHidden(item),
+      ),
+    ).toEqual(['Hilos', 'Daemon', 'n1'])
     expect(
       [...crumbs.querySelectorAll('a')].map((link) =>
         link.getAttribute('href'),
@@ -155,10 +156,12 @@ describe('HilosDaemonNodeShell', () => {
         'North',
       )
       expect(
-        h.view
-          .getByRole('navigation', { name: 'Breadcrumb' })
-          .querySelector('[aria-current="page"]')!.textContent,
-      ).toBe('/North')
+        readTextWithoutAriaHidden(
+          h.view
+            .getByRole('navigation', { name: 'Breadcrumb' })
+            .querySelector('[aria-current="page"]')!,
+        ),
+      ).toBe('North')
       expect(h.view.getByRole('table', { name: 'North' })).not.toBeNull()
       expect(h.view.getByText('n1').textContent).toBe('n1')
       expect(node('log')!.getAttribute('href')).toBe('/hilos/logs/view/n1/live')
@@ -178,10 +181,12 @@ describe('HilosDaemonNodeShell', () => {
 
     expect(h.view.getByRole('heading', { level: 1 }).textContent).toBe('n1')
     expect(
-      h.view
-        .getByRole('navigation', { name: 'Breadcrumb' })
-        .querySelector('[aria-current="page"]')!.textContent,
-    ).toBe('/n1')
+      readTextWithoutAriaHidden(
+        h.view
+          .getByRole('navigation', { name: 'Breadcrumb' })
+          .querySelector('[aria-current="page"]')!,
+      ),
+    ).toBe('n1')
     expect(h.view.getByRole('table', { name: 'n1' })).toBe(table)
     expect(el('hilos-page-head')!.textContent).not.toContain('North')
     expect(
@@ -228,11 +233,11 @@ describe('HilosDaemonNodeShell', () => {
         expect(link.hasAttribute('role')).toBe(false)
       }
       expect(text('h1')).toEqual([nodeId])
-      expect(text('nav[aria-label="Breadcrumb"] li')).toEqual([
-        'Hilos',
-        '/Daemon',
-        `/${nodeId}`,
-      ])
+      expect(
+        [...document.querySelectorAll('nav[aria-label="Breadcrumb"] li')].map(
+          (item) => readTextWithoutAriaHidden(item),
+        ),
+      ).toEqual(['Hilos', 'Daemon', nodeId])
       expect(document.body.textContent).not.toContain('hilos_daemon')
       expect(document.querySelector('a[href=""]')).toBeNull()
       expect(h.send).not.toHaveBeenCalled()
@@ -744,10 +749,12 @@ describe('HilosDaemonNodeShell', () => {
     act(() => h.publish({ node: nodeHeading({ name: 'South' }) }))
     expect(h.view.getByRole('heading', { level: 1 }).textContent).toBe('South')
     expect(
-      h.view
-        .getByRole('navigation', { name: 'Breadcrumb' })
-        .querySelector('[aria-current="page"]')!.textContent,
-    ).toBe('/South')
+      readTextWithoutAriaHidden(
+        h.view
+          .getByRole('navigation', { name: 'Breadcrumb' })
+          .querySelector('[aria-current="page"]')!,
+      ),
+    ).toBe('South')
     expect(h.view.getByRole('table', { name: 'South' })).toBe(table)
     expect(document.activeElement).toBe(detailToggle)
     expect(h.workers!.controller.rows.get()).toBe(window)

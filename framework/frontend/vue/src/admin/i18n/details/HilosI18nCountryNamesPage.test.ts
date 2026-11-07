@@ -28,6 +28,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, markRaw, nextTick } from 'vue'
 
+import { readTextWithoutAriaHidden } from '../../../../../test/breadcrumb.js'
 import HilosI18nCountryNamesPage from './HilosI18nCountryNamesPage.vue'
 import HilosI18nCountryNameDelete from './HilosI18nCountryNameDelete.vue'
 import HilosI18nCountryNameWindow from './HilosI18nCountryNameWindow.vue'
@@ -347,11 +348,9 @@ describe('HilosI18nCountryNamesPage', () => {
     expect(overviewTab.attributes('aria-current')).toBeUndefined()
     // The chain ends at the country, not at Names.
     expect(
-      h.view
-        .get('[data-id="hilos-breadcrumb"] li:last-child')
-        .text()
-        .replace('/', '')
-        .trim(),
+      readTextWithoutAriaHidden(
+        h.view.get('[data-id="hilos-breadcrumb"] li:last-child').element,
+      ),
     ).toBe('United States')
 
     const section = h.view.find('[data-id="country-names"]')
@@ -444,11 +443,9 @@ describe('HilosI18nCountryNamesPage', () => {
         },
       })
       const crumb = () =>
-        h.view
-          .get('[data-id="hilos-breadcrumb"] li:last-child')
-          .text()
-          .replace('/', '')
-          .trim()
+        readTextWithoutAriaHidden(
+          h.view.get('[data-id="hilos-breadcrumb"] li:last-child').element,
+        )
       expect(crumb()).toBe(expected)
       expect(h.view.findAll('h1')).toHaveLength(1)
       expect(h.view.get('[data-id="hilos-page-head-title"]').text()).toBe(

@@ -1,3 +1,4 @@
+import { expectBreadcrumbLabels } from './breadcrumb.js'
 import type { Expect, Locator, Page } from '@playwright/test'
 
 import { deliveryObject, type DeliveryFrameLog } from './deliveryFrames.js'
@@ -569,16 +570,11 @@ export async function expectCountryPageHead(
   await expect(lastCrumb.locator('a')).toHaveCount(0)
   // The crumb's own words: a kit may draw its divider as a decoration hidden
   // from assistive technology inside the crumb, and that is not the name.
-  await expect
-    .poll(() =>
-      lastCrumb.evaluate((crumb) => {
-        const words = crumb.cloneNode(true) as Element
-        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-          hidden.remove()
-        return words.textContent?.trim()
-      }),
-    )
-    .toBe(country.name)
+  await expectBreadcrumbLabels(
+    expect,
+    crumbs.locator('[aria-current="page"]'),
+    [country.name],
+  )
   await expect(lastCrumb.locator('xpath=following-sibling::*')).toHaveCount(0)
 
   const tabs = page.getByTestId('hilos-page-tabs')
@@ -648,16 +644,11 @@ export async function expectLanguagePageHead(
   await expect(lastCrumb).toHaveCount(1)
   await expect(lastCrumb).toHaveAttribute('aria-current', 'page')
   await expect(lastCrumb.locator('a')).toHaveCount(0)
-  await expect
-    .poll(() =>
-      lastCrumb.evaluate((crumb) => {
-        const words = crumb.cloneNode(true) as Element
-        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-          hidden.remove()
-        return words.textContent?.trim()
-      }),
-    )
-    .toBe(language.nativeName)
+  await expectBreadcrumbLabels(
+    expect,
+    crumbs.locator('[aria-current="page"]'),
+    [language.nativeName],
+  )
   await expect(lastCrumb.locator('xpath=following-sibling::*')).toHaveCount(0)
   const tabs = page.getByTestId('hilos-page-tabs')
   await expect(tabs).toHaveRole('navigation')

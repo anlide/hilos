@@ -1,3 +1,4 @@
+import { expectBreadcrumbLabels } from './breadcrumb.js'
 import { typeInto } from './input.js'
 import type { Expect, Page } from '@playwright/test'
 import { shownByTestId } from './table.js'
@@ -157,24 +158,19 @@ export async function expectDaemonSectionHead(
   )
   const crumbs = page.getByTestId('hilos-breadcrumb')
   await expect(crumbs).toHaveAccessibleName('Breadcrumb')
+  await expectBreadcrumbLabels(expect, crumbs.locator('li'), [
+    'Hilos',
+    'Daemon',
+  ])
   await expect
     .poll(() =>
-      crumbs.locator('li').evaluateAll((items) =>
-        items.map((item) => {
-          const words = item.cloneNode(true) as Element
-          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-            hidden.remove()
-          return {
-            label: words.textContent?.trim(),
-            current: item.getAttribute('aria-current'),
-          }
-        }),
-      ),
+      crumbs
+        .locator('li')
+        .evaluateAll((items) =>
+          items.map((item) => item.getAttribute('aria-current')),
+        ),
     )
-    .toEqual([
-      { label: 'Hilos', current: null },
-      { label: 'Daemon', current: 'page' },
-    ])
+    .toEqual([null, 'page'])
   await expect(
     page.getByTestId('hilos-page-head-block').locator('.bi-cpu'),
   ).toHaveCount(1)
@@ -229,18 +225,11 @@ export async function expectDaemonNodeHead(
   const crumbs = page.getByTestId('hilos-breadcrumb')
   await expect(crumbs).toHaveAccessibleName('Breadcrumb')
   // React and Angular draw decorative separators inside each list item.
-  await expect
-    .poll(() =>
-      crumbs.locator('li').evaluateAll((items) =>
-        items.map((item) => {
-          const words = item.cloneNode(true) as Element
-          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-            hidden.remove()
-          return words.textContent?.trim()
-        }),
-      ),
-    )
-    .toEqual(['Hilos', 'Daemon', nodeName])
+  await expectBreadcrumbLabels(expect, crumbs.locator('li'), [
+    'Hilos',
+    'Daemon',
+    nodeName,
+  ])
   await expect(page.getByTestId(DAEMON_ROOT_CRUMB)).toHaveAttribute(
     'href',
     DAEMON_ROOT_PATH,

@@ -33,6 +33,7 @@ import {
   type HilosDeliveriesContext,
 } from '@hilos/core/admin/communications'
 
+import { readTextWithoutAriaHidden } from '../../../../test/breadcrumb.js'
 import HilosCommunicationsDeliveriesPage from './HilosCommunicationsDeliveriesPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
@@ -325,7 +326,7 @@ describe('HilosCommunicationsDeliveriesPage shared head', () => {
       view
         .get('nav[aria-label="Breadcrumb"]')
         .findAll('li')
-        .map((crumb) => crumb.text().replace('/', '').trim()),
+        .map((crumb) => readTextWithoutAriaHidden(crumb.element)),
     ).toEqual(['Hilos', 'Communications', 'Email'])
     const row = view.get('nav[aria-label="Channel pages"]')
     expect(
@@ -384,11 +385,9 @@ describe('HilosCommunicationsDeliveriesPage shared head', () => {
     await nextTick()
     expect(view.get('h1').text()).toBe('Outgoing mail')
     expect(
-      view
-        .get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
-        .text()
-        .replace('/', '')
-        .trim(),
+      readTextWithoutAriaHidden(
+        view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]').element,
+      ),
     ).toBe('Outgoing mail')
     expect(view.find('[data-id="channel-head-enabled"]').exists()).toBe(false)
     expect(view.get('[data-id="channel-head-configured"]').text()).toBe(

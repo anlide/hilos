@@ -17,6 +17,7 @@ import {
 import { afterEach, describe, expect, it } from 'vitest'
 import { HilosModerationKindPage } from '@hilos/angular/admin/moderation'
 import { HILOS_ROUTER } from '@hilos/angular/base'
+import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
 
 const TABLE = HILOS_MODERATION_KINDS_TABLE
 const PAGE = HilosPages.MODERATION_KIND
@@ -163,11 +164,9 @@ function mount(bench: ReturnType<typeof backend>): HTMLElement {
   return fixture.nativeElement as HTMLElement
 }
 function text(node: Element | null): string {
-  const copy = node?.cloneNode(true) as Element | undefined
-  for (const hidden of copy?.querySelectorAll('[aria-hidden="true"]') ?? []) {
-    hidden.remove()
-  }
-  return copy?.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+  return node === null
+    ? ''
+    : readTextWithoutAriaHidden(node).replace(/\s+/g, ' ')
 }
 
 describe('HilosModerationKindPage', () => {

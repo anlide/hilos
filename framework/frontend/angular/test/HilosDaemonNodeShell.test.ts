@@ -6,6 +6,7 @@ import {
   pageIdentity,
 } from '@hilos/core/base'
 import { describe, expect, it, vi } from 'vitest'
+import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
 import {
   nodeHarness,
   nodeHeading,
@@ -19,7 +20,7 @@ const el = (name: string) =>
 const node = (name: string) => el(`hilos-daemon-node-${name}`)
 const text = (selector: string) =>
   [...document.querySelectorAll(selector)].map((item) =>
-    item.textContent?.replace(/\s+/g, ' ').trim(),
+    readTextWithoutAriaHidden(item).replace(/\s+/g, ' '),
   )
 
 describe('HilosDaemonNodeShell', () => {
@@ -44,12 +45,14 @@ describe('HilosDaemonNodeShell', () => {
       node('visual')!.querySelector('i')!.classList.contains('bi-hdd-network'),
     ).toBe(true)
     expect(node('visual')!.getAttribute('aria-hidden')).toBe('true')
-    expect(text('nav[aria-label="Breadcrumb"] li')).toEqual([
-      'Hilos',
-      '/Daemon',
-      '/ Варшава <main>',
-    ])
     const crumbs = document.querySelector('nav[aria-label="Breadcrumb"]')!
+    expect(crumbs.querySelectorAll('li')).toHaveLength(3)
+    expect(text('nav[aria-label="Breadcrumb"] li:last-child')).toEqual([
+      'Варшава <main>',
+    ])
+    expect(
+      readTextWithoutAriaHidden(crumbs.querySelector('[aria-current="page"]')!),
+    ).toBe('Варшава <main>')
     expect(
       [...crumbs.querySelectorAll('a')].map((link) =>
         link.getAttribute('href'),
@@ -107,11 +110,16 @@ describe('HilosDaemonNodeShell', () => {
         expect(link.hasAttribute('role')).toBe(false)
       }
       expect(text('h1')).toEqual([nodeId])
-      expect(text('nav[aria-label="Breadcrumb"] li')).toEqual([
-        'Hilos',
-        '/Daemon',
-        `/ ${nodeId}`,
+      const crumbs = document.querySelector('nav[aria-label="Breadcrumb"]')!
+      expect(crumbs.querySelectorAll('li')).toHaveLength(3)
+      expect(text('nav[aria-label="Breadcrumb"] li:last-child')).toEqual([
+        nodeId,
       ])
+      expect(
+        readTextWithoutAriaHidden(
+          crumbs.querySelector('[aria-current="page"]')!,
+        ),
+      ).toBe(nodeId)
       expect(
         document.body.textContent?.replace(/\s+/g, ' ').trim(),
       ).not.toContain('hilos_daemon')

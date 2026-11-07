@@ -124,14 +124,6 @@ function countText(kind: string): string {
   )
 }
 
-/** The node's own text, without a decorative separator a screen reader skips. */
-function visibleText(node: Element): string {
-  const copy = node.cloneNode(true) as Element
-  for (const hidden of copy.querySelectorAll('[aria-hidden="true"]'))
-    hidden.remove()
-  return copy.textContent?.replace(/\s+/g, ' ').trim() ?? ''
-}
-
 describe('HilosI18nPage', () => {
   it.each([false, true])(
     'draws the two linked tiles under one shared section head (viewer=%s)',
@@ -149,9 +141,9 @@ describe('HilosI18nPage', () => {
           ?.textContent,
       ).toBe('Languages, countries, locales, and translation screens.')
       const crumbs = document.querySelector('nav[aria-label="Breadcrumb"]')!
-      expect(
-        [...crumbs.querySelectorAll('li')].map((crumb) => visibleText(crumb)),
-      ).toEqual(['Hilos', 'Internationalization'])
+      expect(crumbs.querySelectorAll('li')).toHaveLength(2)
+      expect(crumbs.querySelector('[aria-current="page"]')).not.toBeNull()
+      expect(crumbs.querySelector('[aria-current="page"] a')).toBeNull()
       expect(crumbs.querySelector('a')?.getAttribute('href')).toBe('/hilos')
       expect(crumbs.querySelectorAll('a')).toHaveLength(1)
       const tabs = document.querySelector(

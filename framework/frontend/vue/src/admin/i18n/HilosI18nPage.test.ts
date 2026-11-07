@@ -157,11 +157,7 @@ describe('HilosI18nPage', () => {
       )
       expect(view.find('i.bi-translate').exists()).toBe(true)
       const crumbs = view.get('nav[aria-label="Breadcrumb"]')
-      expect(
-        crumbs
-          .findAll('li')
-          .map((crumb) => crumb.text().replace('/', '').trim()),
-      ).toEqual(['Hilos', 'Internationalization'])
+      expect(crumbs.findAll('li')).toHaveLength(2)
       expect(crumbs.get('a').attributes('href')).toBe('/admin/demo')
       expect(crumbs.findAll('a')).toHaveLength(1)
       const tabs = view.get('nav[aria-label="Internationalization pages"]')

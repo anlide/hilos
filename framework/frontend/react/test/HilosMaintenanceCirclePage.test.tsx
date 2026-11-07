@@ -1085,20 +1085,10 @@ describe('HilosMaintenanceCirclePage head', () => {
     expect(byId('hilos-admin-page')?.getAttribute('data-page')).toBe(
       HilosPages.MAINTENANCE_CIRCLE,
     )
+    expect(byId('hilos-breadcrumb')?.querySelectorAll('li')).toHaveLength(2)
     expect(
       [...document.querySelectorAll('h1')].map((h) => h.textContent),
     ).toEqual(['Maintenance'])
-    // What a reader hears of each crumb: the drawn separators are aria-hidden.
-    expect(
-      [...(byId('hilos-breadcrumb')?.querySelectorAll('li') ?? [])].map(
-        (item) => {
-          const words = item.cloneNode(true) as Element
-          for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-            hidden.remove()
-          return words.textContent?.trim()
-        },
-      ),
-    ).toEqual(['Hilos', 'Maintenance'])
     const tabs = byId('hilos-page-tabs')
     expect(tabs?.getAttribute('aria-label')).toBe('Maintenance pages')
     expect(

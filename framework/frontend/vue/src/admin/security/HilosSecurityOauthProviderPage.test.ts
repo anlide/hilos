@@ -36,6 +36,7 @@ import {
   type HilosSecurityOauthContext,
 } from '@hilos/core/admin/security'
 
+import { readTextWithoutAriaHidden } from '../../../../test/breadcrumb.js'
 import HilosSecurityOauthProviderPage from './HilosSecurityOauthProviderPage.vue'
 import HilosLayout from '../../HilosLayout.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
@@ -572,7 +573,7 @@ describe('HilosSecurityOauthProviderPage entity head', () => {
       expect(
         crumbs
           .findAll('li')
-          .map((crumb) => crumb.text().replace('/', '').trim()),
+          .map((crumb) => readTextWithoutAriaHidden(crumb.element)),
       ).toEqual(['Hilos', 'Security Center', 'OAuth providers', 'GitHub'])
       expect(
         crumbs.findAll('a').map((link) => link.attributes('href')),
@@ -664,11 +665,10 @@ describe('HilosSecurityOauthProviderPage entity head', () => {
       ).toContain(icon)
       expect(t.view.get('[data-id="oauth-provider-head-key"]').text()).toBe(key)
       expect(
-        t.view
-          .get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
-          .text()
-          .replace('/', '')
-          .trim(),
+        readTextWithoutAriaHidden(
+          t.view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
+            .element,
+        ),
       ).toBe(label)
     },
   )
@@ -692,11 +692,10 @@ describe('HilosSecurityOauthProviderPage entity head', () => {
     expect(t.view.get('h1').text()).toBe('GitHub enterprise')
     expect(document.title).toBe('GitHub enterprise · Chat')
     expect(
-      t.view
-        .get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
-        .text()
-        .replace('/', '')
-        .trim(),
+      readTextWithoutAriaHidden(
+        t.view.get('nav[aria-label="Breadcrumb"] [aria-current="page"]')
+          .element,
+      ),
     ).toBe('GitHub enterprise')
     expect(t.view.get('[data-id="oauth-provider-head-state"]').text()).toBe(
       '2 missing',

@@ -16,6 +16,7 @@ import type {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 
+import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
 import { HilosPageHead } from '../src/HilosPageHead.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
@@ -509,9 +510,11 @@ describe('HilosPageHead', () => {
     const items = [
       ...root(head).querySelectorAll('[data-id="hilos-breadcrumb"] li'),
     ]
-    expect(
-      items.map((item) => item.textContent?.replace('/', '').trim()),
-    ).toEqual(['Hilos', 'People', 'Demo section'])
+    expect(items.map((item) => readTextWithoutAriaHidden(item))).toEqual([
+      'Hilos',
+      'People',
+      'Demo section',
+    ])
     expect(items[1]?.querySelector('a')).toBeNull()
     expect(
       root(head).querySelectorAll('[data-id="hilos-breadcrumb"] a'),

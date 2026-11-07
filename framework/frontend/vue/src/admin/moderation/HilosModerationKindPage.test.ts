@@ -14,6 +14,7 @@ import {
 } from '@hilos/core/base'
 import { type HilosModerationKindRow } from '@hilos/core/admin/moderation'
 
+import { readTextWithoutAriaHidden } from '../../../../test/breadcrumb.js'
 import HilosModerationKindPage from './HilosModerationKindPage.vue'
 import HilosView from '../../HilosView.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
@@ -182,12 +183,17 @@ describe('HilosModerationKindPage', () => {
     ])
     const crumbs = view.get('[data-id="hilos-breadcrumb"]')
     expect(
-      crumbs.findAll('a').map((link) => [link.text(), link.attributes('href')]),
+      crumbs
+        .findAll('a')
+        .map((link) => [
+          readTextWithoutAriaHidden(link.element),
+          link.attributes('href'),
+        ]),
     ).toEqual([
       ['Hilos', '/hilos'],
       ['Moderation', '/hilos/moderation'],
     ])
-    expect(crumbs.get('li:last-child').text().replace('/', '').trim()).toBe(
+    expect(readTextWithoutAriaHidden(crumbs.get('li:last-child').element)).toBe(
       'Profile name',
     )
     expect(crumbs.get('li:last-child').find('a').exists()).toBe(false)
@@ -211,7 +217,7 @@ describe('HilosModerationKindPage', () => {
     update({ ...first, title: 'Updated title' })
     await nextTick()
     expect(view.get('h1').text()).toBe('Updated title')
-    expect(crumbs.get('li:last-child').text().replace('/', '').trim()).toBe(
+    expect(readTextWithoutAriaHidden(crumbs.get('li:last-child').element)).toBe(
       'Updated title',
     )
     expect(navigation.currentTitle.get()).toBe('Updated title · Chat')

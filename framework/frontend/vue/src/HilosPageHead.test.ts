@@ -9,6 +9,7 @@ import type {
 } from '@hilos/core/base'
 import { h, nextTick, type VNode } from 'vue'
 
+import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
 import HilosPageHead from './HilosPageHead.vue'
 import { hilosRouterKey } from './hilosRouterKey.js'
 
@@ -307,7 +308,7 @@ describe('HilosPageHead', () => {
     const current = crumbs.findAll('[aria-current="page"]')
     expect(current).toHaveLength(1)
     expect(current[0].element.tagName).toBe('LI')
-    expect(current[0].text().replace('/', '').trim()).toBe('United States')
+    expect(readTextWithoutAriaHidden(current[0].element)).toBe('United States')
   })
 
   it('keeps an intermediate crumb without an address as text', () => {
@@ -323,11 +324,9 @@ describe('HilosPageHead', () => {
     })
 
     const items = head.findAll('[data-id="hilos-breadcrumb"] li')
-    expect(items.map((item) => item.text().replace('/', '').trim())).toEqual([
-      'Hilos',
-      'People',
-      'Demo section',
-    ])
+    expect(
+      items.map((item) => readTextWithoutAriaHidden(item.element)),
+    ).toEqual(['Hilos', 'People', 'Demo section'])
     expect(items[1].find('a').exists()).toBe(false)
     expect(head.findAll('[data-id="hilos-breadcrumb"] a')).toHaveLength(1)
   })

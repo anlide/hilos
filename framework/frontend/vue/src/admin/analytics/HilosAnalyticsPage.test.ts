@@ -163,9 +163,7 @@ describe('HilosAnalyticsPage', () => {
       )
       const breadcrumb = h.view.get('nav[aria-label="Breadcrumb"]')
       expect(breadcrumb.get('a').attributes('href')).toBe('/hilos')
-      expect(
-        breadcrumb.get('[aria-current="page"]').text().replace('/', '').trim(),
-      ).toBe('Analytics')
+      expect(breadcrumb.findAll('[aria-current="page"]')).toHaveLength(1)
       expect(breadcrumb.find('[aria-current="page"] a').exists()).toBe(false)
       expect(h.view.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)
 

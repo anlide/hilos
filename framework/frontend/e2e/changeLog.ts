@@ -1,3 +1,4 @@
+import { expectBreadcrumbLabels } from './breadcrumb.js'
 import type { Expect, Locator, Page } from '@playwright/test'
 import {
   HILOS_CHANGE_LOG_RECEIPT_READ,
@@ -61,19 +62,12 @@ async function expectChangeLogCurrentCrumb(
 ): Promise<void> {
   const currentCrumb = crumbs.locator('[aria-current="page"]')
   await expect(currentCrumb).toHaveCount(1)
-  await expect
-    .poll(() =>
-      currentCrumb.evaluate((crumb) => {
-        const words = crumb.cloneNode(true) as Element
-        for (const hidden of words.querySelectorAll('[aria-hidden="true"]'))
-          hidden.remove()
-        return words.textContent
-          ?.replace(/[\u200b\u00ad]/g, '')
-          .trim()
-          .replace(/\s+/g, ' ')
-      }),
-    )
-    .toBe(label)
+  await expectBreadcrumbLabels(expect, currentCrumb, [label], (label) =>
+    label
+      .replace(/[\u200b\u00ad]/g, '')
+      .trim()
+      .replace(/\s+/g, ' '),
+  )
   await expect(currentCrumb.locator('a')).toHaveCount(0)
 }
 
