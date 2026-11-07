@@ -1,5 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
-
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  CODE_SEND_PURPOSE_STEP_UP,
+  CODE_SEND_STATE_SENT,
+  CODE_SEND_STATE_QUEUED,
+  bindCodeSendProgress,
+  SIGNAL_CODE_SEND_PROGRESS,
+} from '../../src/auth/authSendProgress.js'
 import {
   createHilosStepUpStep,
   type HilosStepUpActions,
@@ -70,6 +76,36 @@ const ASK_CODE = {
   method: 'email_code',
   destination: 'person@example.test',
 } as const
+
+/** Feed the session's send line through its normal signal binding. */
+function boundLine(): (line: Record<string, unknown>) => void {
+  const listeners: ((signal: { type: string; data: unknown }) => void)[] = []
+  bindCodeSendProgress({
+    on: (_event: string, listener: (signal: never) => void) => {
+      listeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+      return () => undefined
+    },
+  } as unknown as HilosConnection)
+  return (data) => {
+    for (const listener of listeners)
+      listener({ type: SIGNAL_CODE_SEND_PROGRESS, data })
+  }
+}
+
+const showLine = boundLine()
+
+/** Complete or interrupt one action independently of the session frames. */
+function pendingSend() {
+  let answer!: (value: { reply: unknown }) => void
+  let reject!: (error: ActionError) => void
+  const done = new Promise<{ reply: unknown }>((resolve, fail) => {
+    answer = resolve
+    reject = fail
+  })
+  return { done, answer, reject }
+}
 
 describe('createHilosStepUpStep', () => {
   it.each([true, false])(
@@ -480,5 +516,143 @@ describe('a confirmation step passed in another tab of the session', () => {
     tell(['change_email'])
 
     expect(passed).toHaveBeenCalledTimes(2)
+  })
+})
+
+afterEach(() => showLine({ state: null, message: null }))
+
+describe('step-up send-progress visibility', () => {
+  function line(
+    ticket: string,
+    state = CODE_SEND_STATE_SENT,
+    purpose = CODE_SEND_PURPOSE_STEP_UP,
+  ) {
+    return { ticket, state, purpose, channel: 'email', message: null }
+  }
+
+  it('waits for a new ticket when the opening or repeat answer arrives first', async () => {
+    const first = pendingSend()
+    const second = pendingSend()
+    const start = vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second)
+    const step = createHilosStepUpStep({ start, confirm: () => handle() })
+    showLine(line('old'))
+    const opening = step.open('change_email')
+    expect(step.sendProgress.get()).toBeNull()
+    showLine(line('old'))
+    first.answer({ reply: ASK_CODE })
+    expect(await opening).toBe('ask')
+    expect(step.sendProgress.get()).toBeNull()
+    showLine(line('first', CODE_SEND_STATE_QUEUED))
+    expect(step.sendProgress.get()).toMatchObject(
+      line('first', CODE_SEND_STATE_QUEUED),
+    )
+
+    const repeating = step.sendAgain()
+    expect(step.sendProgress.get()).toBeNull()
+    showLine(line('first'))
+    expect(step.sendProgress.get()).toBeNull()
+    showLine(line('second', CODE_SEND_STATE_QUEUED))
+    expect(step.sendProgress.get()).toMatchObject(
+      line('second', CODE_SEND_STATE_QUEUED),
+    )
+    second.answer({ reply: ASK_CODE })
+    await repeating
+    expect(step.sendProgress.get()?.ticket).toBe('second')
+    step.dispose()
+  })
+
+  it.each(['fail', 'disconnected'] as const)(
+    'restores the session line after %s on opening and repeat',
+    async (outcome) => {
+      for (const attempt of ['opening', 'repeat']) {
+        for (const current of ['old', 'new', 'removed', 'other']) {
+          const request = pendingSend()
+          const start = vi.fn()
+          if (attempt === 'repeat') start.mockReturnValueOnce(handle(ASK_CODE))
+          start.mockReturnValueOnce(request)
+          const step = createHilosStepUpStep({ start, confirm: () => handle() })
+          if (attempt === 'repeat') await step.open('change_email')
+          showLine(line('old'))
+          const sending =
+            attempt === 'opening' ? step.open('change_email') : step.sendAgain()
+          expect(step.sendProgress.get()).toBeNull()
+          showLine(line('old'))
+          expect(step.sendProgress.get()).toBeNull()
+          if (current === 'new') showLine(line('new', CODE_SEND_STATE_QUEUED))
+          if (current === 'removed') showLine({ state: null, message: null })
+          if (current === 'other')
+            showLine(line('foreign', CODE_SEND_STATE_SENT, 'another_operation'))
+          request.reject(
+            new ActionError('hilos_step_up_start', outcome, 'Send refused'),
+          )
+          await sending
+          expect(step.busy.get()).toBe(false)
+          expect(step.refusal.get()).not.toBeNull()
+          if (current === 'old')
+            expect(step.sendProgress.get()).toMatchObject(line('old'))
+          else if (current === 'new')
+            expect(step.sendProgress.get()).toMatchObject(
+              line('new', CODE_SEND_STATE_QUEUED),
+            )
+          else expect(step.sendProgress.get()).toBeNull()
+          if (outcome === 'disconnected') {
+            showLine(line('old'))
+            expect(step.sendProgress.get()).toMatchObject(line('old'))
+            showLine(line('reconnected', CODE_SEND_STATE_QUEUED))
+            expect(step.sendProgress.get()).toMatchObject(
+              line('reconnected', CODE_SEND_STATE_QUEUED),
+            )
+          }
+          step.dispose()
+          showLine({ state: null, message: null })
+        }
+      }
+    },
+  )
+
+  it('keeps the new opening hidden when an earlier send is rejected late', async () => {
+    const earlier = pendingSend()
+    const current = pendingSend()
+    const start = vi
+      .fn()
+      .mockReturnValueOnce(handle(ASK_CODE))
+      .mockReturnValueOnce(earlier)
+      .mockReturnValueOnce(current)
+    const step = createHilosStepUpStep({ start, confirm: () => handle() })
+    await step.open('change_email')
+    showLine(line('old'))
+    const repeating = step.sendAgain()
+    const opening = step.open('delete_account')
+    earlier.reject(
+      new ActionError('hilos_step_up_start', 'disconnected', 'Disconnected'),
+    )
+    await repeating
+    expect(step.busy.get()).toBe(true)
+    expect(step.refusal.get()).toBeNull()
+    expect(step.sendProgress.get()).toBeNull()
+    current.answer({ reply: ASK_CODE })
+    await opening
+    expect(step.sendProgress.get()).toBeNull()
+    showLine(line('current', CODE_SEND_STATE_QUEUED))
+    expect(step.sendProgress.get()?.ticket).toBe('current')
+    step.dispose()
+  })
+
+  it('leaves a hidden ticket hidden when code confirmation fails', async () => {
+    const step = createHilosStepUpStep({
+      start: () => handle(ASK_CODE),
+      confirm: () =>
+        ({
+          done: Promise.reject(
+            new ActionError('hilos_step_up_confirm', 'fail', 'Wrong code'),
+          ),
+        }) as ReturnType<HilosStepUpActions['confirm']>,
+    })
+    showLine(line('old'))
+    await step.open('change_email')
+    step.code.set('123456')
+    expect(await step.confirm()).toBe(false)
+    expect(step.sendProgress.get()).toBeNull()
+    step.dispose()
   })
 })

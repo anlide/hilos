@@ -1,5 +1,16 @@
-import { describe, expect, it, vi } from 'vitest'
-
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  PROFILE_FLOW_STEP_CURRENT_SENT,
+  PROFILE_FLOW_STEP_CURRENT_PROVEN,
+  PROFILE_FLOW_STEP_NEW_SENT,
+} from '../../src/profile/profileFlows.js'
+import {
+  CODE_SEND_STATE_SENT,
+  CODE_SEND_STATE_QUEUED,
+  bindCodeSendProgress,
+  SIGNAL_CODE_SEND_PROGRESS,
+} from '../../src/auth/authSendProgress.js'
+import { EMAIL_CHANGE_OPERATION } from '../../src/profile/emailChange.js'
 import {
   ActionError,
   bindProfileFlows,
@@ -130,6 +141,36 @@ function sentSteps(dispatch: ReturnType<typeof setup>['dispatch']) {
 /** Let every answer already on its way land. */
 function settled(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+/** Feed the session's send line through its normal signal binding. */
+function boundLine(): (line: Record<string, unknown>) => void {
+  const listeners: ((signal: { type: string; data: unknown }) => void)[] = []
+  bindCodeSendProgress({
+    on: (_event: string, listener: (signal: never) => void) => {
+      listeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+      return () => undefined
+    },
+  } as unknown as HilosConnection)
+  return (data) => {
+    for (const listener of listeners)
+      listener({ type: SIGNAL_CODE_SEND_PROGRESS, data })
+  }
+}
+
+const showLine = boundLine()
+
+/** Complete or interrupt one action independently of the session frames. */
+function pendingSend() {
+  let answer!: (value: { reply: unknown }) => void
+  let reject!: (error: ActionError) => void
+  const done = new Promise<{ reply: unknown }>((resolve, fail) => {
+    answer = resolve
+    reject = fail
+  })
+  return { done, answer, reject }
 }
 
 describe('profile email change', () => {
@@ -439,5 +480,228 @@ describe('profile email change window', () => {
     await submitting
     expect(flow.step.get()).toBe('closed')
     expect(flow.busy.get()).toBe(false)
+  })
+})
+
+afterEach(() => showLine({ state: null, message: null }))
+
+describe.each(['current', 'new'])('send-progress visibility: %s', (mode) => {
+  function line(
+    ticket: string,
+    state = CODE_SEND_STATE_SENT,
+    purpose = EMAIL_CHANGE_OPERATION,
+  ) {
+    return { ticket, state, purpose, channel: 'email', message: null }
+  }
+
+  async function openWindow() {
+    const world = setup()
+    if (mode === 'new') tell([record(PROFILE_FLOW_STEP_CURRENT_PROVEN)])
+    await world.flow.open('old@example.com')
+    if (mode === 'new') world.flow.newEmail.set('new@example.com')
+    const action =
+      mode === 'current'
+        ? 'profile_change_email_current_request'
+        : 'profile_change_email_new_request'
+    const send = () => world.flow.submit()
+    const tellStep = () =>
+      tell([
+        mode === 'current'
+          ? record(PROFILE_FLOW_STEP_CURRENT_SENT)
+          : record(PROFILE_FLOW_STEP_NEW_SENT, 'new@example.com'),
+      ])
+    const repeat = () => world.flow.sendAgain()
+    const queue = (request: ReturnType<typeof pendingSend>) => {
+      world.answers[action] = request.done
+    }
+    const dispose = () => world.flow.dispose()
+    const rejectOther = () => {
+      world.dispatch.mockImplementationOnce(() => ({
+        done: Promise.reject(
+          new ActionError('confirmation', 'fail', 'Wrong code'),
+        ),
+      }))
+      if (mode === 'current') world.flow.currentCode.set('123456')
+      else world.flow.newCode.set('123456')
+      return world.flow.submit()
+    }
+    const reopen = async () => {
+      world.flow.dispose()
+      if (mode === 'new') tell([record(PROFILE_FLOW_STEP_CURRENT_PROVEN)])
+      await world.flow.open('old@example.com')
+      if (mode === 'new') world.flow.newEmail.set('new@example.com')
+    }
+    return {
+      flow: world.flow,
+      action,
+      send,
+      tellStep,
+      repeat,
+      queue,
+      dispose,
+      rejectOther,
+      reopen,
+    }
+  }
+
+  it.each([true, false])(
+    'shows each new ticket before the step frame and successful reply with sent=%s',
+    async (sent) => {
+      const { flow, send, tellStep, repeat, queue, dispose } =
+        await openWindow()
+      showLine(line('old'))
+      for (const [ticket, submit] of [
+        ['first', send],
+        ['second', repeat],
+      ] as const) {
+        const request = pendingSend()
+        queue(request)
+        const sending = submit()
+        expect(flow.sendProgress.get()).toBeNull()
+        showLine(line(ticket, CODE_SEND_STATE_QUEUED))
+        expect(flow.sendProgress.get()).toMatchObject(
+          line(ticket, CODE_SEND_STATE_QUEUED),
+        )
+        tellStep()
+        expect(flow.sendProgress.get()).toMatchObject(
+          line(ticket, CODE_SEND_STATE_QUEUED),
+        )
+        request.answer({ reply: { ...SEND_REPLY, sent } })
+        await sending
+        expect(flow.sendProgress.get()).toMatchObject(
+          line(ticket, CODE_SEND_STATE_QUEUED),
+        )
+      }
+      dispose()
+    },
+  )
+
+  it.each([true, false])(
+    'waits for a new ticket across lines, steps and a successful reply with sent=%s',
+    async (sent) => {
+      const { flow, send, tellStep, repeat, queue, dispose } =
+        await openWindow()
+      showLine(line('old'))
+      const first = pendingSend()
+      queue(first)
+      const sending = send()
+      expect(flow.sendProgress.get()).toBeNull()
+      showLine(line('old'))
+      tellStep()
+      expect(flow.sendProgress.get()).toBeNull()
+      showLine(line('first', CODE_SEND_STATE_QUEUED))
+      expect(flow.sendProgress.get()).toMatchObject(
+        line('first', CODE_SEND_STATE_QUEUED),
+      )
+      tellStep()
+      first.answer({ reply: { ...SEND_REPLY, sent } })
+      await sending
+      expect(flow.sendProgress.get()?.ticket).toBe('first')
+
+      const second = pendingSend()
+      queue(second)
+      const repeating = repeat()
+      second.answer({ reply: { ...SEND_REPLY, sent } })
+      await repeating
+      showLine(line('first'))
+      tellStep()
+      expect(flow.sendProgress.get()).toBeNull()
+      showLine(line('second', CODE_SEND_STATE_QUEUED))
+      expect(flow.sendProgress.get()).toMatchObject(
+        line('second', CODE_SEND_STATE_QUEUED),
+      )
+      dispose()
+    },
+  )
+
+  it.each(['fail', 'disconnected'] as const)(
+    'restores the current session line after %s on first send and repeat',
+    async (outcome) => {
+      for (const attempt of ['first', 'repeat']) {
+        for (const current of ['old', 'new', 'removed', 'other']) {
+          const { flow, action, send, tellStep, repeat, queue, dispose } =
+            await openWindow()
+          if (attempt === 'repeat') {
+            const initial = pendingSend()
+            queue(initial)
+            const sending = send()
+            showLine(line('initial', CODE_SEND_STATE_QUEUED))
+            tellStep()
+            initial.answer({ reply: SEND_REPLY })
+            await sending
+          }
+          showLine(line('old'))
+          const request = pendingSend()
+          queue(request)
+          const sending = attempt === 'first' ? send() : repeat()
+          expect(flow.sendProgress.get()).toBeNull()
+          showLine(line('old'))
+          expect(flow.sendProgress.get()).toBeNull()
+          if (current === 'new') showLine(line('new', CODE_SEND_STATE_QUEUED))
+          if (current === 'removed') showLine({ state: null, message: null })
+          if (current === 'other')
+            showLine(line('foreign', CODE_SEND_STATE_SENT, 'another_operation'))
+          request.reject(new ActionError(action, outcome, 'Send refused'))
+          await sending
+          expect(flow.busy.get()).toBe(false)
+          expect(flow.refusal.get()).not.toBeNull()
+          if (current === 'old')
+            expect(flow.sendProgress.get()).toMatchObject(line('old'))
+          else if (current === 'new')
+            expect(flow.sendProgress.get()).toMatchObject(
+              line('new', CODE_SEND_STATE_QUEUED),
+            )
+          else expect(flow.sendProgress.get()).toBeNull()
+          if (outcome === 'disconnected') {
+            showLine(line('old'))
+            expect(flow.sendProgress.get()).toMatchObject(line('old'))
+            showLine(line('reconnected', CODE_SEND_STATE_QUEUED))
+            expect(flow.sendProgress.get()).toMatchObject(
+              line('reconnected', CODE_SEND_STATE_QUEUED),
+            )
+          }
+          dispose()
+          showLine({ state: null, message: null })
+          tell([])
+        }
+      }
+    },
+  )
+  it('keeps the old ticket hidden when confirmation fails after a successful send', async () => {
+    const { flow, send, tellStep, queue, dispose, rejectOther } =
+      await openWindow()
+    showLine(line('old'))
+    const request = pendingSend()
+    queue(request)
+    const sending = send()
+    tellStep()
+    request.answer({ reply: SEND_REPLY })
+    await sending
+    expect(flow.sendProgress.get()).toBeNull()
+    await rejectOther()
+    expect(flow.refusal.get()).not.toBeNull()
+    expect(flow.sendProgress.get()).toBeNull()
+    dispose()
+  })
+
+  it('ignores an interrupted send from an earlier opening', async () => {
+    const { flow, action, send, queue, dispose, reopen } = await openWindow()
+    showLine(line('old'))
+    const earlier = pendingSend()
+    queue(earlier)
+    const sending = send()
+    await reopen()
+    const current = pendingSend()
+    queue(current)
+    const sendingNow = send()
+    earlier.reject(new ActionError(action, 'disconnected', 'Disconnected'))
+    await sending
+    expect(flow.busy.get()).toBe(true)
+    expect(flow.refusal.get()).toBeNull()
+    expect(flow.sendProgress.get()).toBeNull()
+    current.reject(new ActionError(action, 'fail', 'Send refused'))
+    await sendingNow
+    expect(flow.sendProgress.get()).toMatchObject(line('old'))
+    dispose()
   })
 })

@@ -205,7 +205,10 @@ export function createHilosProfilePasswordChangeFlow(context: {
     () => step.get() === 'code' || step.get() === 'password',
   )
 
-  async function run(submit: () => Promise<void>): Promise<boolean> {
+  async function run(
+    submit: () => Promise<void>,
+    sendingCode = false,
+  ): Promise<boolean> {
     const started = round
     busy.set(true)
     refusal.set(null)
@@ -215,6 +218,7 @@ export function createHilosProfilePasswordChangeFlow(context: {
       return round === started
     } catch (error) {
       if (round === started) {
+        if (sendingCode) hiddenTicket.set(null)
         refusal.set(
           error instanceof ActionError ? error.message : 'The action failed.',
         )
@@ -321,7 +325,7 @@ export function createHilosProfilePasswordChangeFlow(context: {
     if (
       await run(async () => {
         reply = (await actions.requestCode().done).reply
-      })
+      }, true)
     ) {
       if (round !== started || reply === undefined) return
       replyResendAt.set(toLocal(reply.resendAt))

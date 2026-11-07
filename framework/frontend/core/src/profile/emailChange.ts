@@ -396,7 +396,6 @@ export function createHilosProfileEmailChangeFlow(
     )
       return
     refusal.set(null)
-    hiddenTicket.set(null)
     replyResendAt.set(null)
     heldWithoutCode = null
     if (next === 'confirm-current') currentCode.set('')
@@ -519,6 +518,8 @@ export function createHilosProfileEmailChangeFlow(
         }
       } catch (error) {
         if (round !== started) return
+        if (current === 'send-current' || current === 'new-address')
+          hiddenTicket.set(null)
         busy.set(false)
         refusal.set(
           error instanceof ActionError && error.outcome === 'fail'
@@ -584,6 +585,7 @@ export function createHilosProfileEmailChangeFlow(
         standOn(record.get())
       } catch (error) {
         if (round === started) {
+          hiddenTicket.set(null)
           refusal.set(
             error instanceof ActionError && error.outcome === 'fail'
               ? error.message

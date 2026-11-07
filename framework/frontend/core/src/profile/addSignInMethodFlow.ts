@@ -326,6 +326,7 @@ export function createHilosProfileAddSignInFlow(
       }
     } catch (error) {
       if (round === started) {
+        if (onReply !== undefined) hiddenTicket.set(null)
         refusal.set(
           error instanceof ActionError
             ? error.message

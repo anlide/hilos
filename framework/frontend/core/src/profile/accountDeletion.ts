@@ -481,9 +481,13 @@ export function createHilosAccountDeletionFlow(
    * Run one submit: busy while it is out, its refusal above the buttons.
    *
    * @param submit The submit.
+   * @param sendingCode Whether this action hid the earlier send line.
    * @returns Whether it went through.
    */
-  async function run(submit: () => Promise<void>): Promise<boolean> {
+  async function run(
+    submit: () => Promise<void>,
+    sendingCode = false,
+  ): Promise<boolean> {
     const started = round
     busy.set(true)
     refusal.set(null)
@@ -492,7 +496,10 @@ export function createHilosAccountDeletionFlow(
       await submit()
       return round === started
     } catch (error) {
-      if (round === started) refusal.set(actionMessage(error))
+      if (round === started) {
+        if (sendingCode) hiddenTicket.set(null)
+        refusal.set(actionMessage(error))
+      }
       return false
     } finally {
       pending -= 1
@@ -662,7 +669,7 @@ export function createHilosAccountDeletionFlow(
         (await run(async () => {
           const reply = (await actions.sendCode().done).reply
           if (reply !== undefined) replyResendAt.set(toLocal(reply.resendAt))
-        })) &&
+        }, true)) &&
         round === started
       ) {
         step.set(stepOfRecord(record.get(), opening.get()))
@@ -676,7 +683,7 @@ export function createHilosAccountDeletionFlow(
       await run(async () => {
         const reply = (await actions.sendCode().done).reply
         if (reply !== undefined) replyResendAt.set(toLocal(reply.resendAt))
-      })
+      }, true)
     },
     async start() {
       if (busy.get() || step.get() !== 'code') {

@@ -230,6 +230,7 @@ export function createHilosStepUpStep(
         return next.required ? 'ask' : 'skip'
       } catch (error) {
         if (round !== started) return 'refused'
+        hiddenTicket.set(null)
         opening.set(null)
         refusal.set(actionMessage(error))
 
@@ -262,6 +263,7 @@ export function createHilosStepUpStep(
         passed = !next.required
       } catch (error) {
         if (round !== started) return
+        hiddenTicket.set(null)
         refusal.set(actionMessage(error))
       } finally {
         if (round === started) busy.set(false)
