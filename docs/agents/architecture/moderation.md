@@ -301,6 +301,73 @@ fixed checking deadline ends as unavailable. Once approval advances the rename
 to `applying`, moderation has finished: there is no new TTL, and the operation
 waits for the existing person owner's reply.
 
+### Failure diagnostics
+
+The moderator writes bounded failure diagnostics to its own agent log stream
+through the existing logger and write-level. Each record has the
+`Moderation check failure ` prefix followed by one line of JSON; the logger
+supplies the timestamp. Its `event` is `moderation_check_failure`, with
+`outcome`, `stage`, `kind`, `requestId`, `profile`, `provider`, `model`,
+`reason`, `errorClass`, `causeClass`, `httpStatus`, `raw`, `rawTruncated`,
+`summary`, `suppressed`, `firstRequestId`, `lastRequestId` and `windowSec`.
+The snapshot and writer are
+[ModerationFailure](../../../framework/backend/Moderation/DTO/ModerationFailure.php)
+and
+[ModerationFailureLog](../../../framework/backend/Moderation/ModerationFailureLog.php).
+The diagnostic snapshot keeps bounded scalar fields only; it does not retain
+the original exception or profile object.
+
+There are three outcomes. `check_unavailable` is an error for a failure while
+preparing or starting a check, or while validating its final answer;
+`model_failure` is an error for a poll or result-consumption failure, or the
+moderator's in-flight deadline; `malformed_answer` is a warning only when
+[`ModerationDecision::fromModelOutput()`](../../../framework/backend/Moderation/ModerationDecision.php)
+rejects received model text. The six stages are `prepare`, `start`, `poll`,
+`consume`, `parse` and `answer`. A provider response-envelope exception
+remains `model_failure`, not `malformed_answer`. The public verdict remains the
+generic `service_unavailable`; diagnostics do not publish a content refusal.
+
+The record's profile fields describe the attempt. Before the profile resolves,
+`profile` is the known requested key, or null when the kind is unknown, and
+`provider` and `model` are null. After resolution, they are copied from that
+attempt's effective profile, not inferred from a cached client. The provider is
+the resolved provider value, and the next attempt resolves its own profile.
+The `requestId` identifies the attempt, not its connection. `reason` is
+bounded to 512 bytes with any already-known API key redacted before truncation;
+`errorClass`, the innermost `causeClass`, and a structured `httpStatus` are
+included when present. Capturing a failure does not resolve a profile or read a
+secret again. The record does not include an HTTP response body, a trace, or
+previous-exception messages. Only a malformed answer carries `raw`: a sample
+with any known API key redacted before truncation to at most 512 bytes;
+`rawTruncated` marks a clipped value. Other outcomes have `raw: null` and
+`rawTruncated: false`. Invalid UTF-8 is replaced and JSON escapes control
+characters, keeping each record on one physical line.
+
+Repeated failures are grouped by outcome, stage, kind, profile/provider/model
+and a stable failure identity: exception and cause types, throw location, and
+HTTP status when present. Request, user and connection identifiers, answer
+text and variable exception messages do not split a group. Each group emits up
+to three detailed records per 60-second window through the existing logger,
+then counts only additional failures beyond those detailed records. If any
+were counted, closing the window emits a record at the same log level with the
+exact additional count in `suppressed`. Detailed records have `summary: false`
+and `suppressed: 0`; both request bounds equal `requestId`. A summary has
+`summary: true`; `firstRequestId` and `lastRequestId` bound that window's group,
+while `requestId` and the sample fields describe its last event. For example,
+103 failures produce three detailed records and a summary with
+`suppressed: 100`. A malformed-answer summary also carries the bounded raw
+sample of its representative attempt. `windowSec` names the configured window
+size, not the elapsed duration of a window closed late by a tick, by eviction
+or at shutdown.
+
+The moderator retains at most 128 groups. Each tick closes expired windows,
+and a normal stop closes all remaining windows, including replaced ones. When
+capacity is reached, the oldest group is closed and evicted; any held failures
+are summarized before its metadata is released. An abrupt process failure can
+lose a suppressed count whose summary has not yet been written. These counters
+are process-local diagnostics; no DB/RT journal, durable recovery or diagnostic
+signal is added.
+
 ## Models And Settings
 
 Use `hilos.moderation.text` (`ModerationLlmConstants::PROFILE_TEXT`) for `TEXT`

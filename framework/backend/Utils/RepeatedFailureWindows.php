@@ -35,6 +35,18 @@ namespace Hilos\Utils;
  */
 class RepeatedFailureWindows
 {
+    /** Key identifying the failure kind in a closed window */
+    private const string FIELD_KEY = 'key';
+
+    /** Number of failures held back by a window */
+    private const string FIELD_HELD = 'held';
+
+    /** Caller time at which a window opened */
+    private const string FIELD_OPENED_AT = 'openedAt';
+
+    /** Number of failures admitted in full by a window */
+    private const string FIELD_WRITTEN = 'written';
+
     /** @var int Number of failures per key written in full before a window starts counting instead */
     private int $burstLines;
 
@@ -80,23 +92,23 @@ class RepeatedFailureWindows
     {
         $window = $this->windows[$key] ?? null;
 
-        if ($window === null || $now - $window['openedAt'] >= $this->windowSeconds) {
+        if ($window === null || $now - $window[self::FIELD_OPENED_AT] >= $this->windowSeconds) {
             if ($window !== null) {
-                $this->replaced[] = ['key' => $key, 'held' => $window['held']];
+                $this->replaced[] = [self::FIELD_KEY => $key, self::FIELD_HELD => $window[self::FIELD_HELD]];
             }
 
-            $this->windows[$key] = ['openedAt' => $now, 'written' => 1, 'held' => 0];
+            $this->windows[$key] = [self::FIELD_OPENED_AT => $now, self::FIELD_WRITTEN => 1, self::FIELD_HELD => 0];
 
             return true;
         }
 
-        if ($window['written'] < $this->burstLines) {
-            $this->windows[$key]['written']++;
+        if ($window[self::FIELD_WRITTEN] < $this->burstLines) {
+            $this->windows[$key][self::FIELD_WRITTEN]++;
 
             return true;
         }
 
-        $this->windows[$key]['held']++;
+        $this->windows[$key][self::FIELD_HELD]++;
 
         return false;
     }
@@ -124,13 +136,60 @@ class RepeatedFailureWindows
         $this->replaced = [];
 
         foreach ($this->windows as $key => $window) {
-            if ($now - $window['openedAt'] < $this->windowSeconds) {
+            if ($now - $window[self::FIELD_OPENED_AT] < $this->windowSeconds) {
                 continue;
             }
 
-            $closed[] = ['key' => $key, 'held' => $window['held']];
+            $closed[] = [self::FIELD_KEY => $key, self::FIELD_HELD => $window[self::FIELD_HELD]];
             unset($this->windows[$key]);
         }
+
+        return $closed;
+    }
+
+    /**
+     * Closes one key early, including every window it replaced, and forgets it.
+     *
+     * @param string $key Failure kind whose pending windows are handed over
+     * @return list<array{key: string, held: int}> Closed windows, each with what it held back
+     */
+    public function closeKey(string $key): array
+    {
+        $closed = [];
+
+        foreach ($this->replaced as $index => $window) {
+            if ($window[self::FIELD_KEY] !== $key) {
+                continue;
+            }
+
+            $closed[] = $window;
+            unset($this->replaced[$index]);
+        }
+        $this->replaced = array_values($this->replaced);
+
+        $window = $this->windows[$key] ?? null;
+        if ($window !== null) {
+            $closed[] = [self::FIELD_KEY => $key, self::FIELD_HELD => $window[self::FIELD_HELD]];
+            unset($this->windows[$key]);
+        }
+
+        return $closed;
+    }
+
+    /**
+     * Closes every pending window regardless of age, and forgets them all.
+     *
+     * @return list<array{key: string, held: int}> Closed windows, each with what it held back
+     */
+    public function closeAll(): array
+    {
+        $closed = $this->replaced;
+        $this->replaced = [];
+
+        foreach ($this->windows as $key => $window) {
+            $closed[] = [self::FIELD_KEY => $key, self::FIELD_HELD => $window[self::FIELD_HELD]];
+        }
+        $this->windows = [];
 
         return $closed;
     }

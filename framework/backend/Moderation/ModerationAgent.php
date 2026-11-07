@@ -34,6 +34,7 @@ use Hilos\LLM\DTO\MessageImage;
 use Hilos\LLM\Exception\LLMConfigurationException;
 use Hilos\LLM\Exception\LLMException;
 use Hilos\LLM\Routing\LlmProfile;
+use Hilos\Moderation\DTO\ModerationFailure;
 use Hilos\Moderation\DTO\ModerationVerdictSignalData;
 use Hilos\Moderation\DTO\ModerationObserveCommandData;
 use Hilos\Environment\NonProductionGate;
@@ -111,6 +112,15 @@ class ModerationAgent extends AbstractHilosAgent
     /** Async client of {@see self::$profile}, or null before the first check. */
     private ?AsyncChatLLMInterface $client = null;
 
+    /** Requested key of this attempt, known before input preparation or profile resolution. */
+    private ?string $attemptProfileKey = null;
+
+    /** Effective profile of this attempt, independent of the reusable client's profile. */
+    private ?LlmProfile $attemptProfile = null;
+
+    /** Process-private diagnostic windows; their unwritten tail may be lost on a crash. */
+    private ?ModerationFailureLog $failureLog = null;
+
     /** Connection of the attempt in hand, or null while the moderator is free. */
     private ?string $acceptKey = null;
 
@@ -145,8 +155,15 @@ class ModerationAgent extends AbstractHilosAgent
      */
     public function onStop(): void
     {
-        $this->replyObservations('Moderator stopped before the observation tick');
-        $this->forgetAttempt();
+        try {
+            $this->replyObservations('Moderator stopped before the observation tick');
+        } finally {
+            try {
+                $this->failureLog?->flushAll();
+            } finally {
+                $this->forgetAttempt();
+            }
+        }
     }
 
     /**
@@ -223,6 +240,7 @@ class ModerationAgent extends AbstractHilosAgent
     public function onTick(): void
     {
         try {
+            $this->failureLog?->flushExpired(microtime(true));
             if ($this->acceptKey !== null) {
                 $this->advanceAttempt();
 
@@ -333,6 +351,11 @@ class ModerationAgent extends AbstractHilosAgent
 
             return;
         }
+        if (!$this->isStillAsked()) {
+            $this->forgetAttempt();
+
+            return;
+        }
         $client = $this->client;
         $kind = $this->kind;
         if ($client === null || $kind === null) {
@@ -341,8 +364,10 @@ class ModerationAgent extends AbstractHilosAgent
 
             return;
         }
+        $stage = ModerationFailure::STAGE_POLL;
         try {
             if (TimeHelper::nowMs() >= $this->deadlineAt) {
+                $this->recordFailure(ModerationFailure::MODEL_FAILURE, $stage, null);
                 $client->reset();
                 $this->answer(ModerationDecision::unavailable());
 
@@ -352,9 +377,18 @@ class ModerationAgent extends AbstractHilosAgent
             if ($client->isBusy() || !$client->hasResult()) {
                 return;
             }
-            $decision = ModerationDecision::fromModelOutput($client->consumeResult(), $kind);
-        } catch (LLMException|ValidationException $e) {
-            $this->logAgentError("Moderation check {$this->kindKey} gave no verdict: {$e->getMessage()}");
+            $stage = ModerationFailure::STAGE_CONSUME;
+            $raw = $client->consumeResult();
+        } catch (LLMException $failure) {
+            $this->recordFailure(ModerationFailure::MODEL_FAILURE, $stage, $failure);
+            $this->answer(ModerationDecision::unavailable());
+
+            return;
+        }
+        try {
+            $decision = ModerationDecision::fromModelOutput($raw, $kind);
+        } catch (ValidationException $failure) {
+            $this->recordFailure(ModerationFailure::MALFORMED_ANSWER, ModerationFailure::STAGE_PARSE, $failure, $raw);
             $decision = ModerationDecision::unavailable();
         }
         $this->answer($decision);
@@ -411,18 +445,26 @@ class ModerationAgent extends AbstractHilosAgent
         $this->requestId = $check->requestId;
         $this->deadlineAt = $check->deadlineAt;
         $this->attempt = $check;
+        $this->attemptProfileKey = null;
+        $this->attemptProfile = null;
+        $stage = ModerationFailure::STAGE_PREPARE;
         try {
             $kind = Hilos::moderationKinds()[$check->kind]
                 ?? throw new InvalidArgumentException("Unknown moderation kind: {$check->kind}");
+            $this->attemptProfileKey = $kind->input === ModerationInput::IMAGE
+                ? ModerationLlmConstants::PROFILE_IMAGE : ModerationLlmConstants::PROFILE_TEXT;
             $messages = $this->messagesOf($check, $kind);
-            $profile = $this->profileOf($kind->input);
+            $profile = $this->profileOf($this->attemptProfileKey);
+            $this->attemptProfile = $profile;
             $now = TimeHelper::nowMs();
             if ($now >= $this->deadlineAt || !$this->uploadsHeldFor($check)) {
                 $this->answer(ModerationDecision::unavailable());
 
                 return;
             }
-            $this->clientOf($profile)->startGenerate($messages, new ChatGenerateOptions(
+            $client = $this->clientOf($profile);
+            $stage = ModerationFailure::STAGE_START;
+            $client->startGenerate($messages, new ChatGenerateOptions(
                 model: $profile->model,
                 timeoutSec: min($profile->timeoutSec, ($this->deadlineAt - $now) / TimeConstants::MS_PER_SECOND),
                 maxTokens: self::VERDICT_MAX_TOKENS,
@@ -432,10 +474,10 @@ class ModerationAgent extends AbstractHilosAgent
             $this->logAgentWarning("Moderation check {$check->kind} cannot draw its image copy: {$e->getMessage()}");
             $this->answer(new ModerationDecision(false, ModerationReason::UNREADABLE));
         } catch (WiringRefusal $refusal) {
-            $this->logAgentError("Moderation check {$check->kind} cannot read what it needs: {$refusal->getMessage()}");
+            $this->recordFailure(ModerationFailure::CHECK_UNAVAILABLE, $stage, $refusal);
             $this->answer(ModerationDecision::unavailable());
         } catch (HilosException $e) {
-            $this->logAgentError("Moderation check {$check->kind} cannot be asked: {$e->getMessage()}");
+            $this->recordFailure(ModerationFailure::CHECK_UNAVAILABLE, $stage, $e);
             $this->answer(ModerationDecision::unavailable());
         }
     }
@@ -670,22 +712,19 @@ class ModerationAgent extends AbstractHilosAgent
     }
 
     /**
-     * Resolves the effective profile of the next check: the image profile for an image, the text
-     * profile for everything else.
+     * Resolves the requested role with the current moderation settings.
      *
-     * @param ModerationInput $input What the next check looks at
+     * @param string $profileKey Requested role of this attempt
      * @return LlmProfile Effective profile, with the moderation settings applied
      * @throws InvalidStateException When the LLM router is not initialized
      * @throws LLMConfigurationException When the profile cannot be resolved
      * @throws HilosException When an env value or a setting the profile reads cannot be read
      */
-    private function profileOf(ModerationInput $input): LlmProfile
+    private function profileOf(string $profileKey): LlmProfile
     {
         $router = Hilos::$llm ?? throw new InvalidStateException('The LLM router is not initialized');
 
-        return $router->resolve($input === ModerationInput::IMAGE
-            ? ModerationLlmConstants::PROFILE_IMAGE
-            : ModerationLlmConstants::PROFILE_TEXT);
+        return $router->resolve($profileKey);
     }
 
     /**
@@ -756,7 +795,7 @@ class ModerationAgent extends AbstractHilosAgent
                     $this->completeUploadOf($this->acceptKey, $this->attempt->clientUploadId);
                 }
             } catch (WiringRefusal|HilosException $e) {
-                $this->logAgentError("Moderation check {$this->kindKey} lost its upload before the verdict: {$e->getMessage()}");
+                $this->recordFailure(ModerationFailure::CHECK_UNAVAILABLE, ModerationFailure::STAGE_ANSWER, $e);
                 $decision = ModerationDecision::unavailable();
             }
         }
@@ -787,6 +826,29 @@ class ModerationAgent extends AbstractHilosAgent
     }
 
     /**
+     * Captures only this attempt's diagnostic context, without resolving settings again.
+     *
+     * @param string $outcome Diagnostic outcome
+     * @param string $stage Stage which failed
+     * @param ?Throwable $failure Caught failure, or null for the in-flight deadline
+     * @param ?string $raw Parser input for a malformed answer
+     * @throws HilosException When no attempt is in hand or the diagnostic combination is invalid
+     */
+    private function recordFailure(string $outcome, string $stage, ?Throwable $failure, ?string $raw = null): void
+    {
+        ($this->failureLog ??= new ModerationFailureLog($this->getId()))->write(ModerationFailure::capture(
+            $outcome,
+            $stage,
+            $this->kindKey ?? throw new InvalidStateException('A moderation diagnostic needs an active kind'),
+            $this->requestId ?? throw new InvalidStateException('A moderation diagnostic needs an active request'),
+            $failure,
+            $this->attemptProfileKey,
+            $this->attemptProfile,
+            $raw,
+        ), microtime(true));
+    }
+
+    /**
      * Lets the attempt in hand go: the client is reset, and the queue is walked again on the next tick.
      */
     private function forgetAttempt(): void
@@ -798,6 +860,8 @@ class ModerationAgent extends AbstractHilosAgent
         $this->deadlineAt = 0;
         $this->kind = null;
         $this->attempt = null;
+        $this->attemptProfileKey = null;
+        $this->attemptProfile = null;
         $this->answered = false;
         $this->queueChanged = true;
     }

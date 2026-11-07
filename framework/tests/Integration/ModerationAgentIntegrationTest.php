@@ -62,6 +62,7 @@ use Hilos\LLM\Exception\LLMException;
 use Hilos\LLM\Routing\LlmProfile;
 use Hilos\LLM\Routing\LlmProvider;
 use Hilos\LLM\Routing\LlmRouter;
+use Hilos\Log\AgentLogStream;
 use Hilos\Moderation\DTO\ModerationVerdictSignalData;
 use Hilos\Moderation\ModerationAgent;
 use Hilos\Moderation\ModerationInput;
@@ -86,6 +87,7 @@ use Hilos\Testing\IntegrationTest;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
+use Hilos\Utils\LogLevel;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionProperty;
 use Throwable;
@@ -118,6 +120,10 @@ abstract class ModerationAgentIntegrationEnvironment extends FrameworkRollbackIn
     /** Log file the moderator writes why a check went unavailable, or null until it is chosen */
     private ?string $logFile = null;
 
+    private ?string $previousLogFile = null;
+    private ?string $previousErrorLogFile = null;
+    private LogLevel $previousWriteLevel = LogLevel::Debug;
+
     /**
      * Keeps what the case replaces, adds the rules table to the parent's schema and mounts the
      * moderator's surroundings; every case starts with no external API key in the environment.
@@ -130,6 +136,9 @@ abstract class ModerationAgentIntegrationEnvironment extends FrameworkRollbackIn
         $this->previousFs = Hilos::$fs;
         $this->previousBrowser = Hilos::$browser;
         $this->previousExternalKey = getenv(EnvConstants::LLM_EXTERNAL_API_KEY->name);
+        $this->previousLogFile = new ReflectionProperty(Logger::class, 'logFile')->getValue();
+        $this->previousErrorLogFile = new ReflectionProperty(Logger::class, 'errorLogFile')->getValue();
+        $this->previousWriteLevel = Logger::writeLevel();
         parent::prepareIntegrationEnvironment();
         $this->databaseReady = true;
         self::runRulesStub(down: false);
@@ -145,8 +154,11 @@ abstract class ModerationAgentIntegrationEnvironment extends FrameworkRollbackIn
         $this->tmpPath = sys_get_temp_dir() . '/hilos-moderation-' . bin2hex(random_bytes(6));
         Hilos::$fs = new ModerationAgentIntegrationFsContext($this->tmpPath);
         Hilos::$fs->configure();
-        $this->logFile = $this->tmpPath . '.log';
+        mkdir($this->tmpPath . '-logs');
+        $this->logFile = $this->tmpPath . '-logs/daemon.log';
         Logger::setLogFile($this->logFile);
+        Logger::setErrorLogFile($this->tmpPath . '-logs/daemon.error.log');
+        Logger::setWriteLevel(LogLevel::Debug);
         // A removed check leaves its wrapper in the view cache without this subscriber.
         SourceChangeBus::reset();
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
@@ -182,7 +194,9 @@ abstract class ModerationAgentIntegrationEnvironment extends FrameworkRollbackIn
         RtTruthSourceRegistry::unregister(StateHilosModerationCheck::RT_COLLECTION, HilosAgentType::HILOS_USERS_LIBRARY);
         RtTruthSourceRegistry::unregister(StateHilosUpload::RT_COLLECTION, HilosAgentType::HILOS_UPLOADS);
         SourceChangeBus::reset();
-        Logger::resetLogFile();
+        new ReflectionProperty(Logger::class, 'logFile')->setValue(null, $this->previousLogFile);
+        new ReflectionProperty(Logger::class, 'errorLogFile')->setValue(null, $this->previousErrorLogFile);
+        Logger::setWriteLevel($this->previousWriteLevel);
         if ($this->databaseReady && $this->rulesTableCreated) {
             try {
                 Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
@@ -202,8 +216,11 @@ abstract class ModerationAgentIntegrationEnvironment extends FrameworkRollbackIn
             }
             $this->tmpPath = null;
         }
-        if ($this->logFile !== null && is_file($this->logFile)) {
-            unlink($this->logFile);
+        if ($this->logFile !== null) {
+            foreach (glob(dirname($this->logFile) . '/*') as $path) {
+                unlink($path);
+            }
+            rmdir(dirname($this->logFile));
         }
         $this->logFile = null;
         $name = EnvConstants::LLM_EXTERNAL_API_KEY->name;
@@ -221,6 +238,29 @@ abstract class ModerationAgentIntegrationEnvironment extends FrameworkRollbackIn
         if ($failures !== []) {
             throw $failures[0];
         }
+    }
+
+    /**
+     * @param string $agentId Moderator whose real log stream is read
+     * @param bool $errorStream Whether to read its error twin
+     * @return list<array<string, mixed>> Structured diagnostics written by the agent
+     */
+    protected function diagnostics(string $agentId, bool $errorStream = false): array
+    {
+        self::assertNotNull($this->logFile);
+        $path = AgentLogStream::pathFor(dirname($this->logFile), $agentId, $errorStream);
+        $entries = [];
+        foreach (is_file($path) ? file($path, FILE_IGNORE_NEW_LINES) : [] as $line) {
+            $offset = strpos($line, 'Moderation check failure ');
+            if ($offset !== false) {
+                if (!$errorStream) {
+                    self::assertStringContainsString('[WARNING]', $line);
+                }
+                $entries[] = json_decode(substr($line, $offset + strlen('Moderation check failure ')), true, flags: JSON_THROW_ON_ERROR);
+            }
+        }
+
+        return $entries;
     }
 
     /** @param bool $down Whether to execute the stub's drop statement instead of its create statement */
@@ -457,6 +497,16 @@ final class ModerationAgentIntegrationTest extends ModerationAgentIntegrationEnv
         $this->tick();
         self::assertSame([], $this->agent->clients);
         $this->assertVerdict($refused, false, ModerationReason::SERVICE_UNAVAILABLE);
+        $entries = $this->diagnostics($this->agent->getId(), true);
+        self::assertCount(1, $entries);
+        self::assertSame('check_unavailable', $entries[0]['outcome']);
+        self::assertSame('prepare', $entries[0]['stage']);
+        self::assertSame($refused->requestId, $entries[0]['requestId']);
+        self::assertSame($role->kind, $entries[0]['kind']);
+        self::assertSame($role->profileKey, $entries[0]['profile']);
+        self::assertNull($entries[0]['provider']);
+        self::assertNull($entries[0]['model']);
+        self::assertNull($entries[0]['raw']);
         $this->close($refused);
 
         $this->save($role->providerKey, LLMConstants::PROVIDER_LOCAL);
@@ -468,6 +518,8 @@ final class ModerationAgentIntegrationTest extends ModerationAgentIntegrationEnv
         self::assertSame(LlmProvider::LOCAL, $this->model()->profile->provider);
         $this->assertAsked($role, $this->model()->requests[0]);
         $this->assertVerdict($checked, true, ModerationReason::OK);
+        self::assertCount(1, $this->diagnostics($this->agent->getId(), true));
+        self::assertSame([], $this->diagnostics($this->agent->getId()));
     }
 
     #[DataProvider('roles')]
@@ -478,6 +530,16 @@ final class ModerationAgentIntegrationTest extends ModerationAgentIntegrationEnv
         $this->model()->fail(new LLMException('The model did not answer within the timeout'));
         $this->tick();
         $this->assertVerdict($silent, false, ModerationReason::SERVICE_UNAVAILABLE);
+        $entries = $this->diagnostics($this->agent->getId(), true);
+        self::assertCount(1, $entries);
+        self::assertSame('model_failure', $entries[0]['outcome']);
+        self::assertSame('poll', $entries[0]['stage']);
+        self::assertSame($silent->requestId, $entries[0]['requestId']);
+        self::assertSame($role->profileKey, $entries[0]['profile']);
+        self::assertSame($this->model()->profile->provider->value, $entries[0]['provider']);
+        self::assertSame($this->model()->profile->model, $entries[0]['model']);
+        self::assertSame(LLMException::class, $entries[0]['errorClass']);
+        self::assertNull($entries[0]['raw']);
         $this->close($silent);
 
         $next = $this->openCheck($role);
@@ -488,6 +550,68 @@ final class ModerationAgentIntegrationTest extends ModerationAgentIntegrationEnv
         self::assertCount(1, $this->agent->clients);
         self::assertCount(2, $this->model()->requests);
         $this->assertVerdict($next, true, ModerationReason::OK);
+        self::assertCount(1, $this->diagnostics($this->agent->getId(), true));
+        self::assertSame([], $this->diagnostics($this->agent->getId()));
+    }
+
+    #[DataProvider('roles')]
+    public function testAMalformedVerdictWritesAWarningAndAnswersUnavailable(ModerationAgentIntegrationRole $role): void
+    {
+        $check = $this->openCheck($role);
+        $this->tick();
+        $this->assertAsked($role, $this->model()->requests[0]);
+        $this->model()->answer("Looks fine.\nBut this is no verdict.");
+        $this->tick();
+        $this->tick();
+
+        $this->assertVerdict($check, false, ModerationReason::SERVICE_UNAVAILABLE);
+        $entries = $this->diagnostics($this->agent->getId());
+        self::assertCount(1, $entries);
+        self::assertSame('malformed_answer', $entries[0]['outcome']);
+        self::assertSame('parse', $entries[0]['stage']);
+        self::assertSame($check->requestId, $entries[0]['requestId']);
+        self::assertSame($role->kind, $entries[0]['kind']);
+        self::assertSame($role->profileKey, $entries[0]['profile']);
+        self::assertSame($this->model()->profile->model, $entries[0]['model']);
+        self::assertSame("Looks fine.\nBut this is no verdict.", $entries[0]['raw']);
+        self::assertFalse($entries[0]['rawTruncated']);
+        self::assertSame([], $this->diagnostics($this->agent->getId(), true));
+    }
+
+    #[DataProvider('roles')]
+    public function testActiveFailureKeepsTheOldProfileAfterALiveSettingChangeAndTheNextCheckUsesTheNewOne(
+        ModerationAgentIntegrationRole $role,
+    ): void {
+        $first = $this->openCheck($role);
+        $this->tick();
+        $started = $this->model()->profile;
+        $this->assertAsked($role, $this->model()->requests[0]);
+        $this->save($role->modelKey, self::SAVED_MODEL);
+        $this->model()->fail(new LLMException('Active model failed'));
+        $this->tick();
+        $this->assertVerdict($first, false, ModerationReason::SERVICE_UNAVAILABLE);
+        $entries = $this->diagnostics($this->agent->getId(), true);
+        self::assertCount(1, $entries);
+        self::assertSame('model_failure', $entries[0]['outcome']);
+        self::assertSame($first->requestId, $entries[0]['requestId']);
+        self::assertSame($started->key, $entries[0]['profile']);
+        self::assertSame($started->provider->value, $entries[0]['provider']);
+        self::assertSame($started->model, $entries[0]['model']);
+        $this->close($first);
+
+        $next = $this->openCheck($role);
+        $this->tick();
+        self::assertCount(2, $this->agent->clients);
+        self::assertSame(self::SAVED_MODEL, $this->model()->profile->model);
+        $this->assertAsked($role, $this->model()->requests[0]);
+        $this->model()->fail(new LLMException('Active model failed'));
+        $this->tick();
+        $this->assertVerdict($next, false, ModerationReason::SERVICE_UNAVAILABLE);
+        $entries = $this->diagnostics($this->agent->getId(), true);
+        self::assertCount(2, $entries);
+        self::assertSame([$started->model, self::SAVED_MODEL], array_column($entries, 'model'));
+        self::assertSame([$first->requestId, $next->requestId], array_column($entries, 'requestId'));
+        self::assertSame([], $this->diagnostics($this->agent->getId()));
     }
 
     public function testReceivedDocumentBytesAreNeverReadOrSentToVision(): void

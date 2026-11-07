@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Moderation;
 
 use ArrayAccess;
+use Closure;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -34,6 +35,8 @@ use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
 use Hilos\LLM\Exception\LLMConfigurationException;
 use Hilos\LLM\Exception\LLMException;
+use Hilos\LLM\Exception\LLMResponseException;
+use Hilos\LLM\Constants\LLMApiConstants;
 use Hilos\LLM\Routing\LlmProfile;
 use Hilos\LLM\Routing\LlmProvider;
 use Hilos\LLM\Routing\LlmRouter;
@@ -49,6 +52,7 @@ use Hilos\Moderation\ModerationInput;
 use Hilos\Moderation\ModerationKind;
 use Hilos\Moderation\ModerationKindDirectory;
 use Hilos\Moderation\ModerationLlmConstants;
+use Hilos\Moderation\ModerationFailureLog;
 use Hilos\Moderation\ModerationReason;
 use Hilos\Moderation\ModerationKindKey;
 use Hilos\Runtime\State\Collection\HilosConnections;
@@ -58,9 +62,14 @@ use Hilos\Runtime\State\Item\HilosUpload;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Log\AgentLogStream;
+use Hilos\Utils\LogLevel;
+use Hilos\Utils\Logger;
+use Hilos\Utils\RepeatedFailureWindows;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
+use RuntimeException;
 
 /**
  * The moderator over the runtime queue, with a scripted model (HIL-1625).
@@ -109,6 +118,8 @@ final class ModerationAgentTest extends TestCase
     private ModerationAgentTestSignalRouter $router;
 
     private ModerationAgentTestAgent $agent;
+
+    private string $logDirectory;
 
     /** Mounts the queue and scripted model without reserving any image resources. */
     protected function setUp(): void
@@ -347,28 +358,37 @@ final class ModerationAgentTest extends TestCase
     #[DataProvider('unavailableUploads')]
     public function testAnUploadLostDuringTheRequestCannotReceiveAPermission(string $failure, bool $image): void
     {
-        $this->files();
-        $index = Hilos::$fs->getTmp()->create();
-        Hilos::$fs->getTmp()[$index]->append(self::png());
-        $this->upload('file', 'picture.png', 'image/png', 123, tmpIndex: $index);
-        $this->open(self::ACCEPT_KEY, $image ? ModerationAgentTestDirectory::PHOTO : ModerationAgentTestDirectory::FILES,
-            'lost-upload', text: $image ? null : 'Hi', clientUploadId: $image ? 'file' : null,
-            clientUploadIds: $image ? [] : ['file']);
-        $this->agent->onTick();
-        if ($failure === 'stale') {
-            RtStaleness::mark(HilosUpload::RT_COLLECTION, [HilosUpload::keyFor(self::ACCEPT_KEY, 'file')], microtime(true));
-        } else {
-            $this->runtime->dropUpload(HilosUpload::keyFor(self::ACCEPT_KEY, 'file'));
-            if ($failure !== 'missing') {
-                $this->upload('file', 'picture.png', 'image/png', 123,
-                    phase: $failure === 'incomplete' ? UploadPhase::UPLOADING : UploadPhase::COMPLETE,
-                    acceptKey: $failure === 'other connection' ? self::OTHER_ACCEPT_KEY : self::ACCEPT_KEY);
+        $this->withLogs(function () use ($failure, $image): void {
+            $this->files();
+            $index = Hilos::$fs->getTmp()->create();
+            Hilos::$fs->getTmp()[$index]->append(self::png());
+            $this->upload('file', 'picture.png', 'image/png', 123, tmpIndex: $index);
+            $this->open(self::ACCEPT_KEY, $image ? ModerationAgentTestDirectory::PHOTO : ModerationAgentTestDirectory::FILES,
+                'lost-upload', text: $image ? null : 'Hi', clientUploadId: $image ? 'file' : null,
+                clientUploadIds: $image ? [] : ['file']);
+            $this->agent->onTick();
+            if ($failure === 'stale') {
+                RtStaleness::mark(HilosUpload::RT_COLLECTION, [HilosUpload::keyFor(self::ACCEPT_KEY, 'file')], microtime(true));
+            } else {
+                $this->runtime->dropUpload(HilosUpload::keyFor(self::ACCEPT_KEY, 'file'));
+                if ($failure !== 'missing') {
+                    $this->upload('file', 'picture.png', 'image/png', 123,
+                        phase: $failure === 'incomplete' ? UploadPhase::UPLOADING : UploadPhase::COMPLETE,
+                        acceptKey: $failure === 'other connection' ? self::OTHER_ACCEPT_KEY : self::ACCEPT_KEY);
+                }
             }
-        }
-        $this->client()->finish('{"allow":true,"reason":"ok"}');
-        $this->agent->onTick();
+            $this->client()->finish('{"allow":true,"reason":"ok"}');
+            $this->agent->onTick();
 
-        $this->assertOneUnavailableVerdict('lost-upload');
+            $this->assertOneUnavailableVerdict('lost-upload');
+            $entries = $this->diagnostics(true);
+            self::assertCount(1, $entries);
+            self::assertSame('check_unavailable', $entries[0]['outcome']);
+            self::assertSame('answer', $entries[0]['stage']);
+            self::assertSame('lost-upload', $entries[0]['requestId']);
+            self::assertNull($entries[0]['raw']);
+            self::assertSame([], $this->diagnostics());
+        });
     }
 
     public function testTakesTheOldestFreshCheckAndBreaksATieByRowId(): void
@@ -536,45 +556,306 @@ final class ModerationAgentTest extends TestCase
     #[DataProvider('answersThatAreNoVerdict')]
     public function testAnAnswerThatIsNoVerdictIsUnavailable(string $answer): void
     {
-        $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'request-1', text: 'anything');
+        $this->withLogs(function () use ($answer): void {
+            $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'request-1', text: 'anything');
 
-        $this->agent->onTick();
-        $this->client()->finish($answer);
-        $this->agent->onTick();
+            $this->agent->onTick();
+            $this->client()->finish($answer);
+            $this->agent->onTick();
 
-        $this->assertOneUnavailableVerdict('request-1');
+            $this->assertOneUnavailableVerdict('request-1');
+            $entries = $this->diagnostics();
+            self::assertCount(1, $entries);
+            self::assertSame('malformed_answer', $entries[0]['outcome']);
+            self::assertSame('parse', $entries[0]['stage']);
+            self::assertSame('request-1', $entries[0]['requestId']);
+            self::assertSame($answer, $entries[0]['raw']);
+            self::assertSame('text-model', $entries[0]['model']);
+            self::assertSame([], $this->diagnostics(true));
+        });
     }
 
     public function testATransportFailureIsUnavailable(): void
     {
-        $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'request-1', text: 'anything');
+        $this->withLogs(function (): void {
+            $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'request-1', text: 'anything');
+            $this->agent->onTick();
+            $this->client()->failure = new LLMException('Connection refused by the provider');
+            $this->agent->onTick();
+            $this->agent->onTick();
 
-        $this->agent->onTick();
-        $this->client()->failure = new LLMException('Connection refused by the provider');
-        $this->agent->onTick();
-
-        $this->assertOneUnavailableVerdict('request-1');
+            $this->assertOneUnavailableVerdict('request-1');
+            $entries = $this->diagnostics(true);
+            self::assertCount(1, $entries);
+            self::assertSame('model_failure', $entries[0]['outcome']);
+            self::assertSame('poll', $entries[0]['stage']);
+            self::assertSame(LLMException::class, $entries[0]['errorClass']);
+            self::assertSame('Connection refused by the provider', $entries[0]['reason']);
+            self::assertNull($entries[0]['raw']);
+            self::assertSame([], $this->diagnostics());
+        });
     }
 
     public function testAMissingModelIsUnavailable(): void
     {
-        unset($this->llm->profiles[ModerationLlmConstants::PROFILE_TEXT]);
-        $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'request-1', text: 'anything');
+        $this->withLogs(function (): void {
+            unset($this->llm->profiles[ModerationLlmConstants::PROFILE_TEXT]);
+            $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'request-1', text: 'anything');
+            $this->agent->onTick();
 
-        $this->agent->onTick();
-
-        self::assertSame([], $this->agent->clients);
-        $this->assertOneUnavailableVerdict('request-1');
+            self::assertSame([], $this->agent->clients);
+            $this->assertOneUnavailableVerdict('request-1');
+            $entries = $this->diagnostics(true);
+            self::assertCount(1, $entries);
+            self::assertSame('check_unavailable', $entries[0]['outcome']);
+            self::assertSame('prepare', $entries[0]['stage']);
+            self::assertSame(ModerationLlmConstants::PROFILE_TEXT, $entries[0]['profile']);
+            self::assertNull($entries[0]['provider']);
+            self::assertNull($entries[0]['model']);
+        });
     }
 
     public function testAKindWithNoRulesIsUnavailable(): void
     {
-        $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::RULELESS, 'request-1', text: 'anything');
+        $this->withLogs(function (): void {
+            $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::RULELESS, 'request-1', text: 'anything');
+            $this->agent->onTick();
 
-        $this->agent->onTick();
+            self::assertSame([], $this->agent->clients);
+            self::assertSame([], $this->llm->resolved);
+            $this->assertOneUnavailableVerdict('request-1');
+            $entries = $this->diagnostics(true);
+            self::assertCount(1, $entries);
+            self::assertSame('check_unavailable', $entries[0]['outcome']);
+            self::assertSame('prepare', $entries[0]['stage']);
+            self::assertSame(ModerationLlmConstants::PROFILE_TEXT, $entries[0]['profile']);
+            self::assertNull($entries[0]['provider']);
+            self::assertNull($entries[0]['model']);
+        });
+    }
 
-        self::assertSame([], $this->agent->clients);
-        $this->assertOneUnavailableVerdict('request-1');
+    public function testFactoryFailureNamesTheNewResolvedProfileInsteadOfTheCachedClient(): void
+    {
+        $this->withLogs(function (): void {
+            $first = $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'first', text: 'old model');
+            $this->agent->onTick();
+            $this->close($first);
+            $this->llm->profiles[ModerationLlmConstants::PROFILE_TEXT] = self::profile(ModerationLlmConstants::PROFILE_TEXT, 'new-model');
+            $this->agent->factoryFailure = new LLMConfigurationException('Client construction failed');
+            $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'factory', text: 'new model');
+            $this->agent->onTick();
+
+            self::assertCount(1, $this->agent->clients);
+            $this->assertOneUnavailableVerdict('factory');
+            $entries = $this->diagnostics(true);
+            self::assertCount(1, $entries);
+            self::assertSame('check_unavailable', $entries[0]['outcome']);
+            self::assertSame('prepare', $entries[0]['stage']);
+            self::assertSame('new-model', $entries[0]['model']);
+            self::assertSame(LlmProvider::LOCAL->value, $entries[0]['provider']);
+        });
+    }
+
+    public function testResolveFailureAfterAnEarlierClientKeepsOnlyTheRequestedKey(): void
+    {
+        $this->withLogs(function (): void {
+            $first = $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'first', text: 'old model');
+            $this->agent->onTick();
+            $this->close($first);
+            unset($this->llm->profiles[ModerationLlmConstants::PROFILE_TEXT]);
+            $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'resolve', text: 'missing model');
+            $this->agent->onTick();
+
+            $this->assertOneUnavailableVerdict('resolve');
+            $entries = $this->diagnostics(true);
+            self::assertCount(1, $entries);
+            self::assertSame(ModerationLlmConstants::PROFILE_TEXT, $entries[0]['profile']);
+            self::assertNull($entries[0]['provider']);
+            self::assertNull($entries[0]['model']);
+            self::assertCount(2, $this->llm->resolved, 'Logging must not resolve a second time');
+        });
+    }
+
+    public function testAnUnknownKindAfterAnEarlierClientHasNoProfileContext(): void
+    {
+        $this->withLogs(function (): void {
+            $first = $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'first', text: 'old model');
+            $this->agent->onTick();
+            $this->close($first);
+            $this->open(self::ACCEPT_KEY, 'unknown_kind', 'unknown', text: 'anything');
+            $this->agent->onTick();
+
+            $this->assertOneUnavailableVerdict('unknown');
+            $entries = $this->diagnostics(true);
+            self::assertCount(1, $entries);
+            self::assertSame('check_unavailable', $entries[0]['outcome']);
+            self::assertSame('prepare', $entries[0]['stage']);
+            self::assertNull($entries[0]['profile']);
+            self::assertNull($entries[0]['provider']);
+            self::assertNull($entries[0]['model']);
+            self::assertCount(1, $this->llm->resolved);
+        });
+    }
+
+    public function testStartFailureIsUnavailableBeforeAModelIsInFlight(): void
+    {
+        $this->withLogs(function (): void {
+            $first = $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'first', text: 'warm client');
+            $this->agent->onTick();
+            $this->close($first);
+            $this->client()->startFailure = new LLMException('Cannot start transport');
+            $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'start', text: 'retry');
+            $this->agent->onTick();
+
+            $this->assertOneUnavailableVerdict('start');
+            $entries = $this->diagnostics(true);
+            self::assertCount(1, $entries);
+            self::assertSame('check_unavailable', $entries[0]['outcome']);
+            self::assertSame('start', $entries[0]['stage']);
+            self::assertSame('text-model', $entries[0]['model']);
+        });
+    }
+
+    public function testInvalidProviderEnvelopeAtConsumeIsAModelFailureWithoutRaw(): void
+    {
+        $this->withLogs(function (): void {
+            $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'envelope', text: 'anything');
+            $this->agent->onTick();
+            $this->client()->finish('not a provider envelope');
+            $this->client()->consumeFailure = new LLMResponseException(LLMApiConstants::LOG_OPENAI_RESPONSE_INVALID . 'private-envelope');
+            $this->agent->onTick();
+
+            $this->assertOneUnavailableVerdict('envelope');
+            $entries = $this->diagnostics(true);
+            self::assertCount(1, $entries);
+            self::assertSame('model_failure', $entries[0]['outcome']);
+            self::assertSame('consume', $entries[0]['stage']);
+            self::assertSame(LLMResponseException::class, $entries[0]['errorClass']);
+            self::assertNull($entries[0]['raw']);
+            self::assertStringNotContainsString('private-envelope', $entries[0]['reason']);
+            self::assertSame([], $this->diagnostics());
+        });
+    }
+
+    public function testInFlightFailureKeepsItsProfileAndTheNextRequestUsesTheChangedOne(): void
+    {
+        $this->withLogs(function (): void {
+            $first = $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'old', text: 'old model');
+            $this->agent->onTick();
+            $this->llm->profiles[ModerationLlmConstants::PROFILE_TEXT] = self::profile(ModerationLlmConstants::PROFILE_TEXT, 'new-model');
+            $this->client()->failure = new LLMException('Active model failed');
+            $this->agent->onTick();
+            $this->assertOneUnavailableVerdict('old');
+            $this->close($first);
+            $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'new', text: 'new model');
+            $this->agent->onTick();
+            $this->client()->failure = new LLMException('Active model failed');
+            $this->agent->onTick();
+
+            self::assertSame(['text-model', 'new-model'], array_column($this->diagnostics(true), 'model'));
+            self::assertSame(['old', 'new'], array_column($this->diagnostics(true), 'requestId'));
+            self::assertCount(2, $this->agent->clients);
+            self::assertCount(2, $this->llm->resolved);
+        });
+    }
+
+    public function testNormalVerdictsCancellationAndReplacementDoNotWriteFailureDiagnostics(): void
+    {
+        $this->withLogs(function (): void {
+            foreach (['{"allow":true,"reason":"ok"}', '{"allow":false,"reason":"spam"}'] as $answer) {
+                $check = $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, $answer, text: 'valid');
+                $this->agent->onTick();
+                $this->client()->finish($answer);
+                $this->agent->onTick();
+                $this->agent->onTick();
+                $this->close($check);
+            }
+            $check = $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'cancel', text: 'cancel');
+            $this->agent->onTick();
+            $this->close($check);
+            $check = $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'replace', text: 'replace');
+            $this->agent->onTick();
+            $replacement = $check->toArray();
+            $replacement[HilosModerationCheck::requestId] = 'replacement-request';
+            $this->runtime->dropCheck($check->getId());
+            $this->runtime->putCheck(HilosModerationCheck::fromRow($replacement));
+            $this->client()->failure = new LLMException('A canceled result must not be polled');
+            $this->agent->onTick();
+
+            self::assertSame([], $this->diagnostics());
+            self::assertSame([], $this->diagnostics(true));
+            self::assertCount(2, $this->router->verdicts());
+        });
+    }
+
+    public function testAnUnexpectedFailureIsNotConvertedToAModelFailure(): void
+    {
+        $this->withLogs(function (): void {
+            $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'unexpected', text: 'anything');
+            $this->agent->onTick();
+            $failure = new RuntimeException('Unexpected implementation defect');
+            $this->client()->failure = $failure;
+            try {
+                $this->agent->onTick();
+                self::fail('The unexpected failure must propagate');
+            } catch (RuntimeException $caught) {
+                self::assertSame($failure, $caught);
+            }
+
+            self::assertSame([], $this->router->verdicts());
+            self::assertSame([], $this->diagnostics());
+            self::assertSame([], $this->diagnostics(true));
+        });
+    }
+
+    public function testStopFlushesTheSuppressedTailEvenWhenAnObservationReplyFails(): void
+    {
+        $this->withLogs(function (): void {
+            $this->floodMalformedAnswers();
+            self::assertCount(3, $this->diagnostics());
+            $this->parkObservation(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'stop-failure');
+            $failure = new RuntimeException('Reply transport failed');
+            $this->router->queueFailure = $failure;
+            try {
+                $this->agent->onStop();
+                self::fail('The reply failure must propagate');
+            } catch (RuntimeException $caught) {
+                self::assertSame($failure, $caught);
+            } finally {
+                $this->router->queueFailure = null;
+            }
+            $this->agent->onStop();
+
+            $entries = $this->diagnostics();
+            self::assertCount(4, $entries);
+            self::assertSame([0, 0, 0, 2], array_column($entries, 'suppressed'));
+            self::assertTrue($entries[3]['summary']);
+            self::assertSame('flood-1', $entries[3]['firstRequestId']);
+            self::assertSame('flood-5', $entries[3]['lastRequestId']);
+            self::assertSame([], $this->diagnostics(true));
+        });
+    }
+
+    public function testIdleTickFlushesAnExpiredTailWithoutAnotherCheck(): void
+    {
+        $this->withLogs(function (): void {
+            $this->floodMalformedAnswers();
+            $this->agent->onTick();
+            $writer = new ReflectionProperty(ModerationAgent::class, 'failureLog')->getValue($this->agent);
+            $limiter = new ReflectionProperty(ModerationFailureLog::class, 'windows')->getValue($writer);
+            $windowsProperty = new ReflectionProperty(RepeatedFailureWindows::class, 'windows');
+            $windows = $windowsProperty->getValue($limiter);
+            foreach ($windows as &$window) {
+                $window['openedAt'] = microtime(true) - ModerationFailureLog::WINDOW_SECONDS;
+            }
+            unset($window);
+            $windowsProperty->setValue($limiter, $windows);
+
+            $this->agent->onTick();
+            $this->agent->onTick();
+            self::assertSame([0, 0, 0, 2], array_column($this->diagnostics(), 'suppressed'));
+            self::assertCount(5, $this->client()->requests);
+        });
     }
 
     public function testAKindWithOwnRulesAloneAsksTheModel(): void
@@ -721,19 +1002,31 @@ final class ModerationAgentTest extends TestCase
 
     public function testAnInFlightDeadlineEndsUnavailableAndReleasesTheQueue(): void
     {
-        $now = TimeHelper::nowMs();
-        $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::FILES, 'expires', text: '', deadlineAt: $now + 100);
-        $this->open(self::OTHER_ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'next', text: 'next', startedAt: $now + 1);
-        $this->agent->onTick();
-        usleep(150000);
+        $this->withLogs(function (): void {
+            $now = TimeHelper::nowMs();
+            $check = $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::FILES, 'expires', text: '');
+            $this->open(self::OTHER_ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'next', text: 'next', startedAt: $now + 1);
+            $this->agent->onTick();
+            new ReflectionProperty(ModerationAgent::class, 'deadlineAt')->setValue($this->agent, $now - 1);
+            new ReflectionProperty(HilosModerationCheck::class, HilosModerationCheck::deadlineAt)->setValue($check, $now - 1);
 
-        $this->agent->onTick();
+            $this->agent->onTick();
 
-        self::assertFalse($this->client()->isBusy());
-        $this->assertOneUnavailableVerdict('expires');
-        $this->agent->onTick();
-        $this->agent->onTick();
-        self::assertCount(2, $this->client()->requests);
+            self::assertFalse($this->client()->isBusy());
+            $this->assertOneUnavailableVerdict('expires');
+            $entries = $this->diagnostics(true);
+            self::assertCount(1, $entries);
+            self::assertSame('model_failure', $entries[0]['outcome']);
+            self::assertSame('poll', $entries[0]['stage']);
+            self::assertSame('deadline_exceeded', $entries[0]['reason']);
+            self::assertSame('text-model', $entries[0]['model']);
+            $this->agent->onTick();
+            $this->agent->onTick();
+            self::assertCount(2, $this->client()->requests);
+            self::assertStringEndsWith("Text:\nnext", $this->client()->requests[1]->messages[1]->content);
+            self::assertCount(1, $this->router->verdicts());
+            self::assertCount(1, $this->diagnostics(true));
+        });
     }
 
     public function testImageCopyChoiceIsPartOfTheAttemptComparedBeforeTheAnswer(): void
@@ -887,10 +1180,73 @@ final class ModerationAgentTest extends TestCase
         $this->assertSame([], $this->agent->clients);
     }
 
+    /** Repeats one actual parser failure site across independent attempts. */
+    private function floodMalformedAnswers(): void
+    {
+        for ($attempt = 1; $attempt <= 5; $attempt++) {
+            $check = $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'flood-' . $attempt, text: 'anything');
+            $this->agent->onTick();
+            $this->client()->finish('Not JSON');
+            $this->agent->onTick();
+            $this->close($check);
+        }
+    }
+
     private function parkObservation(string $acceptKey, string $kind, string $correlationId): void
     {
         $this->agent->onSignalCommand(new CommandRequestDTO($correlationId, ModerationCommandConstants::TEST_OBSERVE,
             parsedPayload: new ModerationObserveCommandData($acceptKey, $kind)), 'command', ModerationCommandConstants::TEST_OBSERVE);
+    }
+
+    /**
+     * @param bool $errorStream Whether to read the agent's error twin
+     * @return list<array<string, mixed>> Structured diagnostics in the real agent stream
+     */
+    private function diagnostics(bool $errorStream = false): array
+    {
+        $path = AgentLogStream::pathFor($this->logDirectory, $this->agent->getId(), $errorStream);
+        $entries = [];
+        foreach (is_file($path) ? file($path, FILE_IGNORE_NEW_LINES) : [] as $line) {
+            $offset = strpos($line, 'Moderation check failure ');
+            if ($offset !== false) {
+                if (!$errorStream) {
+                    self::assertStringContainsString('[WARNING]', $line);
+                }
+                $entries[] = json_decode(substr($line, $offset + strlen('Moderation check failure ')), true, flags: JSON_THROW_ON_ERROR);
+            }
+        }
+
+        return $entries;
+    }
+
+    /** @param Closure $check Scenario with isolated real Logger files */
+    private function withLogs(Closure $check): void
+    {
+        $main = new ReflectionProperty(Logger::class, 'logFile');
+        $error = new ReflectionProperty(Logger::class, 'errorLogFile');
+        $previousMain = $main->getValue();
+        $previousError = $error->getValue();
+        $previousLevel = Logger::writeLevel();
+        $this->logDirectory = sys_get_temp_dir() . '/moderation-agent-log-' . bin2hex(random_bytes(8));
+        mkdir($this->logDirectory);
+        try {
+            Logger::setLogFile($this->logDirectory . '/daemon.log');
+            Logger::setErrorLogFile($this->logDirectory . '/daemon.error.log');
+            Logger::setWriteLevel(LogLevel::Debug);
+            try {
+                $check();
+            } finally {
+                $this->agent->onStop();
+            }
+        } finally {
+            $main->setValue(null, $previousMain);
+            $error->setValue(null, $previousError);
+            Logger::setWriteLevel($previousLevel);
+            foreach (glob($this->logDirectory . '/*') as $path) {
+                unlink($path);
+            }
+            rmdir($this->logDirectory);
+        }
     }
 
     /** Mounts an isolated real temporary directory only for cases that read images. */
@@ -1285,12 +1641,17 @@ final class ModerationAgentTestSignalRouter extends SignalRouter
     /** @var list<ModerationAgentTestSentSignal> */
     public array $sent = [];
 
+    public ?Throwable $queueFailure = null;
+
     public function queueSignal(
         SignalSourceInterface $signalSource,
         SignalTypeInterface $signalType,
         SignalNameInterface $signalName,
         SignalDataInterface $signalData,
     ): void {
+        if ($this->queueFailure !== null) {
+            throw $this->queueFailure;
+        }
         $this->sent[] = new ModerationAgentTestSentSignal(
             $signalName->getName(),
             $signalData instanceof AgentSignalData ? $signalData->data : $signalData,
@@ -1326,8 +1687,17 @@ final class ModerationAgentTestAgent extends ModerationAgent
     /** @var list<ModerationAgentTestClient> Clients built, in order */
     public array $clients = [];
 
+    public ?LLMException $factoryFailure = null;
+
+    /**
+     * @param LlmProfile $profile Effective profile being built, or refused by the scripted factory
+     * @return AsyncChatLLMInterface Client kept for the case to script
+     */
     protected function createChatClient(LlmProfile $profile): AsyncChatLLMInterface
     {
+        if ($this->factoryFailure !== null) {
+            throw $this->factoryFailure;
+        }
         $client = new ModerationAgentTestClient();
         $this->clients[] = $client;
 
@@ -1351,7 +1721,11 @@ final class ModerationAgentTestClient implements AsyncChatLLMInterface
     /** @var list<ModerationAgentTestRequest> Requests started, in order */
     public array $requests = [];
 
-    public ?LLMException $failure = null;
+    public ?Throwable $failure = null;
+
+    public ?LLMException $startFailure = null;
+
+    public ?LLMException $consumeFailure = null;
 
     public int $resets = 0;
 
@@ -1362,6 +1736,9 @@ final class ModerationAgentTestClient implements AsyncChatLLMInterface
     /** @param list<Message> $messages Messages to generate from */
     public function startGenerate(array $messages, ChatGenerateOptions $options): void
     {
+        if ($this->startFailure !== null) {
+            throw $this->startFailure;
+        }
         $this->requests[] = new ModerationAgentTestRequest($messages, $options);
         $this->busy = true;
         $this->result = null;
@@ -1384,6 +1761,9 @@ final class ModerationAgentTestClient implements AsyncChatLLMInterface
 
     public function consumeResult(): string
     {
+        if ($this->consumeFailure !== null) {
+            throw $this->consumeFailure;
+        }
         $result = $this->result ?? throw new LLMException('No result');
         $this->result = null;
 
