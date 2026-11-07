@@ -379,7 +379,10 @@ rule and the scenario's behavioral preconditions; changing a spec does not
 require drawing its suitable zones again.
 
 Draw a new or replacement browser zone **once, while writing the test**, with
-the demo's `test:e2e-time-zone` Composer command. All six demos provide it;
+the demo's `test:e2e-time-zone` Composer command. The six currently active
+ordinary demos provide it; each planned carrier must supply the same interface
+under its activation marker in the
+[ordinary carrier table](../testing.md#ordinary-demo-carriers).
 `binance-btc-tracker` and `online-testing` also provide
 `test:cluster:e2e-time-zone` for their cluster browser entries. Use the command
 for the same stand the scenario runs on. From the repository root, for example:
@@ -482,7 +485,10 @@ the moment:
    registered pages and agents in `demo/<demo>/backend/Hilos.php` — and whose
    stand carries the needed service. Read
    `demo/<demo>/docker/docker-compose.test.yml`: the Telegram/SMS gateway is
-   in chat, tasks and polls; Mailpit is in all six demos.
+   currently in chat, tasks and polls. Check Mailpit, the gateway and the model
+   against each activated stand's actual declarations; do not infer service
+   availability from membership in the twelve-demo target. A planned carrier's
+   activation below must supply the services its transferred areas need.
 3. Of those candidates, choose the shortest group chain: add the demo's
    `check`, `php` and `e2e` durations from the `=== SUMMARY` table that
    `scripts/run-test-suite.php` prints at the end of the latest green full
@@ -499,9 +505,66 @@ away from its area takes shared helpers from `framework/frontend/e2e/` and
 [the toolbox route](#the-shared-toolbox--look-there-first-leave-there-what-you-grow)
 before moving, splitting or porting a spec too.
 
-A new demo is born only together with the specs that move into it. A moved
-spec leaves no copy behind: the view framework it left stops proving those
-screens end to end. The owner accepts that loss of screen coverage.
+#### Approved target ownership — HIL-1984
+
+The [twelve ordinary carriers and their current activation state](../testing.md#ordinary-demo-carriers)
+are cataloged in the testing guide, which also owns their commands, isolation,
+cleanup and phase boundary. The matrix below is the approved **target** for
+the framework areas that move. Its markers name the leaves that activate the
+recipients and transfer the areas; a marked row is not a completed transfer.
+It does not replace the load-based choice for a new server-spec file above.
+
+In this inventory, `donor/{a,b}` means the existing
+`demo/<donor>/tests/e2e/tests/a.spec.ts` and `b.spec.ts`; a single
+`donor/name` means the same path with `name.spec.ts`. The destination is
+`demo/<target>/tests/e2e/tests/`. Names identify whole areas, including later
+additions before execution, rather than freezing their file list today.
+
+| Target / view | Whole framework areas and current source specs | Activation and transfer owner |
+|---|---|---|
+| `pmd` / Vue | **Table geometry:** `chat/table-geometry`. **Account/profile/security:** `chat/{profile,profile-data,profile-time-zone,profile-session-time-zone,profile-photo,rename-moderation,account-deletion,account-merge,security-center,second-factor-mail}`. **Analytics:** `chat/{analytics,analytics-browser-session}`. **People/settings/Appearance:** `binance-btc-tracker/{users,settings,appearance}`. | (not in the code yet — HIL-2016) |
+| `roblox-game-server` / Vue | **Change Log/Moderation/Communications:** `chat/{change-log,change-log-table,change-log-tables,moderation,communications}`. **Theme:** `chat/{theme-account,theme-guest}`. **Daemon/Backup/Logs/maintenance:** `binance-btc-tracker/{daemon,backup,backup-reopen,logs,logs-rotation,maintenance-restore,maintenance-words}`. | (not in the code yet — HIL-2017) |
+| `solar-system-model` / React | **Account/profile:** `tasks/{profile,profile-data,profile-time-zone,profile-photo,account-deletion}`. **Theme/Analytics:** `tasks/{theme-account,theme-guest,analytics,analytics-browser-session}`. **Table geometry:** the entire independent Geometry area in `ecommerce-shop/users`, with its frontend fixture; excludes Users scenarios. | (not in the code yet — HIL-2018) |
+| `file-gallery-manager` / React | **i18n lifecycle:** `tasks/{i18n-country-names,i18n-country,i18n-language-names,i18n-language,i18n-locale,i18n-overview}`. **Daemon/Change Log/Communications:** `tasks/{daemon,change-log,change-log-table,change-log-tables,communications}`. **Users:** the entire Users remainder of `ecommerce-shop/users` after Geometry is separated, including F-001. | (not in the code yet — HIL-2019) |
+| `preferans` / Angular | **i18n lifecycle:** `polls/{i18n-country-names,i18n-country,i18n-language-names,i18n-language,i18n-locale,i18n-overview}`. **Theme/Appearance:** `polls/{theme-account,theme-guest,appearance}`. **Analytics:** `polls/{analytics,analytics-browser-session}`. | (not in the code yet — HIL-2020) |
+| `concert-tickets` / Angular | **Daemon/Change Log:** `polls/{daemon,change-log,change-log-table,change-log-tables}`. **Profile/account deletion:** `polls/{profile,profile-data,profile-time-zone,profile-photo,account-deletion}`. | (not in the code yet — HIL-2021) |
+
+**Move a whole area within its view framework, leaving no second proof behind.**
+The only physical file split in this plan is
+`demo/ecommerce-shop/tests/e2e/tests/users.spec.ts`: Geometry and Users are
+independent areas sharing one file, not a license to divide arbitrary
+assertions. Geometry's fixture moves with its consumer.
+The existing examples are
+[`TableGeometryFixture.vue`](../../../demo/chat/frontend/tests/tableGeometry/TableGeometryFixture.vue)
+and
+[`TableGeometryFixture.tsx`](../../../demo/ecommerce-shop/frontend/tests/tableGeometry/TableGeometryFixture.tsx).
+Each activation carries the required frontend wiring, fixtures, preparation and
+stand services with the consuming area. F-001 stays with Users, with its
+existing quarantine status; a transfer does not heal it.
+
+Areas not named above stay with their donor, including product and stand-owned
+suites. Each donor keeps its own smoke/sign-in and leaves its features enabled.
+Each recipient is responsible for its own guest, sign-in and real Analytics
+activation proof, as specified in the testing guide. That local proof does not
+create a second copy of a transferred framework suite. The existing exception
+for one shared screen body with local registrations still applies; source
+sharing alone does not reduce the number of runs. Its
+[rollout](#rollout) is unchanged by these moves.
+
+**Until activation, write both old and new tests of an area where it works
+today; they move together.** The named leaf takes every spec of that area,
+including additions since this inventory. It updates the current paths below
+and other references it moves, and clears its markers in the same code commit
+under [rule authoring](../rule-authoring.md#a-rule-written-ahead-of-its-code).
+The subsequent React/Angular parity pass belongs to HIL-2022
+(not in the code yet — HIL-2022); it is not evidence of readiness today.
+
+#### Current owners during activation
+
+The inventory and explanations below describe the working placement before the
+target transfers. They remain the place to find today's paths, not a competing
+target assignment. A leaf that actually moves an area updates its entries;
+this documentation change does not pretend the destination is active.
 
 The operations moves of 2026-09-27 paired the demos by view framework:
 chat (Vue) → binance-btc-tracker (Vue), tasks (React) → ecommerce-shop (React),
@@ -531,11 +594,13 @@ tasks switched on Ways to sign in (`/profile/sign-in`) to carry them (HIL-1324);
 polls switched on Ways to sign in, Sessions and Agreements of the profile, and its
 Terms gained a substantial and an editorial revision, to carry them (HIL-1325).
 
-The Daemon screen specs live where their views are mounted: binance-btc-tracker
-(Vue), tasks (React) and polls (Angular). Ecommerce-shop also activates the
-feature without `LOGS` and carries a standalone smoke of its own. Online-testing
-has the backend feature without a UI. Chat checks the section's accessibility
-in its existing `tests/e2e/tests/a11y.spec.ts`.
+The current Daemon screen specs live where their views are mounted:
+binance-btc-tracker (Vue), tasks (React) and polls (Angular). Ecommerce-shop also
+activates the feature without `LOGS` and carries a standalone smoke of its own.
+Online-testing has the backend feature without a UI. Chat checks the section's accessibility
+in its existing `tests/e2e/tests/a11y.spec.ts`. The matrix above moves the three
+ordinary `daemon` areas; the independent smoke and cluster proofs stay with
+their existing owners in this phase.
 
 Binance carries an independent live cluster smoke at
 `tests/e2e/cluster/live/daemon-section.spec.ts`, titled “daemon section
@@ -567,7 +632,7 @@ Navigation, order, contexts, the host handshake and inode/offset node-log
 observations stay in the demo. The fresh `test:cluster:e2e -- --daemon` phase
 and restoration before the old phases remain documented in [../testing.md](../testing.md).
 
-The Moderation section specs live where its views are mounted: chat (Vue),
+The current Moderation section specs live where its views are mounted: chat (Vue),
 tasks (React) and polls (Angular) each carry `moderation.spec.ts` with one set
 of tests — tests 1–5 have the same titles and steps in all three, the checks
 they share are one copy in `framework/frontend/e2e/moderation.ts`, and each
@@ -591,8 +656,9 @@ after a refusal — is one test of the same title in `profile.spec.ts` of tasks
 and polls. None of these files carries a `spec-owner` line; chat's message and
 message picture moderation specs do (HIL-1638).
 
-The Analytics section did not move either: chat (Vue), tasks (React) and polls
-(Angular) each carry `analytics.spec.ts` and `analytics-browser-session.spec.ts`.
+The current Analytics section proofs are in chat (Vue), tasks (React) and polls
+(Angular): each carries `analytics.spec.ts` and `analytics-browser-session.spec.ts`.
+Their next owners are the targets above, once their activation leaves land.
 The three session specs share one test title, while the titles in
 `analytics.spec.ts` follow the pages each kit serves. The actions the specs look
 at are the registration of the person and of the administrator, because tasks
@@ -609,7 +675,9 @@ as pending until the standard Apply action removes the row. Both are framework
 specs; the separate cluster config keeps them out of the single-node suite, and
 the stand runs live only (HIL-1423, HIL-1639).
 
-Theme coverage has one full UI owner per kit and separate build probes:
+Current Theme coverage has one full UI owner per kit and separate build probes.
+The target matrix moves the named Theme/Appearance areas; first-frame build
+probes, product shell smoke and cluster proofs keep the owners below:
 
 | Proof | Specs | Lives in |
 |---|---|---|
@@ -627,8 +695,9 @@ their own Appearance. The build probes cover a cached pick or a fresh browser's
 System fallback, not a server account choice that browser has never received.
 The full production build/head sweep already checks every emitted entrypoint.
 
-The shared Change Log receipt and history scenarios remain in chat (Vue), tasks
-(React) and polls (Angular). They cover an administrator blocking a person from
+The current shared Change Log receipt and history scenarios live in chat (Vue),
+tasks (React) and polls (Angular) until their whole areas move under the matrix.
+They cover an administrator blocking a person from
 that person's card: the column's value is journaled in every demo, and the
 signed-in person is the author (a registration receipt has no author because it
 comes from a guest). Chat additionally covers the adopted Vue section head,
@@ -645,11 +714,14 @@ binance-btc-tracker additionally carries the separate cluster proof in
 `tests/e2e/cluster/live/change-log.spec.ts`: one remote writer's block receipt
 reads identically through every master (HIL-1465).
 
-The languages and countries section is proved on every kit by the same 25
+The current languages and countries section is proved on every kit by the same 25
 `i18n-*.spec.ts` files: binance-btc-tracker (Vue), tasks (React) and polls
-(Angular). Their test titles match but for the country head scenarios of
-`i18n-country-card` and `i18n-country-name-write`, which each kit splits its
-own way. The Vue kit moved from chat to binance-btc-tracker on the owner's word
+(Angular). The matrix moves only the six named lifecycle specs as one area in
+React and Angular; the other i18n areas stay with their current owners, and
+Vue's i18n stays in binance-btc-tracker. Their test titles match but for the
+country head scenarios of `i18n-country-card` and `i18n-country-name-write`,
+which each kit splits its own way. The Vue kit moved from chat to
+binance-btc-tracker on the owner's word
 (2026-10-15), taking about 4.4 minutes off chat-e2e, the floor of the run. The
 country's shared head, its Overview · Names row, its live name and its live 404
 are proved in these files on all three kits, through the checks of
@@ -663,36 +735,40 @@ depending on file order. Use the shared test-command operations in
 `framework/frontend/scripts/i18n.mjs` through the test-scoped
 `framework/frontend/scripts/i18nFixtures.mjs` fixture described below.
 
-**What stays in chat:** its product (the specs marked `demo`), the stand's own
-specs (marked `stand`), the shell (`a11y`, `about`, `navigation`, `layout`,
-`page-error`, `unbuilt-page`, `prerender`, `license`, `smoke`, `connection`,
-`admin-view-mode`), `profile-photo` and `account-merge` (their features are
-switched on only in chat), and `account-deletion` and `profile-data` (tasks and
-polls carry their own copies of those screens). From `auth`, chat keeps the
-still button, sign-up with a return, a wrong password, and the re-check of an
-open admin and profile on sign-out. From `profile`, it keeps the header link,
-the rename, the tab conflict and the push devices page. The push devices page
-and the second-factor removal notice by mail (second-factor-mail) ride
-notification delivery, which is on only in chat and binance-btc-tracker; the
-view-only takeover test parked by the owner stays in chat's
-impersonation-settings — the write it is refused is a chat message. Everything
-else of `auth` and `profile` moves.
+**What stays in chat after this phase:** its product (the specs marked `demo`),
+the stand's own specs (marked `stand`), the shell (`a11y`, `about`, `navigation`,
+`layout`, `page-error`, `unbuilt-page`, `prerender`, `license`, `smoke`, `connection`,
+`admin-view-mode`), its remaining `auth` cases and every unlisted area. Its
+`auth` cases include the still button, sign-up with a return, a wrong password,
+and the re-check of an open admin and profile on sign-out. The view-only
+takeover test parked by the owner stays in chat's `impersonation-settings` —
+the write it is refused is a chat message.
+
+The previous move left Chat's `profile` cases (header link, rename, tab conflict
+and push devices), `profile-photo`, `account-merge`, `account-deletion`,
+`profile-data` and `second-factor-mail` here. Those are current paths, not
+exceptions to the new whole-area assignment to PMD above. Their activation
+must carry the required photo, merge and notification support; today's feature
+availability does not make these framework proofs product-owned.
 
 `admin-gating` and `account-lifecycle` are the screens of an administrator
-over people, and they go with settings, people and admin: framework-level
-tests, in the owner's words on the HIL-1209 interview, not chat's.
+over people: framework-level tests moved to binance-btc-tracker under HIL-1219.
+They are not named in the new transfer matrix and stay there; the new plan
+moves its named Users/settings/Appearance areas, not every admin spec.
 
-Two pieces of that area stayed in chat by the same rule — a spec lives on the
+The same placement rule distinguishes the remaining cases: a spec lives on the
 side of the feature it is about. The two-tab rename conflict on the framework
 people card is `users.spec` in binance-btc-tracker, which already carries that
-screen. The test that switches on the confirmation before removing rights sits in
+screen, until the Users area moves under the matrix. The test that switches on
+the confirmation before removing rights sits in
 `step-up.spec`: its subject is the switch, and the switch lives in the Security
 Center, on the account side. `admin-view-mode.spec` is the shell's gear over
 chat's screen; where every viewer e2e lies is the table in
 [../architecture/admin-view-mode.md](../architecture/admin-view-mode.md), "Tests".
 
 The old demos switch nothing off — only the spec moves; the new demo switches
-on what it tests, plus sign-in.
+on what it tests together with the shell, sign-in and working administrative
+Analytics required by its activation in the testing guide.
 
 **A move is a rewrite, not a copy.** Chat's e2e hold on to chat's product:
 `signUp` enters through `message-signin`
@@ -705,12 +781,6 @@ shape the data. A new demo seeds what its moved specs read in its own
 setting row the settings spec deletes. What is shared comes from the
 toolbox — `framework/frontend/e2e/` and `framework/frontend/scripts/`, "The
 shared toolbox" below — and is not copied across.
-
-**Until the new demo carries an area, its specs — old and new — are written
-where the area lives today, and move together.** The leaf that moves an area
-takes every spec of it, named in its card or not. An area in neither list
-stays in its demo. This governs the planned moves above and specs of screens;
-a new server spec file follows the load choice above.
 
 #### Whose a spec is — the spec-owner line
 
