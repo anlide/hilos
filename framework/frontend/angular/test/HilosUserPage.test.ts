@@ -185,12 +185,13 @@ function userContext(
   ]
   const tableWindowListeners: Array<(signal: unknown) => void> = []
   const tableDeltaListeners: Array<(signal: unknown) => void> = []
-  const serveCandidates = (): void => {
+  const serveCandidates = (requestId?: string): void => {
     const signal = {
       kind: 'tableWindow',
       data: {
         page: HilosPages.USER,
         tableKey: 'mergeCandidates',
+        requestId,
         rows: candidateRows(),
         totalCount: 2,
         totalExact: true,
@@ -222,11 +223,13 @@ function userContext(
         )
     },
   )
-  vi.spyOn(connection, 'sendTableViewport').mockImplementation(() => {
-    serveCandidates()
+  vi.spyOn(connection, 'sendTableViewport').mockImplementation(
+    (_page, _table, descriptor) => {
+      serveCandidates(descriptor.requestId)
 
-    return true
-  })
+      return true
+    },
+  )
   // The server's word on the step, answered on the next microtask as a socket would.
   const answerStepUp = (action: string, requestId?: string): void => {
     const refused = action === 'hilos_step_up_start' && stepUp === 'refused'
