@@ -12,6 +12,7 @@ documents by touched surface; it does not replace them.
 | Choosing between magic properties, `[]`, result accessors, and `findBy*()` | `accessor-contracts.md` |
 | Walking a collection with `foreach`, or adding/removing rows during a walk | `collection-iteration.md` |
 | Entity table mapping, persisted fields, primary keys, foreign keys, indexes, or row contracts | `entity.md` |
+| Storing a moment or changing its schema, writer, reader or explicit project storage choice | [Database Moment Storage](../architecture/time-zones.md#database-moment-storage); when planning a migration, also the published [research and census](../architecture/moment-storage.md) |
 | Extending a framework table with project columns, subclassing a framework ORM class, or mounting a subclass under a framework key | `inheritance.md` |
 | Object item mapping, object collection loading, object enrichment, or `getIdString()` | `object.md` |
 | Schema migrations, rollback files, seeds, or schema checks | `migrations.md` |

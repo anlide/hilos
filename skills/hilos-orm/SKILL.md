@@ -1,6 +1,6 @@
 ---
 name: hilos-orm
-description: Work with Hilos ORM entities, Object/View layers, DbCollection queries and actions, migrations, seeds, schema consistency, persistence, Hilos::$db and accessor contracts. Use when changing an Entity, Object, collection lookup or DB action; declaring which column partitions an entity into owner sets; extending a framework table through its whole subclass chain and mounting it under the framework key; opening a transaction or scheduling work after commit; declaring a journaled Entity or writing under a change-log receipt. Transactions never nest, end inside their opening handler, and release announcements at commit.
+description: Work with Hilos ORM entities, Object/View layers, DbCollection queries and actions, migrations, seeds, schema consistency, persistence, Hilos::$db and accessor contracts. Use when changing an Entity, Object, collection lookup or DB action; storing a moment or changing its schema, writer, reader or project storage representation; declaring which column partitions an entity into owner sets; extending a framework table through its whole subclass chain and mounting it under the framework key; opening a transaction or scheduling work after commit; declaring a journaled Entity or writing under a change-log receipt. Transactions never nest, end inside their opening handler, and release announcements at commit.
 ---
 
 # Hilos ORM
@@ -30,6 +30,9 @@ touched ORM surfaces.
   `docs/agents/code-style/table-names.md`
 - Object layer and view transformations: `docs/agents/orm/object.md`
 - Migrations and seeds: `docs/agents/orm/migrations.md`
+- Storing a moment or changing its schema, writer, reader or project storage
+  representation: `docs/agents/architecture/time-zones.md#database-moment-storage`;
+  for migration planning, also `docs/agents/architecture/moment-storage.md`.
 - A declared table order needs an index matching it in both columns and
   directions, the primary key last: `docs/agents/frontend/table-sort-orders.md`
 - A new table needs a `_pii` verdict on its Entity, an empty column map included,

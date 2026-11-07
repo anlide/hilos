@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos ORM"
   short_description: "Hilos::$db, DbContext, collections, actions, and migrations"
-  default_prompt: "Use $hilos-orm to implement a database-backed Hilos change, following docs/agents/orm/entity-references.md for captured entity IDs and external code boundaries."
+  default_prompt: "Use $hilos-orm to implement a database-backed Hilos change, following docs/agents/orm/entity-references.md for captured entity IDs and external code boundaries. When storing a moment or changing its schema, writer, reader or project storage representation, read docs/agents/architecture/time-zones.md#database-moment-storage; for migration planning, also read the published research in docs/agents/architecture/moment-storage.md."

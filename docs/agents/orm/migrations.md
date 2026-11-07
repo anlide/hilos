@@ -170,6 +170,27 @@ the project adds to a framework table — a column ([inheritance.md](inheritance
 *the project's columns arrive by a project migration*), an index, its own rows moved into
 it — remains a separate project migration.
 
+### Moment storage transitions
+
+Apply [Database Moment Storage](../architecture/time-zones.md#database-moment-storage)
+to new moments and source migrations. Deliver a framework source's transition
+as the current stub pair plus a new immutable `Change`, then use
+`db:framework:pull` for every project carrying its unit and apply the generated
+project migrations. Project-owned tables need their own project migrations.
+Account separately for the three bootstrap moments in migration claim,
+admin-view latch and database marker: initialization owns their DDL without
+stubs, and the existing bootstrap change parts use null stub hashes.
+
+Old stand data may be recreated without a preserving conversion. This does not
+permit rewriting genesis, published changes, old project SQL or their hashes;
+the immutable delivery and `introducesUnit` rules below still apply.
+
+A transition closes every writer and reader of its source, including replication,
+queries, exports and its own checks. Its leaf searches all of `docs/` for its
+key and removes the markers made true in the same commit. The
+[transition table](../architecture/time-zones.md#transition-owners) names the
+owners; final cleanup does not take over their marker removal.
+
 ### Schema units and immutable changes
 
 The sources live under `framework/backend/Database/Migration/`:

@@ -205,20 +205,39 @@ is named in the `$allowedTablesWithoutEntity` argument; anything left over is a 
 on the `table_unmapped` axis. Without this direction a table nobody mapped passes the
 suite in silence, which is exactly what it used to do (HIL-605).
 
+### Persisted moments
+
+For a persisted moment's type, unit, null semantics, writer and project storage
+choice, follow [Database Moment Storage](../architecture/time-zones.md#database-moment-storage).
+The declaration of moment semantics, physical storage and explicit project
+opt-out belongs to HIL-1916 (not in the code yet — HIL-1916); its physical-type
+and direct writer-error checks belong to HIL-1917
+(not in the code yet — HIL-1917). Their exact APIs remain with those leaves;
+the [transition table](../architecture/time-zones.md#transition-owners) owns
+the implementation map. Today's broad integer-family audit is not that check.
+
 ### Who owns the value of a column with a DB-level DEFAULT
 
-`TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` and its kin have exactly two legal shapes,
-and picking between them is one question: **does the application need to read the value?**
+A column with a DB-level DEFAULT has two ownership shapes, and picking between
+them is one question: **does the application need to read the value?** The
+`TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` examples below describe existing
+moment implementations awaiting their named migrations. They are not storage
+options for new moments; the general mapping, hydration, nullability and DEFAULT
+rules still apply to other fields.
 
 - **The application owns it.** The column is in `_columns`, its property is non-nullable
   and carries no initializer (`public string $created_at;`), and the writer sets it before
   `sync()`. Hydration then fills the property on every read, so the value is available to
-  the object and view layers. This is the shape for `hilos_session.created_at` and the
-  notification tables' `created_at` / `updated_at`.
+  the object and view layers. The current `hilos_session.created_at` is an old moment
+  example; move its storage and writer together (not in the code yet — HIL-1919).
+  The notification tables' `created_at` / `updated_at` are also old moment examples;
+  move their storage and writers together (not in the code yet — HIL-1923).
 - **The database owns it.** The column is left out of `_columns` entirely, so the ORM
   neither writes nor reads it and the DEFAULT is its only writer. `hilos_identity` is the
   example: its `created_at` / `updated_at` exist in the DDL, and in the Entity only as
   column-name constants, which the personal-data verdict below needs to name them.
+  Move these old moment columns and every writer to the storage norm
+  (not in the code yet — HIL-1920).
 
 The criterion is not taste: hydration walks `_columns` (`Entity::fromRow()`), so leaving a
 column out of it makes the value invisible to the ORM. Need to read it — first shape; do

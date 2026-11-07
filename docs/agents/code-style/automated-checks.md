@@ -705,6 +705,31 @@ count is per file, so one site replaced by another in the same file at the same
 count is invisible to this baseline; review must refuse that substitution and
 enforce payoff when the file is touched.
 
+## Planned Moment Storage Check
+
+[Database Moment Storage](../architecture/time-zones.md#database-moment-storage)
+is mandatory for new changes now; reading and review enforce it while the
+storage guard is pending. `MOMENT-FORMAT` above checks display formatting, not
+database storage, and the existing integer-family schema audit proves neither
+physical signed `BIGINT` nor milliseconds.
+
+The semantic moment declaration and explicit project storage opt-out belong to
+HIL-1916 (not in the code yet — HIL-1916).
+The physical signed-`BIGINT` check and detection of obvious direct seconds or
+SQL-text writers, including non-Entity and bootstrap sources, belong to HIL-1917
+(not in the code yet — HIL-1917). This promises neither arbitrary `int` dataflow
+proof nor a general ban on `time()` or `date()`; exact declarations, APIs and
+check format are settled by their owners.
+
+The named, closed list of existing storage debt belongs to HIL-1917
+(not in the code yet — HIL-1917). The
+[transition owners](../architecture/time-zones.md#transition-owners) are
+documentation addresses for that debt, not an executable baseline or a new
+entry in the table of running rules. Each source migration removes its own
+records and documentation markers with its behavior. Final shared bridge,
+transition-text and residual-debt cleanup follows all sources
+(not in the code yet — HIL-1931).
+
 ## Adding a rule
 
 1. Write or extend the canonical rule in `docs/agents/*` first, and add
