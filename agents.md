@@ -110,6 +110,7 @@ Both exceptions are about `git commit` only. The push ban has none.
 |---|---|
 | [frontend/README.md](docs/agents/frontend/README.md) | any frontend change — routes to the core/connection, wire-protocol, data-model, table-subscription, table-sort-orders, conflict-resolution, SDK-packaging, multiframework-core, page-module file layout, toasts, styling, testing, and build specs, plus the AI-first premise and the rules/violations catalog |
 | [frontend/toasts.md](docs/agents/frontend/toasts.md) | which surface an outcome belongs on — a toast, a banner, or a durable record — a toast's two addressees, and what must never interrupt an uninvolved user |
+| [frontend/date-time-picker.md](docs/agents/frontend/date-time-picker.md) | implementing or consuming the DateTimePicker contract: date/time/datetime and single/range, one draft with preserved precision, explicit factors, gap/fold adapter, calendar/keyboard behavior and SDK views |
 
 The frontend is rebuilt from zero on this branch (Path 1 rewrite) and its
 specification is graduated ahead of the code. Frontend FE↔BE contract changes

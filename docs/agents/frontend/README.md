@@ -35,6 +35,7 @@ document.
 | SDK packaging, the monorepo workspace, the two-tier component model and slots, Composer / tarball distribution | [sdk-packaging.md](sdk-packaging.md) |
 | adding or upgrading a frontend dependency — how every npm root that carries Angular declares its Angular versions, which ranges are deliberate, how a version moves, and what to do instead of deleting a lockfile on `ERESOLVE` | [sdk-packaging.md](sdk-packaging.md) |
 | the framework-agnostic core, the signal primitive, Vue / React / Angular adapters, the conformance demos | [multiframework-core.md](multiframework-core.md) |
+| the DateTimePicker contract — date/time/datetime, single/range, explicit factors, preserved precision, gap/fold resolution, keyboard/calendar behavior and SDK ownership | [date-time-picker.md](date-time-picker.md) |
 | creating, moving, or naming the files of a page — the per-page folder, the view / `…Page` selectors / `…Actions` files, and whether a type is domain or page-local | [page-module-structure.md](page-module-structure.md) |
 | the app's page registry — the `pages/` folder (keys, routes, entity-slot types) and the `bindPageScope` / `PAGE_SIGNAL_SCHEMAS` / `createAppPageRouter` SDK binding | [page-registry.md](page-registry.md) |
 | building or redrawing a section or entity head — catalog identity, breadcrumbs, owner tabs, live name and adoption | [../architecture/page-head.md](../architecture/page-head.md) |
@@ -83,6 +84,9 @@ before editing.
   carries Angular declares and moves its Angular versions.
 - [multiframework-core.md](multiframework-core.md) — the agnostic core, the neutral signal primitive,
   and the per-framework view adapters proven by conformance demos.
+- [date-time-picker.md](date-time-picker.md) — the normative picker contract:
+  canonical values, one draft, explicit factors, exact zone resolution and
+  field/calendar accessibility, with implementation markers per leaf.
 - [page-module-structure.md](page-module-structure.md) — one folder per page under `views/`, the
   view / selectors / actions / optional error files and their per-engine names,
   and the domain-versus-page-local split for TypeScript types.
