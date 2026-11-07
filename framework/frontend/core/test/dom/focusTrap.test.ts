@@ -5,15 +5,34 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  HILOS_INTERACTION_BLOCKED_ATTR,
+  HILOS_INTERACTION_REGION_ATTR,
+} from '../../src/connection/interactionBlock.js'
+import {
   FocusTrap,
   focusableElements,
   focusInitial,
   registerFocusReturnFallback,
+  type FocusPlacement,
 } from '../../src/dom/focusTrap.js'
 
+const traps: FocusTrap[] = []
+
 afterEach(() => {
+  for (const trap of traps) trap.release()
+  traps.length = 0
+  vi.restoreAllMocks()
+  document.body.removeAttribute('tabindex')
   document.body.innerHTML = ''
 })
+
+/** Create a real trap whose document listener is released after the test. */
+function createTrap(): FocusTrap {
+  const trap = new FocusTrap()
+  traps.push(trap)
+
+  return trap
+}
 
 /**
  * A dialog root in the document, with `tabindex="-1"` so the root itself can
@@ -107,7 +126,7 @@ function openFrom(opener: HTMLElement): {
   trap: FocusTrap
 } {
   const dialog = mountRoot()
-  const trap = new FocusTrap()
+  const trap = createTrap()
   opener.focus()
   trap.activate(dialog)
 
@@ -124,6 +143,38 @@ function strayButton(): HTMLButtonElement {
   return mountRoot('<button type="button">Stray</button>').querySelector(
     'button',
   )!
+}
+
+/**
+ * An open main dialog with two stable fields and independent body/footer buttons.
+ * The second field deliberately has no autofocus mark.
+ *
+ * @param busy Whether the body is disabled before activation.
+ * @param placement The dialog's initial and idle-fallback focus policy.
+ * @returns The real trap and its current mounted DOM handles.
+ */
+function mountBusyDialog(busy = false, placement: FocusPlacement = 'marked') {
+  const root = mountRoot(
+    '<section data-id="body">' +
+      '<fieldset><input data-autofocus data-id="first" />' +
+      '<input data-id="second" value="Draft" /></fieldset>' +
+      '<button type="button" data-id="loading">Save</button></section>' +
+      '<button type="button" data-id="footer">Cancel</button>',
+  )
+  root.setAttribute('role', 'dialog')
+  root.setAttribute(HILOS_INTERACTION_REGION_ATTR, '')
+  const body = root.querySelector<HTMLElement>('[data-id="body"]')!
+  const fieldset = body.querySelector('fieldset')!
+  const first = body.querySelector<HTMLInputElement>('[data-id="first"]')!
+  const second = body.querySelector<HTMLInputElement>('[data-id="second"]')!
+  const loading = body.querySelector<HTMLButtonElement>('[data-id="loading"]')!
+  const footer = root.querySelector<HTMLButtonElement>('[data-id="footer"]')!
+  fieldset.disabled = busy
+  const trap = createTrap()
+  trap.activate(root, placement)
+  trap.setBusy(root, body, busy, placement)
+
+  return { root, body, fieldset, first, second, loading, footer, trap }
 }
 
 describe('focusableElements', () => {
@@ -284,6 +335,25 @@ describe('focusInitial', () => {
 })
 
 describe('FocusTrap', () => {
+  it.each([false, true])(
+    'takes Tab from the dialog to its boundary control (shift: %s)',
+    (shiftKey) => {
+      const root = mountRoot(
+        '<button type="button" data-id="first">First</button>' +
+          '<input disabled />' +
+          '<button type="button" data-id="last">Last</button>',
+      )
+      const trap = createTrap()
+      trap.activate(root)
+      expect(document.activeElement).toBe(root)
+      expect(pressTab(trap, root, shiftKey)).toBe(true)
+      expect(document.activeElement).toBe(
+        root.querySelector(shiftKey ? '[data-id="last"]' : '[data-id="first"]'),
+      )
+      trap.release()
+    },
+  )
+
   it('wraps Tab over the controls a disabled fieldset turns off', () => {
     const root = mountRoot(
       '<fieldset disabled><input data-id="before" /></fieldset>' +
@@ -293,7 +363,7 @@ describe('FocusTrap', () => {
     )
     const first = root.querySelector<HTMLElement>('[data-id="first"]')!
     const last = root.querySelector<HTMLElement>('[data-id="last"]')!
-    const trap = new FocusTrap()
+    const trap = createTrap()
     trap.activate(root)
     last.focus()
     expect(pressTab(trap, root)).toBe(true)
@@ -309,7 +379,7 @@ describe('FocusTrap', () => {
         '<button type="button">Save</button>' +
         '</fieldset>',
     )
-    const trap = new FocusTrap()
+    const trap = createTrap()
     trap.activate(root)
     expect(document.activeElement).toBe(root)
     expect(pressTab(trap, root)).toBe(true)
@@ -324,7 +394,7 @@ describe('FocusTrap', () => {
     document.body.append(opener)
     opener.focus()
     const root = mountRoot('<button type="button">Inside</button>')
-    const trap = new FocusTrap()
+    const trap = createTrap()
     trap.activate(root)
     trap.release()
     expect(document.activeElement).toBe(opener)
@@ -341,7 +411,7 @@ describe('FocusTrap', () => {
     const disposeInner = registerFocusReturnFallback(inner, () => fallback)
     const root = mountRoot()
     opener.focus()
-    const trap = new FocusTrap()
+    const trap = createTrap()
     trap.activate(root)
     opener.remove()
     expect(document.activeElement).toBe(root)
@@ -359,7 +429,7 @@ describe('FocusTrap', () => {
       const fallback = surface.querySelector('input')!
       const dispose = registerFocusReturnFallback(surface, () => fallback)
       const root = mountRoot()
-      const trap = new FocusTrap()
+      const trap = createTrap()
       opener.focus()
       trap.activate(root)
       opener.setAttribute(state, '')
@@ -377,7 +447,7 @@ describe('FocusTrap', () => {
     const fallback = surface.querySelector('input')!
     const dispose = registerFocusReturnFallback(surface, () => fallback)
     const root = mountRoot()
-    const trap = new FocusTrap()
+    const trap = createTrap()
     opener.focus()
     trap.activate(root)
     opener.remove()
@@ -393,8 +463,8 @@ describe('FocusTrap', () => {
     const opener = mountRoot('<button>Open</button>').querySelector('button')!
     const root = mountRoot('<button>Details</button>')
     const upper = mountRoot()
-    const trap = new FocusTrap()
-    const nested = new FocusTrap()
+    const trap = createTrap()
+    const nested = createTrap()
     opener.focus()
     trap.activate(root)
     const details = root.querySelector('button')!
@@ -409,6 +479,440 @@ describe('FocusTrap', () => {
     other.focus()
     trap.release()
     expect(document.activeElement).toBe(other)
+  })
+})
+
+describe('FocusTrap busy focus', () => {
+  it.each(['control', 'fieldset'] as const)(
+    'parks a focused field disabled by its %s and restores the same unmarked node and value',
+    (source) => {
+      const { root, body, fieldset, first, second, trap } = mountBusyDialog()
+      expect(document.activeElement).toBe(first)
+      second.focus()
+      second.value = 'Edited second field'
+      const park = vi.spyOn(root, 'focus')
+      const restore = vi.spyOn(second, 'focus')
+      if (source === 'control') second.disabled = true
+      else fieldset.disabled = true
+      // jsdom leaves activeElement on the disabled field. This is one possible
+      // post-render state, not proof of native browser focus fixup.
+      expect(document.activeElement).toBe(second)
+      trap.setBusy(root, body, true)
+      expect(document.activeElement).toBe(root)
+      expect(park).toHaveBeenCalledExactlyOnceWith({ preventScroll: true })
+      second.disabled = false
+      fieldset.disabled = false
+      trap.setBusy(root, body, false)
+      expect(document.activeElement).toBe(second)
+      expect(body.querySelector('[data-id="second"]')).toBe(second)
+      expect(second.value).toBe('Edited second field')
+      expect(restore).toHaveBeenCalledExactlyOnceWith({ preventScroll: true })
+    },
+  )
+
+  it.each(['without focusin', 'with focusin'] as const)(
+    'keeps the pre-disabled snapshot when activeElement is already body %s',
+    (fixup) => {
+      const { root, body, fieldset, second, trap } = mountBusyDialog()
+      second.focus()
+      fieldset.disabled = true
+      // Explicit simulation: jsdom does not perform the browser's disabled fixup.
+      const active =
+        fixup === 'without focusin'
+          ? vi
+              .spyOn(document, 'activeElement', 'get')
+              .mockReturnValue(document.body)
+          : undefined
+      if (fixup === 'with focusin') {
+        document.body.tabIndex = -1
+        document.body.focus()
+      }
+      expect(document.activeElement).toBe(document.body)
+      trap.setBusy(root, body, true)
+      active?.mockRestore()
+      expect(document.activeElement).toBe(root)
+      fieldset.disabled = false
+      trap.setBusy(root, body, false)
+      expect(document.activeElement).toBe(second)
+    },
+  )
+
+  it('observes initial autofocus before disabled can drop it to body', () => {
+    const { root, body, fieldset, first, trap } = mountBusyDialog()
+    expect(document.activeElement).toBe(first)
+    fieldset.disabled = true
+    const active = vi
+      .spyOn(document, 'activeElement', 'get')
+      .mockReturnValue(document.body)
+    trap.setBusy(root, body, true)
+    active.mockRestore()
+    expect(document.activeElement).toBe(root)
+    fieldset.disabled = false
+    trap.setBusy(root, body, false)
+    expect(document.activeElement).toBe(first)
+  })
+
+  it.each([
+    'disabled',
+    'fieldset',
+    'hidden',
+    'inert',
+    'aria-disabled',
+    'display',
+    'visibility',
+    'collapse',
+    'connection',
+  ] as const)(
+    'never falls back around a surviving %s target or retries on an idle render',
+    (reason) => {
+      const { root, body, fieldset, second, trap } = mountBusyDialog()
+      const sheet = document.createElement('style')
+      sheet.textContent = `
+        .d-none { display: none !important; }
+        .invisible { visibility: hidden !important; }
+        .test-collapse { visibility: collapse; }
+      `
+      root.append(sheet)
+      second.focus()
+      fieldset.disabled = true
+      trap.setBusy(root, body, true)
+      expect(document.activeElement).toBe(root)
+      fieldset.disabled = false
+      switch (reason) {
+        case 'disabled':
+          second.disabled = true
+          break
+        case 'fieldset':
+          fieldset.disabled = true
+          break
+        case 'hidden':
+        case 'inert':
+          fieldset.setAttribute(reason, '')
+          break
+        case 'aria-disabled':
+          second.setAttribute('aria-disabled', 'true')
+          break
+        case 'display':
+          fieldset.classList.add('d-none')
+          break
+        case 'visibility':
+          fieldset.classList.add('invisible')
+          break
+        case 'collapse':
+          fieldset.classList.add('test-collapse')
+          break
+        case 'connection':
+          root.setAttribute(HILOS_INTERACTION_BLOCKED_ATTR, '')
+          break
+      }
+      const restore = vi.spyOn(second, 'focus')
+      trap.setBusy(root, body, false)
+      expect(document.activeElement).toBe(root)
+      expect(restore).not.toHaveBeenCalled()
+      second.disabled = false
+      fieldset.disabled = false
+      fieldset.removeAttribute('hidden')
+      fieldset.removeAttribute('inert')
+      fieldset.removeAttribute('class')
+      second.removeAttribute('aria-disabled')
+      root.removeAttribute(HILOS_INTERACTION_BLOCKED_ATTR)
+      trap.setBusy(root, body, false)
+      expect(document.activeElement).toBe(root)
+      expect(restore).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['footer', 'loading', 'outside'] as const)(
+    'preserves another %s control chosen before busy',
+    (choice) => {
+      const { root, body, fieldset, second, footer, loading, trap } =
+        mountBusyDialog()
+      second.focus()
+      const other =
+        choice === 'footer'
+          ? footer
+          : choice === 'loading'
+            ? loading
+            : strayButton()
+      other.focus()
+      if (choice === 'loading') other.setAttribute('aria-disabled', 'true')
+      fieldset.disabled = true
+      const park = vi.spyOn(root, 'focus')
+      trap.setBusy(root, body, true)
+      expect(document.activeElement).toBe(other)
+      expect(park).not.toHaveBeenCalled()
+      fieldset.disabled = false
+      trap.setBusy(root, body, false)
+      expect(document.activeElement).toBe(other)
+    },
+  )
+
+  it('forgets an old field when another control was chosen and then focus left for body', () => {
+    const { root, body, fieldset, first, second, trap } = mountBusyDialog()
+    second.focus()
+    const other = strayButton()
+    other.focus()
+    fieldset.disabled = true
+    other.blur()
+    expect(document.activeElement).toBe(document.body)
+    trap.setBusy(root, body, true)
+    expect(document.activeElement).toBe(document.body)
+    root.focus()
+    fieldset.disabled = false
+    trap.setBusy(root, body, false)
+    expect(document.activeElement).toBe(first)
+  })
+
+  it.each(['footer', 'outside', 'upper dialog', 'body'] as const)(
+    'preserves %s focus chosen after parking and clears the cycle',
+    (choice) => {
+      const { root, body, fieldset, second, footer, trap } = mountBusyDialog()
+      second.focus()
+      fieldset.disabled = true
+      trap.setBusy(root, body, true)
+      expect(document.activeElement).toBe(root)
+      let other: HTMLElement
+      if (choice === 'body') {
+        root.blur()
+        other = document.body
+      } else if (choice === 'upper dialog') {
+        other = mountRoot()
+        other.setAttribute('role', 'dialog')
+        other.focus()
+      } else {
+        other = choice === 'footer' ? footer : strayButton()
+        other.focus()
+      }
+      fieldset.disabled = false
+      const restore = vi.spyOn(second, 'focus')
+      trap.setBusy(root, body, false)
+      expect(document.activeElement).toBe(other)
+      expect(restore).not.toHaveBeenCalled()
+      root.focus()
+      trap.setBusy(root, body, false)
+      expect(document.activeElement).toBe(root)
+      expect(restore).not.toHaveBeenCalled()
+    },
+  )
+
+  it('captures once per busy cycle and follows the next cycle independently', () => {
+    const { root, body, fieldset, first, second, footer, trap } =
+      mountBusyDialog()
+    second.focus()
+    fieldset.disabled = true
+    trap.setBusy(root, body, true)
+    trap.refocus(root, 'dialog')
+    trap.setBusy(root, body, true)
+    fieldset.disabled = false
+    trap.setBusy(root, body, false)
+    expect(document.activeElement).toBe(second)
+    footer.focus()
+    trap.setBusy(root, body, false)
+    expect(document.activeElement).toBe(footer)
+    first.focus()
+    fieldset.disabled = true
+    trap.setBusy(root, body, true)
+    expect(document.activeElement).toBe(root)
+    trap.setBusy(root, body, true)
+    fieldset.disabled = false
+    trap.setBusy(root, body, false)
+    expect(document.activeElement).toBe(first)
+  })
+
+  it.each(['already busy', 'root before busy'] as const)(
+    'keeps the idle fallback when the dialog is %s without a captured field',
+    (start) => {
+      const { root, body, fieldset, first, trap } = mountBusyDialog(
+        start === 'already busy',
+      )
+      if (start === 'root before busy') {
+        root.focus()
+        fieldset.disabled = true
+        trap.setBusy(root, body, true)
+      }
+      expect(document.activeElement).toBe(root)
+      fieldset.disabled = false
+      trap.setBusy(root, body, false)
+      expect(document.activeElement).toBe(first)
+    },
+  )
+
+  it.each(['marked', 'dialog'] as const)(
+    'uses %s placement for a new step after the captured node leaves the body',
+    (placement) => {
+      const { root, body, fieldset, second, trap } = mountBusyDialog()
+      second.focus()
+      fieldset.disabled = true
+      trap.setBusy(root, body, true)
+      body.innerHTML =
+        '<input data-id="second" value="Lookalike" />' +
+        '<input data-autofocus data-id="new-step" />'
+      const next = body.querySelector('[data-id="new-step"]')
+      trap.setBusy(root, body, false, placement)
+      expect(document.activeElement).toBe(placement === 'marked' ? next : root)
+    },
+  )
+
+  it('allows the uncaptured fallback from body but preserves another chosen control', () => {
+    const { root, body, fieldset, first, footer, trap } = mountBusyDialog(true)
+    root.blur()
+    expect(document.activeElement).toBe(document.body)
+    fieldset.disabled = false
+    trap.setBusy(root, body, false)
+    expect(document.activeElement).toBe(first)
+    root.focus()
+    fieldset.disabled = true
+    trap.setBusy(root, body, true)
+    footer.focus()
+    fieldset.disabled = false
+    trap.setBusy(root, body, false)
+    expect(document.activeElement).toBe(footer)
+  })
+
+  it('does not focus a new step over an explicit choice made after parking', () => {
+    const { root, body, fieldset, second, footer, trap } = mountBusyDialog()
+    second.focus()
+    fieldset.disabled = true
+    trap.setBusy(root, body, true)
+    body.innerHTML = '<input data-autofocus />'
+    footer.focus()
+    trap.setBusy(root, body, false)
+    expect(document.activeElement).toBe(footer)
+  })
+
+  it('clears a busy capture before returning to the opener and reopening', () => {
+    const opener = strayButton()
+    opener.focus()
+    const { root, body, fieldset, first, second, trap } = mountBusyDialog()
+    second.focus()
+    fieldset.disabled = true
+    trap.setBusy(root, body, true)
+    trap.release()
+    expect(document.activeElement).toBe(opener)
+    fieldset.disabled = false
+    trap.setBusy(root, body, false)
+    expect(document.activeElement).toBe(opener)
+    trap.activate(root, 'dialog')
+    trap.setBusy(root, body, false)
+    expect(document.activeElement).toBe(root)
+    fieldset.disabled = true
+    trap.setBusy(root, body, true)
+    fieldset.disabled = false
+    trap.setBusy(root, body, false)
+    expect(document.activeElement).toBe(first)
+  })
+
+  it('replaces activation listeners and removes them exactly once on repeated release', () => {
+    const add = vi.spyOn(document, 'addEventListener')
+    const remove = vi.spyOn(document, 'removeEventListener')
+    const { root, body, fieldset, second, trap } = mountBusyDialog()
+    second.focus()
+    fieldset.disabled = true
+    trap.setBusy(root, body, true)
+    fieldset.disabled = false
+    trap.activate(root, 'dialog')
+    trap.setBusy(root, body, false)
+    expect(document.activeElement).toBe(root)
+    trap.release()
+    trap.release()
+    const subscriptions = add.mock.calls.filter(([type]) => type === 'focusin')
+    const removals = remove.mock.calls.filter(([type]) => type === 'focusin')
+    expect(subscriptions).toHaveLength(2)
+    expect(removals).toHaveLength(2)
+    for (const [, listener] of subscriptions) {
+      expect(remove).toHaveBeenCalledWith('focusin', listener, true)
+    }
+  })
+
+  it.each(['dialog', 'alertdialog'] as const)(
+    'invalidates the old capture when refocus switches to another %s root',
+    (role) => {
+      const { root, body, fieldset, first, second, trap } = mountBusyDialog()
+      second.focus()
+      fieldset.disabled = true
+      trap.setBusy(root, body, true)
+      const upper = mountRoot('<button>Confirm</button>')
+      upper.setAttribute('role', role)
+      // Angular renders its confirm inside the main dialog.
+      root.append(upper)
+      trap.refocus(upper, 'dialog')
+      fieldset.disabled = false
+      trap.setBusy(root, body, false)
+      expect(document.activeElement).toBe(upper)
+      trap.refocus(root, 'dialog')
+      trap.setBusy(root, body, false)
+      expect(document.activeElement).toBe(root)
+      fieldset.disabled = true
+      trap.setBusy(root, body, true)
+      fieldset.disabled = false
+      trap.setBusy(root, body, false)
+      expect(document.activeElement).toBe(first)
+    },
+  )
+
+  it.each(['dialog', 'alertdialog', 'interaction region'] as const)(
+    'does not capture a disabled field of a nested %s even after focus fixup to body',
+    (boundary) => {
+      const { root, body, trap } = mountBusyDialog()
+      const nested = mountRoot('<input />')
+      if (boundary === 'interaction region')
+        nested.setAttribute(HILOS_INTERACTION_REGION_ATTR, '')
+      else nested.setAttribute('role', boundary)
+      body.append(nested)
+      const field = nested.querySelector('input')!
+      field.focus()
+      field.disabled = true
+      document.body.tabIndex = -1
+      document.body.focus()
+      expect(document.activeElement).toBe(document.body)
+      trap.setBusy(root, body, true)
+      expect(document.activeElement).toBe(document.body)
+    },
+  )
+
+  it('rejects a captured node moved into a nested dialog without initial-focus fallback', () => {
+    const { root, body, fieldset, second, trap } = mountBusyDialog()
+    second.focus()
+    fieldset.disabled = true
+    trap.setBusy(root, body, true)
+    const nested = document.createElement('section')
+    nested.setAttribute('role', 'alertdialog')
+    body.append(nested)
+    nested.append(second)
+    fieldset.disabled = false
+    trap.setBusy(root, body, false)
+    expect(document.activeElement).toBe(root)
+  })
+
+  it('ignores another root and a foreign body without consuming the busy transition', () => {
+    const { root, body, fieldset, second, trap } = mountBusyDialog()
+    const otherRoot = mountRoot()
+    const foreignBody = document.createElement('section')
+    foreignBody.setAttribute(HILOS_INTERACTION_REGION_ATTR, '')
+    body.append(foreignBody)
+    second.focus()
+    fieldset.disabled = true
+    trap.setBusy(otherRoot, otherRoot, true)
+    trap.setBusy(root, foreignBody, true)
+    expect(document.activeElement).toBe(second)
+    trap.setBusy(root, body, true)
+    expect(document.activeElement).toBe(root)
+    fieldset.disabled = false
+    trap.setBusy(root, body, false)
+    expect(document.activeElement).toBe(second)
+  })
+
+  it('does not park or restore into a disconnected root', () => {
+    const { root, body, fieldset, second, trap } = mountBusyDialog()
+    second.focus()
+    fieldset.disabled = true
+    root.remove()
+    const park = vi.spyOn(root, 'focus')
+    trap.setBusy(root, body, true)
+    fieldset.disabled = false
+    trap.setBusy(root, body, false)
+    expect(document.activeElement).toBe(document.body)
+    expect(park).not.toHaveBeenCalled()
   })
 })
 

@@ -37,11 +37,40 @@ A footer `LoadingButton` keeps its own `loading`, which is not an independent
 `disabled` ([accessibility.md](accessibility.md), "Busy state").
 Nothing turns `inert` or `aria-hidden`, so the text, the draft and the refusal
 stay readable, and Tab and the initial focus skip what is disabled
-([`focusTrap.ts`](../../../framework/frontend/core/src/dom/focusTrap.ts)). When
-`busy` changes from true to false while the modal is open and no confirm is
-showing, Vue, React, and Angular restore initial focus only from the dialog,
-document body or no active element; another focus target stays put. The focus trap,
-modal layers and scroll lock stay live.
+([`focusTrap.ts`](../../../framework/frontend/core/src/dom/focusTrap.ts)). While
+the trap is active, it records real focus events in the owner document so it
+knows the last focused body field before disabling the fieldset can move focus.
+Vue, React and Angular call `FocusTrap.setBusy(root, body, busy, placement)`
+after the DOM update and once after trap activation; the core owns this capture
+and fallback cycle for all three.
+On a `busy: false → true` transition, it captures that exact body `HTMLElement`
+only when it matches `:disabled` (including disabled-fieldset inheritance) and
+focus is still on it or has fallen to `body`. If focus has already moved
+elsewhere, it leaves the choice alone. The capture belongs to this open dialog
+and cycle; it is not looked up again by id, label or position. The same capture
+rule covers the modal's own body fields without bypassing focus boundaries.
+
+On `busy: true → false`, the captured element receives focus with
+`preventScroll` only when it is still in the current body, remains available,
+and focus is still on the dialog root. The captured element must remain
+connected and available: it must not match `:disabled`, have a hidden or inert
+ancestor, carry `aria-disabled="true"`, sit in a blocked interaction region,
+or have computed `display: none` / `visibility: hidden` or `collapse`. If it
+remains in the body but is unavailable, do not move to another field. With a
+surviving capture, focus already on another control, `body`, a confirm dialog
+or an upper modal is left alone.
+
+The existing `initialFocus` fallback remains for a cycle with no captured field
+(for example, the modal opened busy or focus was already on its root) or when a
+step change removed the captured element from the body. It runs only when focus
+is on the dialog root, `body` or nowhere, and no confirm is showing; it chooses
+the current step's initial target. From the dialog root, Tab enters the first
+available target and Shift+Tab the last; with no available target, the trap
+consumes Tab and keeps focus on the root. Busy does not reactivate the trap or
+change modal layers or the scroll lock. Esc keeps its existing route through
+the modal controller: it does not close a busy modal, and an answered request
+does not replay the key. On close or unmount, the trap clears the busy capture
+and focus listener before ordinary release returns to the opener or fallback.
 
 That is the ordinary modal busy contract. The standard framework own-name flow
 is a local exception: its `pending` tracks a session-held operation, including

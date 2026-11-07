@@ -3,6 +3,7 @@
 // component boundary, where distinct modal instances become distinct owners,
 // the modal layer each of those instances stands on, and the landing place of
 // focus when a dialog opens.
+import { NgTemplateOutlet } from '@angular/common'
 import { Component, signal } from '@angular/core'
 import { By } from '@angular/platform-browser'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
@@ -21,6 +22,11 @@ import {
 import { HilosLayout } from '../src/HilosLayout.js'
 import { HilosModal } from '../src/HilosModal.js'
 import { LoadingButton } from '../src/LoadingButton.js'
+import {
+  registerModalBusyFocusCases,
+  type ModalBusyFocusProps,
+  type MountModalBusyFocus,
+} from '../../test/modalBusyFocusCases.js'
 
 /** A host that can draw either nested modals or two sibling modals. */
 @Component({
@@ -243,6 +249,96 @@ class CustomBodyHost {
     if (this.busy()) return
     this.busy.set(true)
     this.sent()
+  }
+}
+
+/** Real projection and inputs for the shared busy-focus scenarios. */
+@Component({
+  selector: 'test-modal-busy-focus-host',
+  imports: [NgTemplateOutlet, HilosModal, LoadingButton],
+  template: `
+    @if (state(); as state) {
+      <ng-template #fieldContent let-locked>
+        <form (submit)="submit($event)">
+          <input
+            data-id="busy-focus-first"
+            data-autofocus
+            [disabled]="locked"
+            aria-label="First field"
+          />
+          <input
+            data-id="busy-focus-second"
+            [disabled]="locked || state.disabled"
+            aria-label="Second field"
+          />
+          @if (state.body === 'custom' && state.submitting) {
+            <button
+              hilosLoadingButton
+              type="submit"
+              [loading]="state.busy"
+              data-id="busy-focus-submit"
+            >
+              Save
+            </button>
+          }
+        </form>
+      </ng-template>
+      <ng-template #fields let-locked>
+        @if (state.step === 'first') {
+          <ng-container
+            [ngTemplateOutlet]="fieldContent"
+            [ngTemplateOutletContext]="{ $implicit: locked }"
+          />
+        } @else {
+          <ng-container
+            [ngTemplateOutlet]="fieldContent"
+            [ngTemplateOutletContext]="{ $implicit: locked }"
+          />
+        }
+      </ng-template>
+      <button type="button" data-id="busy-focus-opener">Open editor</button>
+      <button type="button" data-id="busy-focus-outside">Outside</button>
+      <hilos-modal
+        [open]="state.open"
+        [busy]="state.busy"
+        [initialFocus]="state.initialFocus"
+        title="Edit fields"
+      >
+        @if (state.body === 'default' && state.open) {
+          <ng-container
+            [ngTemplateOutlet]="fields"
+            [ngTemplateOutletContext]="{ $implicit: false }"
+          />
+        }
+        @if (state.body === 'custom') {
+          <ng-template #modalBody let-locked="busy">
+            <ng-container
+              [ngTemplateOutlet]="fields"
+              [ngTemplateOutletContext]="{ $implicit: locked }"
+            />
+          </ng-template>
+        }
+        @if (state.actions) {
+          <ng-template #modalActions>
+            <button type="button" data-id="busy-focus-inside-first">
+              First action
+            </button>
+            <button type="button" data-id="busy-focus-inside-last">
+              Last action
+            </button>
+          </ng-template>
+        }
+      </hilos-modal>
+    }
+  `,
+})
+class BusyFocusHost {
+  readonly state = signal<ModalBusyFocusProps | null>(null)
+
+  /** Deliver the native form submit to the common scenario. */
+  submit(event: Event): void {
+    event.preventDefault()
+    this.state()?.onSubmit?.()
   }
 }
 
@@ -664,7 +760,7 @@ describe('HilosModal', () => {
     expect(host.cancels()).toBe(1)
   })
 
-  it('keeps the draft, the focus and an open confirm step when busy flips', () => {
+  it('parks focus while keeping the draft and an open confirm step when busy flips', () => {
     const { fixture, host, setBusy } = mountBusyHost()
     host.confirmOnClose.set(true)
     fixture.detectChanges()
@@ -672,7 +768,7 @@ describe('HilosModal', () => {
     field.value = 'draft'
 
     setBusy(true)
-    expect(document.activeElement).toBe(field)
+    expect(document.activeElement).toBe(byId('modal'))
     setBusy(false)
     expect(document.activeElement).toBe(field)
     expect((byId('field') as HTMLInputElement).value).toBe('draft')
@@ -697,14 +793,19 @@ describe('HilosModal', () => {
     const { host, setBusy } = mountBusyHost()
     const dialog = byId('modal')
     const depth = layerDepths('[data-id="modal"]')
+    const activate = vi.spyOn(FocusTrap.prototype, 'activate')
+    try {
+      setBusy(true)
+      setBusy(false)
 
-    setBusy(true)
-    setBusy(false)
-
-    expect(byId('modal')).toBe(dialog)
-    expect(layerDepths('[data-id="modal"]')).toEqual(depth)
-    expect(document.body.classList.contains('modal-open')).toBe(true)
-    expect(host.open()).toBe(true)
+      expect(activate).not.toHaveBeenCalled()
+      expect(byId('modal')).toBe(dialog)
+      expect(layerDepths('[data-id="modal"]')).toEqual(depth)
+      expect(document.body.classList.contains('modal-open')).toBe(true)
+      expect(host.open()).toBe(true)
+    } finally {
+      activate.mockRestore()
+    }
   })
 
   it('leaves the disabled close button and busy body out of the Tab cycle', () => {
@@ -751,6 +852,60 @@ describe('HilosModal', () => {
     expect(document.activeElement).toBe(opener)
     opener.remove()
   })
+})
+
+// Angular owns TestBed, projection and rendering; the common suite owns outcomes.
+describe('HilosModal (Angular) modalBusyFocusCases', () => {
+  const mountAngular: MountModalBusyFocus = async (props) => {
+    let fixture: ComponentFixture<BusyFocusHost> | undefined
+    const unmount = async () => {
+      try {
+        if (fixture) fixture.destroy()
+        else TestBed.resetTestingModule()
+        await Promise.resolve()
+      } finally {
+        fixture?.nativeElement.remove()
+      }
+    }
+    const flush = async () => {
+      fixture!.detectChanges()
+      await fixture!.whenStable()
+      fixture!.detectChanges()
+    }
+    try {
+      fixture = TestBed.createComponent(BusyFocusHost)
+      const host = fixture.componentInstance
+      host.state.set(props)
+      await flush()
+      return {
+        get container() {
+          return document.body
+        },
+        update: async (patch) => {
+          host.state.update((state) => ({ ...state!, ...patch }))
+          await flush()
+        },
+        key: async (target, key, shiftKey = false) => {
+          const event = new KeyboardEvent('keydown', {
+            key,
+            shiftKey,
+            bubbles: true,
+            cancelable: true,
+          })
+          target.dispatchEvent(event)
+          await flush()
+          return event
+        },
+        flush,
+        unmount,
+      }
+    } catch (error) {
+      await unmount()
+      throw error
+    }
+  }
+
+  registerModalBusyFocusCases({ it, expect }, mountAngular)
 })
 
 describe('HilosModal busy body', () => {
@@ -871,9 +1026,11 @@ describe('HilosModal busy body', () => {
       const { fixture, setBusy } = mountBusyHost()
       const field = modalElement('field')
       const dialog = modalElement('modal')
-      const refocus = vi.spyOn(FocusTrap.prototype, 'refocus')
+      // Initial-focus fallback has no field captured before busy.
+      dialog.focus()
+      const focus = vi.spyOn(field, 'focus')
       setBusy(true)
-      expect(refocus).not.toHaveBeenCalled()
+      expect(focus).not.toHaveBeenCalled()
       dialog.focus()
       if (from !== 'dialog') dialog.blur()
       const active =
@@ -885,11 +1042,11 @@ describe('HilosModal busy body', () => {
       active?.mockRestore()
       expect(field.matches(':disabled')).toBe(false)
       expect(document.activeElement).toBe(field)
-      expect(refocus).toHaveBeenCalledExactlyOnceWith(dialog, 'marked')
-      refocus.mockClear()
+      expect(focus).toHaveBeenCalledExactlyOnceWith()
+      focus.mockClear()
       dialog.focus()
       fixture.detectChanges()
-      expect(refocus).not.toHaveBeenCalled()
+      expect(focus).not.toHaveBeenCalled()
       expect(document.activeElement).toBe(dialog)
     },
   )
@@ -899,8 +1056,10 @@ describe('HilosModal busy body', () => {
     (placement) => {
       const { host, setBusy } = mountBusyHost()
       host.initialFocus.set(placement)
-      setBusy(true)
       const dialog = modalElement('modal')
+      // A declared initial placement belongs to the uncaptured fallback path.
+      dialog.focus()
+      setBusy(true)
       dialog.focus()
       setBusy(false)
       expect(document.activeElement).toBe(

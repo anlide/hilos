@@ -38,6 +38,9 @@ page that has one (docs/agents/frontend/rules-and-violations.md, section E).
 Open state is v-model (`v-model="open"`); the dialog
 teleports to <body>, traps Tab focus and returns focus to the opener on close,
 and is keyboard- and ARIA-labelled (a11y ships in v1, styling-rules.md).
+Busy parks a newly disabled body field on the dialog and returns to that exact
+field when it becomes available again. Initial focus is a separate fallback
+for an opening already busy or a step whose captured field has disappeared.
 With confirmOnClose, an Esc/backdrop/close attempt raises a confirm step
 standing as a second layer over the modal — its own backdrop and one step
 narrower (mockups/components/modal, D-106) — learning its depth from the core
@@ -133,11 +136,12 @@ const props = withDefaults(
      * clears. The parent setting `modelValue` to false still closes the
      * dialog. The body is locked too: the fieldset around the default slot is
      * disabled, or #body receives the flag to lock its own fields. A control
-     * disabled for a reason of its own stays disabled once it clears. Once it
-     * clears, focus that stands on the dialog itself or on the page's body goes
-     * to the initial element again, as on opening; any other element keeps it —
-     * a control in the dialog, or one outside it, such as another modal
-     * standing over this one.
+     * disabled for a reason of its own stays disabled once it clears. A newly
+     * disabled focused body field parks focus on the dialog; once busy clears,
+     * that exact field takes focus back only from the dialog and only if it
+     * is still available. Another focus choice is preserved. Opening already
+     * busy, or moving to a step without the captured field, keeps the initial
+     * focus fallback for the current step from the dialog or document body.
      */
     busy?: boolean
     /** Raise a confirm step before closing — set it when the draft is dirty. */
@@ -181,6 +185,7 @@ const emit = defineEmits<{
 }>()
 
 const dialog = ref<HTMLElement>()
+const modalBody = ref<HTMLElement>()
 const confirmDialog = ref<HTMLElement>()
 const interactionScope = ref<HTMLFieldSetElement>()
 const confirmInteractionScope = ref<HTMLFieldSetElement>()
@@ -268,6 +273,14 @@ watch(
         const root = activeRoot()
         if (root?.isConnected) {
           trap.activate(root, trapPlacement(props.initialFocus))
+          if (!confirmVisible.value && modalBody.value?.isConnected) {
+            trap.setBusy(
+              root,
+              modalBody.value,
+              props.busy,
+              trapPlacement(props.initialFocus),
+            )
+          }
         }
       })
     } else {
@@ -308,26 +321,28 @@ watch(confirmVisible, (visible) => {
   })
 })
 
-// A step that moved while the request was out found its field locked and put
-// focus on the dialog itself; once busy clears, focus that stands on the dialog
-// itself or on the page's body goes to the initial element again, as on
-// opening. Any other element keeps it — a control in the dialog, another modal
-// standing over this one, an open confirm step.
+// Reconcile after native disabled has reached both the default and custom body.
+// The core owns the captured field and the independent current-step fallback.
 watch(
   () => props.busy,
-  (busy, wasBusy) => {
-    if (busy || !wasBusy) return
+  () => {
+    const generation = activation
     void nextTick(() => {
-      if (disposed || props.busy || !props.modelValue || confirmVisible.value) {
+      if (
+        disposed ||
+        generation !== activation ||
+        !props.modelValue ||
+        confirmVisible.value
+      ) {
         return
       }
       const root = dialog.value
-      if (!root?.isConnected) return
-      const { activeElement: active, body } = root.ownerDocument
-      if (active && active !== root && active !== body) return
-      trap.refocus(root, trapPlacement(props.initialFocus))
+      const body = modalBody.value
+      if (!root?.isConnected || !body?.isConnected) return
+      trap.setBusy(root, body, props.busy, trapPlacement(props.initialFocus))
     })
   },
+  { flush: 'post' },
 )
 
 function onTab(event: KeyboardEvent): void {
@@ -392,7 +407,7 @@ function onTab(event: KeyboardEvent): void {
                 @click="modal.requestClose()"
               ></button>
             </div>
-            <div class="modal-body">
+            <div ref="modalBody" class="modal-body">
               <!-- The fieldset is always there, so flipping busy only toggles
               its disabled: the fields and their draft are never remounted. -->
               <slot name="body" :busy="busy">

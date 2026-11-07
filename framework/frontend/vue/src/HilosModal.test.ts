@@ -3,7 +3,12 @@
 // matches `:disabled` only in jsdom, and that inheritance is what the locked
 // body gives and what the focus trap reads.
 
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import {
+  enableAutoUnmount,
+  flushPromises,
+  mount,
+  type VueWrapper,
+} from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { h, nextTick, ref } from 'vue'
 import {
@@ -16,6 +21,10 @@ import {
   type HilosConnection,
 } from '@hilos/core/base'
 
+import {
+  registerModalBusyFocusCases,
+  type MountModalBusyFocus,
+} from '../../test/modalBusyFocusCases.js'
 import HilosLayout from './HilosLayout.vue'
 import HilosModal from './HilosModal.vue'
 import LoadingButton from './LoadingButton.vue'
@@ -828,6 +837,8 @@ describe('HilosModal', () => {
     const dialog = document.querySelector<HTMLElement>('[data-id="modal"]')
     const field = document.querySelector<HTMLElement>('[data-id="field"]')
 
+    // Start on the root to exercise initial-focus fallback without a capture.
+    dialog?.focus()
     await wrapper.setProps({ busy: true })
     // A step that moved in flight looks for its mark and, the field being
     // locked, lands on the dialog itself.
@@ -884,6 +895,8 @@ describe('HilosModal', () => {
     const dialog = document.querySelector<HTMLElement>('[data-id="modal"]')
     const field = document.querySelector<HTMLElement>('[data-id="field"]')
 
+    // Body permits the fallback only when this busy cycle captured no field.
+    dialog?.focus()
     await wrapper.setProps({ busy: true })
     // A disabled field cannot be blurred; focus the dialog and let go of it.
     dialog?.focus()
@@ -1623,4 +1636,108 @@ describe('HilosModal connection interaction (HIL-1651)', () => {
         node.closest('[aria-modal]')?.getAttribute('aria-describedby'),
       ).toBe(node.id)
   })
+})
+
+// Vue owns projection, teleport and nextTick; the common suite owns every outcome.
+describe('HilosModal (Vue) modalBusyFocusCases', () => {
+  const mountVue: MountModalBusyFocus = async (props) => {
+    const state = ref({ ...props })
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    let wrapper: VueWrapper | undefined
+    let releaseApp: (() => void) | undefined
+    const flush = async () => {
+      await nextTick()
+      await flushPromises()
+    }
+    const unmount = async () => {
+      try {
+        if (wrapper) wrapper.unmount()
+        else releaseApp?.()
+        await flush()
+      } finally {
+        host.remove()
+      }
+    }
+    try {
+      wrapper = mount(
+        {
+          components: { HilosModal, LoadingButton },
+          setup: () => ({ state }),
+          template: `
+            <button type="button" data-id="busy-focus-opener">Open editor</button>
+            <button type="button" data-id="busy-focus-outside">Outside</button>
+            <HilosModal
+              :model-value="state.open"
+              :busy="state.busy"
+              :initial-focus="state.initialFocus"
+              title="Edit fields"
+            >
+              <template #default>
+                <form :key="state.step" @submit.prevent="state.onSubmit?.()">
+                  <input data-id="busy-focus-first" data-autofocus aria-label="First field" />
+                  <input data-id="busy-focus-second" :disabled="state.disabled" aria-label="Second field" />
+                </form>
+              </template>
+              <template v-if="state.body === 'custom'" #body="{ busy: locked }">
+                <form :key="state.step" @submit.prevent="state.onSubmit?.()">
+                  <input data-id="busy-focus-first" data-autofocus :disabled="locked" aria-label="First field" />
+                  <input data-id="busy-focus-second" :disabled="locked || state.disabled" aria-label="Second field" />
+                  <LoadingButton
+                    v-if="state.submitting"
+                    type="submit"
+                    :loading="state.busy"
+                    data-id="busy-focus-submit"
+                  >Save</LoadingButton>
+                </form>
+              </template>
+              <template v-if="state.actions" #actions>
+                <button type="button" data-id="busy-focus-inside-first">First action</button>
+                <button type="button" data-id="busy-focus-inside-last">Last action</button>
+              </template>
+            </HilosModal>
+          `,
+        },
+        {
+          attachTo: host,
+          // Retain cleanup even when mount throws before returning its wrapper.
+          global: {
+            plugins: [
+              (app) => {
+                releaseApp = () => app.unmount()
+              },
+            ],
+          },
+        },
+      )
+      await flush()
+      return {
+        get container() {
+          return document.body
+        },
+        update: async (patch) => {
+          state.value = { ...state.value, ...patch }
+          await flush()
+        },
+        key: async (target, key, shiftKey = false) => {
+          const event = new KeyboardEvent('keydown', {
+            key,
+            shiftKey,
+            bubbles: true,
+            cancelable: true,
+          })
+          target.dispatchEvent(event)
+          await flush()
+          return event
+        },
+        flush,
+        unmount,
+      }
+    } catch (error) {
+      await unmount()
+      throw error
+    }
+  }
+
+  registerModalBusyFocusCases({ it, expect }, mountVue)
 })

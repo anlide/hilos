@@ -8,10 +8,13 @@
 // Busy disables the default body's permanent fieldset and the modal's own Copy
 // button. A body with its own submitting LoadingButton uses `body({ busy })`
 // instead, keeping that button outside its disabled field groups. The owner
-// disables ordinary actions; submitting buttons keep their own loading. Once
-// busy clears in an open dialog with no confirm, initial focus returns only
-// from the dialog, document body or no active element. Another focus choice
-// stays put, and the trap, layers and scroll lock stay live.
+// disables ordinary actions; submitting buttons keep their own loading. The
+// core parks a newly disabled focused body field on the dialog and returns to
+// that exact available field when busy clears and focus is still on the dialog.
+// A missing captured field or a cycle without one keeps the current step's
+// initial-focus fallback from dialog/body; an unavailable surviving field or
+// another focus choice forbids that return. The trap, layers and scroll lock
+// stay live.
 // The shell connection lock is independent of busy: permanent fieldsets cover
 // the whole dialog and its confirm layer, including custom content. Core binds
 // the real roots without restarting the focus trap or scroll lock.
@@ -134,9 +137,12 @@ export interface HilosModalProps {
    * `actions` slot receives closes the dialog or raises the confirm step.
    * Outranks `closeOnEsc` and `closeOnBackdrop`; a gesture refused while busy
    * is not replayed once it clears. The parent setting `open` to false still
-   * closes the dialog. On true to false, initial focus returns only if focus
-   * is on the dialog, document body or nowhere, while the dialog is still open
-   * and no confirm is open. Defaults to false.
+   * closes the dialog. The core parks a newly disabled focused body field on
+   * the dialog. On true to false, it returns to that exact available field
+   * only while focus is still on the dialog. If no captured field survives,
+   * current-step initial focus remains the fallback from dialog/body/nowhere.
+   * An unavailable surviving field or another focus choice prevents return;
+   * the dialog must still be open without a confirm. Defaults to false.
    */
   busy?: boolean
   /** Raise a confirm step before closing — set it when the draft is dirty. */
@@ -201,6 +207,7 @@ export function HilosModal({
   actions,
 }: HilosModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
   const confirmRef = useRef<HTMLDivElement>(null)
   const interactionScope = useRef<HTMLFieldSetElement>(null)
   const confirmInteractionScope = useRef<HTMLFieldSetElement>(null)
@@ -209,7 +216,6 @@ export function HilosModal({
   const connectionDescriptionId = `hilos-modal-connection-${useId()}`
   const confirmConnectionDescriptionId = `${connectionDescriptionId}-confirm`
   const trap = useRef(new FocusTrap()).current
-  const previousBusy = useRef(busy)
   const scrollLockOwner = useRef<ScrollLockOwner>({}).current
   const modalLayerOwner = useRef<ModalLayerOwner>({}).current
   // The layer this modal stands on: 0 over the page, 1 over another modal.
@@ -294,6 +300,10 @@ export function HilosModal({
     const root = dialogRef.current
     if (root) {
       trap.activate(root, trapPlacement(initialFocus))
+      const mountedBody = bodyRef.current
+      if (mountedBody) {
+        trap.setBusy(root, mountedBody, busy, trapPlacement(initialFocus))
+      }
     }
 
     return () => {
@@ -327,18 +337,15 @@ export function HilosModal({
     return () => leaveModalLayer(confirmLayerOwner)
   }, [open, confirmVisible, confirmLayerOwner])
 
-  // Read focus after the fieldset's disabled state has reached the DOM. A step
-  // may have left focus on the root while its next field was still locked;
-  // another control or an upper modal keeps its chosen focus.
-  useEffect(() => {
-    const wasBusy = previousBusy.current
-    previousBusy.current = busy
-    if (busy || !wasBusy || !open || confirmVisible) return
+  // Reconcile only after the body has applied disabled. The core tracks focus
+  // before native fixup, owns the busy cycle and guards another focus choice.
+  useLayoutEffect(() => {
+    if (!open || confirmVisible) return
     const root = dialogRef.current
-    if (!root?.isConnected) return
-    const { activeElement: active, body: documentBody } = root.ownerDocument
-    if (active && active !== root && active !== documentBody) return
-    trap.refocus(root, trapPlacement(initialFocus))
+    const mountedBody = bodyRef.current
+    if (root && mountedBody) {
+      trap.setBusy(root, mountedBody, busy, trapPlacement(initialFocus))
+    }
   }, [busy, open, confirmVisible, initialFocus, trap])
 
   if (!open) {
@@ -423,7 +430,7 @@ export function HilosModal({
                 onClick={() => modal.requestClose()}
               />
             </div>
-            <div className="modal-body">
+            <div ref={bodyRef} className="modal-body">
               {body ? (
                 body({ busy })
               ) : (

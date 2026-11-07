@@ -208,6 +208,16 @@ view-package test that renders on the server says `// @vitest-environment node`
 (`framework/frontend/vue/src/serverRender.test.ts`,
 `framework/frontend/react/test/serverRender.test.tsx`).
 
+A test of a control inheriting `:disabled` from a disabled `fieldset` declares
+`// @vitest-environment jsdom` on its first line. The core focus-trap test and
+the Vue modal test use this override:
+`framework/frontend/core/test/dom/focusTrap.test.ts` and
+`framework/frontend/vue/src/HilosModal.test.ts`. The verified happy-dom 16.8.1
+baseline did not model inherited `:disabled`; keep the override on these test
+files rather than changing the package environment or assuming behavior from a
+later happy-dom version. jsdom checks the selector state, but does not establish
+native browser focus fixup or implicit Enter submission.
+
 For shared behavior, the existing local `*.test.ts` / `*.test.tsx` files stay
 discovery entries in the places above and call the common scenario module.
 That test-only module is not a second SDK API and does not enter the runtime

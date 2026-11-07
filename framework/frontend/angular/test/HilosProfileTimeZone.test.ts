@@ -728,6 +728,9 @@ describe('HilosProfileTimeZone', () => {
     await settle()
     expect(server.host.shown()).toBe(true)
     expect(search().disabled).toBe(false)
+    // Focus returns during the last render; fake timers defer selectionchange
+    // scheduled inside the preceding timer turn to the next millisecond.
+    await vi.advanceTimersByTimeAsync(1)
     expect(vi.getTimerCount()).toBe(1)
     byId('profile-time-zone-close').click()
     await settle()

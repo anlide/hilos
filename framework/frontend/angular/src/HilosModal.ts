@@ -13,8 +13,9 @@
 // keeps its look and focus until its spinner. The footer stays outside the
 // busy fieldset; its owner disables Cancel and other actions, the modal disables
 // Copy.
-// Once busy clears, the existing trap restores initial focus only from the
-// dialog itself or the document body, leaving another focus choice alone.
+// After disabled applies, the shared trap parks a disabled body field on the
+// dialog, then returns to that exact available field once busy clears. A missing
+// field permits the current step's initial focus; another focus choice stays put.
 // The shell connection lock is independent of busy: permanent fieldsets cover
 // the whole dialog and its confirm layer, including custom content. Core binds
 // the real roots without restarting the focus trap or scroll lock.
@@ -65,6 +66,7 @@ import {
   model,
   output,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core'
 import type { TemplateRef } from '@angular/core'
@@ -175,7 +177,7 @@ export interface ModalBodyContext {
                 (click)="modal.requestClose()"
               ></button>
             </div>
-            <div class="modal-body">
+            <div #bodyRoot class="modal-body">
               @if (body(); as tpl) {
                 <ng-container
                   [ngTemplateOutlet]="tpl"
@@ -324,8 +326,10 @@ export class HilosModal {
    * still closes the dialog. A permanent fieldset disables the default body;
    * a custom `#modalBody` receives busy to disable its own groups, leaving its
    * submitting LoadingButton outside them. Copy is disabled; the owner guards
-   * other footer actions. Once idle, initial focus returns only from the dialog
-   * or document body, with no confirm showing. Defaults to false.
+   * other footer actions. After disabled applies, focus parks on the dialog and
+   * returns to the exact available field on idle. If that field is gone, the
+   * current step's initial focus is used from dialog/body; another focus choice
+   * stays put. No return runs with a confirm showing. Defaults to false.
    */
   readonly busy = input(false)
   /** Raise a confirm step before closing — set it when the draft is dirty. */
@@ -353,6 +357,7 @@ export class HilosModal {
   private readonly modalLayerOwner: ModalLayerOwner = {}
   private readonly confirmLayerOwner: ModalLayerOwner = {}
   private readonly dialog = viewChild<ElementRef<HTMLElement>>('dialog')
+  private readonly bodyRoot = viewChild<ElementRef<HTMLElement>>('bodyRoot')
   private readonly confirmDialog =
     viewChild<ElementRef<HTMLElement>>('confirmDialog')
   private readonly interactionScope =
@@ -433,7 +438,13 @@ export class HilosModal {
       this.copied.set(false)
       lockBodyScroll(this.doc, this.scrollLockOwner)
       this.layerDepth.set(enterModalLayer(this.doc, this.modalLayerOwner))
-      this.trap.activate(root, trapPlacement(this.initialFocus()))
+      // Opening configuration must not subscribe this lifetime to busy changes.
+      untracked(() => {
+        const placement = trapPlacement(this.initialFocus())
+        this.trap.activate(root, placement)
+        const body = this.bodyRoot()?.nativeElement
+        if (body) this.trap.setBusy(root, body, this.busy(), placement)
+      })
       onCleanup(() => {
         unlockBodyScroll(this.scrollLockOwner)
         leaveModalLayer(this.modalLayerOwner)
@@ -455,19 +466,19 @@ export class HilosModal {
         )
       }
     })
-    // Only this adapter instance needs the previous busy value. Render first:
-    // the current step and its disabled fieldsets must be applied before focus.
-    let wasBusy = false
+    // Reconcile only after the current step and disabled fieldsets are rendered.
+    // Core owns the capture and preserves it across repeated renders.
     afterRenderEffect(() => {
-      const busy = this.busy()
-      const becameIdle = wasBusy && !busy
-      wasBusy = busy
-      if (!becameIdle || !this.open() || this.confirmVisible()) return
+      if (!this.open() || this.confirmVisible()) return
       const root = this.dialog()?.nativeElement
-      if (!root?.isConnected || this.busy()) return
-      const { activeElement: active, body } = root.ownerDocument
-      if (active && active !== root && active !== body) return
-      this.trap.refocus(root, trapPlacement(this.initialFocus()))
+      const body = this.bodyRoot()?.nativeElement
+      if (!root || !body) return
+      this.trap.setBusy(
+        root,
+        body,
+        this.busy(),
+        trapPlacement(this.initialFocus()),
+      )
     })
     // Confirm step enters its own modal layer while visible, and releases it on
     // hide or close.

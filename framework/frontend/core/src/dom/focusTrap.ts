@@ -14,6 +14,8 @@ import {
 const FOCUSABLE_SELECTOR =
   'a[href], summary, button, input, select, textarea, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex="-1"])'
 
+const FOCUS_BOUNDARY_SELECTOR = `dialog, [role="dialog"], [role="alertdialog"], [${HILOS_INTERACTION_REGION_ATTR}]`
+
 const FOCUS_RETURN_REQUEST = 'hilos-focus-return-request'
 
 interface FocusReturnRequest {
@@ -200,6 +202,10 @@ export class FocusTrap {
   private opener: HTMLElement | null = null
   private root: HTMLElement | null = null
   private fallback: (() => HTMLElement | null) | undefined
+  private wasBusy = false
+  private busyTarget: HTMLElement | null = null
+  private lastFocused: HTMLElement | null = null
+  private stopFocusTracking: (() => void) | undefined
 
   /**
    * Remember the currently-focused element and move focus into `root`
@@ -209,6 +215,7 @@ export class FocusTrap {
     const active = root.ownerDocument.activeElement
     this.opener = active instanceof HTMLElement ? active : null
     this.root = root
+    this.trackFocus(root)
     const request: FocusReturnRequest = {}
     this.opener?.dispatchEvent(
       new CustomEvent(FOCUS_RETURN_REQUEST, {
@@ -225,8 +232,71 @@ export class FocusTrap {
    * when swapping sub-dialogs.
    */
   refocus(root: HTMLElement, placement: FocusPlacement = 'marked'): void {
-    this.root = root
+    if (root !== this.root) {
+      this.root = root
+      this.trackFocus(root)
+    }
     focusInitial(root, placement)
+  }
+
+  /**
+   * Reconcile busy after the open main dialog's body has applied disabled.
+   * Park only a natively disabled focused control, then return to that exact
+   * node from the dialog root. A surviving unavailable target forbids fallback;
+   * a missing target permits initial focus for the current step from root/body.
+   * Repeated busy or idle renders do not move focus or replace the capture.
+   *
+   * @param root The current connected main dialog, without a confirm step.
+   * @param body The current mounted body belonging to that dialog.
+   * @param busy Whether the dialog's request is in flight.
+   * @param placement Initial focus policy when no captured field survives.
+   */
+  setBusy(
+    root: HTMLElement,
+    body: HTMLElement,
+    busy: boolean,
+    placement: FocusPlacement = 'marked',
+  ): void {
+    if (
+      root !== this.root ||
+      !root.isConnected ||
+      root.matches('[role="alertdialog"]') ||
+      !this.owns(body) ||
+      busy === this.wasBusy
+    )
+      return
+
+    this.wasBusy = busy
+    const document = root.ownerDocument
+    const active = document.activeElement
+    if (busy) {
+      const target = this.lastFocused
+      if (
+        target &&
+        body.contains(target) &&
+        this.owns(target) &&
+        target.matches(':disabled') &&
+        (active === target || active === document.body)
+      ) {
+        this.busyTarget = target
+        root.focus({ preventScroll: true })
+      }
+
+      return
+    }
+
+    const target = this.busyTarget
+    this.busyTarget = null
+    if (target && body.contains(target)) {
+      if (active === root && this.owns(target) && available(target)) {
+        target.focus({ preventScroll: true })
+      }
+
+      return
+    }
+    if (!active || active === root || active === document.body) {
+      focusInitial(root, placement)
+    }
   }
 
   /**
@@ -237,6 +307,7 @@ export class FocusTrap {
    */
   release(): void {
     const { opener, root, fallback } = this
+    this.clearFocusTracking()
     this.opener = null
     this.root = null
     this.fallback = undefined
@@ -250,12 +321,13 @@ export class FocusTrap {
 
   /**
    * Keep Tab focus within `root`: wrap from the last element to the first and,
-   * with Shift, from the first back to the last. With nothing in `root` left to
-   * take focus — no control, or every one `:disabled` — Tab is swallowed and
-   * focus stays where it is.
+   * with Shift, from the first back to the last. From the root itself, Tab takes
+   * the first element and Shift+Tab the last. With nothing in `root` left to take
+   * focus — no control, or every one `:disabled` — Tab is swallowed and focus
+   * stays where it is.
    *
    * @param root The dialog element whose focusables cycle.
-   * @param event The Tab keydown event; its default is prevented on a wrap and
+   * @param event The Tab keydown event; its default is prevented on a move and
    *   when nothing in `root` takes focus.
    */
   handleTab(root: HTMLElement, event: KeyboardEvent): void {
@@ -268,12 +340,57 @@ export class FocusTrap {
     const first = items[0]
     const last = items[items.length - 1]
     const active = root.ownerDocument.activeElement
-    if (event.shiftKey && active === first) {
+    if (active === root) {
+      event.preventDefault()
+      const target = event.shiftKey ? last : first
+      target.focus()
+    } else if (event.shiftKey && active === first) {
       event.preventDefault()
       last.focus()
     } else if (!event.shiftKey && active === last) {
       event.preventDefault()
       first.focus()
     }
+  }
+
+  private owns(element: Element): boolean {
+    const root = this.root
+
+    return (
+      !!root &&
+      root.contains(element) &&
+      element.closest(FOCUS_BOUNDARY_SELECTOR) ===
+        root.closest(FOCUS_BOUNDARY_SELECTOR)
+    )
+  }
+
+  private trackFocus(root: HTMLElement): void {
+    this.clearFocusTracking()
+    const document = root.ownerDocument
+    const view = document.defaultView
+    const remember = (target: EventTarget | null) => {
+      // Native disabled focus fixup may land on body without a focus event,
+      // or send one there. Blur/focusout ordering cannot invalidate the snapshot.
+      if (target === document.body && this.lastFocused?.matches(':disabled'))
+        return
+      this.lastFocused =
+        view && target instanceof view.HTMLElement && this.owns(target)
+          ? target
+          : null
+    }
+    const onFocus = (event: FocusEvent) => remember(event.target)
+    document.addEventListener('focusin', onFocus, true)
+    this.stopFocusTracking = () => {
+      document.removeEventListener('focusin', onFocus, true)
+    }
+    remember(document.activeElement)
+  }
+
+  private clearFocusTracking(): void {
+    this.stopFocusTracking?.()
+    this.stopFocusTracking = undefined
+    this.wasBusy = false
+    this.busyTarget = null
+    this.lastFocused = null
   }
 }

@@ -14,6 +14,10 @@ import {
 import { HilosLayout } from '../src/HilosLayout.js'
 import { HilosModal } from '../src/HilosModal.js'
 import { LoadingButton } from '../src/LoadingButton.js'
+import {
+  registerModalBusyFocusCases,
+  type MountModalBusyFocus,
+} from '../../test/modalBusyFocusCases.js'
 
 // HilosModal portals to <body>, so assertions query the document, not the render.
 const realClipboard = navigator.clipboard
@@ -911,6 +915,126 @@ describe('HilosModal busy body', () => {
   })
 })
 
+// React owns projection, portal and act; the common suite owns every outcome.
+describe('HilosModal (React) modalBusyFocusCases', () => {
+  const mountReact: MountModalBusyFocus = async (props) => {
+    let state = { ...props }
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    let view:
+      Pick<ReturnType<typeof render>, 'rerender' | 'unmount'> | undefined
+    const unmount = async () => {
+      try {
+        if (view) view.unmount()
+        else cleanup()
+        await settled()
+      } finally {
+        host.remove()
+      }
+    }
+    const fields = (locked = false) => (
+      <form
+        key={state.step}
+        onSubmit={(event) => {
+          event.preventDefault()
+          state.onSubmit?.()
+        }}
+      >
+        <input
+          data-id="busy-focus-first"
+          data-autofocus
+          disabled={locked}
+          aria-label="First field"
+        />
+        <input
+          data-id="busy-focus-second"
+          disabled={locked || state.disabled}
+          aria-label="Second field"
+        />
+        {state.body === 'custom' && state.submitting ? (
+          <LoadingButton
+            type="submit"
+            loading={state.busy}
+            data-id="busy-focus-submit"
+          >
+            Save
+          </LoadingButton>
+        ) : null}
+      </form>
+    )
+    const fixture = () => (
+      <>
+        <button type="button" data-id="busy-focus-opener">
+          Open editor
+        </button>
+        <button type="button" data-id="busy-focus-outside">
+          Outside
+        </button>
+        <HilosModal
+          open={state.open}
+          busy={state.busy}
+          initialFocus={state.initialFocus}
+          title="Edit fields"
+          body={
+            state.body === 'custom'
+              ? ({ busy: locked }) => fields(locked)
+              : undefined
+          }
+          actions={
+            state.actions
+              ? () => (
+                  <>
+                    <button type="button" data-id="busy-focus-inside-first">
+                      First action
+                    </button>
+                    <button type="button" data-id="busy-focus-inside-last">
+                      Last action
+                    </button>
+                  </>
+                )
+              : undefined
+          }
+        >
+          {fields()}
+        </HilosModal>
+      </>
+    )
+    try {
+      view = render(fixture(), { container: host })
+      await settled()
+      return {
+        get container() {
+          return document.body
+        },
+        update: async (patch) => {
+          state = { ...state, ...patch }
+          view!.rerender(fixture())
+          await settled()
+        },
+        key: async (target, key, shiftKey = false) => {
+          const event = new KeyboardEvent('keydown', {
+            key,
+            shiftKey,
+            bubbles: true,
+            cancelable: true,
+          })
+          await act(async () => {
+            target.dispatchEvent(event)
+          })
+          return event
+        },
+        flush: settled,
+        unmount,
+      }
+    } catch (error) {
+      await unmount()
+      throw error
+    }
+  }
+
+  registerModalBusyFocusCases({ it, expect }, mountReact)
+})
+
 describe('HilosModal focus after busy', () => {
   it.each([
     ['', false, 'field'],
@@ -927,8 +1051,10 @@ describe('HilosModal focus after busy', () => {
       )
       const view = render(modal(false))
       for (const focusFrom of ['root', 'body']) {
-        view.rerender(modal(true))
         const root = byId('modal')!
+        // This is initial-focus fallback, with no field captured by busy.
+        root.focus()
+        view.rerender(modal(true))
         // Set the starting focus explicitly: browser focus fixup on entering
         // busy belongs to a separate browser scenario, not this jsdom test.
         root.focus()
@@ -944,26 +1070,26 @@ describe('HilosModal focus after busy', () => {
   )
 
   it('refocuses from no active element and skips a disconnected root', () => {
-    const refocus = vi.spyOn(FocusTrap.prototype, 'refocus')
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
     const modal = (busy: boolean) => (
       <HilosModal open busy={busy}>
         <input data-id="field" data-autofocus />
       </HilosModal>
     )
     const view = render(modal(true))
-    refocus.mockClear()
+    focus.mockClear()
     const active = vi.spyOn(document, 'activeElement', 'get')
     active.mockReturnValue(null)
     view.rerender(modal(false))
     active.mockRestore()
-    expect(refocus).toHaveBeenCalledExactlyOnceWith(byId('modal'), 'marked')
+    expect(focus).toHaveBeenCalledExactlyOnceWith()
     expect(document.activeElement).toBe(byId('field'))
     view.rerender(modal(true))
     const root = byId('modal')!
     root.remove()
-    refocus.mockClear()
+    focus.mockClear()
     view.rerender(modal(false))
-    expect(refocus).not.toHaveBeenCalled()
+    expect(focus).not.toHaveBeenCalled()
     document.body.appendChild(root)
   })
 
