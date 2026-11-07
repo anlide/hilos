@@ -28,16 +28,22 @@ final class FullRestoreTriggerIntegrationTest extends FrameworkIntegrationTestCa
     private const string PASSWORD = 'trigger-fixture-secret';
 
     private DatabaseConnectionConfig $base;
+    private string $catalogHost;
     private array $databases;
     private array $users;
     private array $previousMigration;
     private string $root;
 
-    /** Creates two destinations on one server, each visible only to its own account. */
+    /** Owns a server-wide catalog and two destinations, each visible only to its own account. */
     protected function setUp(): void
     {
         parent::setUp();
         $this->base = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        $catalogHost = getenv('HILOS_TEST_CATALOG_DB_HOST');
+        $this->assertIsString($catalogHost, 'The trigger fixture needs its dedicated catalog server');
+        $this->assertNotSame('', $catalogHost);
+        $this->assertNotSame($this->base->host, $catalogHost);
+        $this->catalogHost = $catalogHost;
         $suffix = bin2hex(random_bytes(6));
         $this->databases = [0 => 'hilos-trigger_' . $suffix . '%`', self::SECOND_INDEX => 'hilos-trigger-' . $suffix];
         $this->users = [0 => 'trigger-' . $suffix . '-a', self::SECOND_INDEX => 'trigger-' . $suffix . '-b'];
@@ -51,7 +57,7 @@ final class FullRestoreTriggerIntegrationTest extends FrameworkIntegrationTestCa
         Migration::setMigrationName('Schema');
         FsPath::write($this->root . '/Schema/001_archive.sql', "SELECT 1;\n");
         FsPath::write($this->root . '/Schema/002_retire.sql', "DROP TRIGGER IF EXISTS retired_trigger;\nDROP TABLE carried;\n");
-        $this->connect(self::CONTROL_INDEX, $this->base->database, 'root', Hilos::$env[EnvConstants::DB_ROOT_PASSWORD]->string());
+        $this->connect(self::CONTROL_INDEX, 'information_schema', 'root', Hilos::$env[EnvConstants::DB_ROOT_PASSWORD]->string());
         foreach ($this->databases as $index => $database) {
             Database::sql('CREATE DATABASE ' . self::identifier($database));
             Database::sql('CREATE USER ?@? IDENTIFIED BY ?', [$this->users[$index], '%', self::PASSWORD]);
@@ -176,6 +182,31 @@ final class FullRestoreTriggerIntegrationTest extends FrameworkIntegrationTestCa
         $this->assertFalse(array_values($planner->schema->servers)[0]->completeVisibility);
         $planner->assertUnchanged();
         $this->assertIntact();
+    }
+
+    /** Global TRIGGER evidence still detects another schema's drift on the fixture's own server. */
+    public function testGlobalTriggerRecheckDetectsOtherSchemaDrift(): void
+    {
+        Database::sql('REVOKE TRIGGER ON ' . $this->grantSchema(0) . '.* FROM ?@?', [$this->users[0], '%']);
+        Database::sql('GRANT TRIGGER ON *.* TO ?@?', [$this->users[0], '%']);
+        $this->connect(0, $this->databases[0], $this->users[0], self::PASSWORD);
+        Database::useConnection(self::CONTROL_INDEX);
+        $inputs = $this->inputs();
+        $planner = FullRestorePlanner::prepare($inputs);
+        $this->assertSame([], array_values($planner->schema->servers)[0]->triggers);
+        $planner->assertUnchanged();
+        $this->createTrigger(self::SECOND_INDEX, 'retained');
+        $snapshot = FullRestoreSchemaSnapshot::read($inputs->targets);
+        $this->assertEquals($planner->schema->schemas, $snapshot->schemas);
+        $this->assertCount(1, array_values($snapshot->servers)[0]->triggers);
+        try {
+            $planner->assertUnchanged();
+            $this->fail('Server-wide trigger evidence must include drift outside the destination schema');
+        } catch (RestoreFailedException $failure) {
+            $this->assertFalse($failure->databaseTouched());
+            $this->assertStringContainsString('changed', $failure->getMessage());
+            $this->assertIntact();
+        }
     }
 
     /** @param string $owner Archived or retained owner hidden from the first target's account */
@@ -306,7 +337,7 @@ final class FullRestoreTriggerIntegrationTest extends FrameworkIntegrationTestCa
     private function connect(int $index, string $database, string $user, string $password): void
     {
         Database::close($index);
-        Database::configure($index, $this->base->host, $user, $password, $database, $this->base->port, $this->base->charset);
+        Database::configure($index, $this->catalogHost, $user, $password, $database, $this->base->port, $this->base->charset);
         Database::connect($index);
         Database::useConnection($index);
     }

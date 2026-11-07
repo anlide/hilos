@@ -4,11 +4,6 @@
 
 - `TODO` in `DaemonManager::sendToGroup()`: Group subscription tracking is not properly implemented. Currently sends to all clients instead of group members only.
 
-## Rate Limiting UX
-
-The backend rejects submits inside the 10-second common outbound limit with an action error.
-The composer has its own countdown, but cross-tab submits can still produce the backend error.
-
 ## Group Subscription Routing
 
 `sendToGroup()` in daemon sends to ALL clients (basic implementation).

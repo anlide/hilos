@@ -87,6 +87,10 @@ final class SelfConnectionBrowserData
                 BrowserDataFieldKey::VIA => [
                     ChatUserState::userId => Connection::userId,
                 ],
+                // A changed submission time invalidates this DATA slot even when the computed
+                // remaining seconds repeat. The client consumes the remaining seconds; keeping
+                // the submission time in the row also distinguishes successive submits if DATA
+                // ever gains content comparison. Today DATA rebuilds on triggers without it.
                 BrowserDataFieldKey::FIELDS => [
                     ChatUserState::lastOutboundSubmittedAt,
                 ],

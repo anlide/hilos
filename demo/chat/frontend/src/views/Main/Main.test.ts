@@ -279,6 +279,10 @@ describe('Main composer refusal', () => {
 })
 
 describe('Main composer send pause', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   async function typeMessage(wrapper: ReturnType<typeof setup>): Promise<void> {
     await wrapper.get('[data-id="message-input"]').setValue('Hello')
     await settle()
@@ -347,6 +351,58 @@ describe('Main composer send pause', () => {
     await typeMessage(wrapper)
 
     expect(byId('message-cooldown').textContent).toBe('7s')
+    expect(isSendDisabled()).toBe(true)
+  })
+
+  it('restarts the pause from a new object with the same server remaining after local expiry', async () => {
+    vi.useFakeTimers()
+    inputs.selfConnection.set({
+      messageRateLimitSecondsRemaining: 10,
+      moderation: null,
+    })
+    const wrapper = setup()
+    await typeMessage(wrapper)
+    expect(byId('message-cooldown').textContent).toBe('10s')
+    expect(isSendDisabled()).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    await nextTick()
+    expect(wrapper.find('[data-id="message-cooldown"]').exists()).toBe(false)
+    expect(isSendDisabled()).toBe(false)
+
+    inputs.selfConnection.set({
+      messageRateLimitSecondsRemaining: 10,
+      moderation: null,
+    })
+    await settle()
+    expect(byId('message-cooldown').textContent).toBe('10s')
+    expect(isSendDisabled()).toBe(true)
+  })
+
+  it('keeps the original next tick when a new object matches the local remaining', async () => {
+    vi.useFakeTimers()
+    inputs.selfConnection.set({
+      messageRateLimitSecondsRemaining: 10,
+      moderation: null,
+    })
+    const wrapper = setup()
+    await typeMessage(wrapper)
+
+    await vi.advanceTimersByTimeAsync(1500)
+    await nextTick()
+    expect(byId('message-cooldown').textContent).toBe('9s')
+
+    inputs.selfConnection.set({
+      messageRateLimitSecondsRemaining: 9,
+      moderation: null,
+    })
+    await settle()
+    expect(byId('message-cooldown').textContent).toBe('9s')
+    expect(isSendDisabled()).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(500)
+    await nextTick()
+    expect(byId('message-cooldown').textContent).toBe('8s')
     expect(isSendDisabled()).toBe(true)
   })
 })

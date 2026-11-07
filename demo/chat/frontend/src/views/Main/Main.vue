@@ -230,13 +230,14 @@ const submitMessage = (): void => {
   startCooldown()
 }
 
-// The backend-reported remaining seconds reconcile the countdown in both
-// directions: on reload or a cross-tab submit the server is the source of truth,
-// so adopt a longer remaining (e.g. resume a lockout after a refresh) and a
-// shorter one alike, and a remaining of 0 puts the countdown out.
+// Each selfConnection object reconciles the countdown in both directions, even
+// when a new submit repeats the previous server remaining. Compare with the
+// current local countdown so an equal remaining preserves the next timer tick;
+// a longer or shorter remaining resets it, and 0 ends the pause.
 watch(
-  () => selfConn.value?.messageRateLimitSecondsRemaining ?? 0,
-  (seconds) => {
+  selfConn,
+  (state) => {
+    const seconds = state?.messageRateLimitSecondsRemaining ?? 0
     if (seconds !== cooldownSeconds.value) {
       startCooldown(seconds)
     }

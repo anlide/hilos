@@ -33,7 +33,7 @@ Composer scripts live in the repo-root `composer.json`:
 | Script | What it does |
 |---|---|
 | `composer run test:framework:install-deps` | Install PHPUnit & framework dev deps inside the test container. |
-| `composer run test:framework:up` | Build the backup receiver image from the cache, start `mysql-framework-test`, `mysql-framework-remote-test`, and `sshd-framework-test`, and wait until they are healthy. |
+| `composer run test:framework:up` | Build the backup receiver image from the cache, start `mysql-framework-test`, `mysql-framework-remote-test`, `mysql-framework-catalog-test`, and `sshd-framework-test`, and wait until they are healthy. |
 | `composer run test:framework:databases` | Recreate the integration-piece and derived change-log schemas on both MariaDB services. Needs `up`. |
 | `composer run test:framework:piece -- <K>` | Run integration piece K on its own database: the classes whose crc32 of the short name lands on K, as defined in `scripts/framework-pieces.php`. Needs `up` and `databases`. |
 | `composer run test:framework:unit` | Run framework unit tests (`framework/tests/Unit`). |
@@ -52,6 +52,17 @@ user access to them. The remote service supports real cross-server ORM routing
 tests; the built-in change log stays on the primary server's derived schema and
 uses row connection 0. The public composer target names are unchanged, and the
 framework unit runner has no database-service dependency.
+
+`mysql-framework-catalog-test` is a third MariaDB service, owned by
+`FullRestoreTriggerIntegrationTest`. Its global TRIGGER grant observes every
+schema on that server, so a separate schema on either shared service cannot
+isolate its prepare/recheck boundary from concurrent pieces. The fixture uses
+`HILOS_TEST_CATALOG_DB_HOST`, creates and drops its own schemas and accounts,
+and opens its root control connection on `information_schema`; it needs no
+piece schemas or application account from `test:framework:databases`. The
+service inherits the remote service's image, tmpfs, healthcheck and network,
+with no published port. Other framework integration classes keep using the
+primary and remote services in parallel.
 
 ---
 
