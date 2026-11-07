@@ -60,7 +60,15 @@ Framework rules stay in `/docs/agents/**`; nothing here overrides them.
 
 ## Key rules for this project
 
-1. `ChatAgent` is the **only** truth source for: `events`, `eventAttachments`, `users`, `connections`, `userStates`
+1. `ChatAgent` owns the DB room collections `events`, `eventMessages`,
+   `eventAttachments` and `eventUserRegistrations`; it does not own `users`. The users
+   library creates registration/feed events, while later room changes belong to
+   `ChatAgent`; the sessions holder still has the terminal rights listed in the
+   framework [Writer
+   Map](../../docs/agents/architecture/account-operations.md#writer-map). Chat's
+   borrowed `userRenames` update for history cleanup moves to the journal's personal
+   owner (not in the code yet — HIL-1897). Its RT truth sources remain `connections` and
+   `userStates`.
 2. `LibraryAgent` is the **only** truth source for the admin library DB collection `bots`
 3. `ChatContextAnalyzerAgent` is the only truth source for `chatContexts`
 4. Uploads belong to the framework uploads agent (`hilosUploads`) and attached files to the files registry (`hilos_file`); the composer projection lives on `Connection`, the shared moderation attempt lives in `hilosModerationChecks`, and the submit rate limit lives on `ChatUserState`.

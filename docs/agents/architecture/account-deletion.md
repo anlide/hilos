@@ -20,13 +20,15 @@ The users library starts a request. The person's agent cancels it, whether the
 person or an administrator asked (HIL-1409). The session holder marks a request
 carried out under a borrowed `Update` claim, because it is the one that erases.
 
-That is the code today. The approved research design in
-[account-operations.md](account-operations.md#erasure) gives the request a
-started fact of its own, apart from `completed_at`: the person's agent wins or
-loses the start against "Keep my account" by the same kind of conditional
-write, and `completed_at` is written only once the row is gone. The Entity
-carries no started phase and nothing of it is built; the race of cancel against
-due and the trace row after the person stay requirements either way.
+That is the code today: `complete()` is written inside the erasure's one
+transaction and rolls back with it, so a committed `completed_at` still means
+the whole circle succeeded. The approved research direction in
+[account-operations.md](account-operations.md#erasure) separates starting and
+finishing, but this page adds no started field or new meaning to today's
+column. HIL-1935 owns the detailed erasure protocol. The old writer and its
+borrowed right remain until the live switch
+(not in the code yet — HIL-1952); the cancel/due race and the retained trace
+remain requirements.
 
 ## Starting And Calling It Off
 
@@ -146,8 +148,13 @@ signal between them. The price is said rather than hidden: the one transaction
 goes, and with it the rollback of the whole — once the start is recorded, a
 failure leaves a visible unfinished operation that is finished forward, never
 an account that comes back. The circle, folded accounts first, the order of
-children before parents and `RESTRICT` as the last check stay. Nothing of it
-is built; the sweep above is what runs.
+children before parents and `RESTRICT` as the last check stay. HIL-1935 owns
+the detailed next-phase norms. Preparation is inert: the due sweep above and
+force-purge below remain the only live producers until HIL-1952 enables the
+new erasure and retires the old path (not in the code yet — HIL-1952). Keep
+its necessary grants, comments and debt until that switch, and keep whatever
+rights the old merge still needs afterward. An inert handler does not clear
+the marker.
 
 Tests can bring a request due with `test:account:force-purge <userId>`: the
 session holder moves its moment to now and erases it through this path,
@@ -202,5 +209,6 @@ rolls back, so the library removes them after the commit.
 That is the seam today, and a project written today writes it. Under the
 approved research design a project names its own participants for those rows,
 each deleting in a transaction of its own with a recorded result
-([Erasure](account-operations.md#erasure), step 6); the seam and the borrowed
-claims it needs stay until a leaf cut from HIL-1674 replaces them.
+([Erasure](account-operations.md#erasure), step 6). HIL-1935 owns the precise
+participant contract; the seam and its borrowed rights stay live until the
+HIL-1952 switch retires them (not in the code yet — HIL-1952).

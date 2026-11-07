@@ -24,9 +24,20 @@ collection is — and this file says *owner*.
 
 ## Core Rule
 
-A collection written by the application has exactly one full owner. Ownership
-is declared on the claimant's class, the way an agent's reads are, and not made
-by a call inside a start hook:
+**DB:** after creation, each application-owned database row has one changing
+writer: the owner of that row or of a non-overlapping set. A complete claim
+does not permit a second changing writer, and splitting `Update` and `Remove`
+between writers is not an exception. A creator's `Add` alone is compatible
+with that owner. Non-overlapping row or set owners need no full-table owner
+beside them. Choose the creator and the writer after creation before adding a
+write path; a caller outside that ownership hands the work to the owner.
+
+**RT:** the existing rule remains one full owner, with a declared add/remove
+co-owner where the runtime contract allows it. Its shared-owner receipts and
+readiness rules are unchanged; they are not a DB permission.
+
+Ownership is declared on the claimant's class, the way an agent's reads are,
+and not made by a call inside a start hook:
 what a class owns is a fact about the class. The claimant is usually an agent,
 but not always — a test-only CLI command and the application class declare the
 same way, and *Three Cases A Flat Constant Cannot Say* is where that is spelled
@@ -40,14 +51,21 @@ not reach into the registry, and it does not list the collection among its reads
 in order to write it. What the declaration looks like is in *Interest And
 Ownership Are One Fact*; what it replaces is in *The Form That Is Gone*.
 
-The account erasure and the account merge are the two operations that write
-across other owners' tables today, under borrowed claims at the sessions holder
-([instance-owners.md](instance-owners.md#operations-over-many-instances)).
-[account-operations.md](account-operations.md) is the approved research design
-that brings them under this rule — one changing writer per table, and a
-recorded fact and a signal between owners instead of one transaction. It is a
-design and not code: the borrowed claims stay declared, the guard judges what
-it judges today, and no sentence there is callable.
+Today's ordinary overlaps and the sessions holder's account erasure and merge
+are a closed transition list, not permission to add another writer. The
+[Writer Map](account-operations.md#writer-map) names each current operation,
+creator, target writer and implementing leaf. The stricter DB judge will refuse
+new changing-writer pairs even with incomplete operation sets; its closed
+executable debt list and shrink checks belong to its own contract
+(not in the code yet — HIL-1892). The present complete-only comparison is
+spelled out under *What The Start Refuses* below.
+
+Ordinary moves land first. The old erasure remains until its live cutover
+(not in the code yet — HIL-1952), and the old merge until its live cutover
+(not in the code yet — HIL-1999). Each keeps the grants and comments its
+running path needs until that cutover. The agreed terminal design in
+[account-operations.md](account-operations.md) is not a callable API.
+The trigger-written tables and scoped receipt lifecycle below stay separate.
 
 ## A Collection Written Outside The Application
 
@@ -122,12 +140,16 @@ cache read before it — and the worker waits for it at the start, beside
 `READS_RT` and `READS_DB` and before the instance is built
 (`OwnershipDeclaration::borrowedRtCollectionsOf()`,
 `OwnershipDeclaration::borrowedDbCollectionsOf()`). The delivery channels are
-the standing case: each edits the journal row of the attempt it runs
-(`AbstractDeliveryChannelAgent`), while the notifications library adds and
-prunes those rows. The operations are read folded — `BY_KIND` expanded and the
+the standing readiness case: each edits the journal row of the attempt it runs
+(`AbstractDeliveryChannelAgent`), while the notifications library currently
+adds, retries and prunes those rows. Pruning moves to the channel or shard,
+without deleting pending rows (not in the code yet — HIL-1902); retry and its
+`resetForRetry()` move there too (not in the code yet — HIL-1910).
+Borrowing describes readiness and reader interest, never permission for a
+second DB writer. The operations are read folded — `BY_KIND` expanded and the
 parents' records merged — so an heir that gives a borrowed record the right to
-add owns the collection. A claim narrowed to named rows (`OWNS_DB_ROWS`,
-`OWNS_RT_ROWS`) is never borrowed: the rows it names are its own. A claim over a
+add no longer waits as a borrowed holder. A claim narrowed to named rows
+(`OWNS_DB_ROWS`, `OWNS_RT_ROWS`) is never borrowed: the rows it names are its own. A claim over a
 set is another matter, because the rows of a set are often brought into being by
 somebody else: it is borrowed by the same test — no `Add` among its folded
 operations — and waits at the start the same way. *A Claim Over A Set* has the
@@ -137,13 +159,12 @@ The sessions holder's claims for the account erasure and the account merge are
 borrowed claims of this kind — `Update` and `Remove`, or `Remove` alone, over
 seventeen collections somebody else brings into being — and so are the chat
 holder's over the room tables. Nothing of the mechanism here changes for them.
-What the approved research design changes is who holds those writes: each goes
-to the owner of the rows, and the borrowed claim goes with the leaf that moves
-it ([Writer Map](account-operations.md#writer-map)). The standing case above
-changes the same way there — the notifications library keeps creating the
-journal rows, and the channel becomes the one writer of them afterwards,
-pruning included. None of it is built: the claims in the tree are the ones
-this section describes.
+The [Writer Map](account-operations.md#writer-map) assigns those terminal
+writes to the row owners: the erasure's borrowed rights leave at its live
+cutover (not in the code yet — HIL-1952), and the merge's at its own
+(not in the code yet — HIL-1999). An inert preparatory handler removes no
+right. These moves do not change the borrowed wait, the initial RT snapshot
+or the DB reader-interest acknowledgement.
 
 The interest of a claim that may add is raised at the claim and not at the
 report that follows it. An agent writing its first row inside `onStart()` reads
@@ -755,8 +776,10 @@ the master on every lazy load (owner's decision, 2026-08-27, on HIL-750).
 The topology validator reads the declarations off the classes before a single
 process is built, and refuses four contradictions there (HIL-899, HIL-1114).
 
-Two owners holding one collection in full, where full is the word the runtime
-guard already uses: every operation, over rows that overlap. A claim over the
+**Current mechanism, for DB and RT:** the comparison considers only complete
+operation sets (`TruthSourceOperations::isComplete()`), not every changing
+writer pair. It refuses two owners holding one collection in full, where
+full means every operation over rows that overlap. A claim over the
 whole collection covers any rows, so a full owner beside a by-row or set owner
 of the same collection is that same refusal rather than a second rule, when both
 claims carry every operation. A set owner without `Add` beside the library that
@@ -764,14 +787,22 @@ creates the rows is a declared shape and not a collision. Two by-row claims and
 a set-plus-row pair are not judged at all — which rows an instance holds, and
 whether a named row lies in the set, only the instance and database know.
 
-The sessions holder's borrowed claims for the account erasure and the merge
-pass here as that declared shape, each with the comment
-[instance-owners.md](instance-owners.md#operations-over-many-instances) asks
-for. The approved research design takes them away one real move at a time, the
-claim and its comment removed in the commit that lands the move
-([Cutting Inputs](account-operations.md#cutting-inputs), piece 8); until then
-the validator judges the declarations as they stand, and that page adds no
-refusal here.
+Passing this comparison does not make a second DB changing writer lawful.
+In particular, `Update` at one writer and `Remove` at another overlap under
+the DB Core Rule even though neither claim is complete. Refusing such a new
+pair, while retaining only the named current debts, is the stricter DB judge
+(not in the code yet — HIL-1892). That leaf defines the executable closed list
+and its shrinking checks; this document defines no new declaration shape.
+RT's full-owner comparison and shared-owner receipts stay as they are.
+
+The sessions holder's borrowed erasure and merge claims pass the current
+comparison. Their comments remain attached to the live paths described in
+[instance-owners.md](instance-owners.md#operations-over-many-instances).
+Removing the old erasure grants waits for HIL-1952's cutover
+(not in the code yet — HIL-1952); removing the old merge grants waits for
+HIL-1999's cutover (not in the code yet — HIL-1999). Each implementing leaf
+removes its obsolete grant, comment, debt entry and markers in that same
+commit; a still-used right is not removed on the arrival of preparation code.
 
 The width over a set brings a case that can be judged: two different classes
 holding sets of one table in full are refused as potential owners of the same

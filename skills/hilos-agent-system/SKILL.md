@@ -70,7 +70,11 @@ Use this skill for agent business logic and registration work. Start by reading 
 4. Move long or blocking work out of `onTick()` and signal handlers.
 5. In named signal handlers, omit empty `default` branches for intentionally
    ignored shared-broadcast names and document the ignore contract in PHPDoc.
-6. Declare what the agent owns, and check the registry's
+6. For a DB write, choose the creator and the single changing writer after
+   creation first, following `docs/agents/architecture/truth-source.md`,
+   `docs/agents/architecture/instance-owners.md` and
+   `docs/agents/architecture/entity-libraries.md`; hand later writes to that
+   owner. Declare what the agent owns, and check the registry's
    `AgentRegistryKey::SCOPE` against that declaration. A database collection is
    declared on the class, in `OWNS_DB`: a map from collection key to the
    operations the owner may perform on its rows. A runtime collection is

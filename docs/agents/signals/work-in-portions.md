@@ -81,8 +81,10 @@ not built; do not add it on your own.
 
 ## Related Records
 
-Put related writes in one transaction in one handler. Their announcements leave
-after the commit; see
+Put related writes of one owner in one local transaction in one handler.
+Between owners, hand the work to its owner; do not open a transaction across
+handlers or call a foreign writer to keep one SQL transaction. Announcements
+leave after the commit; see
 [What waits for the commit, and what does not](../orm/transactions.md#what-waits-for-the-commit-and-what-does-not)
 and [The transaction ends with its handler](../orm/transactions.md#the-transaction-ends-with-its-handler).
 In portioned work, keep everything tied to one item in one portion and one
@@ -105,8 +107,12 @@ example of this rule, because its one transaction crosses other owners'
 tables; the approved research design that replaces it keeps each owner's
 related writes in one transaction of that owner and puts a recorded fact and a
 signal between owners
-([account-operations.md](../architecture/account-operations.md)). Nothing of
-that design is built.
+([account-operations.md](../architecture/account-operations.md)). The old
+terminal path and its required grants remain until the live erasure switch
+(not in the code yet — HIL-1952); an inert preparatory handler does not clear
+that marker. HIL-1935 owns the detailed erasure norms. This boundary promises
+no distributed transaction, new `afterCommit()` guarantee or retry of files
+and outside actions.
 
 ## After A Failure
 

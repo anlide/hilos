@@ -31,28 +31,33 @@ Preconditions* and *What This Approach Does Not Decide*.
 One entity, one library. A caller that does not own an instance reads the set
 from that entity's library or from the database, and never by iterating a
 collection in local memory. A write with no instance to address goes to the
-library, which owns the set; a write into a row that has an owner goes to that
-owner, which owns the contents.
+library for creation; every later change or deletion of an owned row goes to
+its single changing writer. Finding rows across a set does not grant the
+finder `Update` or `Remove` on them.
 
 ## The Unit: One Entity, One Library
 
 The unit is per entity, not per project and not per subsystem. The library of an
-entity owns the *set* operations — list, search, create, delete, and any command
-that arrives without an instance to address. It does not own what is inside a row
-that has an instance owner.
+entity answers the *set* operations — list, search, create and commands that
+arrive without an instance to address. With an instance owner beside it, the
+library creates an entity of any fullness, with children, and does not go on
+to change or delete existing rows. A bulk request or a sweep may find the rows
+here; their owners perform the later writes. Initial secret population right
+after insert completes creation; replacing an old enrollment or code set,
+extending a trust and upserting a known endpoint do not.
 
-For the person, "delete" and the merge are today one transaction at the
-sessions holder over tables other owners hold
-([instance-owners.md](instance-owners.md#operations-over-many-instances)). The
-owner's reading of the unit (2026-10-18, rendered in
-[account-operations.md](account-operations.md#owner-decisions)) is narrower
-than the list above: the library creates an entity, of any fullness and with
-its children, and does not go on to edit it; an operation over many instances
-is coordinated by the sessions holder and carried out by each owner on its own
-rows. That
-page is the approved research design of the split erasure and merge and not
-code: the users library and the sessions holder keep the writes they have, and
-the read path and the placement axes below are not touched by it.
+This division does not forbid a library that is itself the only changing
+writer of its collection, with no instance owner: `settings` below is such a
+library. Executors also keep their own working rows. The creator, the personal
+owner and the executor are chosen by responsibility, not by a class name.
+
+The current account erasure and merge still run as one transaction at the
+sessions holder across other owners' tables. The
+[three phases](account-operations.md#three-phases) separate ordinary moves
+from those terminal cutovers: old erasure writes stay until the live switch
+(not in the code yet — HIL-1952), old merge writes until its own
+(not in the code yet — HIL-1999). The read path and placement axes below stay
+unchanged.
 
 `demo/chat/backend/Agents/LibraryAgent.php` is the live one-entity, one-library
 shape: it registers only `ChatDbContext::bots` in `onStart()`. Its page
@@ -249,7 +254,7 @@ Operation Axis*).
 |---|---|---|
 | library | create rows in the collection | a claim of zero width — no rows — with the single operation `TruthSourceOperation::Add` |
 | instance owner | write its own row's keys | a claim naming those keys |
-| either | only some of add / update / remove | the claim's list of `TruthSourceOperation` |
+| DB changing owner | every later update or removal of its rows | the claim's list of `TruthSourceOperation`; a partial list permits no second changing writer |
 
 Creating is not a mechanism of its own (HIL-688): `registerCreate()` is a
 registration that covers no row and allows `TruthSourceOperation::Add`, and the
@@ -280,20 +285,27 @@ and not the first: it names the rows the agent owns, and there is no create-side
 seam on the agent today — adding one is the implementing leaf's business, not a
 decision this approach makes. What the claim does carry is the operation set: it
 takes it from `AbstractAgent::defaultTruthSourceOperations()`, which
-`AbstractUsersLibraryAgent` overrides with adding and removing
-([truth-source.md](truth-source.md)). **A library never
-edits a row it already wrote** (owner's decision, 2026-08-24) - the standard
-behaviour of a library rather than a switch each project throws, and the whole of
-the rule is that one override.
+`AbstractUsersLibraryAgent` currently overrides with adding and removing
+([truth-source.md](truth-source.md)). That default describes today's grants;
+it does not enforce the DB creator/owner boundary. A library beside an
+instance owner creates and then hands all changes and removals to that owner.
+A creator's `Add` alone is compatible with it; a borrowed or incomplete claim
+is no permission for another DB changing writer.
 
-The sentence is the rule, and the tree does not hold all of it yet: the
-notifications library still requeues a failed delivery and prunes the journal,
-re-subscribes a known push endpoint and marks one gone, and the users library
-removes an unfinished enrolment — each named in the
-[Writer Map](account-operations.md#writer-map) with the owner the approved
-research design hands it to (2026-10-18: *the library creates, and that is
-all*). Those writes stand, and their APIs with them, until a leaf cut from
-HIL-1674 moves each; the design removes none of them by itself.
+The [ordinary transition table](account-operations.md#ordinary-transitions)
+addresses each remaining path. Delivery retry moves to the channel
+(not in the code yet — HIL-1910), and retention moves to that channel or shard
+without pruning pending rows (not in the code yet — HIL-1902). A known push
+device is updated by its personal owner (not in the code yet — HIL-1905);
+rebinding another person's endpoint deletes through the former owner and creates anew
+at the library, possibly under a new id (not in the code yet — HIL-1906).
+The transport's dead-endpoint report is written by the personal owner
+(not in the code yet — HIL-1895). The personal owner removes the old enrollment
+(not in the code yet — HIL-1903) and old backup codes
+(not in the code yet — HIL-1904) before the library creates their replacements.
+Trust renewal, policy, rename links, first-admin creation and the legal test
+path have their own addresses in that same table. Their current doors and
+claims stay until each real move; no generic sweep exception is retained.
 
 **A library may hold the write and no reading at all** (HIL-946). Where the
 collection stands in `DbContext::processWideReadCollections()`, the whole copy is

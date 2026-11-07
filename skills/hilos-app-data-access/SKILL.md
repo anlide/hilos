@@ -120,8 +120,13 @@ switch to the focused data-layer skill first.
    explicit unless a new method was approved by name. Checked automatically by
    the `RT-STATE-REACH` guard on `test:framework:unit` — see
    `docs/agents/code-style/automated-checks.md`.
-7. For writes, call a collection action or item action. When a DB/RT item key is
-   known and the write changes or deletes that one item, load the item and call
+7. Before a DB write, choose its creator and the single writer after creation
+   under `docs/agents/architecture/truth-source.md`,
+   `docs/agents/architecture/instance-owners.md` and
+   `docs/agents/architecture/entity-libraries.md`. Hand later changes to that
+   owner; partial rights do not permit another changing writer. Call a collection
+   action or item action. When a DB/RT item key is known and the write changes
+   or deletes that one item, load the item and call
    `$item->actions->...` instead of a collection action that accepts the key.
 8. After a write, ask who is on an open screen the new fact devalues. A screen
    that declared the collection you wrote as its own source needs nothing — the

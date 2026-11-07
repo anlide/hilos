@@ -12,7 +12,15 @@ through this agent. Uploads belong to the framework uploads agent.
 - **Message moderation**: opens the first shared check, applies fresh framework verdicts, and checks attached images one at a time under the first check's deadline.
 - **Attachment publication**: receives the registry's `chat_attachments_published` answer, writes the approved event and binds its files. Binary WS frames go to the framework uploads agent.
 - **Bot lifecycle**: handles generated bot messages and chat-visible bot events.
-- **Truth source**: owns `ChatDbContext::events`, `eventAttachments`, `users`, and `ChatRtContext::connections`, `userStates`.
+- **Truth source**: owns DB `ChatDbContext::events`, `eventMessages`, `eventAttachments`
+  and `eventUserRegistrations`, and RT `ChatRtContext::connections`, `userStates`. It
+  does not own `users`. The users library creates registration and rename-feed events;
+  their later changes belong to `ChatAgent`, subject to the current terminal rights in
+  the framework [Writer
+  Map](../../../../docs/agents/architecture/account-operations.md#writer-map). Its
+  borrowed `Update` on `userRenames` for clearing history moves to the journal's
+  personal owner, whose unlink is confirmed before events are deleted (not in the code
+  yet — HIL-1897).
 
 ## Key Signal Handlers
 

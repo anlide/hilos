@@ -106,6 +106,13 @@ lock on the person's row on its frame (HIL-1406) ([../architecture/second-factor
 | `account:merge <survivorId> <loserId> [--password=…]` | `daemon` | Fold one populated account into another |
 | `second-factor:unlock <userId>` | `daemon` | Lift a person's second-factor app-code lock |
 
+`admin:create` remains a daemon command answered by the sessions holder. Today
+that holder's `mintAdminUser()` creates a person when the session has none.
+The new person, including the first administrator, will be created through the
+users library; the holder still authorizes the operation and binds the session
+(not in the code yet — HIL-1898). The command's usage, reply and behavior for a
+session that already names a person stay the same.
+
 `account:merge` reports what moved as a map rather than a count: the framework moves the
 sign-in identities itself and asks the project to move the rows only it knows about, so the
 reply carries the project's own tally under the project's own names — in chat, `messages`.

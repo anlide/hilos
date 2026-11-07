@@ -94,12 +94,14 @@ recovered) or of a block flag that really changed, the person's agent sends the
 mandatory security notice (`SecurityNotifier`, HIL-294); a notice that cannot be
 queued goes to the agent's log and does not undo the write.
 
-The three set operations are the code today. The approved research design
-([Writer Map](account-operations.md#writer-map), the `users` row) keeps the
-first administrator with creation and gives the loser's block and the erased
-row's final delete to the person's own agent, each in the closing transaction
-of its own part; the holder coordinates and is not a second writer of the row.
-None of it is built.
+Those three operations are the code today. Creation of the first
+administrator moves to the users library; the sessions holder still authorizes
+and binds the session (not in the code yet — HIL-1898). The old erasure's
+foreign `Remove` retires at its live switch
+(not in the code yet — HIL-1952), and the old merge's foreign `Update` at its
+own (not in the code yet — HIL-1999). The
+[Writer Map](account-operations.md#writer-map) keeps those terminal debts
+separate from ordinary creation; HIL-1935/HIL-1986 own the detailed protocols.
 
 ## What The Framework Does For A Person
 
@@ -176,8 +178,20 @@ project's. The journal is born with its foreign keys onto `hilos_user`.
 A project that needs something of its own on a rename row extends the journal by
 [../orm/inheritance.md](../orm/inheritance.md); the chat demo's link from a
 rename to the event of its feed is the first case: the column `event_id`, which
-its `afterUserRenamed()` writes through the journal row's item actions — empty in
-the framework and left for exactly this (HIL-1196).
+its `afterUserRenamed()` currently writes through the journal row's item actions
+— empty in the framework and left for exactly this (HIL-1196). The hook and its
+users-library `Update` grant still exist. Creating the feed event there is
+creation; linking an already-created journal row is a later write. That link
+moves to the renamed person's owner (not in the code yet — HIL-1896).
+
+When chat history is cleared, `ChatAgent` currently uses borrowed journal
+`Update` for `unlinkEvents()`. It will obtain confirmed unlink from the
+journal's personal owner before deleting the events
+(not in the code yet — HIL-1897). Neither a database `SET NULL` nor deletion
+of the journal before its event ids were read substitutes for that hand-over.
+Keep the current grants and hook until their actual moves; the journal's
+terminal deletion remains at the holder until erasure's live switch
+(not in the code yet — HIL-1952).
 
 ## Taking A Person Over
 
@@ -262,8 +276,11 @@ block in one transaction of its own, under a transfer right judged by the
 operation; the survivor's agent takes the rows into memory and confirms; the
 lock and the re-read of the second-factor tables go; and the loser's agent,
 which stops today the moment the row appears, stops after its confirmed part.
-The keys, the chain and its readers below do not change. Nothing of it is
-built; `mergeAccounts()` is what runs.
+The keys, the chain and its readers below do not change. HIL-1986 owns the
+next phase's precise merge protocol. Preparation remains inert and
+`mergeAccounts()` remains the only normal producer until the live switch
+retires its foreign writes, grants, comments and debt
+(not in the code yet — HIL-1999). A prepared handler does not clear this marker.
 
 The second-factor choice is independent of the password choice. A protected
 loser requires an explicit transfer, or retaining the survivor's existing

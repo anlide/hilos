@@ -26,10 +26,12 @@ person's step-up confirmations and the trust taken from the person's browsers
 (HIL-1408), and calling off a deletion request and the profile photo
 (HIL-1409).
 
-Choose the writer before adding a write path. A new surface does not become
-another writer merely because it already runs in a library or a page agent.
-Until a named move lands, the existing library remains the writer; a marker
-does not make the future agent callable today.
+Choose both the creator and the single writer after creation before adding a
+DB write path. The library may create an entity with all its children; later
+`Update` and `Remove` belong to the row's owner, including a sweep's write.
+An executor keeps its working rows as described below. A partial claim gives
+no second writer permission. Until each named move lands, the current writers
+and their required grants remain; a marker makes no future door callable.
 
 ## Does A New Entity Need One
 
@@ -66,29 +68,25 @@ notification marks, channel preferences and push unsubscribe (HIL-1408), calling
 off a deletion request and the profile photo (HIL-1409), and the theme choice
 (HIL-1427).
 
-The library keeps operations over the set: create, erase, merge, sweep expired
-rows and find. See [The Unit: One Entity, One Library](entity-libraries.md#the-unit-one-entity-one-library).
-A merge moves rows between sets; the write mechanism grants that move only to
-the holder of the whole table, because a claim over one set cannot cover both
-the origin and destination of that move. See [A Claim Over A Set](truth-source.md#a-claim-over-a-set).
-The sessions holder's existing erasure and merge are the declared shapes below.
+The library reads the set, creates new members and coordinates work on members
+it does not own. Finding an expired row does not make it the writer of that
+row. A library with no personal owner beside it may itself be the only writer,
+as with `settings`; see [entity-libraries.md](entity-libraries.md).
 
-That is the division in the tree. The owner's reading of 2026-10-18 and the
-decisions of 2026-10-21 go one step further, rendered in
-[account-operations.md](account-operations.md#owner-decisions): the library
-creates and does not go on to edit; every edit, deletion and transfer of a row
-after its creation is the instance owner's — in the erasure each owner deletes
-its own rows in a transaction of its own, in the merge the loser's agent gives
-its rows away under a transfer right judged by the operation
-([The Transfer Right](account-operations.md#the-transfer-right)). That page is
-the approved research design and not code: until a leaf cut from HIL-1674 lands
-a move, the holder's erasure and merge stay the writers below, and the rules of
-ordinary edits on this page do not change.
+The current set guard grants a cross-set move only to a whole-table claimant,
+because one set claim cannot cover both origin and destination. This is the
+mechanism today, not a license to add such a claimant. The agreed terminal
+direction is each owner deleting its own rows in its own transaction, and
+the loser giving rows away under a narrow operation right. Its exact protocol
+belongs to the later phases in
+[account-operations.md](account-operations.md#three-phases). The old erasure
+remains live until HIL-1952 (not in the code yet — HIL-1952), and the old merge
+until HIL-1999 (not in the code yet — HIL-1999); preparation stays inert.
 
 **Executors keep their working rows.** A delivery status, a personal data export
 and an administrator's export of acceptances stay with the executor that writes
-them. These are declared exceptions, with one writer for the work and no race
-between content editors:
+them. These are their own writing responsibilities, with one writer for the
+work; belonging to a person's data does not assign the same row two owners:
 
 - `AbstractDeliveryChannelAgent` edits the delivery attempt it is running
   (`framework/backend/Notification/Delivery/AbstractDeliveryChannelAgent.php`).
@@ -118,10 +116,17 @@ judges the administrator flag and the block and the person's agent writes them
 taken away are the person's agent's too (HIL-1407): the holder hands the data-copy
 credit of a refused blocked sign-in and the trust of the sessions it ended to the
 agent by frame, and the agent takes the trust away itself with the second factor,
-a changed or recovered password and the block. The holder keeps creating the
-trust on the way in, applying the days an administrator sets to every person's
-trust at once, and the merge and the erasure. Notification marks, channel
-preferences and push unsubscribe are the person's agent's too (HIL-1408).
+a changed or recovered password and the block. The holder currently creates
+or extends trust on the way in and applies the term to every person's trust at
+once.
+Creation stays there; renewal of an existing pair moves to the person
+(not in the code yet — HIL-1907). A saved policy is retained for application
+(not in the code yet — HIL-1900), with missed work found at sweep and start
+(not in the code yet — HIL-1901). The personal owner applies the cap
+(not in the code yet — HIL-1908) and switch-off removal
+(not in the code yet — HIL-1909). Erasure and merge remain the terminal debts
+below. Notification marks, channel preferences and push unsubscribe are the
+person's agent's too (HIL-1408).
 A session has no instance owner today: it stays standalone and the sessions
 holder, whose responsibility is authorization, stays its writer; an agent per
 session keyed by the stable `session.id` is an acceptable later design and
@@ -152,7 +157,11 @@ claims (HIL-630), and takes the frames of the edits that have moved to it
   startup refusals belong to [A Claim Over A Set](truth-source.md#a-claim-over-a-set).
   The one exception is a row the owner writes in the same transaction as its
   own row: the person's rename journal row is added with the name, so the agent
-  claims that set **with `Add`** and nothing else (HIL-1404).
+  currently claims that set **with `Add`** and nothing else (HIL-1404).
+  The feed link also moves to the renamed person's owner
+  (not in the code yet — HIL-1896), and clearing chat history obtains that
+  owner's confirmed unlink before deleting the events
+  (not in the code yet — HIL-1897).
   The person's one row of second-factor settings (`hilos_second_factor_setting`,
   keyed by the person) is born by the owner's first edit of it — a wait chosen, a
   wrong code counted — so the agent claims that set with `Add` and `Update`
@@ -251,7 +260,11 @@ An edit that moved travels in one shape, and the next ones follow it (HIL-1404):
   row with everything it is born with — a password's secret and its verified
   mark, a passkey's first counter — and edits nothing afterwards: the secret,
   which no insert can carry, is written right after the insert and judged as the
-  creation it completes (HIL-1405).
+  creation it completes (HIL-1405). It does not cover deleting an earlier
+  enrollment or backup-code set, extending an existing trust pair, or
+  upserting a known push endpoint. Those are changes to already-owned rows,
+  with the [ordinary moves](account-operations.md#ordinary-transitions)
+  addressed separately.
 
 ## Memory
 
@@ -265,64 +278,48 @@ profile move belong to a separate leaf
 
 ## Operations Over Many Instances
 
-These are declared shapes, not debts waiting for an instance owner — the
-implementation in the tree, kept by the owner's decision at the split
-(2026-10-04):
+The following are today's retained terminal paths, not a standing exception
+for any sweep, erasure or merge:
 
-- **Account erasure** is one transaction at the sessions holder over the whole
-  circle of merged accounts. It removes the person's rows and child data
-  together; see [The Erasure](account-deletion.md#the-erasure) (HIL-302, HIL-1202).
-- **Account merge** is one transaction there too: it transfers sign-in methods,
-  passkey credentials and the access log, blocks the losing account and records
-  the merge. See [A Merged Account](people-table.md#a-merged-account).
-- **Chat room rows during a person's erasure or merge** stay in that operation's
-  transaction: messages, attachments, events and registration events. Erasure
-  must remove the person's messages atomically, whoever owns the room (owner's
-  decision at the split, 2026-10-04).
-- **Unlinking the rename journal while clearing chat history** is a sweep. The
-  chat agent has the borrowed write needed to clear the room reference.
-- **The days an administrator sets for browser trust** cap or erase every
-  person's trust at once, at the sessions holder (HIL-1301). With the trust it
-  creates on the way in and moves or removes in the merge and the erasure, this
-  is why the holder claims the trust table whole; one person's trust taken away
-  is still the person's agent's (HIL-1407).
+- **Account erasure:** `eraseAccount()` and `applyAccountErasure()` run one
+  transaction at the sessions holder over the whole merged circle, including
+  chat messages, attachments, events and registration events. The due sweep
+  and `test:account:force-purge` remain its live producers until the switch to
+  owner-local work (not in the code yet — HIL-1952).
+- **Account merge:** `mergeAccounts()` and `applyAccountMerge()` run one
+  transaction there too. Ways in, second factor, chat authorship, the loser's
+  block and the tombstone keep their current writers until the merge cutover
+  (not in the code yet — HIL-1999).
+- **Stops:** today a deleted person row or a merge row stops the affected
+  personal agent; an agent not running does not rise, and the survivor is not
+  stopped. The terminal protocols move this stop after the owner's confirmed
+  part, at the erasure cutover (not in the code yet — HIL-1952) and the merge
+  cutover (not in the code yet — HIL-1999).
 
-After an erasure or a merge commits, on any node, the agent of each erased
-person and the agent of the folded account stop themselves: the people row is
-gone, or a merge row has appeared under that account's id. An agent that was
-not up does not rise. The survivor's agent is not touched.
+Ordinary cross-owner writes are separate, finite transitions. The chat agent's
+borrowed journal `Update` for `unlinkEvents()` goes to the journal's personal
+owner, whose answer precedes event deletion (not in the code yet — HIL-1897).
+The users library's journal link goes to that same owner
+(not in the code yet — HIL-1896). Creating the first administrator moves from
+`mintAdminUser()` at the sessions holder to the users library; the holder
+still authorizes and binds the session (not in the code yet — HIL-1898).
+Trust renewal, the administrator's term and switch-off have the ordinary
+addresses above. The complete [Writer Map](account-operations.md#writer-map)
+and [ordinary transitions](account-operations.md#ordinary-transitions) cover
+the other rows and the exact current operations.
 
-The owner's decisions of 2026-10-18 and 2026-10-21 replace these shapes with a
-protocol, written up as the approved research design in
-[account-operations.md](account-operations.md) — not code, and nothing of it
-callable today. There the holder coordinates and each owner writes its own
-rows in a transaction of its own, with a recorded fact and a signal between
-owners ([Erasure](account-operations.md#erasure),
-[Merge](account-operations.md#merge)); `ChatAgent` deletes the erased person's
-messages of every room itself, in one transaction of its own, on the signal —
-the atomic reading of 2026-10-04 kept under one writer; the chat agent's
-unlink of the journal on a cleared history and the days an administrator sets
-for browser trust become hand-overs to each person's agent
-([Writer Map](account-operations.md#writer-map)); and the agent of an erased or
-folded account keeps its claims until its own part is confirmed and stops after
-it, raised again only to finish — the stop on the deleted row and on the merge
-row above is the code today, and the moved stop is the design. The borrowed
-claims and their comments stay in the code until the leaf that carries out each
-move lands; that leaf brings its norms and its markers into this page.
+The three phases have distinct end points: ordinary moves leave only the
+named erasure/merge debts; HIL-1952 switches erasure and leaves only merge
+debt; HIL-1999 switches merge and removes that remainder. HIL-1935 owns the
+next erasure documentation and HIL-1986 the merge documentation, including
+the precise durable and transfer protocols. Their preparatory code is inert:
+the existence of a new handler does not retire a live producer.
 
-Creating the first administrator is creation, so it remains a library operation;
-deleting the erased person's row is part of the erasure transaction, and
-blocking the losing account is part of the merge transaction. None of them is
-an ordinary edit of a living person's content. The administrator flag and block
-edits outside those set operations are the person's agent's (HIL-1404). The
-sessions holder's claim on `hilos_user` cannot tell the merge's edit from an
-ordinary one; that is the accepted price of keeping the merge in one transaction
-(owner's decision at the split, 2026-10-04).
-
-The borrowed claims for these operations carry an ordinary code comment: name
-the erasure, merge or sweep, say why it writes here, and point to this section.
-Do not put `TODO` or a future leaf key on a deliberately retained shape. A real
-move keeps a `TODO` naming the leaf that will remove the borrowed write.
+Keep the grants, comments and debt entries needed by the old path until its
+actual switch. In the commit that enables a move, its implementing leaf removes
+the obsolete foreign right, comment, debt entry and its markers. If erasure
+and merge share a right, erasure's switch keeps what merge still needs. Do not
+add another foreign writer under the name of a set operation or sweep.
 
 ## Anti-Patterns
 

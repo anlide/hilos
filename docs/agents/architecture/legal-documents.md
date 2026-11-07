@@ -85,12 +85,18 @@ undeclared document or revision is a programming error at this internal entry.
 server's `accepted_at`, with an auto-increment `id` and a unique key over the
 person/document/revision. Repeating a recorded acceptance returns its original
 row and timestamp. There are no item actions: a stored acceptance is immutable.
-The users library owns the collection; the sessions library borrows removal
-for account erasure. Erasure removes all of the person's acceptance rows.
+The users library currently claims `Add`/`Update`/`Remove`; it creates the
+immutable acceptance, and its test hold path removes rows. The sessions
+library borrows `Remove` for account erasure, which removes all of the person's
+acceptances. That terminal right remains until the live erasure switch
+(not in the code yet — HIL-1952).
 The only other removal is test-only: `test:legal:hold <userId> <document> <revisionId>` (HIL-324)
 forgets acceptances of revisions declared after the named one, and records it, so the test
 holds the person on the former revision; window, lapse, and freeze follow by calculation.
-Merging accounts leaves those rows with the account that gave the acceptance.
+That deletion moves to the personal owner of the acceptance set; the library
+keeps creating immutable acceptances (not in the code yet — HIL-1899).
+The current test door remains until this move lands. Merging accounts leaves
+those rows with the account that gave the acceptance.
 
 A person's [data copy](data-export.md) carries every acceptance, including
 revisions the catalog no longer declares. The profile projection omits those
@@ -606,8 +612,11 @@ node from the project's system bootstrap: an export's day must not wait for
 somebody to open the section, and an order left preparing by a restart is built
 again only by a running agent. Its daemon proxy requires a monopolistic worker:
 whole-history SQL must not occupy the shared administration worker's tick.
-The agent reads acceptance records, whose writer remains the users library, and
-owns one DB collection: `legalAcceptanceExports`.
+The agent reads acceptance records; it is no writer of their content or
+deletion. The users library creates them, and the personal-owner transition
+for their test removal is specified above. The legal agent creates and writes
+its own export orders in `legalAcceptanceExports`; moving acceptance deletion
+does not give those executor rows to the personal agent.
 
 `LegalAcceptanceChangeSubscriber` invalidates `LegalAdminAudience` on local and
 remote acceptance changes. That process-local audience shares histograms and

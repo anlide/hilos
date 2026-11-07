@@ -40,24 +40,31 @@ has a submit of its own in flight.
 
 ## What is stored, and who owns it
 
-| Table | Owner | What |
-|---|---|---|
-| `hilos_second_factor` | person's agent edits; users library creates (Add/Remove) | apps: base32 secret, last accepted step, confirmed or not |
-| `hilos_second_factor_backup_code` | person's agent edits; users library creates (Add/Remove) | one row per code, spent by a conditional write |
-| `hilos_second_factor_reset` | person's agent edits; users library creates (Add) | removals: when asked, when due, the cancel token, last notice |
-| `hilos_second_factor_setting` | person's agent creates and edits; session holder whole | the person's removal wait and a shorter one not yet in force; the app-code miss count, its window, the lock step and its end |
-| `hilos_second_factor_trust` | session holder creates and applies the administrator's term; person's agent takes one person's away | a browser (session row) trusted for a person until a moment |
+These are current grants and calls, including the retained foreign writes.
+The transitions below do not make a future owner callable today.
 
-Every edit of one person's factor is written by that person's agent
+| Table | Writers and operations today | What |
+|---|---|---|
+| `hilos_second_factor` | users library `Add`/`Remove` (replacement enrollment); person's agent `Update`/`Remove`; holder `Update`/`Remove` for merge/erasure | apps: base32 secret, last accepted step, confirmed or not |
+| `hilos_second_factor_backup_code` | users library `Add`/`Remove` (replacement set); person's agent `Update`/`Remove`; holder `Update`/`Remove` for merge/erasure | one row per code, spent by a conditional write |
+| `hilos_second_factor_reset` | users library `Add`; person's agent `Update`/`Remove`; holder `Remove` for merge/erasure | removals: when asked, when due, the cancel token, last notice |
+| `hilos_second_factor_setting` | person's agent `Add`/`Update`; holder `Add`/`Update`/`Remove` for the merge's wait upsert and merge/erasure deletion | the person's removal wait and a shorter one not yet in force; the app-code miss count, its window, the lock step and its end |
+| `hilos_second_factor_trust` | holder `Add`/`Update`/`Remove` (create/renew, global term/switch-off, merge/erasure); person's agent `Update`/`Remove` for personal revocations | a browser (session row) trusted for a person until a moment |
+
+The personal edits moved in HIL-1406 are written by the person's agent
 (`AbstractUserAgent`, its writes in `SecondFactorPersonEdits`) on a frame of the
 users library, which judges what lies outside the person's set first and does
-what follows the agent's answer (HIL-1406). The library only brings rows into
-being, each with what it replaces: an enrolment started (an unfinished one goes
-in the same operation), a set of backup codes issued (the old set goes in the
-same operation), a removal asked for. The secret, the code and the token are
-written right after their row is inserted, and that write is judged as the
-creation it completes. The person's settings row is the agent's to create, born
-of its first edit - a wait chosen, a wrong code counted (owner's decision,
+what follows the agent's answer. The library still creates enrollment, backup
+codes and reset requests. Today `startEnrolment()` also deletes an unfinished
+enrollment and `issueSet()` deletes the previous code set. Those are later
+writes to old rows, not part of creating their replacements.
+
+The personal owner removes the previous enrollment before the library creates
+the new one (not in the code yet — HIL-1903), and removes the old backup-code
+set before the library creates the new codes (not in the code yet — HIL-1904).
+The secret, code and token written immediately after their new row's insert
+remain completion of creation. The person's settings row is the agent's to
+create, born of its first edit - a wait chosen, a wrong code counted (owner's decision,
 2026-10-09); the library only reads it. Merge and erasure are the session
 holder's, below.
 
@@ -93,12 +100,14 @@ All five sets are locked without waiting before the transaction rereads them;
 a busy set refuses the operation. Browser requests also carry the two presence
 flags shown in the summary, and a mismatch refuses without writing.
 
-The holder needs full ownership of settings to upsert that wait and erase a
-person atomically. The person's own wait changes are the person's agent's, which
-creates and edits that row (HIL-1406); no shared-full-owner exception is needed.
-These set operations remain
-at the holder when ordinary personal edits move to instance owners; see
-[instance-owners.md](instance-owners.md#operations-over-many-instances).
+The holder currently claims settings with all three operations for that wait
+upsert and the terminal deletions. The person's own wait is created and edited
+by their agent (HIL-1406). The complete-only topology comparison does not catch
+this overlap; it is named terminal debt, not a permission for partial DB
+co-owners. Old erasure rights remain until its live switch
+(not in the code yet — HIL-1952), and old merge rights until its own
+(not in the code yet — HIL-1999). HIL-1935 and HIL-1986 own those detailed
+protocols; see [instance-owners.md](instance-owners.md#operations-over-many-instances).
 
 The loser's sessions end after commit. When its factor first protects the
 survivor, the survivor's sessions end too. A confirmed loser factor revokes
@@ -140,11 +149,12 @@ all their trusts. Blocking a person removes every trust even when no session is
 currently signed in. Unblocking does not restore one. Ordinary sign-out keeps
 the trust until its expiry or an explicit revocation.
 
-Who writes each of these (HIL-1407). The session holder creates a trust on the
-way in, applies the administrator's term to every person's trust at once, forgets
-them all when the factor is turned off for everyone, and moves or removes them in
-the merge and the erasure; it claims the table whole for that. Taking one person's trust away is that person's agent's, in the turn of the
-write that causes it:
+Who writes each of these today (HIL-1407). The session holder's `trust()`
+creates a new pair or extends an existing pair on the way in. It applies the
+administrator's term installation-wide, removes trusts on switch-off when
+requested, and removes them in merge and erasure; it claims all three
+operations for those paths. Taking one person's trust away is already that
+person's agent's, in the turn of the write that causes it:
 
 - switching the factor off and a carried-out removal - in the transaction that
   takes the factor out (`SecondFactorPersonEdits`); the holder's `off` frame only
@@ -160,6 +170,24 @@ write that causes it:
 - ending one session or all others - the holder ends the sessions and answers the
   browser, then asks the agent on `hilos_user_browser_trust_revoke`, and only logs
   a refusal.
+
+### Trust Writes After The Ordinary Moves
+
+New trust creation on entry stays at the holder; renewal of an existing
+session/person pair goes to the personal owner, which owns every later write
+(not in the code yet — HIL-1907). The saved policy needed to apply a shorter
+term is retained (not in the code yet — HIL-1900); a sweep and owner start
+recover missed application work (not in the code yet — HIL-1901). These are
+ownership and recovery obligations, not a declaration of new DB fields here.
+
+The personal owners apply the saved cap, or remove their rows for a zero term
+(not in the code yet — HIL-1908). They also perform `forgetTrusts` when
+installation switch-off calls for it (not in the code yet — HIL-1909). The
+saved-moment rule, no extension of an earlier expiry, current gate checks and
+browser outcomes above stay requirements. The current holder calls remain
+until each ordinary move is enabled. Its terminal removals then remain only
+until erasure's switch (not in the code yet — HIL-1952) and merge's switch
+(not in the code yet — HIL-1999).
 
 ## The delayed removal
 
