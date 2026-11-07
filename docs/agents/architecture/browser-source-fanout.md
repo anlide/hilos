@@ -465,21 +465,38 @@ rebuilds both the current and previous row keys, while a list anchored to the
 subscribing connection considers only its anchor key and emits neither rows nor
 deletes for another subscriber's key.
 
-For `DATA`, the first non-`MANY` row is also the subscription's scope anchor. A
-key produced by a joined `MANY` row is only a candidate: before rebuilding the
-DATA value, `BrowserContext` resolves the anchor by its declared logical browser
-`ROW_KEY` and `WHERE`, with that subscription's params, through the same source
-resolver as the row builder. The logical key need not be the source's storage
-primary id: a connection stored by `acceptKey` can declare `ROW_KEY = userId`
-and `WHERE acceptKey = <subscriber>`. The source id still addresses that stored
-connection; it is not a lookup key for the logical user row. If the change
-deletes or moves the anchor itself, the check can use the `SourceChange` row and
-previous values to recognize the old `WHERE` even when the current anchor row
-is already gone. An owned anchor delete therefore clears that subscription's
-DATA; it does not need the removed row to still be readable. A joined owner move
-rebuilds both current and previous scopes, leaving a third, unrelated anchor
-untouched. `Clear` retains its existing collection-wide meaning. The behavior is
-covered by `BrowserContextDataScopeTest` and the language-card fan-out cases in
+For `DATA` and `LIST`, the first non-`MANY` row is the subscription's scope
+anchor. `anchorRowConfigs()` selects it; an absent or empty anchor `WHERE`
+admits every candidate. For row-keyed changes, `rowKeysForChange()` collects
+current and previous logical-key candidates and deduplicates them; anchor-field
+joins continue to resolve their keys through the anchor field. Before the
+shared scope check, `selfAnchoredListRowKey()` still narrows a list tied to the
+subscriber's own connection to that connection's key. Every DATA or LIST
+candidate then passes `browserRowKeyMatchesScope()` before its row is built.
+The check reads only the anchor through `sourceItemsForRow()` with the candidate
+key and this subscription's params; a current match proves membership. If it
+does not match, the change must match the anchor source, its restored logical
+key must equal the candidate, and the previous `WHERE` must match. The gate
+reconstructs that `WHERE` from `previous` values first, then `row` values (which
+carry the old row on delete), then unchanged fields from the current source item
+when available, and evaluates it with the subscription's params.
+`changeValueKey()` maps declared DB object fields to entity-column names when
+needed. `sourceId` addresses the changed storage item; it does not replace the
+declared logical `ITEM_KEY` or `ROW_KEY`. A change to an unrelated `MANY` source
+cannot stand in for an earlier anchor snapshot. Joined fragments are built only
+after a candidate passes this check.
+
+After admission, `buildBrowserRow()` still builds the current row. If the anchor
+is gone or no longer belongs to the subscription, the DATA value becomes `[]`
+and a LIST emits the key under `deleted`; if the anchor remains, the current
+item is emitted. When a `MANY` source moves between two live anchors, the former
+anchor gets its row with an empty joined slot and the new anchor gets the filled
+slot; a third subscription gets nothing, including no deletion. LIST items keep
+the existing `page_response` shape at `payload.lists[listKey].items`, with
+deletions at `payload.lists[listKey].deleted`. `Clear` still applies to the
+whole observed collection and keeps its existing handling. The behavior is
+covered by `BrowserContextDataScopeTest`, `BrowserContextListScopeTest`, and
+the language-card fan-out case in
 `I18nLanguageCardTest::testSubscribedCardReceivesEnabledLocaleCounts`.
 
 A list item can carry a row of another table that its anchor points at by a

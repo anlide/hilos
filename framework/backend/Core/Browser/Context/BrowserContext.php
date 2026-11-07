@@ -2689,8 +2689,8 @@ abstract class BrowserContext
 
             foreach ($rowKeys as $rowKey) {
                 if (
-                    $this->browserKind($browserKey) === BrowserSourceKind::DATA
-                    && !$this->dataRowKeyMatchesScope(
+                    in_array($this->browserKind($browserKey), [BrowserSourceKind::DATA, BrowserSourceKind::LIST], true)
+                    && !$this->browserRowKeyMatchesScope(
                         $browserKey, $browserConfig, $change, $rowKey, $acceptKey, $pageParams, $browserParams,
                     )
                 ) {
@@ -3722,7 +3722,7 @@ abstract class BrowserContext
      * {@see self::dbSourceItemsForRow()} reads a join by, on the column the topology validator holds to a
      * key or an index. Taking the changed row's id for an item key instead would rebuild whichever item
      * merely shares that number. Each candidate passes the anchor's WHERE with this subscription's params
-     * before any row is built, as {@see self::dataRowKeyMatchesScope()} holds DATA to its anchor, so the
+     * before any row is built, as {@see self::browserRowKeyMatchesScope()} holds DATA and LIST to their anchor, so the
      * subscriber of somebody else's items is sent neither rows nor deletions. One query per change and
      * subscription: nothing is cached between subscriptions.
      *
@@ -3774,10 +3774,10 @@ abstract class BrowserContext
     }
 
     /**
-     * A joined key is only a rebuild candidate; the DATA anchor owns its subscription scope.
+     * A joined logical key is only a rebuild candidate; the DATA or LIST anchor owns its subscription scope.
      * A removed or moved anchor is also matched against its previous WHERE values.
      *
-     * @param string $browserKey Browser DATA key for the declared source resolver
+     * @param string $browserKey Browser DATA or LIST key for the declared source resolver
      * @param BrowserSourceConfig $browserConfig Browser source declaration
      * @param SourceChange $change Current source fact, including previous values
      * @param int|string $rowKey Candidate logical browser row key, distinct from source storage id
@@ -3792,7 +3792,7 @@ abstract class BrowserContext
      * @throws LogicException When a database collection is not configured with its class constants
      * @throws CollectionNotManualException When the collection built for a join refuses its own items
      */
-    private function dataRowKeyMatchesScope(
+    private function browserRowKeyMatchesScope(
         string $browserKey,
         BrowserSourceConfig $browserConfig,
         SourceChange $change,
