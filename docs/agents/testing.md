@@ -377,7 +377,9 @@ is exactly what its compose file says: the default instance. Service keys are no
 renamed — they are the host names inside a stand's own network. A new compose file
 that pins a name, a subnet, an address or a host path takes `${HILOS_STAND_SUFFIX:-}`
 or its stand's `HILOS_STAND_NET_*` octet the same way; the table of octets lives in
-[`scripts/stand-instance.php`](../../scripts/stand-instance.php).
+[`scripts/stand-instance.php`](../../scripts/stand-instance.php). The table is
+written in blocks: the octet an instance occupies does not shift, and a new stand
+opens its own block rather than extending an old one.
 
 **CPU weight of a stand.** Every stand service reads `cpu_shares` from
 `HILOS_STAND_CPU_SHARES`; unset, it is `0`, which docker reads as its own default.
@@ -607,11 +609,14 @@ remain for diagnosis and still owe the explicit cleanup above.
 
 The suffix, network/address, host-port and CPU-share isolation described under
 [the full run](#the-full-run--one-graph-a-bounded-number-of-lanes) still applies.
-The current address map in
-[`scripts/stand-instance.php`](../../scripts/stand-instance.php) has ten slots
-per instance, all occupied. Extending its capacity for the new ordinary stands
-belongs to HIL-2015 (not in the code yet — HIL-2015); this document chooses no
-new octet layout or stride.
+The address map in
+[`scripts/stand-instance.php`](../../scripts/stand-instance.php) is two blocks.
+The first holds the ten stands that exist today. The second holds six planned
+ordinary demos, `HILOS_STAND_NET_PMD` through `HILOS_STAND_NET_CONCERT_TICKETS`,
+on default octets 214 to 219. The test compose of each activation reads its own
+variable, and its ports and local subnet are reserved in the registry
+([../new-project/README.md](../new-project/README.md)).
+Room for the cluster stands of HIL-1985 is left but not introduced.
 
 **Seven lanes is the agreed comparison condition for HIL-1984 on the test
 box**, not a replacement for the adaptive lane-count formula. Do not increase

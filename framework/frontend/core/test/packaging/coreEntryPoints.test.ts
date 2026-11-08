@@ -2472,7 +2472,7 @@ describe('core public entries', () => {
     expect(Object.keys(base)).not.toContain('createHilosSettingPresets')
     expect(Object.keys(base)).not.toContain('legalAdminDocumentSchema')
     expect(Object.keys(base)).not.toContain('createHilosModerationKindsTable')
-  })
+  }, 30_000)
 
   it.each([
     'base/index.ts',

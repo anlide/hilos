@@ -254,24 +254,39 @@ registry of taken host ports:
 | online-testing local | 33071 | 8150/8151/8152 | 8160 | https 8156 | 5178 | 10.203 |
 | online-testing test | 33072 | 8153/8154/8155 | — | http 8157 / https 8158 | — | 10.213 |
 | online-testing cluster | — | — | — | — | — | 10.223 |
+| pmd local (not in the code yet — HIL-2016) | 33073 | 8170/8171/8172 | 8180 | https 8176 | 5179 | 10.204 |
+| pmd test (not in the code yet — HIL-2016) | 33074 | 8173/8174/8175 | — | http 8177 / https 8178 | — | 10.214 |
+| roblox-game-server local (not in the code yet — HIL-2017) | 33075 | 8190/8191/8192 | 8200 | https 8196 | 5180 | 10.205 |
+| roblox-game-server test (not in the code yet — HIL-2017) | 33076 | 8193/8194/8195 | — | http 8197 / https 8198 | — | 10.215 |
+| solar-system-model local (not in the code yet — HIL-2018) | 33077 | 8210/8211/8212 | 8220 | https 8216 | 5181 | 10.206 |
+| solar-system-model test (not in the code yet — HIL-2018) | 33078 | 8213/8214/8215 | — | http 8217 / https 8218 | — | 10.216 |
+| file-gallery-manager local (not in the code yet — HIL-2019) | 33079 | 8230/8231/8232 | 8240 | https 8236 | 5182 | 10.207 |
+| file-gallery-manager test (not in the code yet — HIL-2019) | 33080 | 8233/8234/8235 | — | http 8237 / https 8238 | — | 10.217 |
+| preferans local (not in the code yet — HIL-2020) | 33081 | 8250/8251/8252 | 8260 | https 8256 | 5183 | 10.208 |
+| preferans test (not in the code yet — HIL-2020) | 33082 | 8253/8254/8255 | — | http 8257 / https 8258 | — | 10.218 |
+| concert-tickets local (not in the code yet — HIL-2021) | 33083 | 8270/8271/8272 | 8280 | https 8276 | 5184 | 10.209 |
+| concert-tickets test (not in the code yet — HIL-2021) | 33084 | 8273/8274/8275 | — | http 8277 / https 8278 | — | 10.219 |
 | retired five-node stand — 10.185 stays unassigned (HIL-1218) | — | — | — | — | — | 10.185 |
 
 Every number comes from the stack's own compose file — the `${…:-N}` defaults
 of `demo/<demo>/docker/docker-compose.{local,dev,test}.yml` and of
 `framework/docker/docker-compose.yml` — and the subnet from the same files
 (`DOCKER_NETWORK_SUBNET`, `DOCKER_TEST_NETWORK_SUBNET`). Local nginx publishes
-https only; Mailpit is published by the local and dev stacks.
+https only; Mailpit is published by the local and dev stacks. A row whose
+Stack cell carries a marker is reserved for that activation; its compose
+carries exactly these defaults.
 
 A demo from binance-btc-tracker on takes a block of twenty host ports in the
-81xx range — 8110–8129, 8130–8149, 8150–8169; the next project takes
-8170–8189 — with the same offsets in every block: +0/+1/+2 the local daemon
-status/comm/ws, +3/+4/+5 the test daemon, +6 the local nginx https, +7/+8 the
-test nginx http/https, +10 the local Mailpit; +9 and +11…+19 are kept for the
-demo's later stacks. mysql and FE dev keep their own rows: the next
-project takes 33073/33074 and 5179. A block, because the rows of the first
-three demos have no room left: the next test http port would be 8089, and
-8090 is already the chat daemon; and the `443+n` scheme for local https is
-dead on Windows, where SMB holds 445 — which is why polls sits on 8445.
+81xx range — 8110–8129, 8130–8149, 8150–8169 — with the same offsets in every
+block: +0/+1/+2 the local daemon status/comm/ws, +3/+4/+5 the test daemon, +6
+the local nginx https, +7/+8 the test nginx http/https, +10 the local Mailpit;
++9 and +11…+19 are kept for the demo's later stacks. mysql and FE dev keep
+their own rows. Six blocks, 8170–8289, mysql 33073–33084 and FE dev 5179–5184,
+are reserved by the rows above; the next project takes 8290–8309, 33085/33086
+and 5185. A block, because the rows of the first three demos have no room
+left: the next test http port would be 8089, and 8090 is already the chat
+daemon; and the `443+n` scheme for local https is dead on Windows, where SMB
+holds 445 — which is why polls sits on 8445.
 
 Each network also needs its own subnet, because the cli reaches the daemon by
 a static IP (`HILOS_DAEMON_HOST`), and that subnet must sit **outside Docker's
@@ -283,8 +298,14 @@ the ranges live there. The first three demos sit in the `10.18x` row for test
 and in the `10.19x` row for local+prod+dev; from the second generation on a
 demo takes one column across three rows — `10.20x` local+prod+dev, `10.21x`
 test, `10.22x` the cluster stand — and the column is the demo: 1
-binance-btc-tracker, 2 ecommerce-shop, 3 online-testing. The next project
-takes the next column: `10.204` / `10.214` / `10.224`.
+binance-btc-tracker, 2 ecommerce-shop, 3 online-testing, 4 pmd, 5
+roblox-game-server, 6 solar-system-model, 7 file-gallery-manager, 8 preferans,
+9 concert-tickets. Columns 1–9 are taken (twelve ordinary demos are approved);
+the tenth project needs a new rule for the rows. Column 10 (`10.210` /
+`10.220` / `10.230`) is not promised: it breaks the `10.20x` / `10.21x` /
+`10.22x` notation. A stand instance moves its test network off its default
+onto the octet of its own block
+([Stand instances](../agents/testing.md#the-full-run--one-graph-a-bounded-number-of-lanes)).
 
 **Project time zone.** Copy the approved
 [warning and full consequences](../agents/architecture/calculated-results.md#warning-at-the-configuration-source)
