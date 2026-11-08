@@ -9,6 +9,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
+use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
 
 /**
  * Closed, versioned DB writer transitions from the approved Writer Map.
@@ -18,7 +19,6 @@ use Hilos\Hilos;
  */
 class DbWriterTransitionCatalog
 {
-    protected const string CHANNEL_GUARD = 'HIL-1893';
     protected const string PUSH_GONE = 'HIL-1895';
     protected const string RENAME_LINK = 'HIL-1896';
     protected const string RENAME_UNLINK = 'HIL-1897';
@@ -234,7 +234,7 @@ class DbWriterTransitionCatalog
     protected function states(array $base, array $pending, array $completed = [], array $requires = []): array
     {
         foreach ($pending as $leaf => $claims) {
-            if ($claims === [] && $leaf !== self::CHANNEL_GUARD) {
+            if ($claims === []) {
                 unset($pending[$leaf], $completed[$leaf]);
             }
         }
@@ -262,9 +262,7 @@ class DbWriterTransitionCatalog
             foreach ($leaves as $leaf) {
                 $claims = [...$claims, ...(in_array($leaf, $unpaid, true) ? $pending[$leaf] : ($completed[$leaf] ?? []))];
             }
-            $partitions = isset($pending[self::CHANNEL_GUARD]) && !in_array(self::CHANNEL_GUARD, $unpaid, true)
-                ? [DbWriterPartition::NotificationChannelShard] : [];
-            $states[] = new DbWriterTransitionState($unpaid, $this->mergeClaims($claims), $partitions);
+            $states[] = new DbWriterTransitionState($unpaid, $this->mergeClaims($claims));
         }
 
         return $states;
@@ -272,30 +270,34 @@ class DbWriterTransitionCatalog
 
     /**
      * @param class-string<Hilos> $hilosClass Inspected topology
-     * @return list<DbWriterTransitionState> Channel guard, retention, retry and erasure transitions
+     * @return list<DbWriterTransitionState> Guarded delivery retention, retry and erasure transitions
      */
     private function deliveryStates(string $hilosClass): array
     {
         $channels = [];
         foreach ([HilosAgentType::HILOS_MAIL, HilosAgentType::HILOS_SMS, HilosAgentType::HILOS_PUSH] as $agentType) {
-            $channels = [...$channels, ...$this->claim($this->role($hilosClass, $agentType),
-                DbWriterClaimWidth::Whole, TruthSourceOperation::Update)];
+            $worker = $this->role($hilosClass, $agentType);
+            if ($worker !== null && is_subclass_of($worker, AbstractDeliveryChannelAgent::class)) {
+                $channels = [...$channels, ...$this->claim($worker, DbWriterClaimWidth::Whole, TruthSourceOperation::Update)];
+            }
         }
         $library = $this->role($hilosClass, HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY);
         $channelRemoval = array_map(static fn (DbWriterClaim $claim): DbWriterClaim => new DbWriterClaim(
             $claim->ownerClass, $claim->width, TruthSourceOperations::of(TruthSourceOperation::Remove),
         ), $channels);
 
-        return $this->states(
+        $states = $this->states(
             [...$this->claim($library, DbWriterClaimWidth::Whole, TruthSourceOperation::Add), ...$channels],
-            [...($channels === [] ? [] : [self::CHANNEL_GUARD => []]),
-                self::DELIVERY_PRUNE => $this->claim($library, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove),
+            [self::DELIVERY_PRUNE => $this->claim($library, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove),
                 self::DELIVERY_RETRY => $this->claim($library, DbWriterClaimWidth::Whole, TruthSourceOperation::Update),
                 self::ERASURE => $this->claim($this->role($hilosClass, HilosAgentType::HILOS_SESSIONS_LIBRARY),
                     DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
             [self::DELIVERY_PRUNE => $channelRemoval, self::ERASURE => $channelRemoval],
-            [self::DELIVERY_PRUNE => [self::CHANNEL_GUARD], self::DELIVERY_RETRY => [self::CHANNEL_GUARD]],
         );
+
+        return array_map(static fn (DbWriterTransitionState $state): DbWriterTransitionState => new DbWriterTransitionState(
+            $state->pendingLeaves, $state->claims, $channels === [] ? [] : [DbWriterPartition::NotificationChannelShard],
+        ), $states);
     }
 
     /**

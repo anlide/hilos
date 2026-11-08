@@ -1,0 +1,14 @@
+{
+    "format": 1,
+    "id": "20261108080825608007_HIL-1893_delivery_routing_key",
+    "parts": [
+        {
+            "unit": "notification_delivery",
+            "up": "notification_delivery.sql",
+            "down": "notification_delivery_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "d026cfc67dd00c8089f856b080d6e0131ceda31048b22df0ae96ddfd76296bef",
+            "afterStubDownSha256": "20060db3a4041f04299235dde117ac4e656020570c73a687d810c8247ab18b6b"
+        }
+    ]
+}

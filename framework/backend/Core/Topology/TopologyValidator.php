@@ -50,6 +50,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
+use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 use Hilos\Core\TruthSource\DbWriterClaim;
 use Hilos\Core\TruthSource\DbWriterPartition;
 use Hilos\Core\TruthSource\DbWriterTransitionState;
@@ -1303,7 +1304,10 @@ final class TopologyValidator
             if ($key !== $descriptor->name() || $key === '' || $signal === ''
                 || count($sameAddress) !== 1 || count($routedOwners) !== 1
                 || AgentRegistry::workerClass($entry) !== $owner
-                || $descriptor->isPooled() !== $indexed || $descriptor->indexField() !== $indexField) {
+                || (AgentSignalRouteRegistry::routes($agents)[$signal] ?? null) !== $owner::AGENT_TYPE
+                || (is_array($route) ? ($route[AgentSignalConfigKey::DTO] ?? null) : $route) !== NotificationDeliverSignalData::class
+                || $descriptor->isPooled() !== $indexed || $descriptor->indexField() !== $indexField
+                || ($indexed && $indexField !== NotificationDeliverSignalData::shardKey)) {
                 $errors[] = "{$owner} DB_WRITER_PARTITION has no unique registered channel/shard address";
                 continue;
             }

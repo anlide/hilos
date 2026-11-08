@@ -11,6 +11,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\MigrationMarkedFailedException;
+use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
 use Hilos\Database\Migration;
 use Hilos\Database\Migration\FrameworkMigrationCatalog;
 use Hilos\Database\Migration\FrameworkMigrationInstaller;
@@ -22,8 +23,10 @@ use Hilos\Database\Migration\FrameworkMigrationStartupGuard;
 use Hilos\Database\Migration\FrameworkSchemaCatalog;
 use Hilos\Database\Migration\FrameworkSchemaUnit;
 use Hilos\Database\MigrationClaim;
+use Hilos\Database\Schema\EntitySchemaAudit;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Notification\Delivery\DeliveryStatus;
 use JsonException;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -42,6 +45,7 @@ final class FrameworkMigrationIntegrationTest extends FrameworkIntegrationTestCa
     private const string USER_TABLE = 'hilos_fw_catalog_user';
     private const string SESSION_TABLE = 'hilos_fw_catalog_session';
     private const string JOURNAL_TABLE = 'hilos_fw_catalog_journal';
+    private const string DELIVERY_CHANGE = '20261108080825608007_HIL-1893_delivery_routing_key';
 
     private string $root;
     private string $database;
@@ -409,6 +413,70 @@ final class FrameworkMigrationIntegrationTest extends FrameworkIntegrationTestCa
         $this->assertSame([['id' => '17']], Database::rows());
         $this->assertSame([9400, 9401], Migration::appliedIndices());
         $this->assertRepeatIsEmpty();
+    }
+
+    /** The real source delta preserves legacy rows through ordinary up, down and reapplication. */
+    public function testDeliveryRoutingKeySourceChangePreservesEveryLegacyColumn(): void
+    {
+        $part = new FrameworkMigrationCatalog()->part(self::DELIVERY_CHANGE, 'notification_delivery');
+        self::assertSame([], $part->requires);
+        Database::sqlRun(<<<'SQL'
+            CREATE TABLE `hilos_notification_delivery` (
+                `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `notification_id` INT UNSIGNED NOT NULL,
+                `channel` VARCHAR(50) NOT NULL,
+                `status` ENUM('pending', 'sent', 'failed') NOT NULL DEFAULT 'pending',
+                `attempts` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+                `last_error` VARCHAR(255) DEFAULT NULL,
+                `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                `delivered_at` TIMESTAMP NULL DEFAULT NULL,
+                PRIMARY KEY (`id`),
+                KEY `idx_notification_delivery_notification` (`notification_id`),
+                KEY `idx_notification_delivery_channel_status` (`channel`, `status`),
+                KEY `idx_notification_delivery_created` (`created_at`),
+                KEY `idx_notification_delivery_status_created` (`status`, `created_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+            SQL);
+        foreach ([DeliveryStatus::PENDING, DeliveryStatus::SENT, DeliveryStatus::FAILED] as $offset => $status) {
+            Database::sql(
+                'INSERT INTO `hilos_notification_delivery` '
+                . '(`id`, `notification_id`, `channel`, `status`, `attempts`, `last_error`, `created_at`, `updated_at`, `delivered_at`) '
+                . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [17 + $offset, 900 + $offset, 'legacy-channel', $status, 3 + $offset,
+                    $status === DeliveryStatus::PENDING ? null : "Legacy ошибка 'quoted' \\ bytes",
+                    '2026-10-01 10:20:30', '2026-10-02 11:21:31',
+                    $status === DeliveryStatus::SENT ? '2026-10-02 11:21:30' : null],
+            );
+        }
+        Database::sql('SELECT * FROM `hilos_notification_delivery` ORDER BY `id`');
+        $legacy = Database::rows();
+        file_put_contents($this->project->root . '/9401_delivery_routing_key.sql', $part->upSql);
+        file_put_contents($this->project->root . '/9401_delivery_routing_key_down.sql', $part->downSql);
+
+        self::assertSame(2, Migration::migrateUp());
+        self::assertSame([], EntitySchemaAudit::audit([EntityNotificationDelivery::class]));
+        Database::sql('SELECT * FROM `hilos_notification_delivery` ORDER BY `id`');
+        $upRows = Database::rows();
+        self::assertCount(3, $upRows);
+        foreach ($upRows as $offset => $row) {
+            self::assertArrayHasKey('routing_key', $row);
+            self::assertNull($row['routing_key']);
+            unset($row['routing_key']);
+            self::assertSame($legacy[$offset], $row);
+        }
+        self::assertSame(0, Migration::migrateUp());
+        self::assertSame(1, Migration::migrateDown(self::ANCHOR));
+        self::assertNull($this->column(EntityNotificationDelivery::_table, EntityNotificationDelivery::routing_key));
+        Database::sql('SELECT COLUMN_NAME FROM information_schema.STATISTICS '
+            . 'WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND INDEX_NAME = ? ORDER BY SEQ_IN_INDEX',
+            [$this->database, EntityNotificationDelivery::_table, 'idx_notification_delivery_channel_status']);
+        self::assertSame(['channel', 'status'], array_column(Database::rows(), 'COLUMN_NAME'));
+        Database::sql('SELECT * FROM `hilos_notification_delivery` ORDER BY `id`');
+        self::assertSame($legacy, Database::rows());
+        self::assertSame(1, Migration::migrateUp());
+        Database::sql('SELECT * FROM `hilos_notification_delivery` ORDER BY `id`');
+        self::assertSame($upRows, Database::rows());
     }
 
     /**

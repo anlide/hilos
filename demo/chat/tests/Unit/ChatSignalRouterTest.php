@@ -371,18 +371,28 @@ final class ChatSignalRouterTest extends TestCase
         $router = new ChatSignalRouter();
 
         foreach (ChatDeliveryChannelRegistry::all() as $channel => $descriptor) {
-            $destinations = $router->getDestinations(new SignalDTO(
+            $signal = new SignalDTO(
                 new SignalSource(SignalSource::WORKER),
                 new SignalType(SignalTypeConstants::AGENT_SIGNAL),
                 new SignalName($descriptor->deliverSignalName()),
                 new AgentSignalData(new NotificationDeliverSignalData(
+                    deliveryId: 91,
                     notificationId: 1,
                     channel: $channel,
                     shardKey: 4,
-                )),
-            ));
+                ), receiptId: 42),
+            );
+            $atDaemon = SignalDTO::fromJson($signal->toJson());
+            $atWorker = SignalDTO::fromJson($atDaemon->toJson());
+            self::assertInstanceOf(AgentSignalData::class, $atWorker->data);
+            self::assertSame(42, $atWorker->data->receiptId);
+            self::assertInstanceOf(NotificationDeliverSignalData::class, $atWorker->data->data);
+            self::assertSame(91, $atWorker->data->data->deliveryId);
+            self::assertSame($signal->toArray(), $atWorker->toArray());
+            $destinations = $router->getDestinations($atWorker);
 
             $this->assertNotSame([], $destinations, "Channel {$channel} lost its delivery route");
+            self::assertEquals([new AgentDestination(Hilos::getAgentSignalRoutes()[$descriptor->deliverSignalName()], '4')], $destinations);
         }
     }
 

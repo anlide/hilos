@@ -140,12 +140,31 @@ collection, the master's acknowledgement for a database one, which drops the
 cache read before it — and the worker waits for it at the start, beside
 `READS_RT` and `READS_DB` and before the instance is built
 (`OwnershipDeclaration::borrowedRtCollectionsOf()`,
-`OwnershipDeclaration::borrowedDbCollectionsOf()`). The delivery channels are
-the standing readiness case: each edits the journal row of the attempt it runs
-(`AbstractDeliveryChannelAgent`), while the notifications library currently
-adds, retries and prunes those rows. Pruning moves to the channel or shard,
-without deleting pending rows (not in the code yet — HIL-1902); retry and its
-`resetForRetry()` move there too (not in the code yet — HIL-1910).
+`OwnershipDeclaration::borrowedDbCollectionsOf()`). The delivery channel agents
+are the standing readiness case. Their existing whole-collection `OWNS_DB`
+declaration remains `BY_KIND` with an effective `Update` ceiling;
+`NotificationChannelShard` adds item-specific owner proof, not an
+`OWNS_DB_ROWS` snapshot. At an item-write door, `DbWriteGuard` keeps the
+ordinary operation check, then `NotificationDeliveryWriteGuard` rereads the
+persisted delivery id, notification id, channel and routing key, and refuses a
+proposed identity change. A delivery claimant must also match the current
+registered unique descriptor and route resolved by `DeliveryOwnerResolver`
+from the saved channel and key (the notification id for legacy `NULL`); this
+lookup does not read the notification, recipient or address. Topology
+validation requires that real descriptor/route and matching partition state;
+it adds no raw-sender exception or empty-coverage proof. Whole-collection and
+set-write doors refuse a delivery claimant regardless of operation because
+they carry no row coordinates.
+Address changes do not rewrite an existing delivery's key; a new delivery
+stores the routing key produced for its current recipient state, or `NULL`
+for a singleton. The pool width is expected to agree across nodes after the
+normal restart/freeze process; no rolling mixed-environment or split-brain
+fence is promised. This guard adds no channel `Add` or `Remove`. The
+notifications library still creates, retries and prunes those rows. Pruning
+moves to the channel or shard without deleting pending rows
+(not in the code yet — HIL-1902); retry and `resetForRetry()` move there too
+(not in the code yet — HIL-1910). A standalone raw SMS worker has no
+delivery claim and cannot borrow the notifications library's grant.
 Borrowing describes readiness and reader interest, never permission for a
 second DB writer. The operations are read folded — `BY_KIND` expanded and the
 parents' records merged — so an heir that gives a borrowed record the right to
@@ -832,9 +851,12 @@ DB partition proof. It is accepted only for a registered delivery-agent
 subclass with one unique channel descriptor and its
 `deliverSignalName`/`AGENT_SIGNALS` route. It proves separation between channel
 workers for `notificationDeliveries`, not between a channel and the library or
-sessions holder. Production `DB_WRITER_PARTITION` remains `null`; the shared
-channel/shard guard and its HIL-1893 enablement are still future work. No
-arbitrary callback or boolean can stand in for this proof.
+sessions holder. Production delivery workers declare this partition; the item
+write guard checks fresh persisted delivery identity and the executing current
+channel/shard before each update. The id-based pipeline repeats that check before
+opening or settling a transport, and bounded recovery uses the saved routing key
+(or notification id for legacy NULL keys). Raw SMS workers carry no delivery claim.
+No arbitrary callback or boolean can stand in for this proof.
 
 The sessions holder's borrowed erasure and merge claims remain in the catalog
 until their live cutovers. Their comments stay attached to the live paths

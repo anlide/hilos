@@ -13,6 +13,7 @@ use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscription
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Hilos;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\ChannelConfigField;
@@ -107,22 +108,27 @@ class PushDeliveryChannel extends AbstractDeliveryChannel
     }
 
     /**
-     * Shards by the recipient id so a recipient's device deliveries stay on one pool instance.
-     *
-     * There is no raw-send intake to co-locate with (unlike mail/sms), so the shard
-     * dimension is simply the recipient id, narrowed to the push pool range.
-     *
      * @param int $userId Recipient user id
-     * @param int $notificationId Notification id being delivered (unused; the recipient is the shard dimension)
-     * @return ?int Positive pool shard key in the range 1..PUSH_WORKER_COUNT
-     * @throws EnvException When the push worker count is missing, outside the catalog, or not an int
+     * @param int $notificationId Notification id being delivered
+     * @return ?int Unreduced recipient id, independent of device endpoints
      */
-    public function shardKeyFor(int $userId, int $notificationId): ?int
+    public function routingKeyFor(int $userId, int $notificationId): ?int
     {
-        $env = Hilos::$env;
-        $workerCount = $env === null ? 1 : max(1, $env[EnvConstants::PUSH_WORKER_COUNT]->int());
+        return $userId;
+    }
 
-        return 1 + ($userId % $workerCount);
+    /**
+     * @return int Positive current push worker count
+     * @throws EnvException When PUSH_WORKER_COUNT is unreadable or not positive
+     */
+    public function poolSize(): int
+    {
+        $size = Hilos::$env === null ? 1 : Hilos::$env[EnvConstants::PUSH_WORKER_COUNT]->int();
+        if ($size < 1) {
+            throw new EnvInvalidValueException('PUSH_WORKER_COUNT must be positive');
+        }
+
+        return $size;
     }
 
     /**

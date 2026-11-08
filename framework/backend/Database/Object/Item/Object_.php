@@ -278,7 +278,7 @@ abstract class Object_
 
         $idString = $this->getIdString();
 
-        DbWriteGuard::guardItemWrite($collectionKey, $idString, $this->touchedSetKeys(...), TruthSourceOperation::Remove);
+        DbWriteGuard::guardItemWrite($collectionKey, $idString, $this->touchedSetKeys(...), TruthSourceOperation::Remove, $this);
 
         // Keep a tombstone row for DB_SYNC_DELETED consumers; it is no longer
         // available from the object collection after the physical delete.
@@ -470,6 +470,7 @@ abstract class Object_
             $this->getIdString(),
             $this->touchedSetKeys(...),
             TruthSourceOperation::Update,
+            $this,
         );
     }
 

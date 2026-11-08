@@ -99,6 +99,7 @@ use Hilos\Database\Actions\Collection\LocalesActions;
 use Hilos\Database\Actions\Collection\I18nReflowsActions;
 use Hilos\Database\Actions\Collection\ProbeValuesActions;
 use Hilos\Database\Actions\Collection\ModerationRulesActions;
+use Hilos\Database\Actions\Collection\NotificationDeliveriesActions;
 use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
 use Hilos\Database\Actions\Collection\NotificationsActions;
 use Hilos\Database\Actions\Collection\OAuthProvidersActions;
@@ -134,6 +135,7 @@ use Hilos\Database\Actions\Item\LanguageActions;
 use Hilos\Database\Actions\Item\LanguageNameActions;
 use Hilos\Database\Actions\Item\LocaleActions;
 use Hilos\Database\Actions\Item\NotificationActions;
+use Hilos\Database\Actions\Item\NotificationDeliveryActions;
 use Hilos\Database\Actions\Item\OAuthProviderActions;
 use Hilos\Database\Actions\Item\SecondFactorActions;
 use Hilos\Database\Actions\Item\SecondFactorBackupCodeActions;
@@ -448,6 +450,8 @@ abstract class HilosDbContext extends DbContext
             self::notificationDeliveries,
             Objects::LAZY_STRATEGY_KEY,
             DbCollectionNotificationDeliveries::class,
+            NotificationDeliveriesActions::class,
+            NotificationDeliveryActions::class,
         );
         $this->mountFramework(
             self::notificationPreferences,

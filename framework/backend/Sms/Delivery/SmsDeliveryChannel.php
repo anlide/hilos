@@ -10,6 +10,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Hilos;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\ChannelConfigField;
@@ -110,20 +111,31 @@ class SmsDeliveryChannel extends AbstractDeliveryChannel
     }
 
     /**
-     * Shards by the recipient's number so both SMS intakes co-locate.
-     *
      * @param int $userId Recipient user id
-     * @param int $notificationId Notification id being delivered (unused; the number is the shard dimension)
-     * @return ?int Positive pool shard key for the recipient number, or null when it no longer resolves
+     * @param int $notificationId Notification id being delivered
+     * @return ?int Unreduced source key, or null when the address is unavailable
      * @throws DatabaseException When the identity lookup fails
-     * @throws EnvException When SMS_WORKER_COUNT is unreadable
-     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws InvalidArgumentException When the entity query has an invalid order direction
      */
-    public function shardKeyFor(int $userId, int $notificationId): ?int
+    public function routingKeyFor(int $userId, int $notificationId): ?int
     {
         $address = $this->resolveAddress($userId);
 
-        return $address === null ? null : HilosSmsSender::shardKeyForNumber($address);
+        return $address === null ? null : HilosSmsSender::routingKeyForNumber($address);
+    }
+
+    /**
+     * @return int Positive current sms worker count
+     * @throws EnvException When SMS_WORKER_COUNT is unreadable or not positive
+     */
+    public function poolSize(): int
+    {
+        $size = Hilos::$env === null ? 1 : Hilos::$env[EnvConstants::SMS_WORKER_COUNT]->int();
+        if ($size < 1) {
+            throw new EnvInvalidValueException('SMS_WORKER_COUNT must be positive');
+        }
+
+        return $size;
     }
 
     /**

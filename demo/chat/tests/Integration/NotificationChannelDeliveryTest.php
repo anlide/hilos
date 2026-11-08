@@ -27,6 +27,7 @@ use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificati
 use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDelivery;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
+use Hilos\Mail\HilosMailer;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Notification\Delivery\DeliveryStatus;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
@@ -114,11 +115,15 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
             self::assertSame(DeliveryStatus::PENDING, $row->status);
             self::assertSame(0, $row->attempts);
             self::assertNull($row->delivered_at);
+            self::assertSame(
+                ChatDeliveryChannelRegistry::get($row->channel)?->routingKeyFor(self::RECIPIENT_ID, $notificationId),
+                $row->routing_key,
+            );
         }
 
         $signals = $this->takeSignals();
-        $this->assertDeliveryFrame($signals, self::EMAIL, HilosSignalConstants::HILOS_MAIL_DELIVER, $notificationId, self::RECIPIENT_ID);
-        $this->assertDeliveryFrame($signals, self::SMS, HilosSignalConstants::HILOS_SMS_DELIVER, $notificationId, self::RECIPIENT_ID);
+        $this->assertDeliveryFrame($signals, self::EMAIL, HilosSignalConstants::HILOS_MAIL_DELIVER, $notificationId);
+        $this->assertDeliveryFrame($signals, self::SMS, HilosSignalConstants::HILOS_SMS_DELIVER, $notificationId);
     }
 
     public function testADisabledChannelIsSkipped(): void
@@ -133,7 +138,7 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
         self::assertSame([self::SMS], array_keys($this->rowsFor($notificationId)));
         $signals = $this->takeSignals();
         $this->assertNoDeliveryFrame($signals, self::EMAIL);
-        $this->assertDeliveryFrame($signals, self::SMS, HilosSignalConstants::HILOS_SMS_DELIVER, $notificationId, self::RECIPIENT_ID);
+        $this->assertDeliveryFrame($signals, self::SMS, HilosSignalConstants::HILOS_SMS_DELIVER, $notificationId);
     }
 
     public function testADraftNarrowedToOneChannelReachesOnlyThatChannel(): void
@@ -148,7 +153,7 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
         self::assertSame([self::SMS], array_keys($this->rowsFor($notificationId)));
         $signals = $this->takeSignals();
         $this->assertNoDeliveryFrame($signals, self::EMAIL);
-        $this->assertDeliveryFrame($signals, self::SMS, HilosSignalConstants::HILOS_SMS_DELIVER, $notificationId, self::RECIPIENT_ID);
+        $this->assertDeliveryFrame($signals, self::SMS, HilosSignalConstants::HILOS_SMS_DELIVER, $notificationId);
     }
 
     public function testARecipientWithoutAnAddressIsSkippedOnThatChannel(): void
@@ -161,7 +166,7 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
 
         self::assertSame([self::EMAIL], array_keys($this->rowsFor($notificationId)));
         $signals = $this->takeSignals();
-        $this->assertDeliveryFrame($signals, self::EMAIL, HilosSignalConstants::HILOS_MAIL_DELIVER, $notificationId, self::RECIPIENT_ID);
+        $this->assertDeliveryFrame($signals, self::EMAIL, HilosSignalConstants::HILOS_MAIL_DELIVER, $notificationId);
         $this->assertNoDeliveryFrame($signals, self::SMS);
     }
 
@@ -178,7 +183,7 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
         self::assertSame([self::SMS], array_keys($this->rowsFor($notificationId)));
         $signals = $this->takeSignals();
         $this->assertNoDeliveryFrame($signals, self::EMAIL);
-        $this->assertDeliveryFrame($signals, self::SMS, HilosSignalConstants::HILOS_SMS_DELIVER, $notificationId, self::RECIPIENT_ID);
+        $this->assertDeliveryFrame($signals, self::SMS, HilosSignalConstants::HILOS_SMS_DELIVER, $notificationId);
     }
 
     public function testAMandatoryTypePassesAMute(): void
@@ -193,8 +198,8 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
 
         self::assertSame([self::EMAIL, self::SMS], array_keys($this->rowsFor($notificationId)));
         $signals = $this->takeSignals();
-        $this->assertDeliveryFrame($signals, self::EMAIL, HilosSignalConstants::HILOS_MAIL_DELIVER, $notificationId, self::RECIPIENT_ID);
-        $this->assertDeliveryFrame($signals, self::SMS, HilosSignalConstants::HILOS_SMS_DELIVER, $notificationId, self::RECIPIENT_ID);
+        $this->assertDeliveryFrame($signals, self::EMAIL, HilosSignalConstants::HILOS_MAIL_DELIVER, $notificationId);
+        $this->assertDeliveryFrame($signals, self::SMS, HilosSignalConstants::HILOS_SMS_DELIVER, $notificationId);
     }
 
     /**
@@ -212,8 +217,8 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
 
         self::assertSame([self::EMAIL, self::SMS], array_keys($this->rowsFor($notificationId)));
         $signals = $this->takeSignals();
-        $this->assertDeliveryFrame($signals, self::EMAIL, HilosSignalConstants::HILOS_MAIL_DELIVER, $notificationId, self::RECIPIENT_ID);
-        $this->assertDeliveryFrame($signals, self::SMS, HilosSignalConstants::HILOS_SMS_DELIVER, $notificationId, self::RECIPIENT_ID);
+        $this->assertDeliveryFrame($signals, self::EMAIL, HilosSignalConstants::HILOS_MAIL_DELIVER, $notificationId);
+        $this->assertDeliveryFrame($signals, self::SMS, HilosSignalConstants::HILOS_SMS_DELIVER, $notificationId);
     }
 
     public function testAnAttemptCountsAndASendStampsTheDeliveredTime(): void
@@ -270,9 +275,65 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
             self::EMAIL,
             HilosSignalConstants::HILOS_MAIL_DELIVER,
             $retried->notification_id,
-            self::RETRY_RECIPIENT_ID,
         );
         self::assertNull($this->retryAnswer($signals)->error);
+    }
+
+    public function testRetryKeepsTheSavedDeliveryAndKeyAfterTheAddressDisappears(): void
+    {
+        $delivery = $this->failedRetryDelivery();
+        $deliveryId = $this->deliveryId($delivery);
+        $savedKey = $this->row($deliveryId)->routing_key;
+        self::assertNotNull($savedKey);
+        Database::sql(
+            'DELETE FROM `' . EntityIdentity::_table . '` WHERE `' . EntityIdentity::user_id . '` = ?',
+            [self::RETRY_RECIPIENT_ID],
+        );
+        self::assertNull(ChatDeliveryChannelRegistry::get(self::EMAIL)?->resolveAddress(self::RETRY_RECIPIENT_ID));
+
+        $this->retry($deliveryId);
+
+        self::assertSame($savedKey, $this->row($deliveryId)->routing_key);
+        $this->assertDeliveryFrame(
+            $this->takeSignals(), self::EMAIL, HilosSignalConstants::HILOS_MAIL_DELIVER,
+            $delivery->notificationId,
+        );
+    }
+
+    /** A new delivery captures the new address's seed, while retry keeps the old row's saved seed. */
+    public function testAddressChangeOnlyChangesTheSeedOfNewDeliveries(): void
+    {
+        $this->enableChannel(self::EMAIL, true);
+        $this->enableChannel(self::SMS, false);
+        Hilos::$db->identities->createMagicLinkIdentity(self::RETRY_RECIPIENT_ID, 'original@example.test');
+        $oldNotificationId = $this->emit(self::RETRY_RECIPIENT_ID, channels: [self::EMAIL]);
+        $oldDelivery = $this->deliveries()->findFor($oldNotificationId, self::EMAIL);
+        self::assertNotNull($oldDelivery);
+        for ($attempt = 0; $attempt < self::MAX_ATTEMPTS; $attempt++) {
+            $this->deliveries()->beginAttempt($oldDelivery);
+            $this->deliveries()->recordFailure($oldDelivery, 'smtp down', self::MAX_ATTEMPTS);
+        }
+        Hilos::$db->identities->changeEmail(self::RETRY_RECIPIENT_ID, 'original@example.test', 'replacement@example.test');
+        self::assertSame('replacement@example.test', Hilos::$db->identities->findVerifiedEmailByUser(self::RETRY_RECIPIENT_ID));
+
+        $newNotificationId = $this->emit(self::RETRY_RECIPIENT_ID, channels: [self::EMAIL]);
+        $this->assertDeliveryFrame($this->takeSignals(), self::EMAIL, HilosSignalConstants::HILOS_MAIL_DELIVER, $newNotificationId);
+        $this->retry($this->deliveryId($oldDelivery));
+        $this->assertDeliveryFrame($this->takeSignals(), self::EMAIL, HilosSignalConstants::HILOS_MAIL_DELIVER, $oldNotificationId);
+
+        self::assertNotSame(
+            HilosMailer::routingKeyForAddress('original@example.test'),
+            HilosMailer::routingKeyForAddress('replacement@example.test'),
+        );
+        self::assertSame([
+            ['notification_id' => (string)$oldNotificationId, 'routing_key' => (string)HilosMailer::routingKeyForAddress('original@example.test'),
+                'status' => DeliveryStatus::PENDING, 'attempts' => '0'],
+            ['notification_id' => (string)$newNotificationId, 'routing_key' => (string)HilosMailer::routingKeyForAddress('replacement@example.test'),
+                'status' => DeliveryStatus::PENDING, 'attempts' => '0'],
+        ], Database::sql(
+            'SELECT notification_id, routing_key, status, attempts FROM hilos_notification_delivery WHERE notification_id IN (?, ?) ORDER BY id',
+            [$oldNotificationId, $newNotificationId],
+        )->rows());
     }
 
     public function testARetryOfARowThatIsNotFailedIsRefusedWithItsSentence(): void
@@ -504,9 +565,8 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
      * @param string $channel Expected channel
      * @param string $name Expected delivery signal name
      * @param int $notificationId Notification id in the frame
-     * @param int $userId Recipient used to derive the shard key
      */
-    private function assertDeliveryFrame(array $signals, string $channel, string $name, int $notificationId, int $userId): void
+    private function assertDeliveryFrame(array $signals, string $channel, string $name, int $notificationId): void
     {
         foreach ($signals as $signal) {
             $data = $signal->data;
@@ -516,8 +576,10 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
 
             self::assertSame($name, $signal->signalName->getName());
             self::assertSame($notificationId, $data->data->notificationId);
+            $saved = $this->rowsFor($notificationId)[$channel];
+            self::assertSame($saved->id, $data->data->deliveryId);
             self::assertSame(
-                ChatDeliveryChannelRegistry::get($channel)?->shardKeyFor($userId, $notificationId),
+                ChatDeliveryChannelRegistry::get($channel)?->ownerIndexFor($saved->routing_key ?? $notificationId),
                 $data->data->shardKey,
             );
 

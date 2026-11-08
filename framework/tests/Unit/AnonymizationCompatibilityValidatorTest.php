@@ -376,6 +376,22 @@ final class AnonymizationCompatibilityValidatorTest extends TestCase
         $this->expectNotToPerformAssertions();
     }
 
+    public function testNullableBigintRoutingDimensionCanBeNullified(): void
+    {
+        $registry = PiiRegistry::fromDeclarations([0 => [
+            'hilos_probe' => ['routing_key' => AnonymizationStrategy::NULLIFY],
+        ]]);
+
+        AnonymizationCompatibilityValidator::validate(
+            $registry,
+            0,
+            self::probeSchemas(['routing_key' => true], ['routing_key' => 'bigint'], ['routing_key' => null]),
+            self::maxKey(),
+        );
+
+        $this->expectNotToPerformAssertions();
+    }
+
     public function testAPurgedTableNothingHoldsBackPasses(): void
     {
         AnonymizationCompatibilityValidator::validate(

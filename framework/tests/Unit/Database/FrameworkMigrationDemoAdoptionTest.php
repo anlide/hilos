@@ -250,6 +250,22 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 self::assertSame([], glob($project->root . '/*_framework_install_probe_value*.sql'));
                 self::assertNotContains('probe_value', array_column($schema->selectedUnits($project->facade), 'key'));
             }
+            $deliveryIndices = [117, 75, 75, 60, 60, 62];
+            $base = $project->root . '/' . sprintf('%03d', $deliveryIndices[$index])
+                . '_framework_change_869cfec607df616589031585e78bbd31d915dc4d908729ff59aefc127be19f58';
+            $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+            self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+            self::assertSame(['notification_delivery'], $change->units);
+            self::assertCount(1, $change->parts);
+            self::assertSame('20261108080825608007_HIL-1893_delivery_routing_key/notification_delivery', $change->parts[0]->key());
+            $source = $catalog->part($change->parts[0]->changeId, 'notification_delivery');
+            self::assertFalse($source->introducesUnit);
+            self::assertSame([], $source->requires);
+            self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('notification_delivery')->upPath)),
+                $source->afterStubUpSha256);
+            self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('notification_delivery')->downPath)),
+                $source->afterStubDownSha256);
+            $origins[] = $change;
             $erasureIndices = [115, 73, 73, 58, 58, 60];
             foreach (['account_erasure_operation', 'account_erasure_assignment'] as $offset => $key) {
                 $unit = $schema->unit($key);

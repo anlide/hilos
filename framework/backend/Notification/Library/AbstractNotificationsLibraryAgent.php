@@ -509,6 +509,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * @throws SettingException When the settings accessor refuses a channel's enablement key
      * @throws DbCollectionNotReadableException When nothing here reads the notifications, deliveries or preferences collection, or its readiness is
      *   on its way
+     * @throws HilosException When channel dispatch refuses delivery creation, pool configuration or the handoff payload
      */
     public function emit(NotificationDraft $draft): int
     {

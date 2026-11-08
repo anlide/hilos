@@ -6,9 +6,11 @@ namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Database\ChangeLog\Section\ChangeLogReadCollection;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -20,7 +22,9 @@ use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDeliver
 use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\SqlSortDirection;
+use Hilos\HilosException;
 use Hilos\Notification\Delivery\DeliveryStatus;
+use Hilos\Notification\Delivery\NotificationDeliveryIdentity;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -60,23 +64,33 @@ class NotificationDeliveries extends Objects
      *
      * @param int $notificationId Notification being delivered (soft ref)
      * @param string $channel Target channel name
+     * @param ?int $routingKey Original nonnegative routing dimension, null for legacy callers
      * @return ObjectNotificationDelivery The created delivery object
      * @throws EmptyValueException When the channel name is empty
+     * @throws ValidationException When the routing key is negative
      * @throws TableNotActivatedException When the project has not activated the delivery table
      * @throws DatabaseException If the insert query fails
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws HilosException When ownership or the insert announcement refuses the row
      */
-    public function createPending(int $notificationId, string $channel): ObjectNotificationDelivery
-    {
+    public function createPending(
+        int $notificationId,
+        string $channel,
+        ?int $routingKey = null,
+    ): ObjectNotificationDelivery {
         $this->requireActivatedTable();
 
         if ($channel === '') {
             throw new EmptyValueException('Notification delivery channel is required');
         }
+        if ($routingKey !== null && $routingKey < 0) {
+            throw new ValidationException('Notification delivery routing key must be nonnegative');
+        }
 
         $delivery = static::OBJECT_CLASS::create();
         $delivery->notificationId = $notificationId;
         $delivery->channel = $channel;
+        $delivery->routingKey = $routingKey;
         $delivery->status = DeliveryStatus::PENDING;
         $delivery->attempts = 0;
         $delivery->createdAt = TimeHelper::getSqlDateTime();
@@ -111,7 +125,7 @@ class NotificationDeliveries extends Objects
     {
         $this->requireActivatedTable();
 
-        $entities = static::entityClass()::get(
+        $entities = static::entityClass()::get( // fresh-sql: select the persisted pair even when a held object's identity is dirty.
             [
                 EntityNotificationDelivery::notification_id => $notificationId,
                 EntityNotificationDelivery::channel => $channel,
@@ -132,6 +146,81 @@ class NotificationDeliveries extends Objects
         }
 
         return null;
+    }
+
+    /**
+     * Reads saved coordinates without hydrating or consulting the local Object mirror.
+     *
+     * @param int $deliveryId Delivery primary key
+     * @return ?NotificationDeliveryIdentity Fresh saved identity, null when the delivery has disappeared
+     * @throws TableNotActivatedException When the project has not activated the delivery table
+     * @throws DatabaseException When the binding or projection query fails
+     */
+    public function readIdentity(int $deliveryId): ?NotificationDeliveryIdentity
+    {
+        $this->requireActivatedTable();
+        $entityClass = static::entityClass();
+        $row = Database::sql(
+            'SELECT `' . EntityNotificationDelivery::id . '`, `' . EntityNotificationDelivery::notification_id . '`,'
+            . ' `' . EntityNotificationDelivery::channel . '`, `' . EntityNotificationDelivery::routing_key . '`'
+            . ' FROM ' . $entityClass::getSqlTableName()
+            . ' WHERE `' . EntityNotificationDelivery::id . '` = ? LIMIT 1',
+            [$deliveryId],
+            index: $entityClass::getDatabase()->connectionIndex,
+        )->firstRow();
+        if ($row === null) {
+            return null;
+        }
+
+        return new NotificationDeliveryIdentity(
+            deliveryId: (int)$row[EntityNotificationDelivery::id],
+            notificationId: (int)$row[EntityNotificationDelivery::notification_id],
+            channel: (string)$row[EntityNotificationDelivery::channel],
+            routingKey: $row[EntityNotificationDelivery::routing_key] === null
+                ? null : (int)$row[EntityNotificationDelivery::routing_key],
+        );
+    }
+
+    /**
+     * Reads one bounded page of saved pending identities, including orphaned deliveries.
+     *
+     * @param string $channel Saved channel to scan
+     * @param int $afterId Exclusive delivery primary-key cursor
+     * @param int $limit Positive maximum number of identities
+     * @return ChangeLogReadCollection<NotificationDeliveryIdentity> Dense snapshot in ascending delivery-id order
+     * @throws InvalidArgumentException When the page limit is not positive
+     * @throws TableNotActivatedException When the project has not activated the delivery table
+     * @throws DatabaseException When the binding or projection query fails
+     */
+    public function pendingIdentitiesAfter(string $channel, int $afterId, int $limit): ChangeLogReadCollection
+    {
+        if ($limit <= 0) {
+            throw new InvalidArgumentException('Notification delivery identity page limit must be positive');
+        }
+        $this->requireActivatedTable();
+        $entityClass = static::entityClass();
+        $identities = [];
+        foreach (Database::sql(
+            'SELECT `' . EntityNotificationDelivery::id . '`, `' . EntityNotificationDelivery::notification_id . '`,'
+            . ' `' . EntityNotificationDelivery::channel . '`, `' . EntityNotificationDelivery::routing_key . '`'
+            . ' FROM ' . $entityClass::getSqlTableName()
+            . ' WHERE `' . EntityNotificationDelivery::channel . '` = ?'
+            . ' AND `' . EntityNotificationDelivery::status . '` = ?'
+            . ' AND `' . EntityNotificationDelivery::id . '` > ?'
+            . ' ORDER BY `' . EntityNotificationDelivery::id . '` ASC LIMIT ?',
+            [$channel, DeliveryStatus::PENDING, $afterId, $limit],
+            index: $entityClass::getDatabase()->connectionIndex,
+        )->rows() as $row) {
+            $identities[] = new NotificationDeliveryIdentity(
+                deliveryId: (int)$row[EntityNotificationDelivery::id],
+                notificationId: (int)$row[EntityNotificationDelivery::notification_id],
+                channel: (string)$row[EntityNotificationDelivery::channel],
+                routingKey: $row[EntityNotificationDelivery::routing_key] === null
+                    ? null : (int)$row[EntityNotificationDelivery::routing_key],
+            );
+        }
+
+        return ChangeLogReadCollection::fromArray($identities);
     }
 
     /**
@@ -305,7 +394,7 @@ class NotificationDeliveries extends Objects
 
         $where = '`' . EntityNotificationDelivery::notification_id . '` IN (SELECT `' . EntityNotification::id
             . '` FROM `' . EntityNotification::_table . '` WHERE `' . EntityNotification::user_id . '` = ?)';
-        foreach (static::entityClass()::get($where, [$userId]) as $entity) {
+        foreach (static::entityClass()::get($where, [$userId]) as $entity) { // fresh-sql: saved parent links decide erasure membership.
             $id = $entity->id;
             if ($id === null) {
                 continue;
@@ -328,6 +417,7 @@ class NotificationDeliveries extends Objects
      * next call.
      *
      * @throws TableNotActivatedException When the project has not activated the table
+     * @throws DatabaseException When the mounted Entity's binding cannot be resolved
      */
     private function requireActivatedTable(): void
     {
@@ -335,7 +425,8 @@ class NotificationDeliveries extends Objects
             return;
         }
 
-        Schema::requireTable(EntityNotificationDelivery::_table);
+        $entityClass = static::entityClass();
+        Schema::requireTable($entityClass::_table, $entityClass::getDatabase()->schemaIndex);
         $this->tableActivationConfirmed = true;
     }
 }

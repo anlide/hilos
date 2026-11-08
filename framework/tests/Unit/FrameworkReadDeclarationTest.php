@@ -19,6 +19,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
+use Hilos\Sms\Delivery\SmsRawSendAgent;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -255,6 +256,25 @@ final class FrameworkReadDeclarationTest extends TestCase
         }
 
         $this->assertContains(HilosDbContext::pushSubscriptions, PushDeliveryChannelAgent::READS_DB);
+        $this->assertSame(
+            [HilosDbContext::notifications, HilosDbContext::settings],
+            SmsDeliveryChannelAgent::READS_DB,
+        );
+    }
+
+    /** A raw-only SMS worker reads transport settings and has no delivery data or writing rights. */
+    public function testRawSmsDeclaresOnlySettingsAndNoDbOrRtClaims(): void
+    {
+        $this->assertSame([HilosDbContext::settings], SmsRawSendAgent::READS_DB);
+        $this->assertSame([HilosDbContext::settings], SmsRawSendAgent::readDbCollections());
+        $this->assertSame([], SmsRawSendAgent::READS_RT);
+        $this->assertSame([], SmsRawSendAgent::OWNS_DB);
+        $this->assertSame([], SmsRawSendAgent::OWNS_DB_ROWS);
+        $this->assertSame([], SmsRawSendAgent::OWNS_DB_SET);
+        $this->assertSame([], SmsRawSendAgent::OWNS_RT);
+        $this->assertSame([], SmsRawSendAgent::OWNS_RT_ROWS);
+        $this->assertSame([], SmsRawSendAgent::OWNS_RT_SET);
+        $this->assertNull(SmsRawSendAgent::DB_WRITER_PARTITION);
     }
 
     /**

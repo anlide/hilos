@@ -147,6 +147,7 @@ final class MailDeliveryChannelTest extends TestCase
         $channel = new MailDeliveryChannel();
 
         self::assertNull($channel->resolveAddress(7));
+        self::assertNull($channel->routingKeyFor(7, 42));
         self::assertNull($channel->shardKeyFor(7, 42));
     }
 
@@ -165,6 +166,22 @@ final class MailDeliveryChannelTest extends TestCase
         self::assertSame(HilosMailer::shardKeyForAddress('User@Example.com'), $shard);
         self::assertGreaterThanOrEqual(1, $shard);
         self::assertLessThanOrEqual(8, $shard);
+    }
+
+    public function testSourceKeySurvivesNormalizationAndPoolWidthChanges(): void
+    {
+        $channel = $this->createPartialMock(MailDeliveryChannel::class, ['resolveAddress']);
+        $channel->method('resolveAddress')->willReturn(' User@Example.com ');
+        putenv('MAIL_WORKER_COUNT=8');
+        self::assertSame(1634596257, $channel->routingKeyFor(7, 42));
+        self::assertSame(1634596257, HilosMailer::routingKeyForAddress('user@example.com'));
+        self::assertSame(8, $channel->poolSize());
+        self::assertSame(2, $channel->ownerIndexFor(1634596257));
+        self::assertSame(2, HilosMailer::shardKeyForAddress(' User@Example.com '));
+        putenv('MAIL_WORKER_COUNT=3');
+        self::assertSame(1634596257, $channel->routingKeyFor(7, 42));
+        self::assertSame(1, $channel->ownerIndexFor(1634596257));
+        self::assertSame(1, HilosMailer::shardKeyForAddress('user@example.com'));
     }
 
     public function testConfigFieldsDeclareOperationalFieldsAndEnvOnlySecrets(): void

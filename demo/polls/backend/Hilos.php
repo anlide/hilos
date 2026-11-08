@@ -208,7 +208,7 @@ use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
 use Hilos\Runtime\View\Context\RtContext;
-use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
+use Hilos\Sms\Delivery\SmsRawSendAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
@@ -531,8 +531,8 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::INDEXED => true,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
-        SmsDeliveryChannelAgent::AGENT_TYPE => [
-            AgentRegistryKey::WORKER => SmsDeliveryChannelAgent::class,
+        SmsRawSendAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => SmsRawSendAgent::class,
             AgentRegistryKey::DAEMON => SmsDeliveryChannelAgentDaemon::class,
             AgentRegistryKey::INDEXED => true,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
@@ -587,7 +587,7 @@ final class Hilos extends HilosFacade
         HilosDbContext::identities => ['HIL-1952', 'HIL-1999'],
         HilosDbContext::legalAcceptanceExports => ['HIL-1952'],
         HilosDbContext::legalAcceptances => ['HIL-1952'],
-        HilosDbContext::notificationDeliveries => ['HIL-1893', 'HIL-1902', 'HIL-1910', 'HIL-1952'],
+        HilosDbContext::notificationDeliveries => ['HIL-1902', 'HIL-1910', 'HIL-1952'],
         HilosDbContext::notificationPreferences => ['HIL-1952'],
         HilosDbContext::notifications => ['HIL-1952'],
         HilosDbContext::passkeyCredentials => ['HIL-1952', 'HIL-1999'],

@@ -146,6 +146,7 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
+     * @throws HilosException When fresh durable delivery coordinates cannot be read
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
@@ -159,17 +160,19 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
     }
 
     /**
-     * Pumps the delivery pipeline, then the raw-send pool.
+     * Pumps the delivery pipeline, then the independent raw pool even when durable ownership fails.
      *
-     * @throws HilosException Whatever the delivery bookkeeping or the mail transport raises
+     * @throws HilosException When durable configuration, delivery bookkeeping or a transport fails
      */
     public function onTick(): void
     {
-        parent::onTick();
-
-        $nowMs = microtime(true) * TimeConstants::MS_PER_SECOND;
-        $this->pumpRawInFlight($nowMs);
-        $this->startRawQueued($nowMs);
+        try {
+            parent::onTick();
+        } finally {
+            $nowMs = microtime(true) * TimeConstants::MS_PER_SECOND;
+            $this->pumpRawInFlight($nowMs);
+            $this->startRawQueued($nowMs);
+        }
     }
 
     /**

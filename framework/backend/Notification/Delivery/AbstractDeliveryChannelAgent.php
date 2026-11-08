@@ -7,21 +7,17 @@ namespace Hilos\Notification\Delivery;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
-use Hilos\Core\Router\SignalSource;
+use Hilos\Core\TruthSource\DbWriterPartition;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
-use Hilos\Database\Exception\TableNotActivatedException;
-use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
-use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
-use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDelivery;
 use Hilos\Database\Schema\Schema;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -74,8 +70,8 @@ use Hilos\Sms\Exception\SmsTemplateParamMissingException;
 abstract class AbstractDeliveryChannelAgent extends AbstractAgent
 {
     /**
-     * @var list<string> The notification each dispatched delivery is about, reloaded by
-     *     {@see startOp()} through {@see notifications()}. Read rather than claimed: the rows are
+     * @var list<string> The notification each dispatched delivery is about, loaded by
+     *     {@see startOp()} through the mounted notifications View. Read rather than claimed: the rows are
      *     the notifications library's ({@see AbstractNotificationsLibraryAgent}), and a collection
      *     has one owner. The delivery journal is absent on purpose - {@see self::OWNS_DB} claims
      *     it, and a claim is the owner's own interest.
@@ -101,6 +97,12 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
      */
     public const array OWNS_DB = [HilosDbContext::notificationDeliveries => TruthSourceOperation::BY_KIND];
 
+    /** Fresh saved channel/shard coordinates constrain every item write. */
+    public const ?DbWriterPartition DB_WRITER_PARTITION = DbWriterPartition::NotificationChannelShard;
+
+    /** Maximum number of pending identities inspected in one tick. */
+    private const int PENDING_ADOPTION_BATCH_SIZE = 100;
+
     /** Default ceiling on concurrently pumped attempts (outbound I/O, not CPU). */
     private const int DEFAULT_MAX_CONCURRENT = 16;
 
@@ -110,10 +112,10 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
     /** Base retry backoff in milliseconds, doubled per prior attempt. */
     private const float RETRY_BACKOFF_BASE_MS = 1000.0;
 
-    /** @var array<int, NotificationDeliverSignalData> Ops awaiting a start or a retry, keyed by notification id. */
+    /** @var array<int, NotificationDeliveryIdentity> Immutable ops awaiting a start or retry, keyed by delivery id. */
     private array $ops = [];
 
-    /** @var array<int, DeliveryAttempt> In-flight attempts, keyed by notification id. */
+    /** @var array<int, DeliveryAttempt> In-flight attempts, keyed by delivery id. */
     private array $inFlight = [];
 
     /** @var array<int, float> Earliest next-attempt time (ms) per op, for retry backoff. */
@@ -121,6 +123,9 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
 
     /** Whether this shard owes a read of its pending rows, from birth or after a silencing freeze (HIL-1135). */
     private bool $rereadOwed = true;
+
+    /** Last inspected delivery id, including rows owned by other shards. */
+    private int $pendingCursor = 0;
 
     /**
      * Returns this agent's channel descriptor (identity, address, signal seams).
@@ -177,42 +182,24 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
     }
 
     /**
-     * Adopts a dispatched delivery for this channel, keyed by its notification id.
-     *
-     * The single intake: a deliver signal whose channel matches this agent is queued
-     * for the tick loop; a mismatched channel or a malformed payload is ignored (the
-     * router only routes this channel's signal here, so a mismatch means a
-     * misconfiguration and must not drive a foreign send). A well-formed delivery that
-     * arrives while the freeze silences this pipeline is refused; its row stays pending.
+     * Handles this channel's durable intake and ignores unrelated signal names.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
-     * @param string $name Routed agent-signal name (this channel's deliver signal)
+     * @param string $sender Sender identity, unused
+     * @param string $name Routed agent-signal name
+     * @throws InvalidAgentSignalPayloadException When the deliver name carries another payload type
+     * @throws HilosException When saved coordinates cannot be read or the pool configuration is invalid
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
-        if (!$data->data instanceof NotificationDeliverSignalData) {
-            $this->logAgentWarning($name . ' payload must be ' . NotificationDeliverSignalData::class);
-
-            return;
+        switch ($name) {
+            case $this->channel()->deliverSignalName():
+                $payload = $data->data;
+                if (!$payload instanceof NotificationDeliverSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, NotificationDeliverSignalData::class, $payload);
+                }
+                $this->admitDelivery($payload);
         }
-        if ($data->data->channel !== $this->channel()->name()) {
-            $this->logAgentWarning(
-                "delivery for channel '{$data->data->channel}' reached the '{$this->channel()->name()}' agent",
-            );
-
-            return;
-        }
-        if ($this->freezeSilencesDeliveries()) {
-            $this->logAgentWarning(
-                "delivery for notification {$data->data->notificationId} dropped: protected mode holds the node, its row stays pending",
-            );
-            $this->rereadOwed = true;
-
-            return;
-        }
-
-        $this->ops[$data->data->notificationId] = $data->data;
     }
 
     /**
@@ -222,7 +209,7 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
      * what is held and says how much, the later ones find nothing, and neither touches the
      * database.
      *
-     * @throws HilosException Whatever the delivery bookkeeping or the channel transport raises
+     * @throws HilosException When pool configuration, delivery bookkeeping or the channel transport fails
      */
     public function onTick(): void
     {
@@ -253,6 +240,37 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
     public function onStop(): void
     {
         $this->abandonDeliveries();
+    }
+
+    /**
+     * Captures an immutable identity only when every coordinate and the current route agree.
+     *
+     * @param NotificationDeliverSignalData $delivery Parsed frame with the persisted delivery id
+     * @throws HilosException When saved coordinates cannot be read or the pool configuration is invalid
+     */
+    private function admitDelivery(NotificationDeliverSignalData $delivery): void
+    {
+        if ($delivery->channel !== $this->channel()->name()) {
+            return;
+        }
+        if ($this->freezeSilencesDeliveries()) {
+            $this->abandonDeliveries();
+            $this->rereadOwed = true;
+
+            return;
+        }
+        $saved = Hilos::$db->notificationDeliveries->readIdentity($delivery->deliveryId);
+        if ($saved === null || $saved->deliveryId !== $delivery->deliveryId
+            || $saved->notificationId !== $delivery->notificationId
+            || $saved->channel !== $delivery->channel || !$this->ownsIdentity($saved)) {
+            return;
+        }
+        $owner = DeliveryOwnerResolver::forDelivery($saved);
+        if ($delivery->shardKey !== ($owner->index === null ? null : (int)$owner->index)) {
+            return;
+        }
+
+        $this->ops[$saved->deliveryId] ??= $saved;
     }
 
     /**
@@ -287,23 +305,17 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
         $this->inFlight = [];
         $this->ops = [];
         $this->nextAttemptMs = [];
+        $this->pendingCursor = 0;
 
         return $dropped;
     }
 
     /**
-     * Queues this shard's persisted pending rows without duplicating already signalled ops.
+     * Inspects one bounded page, advancing past foreign rows as well as this shard's.
+     * A completed recovery scan stays complete until restart or a silencing freeze.
+     * A configuration failure leaves the failing identity owed on the next tick.
      *
-     * A null shard belongs to index 1, so an orphan or an unresolved recipient can
-     * reach the existing terminal failure path instead of remaining pending forever.
-     * A project may mount the framework collection without activating its table;
-     * those raw-mail-only projects owe no journal read.
-     *
-     * @throws DatabaseException When the journal or shard dimension cannot be read
-     * @throws TableNotActivatedException When the project has not activated the journal
-     * @throws DbCollectionNotReadableException When the shard dimension is not readable here
-     * @throws EnvException When a pool width cannot be read
-     * @throws InvalidArgumentException When a shard lookup has invalid query order
+     * @throws HilosException When pending identities cannot be read or the pool configuration is invalid
      */
     private function adoptPendingRows(): void
     {
@@ -313,183 +325,174 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
             return;
         }
 
-        $journal = Hilos::$db?->getObjectCollection(HilosDbContext::notificationDeliveries);
-        if (!$journal instanceof ObjectNotificationDeliveries) {
-            $this->rereadOwed = false;
-
-            return;
-        }
-
-        $channel = $this->channel();
-        $picked = 0;
-        foreach ($journal->pendingRecipients($channel->name()) as $notificationId => $userId) {
-            $shardKey = $userId === null ? null : $channel->shardKeyFor($userId, $notificationId);
-            $myRow = !$channel->isPooled()
-                || ($shardKey === null ? $this->agentIndex === '1' : (string)$shardKey === $this->agentIndex);
-            if (!$myRow || isset($this->ops[$notificationId])) {
-                continue;
+        $pending = Hilos::$db->notificationDeliveries->pendingIdentitiesAfter(
+            $this->channel()->name(), $this->pendingCursor, self::PENDING_ADOPTION_BATCH_SIZE,
+        );
+        foreach ($pending as $saved) {
+            if ($this->ownsIdentity($saved)) {
+                $this->ops[$saved->deliveryId] ??= $saved;
             }
-
-            $this->ops[$notificationId] = new NotificationDeliverSignalData($notificationId, $channel->name(), $shardKey);
-            $picked++;
+            $this->pendingCursor = $saved->deliveryId;
         }
-
-        $this->rereadOwed = false;
-        if ($picked > 0) {
-            $this->logAgentInfo("picked up {$picked} pending deliveries from the journal");
-        }
+        $this->rereadOwed = count($pending) === self::PENDING_ADOPTION_BATCH_SIZE;
     }
 
     /**
-     * Advances each in-flight attempt and records its terminal outcome.
-     *
-     * A settled attempt marks its delivery row sent, or records a failure that either
-     * schedules a backed-off retry or fails the row terminally once the attempt
-     * ceiling is reached. A row that vanished or already settled elsewhere just drops
-     * the attempt.
+     * Checks the saved identity and current owner before advancing or settling an attempt.
      *
      * @param float $nowMs Current time in milliseconds
+     * @throws HilosException When ownership, pool configuration, transport or settlement fails
      */
     private function pumpInFlight(float $nowMs): void
     {
-        foreach (array_keys($this->inFlight) as $notificationId) {
-            $attempt = $this->inFlight[$notificationId];
+        foreach ($this->inFlight as $deliveryId => $attempt) {
+            if (!$this->opIsCurrent($deliveryId)) {
+                $this->finishOp($deliveryId);
+                continue;
+            }
             $attempt->tick($nowMs);
             if ($attempt->isBusy()) {
                 continue;
             }
-
-            $deliveries = $this->deliveries();
-            $delivery = $deliveries->findFor($notificationId, $this->channel()->name());
-            if ($delivery === null || $delivery->isSettled()) {
-                $this->finishOp($notificationId, $attempt);
+            if (!$this->opIsCurrent($deliveryId)) {
+                $this->finishOp($deliveryId);
                 continue;
             }
-
             if ($attempt->isDelivered()) {
-                $deliveries->markSent($delivery);
-                $this->finishOp($notificationId, $attempt);
+                Hilos::$db->notificationDeliveries[$deliveryId]->actions->markSent();
+                $this->finishOp($deliveryId);
                 continue;
             }
 
-            $deliveries->recordFailure(
-                $delivery,
-                $attempt->errorDetail() ?? 'delivery failed',
-                $this->maxAttempts(),
-            );
+            $error = $attempt->errorDetail() ?? 'delivery failed';
             $attempt->close();
-            unset($this->inFlight[$notificationId]);
-            if ($delivery->isSettled()) {
-                unset($this->ops[$notificationId], $this->nextAttemptMs[$notificationId]);
-                continue;
-            }
-            $this->nextAttemptMs[$notificationId] = $nowMs + $this->backoffMs($delivery->attempts);
+            unset($this->inFlight[$deliveryId]);
+            $this->failOrRetry($deliveryId, $error, $nowMs);
         }
     }
 
     /**
-     * Starts every queued op that is due and under the concurrency ceiling.
-     *
-     * An op whose delivery row is gone or already settled is dropped; a due op with a
-     * free pool slot begins an attempt (counting the try), unless the address no
-     * longer resolves, which is recorded as a failed attempt like any other.
-     *
      * @param float $nowMs Current time in milliseconds
+     * @throws HilosException When ownership, pool configuration or starting an attempt fails
      */
     private function startQueued(float $nowMs): void
     {
-        foreach ($this->ops as $notificationId => $op) {
-            if (isset($this->inFlight[$notificationId])) {
-                continue;
-            }
-            if ($nowMs < ($this->nextAttemptMs[$notificationId] ?? 0.0)) {
+        foreach ($this->ops as $deliveryId => $op) {
+            if (isset($this->inFlight[$deliveryId]) || $nowMs < ($this->nextAttemptMs[$deliveryId] ?? 0.0)) {
                 continue;
             }
             if (count($this->inFlight) >= $this->maxConcurrent()) {
                 return;
             }
 
-            $this->startOp($notificationId);
+            $this->startOp($deliveryId);
         }
     }
 
     /**
-     * Begins one attempt: load the row and notification, count the try, and open the send.
+     * Counts the attempt and opens its transport only while the saved id still belongs here.
      *
-     * @param int $notificationId Notification id to deliver
+     * @param int $deliveryId Captured delivery primary key
+     * @throws HilosException When ownership, pool configuration, bookkeeping or the channel transport fails
      */
-    private function startOp(int $notificationId): void
+    private function startOp(int $deliveryId): void
     {
-        $deliveries = $this->deliveries();
-        $delivery = $deliveries->findFor($notificationId, $this->channel()->name());
-        if ($delivery === null || $delivery->isSettled()) {
-            unset($this->ops[$notificationId], $this->nextAttemptMs[$notificationId]);
+        if (!$this->opIsCurrent($deliveryId)) {
+            $this->finishOp($deliveryId);
 
             return;
         }
-
-        $notification = $this->notifications()->get($notificationId);
-        if (!$notification instanceof ObjectNotification) {
-            $deliveries->beginAttempt($delivery);
-            $this->failOrRetry(
-                $delivery,
-                'notification unavailable',
-                $notificationId,
-                microtime(true) * TimeConstants::MS_PER_SECOND,
-            );
+        $notification = Hilos::$db->notifications[$this->ops[$deliveryId]->notificationId] ?? null;
+        if (!$this->opIsCurrent($deliveryId)) {
+            $this->finishOp($deliveryId);
 
             return;
         }
+        Hilos::$db->notificationDeliveries[$deliveryId]->actions->beginAttempt();
+        if ($notification === null) {
+            $this->failOrRetry($deliveryId, 'notification unavailable', microtime(true) * TimeConstants::MS_PER_SECOND);
 
-        $deliveries->beginAttempt($delivery);
+            return;
+        }
         $address = $this->channel()->resolveAddress($notification->userId);
         if ($address === null) {
-            $this->failOrRetry(
-                $delivery,
-                'address unresolved',
-                $notificationId,
-                microtime(true) * TimeConstants::MS_PER_SECOND,
-            );
+            $this->failOrRetry($deliveryId, 'address unresolved', microtime(true) * TimeConstants::MS_PER_SECOND);
+
+            return;
+        }
+        if (!$this->opIsCurrent($deliveryId)) {
+            $this->finishOp($deliveryId);
 
             return;
         }
 
-        $this->inFlight[$notificationId] = $this->createAttempt($address, $notification);
+        $this->inFlight[$deliveryId] = $this->createAttempt($address, $notification->getObject());
     }
 
     /**
-     * Records a pre-send failure, dropping the op when it fails terminally or scheduling a retry.
-     *
-     * @param ObjectNotificationDelivery $delivery Loaded delivery row
+     * @param int $deliveryId Captured delivery primary key
      * @param string $error Failure detail
-     * @param int $notificationId Op key
      * @param float $nowMs Current time in milliseconds
+     * @throws HilosException When ownership, pool configuration or recording the failure fails
      */
-    private function failOrRetry(
-        ObjectNotificationDelivery $delivery,
-        string $error,
-        int $notificationId,
-        float $nowMs,
-    ): void {
-        $this->deliveries()->recordFailure($delivery, $error, $this->maxAttempts());
-        if ($delivery->isSettled()) {
-            unset($this->ops[$notificationId], $this->nextAttemptMs[$notificationId]);
+    private function failOrRetry(int $deliveryId, string $error, float $nowMs): void
+    {
+        if (!$this->opIsCurrent($deliveryId)) {
+            $this->finishOp($deliveryId);
 
             return;
         }
-        $this->nextAttemptMs[$notificationId] = $nowMs + $this->backoffMs($delivery->attempts);
+        Hilos::$db->notificationDeliveries[$deliveryId]->actions->recordFailure($error, $this->maxAttempts());
+        if (Hilos::$db->notificationDeliveries[$deliveryId]->status !== DeliveryStatus::PENDING) {
+            $this->finishOp($deliveryId);
+
+            return;
+        }
+        $this->nextAttemptMs[$deliveryId] = $nowMs + $this->backoffMs(Hilos::$db->notificationDeliveries[$deliveryId]->attempts);
     }
 
     /**
-     * Drops a completed op: closes its attempt and forgets its bookkeeping.
-     *
-     * @param int $notificationId Op key
-     * @param DeliveryAttempt $attempt Settled attempt to close
+     * @param int $deliveryId Captured delivery primary key
+     * @return bool Whether fresh coordinates, owner and pending state still match this local op
+     * @throws HilosException When saved coordinates cannot be read or the pool configuration is invalid
      */
-    private function finishOp(int $notificationId, DeliveryAttempt $attempt): void
+    private function opIsCurrent(int $deliveryId): bool
     {
-        $attempt->close();
-        unset($this->inFlight[$notificationId], $this->ops[$notificationId], $this->nextAttemptMs[$notificationId]);
+        $saved = Hilos::$db->notificationDeliveries->readIdentity($deliveryId);
+        $op = $this->ops[$deliveryId];
+
+        return $saved !== null && $saved->deliveryId === $op->deliveryId && $saved->notificationId === $op->notificationId
+            && $saved->channel === $op->channel && $saved->routingKey === $op->routingKey
+            && $this->ownsIdentity($saved)
+            && isset(Hilos::$db->notificationDeliveries[$deliveryId])
+            && Hilos::$db->notificationDeliveries[$deliveryId]->status === DeliveryStatus::PENDING;
+    }
+
+    /**
+     * @param NotificationDeliveryIdentity $saved Immutable saved coordinates
+     * @return bool Whether the registered current route addresses this channel/shard instance
+     * @throws EnvException When the descriptor's pool configuration is unreadable or invalid
+     * @throws InvalidArgumentException When the saved key or pool width cannot be reduced
+     */
+    private function ownsIdentity(NotificationDeliveryIdentity $saved): bool
+    {
+        if ($saved->channel !== $this->channel()->name()) {
+            return false;
+        }
+        $owner = DeliveryOwnerResolver::forDelivery($saved);
+
+        return $owner !== null && $owner->type === static::AGENT_TYPE && $owner->index === $this->agentIndex;
+    }
+
+    /**
+     * @param int $deliveryId Op key whose transport and bookkeeping must be forgotten
+     */
+    private function finishOp(int $deliveryId): void
+    {
+        if (isset($this->inFlight[$deliveryId])) {
+            $this->inFlight[$deliveryId]->close();
+        }
+        unset($this->inFlight[$deliveryId], $this->ops[$deliveryId], $this->nextAttemptMs[$deliveryId]);
     }
 
     /**
@@ -503,35 +506,5 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
         $exponent = max(0, $attempts - 1);
 
         return self::RETRY_BACKOFF_BASE_MS * (2 ** $exponent);
-    }
-
-    /**
-     * Resolves the framework-owned notification-deliveries object collection.
-     *
-     * @return ObjectNotificationDeliveries Delivery persistence primitives
-     */
-    private function deliveries(): ObjectNotificationDeliveries
-    {
-        $collection = Hilos::$db?->getObjectCollection(HilosDbContext::notificationDeliveries);
-        if (!$collection instanceof ObjectNotificationDeliveries) {
-            throw new LogicException('Notification deliveries object collection is not configured');
-        }
-
-        return $collection;
-    }
-
-    /**
-     * Resolves the framework-owned notifications object collection.
-     *
-     * @return ObjectNotifications Notification persistence primitives
-     */
-    private function notifications(): ObjectNotifications
-    {
-        $collection = Hilos::$db?->getObjectCollection(HilosDbContext::notifications);
-        if (!$collection instanceof ObjectNotifications) {
-            throw new LogicException('Notifications object collection is not configured');
-        }
-
-        return $collection;
     }
 }

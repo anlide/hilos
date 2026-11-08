@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Notification\Delivery;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\DeliveryChannelRegistry;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
@@ -12,6 +13,7 @@ use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationTypeDescriptor;
 use Hilos\Notification\NotificationTypeRegistry;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -52,8 +54,9 @@ final class DeliveryChannelTest extends TestCase
 
     public function testDeliverSignalDataRoundTripsWithShardKey(): void
     {
-        $pooled = new NotificationDeliverSignalData(notificationId: 12, channel: 'email', shardKey: 7);
+        $pooled = new NotificationDeliverSignalData(deliveryId: 91, notificationId: 12, channel: 'email', shardKey: 7);
         $restored = NotificationDeliverSignalData::fromArray($pooled->toArray());
+        self::assertSame(91, $restored->deliveryId);
         self::assertSame(12, $restored->notificationId);
         self::assertSame('email', $restored->channel);
         self::assertSame(7, $restored->shardKey);
@@ -61,11 +64,35 @@ final class DeliveryChannelTest extends TestCase
 
     public function testDeliverSignalDataRoundTripsWithoutShardKey(): void
     {
-        $singleton = new NotificationDeliverSignalData(notificationId: 3, channel: 'telegram');
+        $singleton = new NotificationDeliverSignalData(deliveryId: 91, notificationId: 3, channel: 'telegram');
         $restored = NotificationDeliverSignalData::fromArray($singleton->toArray());
+        self::assertSame(91, $restored->deliveryId);
         self::assertSame(3, $restored->notificationId);
         self::assertSame('telegram', $restored->channel);
         self::assertNull($restored->shardKey);
+    }
+
+    /** @param array<string, mixed> $payload Invalid wire coordinates */
+    #[DataProvider('invalidDeliveries')]
+    public function testDeliveryPayloadRefusesMissingMistypedAndInvalidCoordinates(array $payload): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        NotificationDeliverSignalData::fromArray($payload);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>}> Malformed delivery frames */
+    public static function invalidDeliveries(): iterable
+    {
+        $valid = ['deliveryId' => 91, 'notificationId' => 12, 'channel' => 'email', 'shardKey' => 7];
+        yield 'old frame' => [['notificationId' => 12, 'channel' => 'email', 'shardKey' => 7]];
+        foreach ([null, '91', true, 91.0, 0, -1] as $value) {
+            yield 'delivery ' . var_export($value, true) => [array_replace($valid, ['deliveryId' => $value])];
+        }
+        yield 'notification string' => [array_replace($valid, ['notificationId' => '12'])];
+        yield 'notification zero' => [array_replace($valid, ['notificationId' => 0])];
+        yield 'empty channel' => [array_replace($valid, ['channel' => ''])];
+        yield 'shard string' => [array_replace($valid, ['shardKey' => '7'])];
+        yield 'shard zero' => [array_replace($valid, ['shardKey' => 0])];
     }
 
     /** Keeps existing project subclasses usable with private address metadata by default. */
@@ -77,6 +104,9 @@ final class DeliveryChannelTest extends TestCase
         self::assertSame('notifications.channel.telegram.enabled', $channel->enabledSettingKey());
         self::assertFalse($channel->isPooled());
         self::assertNull($channel->indexField());
+        self::assertNull($channel->routingKeyFor(7, 42));
+        self::assertSame(1, $channel->poolSize());
+        self::assertNull($channel->ownerIndexFor(7));
         self::assertNull($channel->shardKeyFor(7, 42));
         self::assertSame('tg-7', $channel->resolveAddress(7));
         self::assertNull($channel->resolveAddress(99));
@@ -129,7 +159,10 @@ final class DeliveryChannelTest extends TestCase
 
         self::assertTrue($channel->isPooled());
         self::assertSame(NotificationDeliverSignalData::shardKey, $channel->indexField());
-        self::assertSame(7, $channel->shardKeyFor(7, 42));
+        self::assertSame(7, $channel->routingKeyFor(7, 42));
+        self::assertSame(1, $channel->poolSize());
+        self::assertSame(1, $channel->ownerIndexFor(7));
+        self::assertSame(1, $channel->shardKeyFor(7, 42));
     }
 
     public function testChannelRegistryBaseIsEmptyAndSubclassComposes(): void

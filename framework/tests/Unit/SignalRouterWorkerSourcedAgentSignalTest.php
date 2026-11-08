@@ -29,6 +29,8 @@ use Hilos\Push\Delivery\PushDeliveryChannelAgent;
 use Hilos\Push\Delivery\PushDeliveryChannelAgentDaemon;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
+use Hilos\Sms\Delivery\SmsRawSendAgent;
+use Hilos\Core\Topology\AgentSignalRouteRegistry;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
 use Hilos\Sms\DTO\SmsSendSignalData;
 use PHPUnit\Framework\TestCase;
@@ -100,6 +102,40 @@ final class SignalRouterWorkerSourcedAgentSignalTest extends TestCase
         ], $destinations);
     }
 
+    public function testRawOnlySmsWorkerKeepsIndexedRoundtripAndReceipt(): void
+    {
+        $frame = new SignalDTO(
+            new SignalSource(SignalSource::WORKER),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName(HilosSignalConstants::HILOS_SMS_SEND),
+            new AgentSignalData(new SmsSendSignalData(to: '+15550000000', shardKey: 3, text: 'code'), receiptId: 42),
+        );
+        $atWorker = SignalDTO::fromJson(SignalDTO::fromJson($frame->toJson())->toJson());
+        self::assertSame($frame->toArray(), $atWorker->toArray());
+        self::assertInstanceOf(SmsSendSignalData::class, $atWorker->data->data);
+        self::assertSame(42, $atWorker->data->receiptId);
+        self::assertEquals([new AgentDestination(SmsRawSendAgent::AGENT_TYPE, '3')],
+            new RawWorkerSourcedAgentSignalTestRouter()->getDestinations($atWorker));
+        self::assertSame(SmsSendSignalData::shardKey,
+            AgentSignalRouteRegistry::indexFields(RawWorkerSourcedAgentSignalTestHilos::AGENTS)[HilosSignalConstants::HILOS_SMS_SEND]);
+    }
+
+    public function testRawOnlySmsWorkerHasNoDurableSmsRouteOrPayloadMapping(): void
+    {
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_SMS_DELIVER,
+            AgentSignalRouteRegistry::routes(RawWorkerSourcedAgentSignalTestHilos::AGENTS));
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_SMS_DELIVER,
+            AgentSignalRouteRegistry::dtoRoutes(RawWorkerSourcedAgentSignalTestHilos::AGENTS));
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_SMS_DELIVER,
+            AgentSignalRouteRegistry::indexFields(RawWorkerSourcedAgentSignalTestHilos::AGENTS));
+        self::assertSame([], new RawWorkerSourcedAgentSignalTestRouter()->getDestinations(new SignalDTO(
+            new SignalSource(SignalSource::WORKER),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName(HilosSignalConstants::HILOS_SMS_DELIVER),
+            new AgentSignalData(new NotificationDeliverSignalData(91, 11, SmsDeliveryChannel::NAME, 3)),
+        )));
+    }
+
     /**
      * The dispatcher does not name an agent: it queues whatever the channel descriptor calls
      * its deliver signal, and the route has to be there for each registered channel.
@@ -113,16 +149,25 @@ final class SignalRouterWorkerSourcedAgentSignalTest extends TestCase
             new SmsDeliveryChannel()->deliverSignalName() => SmsDeliveryChannelAgent::AGENT_TYPE,
             new PushDeliveryChannel()->deliverSignalName() => PushDeliveryChannelAgent::AGENT_TYPE,
         ] as $signalName => $agentType) {
-            $destinations = $router->getDestinations(new SignalDTO(
+            $signal = new SignalDTO(
                 new SignalSource(SignalSource::WORKER),
                 new SignalType(SignalTypeConstants::AGENT_SIGNAL),
                 new SignalName($signalName),
                 new AgentSignalData(new NotificationDeliverSignalData(
+                    deliveryId: 91,
                     notificationId: 11,
                     channel: 'channel',
                     shardKey: 5,
-                )),
-            ));
+                ), receiptId: 42),
+            );
+            $atDaemon = SignalDTO::fromJson($signal->toJson());
+            $atWorker = SignalDTO::fromJson($atDaemon->toJson());
+            self::assertInstanceOf(AgentSignalData::class, $atWorker->data);
+            self::assertSame(42, $atWorker->data->receiptId);
+            self::assertInstanceOf(NotificationDeliverSignalData::class, $atWorker->data->data);
+            self::assertSame(91, $atWorker->data->data->deliveryId);
+            self::assertSame($signal->toArray(), $atWorker->toArray());
+            $destinations = $router->getDestinations($atWorker);
 
             $this->assertEquals(
                 [new AgentDestination($agentType, '5')],
@@ -317,4 +362,23 @@ final class WorkerSourcedAgentSignalTestPayload implements SignalDataInterface
     {
         return new static();
     }
+}
+
+final class RawWorkerSourcedAgentSignalTestRouter extends SignalRouter
+{
+    protected function hilosClass(): string
+    {
+        return RawWorkerSourcedAgentSignalTestHilos::class;
+    }
+}
+
+abstract class RawWorkerSourcedAgentSignalTestHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        SmsRawSendAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => SmsRawSendAgent::class,
+            AgentRegistryKey::DAEMON => SmsDeliveryChannelAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
 }

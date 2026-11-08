@@ -9,7 +9,9 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\ExternalWriterException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
+use Hilos\Notification\Delivery\NotificationDeliveryWriteGuard;
 
 /**
  * Database Truth Source Registry.
@@ -259,6 +261,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
         }
 
         $agentId = ExecutionContext::currentAgentId();
+        self::refusePartitionedBulkWrite($collection, $agentId);
         if ($agentId === null) {
             if (self::getTruthSourceKeys($collection)?->coversEveryKey() !== true) {
                 throw new WriteNotAllowedException(
@@ -414,6 +417,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
 
         $topSetKeysOnce = self::once($topSetKeys);
         $agentId = ExecutionContext::currentAgentId();
+        self::refusePartitionedBulkWrite($collection, $agentId);
         if ($agentId === null) {
             if (!self::isSetCovered($collection, $setKey, $topSetKeysOnce)) {
                 throw new WriteNotAllowedException(
@@ -456,6 +460,51 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
     }
 
     /**
+     * Partition grants never supply ambient permission to mutate the whole table.
+     *
+     * @param string $collection Table name
+     * @return TruthSourceOperations Operations of ordinary whole writers only
+     */
+    protected static function operationsCoveringEveryKey(string $collection): TruthSourceOperations
+    {
+        $operations = new TruthSourceOperations();
+        foreach (self::ambientSources($collection) as $grant) {
+            if ($grant->keys->coversEveryKey()) {
+                $operations = $operations->merge($grant->operations);
+            }
+        }
+
+        return $operations;
+    }
+
+    /** Partition proof requires a concrete row; a bulk door carries no such coordinates. */
+    private static function refusePartitionedBulkWrite(string $collection, ?string $agentId): void
+    {
+        if ($collection === HilosDbContext::notificationDeliveries
+            && NotificationDeliveryWriteGuard::partitionFor($agentId) !== null) {
+            throw new WriteNotAllowedException("Delivery claimant '{$agentId}' requires an addressed delivery row for every write.");
+        }
+    }
+
+    /**
+     * Ordinary offline/test writers retain their grants; a channel proof requires an executing agent.
+     *
+     * @param string $collection Table name
+     * @return array<string, TruthSourceGrant> Grants usable without an executing agent
+     */
+    private static function ambientSources(string $collection): array
+    {
+        $sources = &self::getSources();
+        $grants = $sources[$collection] ?? [];
+        if ($collection !== HilosDbContext::notificationDeliveries) {
+            return $grants;
+        }
+
+        return array_filter($grants, static fn (string $agentId): bool =>
+            NotificationDeliveryWriteGuard::partitionFor($agentId) === null, ARRAY_FILTER_USE_KEY);
+    }
+
+    /**
      * Reads the mounted class links alone: no SQL, reader interest, or second map of external collections.
      *
      * Unmounted and manual collections keep their existing guard contract. Their low-level Entity writes
@@ -489,8 +538,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      */
     private static function isNewRowCovered(string $collection, Closure $setKeys): bool
     {
-        $sources = &self::getSources();
-        foreach ($sources[$collection] ?? [] as $grant) {
+        foreach (self::ambientSources($collection) as $grant) {
             if ($grant->allows(TruthSourceOperation::Add) && self::grantCoversNewRow($grant, $setKeys)) {
                 return true;
             }
@@ -510,8 +558,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      */
     private static function hasSetCreateSource(string $collection): bool
     {
-        $sources = &self::getSources();
-        foreach ($sources[$collection] ?? [] as $grant) {
+        foreach (self::ambientSources($collection) as $grant) {
             if ($grant->keys->coversSet() && $grant->allows(TruthSourceOperation::Add)) {
                 return true;
             }
@@ -546,8 +593,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      */
     private static function isRowCovered(string $collection, string $idString, Closure $setKeys): bool
     {
-        $sources = &self::getSources();
-        foreach ($sources[$collection] ?? [] as $grant) {
+        foreach (self::ambientSources($collection) as $grant) {
             if (self::grantCoversRow($grant, $idString, $setKeys)) {
                 return true;
             }
@@ -572,9 +618,8 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
         string $idString,
         Closure $setKeys,
     ): TruthSourceOperations {
-        $sources = &self::getSources();
         $operations = new TruthSourceOperations();
-        foreach ($sources[$collection] ?? [] as $grant) {
+        foreach (self::ambientSources($collection) as $grant) {
             if (!self::grantCoversRow($grant, $idString, $setKeys)) {
                 continue;
             }
@@ -628,8 +673,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      */
     private static function isSetCovered(string $collection, string $setKey, Closure $topSetKeys): bool
     {
-        $sources = &self::getSources();
-        foreach ($sources[$collection] ?? [] as $grant) {
+        foreach (self::ambientSources($collection) as $grant) {
             if (self::grantCoversSet($grant, $setKey, $topSetKeys)) {
                 return true;
             }
@@ -648,9 +692,8 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      */
     private static function operationsCoveringSet(string $collection, string $setKey, Closure $topSetKeys): TruthSourceOperations
     {
-        $sources = &self::getSources();
         $operations = new TruthSourceOperations();
-        foreach ($sources[$collection] ?? [] as $grant) {
+        foreach (self::ambientSources($collection) as $grant) {
             if (!self::grantCoversSet($grant, $setKey, $topSetKeys)) {
                 continue;
             }

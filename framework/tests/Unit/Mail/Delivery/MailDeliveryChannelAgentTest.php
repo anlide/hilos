@@ -7,6 +7,8 @@ namespace Hilos\Tests\Unit\Mail\Delivery;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Context\HilosDbContext;
@@ -18,11 +20,15 @@ use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\View\Collection\Settings;
+use Hilos\Database\View\Collection\NotificationDeliveries;
 use Hilos\Database\View\Item\Setting;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Notification\Delivery\DeliveryChannelRegistry;
+use Hilos\Notification\Delivery\NotificationDeliveryIdentity;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\EmailContent;
 use Hilos\Mail\EmailMessage;
@@ -63,6 +69,10 @@ final class MailDeliveryChannelAgentTest extends TestCase
 
     /** Sentence carried by the last step drained off the queue, or null when it carried none. */
     private ?string $lastDetail = null;
+
+    private ?string $durablePreviousApp = null;
+    private ?HilosDbContext $durablePreviousDb = null;
+    private ?BrowserContext $durablePreviousBrowser = null;
 
     public function testHtmlIntakesUseTheRenderedLanguageAndPreserveOtherParts(): void
     {
@@ -261,6 +271,13 @@ final class MailDeliveryChannelAgentTest extends TestCase
     protected function tearDown(): void
     {
         Hilos::$rt = null;
+        if ($this->durablePreviousApp !== null) {
+            $this->durablePreviousApp::initBrowser($this->durablePreviousBrowser);
+            if ($this->durablePreviousBrowser === null) {
+                Hilos::resetBrowser();
+            }
+            Hilos::$db = $this->durablePreviousDb;
+        }
         parent::tearDown();
     }
 
@@ -462,7 +479,7 @@ final class MailDeliveryChannelAgentTest extends TestCase
         // A deliver signal for a foreign channel is dropped by the base intake (no DB touched);
         // the point is that it is not misrouted into the raw-send pool.
         $agent->onSignalAgent(
-            new AgentSignalData(new NotificationDeliverSignalData(notificationId: 7, channel: 'sms', shardKey: 1)),
+            new AgentSignalData(new NotificationDeliverSignalData(deliveryId: 91, notificationId: 7, channel: 'sms', shardKey: 1)),
             'src',
             HilosSignalConstants::HILOS_MAIL_DELIVER,
         );
@@ -707,8 +724,17 @@ final class MailDeliveryChannelAgentTest extends TestCase
      */
     private function deliver(TestableMailAgent $agent, int $notificationId): void
     {
+        if ($this->durablePreviousApp === null) {
+            $this->durablePreviousApp = Hilos::appClass();
+            $this->durablePreviousDb = Hilos::$db;
+            $this->durablePreviousBrowser = Hilos::$browser;
+        }
+        MailDurableProbeHilos::initBrowser();
+        Hilos::$db = new MailDurableProbeDbContext($notificationId);
         $agent->onSignalAgent(
-            new AgentSignalData(new NotificationDeliverSignalData(notificationId: $notificationId, channel: 'email', shardKey: 1)),
+            new AgentSignalData(new NotificationDeliverSignalData(
+                deliveryId: 91, notificationId: $notificationId, channel: 'email', shardKey: 1,
+            )),
             'src',
             HilosSignalConstants::HILOS_MAIL_DELIVER,
         );
@@ -995,4 +1021,57 @@ final class ScriptedMailTransport implements MailTransportInterface
         $this->closed = true;
         $this->busy = false;
     }
+}
+
+/** Admission reads coordinates; any later journal access exposes a non-silenced tick. */
+final class MailDurableProbeDeliveries extends NotificationDeliveries
+{
+    private bool $admitted = false;
+
+    public function __construct(private readonly int $notificationId)
+    {
+    }
+
+    public function readIdentity(int $deliveryId): ?NotificationDeliveryIdentity
+    {
+        if ($this->admitted) {
+            throw new LogicException('Notification deliveries object collection is not configured');
+        }
+        $this->admitted = true;
+
+        return new NotificationDeliveryIdentity($deliveryId, $this->notificationId, MailDeliveryChannel::NAME, 0);
+    }
+}
+
+final class MailDurableProbeDbContext extends HilosDbContext
+{
+    private MailDurableProbeDeliveries $journal;
+
+    public function __construct(int $notificationId)
+    {
+        $this->journal = new MailDurableProbeDeliveries($notificationId);
+    }
+
+    public function __get(string $name): mixed
+    {
+        return $name === self::notificationDeliveries ? $this->journal : parent::__get($name);
+    }
+}
+
+final class MailDurableProbeChannels extends DeliveryChannelRegistry
+{
+    protected static function channels(): array
+    {
+        return [MailDeliveryChannel::NAME => new MailDeliveryChannel()];
+    }
+}
+
+abstract class MailDurableProbeHilos extends Hilos
+{
+    public const array AGENTS = [MailDeliveryChannelAgent::AGENT_TYPE => [
+        AgentRegistryKey::WORKER => MailDeliveryChannelAgent::class,
+        AgentRegistryKey::INDEXED => true,
+    ]];
+
+    protected const string NOTIFICATION_CHANNEL_REGISTRY = MailDurableProbeChannels::class;
 }

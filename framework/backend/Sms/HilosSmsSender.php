@@ -16,6 +16,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Mail\HilosMailer;
+use Hilos\Notification\Delivery\DeliveryShard;
 use Hilos\Notification\Delivery\NotificationDispatcher;
 use Hilos\Sms\DTO\SmsSendSignalData;
 
@@ -75,14 +76,24 @@ class HilosSmsSender
      *
      * @param string $number Recipient number in E.164
      * @return int Positive shard key in the range 1..SMS_WORKER_COUNT
+     * @throws InvalidArgumentException When the configured pool width is not positive
      * @throws EnvException When SMS_WORKER_COUNT is unreadable
      */
     public static function shardKeyForNumber(string $number): int
     {
-        $env = Hilos::$env;
-        $workerCount = $env === null ? 1 : max(1, $env[EnvConstants::SMS_WORKER_COUNT]->int());
+        return DeliveryShard::indexFor(
+            self::routingKeyForNumber($number),
+            Hilos::$env === null ? 1 : Hilos::$env[EnvConstants::SMS_WORKER_COUNT]->int(),
+        );
+    }
 
-        return 1 + (int)(crc32(self::normalize($number)) % $workerCount);
+    /**
+     * @param string $number Recipient number
+     * @return int CRC32 of the normalized routing dimension
+     */
+    public static function routingKeyForNumber(string $number): int
+    {
+        return crc32(self::normalize($number));
     }
 
     /**

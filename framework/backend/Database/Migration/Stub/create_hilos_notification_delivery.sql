@@ -10,14 +10,15 @@
 -- of its notification. `channel` is the channel name (a string, not an enum:
 -- channels are extended by subclassing, not by a fixed set).
 --
--- Indexes: (notification_id) resolves a notification's deliveries; (channel, status)
--- serves per-channel queue/retry scans; (created_at) and (status, created_at) serve
+-- Indexes: (notification_id) resolves a notification's deliveries; (channel, status, id)
+-- serves per-channel queue/retry cursors; (created_at) and (status, created_at) serve
 -- the delivery-logs window and status/age retention scans (HIL-201).
 
 CREATE TABLE `hilos_notification_delivery` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `notification_id` INT UNSIGNED NOT NULL,
     `channel` VARCHAR(50) NOT NULL,
+    `routing_key` BIGINT UNSIGNED NULL DEFAULT NULL,
     `status` ENUM('pending', 'sent', 'failed') NOT NULL DEFAULT 'pending',
     `attempts` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
     `last_error` VARCHAR(255) DEFAULT NULL,
@@ -26,7 +27,7 @@ CREATE TABLE `hilos_notification_delivery` (
     `delivered_at` TIMESTAMP NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_notification_delivery_notification` (`notification_id`),
-    KEY `idx_notification_delivery_channel_status` (`channel`, `status`),
+    KEY `idx_notification_delivery_channel_status` (`channel`, `status`, `id`),
     KEY `idx_notification_delivery_created` (`created_at`),
     KEY `idx_notification_delivery_status_created` (`status`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

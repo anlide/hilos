@@ -195,7 +195,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      */
     public const array OWNS_DB_SET = [];
 
-    /** SCAFFOLD: HIL-1893 may enable its channel/shard proof only after installing the common write guard. */
+    /** Fixed row proof required in addition to the ordinary DB operation and width grant. */
     public const ?DbWriterPartition DB_WRITER_PARTITION = null;
 
     /**

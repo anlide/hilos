@@ -12,6 +12,7 @@ use Hilos\Database\Entity\Item\ChangeLogReceipt;
 use Hilos\Database\Entity\Item\ChangeLogEntry;
 use Hilos\Database\Entity\Item\ChangeLogChange;
 use Hilos\Database\Entity\Item\ChangeLogValue;
+use Hilos\Database\Entity\Item\NotificationDelivery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Hilos\Database\Entity\Item\User;
 use Hilos\Database\Schema\EntitySchemaAudit;
@@ -185,5 +186,14 @@ final class FrameworkEntityPiiVerdictTest extends TestCase
     {
         $this->assertSame(AnonymizationStrategy::NULLIFY, User::_pii[User::last_browser_time_zone]);
         $this->assertNotContains(User::last_browser_time_zone, User::_piiNotPersonal);
+    }
+
+    public function testDeliveryRoutingDimensionIsPersonalAndNullifiedWithoutChangingErrorMasking(): void
+    {
+        self::assertSame([
+            'last_error' => AnonymizationStrategy::MASK,
+            'routing_key' => AnonymizationStrategy::NULLIFY,
+        ], NotificationDelivery::_pii);
+        self::assertNotContains(NotificationDelivery::routing_key, NotificationDelivery::_piiNotPersonal);
     }
 }

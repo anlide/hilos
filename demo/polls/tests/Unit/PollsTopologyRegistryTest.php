@@ -200,6 +200,7 @@ use Demo\Polls\Tables\PollsTableContext;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Sms\Delivery\SmsRawSendAgent;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Auth\Library\DTO\ThemePickActionDTO;
@@ -1418,7 +1419,6 @@ final class PollsTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_OAUTH_PENDING => HilosAgentType::HILOS_OAUTH,
                 HilosSignalConstants::HILOS_MAIL_DELIVER => HilosAgentType::HILOS_MAIL,
                 HilosSignalConstants::HILOS_MAIL_SEND => HilosAgentType::HILOS_MAIL,
-                HilosSignalConstants::HILOS_SMS_DELIVER => HilosAgentType::HILOS_SMS,
                 HilosSignalConstants::HILOS_SMS_SEND => HilosAgentType::HILOS_SMS,
                 HilosSignalConstants::LOGS_AGENT_READ_LINES => HilosAgentType::HILOS_LOG_STORE,
                 HilosSignalConstants::LOGS_AGENT_FOLLOW_START => HilosAgentType::HILOS_LOG_STORE,
@@ -2174,6 +2174,15 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    public function testSmsWorkerIsRawOnlyWithTheExactRemainingDeliveryDebt(): void
+    {
+        $entry = Hilos::AGENTS[HilosAgentType::HILOS_SMS];
+        $this->assertSame(SmsRawSendAgent::class, $entry[AgentRegistryKey::WORKER]);
+        $this->assertSame([], OwnershipDeclaration::dbCollectionsOf(SmsRawSendAgent::class));
+        $this->assertSame([HilosSignalConstants::HILOS_SMS_SEND], array_keys(SmsRawSendAgent::AGENT_SIGNALS));
+        $this->assertSame(['HIL-1902', 'HIL-1910', 'HIL-1952'], Hilos::SHARED_DB_OWNERS['notificationDeliveries']);
+    }
+
     /**
      * The independent ceiling permits only prescribed DB transitions to retire; startup checks the exact vector.
      */
@@ -2185,7 +2194,7 @@ final class PollsTopologyRegistryTest extends TestCase
             'identities' => ['HIL-1952', 'HIL-1999'],
             'legalAcceptanceExports' => ['HIL-1952'],
             'legalAcceptances' => ['HIL-1952'],
-            'notificationDeliveries' => ['HIL-1893', 'HIL-1902', 'HIL-1910', 'HIL-1952'],
+            'notificationDeliveries' => ['HIL-1902', 'HIL-1910', 'HIL-1952'],
             'notificationPreferences' => ['HIL-1952'],
             'notifications' => ['HIL-1952'],
             'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],

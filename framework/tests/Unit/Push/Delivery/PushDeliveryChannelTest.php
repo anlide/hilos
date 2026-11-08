@@ -95,6 +95,18 @@ final class PushDeliveryChannelTest extends TestCase
         self::assertSame(1, $channel->shardKeyFor(7, 42));
     }
 
+    public function testSourceKeyIsTheUserEvenWhenThePoolWidthChanges(): void
+    {
+        $channel = new PushDeliveryChannel();
+        putenv('PUSH_WORKER_COUNT=8');
+        self::assertSame(7, $channel->routingKeyFor(7, 42));
+        self::assertSame(8, $channel->poolSize());
+        self::assertSame(8, $channel->ownerIndexFor(7));
+        putenv('PUSH_WORKER_COUNT=3');
+        self::assertSame(7, $channel->routingKeyFor(7, 999));
+        self::assertSame(2, $channel->ownerIndexFor(7));
+    }
+
     public function testConfigFieldsDeclareThePublicFieldAndTheEnvOnlyPrivateSecret(): void
     {
         $fields = [];

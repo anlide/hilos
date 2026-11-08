@@ -9,10 +9,12 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Core\TruthSource\DbWriterPartition;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
+use Hilos\Sms\Delivery\SmsRawSendAgent;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\DeliveryChannelRegistry;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
@@ -2602,6 +2604,26 @@ final class TopologyValidatorTest extends TestCase
             $this->declaredOwnershipErrors([TopologyForgedPartitionAgent::class])));
         $this->assertTopologyErrors(static fn (): mixed => TopologyPartitionedOtherCollectionHilos::validateTopology(), [
             "DB collection 'writer_test'", 'exact closed DB writer state',
+        ]);
+    }
+
+    public function testEmailAndRawSmsTopologyHasNoDurableSmsClaim(): void
+    {
+        TopologyRawSmsHilos::validateTopology();
+        self::assertArrayNotHasKey(HilosDbContext::notificationDeliveries, OwnershipDeclaration::dbCollectionsOf(SmsRawSendAgent::class));
+    }
+
+    public function testForgedRawSmsClaimAndPartitionCannotBorrowADeliveryRole(): void
+    {
+        foreach ([TopologyRawSmsGrantHilos::class, TopologyRawSmsPartitionHilos::class] as $facade) {
+            $this->assertTopologyErrors(static fn (): mixed => $facade::validateTopology(), ['exact closed DB writer state']);
+        }
+    }
+
+    public function testRetiredDeliveryGuardDebtCannotReturn(): void
+    {
+        $this->assertTopologyErrors(static fn (): mixed => TopologyResurrectedDeliveryDebtHilos::validateTopology(), [
+            'notificationDeliveries', 'exact closed DB writer state',
         ]);
     }
 
@@ -9349,10 +9371,15 @@ abstract class TopologyPartlyPartitionedChannelsHilos extends TopologyPartitione
     public const array AGENTS = [
         ...parent::AGENTS,
         HilosAgentType::HILOS_MAIL => [
-            AgentRegistryKey::WORKER => MailDeliveryChannelAgent::class,
+            AgentRegistryKey::WORKER => TopologyUnguardedMailAgent::class,
             AgentRegistryKey::INDEXED => true,
         ],
     ];
+}
+
+final class TopologyUnguardedMailAgent extends MailDeliveryChannelAgent
+{
+    public const ?DbWriterPartition DB_WRITER_PARTITION = null;
 }
 
 final class TopologyDbRowsAddRemoveAgent extends TopologyTestAgent
@@ -9880,4 +9907,54 @@ abstract class TopologyPartitionedOtherCollectionHilos extends TopologyPartition
             AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
         ],
     ];
+}
+
+abstract class TopologyRawSmsHilos extends TopologyPartitionedChannelsHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        HilosAgentType::HILOS_SMS => [
+            AgentRegistryKey::WORKER => SmsRawSendAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
+}
+
+class TopologyRawSmsGrant extends SmsRawSendAgent
+{
+    public const array OWNS_DB = [HilosDbContext::notificationDeliveries => [TruthSourceOperation::Update]];
+}
+
+final class TopologyRawSmsPartition extends TopologyRawSmsGrant
+{
+    public const ?DbWriterPartition DB_WRITER_PARTITION = DbWriterPartition::NotificationChannelShard;
+}
+
+abstract class TopologyRawSmsGrantHilos extends TopologyRawSmsHilos
+{
+    public const array AGENTS = [...parent::AGENTS, HilosAgentType::HILOS_SMS => [
+        AgentRegistryKey::WORKER => TopologyRawSmsGrant::class,
+        AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        AgentRegistryKey::INDEXED => true,
+    ]];
+}
+
+abstract class TopologyRawSmsPartitionHilos extends TopologyRawSmsHilos
+{
+    public const array AGENTS = [...parent::AGENTS, HilosAgentType::HILOS_SMS => [
+        AgentRegistryKey::WORKER => TopologyRawSmsPartition::class,
+        AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        AgentRegistryKey::INDEXED => true,
+    ]];
+}
+
+abstract class TopologyResurrectedDeliveryDebtHilos extends TopologyRawSmsHilos
+{
+    public const array AGENTS = [...parent::AGENTS, HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY => [
+        AgentRegistryKey::WORKER => AbstractNotificationsLibraryAgent::class,
+        AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+    ]];
+
+    public const array SHARED_DB_OWNERS = [HilosDbContext::notificationDeliveries => ['HIL-1893']];
 }

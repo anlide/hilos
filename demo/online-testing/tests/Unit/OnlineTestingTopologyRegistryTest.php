@@ -1947,7 +1947,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             'dataExports' => ['HIL-1952'],
             'identities' => ['HIL-1952', 'HIL-1999'],
             'legalAcceptances' => ['HIL-1952'],
-            'notificationDeliveries' => ['HIL-1893', 'HIL-1902', 'HIL-1910', 'HIL-1952'],
+            'notificationDeliveries' => ['HIL-1902', 'HIL-1910', 'HIL-1952'],
             'notificationPreferences' => ['HIL-1952'],
             'notifications' => ['HIL-1952'],
             'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],

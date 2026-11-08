@@ -19,6 +19,7 @@ use Hilos\HilosException;
  * @property-read ?int $id
  * @property-read int $notificationId
  * @property-read string $channel
+ * @property-read ?int $routingKey
  * @property-read string $status
  * @property-read int $attempts
  * @property-read ?string $lastError
@@ -31,7 +32,7 @@ class NotificationDelivery extends DbItem
     /**
      * Magic getter for notification-delivery properties.
      *
-     * @param string $name Property name (id, notificationId, channel, status, attempts, lastError, createdAt, updatedAt, deliveredAt)
+     * @param string $name Delivery scalar field name
      * @return mixed Property value
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
@@ -43,6 +44,7 @@ class NotificationDelivery extends DbItem
             ObjectNotificationDelivery::id => $this->_object->id,
             ObjectNotificationDelivery::notificationId => $this->_object->notificationId,
             ObjectNotificationDelivery::channel => $this->_object->channel,
+            ObjectNotificationDelivery::routingKey => $this->_object->routingKey,
             ObjectNotificationDelivery::status => $this->_object->status,
             ObjectNotificationDelivery::attempts => $this->_object->attempts,
             ObjectNotificationDelivery::lastError => $this->_object->lastError,

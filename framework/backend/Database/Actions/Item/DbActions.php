@@ -101,6 +101,7 @@ abstract class DbActions
                 $this->object->getIdString(),
                 $this->object->touchedSetKeys(...),
                 $operation,
+                $this->object,
             );
         } else {
             // The row is not in the database yet, so an insert is the one write it can receive: the door asks the right to

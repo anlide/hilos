@@ -664,6 +664,10 @@ abstract class StatusNoticeHilos extends Hilos
     public const array AGENTS = [
         HilosAgentType::HILOS_STATUS => [AgentRegistryKey::WORKER => StatusAgent::class],
         HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY => [AgentRegistryKey::WORKER => StatusNoticeLibrary::class],
+        HilosAgentType::HILOS_MAIL => [
+            AgentRegistryKey::WORKER => StatusNoticeMailAgent::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
         'probe' => [AgentRegistryKey::SCOPE => AgentScope::NODE],
     ];
     protected const array FEATURES = [HilosFeature::STATUS];
@@ -710,6 +714,12 @@ final class StatusNoticeChannels extends DeliveryChannelRegistry
             public function name(): string
             {
                 return 'other';
+            }
+
+            /** @return string Distinct signal for the unused channel */
+            public function deliverSignalName(): string
+            {
+                return HilosSignalConstants::HILOS_SMS_DELIVER;
             }
         }];
     }

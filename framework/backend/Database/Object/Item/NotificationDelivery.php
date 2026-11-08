@@ -22,6 +22,7 @@ use Hilos\Notification\Delivery\DeliveryStatus;
  * @property-read ?int $id
  * @property int $notificationId
  * @property string $channel
+ * @property ?int $routingKey
  * @property string $status
  * @property int $attempts
  * @property ?string $lastError
@@ -36,6 +37,7 @@ class NotificationDelivery extends Object_
     public const string id = 'id';
     public const string notificationId = 'notificationId';
     public const string channel = 'channel';
+    public const string routingKey = 'routingKey';
     public const string status = 'status';
     public const string attempts = 'attempts';
     public const string lastError = 'lastError';
@@ -46,7 +48,7 @@ class NotificationDelivery extends Object_
     /**
      * Magic getter for entity properties.
      *
-     * @param string $property Property name (id, notificationId, channel, status, attempts, lastError, createdAt, updatedAt, deliveredAt)
+     * @param string $property Delivery scalar field name
      * @return mixed Property value
      * @throws DatabaseException When the property is not a known NotificationDelivery field
      */
@@ -56,6 +58,7 @@ class NotificationDelivery extends Object_
             self::id => $this->entity->id,
             self::notificationId => $this->entity->notification_id,
             self::channel => $this->entity->channel,
+            self::routingKey => $this->entity->routing_key,
             self::status => $this->entity->status,
             self::attempts => $this->entity->attempts,
             self::lastError => $this->entity->last_error,
@@ -69,7 +72,7 @@ class NotificationDelivery extends Object_
     /**
      * Magic setter for entity properties.
      *
-     * @param string $property Property name (notificationId, channel, status, attempts, lastError, createdAt, updatedAt, deliveredAt)
+     * @param string $property Writable delivery scalar field name
      * @param mixed $value Value to set
      * @throws DatabaseException When the property cannot be set on a NotificationDelivery
      */
@@ -78,6 +81,7 @@ class NotificationDelivery extends Object_
         match ($property) {
             self::notificationId => $this->entity->notification_id = (int)$value,
             self::channel => $this->entity->channel = (string)$value,
+            self::routingKey => $this->entity->routing_key = $value === null ? null : (int)$value,
             self::status => $this->entity->status = (string)$value,
             self::attempts => $this->entity->attempts = (int)$value,
             self::lastError => $this->entity->last_error = $value === null ? null : (string)$value,
@@ -112,7 +116,7 @@ class NotificationDelivery extends Object_
     /**
      * Converts the delivery to an associative array.
      *
-     * @return array<string, mixed> Delivery data (id, notificationId, channel, status, attempts, lastError, createdAt, updatedAt, deliveredAt)
+     * @return array<string, mixed> Delivery scalar fields, including the nullable original routing dimension
      */
     public function toArray(): array
     {
@@ -120,6 +124,7 @@ class NotificationDelivery extends Object_
             self::id => $this->entity->id,
             self::notificationId => $this->entity->notification_id,
             self::channel => $this->entity->channel,
+            self::routingKey => $this->entity->routing_key,
             self::status => $this->entity->status,
             self::attempts => $this->entity->attempts,
             self::lastError => $this->entity->last_error,

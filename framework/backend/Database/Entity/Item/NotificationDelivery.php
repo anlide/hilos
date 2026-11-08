@@ -26,6 +26,7 @@ class NotificationDelivery extends Entity
     public const string id = 'id';
     public const string notification_id = 'notification_id';
     public const string channel = 'channel';
+    public const string routing_key = 'routing_key';
     public const string status = 'status';
     public const string attempts = 'attempts';
     public const string last_error = 'last_error';
@@ -39,6 +40,7 @@ class NotificationDelivery extends Entity
         self::id,
         self::notification_id,
         self::channel,
+        self::routing_key,
         self::status,
         self::attempts,
         self::last_error,
@@ -53,6 +55,7 @@ class NotificationDelivery extends Entity
         self::id => PhpType::INTEGER->value,
         self::notification_id => PhpType::INTEGER->value,
         self::channel => PhpType::STRING->value,
+        self::routing_key => PhpType::INTEGER->value,
         self::status => PhpType::STRING->value,
         self::attempts => PhpType::INTEGER->value,
         self::last_error => PhpType::STRING->value,
@@ -63,7 +66,7 @@ class NotificationDelivery extends Entity
 
     public const array _indexes = [
         'idx_notification_delivery_notification' => [Entity::INDEX_COLUMNS => [self::notification_id]],
-        'idx_notification_delivery_channel_status' => [Entity::INDEX_COLUMNS => [self::channel, self::status]],
+        'idx_notification_delivery_channel_status' => [Entity::INDEX_COLUMNS => [self::channel, self::status, self::id]],
         'idx_notification_delivery_created' => [Entity::INDEX_COLUMNS => [self::created_at]],
         'idx_notification_delivery_status_created' => [Entity::INDEX_COLUMNS => [self::status, self::created_at]],
     ];
@@ -72,7 +75,11 @@ class NotificationDelivery extends Entity
     public const bool _setRoot = false;
 
     // A transport's error text quotes what it was given - an address, a token, a body.
-    public const array _pii = [self::last_error => AnonymizationStrategy::MASK];
+    // A routing dimension can derive from a person's address or account number.
+    public const array _pii = [
+        self::last_error => AnonymizationStrategy::MASK,
+        self::routing_key => AnonymizationStrategy::NULLIFY,
+    ];
 
     public const array _piiNotPersonal = [
         self::id,
@@ -88,6 +95,8 @@ class NotificationDelivery extends Entity
     public ?int $id = null;
     public int $notification_id;
     public string $channel;
+    /** Original shard dimension in 0..PHP_INT_MAX, before modulo; null retains the notification_id fallback. */
+    public ?int $routing_key = null;
     public string $status = 'pending';
     public int $attempts = 0;
     public ?string $last_error = null;

@@ -285,6 +285,36 @@ final class DbWriteGuardLazyCollectionsTest extends TestCase
         $this->assertFalse(TruthSourceRegistry::hasTruthSource(''));
     }
 
+    public function testOptionalObjectLeavesOrdinaryWholeGrantAndLazySetKeysUntouched(): void
+    {
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::all(), self::AGENT);
+        ExecutionContext::setCurrentAgentId(self::AGENT);
+        $object = GuardedObject::fromEntity(GuardedEntity::fromRow(['id' => 1, 'owner_id' => 42]));
+        $unreadableParent = static function (): array {
+            self::fail('A whole-table grant must not read the parent set');
+        };
+
+        DbWriteGuard::guardItemWrite(self::COLLECTION, '1', $unreadableParent, TruthSourceOperation::Update, $object);
+        DbWriteGuard::guardItemWrite(self::COLLECTION, '1', $unreadableParent, TruthSourceOperation::Remove, $object);
+        self::assertFalse($object->hasChanges());
+    }
+
+    public function testOmittedAndExplicitNullObjectsPreserveTheExistingSetGrantContract(): void
+    {
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::set(self::OWN_SET), self::AGENT);
+        ExecutionContext::setCurrentAgentId(self::AGENT);
+        $reads = 0;
+        $setKeys = static function () use (&$reads): array {
+            $reads++;
+            return [self::OWN_SET];
+        };
+
+        DbWriteGuard::guardItemWrite(self::COLLECTION, '1', $setKeys, TruthSourceOperation::Update);
+        self::assertSame(1, $reads);
+        DbWriteGuard::guardItemWrite(self::COLLECTION, '1', $setKeys, TruthSourceOperation::Update, null);
+        self::assertSame(2, $reads);
+    }
+
     /** @return iterable<string, array{string, int, string, bool}> Write doors, strategies, stale grants and execution modes */
     public static function externalWriteDoors(): iterable
     {

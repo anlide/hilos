@@ -14,12 +14,13 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Notification as EntityNotification;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
-use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDelivery;
 use Hilos\Database\Settings\Exception\SettingException;
+use Hilos\Database\View\Collection\NotificationDeliveries;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\NotificationTypeRegistry;
@@ -51,6 +52,7 @@ class NotificationDispatcher
      * @throws InvalidArgumentException When a channel's deliver signal cannot be named or queued
      * @throws SettingException When the settings accessor refuses a channel's enablement key
      * @throws DbCollectionNotReadableException When nothing here reads the deliveries or preferences collection, or its readiness is on its way
+     * @throws HilosException When delivery creation, pool configuration or signal payload validation refuses the handoff
      */
     public function dispatch(ObjectNotification $notification, ?array $channels): void
     {
@@ -85,12 +87,14 @@ class NotificationDispatcher
                 continue;
             }
 
-            $deliveries->createPending($notificationId, $name);
+            $routingKey = $descriptor->routingKeyFor($userId, $notificationId);
+            $delivery = $deliveries->actions->createPending($notificationId, $name, $routingKey);
+            if ($delivery->id === null) {
+                throw new DatabaseException('Notification delivery insert did not assign an id');
+            }
             $this->queueDeliver(
                 $descriptor,
-                $notificationId,
-                $name,
-                $descriptor->shardKeyFor($userId, $notificationId),
+                new NotificationDeliveryIdentity($delivery->id, $notificationId, $name, $routingKey),
             );
         }
     }
@@ -107,32 +111,31 @@ class NotificationDispatcher
      * @throws DatabaseException When the row reset fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws DbCollectionNotReadableException When nothing here reads the deliveries collection, or its readiness is on its way
+     * @throws HilosException When the row reset, pool configuration or signal payload validation refuses the handoff
      */
     public function requeue(ObjectNotificationDelivery $delivery): void
     {
-        $notificationId = $delivery->notificationId;
-        $channel = $delivery->channel;
-        if ($channel === '') {
+        if ($delivery->id === null) {
+            return;
+        }
+        $deliveries = $this->deliveries();
+        $identity = $deliveries->readIdentity($delivery->id);
+        if ($identity === null || $identity->channel === '') {
             return;
         }
 
-        $descriptor = Hilos::notificationChannelRegistryClass()::get($channel);
+        $descriptor = Hilos::notificationChannelRegistryClass()::get($identity->channel);
         if ($descriptor === null) {
             return;
         }
 
-        $notification = EntityNotification::getById($notificationId);
-        $userId = $notification?->user_id;
-        if ($userId === null) {
+        if (EntityNotification::getById($identity->notificationId)?->user_id === null) {
             return;
         }
-
-        $this->deliveries()->resetForRetry($delivery);
+        $deliveries[$delivery->id]->actions->resetForRetry();
         $this->queueDeliver(
             $descriptor,
-            $notificationId,
-            $channel,
-            $descriptor->shardKeyFor($userId, $notificationId),
+            $identity,
         );
     }
 
@@ -188,40 +191,44 @@ class NotificationDispatcher
      * AGENT_SIGNALS, so with no channel registered the router simply drops it.
      *
      * @param AbstractDeliveryChannel $descriptor Channel descriptor
-     * @param int $notificationId Notification id being delivered
-     * @param string $channel Channel name
-     * @param ?int $shardKey Pool shard key for an indexed channel, or null for a singleton
+     * @param NotificationDeliveryIdentity $delivery Saved delivery coordinates
      */
     private function queueDeliver(
         AbstractDeliveryChannel $descriptor,
-        int $notificationId,
-        string $channel,
-        ?int $shardKey,
+        NotificationDeliveryIdentity $delivery,
     ): void {
+        $owner = DeliveryOwnerResolver::forDelivery($delivery);
+        if ($owner === null) {
+            return;
+        }
+
         Hilos::$sr?->queueSignal(
             signalSource: new SignalSource(SignalSource::WORKER),
             signalType: new SignalType(SignalTypeConstants::AGENT_SIGNAL),
             signalName: new SignalName($descriptor->deliverSignalName()),
             signalData: new AgentSignalData(
-                data: new NotificationDeliverSignalData($notificationId, $channel, $shardKey),
+                data: new NotificationDeliverSignalData(
+                    $delivery->deliveryId,
+                    $delivery->notificationId,
+                    $delivery->channel,
+                    $owner->index === null ? null : (int)$owner->index,
+                ),
             ),
         );
     }
 
     /**
-     * Resolves the framework-owned notification-deliveries object collection.
+     * Resolves the framework-owned delivery collection and its action API.
      *
-     * @return ObjectNotificationDeliveries Delivery persistence primitives
-     * @throws DatabaseException When the deliveries object collection is unavailable
-     * @throws DbCollectionNotReadableException When nothing here reads the deliveries collection, or its readiness is on its way
+     * @return NotificationDeliveries Delivery collection
+     * @throws DatabaseException When the DB context is unavailable
      */
-    private function deliveries(): ObjectNotificationDeliveries
+    private function deliveries(): NotificationDeliveries
     {
-        $collection = Hilos::$db?->getObjectCollection(HilosDbContext::notificationDeliveries);
-        if (!$collection instanceof ObjectNotificationDeliveries) {
-            throw new DatabaseException('Notification deliveries object collection is not configured');
+        if (Hilos::$db === null) {
+            throw new DatabaseException('Notification deliveries collection is not configured');
         }
 
-        return $collection;
+        return Hilos::$db->notificationDeliveries;
     }
 }

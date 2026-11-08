@@ -24,8 +24,8 @@ use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
  *
  * A channel is a singleton by default; a high-volume channel overrides
  * {@see isPooled()} + {@see indexField()} to fan across an indexed agent pool, and
- * {@see shardKeyFor()} then picks the pool shard (the recipient id by default, so a
- * recipient's deliveries stay on one instance).
+ * supplies an unreduced routing key and a positive pool width. The saved key can
+ * then be reduced again when the pool width changes.
  */
 abstract class AbstractDeliveryChannel
 {
@@ -122,22 +122,52 @@ abstract class AbstractDeliveryChannel
     }
 
     /**
-     * The pool shard key for a delivery, or null for a singleton channel.
-     *
-     * Defaults to the recipient id so a recipient's deliveries stay on one pool
-     * instance (in-order, cache-friendly); a channel may override to shard by
-     * another dimension.
+     * Compatibility reader; new pooled descriptors override routingKeyFor() and poolSize().
      *
      * @param int $userId Recipient user id
      * @param int $notificationId Notification id being delivered
      * @return ?int Positive shard key for a pooled channel, or null for a singleton
      * @throws DatabaseException When the channel reads the shard dimension from the database
      * @throws EnvException When the channel reads its pool width from the environment
-     * @throws InvalidArgumentException When the channel reads its shard dimension with an invalid query order
+     * @throws InvalidArgumentException When the source lookup has invalid query order, the key is negative or the pool width is not positive
      */
     public function shardKeyFor(int $userId, int $notificationId): ?int
     {
+        $routingKey = $this->routingKeyFor($userId, $notificationId);
+
+        return $routingKey === null ? null : $this->ownerIndexFor($routingKey);
+    }
+
+    /**
+     * @param int $userId Recipient user id
+     * @param int $notificationId Notification id being delivered
+     * @return ?int Unreduced source key to persist, or null for a singleton or unresolved recipient
+     * @throws DatabaseException When the channel reads the source dimension from the database
+     * @throws InvalidArgumentException When the source lookup has an invalid query order
+     */
+    public function routingKeyFor(int $userId, int $notificationId): ?int
+    {
         return $this->isPooled() ? $userId : null;
+    }
+
+    /**
+     * @return int Positive current pool width
+     * @throws EnvException When the pool configuration is unreadable or invalid
+     */
+    public function poolSize(): int
+    {
+        return 1;
+    }
+
+    /**
+     * @param int $routingKey Saved nonnegative source key, or a legacy notification id
+     * @return ?int Current one-based pool index, or null for a singleton
+     * @throws EnvException When the pool configuration is unreadable or invalid
+     * @throws InvalidArgumentException When the source key is negative or the pool width is not positive
+     */
+    public function ownerIndexFor(int $routingKey): ?int
+    {
+        return $this->isPooled() ? DeliveryShard::indexFor($routingKey, $this->poolSize()) : null;
     }
 
     /**

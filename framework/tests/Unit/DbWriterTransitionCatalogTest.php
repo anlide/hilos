@@ -28,8 +28,10 @@ use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Hilos;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
+use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
 use Hilos\Push\Delivery\PushDeliveryChannelAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
+use Hilos\Sms\Delivery\SmsRawSendAgent;
 use Hilos\Users\Agent\AbstractUserAgent;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -58,23 +60,24 @@ final class DbWriterTransitionCatalogTest extends TestCase
         self::$demoLoader->unregister();
     }
 
-    /** @return iterable<string, array{string, bool, bool, bool, bool}> Namespace and independently fixed optional roles */
+    /** @return iterable<string, array{string, bool, bool, bool, bool, bool}> Namespace and independently fixed optional roles */
     public static function profiles(): iterable
     {
-        yield 'chat' => ['Demo\\Chat', true, true, true, true];
-        yield 'tasks' => ['Demo\\Tasks', true, true, false, false];
-        yield 'polls' => ['Demo\\Polls', true, true, false, false];
-        yield 'binance' => ['Demo\\BinanceBtcTracker', false, true, false, false];
-        yield 'shop' => ['Demo\\EcommerceShop', false, false, false, false];
-        yield 'testing' => ['Demo\\OnlineTesting', false, false, false, false];
+        yield 'chat' => ['Demo\\Chat', true, true, true, true, true];
+        yield 'tasks' => ['Demo\\Tasks', true, true, false, false, false];
+        yield 'polls' => ['Demo\\Polls', true, true, false, false, false];
+        yield 'binance' => ['Demo\\BinanceBtcTracker', false, true, false, false, true];
+        yield 'shop' => ['Demo\\EcommerceShop', false, false, false, false, false];
+        yield 'testing' => ['Demo\\OnlineTesting', false, false, false, false, false];
     }
 
     /**
      * @param string $namespace Project namespace
      * @param bool $hasLegalAndOauth Registered optional roles
-     * @param bool $hasSms Registered SMS channel
+     * @param bool $hasSms Registered SMS worker
      * @param bool $hasPush Registered push channel
      * @param bool $isChat Project-specific history extension
+     * @param bool $hasDurableSms Independently fixed durable SMS role
      */
     #[DataProvider('profiles')]
     public function testEveryStartingVectorMatchesIndependentCensus(
@@ -83,6 +86,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
         bool $hasSms,
         bool $hasPush,
         bool $isChat,
+        bool $hasDurableSms,
     ): void {
         $facade = $namespace . '\\Hilos';
         $roles = [
@@ -110,7 +114,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             $roles['oauth'] = $namespace . '\\Agents\\OAuthAgent';
         }
         if ($hasSms) {
-            $roles['sms'] = SmsDeliveryChannelAgent::class;
+            $roles['sms'] = $hasDurableSms ? SmsDeliveryChannelAgent::class : SmsRawSendAgent::class;
         }
         if ($hasPush) {
             $roles['push'] = PushDeliveryChannelAgent::class;
@@ -161,7 +165,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'accountDeletions' => ['HIL-1952'],
             'legalAcceptances' => ['HIL-1952'],
             'notifications' => ['HIL-1952'],
-            'notificationDeliveries' => ['HIL-1893', 'HIL-1902', 'HIL-1910', 'HIL-1952'],
+            'notificationDeliveries' => ['HIL-1902', 'HIL-1910', 'HIL-1952'],
             'notificationPreferences' => ['HIL-1952'],
             'pushSubscriptions' => ['HIL-1895', 'HIL-1905', 'HIL-1906', 'HIL-1952'],
             'dataExports' => ['HIL-1952'],
@@ -173,7 +177,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             $vectors['legalAcceptanceExports'] = [['legal', 'whole', 'add,remove,update'], ['holder', 'whole', 'remove']];
             $leaves['legalAcceptanceExports'] = ['HIL-1952'];
         }
-        foreach (['sms' => $hasSms, 'push' => $hasPush] as $role => $present) {
+        foreach (['sms' => $hasDurableSms, 'push' => $hasPush] as $role => $present) {
             if ($present) {
                 $vectors['notificationDeliveries'][] = [$role, 'whole', 'update'];
             }
@@ -200,7 +204,8 @@ final class DbWriterTransitionCatalogTest extends TestCase
         foreach ($facade::AGENTS as $entry) {
             $worker = AgentRegistry::workerClass($entry);
             self::assertNotNull($worker);
-            self::assertNull($worker::DB_WRITER_PARTITION);
+            self::assertSame(is_subclass_of($worker, AbstractDeliveryChannelAgent::class)
+                ? DbWriterPartition::NotificationChannelShard : null, $worker::DB_WRITER_PARTITION);
             foreach (DbWriterClaim::declarationsOf($worker) as $collection => $claims) {
                 foreach ($claims as $claim) {
                     $census[$collection][$claim->ownerClass . ':' . $claim->width->value] = $claim;
@@ -224,7 +229,8 @@ final class DbWriterTransitionCatalogTest extends TestCase
             }
             sort($expected);
             self::assertSame($leaves[$collection], $catalog[$collection][0]->pendingLeaves, $collection);
-            self::assertSame([], $catalog[$collection][0]->partitions, $collection);
+            self::assertSame($collection === 'notificationDeliveries' ? [DbWriterPartition::NotificationChannelShard] : [],
+                $catalog[$collection][0]->partitions, $collection);
             self::assertSame($expected, $this->signatures($catalog[$collection][0]->claims), $collection . ' catalog');
             self::assertSame($expected, $this->signatures(array_values($census[$collection])), $collection . ' declarations');
             $keys = [];
@@ -312,7 +318,6 @@ final class DbWriterTransitionCatalogTest extends TestCase
         $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['notificationDeliveries']);
         $expectedLibrary = [
             '' => 'add',
-            'HIL-1893,HIL-1902,HIL-1910,HIL-1952' => 'add,remove,update',
             'HIL-1902,HIL-1910,HIL-1952' => 'add,remove,update',
             'HIL-1902,HIL-1952' => 'add,remove',
             'HIL-1910,HIL-1952' => 'add,update',
@@ -328,8 +333,21 @@ final class DbWriterTransitionCatalogTest extends TestCase
                 $expected[] = SessionsLibraryAgent::class . ':whole:remove';
             }
             $this->assertVector($expected, $states[$pending]);
-            self::assertSame(str_contains($pending, 'HIL-1893') ? [] : [DbWriterPartition::NotificationChannelShard],
+            self::assertSame([DbWriterPartition::NotificationChannelShard],
                 $states[$pending]->partitions);
+        }
+    }
+
+    public function testRawWorkersNeverAcquireFutureDeliveryRemoveOrAnOldGuardVertex(): void
+    {
+        foreach (['Demo\\Tasks\\Hilos', 'Demo\\Polls\\Hilos'] as $facade) {
+            foreach ($facade::getDbWriterTransitions()['notificationDeliveries'] as $state) {
+                self::assertNotContains('HIL-1893', $state->pendingLeaves);
+                self::assertSame([DbWriterPartition::NotificationChannelShard], $state->partitions);
+                foreach ($state->claims as $claim) {
+                    self::assertNotSame(SmsRawSendAgent::class, $claim->ownerClass);
+                }
+            }
         }
     }
 
@@ -435,6 +453,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
      * @param bool $hasSms Fixed SMS registration
      * @param bool $hasPush Fixed push registration
      * @param bool $isChat Fixed history extension
+     * @param bool $hasDurableSms Independently fixed durable SMS role
      */
     #[DataProvider('profiles')]
     public function testWholeCatalogMatchesVersionOneCeiling(
@@ -443,6 +462,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
         bool $hasSms,
         bool $hasPush,
         bool $isChat,
+        bool $hasDurableSms,
     ): void {
         $expected = $this->ceilingV1($hasLegalAndOauth, $isChat);
         $roles = [
@@ -455,7 +475,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'oauth' => [$namespace . '\\Agents\\OAuthAgent'],
             'chat' => ['Demo\\Chat\\Agents\\ChatAgent'],
             'channel' => [MailDeliveryChannelAgent::class,
-                ...($hasSms ? [SmsDeliveryChannelAgent::class] : []),
+                ...($hasDurableSms ? [SmsDeliveryChannelAgent::class] : []),
                 ...($hasPush ? [PushDeliveryChannelAgent::class] : [])],
         ];
         foreach ($expected as &$states) {
@@ -584,8 +604,6 @@ final class DbWriterTransitionCatalogTest extends TestCase
                 '' => ['notifications:whole:add', 'person:set:remove,update'],
             ],
             'notificationDeliveries' => [
-                'HIL-1893,HIL-1902,HIL-1910,HIL-1952' => [
-                    'notifications:whole:add,remove,update', 'channel:whole:update', 'holder:whole:remove'],
                 'HIL-1902,HIL-1910,HIL-1952' => [
                     'notifications:whole:add,remove,update', 'channel:whole:update', 'holder:whole:remove',
                     'partition:notification-channel-shard'],

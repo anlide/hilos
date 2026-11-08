@@ -5,9 +5,14 @@ declare(strict_types=1);
 namespace Hilos\Core\TruthSource;
 
 use Closure;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\ExternalWriterException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Object\Item\Object_;
+use Hilos\Notification\Delivery\NotificationDeliveryWriteGuard;
 
 /**
  * The one door every database write asks before it touches a row.
@@ -120,18 +125,30 @@ class DbWriteGuard
      *     each once, empty for a row outside every set; called only when a claim over a set judges
      *     the write, and whatever it raises reaches the caller
      * @param TruthSourceOperation $operation Operation the caller is about to perform
+     * @param ?Object_ $item Proposed Object for collection-specific identity checks
      * @throws WriteNotAllowedException When no grant in this process covers that row and operation
+     * @throws DatabaseException When fresh persisted delivery coordinates cannot be read
      */
     public static function guardItemWrite(
         string $collection,
         string $idString,
         Closure $setKeys,
         TruthSourceOperation $operation,
+        ?Object_ $item = null,
     ): void {
         if ($collection === '') {
             return;
         }
 
         TruthSourceRegistry::checkCanWriteItem($collection, $idString, $setKeys, $operation);
+        if ($collection !== HilosDbContext::notificationDeliveries) {
+            return;
+        }
+
+        $saved = NotificationDeliveryWriteGuard::guardIdentity($idString, $operation, $item);
+        match (NotificationDeliveryWriteGuard::partitionFor(ExecutionContext::currentAgentId())) {
+            null => null,
+            DbWriterPartition::NotificationChannelShard => NotificationDeliveryWriteGuard::guardOwner($saved),
+        };
     }
 }

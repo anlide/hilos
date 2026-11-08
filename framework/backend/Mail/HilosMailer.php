@@ -16,6 +16,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Mail\DTO\MailSendSignalData;
+use Hilos\Notification\Delivery\DeliveryShard;
 use Hilos\Notification\Delivery\NotificationDispatcher;
 
 /**
@@ -79,13 +80,23 @@ class HilosMailer
      *
      * @param string $address Recipient email address
      * @return int Positive shard key in the range 1..MAIL_WORKER_COUNT
+     * @throws InvalidArgumentException When the configured pool width is not positive
      * @throws EnvException When MAIL_WORKER_COUNT is unreadable
      */
     public static function shardKeyForAddress(string $address): int
     {
-        $env = Hilos::$env;
-        $workerCount = $env === null ? 1 : max(1, $env[EnvConstants::MAIL_WORKER_COUNT]->int());
+        return DeliveryShard::indexFor(
+            self::routingKeyForAddress($address),
+            Hilos::$env === null ? 1 : Hilos::$env[EnvConstants::MAIL_WORKER_COUNT]->int(),
+        );
+    }
 
-        return 1 + (int)(crc32(strtolower(trim($address))) % $workerCount);
+    /**
+     * @param string $address Recipient email address
+     * @return int CRC32 of the normalized routing dimension
+     */
+    public static function routingKeyForAddress(string $address): int
+    {
+        return crc32(strtolower(trim($address)));
     }
 }

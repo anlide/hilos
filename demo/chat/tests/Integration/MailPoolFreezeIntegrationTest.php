@@ -6,6 +6,10 @@ namespace Demo\Chat\Tests\Integration;
 
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
@@ -46,6 +50,9 @@ final class MailPoolFreezeIntegrationTest extends IntegrationTestCase
     /** Delivery channel the mail pool answers for. */
     private const string CHANNEL = 'email';
 
+    /** @var list<FreezeProbeMailAgent> Started mail instances whose claims end with the case */
+    private array $mailAgents = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -54,6 +61,15 @@ final class MailPoolFreezeIntegrationTest extends IntegrationTestCase
 
     protected function tearDown(): void
     {
+        foreach ($this->mailAgents as $agent) {
+            try {
+                $this->underAgent($agent, $agent->onStop(...));
+            } finally {
+                TruthSourceRegistry::unregisterAgent($agent->getId());
+                RtTruthSourceRegistry::unregisterAgent($agent->getId());
+                SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($agent->getId()));
+            }
+        }
         Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::create());
         $this->deleteRecipientRows();
         Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = ?', [self::RECIPIENT_ID]);
@@ -71,25 +87,31 @@ final class MailPoolFreezeIntegrationTest extends IntegrationTestCase
             title: 'Mail under a freeze',
         ));
         Hilos::$db->identities->createMagicLinkIdentity(self::RECIPIENT_ID, RandomHelper::hex(8) . '@example.test');
-        $this->deliveries()->createPending($notificationId, self::CHANNEL);
+        $this->deliveries()->createPending($notificationId, self::CHANNEL, 0);
 
         $transport = new HeldMailTransport();
         $resumedTransport = new HeldMailTransport();
         $agent = new FreezeProbeMailAgent([$transport, $resumedTransport]);
+        $this->startMailAgent($agent);
         $agent->onSignalAgent(
-            new AgentSignalData(new NotificationDeliverSignalData(notificationId: $notificationId, channel: self::CHANNEL, shardKey: 1)),
+            new AgentSignalData(new NotificationDeliverSignalData(
+                deliveryId: $this->row($notificationId)->id,
+                notificationId: $notificationId,
+                channel: self::CHANNEL,
+                shardKey: 1,
+            )),
             'src',
             HilosSignalConstants::HILOS_MAIL_DELIVER,
         );
 
-        $agent->onTick();
+        $this->underAgent($agent, $agent->onTick(...));
         self::assertInstanceOf(EmailMessage::class, $transport->started);
         $started = $this->row($notificationId);
         self::assertSame(DeliveryStatus::PENDING, $started->status);
         self::assertSame(1, $started->attempts);
 
         $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVATING);
-        $agent->onTick();
+        $this->underAgent($agent, $agent->onTick(...));
         self::assertTrue($transport->closed);
         $frozen = $this->row($notificationId);
         self::assertSame(DeliveryStatus::PENDING, $frozen->status);
@@ -97,7 +119,7 @@ final class MailPoolFreezeIntegrationTest extends IntegrationTestCase
         self::assertSame($started->updated_at, $frozen->updated_at);
 
         $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE);
-        $agent->onTick();
+        $this->underAgent($agent, $agent->onTick(...));
         self::assertSame(2, $agent->createdCount);
         self::assertInstanceOf(EmailMessage::class, $resumedTransport->started);
         $after = $this->row($notificationId);
@@ -114,22 +136,35 @@ final class MailPoolFreezeIntegrationTest extends IntegrationTestCase
             title: 'Mail in a direct window',
         ));
         Hilos::$db->identities->createMagicLinkIdentity(self::RECIPIENT_ID, RandomHelper::hex(8) . '@example.test');
-        $this->deliveries()->createPending($notificationId, self::CHANNEL);
+        $this->deliveries()->createPending($notificationId, self::CHANNEL, 0);
 
         $transport = new HeldMailTransport();
         $agent = new FreezeProbeMailAgent([$transport]);
+        $this->startMailAgent($agent);
         $agent->onSignalAgent(
-            new AgentSignalData(new NotificationDeliverSignalData(notificationId: $notificationId, channel: self::CHANNEL, shardKey: 1)),
+            new AgentSignalData(new NotificationDeliverSignalData(
+                deliveryId: $this->row($notificationId)->id,
+                notificationId: $notificationId,
+                channel: self::CHANNEL,
+                shardKey: 1,
+            )),
             'src',
             HilosSignalConstants::HILOS_MAIL_DELIVER,
         );
 
         $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW);
-        $agent->onTick();
+        $this->underAgent($agent, $agent->onTick(...));
 
         self::assertInstanceOf(EmailMessage::class, $transport->started);
         self::assertFalse($transport->closed);
         self::assertSame(1, $this->row($notificationId)->attempts);
+    }
+
+    /** @param FreezeProbeMailAgent $agent Instance started with the harness's real declaration claims */
+    private function startMailAgent(FreezeProbeMailAgent $agent): void
+    {
+        $this->startAgent($agent);
+        $this->mailAgents[] = $agent;
     }
 
     /**
