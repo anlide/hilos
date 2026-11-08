@@ -57,13 +57,15 @@ The erasure norms below name the leaves that prepare each capability separately
 from HIL-1952, which enables it on the live path. The [merge norms](#merge)
 likewise separate preparation from the single live switch HIL-1999. Operation,
 assignment, preparation, result, receipt and copy name logical obligations,
-authorship and order, not physical schemas or callable APIs. HIL-1936 and
-HIL-1937 settle the erasure forms; HIL-1987 settles the merge extension on that
-durable basis, without a second operation journal or participant catalog.
-This does not declare the erasure carriers general-purpose. The implementing
-participants settle their own contracts. No reservation field, receipt field,
-admission metadata, partition, frame or stage name is declared as an API here.
-The contract gate stands unchanged.
+authorship and order. HIL-1936 now supplies physical framework tables and
+callable storage APIs for the inert erasure operation and assignments;
+HIL-1937 still settles participant preparation and result records. HIL-1987
+settles the merge extension on that durable basis, without a second operation
+journal or participant catalog. This does not declare the erasure carriers
+general-purpose. The implementing participants settle their own contracts.
+No reservation field, receipt field, admission metadata, partition, frame or
+business stage beyond the initial `preparing` storage value is declared as an
+API here. The contract gate stands unchanged.
 A preparation leaf does not activate a terminal path or retire its old writer.
 
 **Where the facts come from.** The historical census was read at research base
@@ -457,21 +459,49 @@ the chosen password fate and second-factor fate; the stage the operation has
 reached; and the participants it expects, each by a durable address — the
 agent type and index, or the library's or channel's type and shard — never by
 a process id or a node name, which do not survive the restart the record
-exists for. The holder is the single changing writer of this record. The
-record is a working row of an executor, lawful under *Scope And Status*: it is
-not a claim over anybody's business table, and holding it gives the holder no
-write into a person's rows.
-For erasure, the coordinator alone creates and changes the operation and its
-initial assignments, with immutable account ids and circle, current stage and
-expected participants at stable owner addresses (not in the code yet — HIL-1936).
+exists for. In the protocol, the holder is the single changing writer of this
+working record, lawful under *Scope And Status*: it is not a claim over
+anybody's business table, and holding it gives the holder no write into a
+person's rows.
+For erasure, `Hilos::$db->accountErasureOperations` and
+`Hilos::$db->accountErasureAssignments` are mounted framework ORM chains in
+`framework/backend/Database/Context/HilosDbContext.php`. An operation stores
+its immutable request, root and ordered circle, plus its current stage and
+optional outcome. Its initial `preparing` stage means that a plan is recorded;
+it does not mean erasure has started. An assignment is an immutable plan entry
+with a stable owner address. `AbstractSessionsLibraryAgent` is the sole creator
+and changing writer of operations (`Add`/`Update`) and the sole creator of
+assignments (`Add`); see its `OWNS_DB` declaration in
+`framework/backend/Auth/Library/AbstractSessionsLibraryAgent.php`. Assignments
+have no update or remove action, and neither carrier stores participant
+results; HIL-1937 owns those records.
+
+The operation and assignment `record()` actions return exact repeats and
+reject conflicting contents. `advance(expectedStage, nextStage)` is a
+low-level compare-and-set; `finish(expectedStage, outcome)` conditionally
+closes the operation with the coordinator-supplied outcome. These actions
+persist facts but do not validate business transitions, write the request
+owner's start, or prove participant work. The business protocol and result
+carriers remain with later leaves. `openPage()` and `openForOwner()` return
+bounded pages ordered by `id ASC` (limit 1–1000) using the persisted owner
+address; `openForOwner()` can read open assignments without a registered or
+live owner. The entities, record actions, stage actions and readers are in
+`framework/backend/Database/Entity/Item/AccountErasureOperation.php`,
+`framework/backend/Database/Entity/Item/AccountErasureAssignment.php`,
+`framework/backend/Database/Actions/Collection/AccountErasureOperationsActions.php`,
+`framework/backend/Database/Actions/Collection/AccountErasureAssignmentsActions.php`,
+`framework/backend/Database/Actions/Item/AccountErasureOperationActions.php`,
+`framework/backend/Database/Object/Collection/AccountErasureOperations.php`, and
+`framework/backend/Database/Object/Collection/AccountErasureAssignments.php`.
+
 For merge, it records the immutable pair, password and second-factor fates
 and protection flags shown by the browser, with the current stage and expected
 participants at stable addresses. Finding the same work again creates no
 second operation.
-The merge extends the common durable basis of HIL-1936/HIL-1937 without a
-second operation journal or participant catalog; the physical extension is
-this leaf's contract, not a declaration that today's erasure carriers already
-serve both operations (not in the code yet — HIL-1987).
+The merge extends the common durable erasure basis without a second operation
+journal or participant catalog; its physical extension is future work, not a
+declaration that today's erasure carriers already serve both operations (not
+in the code yet — HIL-1987).
 
 **The participants' records.** A participant is every owner the operation
 needs: the agent of each account in the circle, the users library, each
@@ -551,12 +581,19 @@ needs its per-column verdict when it is added
 the preparations and results hold addresses, ids and, in a merge, the rows
 given away.
 
-The erasure operation and initial assignments are durable DB facts included in
-backup, with a per-column personal-data verdict on their physical carriers
-(not in the code yet — HIL-1936). The same durability and classification apply
-to participant preparations and results (not in the code yet — HIL-1937).
-These leaves choose their schema, keys and partitions; participant leaves
-choose the exact contracts of their work. This document chooses none of them.
+The erasure operation and assignments live in the separate framework-owned
+tables `hilos_account_erasure_operation` and
+`hilos_account_erasure_assignment`. Ordinary backup preserves these rows;
+anonymized restore PURGEs both tables. Their moments use signed epoch
+milliseconds. The request ID, root/circle user IDs and assignment user ID are
+soft references; `operation_id` on an assignment has a cascading foreign key
+to its operation. The table mappings and whole-table `PURGE` classifications
+are defined in
+`framework/backend/Database/Entity/Item/AccountErasureOperation.php` and
+`framework/backend/Database/Entity/Item/AccountErasureAssignment.php`.
+Participant preparations and results have the same durability and
+classification obligation (not in the code yet — HIL-1937); their schema and
+keys belong to their implementing leaves.
 
 For merge, the operation's physical carriers enter backup with their
 per-column personal-data verdict when introduced
@@ -579,11 +616,13 @@ path only at the [single cutover](#erasure-cutover-and-observation)
    minute sweep exists today. For the split path, the holder fixes the circle
    from the merge relationships before breaking any link, with folded leaves
    before their survivors, and derives the required owners from the
-   installation's activated tables (not in the code yet — HIL-1938). It records
-   its operation and initial assignments at stable owner addresses, in the
-   logical *preparing* stage; finding that same work again does not create a
-   second operation. Preparing changes nothing of the person's account
-   (not in the code yet — HIL-1936).
+   installation's activated tables (not in the code yet — HIL-1938). The
+   implemented operation and assignment `record()` actions can persist that
+   plan at stable owner addresses in the logical *preparing* stage; an exact
+   repeat returns the same records and a conflict is refused. The stored stage
+   means only that the plan exists: recording it does not start erasure or
+   change the person's account. The due and force-purge production paths still
+   use the old flow until the live switch (not in the code yet — HIL-1952).
 2. **The start is won or lost at the request's owner.** The holder hands the
    start to the personal agent. The agent conditionally records start against
    cancel: a cancel that won leaves the account intact and starts no
@@ -594,9 +633,11 @@ path only at the [single cutover](#erasure-cutover-and-observation)
    that participant's work (not in the code yet — HIL-1937). When start loses
    to cancel, the coordinator closes its operation as *not started*
    (not in the code yet — HIL-1950). Start is distinct
-   from completion; HIL-1936/HIL-1937/HIL-1939 choose its physical carrier, not
-   this document. Today's `completed_at` retains its meaning of a successful
-   common erasure commit until HIL-1952.
+   from completion. HIL-1936 supplies an inert operation stage/outcome carrier;
+   it does not record this request-owner start. HIL-1937 and HIL-1939 still
+   own the participant-result and start/cancel carriers, respectively. Today's
+   `completed_at` retains its meaning of a successful common erasure commit
+   until HIL-1952.
 3. **Access closes; the same agent finishes.** The started fact closes ordinary
    sign-in, actions and late ordinary frames. The personal agent, including
    that of a folded account, accepts only the internal continuation of its own
@@ -1033,7 +1074,7 @@ moves.
 | `sessions` | holder `Add`/`Update`/`Remove`: the anonymous row on the handshake, the bind at sign-in, the revert at sign-out, `killUserSessions()` in the merge and the erasure, the blocked notices released, the sweep `hilos_sessions_expire`; `SessionTestExpireCommand`, test-only | the holder, as today — a session has no instance owner ([Session Ownership](entity-libraries.md#session-ownership), HIL-1403). In the protocol the holder is a participant for its own rows: it releases every reference of a session to the person — the four `RESTRICT` columns, the waits, the cards — as its own step with a recorded result, before the person row can go | Created by the holder; `Add`/`Update`/`Remove` remain there. Release with an atomic participant result is prepared separately (not in the code yet — HIL-1943). For merge, the holder ends loser sessions after the fact and survivor sessions after receipt when the loser's factor first protects it (not in the code yet — HIL-1995). Its own release work becomes a participant step at the erasure switch (not in the code yet — HIL-1952) and merge switch (not in the code yet — HIL-1999); no ordinary writer move. |
 | `accessLogEntries` | holder `Add`/`Update`/`Remove`: `record()`, the hourly sweep, `rePointToUser()` in the merge, `deleteForUser()` in the erasure | the same owner; it moves and deletes its own rows itself as a participant, on the signal | Created by the holder; `Add`/`Update`/`Remove` remain there. Erasure with an atomic participant result is prepared separately (not in the code yet — HIL-1943). Merge transfer commits with its own result; a repeat does not transfer twice (not in the code yet — HIL-1995). Its own delete/repoint become participant steps at erasure (not in the code yet — HIL-1952) and merge (not in the code yet — HIL-1999); no foreign writer is added. |
 | `userMerges` | holder `Add`/`Update`/`Remove`: `add()` in `foldAccount()`, `deleteForUser()` in the erasure | changes and deletion go with the personal life cycle to the personal owner: the loser's agent writes its own tombstone with its block in the transaction that gives its rows away, and the erasure of a folded account deletes its merge row with its own rows, leaves before survivors so the survivor's `SET NULL` does not run | Created by the holder today. Leaf-first personal erasure of the merge row is prepared separately (not in the code yet — HIL-1941). Loser tombstone creation, merge row before its own block, commits with the transfer result (not in the code yet — HIL-1992). Erasure deletion moves with the personal life cycle (not in the code yet — HIL-1952); tombstone creation moves to the loser with live merge (not in the code yet — HIL-1999). Keep the old holder rights required by merge after erasure switches. |
-| the operation record | does not exist; `AccountDeletion` and `UserMerge` carry a trace and a tombstone, no started phase, no set of confirmations, no stored result | the coordinator's — the sessions holder for authorization and the course of the operation — and its single changing writer: the kind, the immutable ids and circle, the chosen password and second-factor fates, the stage and the expected participants. A working record of the holder, not a claim over anybody's business table | No current creator or grant. Erasure operation and initial assignments have the coordinator as sole creator/changing writer, with durable DB/backup carriers and per-column classification (not in the code yet — HIL-1936). HIL-1936 chooses their exact erasure forms. Merge extends the durable basis without a second operation journal or participant catalog, with its own carrier classification and backup coverage (not in the code yet — HIL-1987). Merge stage correlation (not in the code yet — HIL-2000). Merge end follows receipt, all results and copy absence (not in the code yet — HIL-1998). Live merge uses them only at cutover (not in the code yet — HIL-1999). Live erasure uses them only at cutover (not in the code yet — HIL-1952). |
+| the operation record | The legacy `AccountDeletion` and `UserMerge` rows still carry the live trace and tombstone. HIL-1936's separate erasure operation and assignment carriers are built but inert; due erasure and force-purge remain the only production producers. | For erasure, the sessions holder owns operation creation/change and assignment creation; assignments are immutable. Participant preparation and result records belong to their own future leaf. The merge pair, fates and protection flags require the future merge extension. | `AbstractSessionsLibraryAgent::OWNS_DB` declares operations `[Add, Update]` and assignments `[Add]`. The record actions preserve exact repeats and reject conflicts; stage advance/finish are low-level persistence only and do not establish start, participant results, business transitions or live recovery/failover. The framework mounts and entity classifications are documented above. Merge carrier classification and backup coverage (not in the code yet — HIL-1987), merge stage correlation (not in the code yet — HIL-2000), merge end after receipt, results and copy absence (not in the code yet — HIL-1998), and the live merge and erasure switches (not in the code yet — HIL-1999/HIL-1952) remain future work. |
 | the participants' preparations and results | do not exist | each participant's own, written in the same transaction as its work; the coordinator may create the initial assignment and never edits a recorded result. A durable record in `Hilos::$db` through the ordinary collections and actions, not the agent's memory and not a runtime overlay — it has to survive a restart and a restored backup. A result that carries rows given away — the merge's hand-over copy at the loser — is personal data with a bounded life: kept until the survivor's confirmation, then deleted by its one writer | No current creator or grant. Erasure preparation/result have their participant as sole creator/changing writer; work and result commit together and repeat returns the saved outcome (not in the code yet — HIL-1937). HIL-1937 chooses physical carriers, keys and partitions. Merge reservations belong to each personal owner (not in the code yet — HIL-1988); each releases its own with result before the fact (not in the code yet — HIL-1990). Loser work/result and full copy (not in the code yet — HIL-1992); survivor work/receipt (not in the code yet — HIL-1994); holder work/result (not in the code yet — HIL-1995); project participants (not in the code yet — HIL-1996); chat work/result (not in the code yet — HIL-1997). Only the loser cleans its copy after receipt and stops afterward (not in the code yet — HIL-1998). Live merge uses these records only at cutover (not in the code yet — HIL-1999). Live erasure uses them only at cutover (not in the code yet — HIL-1952). |
 
 **Deltas against the first census.** The census of the research base listed

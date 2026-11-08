@@ -20,6 +20,8 @@ use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\View\Collection\AccountDeletions as DbCollectionAccountDeletions;
 use Hilos\Database\View\Collection\AuthBlocks as DbCollectionAuthBlocks;
+use Hilos\Database\View\Collection\AccountErasureOperations as DbCollectionAccountErasureOperations;
+use Hilos\Database\View\Collection\AccountErasureAssignments as DbCollectionAccountErasureAssignments;
 use Hilos\Database\View\Collection\Countries as DbCollectionCountries;
 use Hilos\Database\View\Collection\CountryNames as DbCollectionCountryNames;
 use Hilos\Database\View\Collection\DataExports as DbCollectionDataExports;
@@ -106,6 +108,8 @@ final class FrameworkExtensionMountTest extends TestCase
         HilosDbContext::accessLogEntries => DbCollectionAccessLogEntries::class,
         HilosDbContext::legalAcceptances => DbCollectionLegalAcceptances::class,
         HilosDbContext::accountDeletions => DbCollectionAccountDeletions::class,
+        HilosDbContext::accountErasureOperations => DbCollectionAccountErasureOperations::class,
+        HilosDbContext::accountErasureAssignments => DbCollectionAccountErasureAssignments::class,
         HilosDbContext::dataExports => DbCollectionDataExports::class,
         HilosDbContext::legalAcceptanceExports => DbCollectionLegalAcceptanceExports::class,
         HilosDbContext::files => DbCollectionFiles::class,

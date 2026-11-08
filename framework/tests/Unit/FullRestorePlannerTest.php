@@ -646,20 +646,58 @@ SQL;
             'column types or collations'];
     }
 
+    /** @param array<int, string> $source Authored JSON in either CREATE or a later ADD */
+    #[DataProvider('authoredJsonLineages')]
+    public function testMariaDbJsonAliasProvesCleanupAgainstPhysicalLongtext(array $source): void
+    {
+        $cleanup = $this->plan($source, ['hilos_analytics_payload_json' => self::JSON_PARENT], mariaDbJsonAlias: true);
+        $this->assertSame(['hilos_analytics_payload_json'], array_column($cleanup, 'table'));
+        $this->assertSame([DatabaseConnectionDefaults::PRIMARY_INDEX], array_column($cleanup, 'index'));
+    }
+
+    /** @return iterable<string, array{array<int, string>}> Both entry points use the same proven column normalization */
+    public static function authoredJsonLineages(): iterable
+    {
+        yield 'create' => [[2 => str_replace(
+            'longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`payload_json`))', 'JSON NOT NULL',
+            self::JSON_PARENT,
+        )]];
+        yield 'alter add' => [[
+            2 => str_replace(
+                "  `payload_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`payload_json`)),\n",
+                '', self::JSON_PARENT,
+            ),
+            3 => 'ALTER TABLE hilos_analytics_payload_json ADD payload_json JSON NOT NULL AFTER sha1_hash',
+        ]];
+    }
+
+    /** MySQL native JSON and unknown family evidence cannot authorize alias cleanup. */
+    public function testJsonLineageWithoutMariaDbEvidenceRefuses(): void
+    {
+        $this->expectException(RestoreFailedException::class);
+        $this->expectExceptionMessage('proven MariaDB alias');
+        $this->plan([2 => 'CREATE TABLE later (payload_json JSON)'],
+            ['later' => 'CREATE TABLE later (payload_json LONGTEXT COLLATE utf8mb4_bin CHECK (json_valid(payload_json)))']);
+    }
+
     /**
      * A missing, additional or changed CHECK cannot turn the target's rows into proven cleanup.
      *
      * @param string $source Proven source CREATE
      * @param string $live Actual target definition
+     * @param bool $mariaDbJsonAlias Explicit family evidence for authored JSON fixtures
      */
     #[DataProvider('jsonCheckMismatches')]
-    public function testJsonCheckIsSignificantForCleanup(string $source, string $live): void
+    public function testJsonCheckIsSignificantForCleanup(string $source, string $live, bool $mariaDbJsonAlias = false): void
     {
         $this->expectException(RestoreFailedException::class);
-        $this->plan([2 => $source], ['hilos_analytics_payload_json' => $live]);
+        if ($mariaDbJsonAlias) {
+            $this->expectExceptionMessage('live structure differs');
+        }
+        $this->plan([2 => $source], ['hilos_analytics_payload_json' => $live], mariaDbJsonAlias: $mariaDbJsonAlias);
     }
 
-    /** @return iterable<string, array{string, string}> Constraint changes never disappear from provenance */
+    /** @return iterable<string, array> Constraint and collation changes never disappear from provenance */
     public static function jsonCheckMismatches(): iterable
     {
         $missing = str_replace(' CHECK (json_valid(`payload_json`))', '', self::JSON_PARENT);
@@ -667,6 +705,11 @@ SQL;
         yield 'additional live check' => [$missing, self::JSON_PARENT];
         yield 'changed expression' => [self::JSON_PARENT, str_replace('json_valid(`payload_json`)',
             'json_valid(`payload_json`) OR 1', self::JSON_PARENT)];
+        $alias = str_replace('longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`payload_json`))',
+            'JSON NOT NULL', self::JSON_PARENT);
+        yield 'alias missing live check' => [$alias, $missing, true];
+        yield 'alias wrong live collation' => [$alias, str_replace('COLLATE utf8mb4_bin', 'COLLATE utf8mb4_general_ci',
+            self::JSON_PARENT), true];
     }
 
     /** A successful RENAME keeps the original CREATE provenance, while future UP still starts at the old name. */
@@ -989,6 +1032,7 @@ SQL;
      * @param list<array<string, mixed>> $routines Physical stored routine catalog, including hidden declarations
      * @param list<array<string, mixed>> $functions Opaque native UDF catalog
      * @param ?bool $triggerVisible Schema trigger visibility; defaults to the fixture's global verdict
+     * @param bool $mariaDbJsonAlias Explicit destination evidence for alias-specific cases only
      * @return array Proven cleanup
      */
     private function plan(
@@ -1009,6 +1053,7 @@ SQL;
         array $routines = [],
         array $functions = [],
         ?bool $triggerVisible = null,
+        bool $mariaDbJsonAlias = false,
     ): array {
         $index = DatabaseConnectionDefaults::PRIMARY_INDEX;
         Database::configure($index, 'unused', 'unused', '', 'target');
@@ -1052,7 +1097,7 @@ SQL;
         unset($view);
         $defaults = new StructureDefaults('InnoDB', 'utf8mb4', 'utf8mb4_general_ci',
             ['utf8mb4' => 'utf8mb4_general_ci', 'ascii' => 'ascii_general_ci'], $sqlMode,
-            charsetByCollation: ['utf8mb4_bin' => 'utf8mb4', 'utf8mb4_0900_ai_ci' => 'utf8mb4']);
+            charsetByCollation: ['utf8mb4_bin' => 'utf8mb4', 'utf8mb4_0900_ai_ci' => 'utf8mb4'], mariaDbJsonAlias: $mariaDbJsonAlias);
         $snapshot = new FullRestoreSchemaSnapshot([$index => new SchemaMetadata('server', $metadata,
             $caseMode === null ? [] : [['lower_case_table_names' => $caseMode]], [], [], $defaults,
             completeTriggerVisibility: $triggerVisible ?? $visible, triggers: $triggers)],

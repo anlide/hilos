@@ -39,7 +39,7 @@ Composer scripts live in the repo-root `composer.json`:
 | `composer run test:framework:unit` | Run framework unit tests (`framework/tests/Unit`). |
 | `composer run test:framework:integration` | Run framework integration tests (`framework/tests/Integration`). Requires DB. |
 | `composer run test:framework:phpunit` | Run both PHPUnit suites. |
-| `composer run test:framework:all` | Run the framework backend steps of the graph, tag `framework-php`: `framework-unit` beside the integration pieces, each on its own database; the stand comes up before them and goes down after a green finish. |
+| `composer run test:framework:all` | Run the framework backend steps of the graph, tag `framework-php`: the four integration pieces run sequentially, each on its own database, beside the independent `framework-unit`; the stand comes up before them and goes down after a green finish. |
 | `composer run test:framework:down[-volumes]` | Stop (and optionally wipe volumes). |
 
 Framework integration uses two real MariaDB services on the stand network:
@@ -62,7 +62,11 @@ and opens its root control connection on `information_schema`; it needs no
 piece schemas or application account from `test:framework:databases`. The
 service inherits the remote service's image, tmpfs, healthcheck and network,
 with no published port. Other framework integration classes keep using the
-primary and remote services in parallel. `MomentStorageSchemaIntegrationTest`
+primary and remote services. All four integration pieces share the
+`framework-integration-catalog` group and run sequentially: server-wide metadata
+observers on a shared service can see DDL from other piece schemas. Framework
+unit tests and other stands remain independent and may run in parallel.
+`MomentStorageSchemaIntegrationTest`
 uses the existing remote service for its own disposable pair of named schemas,
 with a root control connection to `information_schema`; it creates and removes
 that pair on every outcome. This keeps its live DDL away from the primary
@@ -341,9 +345,14 @@ The graph is where the safety lives, and two kinds of constraint carry it:
 **A database per piece.** Framework integration runs as four graph steps against
 the primary and remote database services. `framework-up` starts both, and
 `framework:databases` recreates each piece's separate databases on both servers;
-each test class belongs to one piece in full. Shared stand resources, such as the
-backup receiver or MariaDB server settings, may therefore be touched by only one
-class. The pieces need no edge or group between them.
+each test class belongs to one piece in full. Separate schemas do not isolate
+server-wide catalog observers from another piece's DDL. All four pieces therefore
+share `group => 'framework-integration-catalog'` and run sequentially. Each still
+depends only on `framework-up`, so a failed piece does not skip another piece.
+Framework unit tests and other stands may run in parallel with this group, and
+teardown still waits for unit and all four pieces to finish green. Shared stand
+resources, such as the backup receiver or MariaDB server settings, may be touched
+by only one class.
 
 Neither the order nor the lane count is the lever it looks like. The three steps of
 the `chat` demo share a group — one stand. On 2026-09-29, their measured

@@ -59,12 +59,13 @@ final class FrameworkPiecesTest extends TestCase
         $this->assertSame('framework-integration-2', frameworkPieceStepId(2));
     }
 
-    /** The graph runs every piece after setup and keeps teardown behind all outcomes. */
+    /** The graph serializes catalog access after setup and keeps teardown behind all outcomes. */
     public function testManifestContainsAllPiecesAndTheirDependencies(): void
     {
         $steps = array_column(require __DIR__ . '/../../../scripts/test-suite.php', null, 'id');
         $pieceIds = [];
 
+        $this->assertSame(4, FRAMEWORK_INTEGRATION_PIECES);
         $this->assertArrayNotHasKey('framework', $steps);
         for ($piece = 1; $piece <= FRAMEWORK_INTEGRATION_PIECES; $piece++) {
             $id = frameworkPieceStepId($piece);
@@ -72,10 +73,18 @@ final class FrameworkPiecesTest extends TestCase
             $this->assertArrayHasKey($id, $steps);
             $this->assertSame(frameworkPieceDatabase($piece), $steps[$id]['database']);
             $this->assertSame(['framework-up'], $steps[$id]['deps']);
+            $this->assertSame('framework-integration-catalog', $steps[$id]['group']);
         }
 
         $actualPieceIds = array_filter(array_keys($steps), static fn(string $id): bool => str_starts_with($id, 'framework-integration-'));
         $this->assertSame($pieceIds, array_values($actualPieceIds));
+        $this->assertSame($pieceIds, array_keys(array_filter(
+            $steps,
+            static fn(array $step): bool => $step['group'] === 'framework-integration-catalog',
+        )));
+        $this->assertSame(['framework-deps'], $steps['framework-up']['deps']);
+        $this->assertSame(['framework-deps'], $steps['framework-unit']['deps']);
+        $this->assertNull($steps['framework-unit']['group']);
         $this->assertSame(['framework-unit', ...$pieceIds], $steps['framework-down']['deps']);
     }
 }

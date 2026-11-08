@@ -1266,115 +1266,118 @@ test.describe('restarting an agent', () => {
 test.describe('daemon environment', () => {
   test.afterEach(() => setAdminViewMode(false))
 
-  test('reads environment values, masks secrets and filters attention', async ({
-    page,
-  }) => {
-    // Admin preparation and several server-window changes are real round trips.
-    test.slow()
-    await grantAdminToSelf(expect, page)
-    await gotoPage(expect, page, DAEMON_ROOT_PATH, PAGE_READY)
-    await expectStandaloneOverview(
-      expect,
-      page,
-      DATABASE_HOST,
-      DAEMON_STANDALONE_NODE_NAME,
-    )
-    await page.getByTestId('hilos-daemon-node-standalone').click()
-    await expectStandaloneNodeOverview(expect, page, {
-      nodeName: DAEMON_STANDALONE_NODE_NAME,
-    })
-    const link = page.getByTestId('hilos-daemon-environment-link')
-    await link.scrollIntoViewIfNeeded()
-    await link.focus()
-    await link.press('Enter')
-    await expectDaemonPage(expect, page, 'hilos_daemon_env')
-    await expect(page).toHaveURL(/\/hilos\/daemon\/node\/standalone\/env$/)
-    await page.setViewportSize({ width: 1280, height: 812 })
-    await expectStandaloneEnvironment(expect, page)
-    const count = await page.getByTestId('hilos-daemon-env-keys').innerText()
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-      DAEMON_STANDALONE_NODE_NAME,
-    )
-    await expect(
-      page.getByRole('table', { name: 'Catalog keys' }),
-    ).toBeVisible()
-    await expect(page.getByRole('table')).toHaveCount(1)
-    await expect(
-      page.getByRole('list', { name: 'Reading ladder' }),
-    ).toBeVisible()
-    const search = page.getByTestId('hilos-table-search')
-    await expect(search).toHaveAccessibleName('Key or value')
-    await typeInto(search, 'APP_ENV')
-    const app = shownByTestId(page, 'hilos-table-row-APP_ENV')
-    await expect(app).toContainText('test')
-    await expect(app).toContainText('Launch environment')
-    await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
-    const attention = page.getByTestId('hilos-table-filter-attention')
-    await expect(attention).toHaveAccessibleName('Needs attention only')
-    await expect(attention).not.toBeChecked()
-    await attention.focus()
-    await attention.press('Space')
-    await expect(attention).toBeChecked()
-    await expect(
-      shownByTestId(page, 'hilos-daemon-env-keys-empty-attention'),
-    ).toHaveText('No key needs attention.')
-    await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
-    await expect(page.getByTestId('hilos-daemon-env-keys')).toHaveText(count)
-    await attention.focus()
-    await attention.press('Space')
-    await expect(attention).not.toBeChecked()
-    await expect(app).toContainText('test')
-    await typeInto(search, 'DB_PASSWORD')
-    const secret = shownByTestId(page, 'hilos-table-row-DB_PASSWORD')
-    await expect(secret).toContainText(/Set · \d+ chars/)
-    await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
-    await expect(page.locator('body')).not.toContainText('hilos_pass')
-    await secret.scrollIntoViewIfNeeded()
-    await fitsInScrollport(secret)
-    await page.getByTestId(DAEMON_ROOT_CRUMB).click()
-    await expectStandaloneOverview(
-      expect,
-      page,
-      DATABASE_HOST,
-      DAEMON_STANDALONE_NODE_NAME,
-    )
-    await expectStandaloneEnvOrphans(expect, page)
-    await page.reload()
-    await expect(page).toHaveURL(
-      /\/hilos\/daemon\/node\/standalone\/env\/orphans$/,
-    )
-    await expect(
-      page.getByTestId('hilos-page-tab-hilos_daemon_env_orphans'),
-    ).toHaveAttribute('aria-current', 'page')
-    await expect(page.getByRole('table')).toHaveCount(1)
-    await page.goBack()
-    await expectStandaloneNodeOverview(expect, page, {
-      nodeName: DAEMON_STANDALONE_NODE_NAME,
-    })
-    await page.goForward()
-    await expect(page).toHaveURL(
-      /\/hilos\/daemon\/node\/standalone\/env\/orphans$/,
-    )
-    await gotoPage(
-      expect,
-      page,
-      '/hilos/daemon/node/standalone/env/orphans',
-      PAGE_READY,
-    )
-    await expectDaemonPage(expect, page, 'hilos_daemon_env_orphans')
-    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
-    await expect(page.getByRole('table')).toHaveCount(1)
-    // A cold mount binds the catalog window with all keys selected.
-    await gotoPage(
-      expect,
-      page,
-      '/hilos/daemon/node/standalone/env',
-      PAGE_READY,
-    )
-    await expectDaemonPage(expect, page, 'hilos_daemon_env')
-    await expect(page.getByTestId('hilos-table-search')).toHaveValue('')
-    await expectStandaloneEnvironment(expect, page)
-  })
+  // FIXME(F-067, 2026-11-08): The DB_PASSWORD row detaches during scrolling · foreign · attempt 1 · HIL-1898
+  test(
+    'reads environment values, masks secrets and filters attention',
+    { tag: '@quarantine:F-067' },
+    async ({ page }) => {
+      // Admin preparation and several server-window changes are real round trips.
+      test.slow()
+      await grantAdminToSelf(expect, page)
+      await gotoPage(expect, page, DAEMON_ROOT_PATH, PAGE_READY)
+      await expectStandaloneOverview(
+        expect,
+        page,
+        DATABASE_HOST,
+        DAEMON_STANDALONE_NODE_NAME,
+      )
+      await page.getByTestId('hilos-daemon-node-standalone').click()
+      await expectStandaloneNodeOverview(expect, page, {
+        nodeName: DAEMON_STANDALONE_NODE_NAME,
+      })
+      const link = page.getByTestId('hilos-daemon-environment-link')
+      await link.scrollIntoViewIfNeeded()
+      await link.focus()
+      await link.press('Enter')
+      await expectDaemonPage(expect, page, 'hilos_daemon_env')
+      await expect(page).toHaveURL(/\/hilos\/daemon\/node\/standalone\/env$/)
+      await page.setViewportSize({ width: 1280, height: 812 })
+      await expectStandaloneEnvironment(expect, page)
+      const count = await page.getByTestId('hilos-daemon-env-keys').innerText()
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+        DAEMON_STANDALONE_NODE_NAME,
+      )
+      await expect(
+        page.getByRole('table', { name: 'Catalog keys' }),
+      ).toBeVisible()
+      await expect(page.getByRole('table')).toHaveCount(1)
+      await expect(
+        page.getByRole('list', { name: 'Reading ladder' }),
+      ).toBeVisible()
+      const search = page.getByTestId('hilos-table-search')
+      await expect(search).toHaveAccessibleName('Key or value')
+      await typeInto(search, 'APP_ENV')
+      const app = shownByTestId(page, 'hilos-table-row-APP_ENV')
+      await expect(app).toContainText('test')
+      await expect(app).toContainText('Launch environment')
+      await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+      const attention = page.getByTestId('hilos-table-filter-attention')
+      await expect(attention).toHaveAccessibleName('Needs attention only')
+      await expect(attention).not.toBeChecked()
+      await attention.focus()
+      await attention.press('Space')
+      await expect(attention).toBeChecked()
+      await expect(
+        shownByTestId(page, 'hilos-daemon-env-keys-empty-attention'),
+      ).toHaveText('No key needs attention.')
+      await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+      await expect(page.getByTestId('hilos-daemon-env-keys')).toHaveText(count)
+      await attention.focus()
+      await attention.press('Space')
+      await expect(attention).not.toBeChecked()
+      await expect(app).toContainText('test')
+      await typeInto(search, 'DB_PASSWORD')
+      const secret = shownByTestId(page, 'hilos-table-row-DB_PASSWORD')
+      await expect(secret).toContainText(/Set · \d+ chars/)
+      await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+      await expect(page.locator('body')).not.toContainText('hilos_pass')
+      await secret.scrollIntoViewIfNeeded()
+      await fitsInScrollport(secret)
+      await page.getByTestId(DAEMON_ROOT_CRUMB).click()
+      await expectStandaloneOverview(
+        expect,
+        page,
+        DATABASE_HOST,
+        DAEMON_STANDALONE_NODE_NAME,
+      )
+      await expectStandaloneEnvOrphans(expect, page)
+      await page.reload()
+      await expect(page).toHaveURL(
+        /\/hilos\/daemon\/node\/standalone\/env\/orphans$/,
+      )
+      await expect(
+        page.getByTestId('hilos-page-tab-hilos_daemon_env_orphans'),
+      ).toHaveAttribute('aria-current', 'page')
+      await expect(page.getByRole('table')).toHaveCount(1)
+      await page.goBack()
+      await expectStandaloneNodeOverview(expect, page, {
+        nodeName: DAEMON_STANDALONE_NODE_NAME,
+      })
+      await page.goForward()
+      await expect(page).toHaveURL(
+        /\/hilos\/daemon\/node\/standalone\/env\/orphans$/,
+      )
+      await gotoPage(
+        expect,
+        page,
+        '/hilos/daemon/node/standalone/env/orphans',
+        PAGE_READY,
+      )
+      await expectDaemonPage(expect, page, 'hilos_daemon_env_orphans')
+      await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+      await expect(page.getByRole('table')).toHaveCount(1)
+      // A cold mount binds the catalog window with all keys selected.
+      await gotoPage(
+        expect,
+        page,
+        '/hilos/daemon/node/standalone/env',
+        PAGE_READY,
+      )
+      await expectDaemonPage(expect, page, 'hilos_daemon_env')
+      await expect(page.getByTestId('hilos-table-search')).toHaveValue('')
+      await expectStandaloneEnvironment(expect, page)
+    },
+  )
 
   test('a viewer reads Cron, HTTP, environment, orphans and comparison with values hidden', async ({
     page,

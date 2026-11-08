@@ -26,10 +26,12 @@ the whole circle succeeded. The detailed
 [erasure canon](account-operations.md#erasure) separates the conditional start
 at the request's personal owner (not in the code yet — HIL-1939) from that
 owner's final completion after required results and the deletion of its person
-row (not in the code yet — HIL-1942). HIL-1936/HIL-1937/HIL-1939/HIL-1942 choose
-the physical carriers; this page adds no started field or new meaning to
-today's column. The old writer, borrowed right and current `completed_at`
-semantics remain until the live switch
+row (not in the code yet — HIL-1942). HIL-1936 builds the separate, inert
+[operation and assignment carriers](account-operations.md#erasure);
+it does not add a started field here or change today's `completed_at` meaning.
+HIL-1937's participant results, HIL-1939's request-owner start and HIL-1942's
+final completion remain future physical work. The old writer, borrowed right
+and current `completed_at` semantics remain until the live switch
 (not in the code yet — HIL-1952); the cancel/due race and the retained trace
 remain requirements.
 

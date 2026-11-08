@@ -81,12 +81,6 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
         'migrationListPath', 'migrationName', 'initialized',
     ];
 
-    /**
-     * Root password of the chat test MariaDB when the suite is not given one.
-     * demo/chat/docker/docker-compose.test.yml uses it unless MYSQL_ROOT_PASSWORD is set.
-     */
-    private const string STAND_ROOT_PASSWORD = 'hilos_root_pass';
-
     private const string WRITER_AGENT_ID = 'receipt-orm-writer';
 
     private const string INITIATOR_AGENT_ID = 'receipt-orm-initiator';
@@ -1395,14 +1389,6 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
             reconnectAttempts: $source->reconnectAttempts,
             reconnectDelay: $source->reconnectDelay,
         );
-    }
-
-    /** @return string Root password from the environment, or the chat stand's compose default */
-    private function rootPassword(): string
-    {
-        $configured = Hilos::$env[EnvConstants::DB_ROOT_PASSWORD]->string();
-
-        return $configured !== '' ? $configured : self::STAND_ROOT_PASSWORD;
     }
 
     /**

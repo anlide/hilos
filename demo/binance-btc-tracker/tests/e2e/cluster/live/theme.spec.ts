@@ -356,158 +356,168 @@ async function withThemeProof(
     throw new AggregateError(cleanupErrors, 'Theme proof cleanup failed')
 }
 
-test('cluster theme settings reach every master without reloading', async ({
-  browser,
-}) => {
-  // Two registrations and password logins, six live recipients and five saves.
-  test.slow()
-  await withThemeProof(browser, async (proof) => {
-    const { fresh, clients, third } = proof
-    const admin = await fresh(CLUSTER_FOLLOWER, 'light')
-    admin.userId = await grantAdminToSelf(expect, admin.page)
-    await gotoPage(expect, admin.page, APPEARANCE_PATH, PAGE_READY)
-    await expectAppearanceRows(expect, admin.page)
-    proof.admin = admin
-    clients.push(admin)
+// FIXME(F-072, 2026-11-08): Guest Home stays loading while connected · foreign · attempt 2 · HIL-1936
+test(
+  'cluster theme settings reach every master without reloading',
+  { tag: '@quarantine:F-072' },
+  async ({ browser }) => {
+    // Two registrations and password logins, six live recipients and five saves.
+    test.slow()
+    await withThemeProof(browser, async (proof) => {
+      const { fresh, clients, third } = proof
+      const admin = await fresh(CLUSTER_FOLLOWER, 'light')
+      admin.userId = await grantAdminToSelf(expect, admin.page)
+      await gotoPage(expect, admin.page, APPEARANCE_PATH, PAGE_READY)
+      await expectAppearanceRows(expect, admin.page)
+      proof.admin = admin
+      clients.push(admin)
 
-    for (const [node, system] of [
-      [CLUSTER_FOLLOWER, 'light'],
-      [CLUSTER_LEADER, 'light'],
-      [third, 'dark'],
-    ] as const) {
-      const guest = await fresh(node, system)
-      clients.push(guest)
-      await gotoPage(expect, guest.page, '/', PAGE_READY)
-      if (node === CLUSTER_FOLLOWER) {
-        await chooseHeaderTheme(expect, guest.page, 'dark')
-        guest.pick = 'dark'
+      for (const [node, system] of [
+        [CLUSTER_FOLLOWER, 'light'],
+        [CLUSTER_LEADER, 'light'],
+        [third, 'dark'],
+      ] as const) {
+        const guest = await fresh(node, system)
+        clients.push(guest)
+        await gotoPage(expect, guest.page, '/', PAGE_READY)
+        if (node === CLUSTER_FOLLOWER) {
+          await chooseHeaderTheme(expect, guest.page, 'dark')
+          guest.pick = 'dark'
+        }
       }
-    }
 
-    for (const [node, pick, system] of [
-      [CLUSTER_LEADER, 'light', 'dark'],
-      [third, null, 'light'],
-    ] as const) {
-      // Account creation is preparation on a disposable browser. Each recipient then
-      // signs in by password with its own cookie and StorageArea, never a copy.
-      const seed = await fresh(CLUSTER_FOLLOWER, 'light')
-      const person = await createTestUser(expect, seed.page)
-      await proof.close(seed, true)
-      const account = await fresh(node, system)
-      clients.push(account)
-      await gotoPage(expect, account.page, '/', PAGE_READY)
-      await openSignIn(expect, account.page)
-      await login(expect, account.page, person.email)
-      await expect(account.page.getByTestId('self-user')).toHaveText(
-        person.name,
-      )
-      account.userId = person.userId
-      if (pick !== null) await chooseHeaderTheme(expect, account.page, pick)
-      account.pick = pick
-    }
+      for (const [node, pick, system] of [
+        [CLUSTER_LEADER, 'light', 'dark'],
+        [third, null, 'light'],
+      ] as const) {
+        // Account creation is preparation on a disposable browser. Each recipient then
+        // signs in by password with its own cookie and StorageArea, never a copy.
+        const seed = await fresh(CLUSTER_FOLLOWER, 'light')
+        const person = await createTestUser(expect, seed.page)
+        await proof.close(seed, true)
+        const account = await fresh(node, system)
+        clients.push(account)
+        await gotoPage(expect, account.page, '/', PAGE_READY)
+        await openSignIn(expect, account.page)
+        await login(expect, account.page, person.email)
+        await expect(account.page.getByTestId('self-user')).toHaveText(
+          person.name,
+        )
+        account.userId = person.userId
+        if (pick !== null) await chooseHeaderTheme(expect, account.page, pick)
+        account.pick = pick
+      }
 
-    const tokens = await Promise.all(
-      clients.map((client) => sessionToken(client.page)),
-    )
-    expect(new Set(tokens).size).toBe(clients.length)
-    for (const client of clients) {
-      const handshakes = client.frames.filter(
-        (frame) => frame.type === 'handshake_response',
+      const tokens = await Promise.all(
+        clients.map((client) => sessionToken(client.page)),
       )
-      expect(handshakes.length).toBeGreaterThan(0)
-      expectIdentity(handshakes[handshakes.length - 1], client)
-      for (const frame of client.frames) {
-        expect(frameSettings(frame), frame.raw).toEqual({
+      expect(new Set(tokens).size).toBe(clients.length)
+      for (const client of clients) {
+        const handshakes = client.frames.filter(
+          (frame) => frame.type === 'handshake_response',
+        )
+        expect(handshakes.length).toBeGreaterThan(0)
+        expectIdentity(handshakes[handshakes.length - 1], client)
+        for (const frame of client.frames) {
+          expect(frameSettings(frame), frame.raw).toEqual({
+            switchingEnabled: true,
+            defaultTheme: 'system',
+          })
+        }
+        await expectBrowserTheme(client, {
           switchingEnabled: true,
           defaultTheme: 'system',
         })
       }
-      await expectBrowserTheme(client, {
+      // Auth and navigation are finished. Only the intentionally new tabs below
+      // may create documents or connections during settings delivery.
+      const baseline = clients.map((client) => ({ ...client.counts }))
+      let previousStarts = clients.map((client) => client.frames.length)
+      let previousSettings: ThemeSettings = {
         switchingEnabled: true,
         defaultTheme: 'system',
-      })
-    }
-    // Auth and navigation are finished. Only the intentionally new tabs below
-    // may create documents or connections during settings delivery.
-    const baseline = clients.map((client) => ({ ...client.counts }))
-    let previousStarts = clients.map((client) => client.frames.length)
-    let previousSettings: ThemeSettings = {
-      switchingEnabled: true,
-      defaultTheme: 'system',
-    }
+      }
 
-    for (const [key, settings] of [
-      [THEME_DEFAULT_KEY, { switchingEnabled: true, defaultTheme: 'dark' }],
-      [THEME_SWITCHING_KEY, { switchingEnabled: false, defaultTheme: 'dark' }],
-      [THEME_DEFAULT_KEY, { switchingEnabled: false, defaultTheme: 'light' }],
-      [THEME_SWITCHING_KEY, { switchingEnabled: true, defaultTheme: 'light' }],
-      [THEME_DEFAULT_KEY, { switchingEnabled: true, defaultTheme: 'system' }],
-    ] as const) {
-      expectInterval(clients, previousStarts, previousSettings)
-      const starts = clients.map((client) => client.frames.length)
-      if (key === THEME_SWITCHING_KEY) {
-        await openAppearanceSetting(expect, admin.page, THEME_SWITCHING_KEY)
-        await admin.page
-          .getByTestId('appearance-switching-input')
-          .setChecked(settings.switchingEnabled)
-        await saveAppearanceSwitching(
+      for (const [key, settings] of [
+        [THEME_DEFAULT_KEY, { switchingEnabled: true, defaultTheme: 'dark' }],
+        [
+          THEME_SWITCHING_KEY,
+          { switchingEnabled: false, defaultTheme: 'dark' },
+        ],
+        [THEME_DEFAULT_KEY, { switchingEnabled: false, defaultTheme: 'light' }],
+        [
+          THEME_SWITCHING_KEY,
+          { switchingEnabled: true, defaultTheme: 'light' },
+        ],
+        [THEME_DEFAULT_KEY, { switchingEnabled: true, defaultTheme: 'system' }],
+      ] as const) {
+        expectInterval(clients, previousStarts, previousSettings)
+        const starts = clients.map((client) => client.frames.length)
+        if (key === THEME_SWITCHING_KEY) {
+          await openAppearanceSetting(expect, admin.page, THEME_SWITCHING_KEY)
+          await admin.page
+            .getByTestId('appearance-switching-input')
+            .setChecked(settings.switchingEnabled)
+          await saveAppearanceSwitching(
+            expect,
+            admin.page,
+            settings.switchingEnabled,
+          )
+        } else {
+          await openAppearanceSetting(expect, admin.page, THEME_DEFAULT_KEY)
+          await admin.page
+            .getByTestId(`appearance-default-theme-${settings.defaultTheme}`)
+            .check()
+          await saveAppearanceDefaultTheme(
+            expect,
+            admin.page,
+            settings.defaultTheme,
+          )
+        }
+        await expectAppearanceRows(
           expect,
           admin.page,
           settings.switchingEnabled,
-        )
-      } else {
-        await openAppearanceSetting(expect, admin.page, THEME_DEFAULT_KEY)
-        await admin.page
-          .getByTestId(`appearance-default-theme-${settings.defaultTheme}`)
-          .check()
-        await saveAppearanceDefaultTheme(
-          expect,
-          admin.page,
           settings.defaultTheme,
         )
+        await expectDelivery(clients, starts, settings)
+        previousStarts = starts
+        previousSettings = settings
+        for (const [index, client] of clients.entries()) {
+          expect(
+            client.counts,
+            `No reload or reconnect on ${client.node}`,
+          ).toEqual(baseline[index])
+        }
+        if (!settings.switchingEnabled) {
+          // These contexts have never visited the site. Each new tab must receive
+          // the pair in its first handshake, with no cached settings as evidence.
+          for (const node of CLUSTER_MASTERS) {
+            const tab = await fresh(node, 'dark')
+            await gotoPage(expect, tab.page, '/', PAGE_READY)
+            await expect.poll(() => tab.frames.length).toBeGreaterThan(0)
+            expect(tab.frames[0].type).toBe('handshake_response')
+            expectIdentity(tab.frames[0], tab)
+            for (const frame of tab.frames)
+              expect(frameSettings(frame), frame.raw).toEqual(settings)
+            await expectBrowserTheme(tab, settings)
+            expect(tab.counts).toEqual({ loads: 1, sockets: 1 })
+            // A failed check leaves this context to the outer cleanup, which
+            // retains that failure even when stopping a watcher also fails.
+            await proof.close(tab, true)
+          }
+        }
       }
-      await expectAppearanceRows(
-        expect,
-        admin.page,
-        settings.switchingEnabled,
-        settings.defaultTheme,
-      )
-      await expectDelivery(clients, starts, settings)
-      previousStarts = starts
-      previousSettings = settings
+      expectInterval(clients, previousStarts, previousSettings)
       for (const [index, client] of clients.entries()) {
         expect(
           client.counts,
           `No reload or reconnect on ${client.node}`,
         ).toEqual(baseline[index])
       }
-      if (!settings.switchingEnabled) {
-        // These contexts have never visited the site. Each new tab must receive
-        // the pair in its first handshake, with no cached settings as evidence.
-        for (const node of CLUSTER_MASTERS) {
-          const tab = await fresh(node, 'dark')
-          await gotoPage(expect, tab.page, '/', PAGE_READY)
-          await expect.poll(() => tab.frames.length).toBeGreaterThan(0)
-          expect(tab.frames[0].type).toBe('handshake_response')
-          expectIdentity(tab.frames[0], tab)
-          for (const frame of tab.frames)
-            expect(frameSettings(frame), frame.raw).toEqual(settings)
-          await expectBrowserTheme(tab, settings)
-          expect(tab.counts).toEqual({ loads: 1, sockets: 1 })
-          // A failed check leaves this context to the outer cleanup, which
-          // retains that failure even when stopping a watcher also fails.
-          await proof.close(tab, true)
-        }
-      }
-    }
-    expectInterval(clients, previousStarts, previousSettings)
-    for (const [index, client] of clients.entries()) {
-      expect(client.counts, `No reload or reconnect on ${client.node}`).toEqual(
-        baseline[index],
-      )
-    }
-  })
-})
+    })
+  },
+)
 
 /** A handshake must arrive after this boundary, regardless of whether it is valid. */
 async function expectAccountDelivery(

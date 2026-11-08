@@ -26,6 +26,9 @@ final class TableStructure
     private const string CHARSET = 'charset';
     private const string COLLATION = 'collation';
     private const string CHECK = 'check';
+    private const string JSON_CHARSET = 'utf8mb4';
+    private const string JSON_COLLATION = 'utf8mb4_bin';
+    private const string JSON_VALID = 'JSON_VALID';
 
     /** @var array<string, ColumnShape> Columns in physical order */
     public array $columns = [];
@@ -301,7 +304,14 @@ final class TableStructure
      */
     private function column(SqlTokens $cursor, string $name): ColumnShape
     {
+        $json = $cursor->is('JSON');
         $type = strtoupper($cursor->name());
+        if ($json) {
+            if (!$this->defaults->mariaDbJsonAlias || $cursor->is('(')) {
+                throw new RestoreFailedException('Structural JSON requires a proven MariaDB alias without type arguments');
+            }
+            $type = 'LONGTEXT';
+        }
         $boolean = in_array($type, ['BOOL', 'BOOLEAN'], true);
         $type = match ($type) { 'BOOL', 'BOOLEAN' => 'TINYINT', 'INTEGER' => 'INT', 'NUMERIC', 'FIXED' => 'DECIMAL', default => $type };
         if (!in_array($type, self::TYPES, true)) {
@@ -317,11 +327,15 @@ final class TableStructure
         $nullable = true;
         $default = null;
         $attributes = [];
-        $charset = null;
-        $collation = null;
+        $charset = $json ? self::JSON_CHARSET : null;
+        $collation = $json ? self::JSON_COLLATION : null;
         $unsigned = false;
         $zerofill = false;
         while (!$cursor->ended() && !$cursor->is('FIRST') && !$cursor->is('AFTER')) {
+            if ($json && !$cursor->is('NOT') && !$cursor->is('NULL') && !$cursor->is('DEFAULT')
+                && !$cursor->is('COMMENT') && !$cursor->is('CHECK')) {
+                throw new RestoreFailedException('Unsupported structural MariaDB JSON attribute');
+            }
             if ($cursor->takeIf('NOT')) {
                 $cursor->expect('NULL');
                 $nullable = false;
@@ -335,6 +349,9 @@ final class TableStructure
                 $zerofill = true;
                 $unsigned = true;
             } elseif ($cursor->takeIf('DEFAULT')) {
+                if ($json && $cursor->is('CURRENT_TIMESTAMP')) {
+                    throw new RestoreFailedException('Structural MariaDB JSON requires a scalar default');
+                }
                 $default = self::value($cursor);
             } elseif ($cursor->takeIf('AUTO_INCREMENT')) {
                 $attributes['auto_increment'] = 'true';
@@ -364,7 +381,7 @@ final class TableStructure
             } elseif ($cursor->takeIf('CHECK')) {
                 $tokens = $cursor->group();
                 $check = new SqlTokens($tokens);
-                $check->expect('JSON_VALID');
+                $check->expect(self::JSON_VALID);
                 if (array_map('strtolower', $check->names()) !== [$name]) {
                     throw new RestoreFailedException('Structural JSON CHECK must reference only its own column');
                 }
@@ -373,6 +390,12 @@ final class TableStructure
             } else {
                 throw new RestoreFailedException('Unsupported structural column attribute');
             }
+        }
+        if ($json && !isset($attributes[self::CHECK])) {
+            $attributes[self::CHECK] = self::signature([
+                new SqlToken(SqlToken::WORD, self::JSON_VALID, 0, 0), new SqlToken(SqlToken::SYMBOL, '(', 0, 0),
+                new SqlToken(SqlToken::IDENTIFIER, $name, 0, 0), new SqlToken(SqlToken::SYMBOL, ')', 0, 0),
+            ]);
         }
         if (in_array($type, self::INTEGER_TYPES, true) && !$zerofill) {
             $arguments = [];

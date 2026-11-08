@@ -73,7 +73,7 @@ final class FrameworkMigrationSourcesTest extends TestCase
         $schema = new FrameworkSchemaCatalog();
         $catalog = new FrameworkMigrationCatalog($schema);
         $catalog->verifyCurrentStubs();
-        $this->assertCount(50, $schema->allUnits());
+        $this->assertCount(52, $schema->allUnits());
         $this->assertSame(
             [
                 '20261021021039718057_HIL-1580_add_user_time_zone/user',
@@ -87,6 +87,18 @@ final class FrameworkMigrationSourcesTest extends TestCase
         );
         $this->assertSame(1, $schema->unit('change_log')->connection);
         $this->assertNull($schema->unit('migration')->upPath);
+    }
+
+    public function testErasureStorageUnitsAreIntroducedOnceInDependencyOrder(): void
+    {
+        $schema = new FrameworkSchemaCatalog();
+        $catalog = new FrameworkMigrationCatalog($schema);
+        $parts = $catalog->partsForUnits(['account_erasure_assignment', 'account_erasure_operation']);
+        self::assertSame(['account_erasure_operation', 'account_erasure_assignment'], array_column($parts, 'unit'));
+        self::assertTrue($parts[0]->introducesUnit);
+        self::assertTrue($parts[1]->introducesUnit);
+        self::assertSame([$parts[0]->key()], $parts[1]->requires);
+        self::assertSame(['account_erasure_operation'], $schema->unit('account_erasure_assignment')->dependencies);
     }
 
     public function testSelectionUsesUnitUnionAndDoesNotCareAboutFeatureFolder(): void

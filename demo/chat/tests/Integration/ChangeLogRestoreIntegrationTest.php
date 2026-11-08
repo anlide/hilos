@@ -29,11 +29,16 @@ use Hilos\Database\ChangeLog\JournalTriggerFiles;
 use Hilos\Database\ChangeLog\JournalTriggerGenerator;
 use Hilos\Database\ChangeLog\JournalTriggerInstaller;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseConnectionConfig;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Migration;
 use Hilos\Database\Schema\Schema;
 use Hilos\HilosException;
+use Closure;
 use JsonException;
+use mysqli;
+use RuntimeException;
+use Throwable;
 
 /** Real dump/import of chat's two databases, with the original pair restored after every case. */
 final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
@@ -41,6 +46,8 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
     private const string BASELINE_ID = '2026-10-10_00-00-00';
 
     private const string ARCHIVE_ID = '2026-10-10_00-00-01';
+
+    private const array VISIBILITY_PRIVILEGES = ['EVENT', 'SELECT', 'SHOW VIEW', 'TRIGGER'];
 
     /** @var list<string> Exact journal schema, including tables that may carry no rows */
     private const array JOURNAL_TABLES = [
@@ -92,6 +99,18 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
 
     /** @var array<int, array<string, list<array<string, mixed>>>> Original rows in both databases */
     private array $originalContents = [];
+
+    /**
+     * Test-local DBA leases; neither database accounts nor these handles are application DB/RT rows.
+     *
+     * @var array<int, array{
+     *     indices: list<int>, currentIndex: int, configs: array<int, DatabaseConnectionConfig>,
+     *     connected: array<int, bool>, sessions: array<int, array<string, mixed>>,
+     *     control: ?mysqli, account: ?string,
+     *     prior: ?array{privileges: list<string>, clauses: list<string>}, added: list<string>, refresh: bool
+     * }>
+     */
+    private array $visibilityLeases = [];
 
     /**
      * The journal rolls back with the data, without recording the anonymizer's writes.
@@ -183,8 +202,10 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
     /** A production archive predating retirement passes preflight and migrates before anonymization. */
     public function testFullProductionRestoreRetiresHistoricalModerationTable(): void
     {
-        $this->assertSame(114, Migration::getCurrentIndex());
-        $this->assertSame(5, Migration::migrateDown(109));
+        $this->assertOrdinaryVisibilityBoundary();
+        $this->acquireVisibility();
+        $this->assertSame(116, Migration::getCurrentIndex());
+        $this->assertSame(7, Migration::migrateDown(109));
         Schema::reset();
         Database::sql('INSERT INTO `moderator_prompt_piece` (`section`, `prompt_piece`) VALUES (?, ?)',
             ['message_rule', 'Historical non-personal moderation rule']);
@@ -213,15 +234,20 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
                 file_get_contents($this->storeRoot . '/unpacked/db-1.sql'));
         }
 
-        $this->assertSame(5, Migration::migrateUp());
+        $this->assertSame(7, Migration::migrateUp());
         Database::sql('UPDATE `hilos_user` SET `name` = ? WHERE `id` = ?', ['Written after historical archive', $userId]);
         $decision = RestoreEnvGuard::decide(AppEnv::fromString($archive->env), AppEnv::TEST, false)->decision;
         $this->assertSame(RestoreEnvDecision::REQUIRE_ANONYMIZATION, $decision);
         new BackupRestorer()->restore(self::ARCHIVE_ID, BackupScope::FULL, $decision);
         Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
 
-        $this->assertSame(114, Migration::getCurrentIndex());
-        $this->assertArrayNotHasKey('moderator_prompt_piece', LiveSchemaReader::read(DatabaseConnectionDefaults::PRIMARY_INDEX));
+        $this->assertSame(116, Migration::getCurrentIndex());
+        $schema = LiveSchemaReader::read(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        $this->assertArrayNotHasKey('moderator_prompt_piece', $schema);
+        $this->assertArrayHasKey('hilos_account_erasure_operation', $schema);
+        $this->assertArrayHasKey('hilos_account_erasure_assignment', $schema);
+        $this->assertSame([], Database::sql('SELECT * FROM `hilos_account_erasure_operation`')->rows());
+        $this->assertSame([], Database::sql('SELECT * FROM `hilos_account_erasure_assignment`')->rows());
         $this->assertSame([], Database::sql('SELECT `key` FROM `hilos_setting` WHERE `key` IN (?, ?, ?, ?)', [
             'chat_moderation_model', 'chat_moderation_url', 'chat_moderation_provider', 'chat_moderation_timeout_sec',
         ])->rows());
@@ -230,6 +256,83 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
         $this->assertInstalledTriggersMatchFiles();
         AnonymizationStartupGuard::assertLiveSchemaClassified();
         Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+    }
+
+    /** An exception in the elevated body still returns both sessions and the ordinary grants. */
+    public function testVisibilityLeaseRestoresOrdinaryBoundaryAfterFailure(): void
+    {
+        $this->assertOrdinaryVisibilityBoundary();
+        Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+        $lease = $this->acquireVisibility();
+        $failure = new RuntimeException('Expected failure inside the visibility lease');
+        try {
+            try {
+                throw $failure;
+            } finally {
+                $this->releaseVisibility($lease);
+            }
+        } catch (RuntimeException $caught) {
+            $this->assertTrue($caught === $failure, 'Cleanup must preserve the expected body failure');
+        }
+        $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+        $this->assertOrdinaryVisibilityBoundary();
+        Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+    }
+
+    /** A partial acquire owns its cleanup even when it cannot return a lease to the caller. */
+    public function testVisibilityLeaseCleansUpWhenAcquireFailsAfterGrant(): void
+    {
+        $this->assertOrdinaryVisibilityBoundary();
+        $failure = new RuntimeException('Expected failure immediately after the visibility grant');
+        try {
+            $this->acquireVisibility(afterGrant: static function () use ($failure): void {
+                throw $failure;
+            });
+            $this->fail('The acquire failure must reach its caller');
+        } catch (RuntimeException $caught) {
+            $this->assertTrue($caught === $failure, 'Partial acquire must preserve the expected failure');
+        }
+        $this->assertTrue($this->visibilityLeases === [], 'Partial acquire must release its control handle and lease');
+        $this->assertOrdinaryVisibilityBoundary();
+    }
+
+    /** A link opened only for the lease must return to its original closed state. */
+    public function testVisibilityLeaseRestoresOriginallyClosedJournalLink(): void
+    {
+        $this->assertOrdinaryVisibilityBoundary();
+        Database::close(ChangeLogDatabase::CONNECTION_INDEX);
+        try {
+            $lease = $this->acquireVisibility();
+            try {
+                $this->assertTrue(Database::isConnected(ChangeLogDatabase::CONNECTION_INDEX));
+            } finally {
+                $this->releaseVisibility($lease);
+            }
+            $this->assertFalse(Database::isConnected(ChangeLogDatabase::CONNECTION_INDEX));
+        } finally {
+            Database::connect(ChangeLogDatabase::CONNECTION_INDEX);
+        }
+        $this->assertOrdinaryVisibilityBoundary();
+    }
+
+    /** The inner lease may revoke only its missing subset; the outer fixture returns the stand. */
+    public function testVisibilityLeasePreservesPreexistingGlobalPrivilege(): void
+    {
+        $this->assertOrdinaryVisibilityBoundary();
+        $outer = $this->acquireVisibility(['SELECT']);
+        try {
+            $inner = $this->acquireVisibility();
+            try {
+                $this->assertSame(['SELECT'], $this->visibilityLeases[$inner]['prior']['privileges']);
+                $this->assertSame(['EVENT', 'SHOW VIEW', 'TRIGGER'], $this->visibilityLeases[$inner]['added']);
+            } finally {
+                $this->releaseVisibility($inner);
+            }
+            $this->assertVisibilityGranted($outer);
+        } finally {
+            $this->releaseVisibility($outer);
+        }
+        $this->assertOrdinaryVisibilityBoundary();
     }
 
     /**
@@ -336,9 +439,286 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
                 $this->assertSame($this->originalContents, $this->databaseContents(), 'Both databases must return to their original rows');
             }
         } finally {
-            $this->previousBackupDir === false ? putenv('BACKUP_DIR') : putenv('BACKUP_DIR=' . $this->previousBackupDir);
-            $this->removeTree($this->storeRoot);
-            parent::tearDown();
+            try {
+                // Historical recovery needs the same visibility until its rows and triggers are back.
+                $failures = [];
+                foreach (array_reverse(array_keys($this->visibilityLeases)) as $lease) {
+                    try {
+                        $this->releaseVisibility($lease);
+                    } catch (Throwable $failure) {
+                        $failures[] = $failure;
+                    }
+                }
+                $this->assertVisibilityCleanupSucceeded($failures);
+            } finally {
+                try {
+                    $this->previousBackupDir === false ? putenv('BACKUP_DIR') : putenv('BACKUP_DIR=' . $this->previousBackupDir);
+                    $this->removeTree($this->storeRoot);
+                } finally {
+                    parent::tearDown();
+                }
+            }
+        }
+    }
+
+    /**
+     * Root controls grants only; every dump, import and migration keeps its configured app identity.
+     *
+     * @param list<string> $privileges Required subset of the planner's visibility privileges
+     * @param ?Closure(): void $afterGrant Failure injection before session renewal
+     * @return int Lease registered before any connection or privilege mutation
+     */
+    private function acquireVisibility(array $privileges = self::VISIBILITY_PRIVILEGES, ?Closure $afterGrant = null): int
+    {
+        $this->assertFalse(Database::hasOpenTransactions(), 'Visibility renewal requires no open transaction');
+        $indices = Database::getConfiguredIndices();
+        $this->assertSame([0, 1], $indices);
+        $this->assertSame([], array_values(array_diff($privileges, self::VISIBILITY_PRIVILEGES)));
+        $leaseId = $this->visibilityLeases === [] ? 0 : max(array_keys($this->visibilityLeases)) + 1;
+        $this->visibilityLeases[$leaseId] = [
+            'indices' => $indices, 'currentIndex' => Database::getCurrentIndex(), 'configs' => [],
+            'connected' => [], 'sessions' => [], 'control' => null, 'account' => null, 'prior' => null, 'added' => [], 'refresh' => false,
+        ];
+        $lease = &$this->visibilityLeases[$leaseId];
+        foreach ($indices as $index) {
+            $lease['configs'][$index] = Database::getConnectionConfig($index);
+            $lease['connected'][$index] = Database::isConnected($index);
+        }
+        try {
+            foreach ($indices as $index) {
+                if (!Database::isConnected($index)) {
+                    Database::connect($index);
+                }
+                $lease['sessions'][$index] = $this->visibilitySession($index);
+            }
+            $primary = $lease['sessions'][DatabaseConnectionDefaults::PRIMARY_INDEX];
+            foreach ($lease['sessions'] as $session) {
+                $this->assertTrue($session['account'] === $primary['account'], 'Both app links must use the same actual account');
+                $this->assertTrue($this->visibilityServer($session) === $this->visibilityServer($primary), 'App links must share a server');
+            }
+            $config = $lease['configs'][DatabaseConnectionDefaults::PRIMARY_INDEX];
+            $control = new mysqli($config->host, 'root', $this->rootPassword(), 'information_schema', $config->port, $config->socket);
+            $lease['control'] = $control;
+            $control->set_charset($config->charset);
+            $server = $control->query('SELECT @@hostname AS host, @@port AS port, @@server_id AS server_id')->fetch_assoc();
+            $this->assertTrue($server === $this->visibilityServer($primary), 'Control must answer on the actual app server');
+            $separator = strrpos($primary['account'], '@');
+            $this->assertNotFalse($separator, 'CURRENT_USER must identify both the user and host');
+            $lease['account'] = "'" . $control->real_escape_string(substr($primary['account'], 0, $separator))
+                . "'@'" . $control->real_escape_string(substr($primary['account'], $separator + 1)) . "'";
+            $lease['prior'] = $this->visibilityGrants($control, $lease['account']);
+            $lease['added'] = array_values(array_diff($privileges, $lease['prior']['privileges']));
+            // Recording the missing subset first also covers an ambiguous GRANT outcome.
+            $lease['refresh'] = true;
+            if ($lease['added'] !== []) {
+                $control->query('GRANT ' . implode(', ', $lease['added']) . ' ON *.* TO ' . $lease['account']);
+            }
+            if ($afterGrant !== null) {
+                $afterGrant();
+            }
+            $this->renewVisibilitySessions($leaseId, false);
+            $this->assertVisibilityGranted($leaseId);
+            return $leaseId;
+        } catch (Throwable $failure) {
+            try {
+                $this->releaseVisibility($leaseId);
+            } catch (Throwable $cleanup) {
+                throw new RuntimeException('Visibility acquire and cleanup both failed: ' . $cleanup->getMessage(), previous: $failure);
+            }
+            throw $failure;
+        }
+    }
+
+    /**
+     * Attempt every revoke, both links and control close even after an earlier cleanup failure.
+     *
+     * @param int $leaseId Lease whose missing privileges alone may be revoked
+     */
+    private function releaseVisibility(int $leaseId): void
+    {
+        $lease = $this->visibilityLeases[$leaseId];
+        $failures = [];
+        $attempt = static function (Closure $cleanup) use (&$failures): void {
+            try {
+                $cleanup();
+            } catch (Throwable $failure) {
+                $failures[] = $failure;
+            }
+        };
+        try {
+            foreach ($lease['added'] as $privilege) {
+                $attempt(function () use ($lease, $privilege): void {
+                    $current = $this->visibilityGrants($lease['control'], $lease['account']);
+                    if (in_array($privilege, $current['privileges'], true)) {
+                        $lease['control']->query('REVOKE ' . $privilege . ' ON *.* FROM ' . $lease['account']);
+                    }
+                });
+            }
+            $attempt(function () use ($lease): void {
+                if ($lease['prior'] !== null) {
+                    $this->assertTrue($lease['prior'] === $this->visibilityGrants($lease['control'], $lease['account']),
+                        'Release must restore every prior global, schema, authentication and role clause');
+                }
+            });
+            // Do not leave new elevated sessions alive if privilege cleanup itself failed.
+            $grantsRestored = $failures === [];
+            $attempt(fn () => $this->renewVisibilitySessions($leaseId, true, $grantsRestored));
+        } finally {
+            if ($lease['control'] !== null) {
+                $attempt(static fn () => $lease['control']->close());
+            }
+            unset($this->visibilityLeases[$leaseId]);
+        }
+        $this->assertVisibilityCleanupSucceeded($failures);
+    }
+
+    /**
+     * @param int $leaseId Snapshot of both app connections
+     * @param bool $restoring Whether to restore the original open/closed states
+     * @param bool $reopen Whether grants are safe enough to open ordinary sessions
+     */
+    private function renewVisibilitySessions(int $leaseId, bool $restoring, bool $reopen = true): void
+    {
+        $lease = $this->visibilityLeases[$leaseId];
+        $failures = [];
+        foreach ($lease['indices'] as $index) {
+            try {
+                // A refusal before GRANT must not destroy a preexisting raw transaction.
+                $renew = !$restoring || $lease['refresh'] || !$lease['connected'][$index];
+                if ($renew) {
+                    Database::close($index);
+                }
+                $this->assertTrue($lease['configs'][$index] === Database::getConnectionConfig($index), 'Connection config must stay unchanged');
+                if ($renew && $reopen && (!$restoring || $lease['connected'][$index])) {
+                    Database::connect($index);
+                    $session = $this->visibilitySession($index);
+                    $before = $lease['sessions'][$index];
+                    $this->assertTrue($session['account'] === $before['account'], 'Renewal must retain the actual app identity');
+                    $this->assertTrue($this->visibilityServer($session) === $this->visibilityServer($before), 'Renewal must retain the server');
+                    $this->assertNotSame($before['connection_id'], $session['connection_id'], 'Renewal must replace the physical session');
+                    if (!$restoring) {
+                        $this->visibilityLeases[$leaseId]['sessions'][$index] = $session;
+                    }
+                    if ($restoring && $lease['prior'] !== null) {
+                        $this->assertTrue($lease['prior'] === $this->appVisibilityGrants($index),
+                            'Each renewed app session must return to all of its prior grants');
+                    }
+                }
+                $this->assertSame($reopen && (!$restoring || $lease['connected'][$index]), Database::isConnected($index));
+            } catch (Throwable $failure) {
+                $failures[] = $failure;
+                try {
+                    Database::close($index);
+                } catch (Throwable $closeFailure) {
+                    $failures[] = $closeFailure;
+                }
+            }
+        }
+        try {
+            Database::useConnection($lease['currentIndex']);
+            $this->assertSame($lease['currentIndex'], Database::getCurrentIndex());
+            $this->assertSame($lease['indices'], Database::getConfiguredIndices());
+        } catch (Throwable $failure) {
+            $failures[] = $failure;
+        }
+        $this->assertVisibilityCleanupSucceeded($failures);
+    }
+
+    /** @param int $leaseId Lease whose precise privilege delta and app sessions must be visible */
+    private function assertVisibilityGranted(int $leaseId): void
+    {
+        $lease = $this->visibilityLeases[$leaseId];
+        $expected = $lease['prior'];
+        $expected['privileges'] = array_values(array_unique([...$expected['privileges'], ...$lease['added']]));
+        sort($expected['privileges']);
+        $this->assertTrue($expected === $this->visibilityGrants($lease['control'], $lease['account']), 'Only missing visibility grants may change');
+        foreach ($lease['indices'] as $index) {
+            $this->assertTrue($expected === $this->appVisibilityGrants($index),
+                'Both renewed app sessions must see the exact leased grants');
+        }
+    }
+
+    /** Ordinary cases must never inherit a previous test's temporary global privileges. */
+    private function assertOrdinaryVisibilityBoundary(): void
+    {
+        foreach (Database::getConfiguredIndices() as $index) {
+            $grants = $this->appVisibilityGrants($index);
+            $this->assertTrue($grants['privileges'] === [], 'Ordinary app sessions must have no direct global elevation');
+        }
+    }
+
+    /**
+     * @param int $index App session whose effective direct grants are checked
+     * @return array{privileges: list<string>, clauses: list<string>} Normalized evidence without exposing credentials
+     */
+    private function appVisibilityGrants(int $index): array
+    {
+        $rows = Database::sql('SHOW GRANTS', index: $index)->rows();
+        return $this->normalizeVisibilityGrants(array_column($rows, array_key_first($rows[0])));
+    }
+
+    /**
+     * @param int $index App connection to identify without changing the active index
+     * @return array<string, mixed> Actual account, server, schema and physical session
+     */
+    private function visibilitySession(int $index): array
+    {
+        $session = Database::sql('SELECT CURRENT_USER() AS account, @@hostname AS host, @@port AS port, @@server_id AS server_id,'
+            . ' DATABASE() AS schema_name, CONNECTION_ID() AS connection_id, @@in_transaction AS in_transaction', index: $index)->row();
+        $this->assertNotNull($session);
+        $this->assertSame(0, (int)$session['in_transaction'], 'A raw transaction must not be lost during renewal');
+        $this->assertTrue($session['schema_name'] === Database::getConnectionConfig($index)->database, 'App schema must match its config');
+        return $session;
+    }
+
+    /**
+     * @param array<string, mixed> $session Server-reported app identity
+     * @return array<string, mixed> Physical server identity independent of client aliases and session IDs
+     */
+    private function visibilityServer(array $session): array
+    {
+        return array_intersect_key($session, array_flip(['host', 'port', 'server_id']));
+    }
+
+    /**
+     * @param mysqli $control Same-server DBA connection, never registered as an app connection
+     * @param string $account Quoted actual CURRENT_USER account and host
+     * @return array{privileges: list<string>, clauses: list<string>} Normalized evidence kept only in memory
+     */
+    private function visibilityGrants(mysqli $control, string $account): array
+    {
+        return $this->normalizeVisibilityGrants(array_column($control->query('SHOW GRANTS FOR ' . $account)->fetch_all(), 0));
+    }
+
+    /**
+     * Preserve every schema, role and authentication clause without printing them on assertion failure.
+     *
+     * @param list<string> $rows Direct grant evidence from MariaDB
+     * @return array{privileges: list<string>, clauses: list<string>} Sorted global privileges and untouched other clauses
+     */
+    private function normalizeVisibilityGrants(array $rows): array
+    {
+        $privileges = [];
+        $clauses = [];
+        foreach ($rows as $row) {
+            if (preg_match('/^GRANT (.+) ON \*\.\* TO (.+)$/D', $row, $match) === 1) {
+                $privileges = [...$privileges, ...array_diff(explode(', ', $match[1]), ['USAGE'])];
+                $clauses[] = $match[2];
+            } else {
+                $clauses[] = $row;
+            }
+        }
+        sort($privileges);
+        sort($clauses);
+        return ['privileges' => $privileges, 'clauses' => $clauses];
+    }
+
+    /** @param list<Throwable> $failures Cleanup errors collected after all resources received an attempt */
+    private function assertVisibilityCleanupSucceeded(array $failures): void
+    {
+        if ($failures !== []) {
+            throw new RuntimeException('Visibility cleanup failed: '
+                . implode(', ', array_map(static fn (Throwable $failure): string => $failure::class, $failures)), previous: $failures[0]);
         }
     }
 

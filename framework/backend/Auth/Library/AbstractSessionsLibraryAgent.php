@@ -382,6 +382,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // The whole set, written by the holder of authorization; an instance agent keyed by the stable session id
         // is an acceptable later design (HIL-1403). See docs/agents/architecture/entity-libraries.md#session-ownership.
         HilosDbContext::sessions => TruthSourceOperation::BY_KIND,
+        // Inert working records of this coordinator; assignments remain immutable after creation.
+        HilosDbContext::accountErasureOperations => [TruthSourceOperation::Add, TruthSourceOperation::Update],
+        HilosDbContext::accountErasureAssignments => [TruthSourceOperation::Add],
         // Created on the way in, capped or erased by the days an administrator sets for every person, moved by the merge
         // and removed by the erasure: operations over many people. One person's trust is taken away by their agent (HIL-1407).
         // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.

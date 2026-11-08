@@ -319,7 +319,28 @@ final class FullRestorePlannerIntegrationTest extends FrameworkIntegrationTestCa
         $captured = new FullRestoreSchemaSnapshot([0 => new SchemaMetadata(
             $schema->server, $schema->objects, $schema->defaults, $schema->columns, $schema->indexes,
             new StructureDefaults($defaults->engine, $defaults->charset, $defaults->collation, $defaults->collations,
-                $defaults->sqlMode, $defaults->rowFormat, $changedMap), $schema->grants,
+                $defaults->sqlMode, $defaults->rowFormat, $changedMap, $defaults->mariaDbJsonAlias), $schema->grants,
+            completeTriggerVisibility: $schema->completeTriggerVisibility,
+            triggers: $schema->triggers,
+        )], $snapshot->servers);
+        $this->expectException(RestoreFailedException::class);
+        $this->expectExceptionMessage('changed');
+        $captured->assertUnchanged($inputs->targets);
+    }
+
+    /** The real destination proves the alias, and changing only that capability invalidates the snapshot. */
+    public function testRecheckIncludesMariaDbJsonAliasEvidence(): void
+    {
+        $inputs = $this->inputs();
+        $snapshot = FullRestoreSchemaSnapshot::read($inputs->targets);
+        $schema = $snapshot->schemas[0];
+        $defaults = $schema->structureDefaults;
+        $this->assertTrue($defaults->mariaDbJsonAlias);
+        $snapshot->assertUnchanged($inputs->targets);
+        $captured = new FullRestoreSchemaSnapshot([0 => new SchemaMetadata(
+            $schema->server, $schema->objects, $schema->defaults, $schema->columns, $schema->indexes,
+            new StructureDefaults($defaults->engine, $defaults->charset, $defaults->collation, $defaults->collations,
+                $defaults->sqlMode, $defaults->rowFormat, $defaults->charsetByCollation, mariaDbJsonAlias: false), $schema->grants,
             completeTriggerVisibility: $schema->completeTriggerVisibility,
             triggers: $schema->triggers,
         )], $snapshot->servers);

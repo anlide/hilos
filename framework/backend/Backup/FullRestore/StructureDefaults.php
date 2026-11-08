@@ -14,6 +14,7 @@ final readonly class StructureDefaults
      * @param string $sqlMode Actual execution mode; the empty mode is valid
      * @param string $rowFormat Effective default InnoDB row format
      * @param array<string, string> $charsetByCollation Server-proven character set for each unambiguous full collation name
+     * @param bool $mariaDbJsonAlias Whether this invocation's destination proves the MariaDB JSON alias
      */
     public function __construct(
         public string $engine,
@@ -23,6 +24,7 @@ final readonly class StructureDefaults
         public string $sqlMode = '',
         public string $rowFormat = 'dynamic',
         public array $charsetByCollation = [],
+        public bool $mariaDbJsonAlias = false,
     ) {
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Backup;
 
 use Hilos\Backup\Exception\RestoreFailedException;
+use Hilos\Backup\FullRestore\DumpServerVersion;
 use Hilos\Backup\FullRestore\LiveObject;
 use Hilos\Backup\FullRestore\PreparedTarget;
 use Hilos\Backup\FullRestore\SchemaMetadata;
@@ -84,7 +85,7 @@ final readonly class FullRestoreSchemaSnapshot
      * @param string $server Physical server identity
      * @return SchemaMetadata Selected schema without volatile row counts or statistics
      * @throws DatabaseException When catalog or SHOW CREATE reads fail
-     * @throws RestoreFailedException When a declaration or schema default is unavailable
+     * @throws RestoreFailedException When a declaration, schema default or server version is unavailable or unsupported
      */
     private static function schema(string $server): SchemaMetadata
     {
@@ -135,6 +136,7 @@ final readonly class FullRestoreSchemaSnapshot
             }
             $charsetByCollation[$name] = $charset;
         }
+        $version = new DumpServerVersion(Database::getServerInfo());
         return new SchemaMetadata(
             $server, $objects, $defaults,
             Database::sql('SELECT * FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()'
@@ -145,7 +147,7 @@ final readonly class FullRestoreSchemaSnapshot
                 . ' ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX')->rows(),
             new StructureDefaults((string)$defaults[0]['storage_engine'], (string)$defaults[0]['DEFAULT_CHARACTER_SET_NAME'],
                 (string)$defaults[0]['DEFAULT_COLLATION_NAME'], $collations, (string)$defaults[0]['sql_mode'],
-                (string)$defaults[0]['row_format'], $charsetByCollation),
+                (string)$defaults[0]['row_format'], $charsetByCollation, str_contains($version->serverInfo, 'MariaDB')),
             $grants,
             self::hasSchemaPrivilege($grants, $database, 'TRIGGER'),
             Database::sql('SELECT TRIGGER_SCHEMA, TRIGGER_NAME, EVENT_OBJECT_SCHEMA, EVENT_OBJECT_TABLE'

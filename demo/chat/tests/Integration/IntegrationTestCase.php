@@ -16,6 +16,7 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Library\DTO\ProfileNameSetActionDTO;
 use Hilos\Auth\StepUp\StepUpOperationKey;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Http\RequestQueryParams;
@@ -118,6 +119,12 @@ use Throwable;
  */
 abstract class IntegrationTestCase extends TestCase
 {
+    /**
+     * Root password of the chat test MariaDB when the suite is not given one.
+     * demo/chat/docker/docker-compose.test.yml uses it unless MYSQL_ROOT_PASSWORD is set.
+     */
+    protected const string STAND_ROOT_PASSWORD = 'hilos_root_pass';
+
     private const string TEST_AGENT_ID = 'test-agent';
 
     /** @var bool Whether the database has been initialized for this test process */
@@ -137,6 +144,14 @@ abstract class IntegrationTestCase extends TestCase
 
     /** @var ?ChatAgent Socket holder used by the session-name fixture in this case */
     private ?ChatAgent $profileNameHolder = null;
+
+    /** @return string Root password from the environment, or the chat stand's compose default */
+    protected function rootPassword(): string
+    {
+        $configured = Hilos::$env[EnvConstants::DB_ROOT_PASSWORD]->string();
+
+        return $configured !== '' ? $configured : self::STAND_ROOT_PASSWORD;
+    }
 
     /**
      * Initializes the database once and registers test truth-source ownership.

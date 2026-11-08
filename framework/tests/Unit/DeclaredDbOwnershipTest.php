@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
@@ -24,6 +25,19 @@ use TypeError;
  */
 final class DeclaredDbOwnershipTest extends TestCase
 {
+    public function testErasureCoordinatorOwnsOnlyOperationAddUpdateAndAssignmentAdd(): void
+    {
+        $claims = OwnershipDeclaration::dbCollectionsOf(AbstractSessionsLibraryAgent::class);
+        self::assertSame(
+            [TruthSourceOperation::Add, TruthSourceOperation::Update],
+            $claims[HilosDbContext::accountErasureOperations]->asList(),
+        );
+        self::assertSame([TruthSourceOperation::Add], $claims[HilosDbContext::accountErasureAssignments]->asList());
+        self::assertFalse($claims[HilosDbContext::accountErasureOperations]->allows(TruthSourceOperation::Remove));
+        self::assertFalse($claims[HilosDbContext::accountErasureAssignments]->allows(TruthSourceOperation::Update));
+        self::assertFalse($claims[HilosDbContext::accountErasureAssignments]->allows(TruthSourceOperation::Remove));
+    }
+
     public function testJournalDeclaresExactFrameworkAndAgentOperations(): void
     {
         $framework = OwnershipDeclaration::dbCollectionsOf(JournalReceiptScope::class);

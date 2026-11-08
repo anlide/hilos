@@ -188,7 +188,7 @@ for ($piece = 1; $piece <= FRAMEWORK_INTEGRATION_PIECES; $piece++) {
         'stand' => 'framework',
         'database' => frameworkPieceDatabase($piece),
         'deps' => ['framework-up'],
-        'group' => null,
+        'group' => 'framework-integration-catalog',
         'tags' => ['framework', 'backend', 'framework-php'],
         'seconds' => $frameworkPieceSeconds[$piece],
     ];
