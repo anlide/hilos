@@ -340,6 +340,14 @@ export {
   sendHilosThemePick,
   setHilosThemePick,
 } from '../theme/themeState.js'
+export {
+  createIntlDateTimeZoneAdapter,
+  type LocalDateTimeParts,
+  type DateTimeZoneCandidate,
+  type DateTimeZoneResolution,
+  type DateTimeZoneProjection,
+  type DateTimeZoneAdapter,
+} from '../timeZone/dateTimeZoneAdapter.js'
 export { readBrowserTimeZone } from '../timeZone/timeZoneBrowser.js'
 export { resolveTimeZone } from '../timeZone/timeZoneRule.js'
 export {

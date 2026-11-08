@@ -145,8 +145,6 @@ interface DateTimeZoneAdapter {
 declare function createIntlDateTimeZoneAdapter(): DateTimeZoneAdapter
 ```
 
-(not in the code yet — HIL-1967)
-
 `resolve()` distinguishes an invalid date, time or zone from a valid local
 coordinate that lies in a gap or fold. `unique` carries one candidate. A fold
 carries at least two candidates ordered by `epochMs`. `offsetSeconds` is signed
@@ -154,7 +152,6 @@ local-minus-UTC seconds, including historical second offsets; do not round it
 to hours or minutes. `project()` returns the exact candidate and all local
 parts, including `millisecond`, for a loaded moment. An unusable zone is
 reported, never replaced by another zone.
-(not in the code yet — HIL-1967)
 
 For a gap, `before` is the last existing moment immediately before the missing
 local interval, and `after` is the first existing moment after it. Their
@@ -162,7 +159,6 @@ projections provide the calendar parts and the size of the missing interval.
 These facts must also describe half-hour transitions and whole skipped dates;
 neither a gap nor a local day is assumed to be a fixed one-hour or 24-hour
 duration.
-(not in the code yet — HIL-1967)
 
 Build the standard adapter on the existing `localDateTime` / `calendarPeriods`
 engine, preserving compatibility of the old parser/value helpers. UTC works
@@ -172,7 +168,41 @@ and `h23` hours. It must not derive display factors or call a server. This is
 the accepted D-297 boundary: equal inputs and equal zone rules give equal
 behavior; the picker does not supply a uniform tzdata version or a second
 time-zone engine.
-(not in the code yet — HIL-1967)
+
+Resolve and project a fixed Warsaw fold without consulting the clock:
+
+```ts
+import { createIntlDateTimeZoneAdapter } from '@hilos/core/base'
+
+const adapter = createIntlDateTimeZoneAdapter()
+const timeZone = 'Europe/Warsaw'
+const parts = {
+  year: 2026,
+  month: 10,
+  day: 25,
+  hour: 2,
+  minute: 30,
+  second: 45,
+  millisecond: 123,
+}
+const resolution = adapter.resolve(parts, timeZone)
+
+if (resolution.status !== 'fold') throw new Error('Expected a fold')
+
+console.log('Candidates:', resolution.candidates)
+
+const selectedCandidate = resolution.candidates[1]
+const projection = adapter.project(selectedCandidate.epochMs, timeZone)
+if (
+  projection.status !== 'valid' ||
+  projection.candidate.epochMs !== selectedCandidate.epochMs ||
+  projection.candidate.offsetSeconds !== selectedCandidate.offsetSeconds ||
+  projection.parts.millisecond !== parts.millisecond
+) {
+  throw new Error('Projection did not preserve the selected candidate')
+}
+console.log('Projection:', projection)
+```
 
 ## One coherent draft
 
@@ -833,9 +863,10 @@ adoption, separate from the generic component:
 | Angular Schedule maintenance / Change scheduled maintenance | (not in the code yet — HIL-1982) |
 
 Shared Gregorian math and its `/base` exports are implemented by HIL-1966.
+Exact zone facts and their standard `/base` adapter are implemented by HIL-1967.
 The remaining markers name the implementation owner at each boundary:
-HIL-1967 for exact zone facts; HIL-1968 for picker values, draft, factors,
-controller and core exports; HIL-1969 for calendar
+HIL-1968 for picker values, draft, factors, controller and core exports; HIL-1969
+for calendar
 selection/navigation; the SDK field/calendar/narrow sequences HIL-1970–1972,
 HIL-1973–1975 and HIL-1976–1978 for Vue, React and Angular; and HIL-1979–1982
 for maintenance integration and adoption. Do not invent new internal file

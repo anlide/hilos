@@ -60,6 +60,7 @@ import * as core from '../../src/index.js'
 import * as publicStatus from '../../src/status/index.js'
 import * as notificationPreferences from '../../src/notifications/notificationPreferences.js'
 import * as publicStatusDerived from '../../src/status/derivedStatus.js'
+import * as dateTimeZoneAdapter from '../../src/timeZone/dateTimeZoneAdapter.js'
 import * as accountDeletion from '../../src/profile/accountDeletion.js'
 import * as timeZonePicker from '../../src/timeZone/timeZonePicker.js'
 import * as profileNameState from '../../src/profile/profileNameState.js'
@@ -181,6 +182,15 @@ const calendarTypes = [
   'CalendarWeekday',
   'CalendarDateParts',
   'CalendarMonthMatrix',
+]
+/** Exact zone facts belong to base without extending the compatibility root. */
+const dateTimeZoneValues = ['createIntlDateTimeZoneAdapter']
+const dateTimeZoneTypes = [
+  'LocalDateTimeParts',
+  'DateTimeZoneCandidate',
+  'DateTimeZoneResolution',
+  'DateTimeZoneProjection',
+  'DateTimeZoneAdapter',
 ]
 /** Channel icons belong to base without extending the compatibility root. */
 const notificationChannelValues = ['notificationChannelIcon']
@@ -1066,6 +1076,11 @@ describe('core public entries', () => {
           const owner: Record<string, unknown> =
             name === 'calendarMonthMatrix' ? calendarMatrix : calendarDates
           expect(value, name).toBe(owner[name])
+        } else if (entry === './base' && dateTimeZoneValues.includes(name)) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(value, name).toBe(
+            dateTimeZoneAdapter[name as keyof typeof dateTimeZoneAdapter],
+          )
         } else if (
           entry === './base' &&
           notificationChannelValues.includes(name)
@@ -1405,6 +1420,7 @@ describe('core public entries', () => {
       [
         ...expectedValues,
         ...calendarValues,
+        ...dateTimeZoneValues,
         ...notificationChannelValues,
         ...publicStatusDerivedValues,
         ...analyticsOverviewValues,
@@ -2014,11 +2030,19 @@ describe('core public entries', () => {
       ...exportsOf('calendar/monthMatrix.ts'),
     ])
     const calendarNames = [...calendarValues, ...calendarTypes]
+    const dateTimeZoneExports = exportsOf('timeZone/dateTimeZoneAdapter.ts')
+    const dateTimeZoneNames = [...dateTimeZoneValues, ...dateTimeZoneTypes]
     for (const entry of entries.slice(1)) {
       for (const [name, symbol] of exportsOf(entry)) {
         if (entry === 'base/index.ts' && calendarNames.includes(name)) {
           expect(root.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(calendarExports.get(name))
+        } else if (
+          entry === 'base/index.ts' &&
+          dateTimeZoneNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(dateTimeZoneExports.get(name))
         } else if (
           entry === 'base/index.ts' &&
           notificationChannelValues.includes(name)
@@ -2263,6 +2287,7 @@ describe('core public entries', () => {
       [
         ...root.keys(),
         ...calendarNames,
+        ...dateTimeZoneNames,
         ...notificationChannelValues,
         ...publicDerivedNames,
         ...overviewNames,
@@ -2413,6 +2438,7 @@ describe('core public entries', () => {
     'profile/profileSignInMethods.ts',
     'timeZone/timeZoneState.ts',
     'timeZone/timeZonePicker.ts',
+    'timeZone/dateTimeZoneAdapter.ts',
     'subscription/PageSubscription.ts',
     'subscription/bindTableViewport.ts',
     'table/TableViewportController.ts',

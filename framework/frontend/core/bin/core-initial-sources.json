@@ -187,6 +187,7 @@
   "src/theme/themeState.ts",
   "src/theme/themeStored.ts",
   "src/timeZone/calendarPeriods.ts",
+  "src/timeZone/dateTimeZoneAdapter.ts",
   "src/timeZone/timeZoneBrowser.ts",
   "src/timeZone/timeZonePicker.ts",
   "src/timeZone/timeZoneRule.ts",
