@@ -930,6 +930,16 @@ readiness rule above:
   failures per type. `NODE` and `CLUSTER` + `POLICY` components stay on their
   per-node and placement paths. The hook's Status behavior and freeze-resume path
   are described in [Status component startup](status-page.md#startup-paths).
+  With `NOTIFICATION_DELIVERY`, the framework requests the owners of every
+  registered channel after Status: index `null` for a singleton, or string
+  indexes `1..poolSize()` for a pooled descriptor. The requests do not depend on
+  each channel's enabled setting; the same pass runs after a protected-mode lift.
+  The owner set is derived from the registered descriptor and route on each pass,
+  not kept as a second roster. The descriptor's `poolSize()` reads constants or
+  environment values on the master, without recipient, transport, DB or RT state.
+  `CLUSTER` + `POLICY` owners use `requirePlacement()` when cluster placement
+  exists; placement performs the ordinary start with deduplication and freeze
+  gates. Other owners use `startAgent()` directly.
   `WorkerServer::onInitialWorkersReady()` is now a per-node "local workers up" hook
   only and no longer starts singletons.
 - **WebSocket.** Every master accepts browsers (HIL-1304); a slave never does.
@@ -956,7 +966,8 @@ and `Unplaced` remain tracked, and their retries belong to `ClusterPlacement`. A
 any `CLUSTER`+`POLICY` agent, singleton or indexed, also asks that same placement door;
 `NODE` replicas and `LEADER` agents do not. A final negative verdict releases the held
 frame immediately (HIL-1041); the background queue does not retain it. Indexed pools
-keep their size with their caller — the probe supervisor declares only its own 0..9.
+keep their size with their caller — the probe supervisor declares only its own 0..9,
+while delivery pools take their size from the descriptor's `poolSize()`.
 With cluster mode off the same pass hosts the agent locally, waits for `workersReady`
 and keeps `POLICY_PLACEMENT_RETRY_SEC`: a single node is its own leader and data plane.
 

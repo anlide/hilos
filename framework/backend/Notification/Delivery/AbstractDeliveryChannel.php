@@ -151,6 +151,8 @@ abstract class AbstractDeliveryChannel
     }
 
     /**
+     * Runs on the master loop: use only constants and environment values, without I/O.
+     *
      * @return int Positive current pool width
      * @throws EnvException When the pool configuration is unreadable or invalid
      */

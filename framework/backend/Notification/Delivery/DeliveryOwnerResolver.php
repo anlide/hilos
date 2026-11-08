@@ -12,7 +12,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 
-/** Resolves saved delivery coordinates without reading a notification or recipient. */
+/** Resolves channel and saved delivery owners without reading a notification or recipient. */
 final class DeliveryOwnerResolver
 {
     /**
@@ -23,23 +23,36 @@ final class DeliveryOwnerResolver
      */
     public static function forDelivery(NotificationDeliveryIdentity $delivery): ?AgentId
     {
-        $descriptors = Hilos::notificationChannelRegistryClass()::all();
-        $descriptor = $descriptors[$delivery->channel] ?? null;
-        if ($descriptor === null || $descriptor->name() !== $delivery->channel || $delivery->channel === '') {
-            return null;
-        }
-
-        $signal = $descriptor->deliverSignalName();
-        if ($signal === '') {
-            return null;
-        }
-        $matching = array_filter($descriptors, static fn (AbstractDeliveryChannel $other): bool =>
-            $other->name() === $delivery->channel || $other->deliverSignalName() === $signal);
-        if (count($matching) !== 1) {
+        $descriptor = self::descriptorForChannel($delivery->channel);
+        if ($descriptor === null) {
             return null;
         }
 
         $index = $descriptor->ownerIndexFor($delivery->routingKey ?? $delivery->notificationId);
+        $agentType = self::forChannel($delivery->channel);
+        if ($agentType === null
+            || ($descriptor->isPooled() && ($index === null || $index < 1))
+            || (!$descriptor->isPooled() && $index !== null)) {
+            return null;
+        }
+
+        return new AgentId($agentType, $index === null ? null : (string)$index);
+    }
+
+    /**
+     * Reads only descriptor and agent declarations, without reducing a delivery key.
+     *
+     * @param string $channel Registered channel name
+     * @return ?string Owner type, or null when no unique descriptor and route agree
+     */
+    public static function forChannel(string $channel): ?string
+    {
+        $descriptor = self::descriptorForChannel($channel);
+        if ($descriptor === null) {
+            return null;
+        }
+
+        $signal = $descriptor->deliverSignalName();
         $agents = Hilos::appClass()::AGENTS;
         $agentType = AgentSignalRouteRegistry::routes($agents)[$signal] ?? null;
         if ($agentType === null) {
@@ -64,11 +77,33 @@ final class DeliveryOwnerResolver
         $indexField = AgentSignalRouteRegistry::indexFields([$agentType => $agents[$agentType]])[$signal] ?? null;
         if ($descriptor->isPooled() !== $indexed
             || $descriptor->indexField() !== $indexField
-            || ($indexed && ($index === null || $index < 1 || $indexField !== NotificationDeliverSignalData::shardKey))
-            || (!$indexed && ($index !== null || $indexField !== null))) {
+            || ($indexed && $indexField !== NotificationDeliverSignalData::shardKey)
+            || (!$indexed && $indexField !== null)) {
             return null;
         }
 
-        return new AgentId($owner->type, $index === null ? null : (string)$index);
+        return $owner->type;
+    }
+
+    /**
+     * @param string $channel Registered channel name
+     * @return ?AbstractDeliveryChannel Descriptor with a unique name and delivery signal, or null
+     */
+    private static function descriptorForChannel(string $channel): ?AbstractDeliveryChannel
+    {
+        $descriptors = Hilos::notificationChannelRegistryClass()::all();
+        $descriptor = $descriptors[$channel] ?? null;
+        if ($descriptor === null || $descriptor->name() !== $channel || $channel === '') {
+            return null;
+        }
+
+        $signal = $descriptor->deliverSignalName();
+        if ($signal === '') {
+            return null;
+        }
+        $matching = array_filter($descriptors, static fn (AbstractDeliveryChannel $other): bool =>
+            $other->name() === $channel || $other->deliverSignalName() === $signal);
+
+        return count($matching) === 1 ? $descriptor : null;
     }
 }

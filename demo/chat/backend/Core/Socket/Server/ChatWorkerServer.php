@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Core\Socket\Server;
 
 use Demo\Chat\Hilos;
-use Hilos\Constants\EnvConstants;
-use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\Master\MasterFailureUnit;
 use Hilos\HilosException;
@@ -30,23 +28,9 @@ final class ChatWorkerServer extends WorkerServer
     }
 
     /**
-     * Starts the chat cluster-singleton agents on the leader node.
-     *
-     * Calls parent to queue INITIAL_AGENTS_START, then starts a BotAgent for each
-     * active bot. Bots are cluster-singletons (leader-only by default), so the
-     * per-bot startAgent() is a no-op on a follower; the daemon re-runs this on
-     * promotion and after a worker dies hosting agents, so it must stay idempotent
-     * (startAgent() skips a running agent); that re-run is what brings back a bot
-     * or a shard whose worker died.
-     *
-     * Then places the `hilos_mail` and `hilos_sms` pools: MAIL_WORKER_COUNT / SMS_WORKER_COUNT
-     * indexed shards (1..N) each. Both delivery daemons are neither monopolistic nor
-     * leader-pinned, so the leader's best-fit placement spreads these shards across the
-     * cluster; the loops stay idempotent because startAgent() skips a shard that is already
-     * running.
-     *
-     * Every start is contained on its own (HIL-999): one bot or shard without a free worker
-     * costs that agent, not the bots and shards behind it in the loops.
+     * Extends the framework startup, including delivery owners, with one agent per active bot.
+     * Leader promotion and worker loss repeat this pass; starts are idempotent and each bot's
+     * failure is contained so later bots still start.
      *
      * @throws HilosException When the initial-agents signal or project singleton startup fails
      */
@@ -60,17 +44,6 @@ final class ChatWorkerServer extends WorkerServer
             }
             $this->startSingleton('bot', (string) $bot->id);
         }
-
-        $env = Hilos::$env;
-        $mailWorkerCount = $env === null ? 1 : max(1, $env[EnvConstants::MAIL_WORKER_COUNT]->int());
-        for ($shard = 1; $shard <= $mailWorkerCount; $shard++) {
-            $this->startSingleton(HilosAgentType::HILOS_MAIL, (string) $shard);
-        }
-
-        $smsWorkerCount = $env === null ? 1 : max(1, $env[EnvConstants::SMS_WORKER_COUNT]->int());
-        for ($shard = 1; $shard <= $smsWorkerCount; $shard++) {
-            $this->startSingleton(HilosAgentType::HILOS_SMS, (string) $shard);
-        }
     }
 
     /**
@@ -78,7 +51,7 @@ final class ChatWorkerServer extends WorkerServer
      * per-node start does: the line names the agent, and the project hears it as a card.
      *
      * @param string $agentType Agent type to start
-     * @param string $agentIndex Index of the bot or shard
+     * @param string $agentIndex Bot index
      */
     private function startSingleton(string $agentType, string $agentIndex): void
     {

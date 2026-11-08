@@ -1027,6 +1027,36 @@ final class TopologyValidatorTest extends TestCase
         );
     }
 
+    /** @return iterable<string, array{class-string<HilosFacade>}> Idle key declarations on a channel owner */
+    public static function deliveryOwnerIdleDeclarations(): iterable
+    {
+        yield 'positive window' => [TopologyIdleDeliveryOwnerHilos::class];
+        yield 'explicit null' => [TopologyNullIdleDeliveryOwnerHilos::class];
+    }
+
+    /** @param class-string<HilosFacade> $facade Inspected project, independent of the active application */
+    #[DataProvider('deliveryOwnerIdleDeclarations')]
+    public function testDeliveryChannelOwnerCannotDeclareIdleTimeout(string $facade): void
+    {
+        $activeFacade = HilosFacade::appClass();
+        $this->assertTopologyErrors(static fn (): mixed => $facade::validateTopology(), [
+            'AGENTS[' . HilosAgentType::HILOS_MAIL . '] owns delivery channel ' . MailDeliveryChannel::NAME
+                . ' and cannot set ' . AgentRegistryKey::IDLE_TIMEOUT . ': no new traffic brings it back',
+        ]);
+        $this->assertSame($activeFacade, HilosFacade::appClass());
+    }
+
+    /** A registered channel does not remove the idle policy of an unrelated indexed instance. */
+    public function testDeliveryChannelsStillAllowAnUnrelatedIndexedAgentsIdleTimeout(): void
+    {
+        TopologyDeliveryAndIdleInstanceHilos::validateTopology();
+
+        $this->assertSame(
+            AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC,
+            AgentRegistry::idleTimeout(TopologyDeliveryAndIdleInstanceHilos::AGENTS[TopologyIndexedFactoryAgent::AGENT_TYPE]),
+        );
+    }
+
     public function testIdleWindowIsRefusedOnANonIndexedAgent(): void
     {
         // A node replica and a set-wide library come up from the bootstrap, and nothing addresses
@@ -9166,6 +9196,30 @@ abstract class TopologyPartitionedChannelsHilos extends TopologyChannelRegistryH
 abstract class TopologyMissingChannelDescriptorHilos extends TopologyPartitionedChannelsHilos
 {
     protected const string NOTIFICATION_CHANNEL_REGISTRY = TopologyEmptyChannelRegistry::class;
+}
+
+abstract class TopologyIdleDeliveryOwnerHilos extends TopologyPartitionedChannelsHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        HilosAgentType::HILOS_MAIL => [
+            ...parent::AGENTS[HilosAgentType::HILOS_MAIL],
+            AgentRegistryKey::IDLE_TIMEOUT => AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC,
+        ],
+    ];
+}
+
+abstract class TopologyNullIdleDeliveryOwnerHilos extends TopologyPartitionedChannelsHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        HilosAgentType::HILOS_MAIL => [...parent::AGENTS[HilosAgentType::HILOS_MAIL], AgentRegistryKey::IDLE_TIMEOUT => null],
+    ];
+}
+
+abstract class TopologyDeliveryAndIdleInstanceHilos extends TopologyPartitionedChannelsHilos
+{
+    public const array AGENTS = [...parent::AGENTS, ...TopologyIdleWindowedAgentHilos::AGENTS];
 }
 
 abstract class TopologyDuplicateChannelDescriptorHilos extends TopologyPartitionedChannelsHilos

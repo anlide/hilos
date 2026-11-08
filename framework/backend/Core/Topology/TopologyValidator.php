@@ -11,6 +11,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\Config\AgentPlacement;
@@ -70,8 +71,10 @@ use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Database\Schema\SetOwnershipGuard;
 use Hilos\Database\Schema\SetTree;
 use Hilos\Hilos;
+use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
 use Hilos\Notification\Delivery\DeliveryChannelRegistry;
+use Hilos\Notification\Delivery\DeliveryOwnerResolver;
 use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -111,6 +114,8 @@ final class TopologyValidator
     private const string SECTION_SHARED_DB_OWNERS = 'SHARED_DB_OWNERS';
 
     private const string SECTION_SHARED_RT_OWNERS = 'SHARED_RT_OWNERS';
+
+    private const string SECTION_NOTIFICATION_CHANNEL_REGISTRY = 'NOTIFICATION_CHANNEL_REGISTRY';
 
     /**
      * The layer a shared-ownership refusal names a collection by. Two constants for two words
@@ -1045,6 +1050,7 @@ final class TopologyValidator
         $rejected = [];
         $owners = $this->declaredOwnerClasses($agents, $rejected);
 
+        $this->validateDeliveryOwnerIdleTimeouts($agents, $hilosClass, $errors);
         $this->validateDbWriters($owners, $agents, $hilosClass, $errors);
         $this->validateSharedOwners(
             $this->ownershipConflicts($this->completeClaims(
@@ -1252,6 +1258,58 @@ final class TopologyValidator
     }
 
     /**
+     * Applies the channel address checks of {@see DeliveryOwnerResolver::forChannel()} to the inspected facade.
+     * Validation must not install that facade as the process-global application to resolve its owners.
+     *
+     * @param array $agents Inspected agent registry
+     * @param class-string<Hilos> $hilosClass Inspected facade, without initializing it
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateDeliveryOwnerIdleTimeouts(array $agents, string $hilosClass, array &$errors): void
+    {
+        $registryClass = Hilos::catalogConstantOf($hilosClass, self::SECTION_NOTIFICATION_CHANNEL_REGISTRY);
+        if (!is_string($registryClass) || !is_a($registryClass, DeliveryChannelRegistry::class, true)) {
+            return;
+        }
+
+        $descriptors = $registryClass::all();
+        $routes = AgentSignalRouteRegistry::routes($agents);
+        $routeCounts = [];
+        foreach ($agents as $type => $entry) {
+            foreach (array_keys(AgentSignalRouteRegistry::routes([$type => $entry])) as $signal) {
+                $routeCounts[$signal] = ($routeCounts[$signal] ?? 0) + 1;
+            }
+        }
+
+        foreach ($descriptors as $channel => $descriptor) {
+            $signal = $descriptor->deliverSignalName();
+            $agentType = $routes[$signal] ?? null;
+            if ($channel === '' || $descriptor->name() !== $channel || $signal === '' || $agentType === null) {
+                continue;
+            }
+            $entry = $agents[$agentType];
+            if (!is_array($entry) || !array_key_exists(AgentRegistryKey::IDLE_TIMEOUT, $entry)) {
+                continue;
+            }
+
+            $matching = array_filter($descriptors, static fn (AbstractDeliveryChannel $other): bool =>
+                $other->name() === $channel || $other->deliverSignalName() === $signal);
+            $indexed = AgentRegistry::requiresIndex($entry);
+            $indexField = AgentSignalRouteRegistry::indexFields([$agentType => $entry])[$signal] ?? null;
+            if (count($matching) !== 1 || ($routeCounts[$signal] ?? 0) !== 1
+                || AgentId::fromId($agentType)->index !== null
+                || $descriptor->isPooled() !== $indexed || $descriptor->indexField() !== $indexField
+                || ($indexed && $indexField !== NotificationDeliverSignalData::shardKey)
+                || (!$indexed && $indexField !== null)) {
+                continue;
+            }
+
+            $errors[] = "AGENTS[{$agentType}] owns delivery channel {$channel} and cannot set "
+                . AgentRegistryKey::IDLE_TIMEOUT . ': no new traffic brings it back';
+        }
+    }
+
+    /**
      * A descriptor proves only the address of its registered delivery worker, never a library or holder.
      * Metadata is read in the inspected facade's scope, without installing it as the active application.
      *
@@ -1267,7 +1325,7 @@ final class TopologyValidator
         if ($opted === []) {
             return [];
         }
-        $registryClass = Hilos::catalogConstantOf($hilosClass, 'NOTIFICATION_CHANNEL_REGISTRY');
+        $registryClass = Hilos::catalogConstantOf($hilosClass, self::SECTION_NOTIFICATION_CHANNEL_REGISTRY);
         if (!is_string($registryClass) || !is_a($registryClass, DeliveryChannelRegistry::class, true)) {
             $errors[] = 'DB partition proof requires a delivery channel registry';
             return [];

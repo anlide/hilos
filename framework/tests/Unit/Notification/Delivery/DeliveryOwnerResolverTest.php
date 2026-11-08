@@ -144,6 +144,56 @@ final class DeliveryOwnerResolverTest extends TestCase
         self::assertNull(DeliveryOwnerResolver::forDelivery(new NotificationDeliveryIdentity(91, 12, 'project', 27)));
     }
 
+    /** Channel-only resolution agrees with saved deliveries for both owner shapes. */
+    public function testChannelAndDeliveryResolveTheSameAgentType(): void
+    {
+        self::assertSame(ResolverSingletonAgent::AGENT_TYPE, DeliveryOwnerResolver::forChannel('project'));
+        self::assertSame(
+            DeliveryOwnerResolver::forDelivery(new NotificationDeliveryIdentity(91, 12, 'project', null))?->type,
+            DeliveryOwnerResolver::forChannel('project'),
+        );
+
+        $this->projectPool();
+        self::assertSame(ResolverPoolAgent::AGENT_TYPE, DeliveryOwnerResolver::forChannel('project'));
+        self::assertSame(
+            DeliveryOwnerResolver::forDelivery(new NotificationDeliveryIdentity(91, 12, 'project', 27))?->type,
+            DeliveryOwnerResolver::forChannel('project'),
+        );
+    }
+
+    /** Missing and ambiguous declarations cannot identify a channel owner. */
+    public function testChannelRefusesMissingAndAmbiguousDescriptorsAndRoutes(): void
+    {
+        self::assertNull(DeliveryOwnerResolver::forChannel('missing'));
+        DeliveryResolverRegistry::$channels['duplicate'] = new ResolverProjectChannel();
+        self::assertNull(DeliveryOwnerResolver::forChannel('project'));
+        DeliveryResolverRegistry::$channels['duplicate'] = new ResolverProjectChannel(channel: 'other');
+        self::assertNull(DeliveryOwnerResolver::forChannel('project'));
+        unset(DeliveryResolverRegistry::$channels['duplicate']);
+
+        DeliveryResolverNoRoutesHilos::initBrowser();
+        self::assertNull(DeliveryOwnerResolver::forChannel('project'));
+        DeliveryResolverAmbiguousHilos::initBrowser();
+        self::assertNull(DeliveryOwnerResolver::forChannel('project'));
+    }
+
+    /** The master can resolve the route before any pool or delivery key is read. */
+    public function testChannelResolutionDoesNotCalculatePoolOrDeliveryCoordinates(): void
+    {
+        DeliveryResolverPoolHilos::initBrowser();
+        $channel = $this->createMock(AbstractDeliveryChannel::class);
+        $channel->method('name')->willReturn('project');
+        $channel->method('deliverSignalName')->willReturn(ResolverPoolAgent::SIGNAL);
+        $channel->method('isPooled')->willReturn(true);
+        $channel->method('indexField')->willReturn(NotificationDeliverSignalData::shardKey);
+        foreach (['poolSize', 'routingKeyFor', 'ownerIndexFor', 'resolveAddress'] as $method) {
+            $channel->expects(self::never())->method($method);
+        }
+        DeliveryResolverRegistry::$channels['project'] = $channel;
+
+        self::assertSame(ResolverPoolAgent::AGENT_TYPE, DeliveryOwnerResolver::forChannel('project'));
+    }
+
     public function testPoolRequiresIndexedRegistrationAndTheShardField(): void
     {
         DeliveryResolverRegistry::$channels['project'] = new ResolverProjectChannel(pooled: true);

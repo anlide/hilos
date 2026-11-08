@@ -232,9 +232,10 @@ agent back depends on how it was started, and each kind has one way:
 - **A policy-placed singleton** (`AgentPlacement::POLICY`, not indexed) comes
   back through the leader's placement pass, which retries every few seconds. A
   Status component registered as `CLUSTER` + `POLICY` uses this same path.
-- **An agent the leader's bootstrap started** — the bootstrap list, and whatever
-  the project's `onBecameSingletonHost()` starts, such as a bot or a delivery
-  shard, plus enabled Status components registered as `CLUSTER` + `LEADER` —
+- **An agent the leader's bootstrap started** — the bootstrap list, delivery
+  owners requested by the framework's `WorkerServer::onBecameSingletonHost()`
+  base hook, and whatever a project override starts, such as one agent per
+  active bot, plus enabled Status components registered as `CLUSTER` + `LEADER` —
   comes back when the loss re-arms the once-per-term start and
   `onBecameSingletonHost()` runs again (HIL-502). It already had to be
   idempotent, because a promotion runs it again too. This is an ensure-once

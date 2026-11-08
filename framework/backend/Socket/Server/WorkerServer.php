@@ -75,6 +75,7 @@ use Hilos\Fs\Exception\DirectoryCreateException;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use Hilos\Log\AgentLogStream;
+use Hilos\Notification\Delivery\DeliveryChannelOwners;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -163,6 +164,9 @@ abstract class WorkerServer extends AbstractServer implements
 
     /** Bounds preparation independently of the single stop or replay effect. */
     private const int PROTECTED_MODE_PREPARATION_PER_PORTION = 64;
+
+    /** Failure address when a channel cannot describe its delivery owners. */
+    private const string DELIVERY_CHANNEL_FAILURE_ADDRESS = 'delivery channel ';
 
     /**
      * @var array<string, array<string, Process|string|int>> Workers indexed by key (format:
@@ -656,8 +660,8 @@ abstract class WorkerServer extends AbstractServer implements
      * leader (or the sole node when cluster mode is off) and its workers are ready.
      * The base queues INITIAL_AGENTS_START so the project bootstrap agent list is
      * launched through the existing signal routing, then directly starts the enabled
-     * change-log agent and Status catalog's leader-hosted components, containing their
-     * start failures independently. Child classes override to start their own
+     * change-log agent, Status catalog's leader-hosted components and registered delivery
+     * channel owners, containing their failures independently. Child classes override to start their own
      * cluster-singletons (e.g. one agent per active bot), calling parent first.
      *
      * Every agent started here still passes the placement gate in {@see startAgent()}, so an
@@ -680,6 +684,7 @@ abstract class WorkerServer extends AbstractServer implements
 
         $this->startChangeLogAgent();
         $this->startStatusComponentAgents();
+        $this->startDeliveryChannelOwners();
     }
 
     /**
@@ -3701,7 +3706,8 @@ abstract class WorkerServer extends AbstractServer implements
      * freeze; what the window adds is that it now happens mid-operation rather than only at the end.
      *
      * The framework brings back only what it knows: the agents the freeze itself stopped, plus
-     * the per-node registry list, enabled leader-hosted change log and Status components this default starts.
+     * the per-node registry list, enabled leader-hosted change log, Status components and delivery
+     * channel owners this default starts.
      * Anything else this node was running is the application's call - a project that starts local agents by overriding
      * {@see onInitialWorkersReady()} has to override this hook too, or those agents stay down
      * until something else starts them. The default is not redundant with the replayed roster:
@@ -3716,6 +3722,7 @@ abstract class WorkerServer extends AbstractServer implements
         $this->startPerNodeAgents();
         $this->startChangeLogAgent();
         $this->startStatusComponentAgents();
+        $this->startDeliveryChannelOwners();
     }
 
     /**
@@ -3949,6 +3956,54 @@ abstract class WorkerServer extends AbstractServer implements
                     $this->buildAgentId($agentType, null),
                     $throwable,
                 ));
+            }
+        }
+    }
+
+    /**
+     * Requests every declared delivery owner without reading recipients or transport configuration.
+     * Cluster POLICY demand goes through placement to preserve remote owners and wait for rebuild.
+     * Channel description and individual start failures are contained separately so later owners still start.
+     */
+    private function startDeliveryChannelOwners(): void
+    {
+        if (!Hilos::hasFeature(HilosFeature::NOTIFICATION_DELIVERY) || !$this->amClusterLeader()) {
+            return;
+        }
+
+        foreach (array_keys(Hilos::notificationChannelRegistryClass()::all()) as $channel) {
+            try {
+                $owners = DeliveryChannelOwners::of($channel);
+            } catch (Throwable $throwable) {
+                Logger::error("Failed to describe delivery channel {$channel} owners: " . $throwable->getMessage());
+                $this->reportContainedFailure(new ContainedFailure(
+                    MasterFailureUnit::AGENT_START,
+                    self::DELIVERY_CHANNEL_FAILURE_ADDRESS . $channel,
+                    $throwable,
+                ));
+                continue;
+            }
+
+            foreach ($owners->agentIndexes as $index) {
+                try {
+                    $placement = Hilos::$cluster?->placement();
+                    $registryEntry = Hilos::appClass()::AGENTS[$owners->agentType] ?? null;
+                    if ($placement !== null
+                        && AgentRegistry::scope($registryEntry) === AgentScope::CLUSTER
+                        && AgentRegistry::placement($registryEntry) === AgentPlacement::POLICY) {
+                        $placement->requirePlacement($owners->agentType, $index);
+                    } else {
+                        $this->startAgent($owners->agentType, $index);
+                    }
+                } catch (Throwable $throwable) {
+                    $agentId = $this->buildAgentId($owners->agentType, $index);
+                    Logger::error("Failed to start delivery channel owner {$agentId}: " . $throwable->getMessage());
+                    $this->reportContainedFailure(new ContainedFailure(
+                        MasterFailureUnit::AGENT_START,
+                        $agentId,
+                        $throwable,
+                    ));
+                }
             }
         }
     }
