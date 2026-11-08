@@ -769,6 +769,118 @@ final class RuleFixtureTest extends TestCase
                 'VIEW-WRAPPER-BIND Database/View/Item/ByRefWrapperSamples.php:34 — $object is declared by '
                     . 'reference in the wrapper layer; take the value, so no caller has to hand over a '
                     . 'variable (see docs/agents/orm/collection-iteration.md)',
+                'CODE-FQN MomentStorage/Bad.php:42 — \time is written out in code; '
+                    . 'a global function or constant takes the short name and no import (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Bad.php:68 — \Hilos\Utils\Helpers\TimeHelper is written out in code; '
+                    . 'import it and use the short name (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Bad.php:164 — \date is written out in code; '
+                    . 'a global function or constant takes the short name and no import (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:166 — time resolves to no class; '
+                    . 'the import is missing (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:167 — accept resolves to no class; '
+                    . 'the import is missing (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:181 — at resolves to no class; '
+                    . 'the import is missing (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:181 — time resolves to no class; '
+                    . 'the import is missing (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:203 — create resolves to no class; '
+                    . 'the import is missing (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:208 — keywordSingleAssignments resolves to no class; '
+                    . 'the import is missing (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:203 — create resolves to no class; '
+                    . 'the import is missing (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:208 — keywordSingleAssignments resolves to no class; '
+                    . 'the import is missing (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:215 — time resolves to no class; '
+                    . 'the import is missing (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:217 — accept resolves to no class; '
+                    . 'the import is missing (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:218 — time resolves to no class; '
+                    . 'the import is missing (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:221 — keywordCallForms resolves to no class; '
+                    . 'the import is missing (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:291 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:292 — accept resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:322 — at resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:322 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:335 — accept resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:339 — create resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:342 — accept resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:343 — accept resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:335 — accept resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:339 — create resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:342 — accept resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:343 — accept resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:343 — accept resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:366 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:369 — accept resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:370 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:372 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:376 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:380 — docLookalikes resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:382 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:386 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:392 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:394 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:395 — accept resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:396 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:397 — accept resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:370 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:372 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:376 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:380 — docLookalikes resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:382 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:386 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:392 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:394 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:395 — accept resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:396 — time resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Destructuring/backend/Named.php:397 — accept resolves to no class; the import is missing '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Shadow.php:31 — \time is written out in code; '
+                    . 'a global function or constant takes the short name and no import (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Shadow.php:37 — \MomentLookalike\gmdate is written out in code; '
+                    . 'import it and use the short name (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Sql/Writers.php:84 — \Hilos\Database\Database is written out in code; '
+                    . 'import it and use the short name (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Sql/Writers.php:84 — \time is written out in code; '
+                    . 'a global function or constant takes the short name and no import (see docs/agents/code-style/qualified-names.md)',
                 'RT-STATE-MUTATE Runtime/State/Collection/StateMutateSubclass.php:25 — $this->states is written '
                     . 'directly outside RtStates; go through add(), remove() or clear() '
                     . '(see docs/agents/runtime/rt-state.md)',

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\CodeStyle;
 
+use RuntimeException;
+
 /**
  * The roots the code-style guard reads, each with the kind that decides its rules.
  *
@@ -42,7 +44,15 @@ final class ScannedRoots
             'scripts' => RootKind::Standalone,
         ];
 
-        foreach (glob($repositoryRoot . '/demo/*', GLOB_ONLYDIR) ?: [] as $demo) {
+        $demoDirectory = $repositoryRoot . '/demo';
+        if (!file_exists($demoDirectory) && !is_link($demoDirectory)) {
+            return $roots;
+        }
+        $demos = glob($demoDirectory . '/*', GLOB_ONLYDIR | GLOB_ERR);
+        if ($demos === false) {
+            throw new RuntimeException('Cannot enumerate code-style demo roots: ' . $demoDirectory);
+        }
+        foreach ($demos as $demo) {
             $roots['demo/' . basename($demo) . '/backend'] = RootKind::Production;
             $roots['demo/' . basename($demo) . '/tests'] = RootKind::Suite;
         }

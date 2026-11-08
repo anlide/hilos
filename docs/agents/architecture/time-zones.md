@@ -71,15 +71,17 @@ immediately.
 
 ### Transition Owners
 
-Apply the norm to new changes now. Today's code is mixed; an old source awaiting
-its migration is not a pattern for a new moment. Reading and review enforce the
-rule until the planned storage check lands. The existing broad integer-family
-schema audit does not prove physical signed `BIGINT` or milliseconds.
+Apply the norm to new changes now. Existing rows remain mixed while their named
+migrations are pending; an old source is not a pattern for a new moment. The
+source and live-schema checks are described in
+[Automated Rule Checks](../code-style/automated-checks.md#moment-storage-checks).
+The older broad integer-family schema audit alone does not prove physical
+signed `BIGINT` or milliseconds.
 
 | Work | Historical moments | Implementation owner and status |
 |---|---:|---|
 | Semantic moment metadata, inheritance/default and explicit project storage opt-out; [Entity and provider API](../orm/entity.md#persisted-moments). | — | Implemented |
-| Physical-type and obvious direct writer-error check; named, closed baseline of existing debt. Exact format and API belong to its interview. | — | (not in the code yet — HIL-1917) |
+| Token-based direct-writer check, physical moment schema axes, and exact closed baseline of existing debt; [checks and coverage](../code-style/automated-checks.md#moment-storage-checks). | — | Implemented |
 | Bootstrap migration claim, admin-view latch and database marker | 3 | (not in the code yet — HIL-1918) |
 | Sessions and verifier circle | 6 | (not in the code yet — HIL-1919) |
 | Identity, OAuth provider and passkey | 7 | (not in the code yet — HIL-1920) |

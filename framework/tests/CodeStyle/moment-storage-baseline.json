@@ -1,0 +1,1307 @@
+{
+    "version": 1,
+    "records": [
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"demo/chat/backend/Database/Actions/Collection/EventsActions.php\",\"Demo\\\\Chat\\\\Database\\\\Actions\\\\Collection\\\\EventsActions::add\",\"[\\\"schema\\\",\\\"Demo\\\\\\\\Chat\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\Event\\\",\\\"event\\\",\\\"timestamp\\\"]\"]",
+            "actual": "4b2552a73aa2745eff48aa64d4472d4e823a2247e7ffe938b1547e273907c1d0",
+            "count": 1,
+            "owner": "HIL-1930"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/MigrationClaim.php\",\"Hilos\\\\Database\\\\MigrationClaim::take\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Schema\\\\\\\\FrameworkTablesWithoutEntity\\\",\\\"hilos_migration_claim\\\",\\\"claimed_at\\\"]\"]",
+            "actual": "2dd26e67246feb0e24ae4ddc94197405c5097f875a199c73044d780aca1eff23",
+            "count": 1,
+            "owner": "HIL-1918"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/MigrationClaim.php\",\"Hilos\\\\Database\\\\MigrationClaim::take\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Schema\\\\\\\\FrameworkTablesWithoutEntity\\\",\\\"hilos_migration_claim\\\",\\\"claimed_at\\\"]\"]",
+            "actual": "7631d885e2bb64b68b9909ca216e1b2c637fa1032529dd855a2eb29437994f1c",
+            "count": 1,
+            "owner": "HIL-1918"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/AccountDeletions.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\AccountDeletions::request\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\AccountDeletion\\\",\\\"hilos_account_deletion\\\",\\\"requested_at\\\"]\"]",
+            "actual": "bce955fc37958d58d05706caf19f29c41745ecd3c05dc68302dae53c5056937f",
+            "count": 1,
+            "owner": "HIL-1924"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/NotificationDeliveries.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\NotificationDeliveries::beginAttempt\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\NotificationDelivery\\\",\\\"hilos_notification_delivery\\\",\\\"updated_at\\\"]\"]",
+            "actual": "8082442f3161c1979e78a429ea8ab28cb0f52bcdcbee91f232d0402ae123e97c",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/NotificationDeliveries.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\NotificationDeliveries::createPending\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\NotificationDelivery\\\",\\\"hilos_notification_delivery\\\",\\\"created_at\\\"]\"]",
+            "actual": "608fc424af25118e7043c4672c2d4028a9498cc317d5d6462fbfb789fc7be916",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/NotificationDeliveries.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\NotificationDeliveries::markSent\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\NotificationDelivery\\\",\\\"hilos_notification_delivery\\\",\\\"delivered_at\\\"]\"]",
+            "actual": "356c65650986fd53de511f2030fc70cabf620f4c11f9bddac94ad3b029a31d81",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/NotificationDeliveries.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\NotificationDeliveries::markSent\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\NotificationDelivery\\\",\\\"hilos_notification_delivery\\\",\\\"updated_at\\\"]\"]",
+            "actual": "df0edd0a071008fe5b04b21efde6702f1bb33d1e1a3d13b1a8771d49483dcf48",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/NotificationDeliveries.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\NotificationDeliveries::recordFailure\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\NotificationDelivery\\\",\\\"hilos_notification_delivery\\\",\\\"updated_at\\\"]\"]",
+            "actual": "8082442f3161c1979e78a429ea8ab28cb0f52bcdcbee91f232d0402ae123e97c",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/NotificationDeliveries.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\NotificationDeliveries::resetForRetry\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\NotificationDelivery\\\",\\\"hilos_notification_delivery\\\",\\\"updated_at\\\"]\"]",
+            "actual": "8082442f3161c1979e78a429ea8ab28cb0f52bcdcbee91f232d0402ae123e97c",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/NotificationPreferences.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\NotificationPreferences::setChannel\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\NotificationPreference\\\",\\\"hilos_notification_preference\\\",\\\"created_at\\\"]\"]",
+            "actual": "cb4339e9fe1863ee1e42129286222b8901fb5328e8201cb6d20029f6e3fabfe0",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/NotificationPreferences.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\NotificationPreferences::setChannel\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\NotificationPreference\\\",\\\"hilos_notification_preference\\\",\\\"updated_at\\\"]\"]",
+            "actual": "591cca3d82769b862c1b9a6e2f9b340c9f1e6dcd0489b7271db9824a66d64ee3",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/Notifications.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\Notifications::createFor\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\Notification\\\",\\\"hilos_notification\\\",\\\"created_at\\\"]\"]",
+            "actual": "7fa4c6fceb5c9e8e997e6da60a208750fcbf4c2e4392ddefbd3824c377c50995",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/PasskeyCredentials.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\PasskeyCredentials::createFromRegistration\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\PasskeyCredential\\\",\\\"hilos_passkey_credential\\\",\\\"created_at\\\"]\"]",
+            "actual": "999c3d408540c00a31cfbe5a1c78c8546748442ae4fef1269fd0d1509f9ef619",
+            "count": 1,
+            "owner": "HIL-1920"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/RegistrationReservations.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\RegistrationReservations::createReservation\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\RegistrationReservation\\\",\\\"hilos_registration_reservation\\\",\\\"expires_at\\\"]\"]",
+            "actual": "ca2a89c16c70e48b3fb349c80f8e96e8be2f093de035a6a9a3757f7274d19102",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/SecondFactorResets.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\SecondFactorResets::request\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\SecondFactorReset\\\",\\\"hilos_second_factor_reset\\\",\\\"notified_at\\\"]\"]",
+            "actual": "4e2379ee2f1612b07584b87f8062df952b2edac632098f4a4b99328094992b69",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/SecondFactorResets.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\SecondFactorResets::request\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\SecondFactorReset\\\",\\\"hilos_second_factor_reset\\\",\\\"requested_at\\\"]\"]",
+            "actual": "69b58e7a9eb33a42bf97d7cf54b80234c5771525f6aed240916578e58615f19a",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/SecondFactorTrusts.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\SecondFactorTrusts::trust\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\SecondFactorTrust\\\",\\\"hilos_second_factor_trust\\\",\\\"created_at\\\"]\"]",
+            "actual": "deecf24baaaef35b41b1edc0d9d2121cb57fbe35070c5c3897ac4b29b23538e8",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/SecondFactors.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\SecondFactors::startEnrolment\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\SecondFactor\\\",\\\"hilos_second_factor\\\",\\\"created_at\\\"]\"]",
+            "actual": "2011ae7ecb83339acfe4edf3d148ddbcceab74ce3622c497cfd6e1092d191933",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/UserVerifications.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\UserVerifications::createChallenge\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\UserVerification\\\",\\\"hilos_user_verification\\\",\\\"created_at\\\"]\"]",
+            "actual": "bb7bf70beab90e519acc36b06a5e4b513a4a6acb8ddaf9585610458de8c1cb24",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/UserVerifications.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\UserVerifications::createChallenge\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\UserVerification\\\",\\\"hilos_user_verification\\\",\\\"expires_at\\\"]\"]",
+            "actual": "33dc8967c2e3f5f1c6285b2f54eeb033ab0c122814fb939943f7d3c6f225c800",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Item/PasskeyCredential.php\",\"Hilos\\\\Database\\\\Object\\\\Item\\\\PasskeyCredential::touchLastUsed\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\PasskeyCredential\\\",\\\"hilos_passkey_credential\\\",\\\"last_used_at\\\"]\"]",
+            "actual": "2c23104869f01c1c749cdc35dd6df0cefb47540f50796e73292a20d10a3ad11f",
+            "count": 1,
+            "owner": "HIL-1920"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Item/UserVerification.php\",\"Hilos\\\\Database\\\\Object\\\\Item\\\\UserVerification::consume\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\UserVerification\\\",\\\"hilos_user_verification\\\",\\\"consumed_at\\\"]\"]",
+            "actual": "d7da607f47718d13af07bb0bdcf224388d3afa453380472248837b244eb4dcc1",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Database/Object/Item/UserVerification.php\",\"Hilos\\\\Database\\\\Object\\\\Item\\\\UserVerification::expire\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\UserVerification\\\",\\\"hilos_user_verification\\\",\\\"expires_at\\\"]\"]",
+            "actual": "42ed22640fbd184da2ce5d84975eac6107bc0f46e706565c48abf8123b219cc3",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-WRITE",
+            "subject": "[\"source\",\"framework/backend/Notification/Delivery/RestoredDeliveries.php\",\"Hilos\\\\Notification\\\\Delivery\\\\RestoredDeliveries::settlePending\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\NotificationDelivery\\\",\\\"hilos_notification_delivery\\\",\\\"updated_at\\\"]\"]",
+            "actual": "c7431609211093f98aabe466210697b7c783e3826d99a6a1bb8bc5b19dd49065",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Demo\\\\Chat\\\\Database\\\\Entity\\\\Item\\\\Event\",\"event\",\"timestamp\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1930"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Demo\\\\Polls\\\\Database\\\\Entity\\\\Item\\\\Guest\",\"guest\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1930"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Demo\\\\Tasks\\\\Database\\\\Entity\\\\Item\\\\Guest\",\"guest\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1930"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\AuthBlock\",\"hilos_auth_block\",\"updated_at\"]",
+            "actual": "DEFAULT current_timestamp(); EXTRA on update current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\FileVariant\",\"hilos_file_variant\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1926"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\File\",\"hilos_file\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1926"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Identity\",\"hilos_identity\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1920"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Identity\",\"hilos_identity\",\"updated_at\"]",
+            "actual": "DEFAULT current_timestamp(); EXTRA on update current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1920"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\NotificationDelivery\",\"hilos_notification_delivery\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\NotificationDelivery\",\"hilos_notification_delivery\",\"updated_at\"]",
+            "actual": "DEFAULT current_timestamp(); EXTRA on update current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\NotificationPreference\",\"hilos_notification_preference\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\NotificationPreference\",\"hilos_notification_preference\",\"updated_at\"]",
+            "actual": "DEFAULT current_timestamp(); EXTRA on update current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Notification\",\"hilos_notification\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\OAuthProvider\",\"hilos_oauth_provider\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1920"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\OAuthProvider\",\"hilos_oauth_provider\",\"updated_at\"]",
+            "actual": "DEFAULT current_timestamp(); EXTRA on update current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1920"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\PasskeyCredential\",\"hilos_passkey_credential\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1920"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\PushSubscription\",\"hilos_push_subscription\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\RegistrationReservation\",\"hilos_registration_reservation\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactorBackupCode\",\"hilos_second_factor_backup_code\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactorSetting\",\"hilos_second_factor_setting\",\"updated_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactorTrust\",\"hilos_second_factor_trust\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactor\",\"hilos_second_factor\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Session\",\"hilos_session\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1919"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Session\",\"hilos_session\",\"last_seen_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1919"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StepUp\",\"hilos_step_up\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\UserPhoto\",\"hilos_user_photo\",\"set_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1924"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\UserVerification\",\"hilos_user_verification\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-AUTO-WRITE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\VerifierCircleMember\",\"hilos_verifier_circle\",\"created_at\"]",
+            "actual": "DEFAULT current_timestamp()",
+            "count": 1,
+            "owner": "HIL-1919"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Demo\\\\Chat\\\\Database\\\\Entity\\\\Item\\\\Event\",\"event\",\"timestamp\"]",
+            "actual": "datetime",
+            "count": 1,
+            "owner": "HIL-1930"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Demo\\\\Polls\\\\Database\\\\Entity\\\\Item\\\\Guest\",\"guest\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1930"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Demo\\\\Tasks\\\\Database\\\\Entity\\\\Item\\\\Guest\",\"guest\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1930"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\AccessLogEntry\",\"hilos_access_log\",\"occurred_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1924"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\AccountDeletion\",\"hilos_account_deletion\",\"canceled_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1924"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\AccountDeletion\",\"hilos_account_deletion\",\"completed_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1924"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\AccountDeletion\",\"hilos_account_deletion\",\"effective_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1924"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\AccountDeletion\",\"hilos_account_deletion\",\"requested_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1924"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\AuthBlock\",\"hilos_auth_block\",\"blocked_until\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\AuthBlock\",\"hilos_auth_block\",\"updated_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\ChangeLogChange\",\"hilos_change_log_change\",\"created_at\"]",
+            "actual": "datetime(6)",
+            "count": 1,
+            "owner": "HIL-1929"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\ChangeLogEntry\",\"hilos_change_log\",\"created_at\"]",
+            "actual": "datetime(6)",
+            "count": 1,
+            "owner": "HIL-1929"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\ChangeLogReceipt\",\"hilos_change_log_receipt\",\"created_at\"]",
+            "actual": "datetime(6)",
+            "count": 1,
+            "owner": "HIL-1929"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\ChangeLogValue\",\"hilos_change_log_value\",\"created_at\"]",
+            "actual": "datetime(6)",
+            "count": 1,
+            "owner": "HIL-1929"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\DataExport\",\"hilos_data_export\",\"expires_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1925"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\DataExport\",\"hilos_data_export\",\"finished_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1925"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\DataExport\",\"hilos_data_export\",\"requested_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1925"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\FileVariant\",\"hilos_file_variant\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1926"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\File\",\"hilos_file\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1926"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Identity\",\"hilos_identity\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1920"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Identity\",\"hilos_identity\",\"password_changed_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1920"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Identity\",\"hilos_identity\",\"updated_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1920"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\LegalAcceptanceExport\",\"hilos_legal_acceptance_export\",\"expires_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1925"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\LegalAcceptanceExport\",\"hilos_legal_acceptance_export\",\"finished_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1925"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\LegalAcceptanceExport\",\"hilos_legal_acceptance_export\",\"requested_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1925"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\LegalAcceptance\",\"hilos_legal_acceptance\",\"accepted_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1925"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\NotificationDelivery\",\"hilos_notification_delivery\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\NotificationDelivery\",\"hilos_notification_delivery\",\"delivered_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\NotificationDelivery\",\"hilos_notification_delivery\",\"updated_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\NotificationPreference\",\"hilos_notification_preference\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\NotificationPreference\",\"hilos_notification_preference\",\"updated_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Notification\",\"hilos_notification\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Notification\",\"hilos_notification\",\"read_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\OAuthProvider\",\"hilos_oauth_provider\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1920"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\OAuthProvider\",\"hilos_oauth_provider\",\"updated_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1920"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\PasskeyCredential\",\"hilos_passkey_credential\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1920"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\PasskeyCredential\",\"hilos_passkey_credential\",\"last_used_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1920"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\PushSubscription\",\"hilos_push_subscription\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\PushSubscription\",\"hilos_push_subscription\",\"gone_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\PushSubscription\",\"hilos_push_subscription\",\"last_seen_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1923"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\RegistrationReservation\",\"hilos_registration_reservation\",\"code_accepted_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\RegistrationReservation\",\"hilos_registration_reservation\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\RegistrationReservation\",\"hilos_registration_reservation\",\"expires_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactorBackupCode\",\"hilos_second_factor_backup_code\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactorBackupCode\",\"hilos_second_factor_backup_code\",\"used_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactorReset\",\"hilos_second_factor_reset\",\"canceled_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactorReset\",\"hilos_second_factor_reset\",\"completed_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactorReset\",\"hilos_second_factor_reset\",\"effective_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactorReset\",\"hilos_second_factor_reset\",\"notified_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactorReset\",\"hilos_second_factor_reset\",\"requested_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactorSetting\",\"hilos_second_factor_setting\",\"app_code_locked_until\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactorSetting\",\"hilos_second_factor_setting\",\"app_code_misses_from\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactorSetting\",\"hilos_second_factor_setting\",\"pending_reset_wait_from\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactorSetting\",\"hilos_second_factor_setting\",\"updated_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactorTrust\",\"hilos_second_factor_trust\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactorTrust\",\"hilos_second_factor_trust\",\"trusted_until\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactor\",\"hilos_second_factor\",\"confirmed_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactor\",\"hilos_second_factor\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\SecondFactor\",\"hilos_second_factor\",\"last_used_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1922"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Session\",\"hilos_session\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1919"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Session\",\"hilos_session\",\"expires_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1919"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Session\",\"hilos_session\",\"last_seen_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1919"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Session\",\"hilos_session\",\"pending_registration_since\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1919"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Session\",\"hilos_session\",\"pending_second_factor_until\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1919"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusIncidentUpdate\",\"hilos_status_incident_update\",\"at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusIncident\",\"hilos_status_incident\",\"detected_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusIncident\",\"hilos_status_incident\",\"publish_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusIncident\",\"hilos_status_incident\",\"published_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusIncident\",\"hilos_status_incident\",\"resolved_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusIncident\",\"hilos_status_incident\",\"suppressed_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusMaintenancePeriod\",\"hilos_status_maintenance_period\",\"completion_observed_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusMaintenancePeriod\",\"hilos_status_maintenance_period\",\"ended_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusMaintenancePeriod\",\"hilos_status_maintenance_period\",\"last_observed_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusMaintenancePeriod\",\"hilos_status_maintenance_period\",\"started_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusSubscriber\",\"hilos_status_subscriber\",\"confirmation_expires_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusSubscriber\",\"hilos_status_subscriber\",\"confirmed_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusSubscriber\",\"hilos_status_subscriber\",\"subscribed_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusWork\",\"hilos_status_work\",\"canceled_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusWork\",\"hilos_status_work\",\"consumed_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusWork\",\"hilos_status_work\",\"created_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusWork\",\"hilos_status_work\",\"ends_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusWork\",\"hilos_status_work\",\"expired_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusWork\",\"hilos_status_work\",\"last_mail_queued_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusWork\",\"hilos_status_work\",\"starts_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusWork\",\"hilos_status_work\",\"updated_at\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1928"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StepUp\",\"hilos_step_up\",\"confirmed_until\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StepUp\",\"hilos_step_up\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\UserMerge\",\"hilos_user_merge\",\"merged_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1924"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\UserPhoto\",\"hilos_user_photo\",\"set_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1924"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\UserRename\",\"hilos_user_rename\",\"renamed_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1924"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\UserVerification\",\"hilos_user_verification\",\"consumed_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\UserVerification\",\"hilos_user_verification\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\UserVerification\",\"hilos_user_verification\",\"expires_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1921"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\User\",\"hilos_user\",\"last_activity\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1924"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\VerifierCircleMember\",\"hilos_verifier_circle\",\"created_at\"]",
+            "actual": "timestamp",
+            "count": 1,
+            "owner": "HIL-1919"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_admin_view_mode_latch\",\"closed_at\"]",
+            "actual": "int(10) unsigned",
+            "count": 1,
+            "owner": "HIL-1918"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_accept_language\",\"created_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_action_name\",\"created_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_agent_cron_signal\",\"created_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_agent_session\",\"started_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_agent_session\",\"stopped_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_agent_system_signal\",\"created_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_agent_user_action\",\"created_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_api_agent_action\",\"created_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_api_request\",\"finished_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_api_request\",\"started_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_browser_session\",\"first_seen_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_browser_session\",\"last_seen_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_browser_session_accept_language_change\",\"changed_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_browser_session_alias\",\"created_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_browser_session_user_agent_change\",\"changed_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_cron_name\",\"created_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_journal_file\",\"loaded_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_loss\",\"from_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_loss\",\"to_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_page\",\"created_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_page_params\",\"created_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_page_session\",\"closed_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_page_session\",\"opened_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_payload_json\",\"created_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_person_event\",\"created_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_signal_name\",\"created_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_user_action\",\"created_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_user_agent\",\"created_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_worker_session\",\"started_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_worker_session\",\"stopped_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_worker_system_signal\",\"created_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_ws_connection\",\"closed_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_ws_connection\",\"opened_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_ws_connection_ipv4_change\",\"changed_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_ws_connection_ipv6_change\",\"changed_ts\"]",
+            "actual": "bigint unsigned",
+            "count": 1,
+            "owner": "HIL-1927"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_database_marker\",\"written_at\"]",
+            "actual": "datetime",
+            "count": 1,
+            "owner": "HIL-1918"
+        },
+        {
+            "rule": "MOMENT-TYPE",
+            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_migration_claim\",\"claimed_at\"]",
+            "actual": "datetime",
+            "count": 1,
+            "owner": "HIL-1918"
+        }
+    ]
+}

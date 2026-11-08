@@ -711,7 +711,7 @@ final class SourceIndex
         if (!$this->isName($token) || ($this->tokens[$cursor + 1][0] ?? null) !== T_DOUBLE_COLON) {
             return $text;
         }
-        if (($this->tokens[$cursor - 1][0] ?? null) === T_DOUBLE_COLON) {
+        if (in_array($this->tokens[$cursor - 1][0] ?? null, [T_DOUBLE_COLON, T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR], true)) {
             return $text;
         }
         $written = strtolower($text);

@@ -12,6 +12,7 @@ use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DatabaseNames;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Exception\InvalidMomentDeclarationException;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\PhpType;
@@ -34,7 +35,7 @@ use ReflectionClass;
  * cross-dictionary comparison was the core lie of the removed `db:entity:diff`
  * command (HIL-478). Both directions are audited, by separate entry points:
  * {@see EntitySchemaAudit::audit()} goes Entity-to-schema, one Entity at a time
- * across every axis, while {@see EntitySchemaAudit::auditTableCoverage()} goes
+ * across the ORM axes, while {@see EntitySchemaAudit::auditTableCoverage()} goes
  * schema-to-Entity and asks of every live table which Entity claims it. Only the
  * second one sees a table nobody declared - the first cannot, having nothing to
  * start from.
@@ -42,27 +43,29 @@ use ReflectionClass;
  * All divergences for an entity are collected into a list so the caller reports
  * every problem at once instead of failing on the first.
  *
- * One axis lives elsewhere: {@see EntitySchemaIndexAudit} holds _indexes against the
- * live ones. It is handed the rows this class queried and touches no database itself,
- * which is what makes that axis reachable from a unit test.
+ * Pure axes live in EntitySchemaIndexAudit and MomentStorageAudit, which receive queried
+ * rows without touching a database. Physical moment checks run only through auditMoments()
+ * and auditProviderMoments(), separately from the ORM audit.
  */
 final class EntitySchemaAudit
 {
     /**
-     * `information_schema.COLUMNS` / `STATISTICS` / `KEY_COLUMN_USAGE` result keys. The five the
-     * STATISTICS rows are read by are public because {@see EntitySchemaIndexAudit} is handed
-     * those rows and reads them there; the query that names the columns still lives here, so
-     * the keys are spelled once.
+     * `information_schema` result keys shared with the pure index and moment axes.
+     * The queries that name the columns still live here, so the keys are spelled once.
      */
     public const string COL_NAME = 'COLUMN_NAME';
-    private const string COL_TYPE = 'COLUMN_TYPE';
-    private const string COL_IS_NULLABLE = 'IS_NULLABLE';
-    private const string COL_DEFAULT = 'COLUMN_DEFAULT';
-    private const string COL_EXTRA = 'EXTRA';
+    public const string COL_TYPE = 'COLUMN_TYPE';
+    public const string COL_DEFAULT = 'COLUMN_DEFAULT';
+    public const string COL_EXTRA = 'EXTRA';
     public const string COL_INDEX_NAME = 'INDEX_NAME';
     public const string COL_NON_UNIQUE = 'NON_UNIQUE';
     public const string COL_COLLATION = 'COLLATION';
     public const string COL_INDEX_TYPE = 'INDEX_TYPE';
+
+    /** Reserved index name compared through the PRIMARY axis, never the INDEX axis. */
+    public const string INDEX_PRIMARY = 'PRIMARY';
+
+    private const string COL_IS_NULLABLE = 'IS_NULLABLE';
     private const string COL_CONSTRAINT_NAME = 'CONSTRAINT_NAME';
     private const string COL_REFERENCED_TABLE_NAME = 'REFERENCED_TABLE_NAME';
     private const string COL_TABLE_NAME = 'TABLE_NAME';
@@ -79,12 +82,6 @@ final class EntitySchemaAudit
     private const string NULLABLE_YES = 'YES';
     private const string EXTRA_AUTO_INCREMENT = 'auto_increment';
     private const string EXTRA_GENERATED = 'GENERATED';
-
-    /**
-     * Reserved index name that is compared through the PRIMARY axis, never the INDEX axis.
-     * Public for the same reason as the STATISTICS keys above: the INDEX axis drops it too.
-     */
-    public const string INDEX_PRIMARY = 'PRIMARY';
 
     /**
      * Discover concrete Entity classes under a project directory via PSR-4.
@@ -153,6 +150,81 @@ final class EntitySchemaAudit
                         previous: $failure,
                     );
                 }
+            }
+            return $mismatches;
+        } finally {
+            Database::useConnection($originalIndex);
+        }
+    }
+
+    /**
+     * Audit every declared physical moment, including DB-only columns, in each Entity's bound schema.
+     * Missing tables yield missing moment columns; the ordinary ORM audit remains independent.
+     *
+     * @param list<class-string<Entity>> $entityClasses Entity classes to audit
+     * @param ?int $index Restrict to this physical schema without rebinding Entities
+     * @return list<EntitySchemaMismatch> Moment storage divergences with declaration and database context
+     * @throws DatabaseException When introspection or connection selection fails
+     * @throws NamedDatabaseException When a declared database or schema index cannot be resolved
+     * @throws InvalidMomentDeclarationException When moment declarations are invalid
+     */
+    public static function auditMoments(array $entityClasses, ?int $index = null): array
+    {
+        $originalIndex = Database::getCurrentIndex();
+        try {
+            $identity = $index === null ? null : (new DatabaseBinding(DatabaseNames::PRIMARY, $index, $index))->getIdentity();
+            $mismatches = [];
+            foreach ($entityClasses as $entityClass) {
+                $binding = $entityClass::getDatabase();
+                if ($identity !== null && $binding->getIdentity() !== $identity) {
+                    continue;
+                }
+
+                Database::useConnection($binding->schemaIndex);
+                $declaration = $entityClass . '::' . Entity::META_MOMENTS
+                    . " in database '{$binding->name}' ({$binding->getDatabaseName()}) on schema connection {$binding->schemaIndex}";
+                array_push($mismatches, ...self::auditMomentColumns(
+                    $entityClass,
+                    $entityClass::_table,
+                    MomentColumns::forEntity($entityClass),
+                    $declaration,
+                ));
+            }
+            return $mismatches;
+        } finally {
+            Database::useConnection($originalIndex);
+        }
+    }
+
+    /**
+     * Audit moments only in provider tables that exist on the caller's connection.
+     * The caller proves which activated tables must exist; declarations are always validated.
+     *
+     * @param class-string<TablesWithoutEntityProvider> $providerClass Provider bound to this connection by its caller
+     * @param ?int $index Schema connection index, defaulting to the current connection
+     * @return list<EntitySchemaMismatch> Moment storage divergences with provider and connection context
+     * @throws DatabaseException When introspection or connection selection fails
+     * @throws InvalidMomentDeclarationException When provider moment declarations are invalid
+     */
+    public static function auditProviderMoments(string $providerClass, ?int $index = null): array
+    {
+        $originalIndex = Database::getCurrentIndex();
+        try {
+            $momentsByTable = MomentColumns::forProvider($providerClass);
+            $index ??= $originalIndex;
+            Database::useConnection($index);
+            $tables = array_fill_keys(self::liveTables(), true);
+            $mismatches = [];
+            foreach ($momentsByTable as $table => $moments) {
+                if (!isset($tables[$table])) {
+                    continue;
+                }
+                array_push($mismatches, ...self::auditMomentColumns(
+                    null,
+                    (string) $table,
+                    $moments,
+                    "{$providerClass}::moments() on schema connection {$index}",
+                ));
             }
             return $mismatches;
         } finally {
@@ -300,6 +372,34 @@ final class EntitySchemaAudit
             );
         }
         return $mismatches;
+    }
+
+    /**
+     * @param ?class-string<Entity> $entityClass Owning Entity, or null for a provider table
+     * @param string $table Physical table name
+     * @param array<string, MomentColumn> $moments Declared physical moments
+     * @param string $declaration Owning declaration and connection context
+     * @return list<EntitySchemaMismatch> Physical findings annotated for a live audit failure
+     * @throws DatabaseException When the column introspection query fails
+     */
+    private static function auditMomentColumns(?string $entityClass, string $table, array $moments, string $declaration): array
+    {
+        if ($moments === []) {
+            return [];
+        }
+        try {
+            $mismatches = MomentStorageAudit::audit($entityClass, $table, $moments, self::liveColumns($table));
+        } catch (DatabaseException $failure) {
+            throw new DatabaseException("Cannot audit table {$table} moments declared by {$declaration}", previous: $failure);
+        }
+        return array_map(static fn (EntitySchemaMismatch $mismatch): EntitySchemaMismatch => new EntitySchemaMismatch(
+            $mismatch->axis,
+            $mismatch->entityClass,
+            $mismatch->table,
+            $mismatch->subject,
+            $mismatch->expected . '; declared by ' . $declaration,
+            $mismatch->actual,
+        ), $mismatches);
     }
 
     /**

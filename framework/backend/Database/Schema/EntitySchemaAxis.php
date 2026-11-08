@@ -7,11 +7,10 @@ namespace Hilos\Database\Schema;
 /**
  * Axis of an Entity-vs-schema mismatch reported by {@see EntitySchemaAudit}.
  *
- * Every case but one names an independent way the Entity ORM metadata (_table,
- * _columns, _types, _primary, _indexes, _foreign) can diverge from the live
- * table; those come from {@see EntitySchemaAudit::audit()}. TABLE_UNMAPPED runs
- * the other direction — schema to Entity — and comes from
- * {@see EntitySchemaAudit::auditTableCoverage()}.
+ * ORM axes come from EntitySchemaAudit::audit(); moment storage axes are opt-in
+ * through EntitySchemaAudit::auditMoments() and EntitySchemaAudit::auditProviderMoments().
+ * TABLE_UNMAPPED runs the other direction — schema to Entity — and comes from
+ * EntitySchemaAudit::auditTableCoverage().
  */
 enum EntitySchemaAxis: string
 {
@@ -29,6 +28,15 @@ enum EntitySchemaAxis: string
 
     /** A column declared in _columns is absent from the live table. */
     case COLUMN_MISSING = 'column_missing';
+
+    /** A declared physical moment, including a DB-only one, is absent from the live table. */
+    case MOMENT_COLUMN_MISSING = 'moment_column_missing';
+
+    /** A standard moment's physical type is not signed BIGINT. */
+    case MOMENT_TYPE = 'moment_type';
+
+    /** A standard moment has a SQL current-time DEFAULT or ON UPDATE writer. */
+    case MOMENT_AUTO_WRITE = 'moment_auto_write';
 
     /**
      * A live column outside _columns is not insert-safe (not nullable, no

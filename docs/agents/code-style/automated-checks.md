@@ -55,6 +55,7 @@ rule.
 | `UNBUILT-PAGE` | Unbuilt admin pages are listed per view layer: a listed page has no built view, an absent view or bare leaf/section with only unbuilt children is listed, and every child of a listed section is listed; entries name admin keys and nonempty, distinct Vue/React/Angular layers. A built child stays under an unbuilt parent only through a row of `STAGED_CHILDREN` (`framework/frontend/codestyle/stagedChildren.ts`) naming its layer, parent, child and leaf; a row excusing nothing — the parent built in that layer, or the child listed unbuilt again — is reported as spent, and a row naming no catalog child of an admin page, an unknown layer or no `HIL-<n>` leaf is reported as malformed. Reads the registry and view sources of all three SDK layers, `STAGED_CHILDREN`, and the PHP catalog text as tree data; the built `HilosSettingPresetsPage` wrapper counts as content. The Angular reader also recognizes the exact `hilos-legal-document-page-shell`, `hilos-legal-revision-page-shell` and `hilos-change-log-table-shell` tags; each counts only when `[page]` binds a component field initialized from a literal `HilosPages.<key>`. Commented tags, arbitrary wrapper names, dynamic page values and static `page` attributes remain outside this recognition. Views outside the recognized shell-template shapes and project views/`projectViews` are not judged. | [page-module-structure.md](../frontend/page-module-structure.md) |
 | `TYPE-CHECK` | Type errors in the roots of `framework/frontend/codestyle`. The config `framework/frontend/codestyle/tsconfig.json` extends `../tsconfig.base.json`, sets `noEmit` and `types: ['node']`, includes the `*.ts` and `*.mts` files of the `codestyle` directory itself, and excludes `fixtures`. A new file in that directory is included by those globs. `framework/frontend/scripts`, the SDK sources and the demos are outside these roots. One `ts.Program` per run, the compiler's syntactic and semantic diagnostics, and no emit. `transpileModule` is not the mechanism, and neither is a parse that only calls `createSourceFile`. A setup refusal — a missing or unreadable tsconfig, an empty root set, an unresolved required type, or a diagnostic with no checked file — is thrown and never becomes a baseline record. `skipLibCheck` is inherited from the base config, and this config does not relax `strict`. The report line is `TYPE-CHECK <path>:<line> — TS<code>: <message> (see docs/agents/code-style/automated-checks.md)`. The ordinary entry is the `fe-checks` step, `composer run test:framework:frontend`: its unit half is `npm run test`, which runs `framework/frontend/codestyle/guard.test.ts`. The check has no target of its own, and `npm run check` of the other SDK packages is unchanged. | [automated-checks.md](automated-checks.md) |
 | `MOMENT-FORMAT` | A moment is displayed through `formatMoment()` and never through a printer of the engine's own. Reported: `toLocaleDateString`, `toLocaleTimeString`, `toDateString`, `toTimeString` and `toUTCString` on any receiver; `toLocaleString` unless the receiver is proven `number` or `bigint`; `toString` on a proven `Date`; an `Intl.DateTimeFormat` call or `new`, and `format`, `formatToParts`, `formatRange` and `formatRangeToParts` on a typed `DateTimeFormat`; text built from `Date` getters; the Angular `date` pipe. Judged by type through the compiler, not by name: `any`, `unknown` and a type that did not resolve prove nothing and are reported, and in a Vue or Angular template every name is unknown, so only a literal, `Number(…)` or `BigInt(…)` passes as a number — print a count through a typed TypeScript helper. The chain `….resolvedOptions().timeZone` is allowed. Exceptions are five addresses, each letting one site of its own form through. Reads the five SDK `src` roots and every demo's `frontend/src`; interprocedural paths and the template forms it does not read stay with review. The subsection below lists roots, forms, exceptions and limits. Frontend only. | [time-zones.md](../architecture/time-zones.md#guard-the-display-boundary) |
+| `MOMENT-WRITE` | The framework unit suite checks proven direct second-based or SQL-datetime writes to catalogued moment sinks. Token-based PHP analysis recognizes Entity/Object assignment and magic-property writes plus direct, statically resolved `Database::sql()` / `sqlRun()` INSERT/UPDATE templates with inline parameters. It is bounded: arbitrary integer dataflow and unknown or dynamic writers remain for review. | [time-zones.md](../architecture/time-zones.md#database-moment-storage) |
 | `DOC-ROUTE` | Every file of this catalog, at any depth, is mentioned by at least one `skills/*/SKILL.md`, or declines a route in itself and says why. A file that is both routed and declining is reported the same way. | [rule-authoring.md](../rule-authoring.md) |
 | `DOC-LINK` | A local reference in the agent docs names something that exists. In a skill wrapper both a markdown link and a backticked path count as one; in a document only a markdown link does. | [rule-authoring.md](../rule-authoring.md) |
 | `SKILL-HEADER` | Only the header of `skills/*/SKILL.md` is judged. Non-empty `name` and `description` are required. An unquoted value must not carry `: ` or ` #`, must not end with a colon, and must not open with a YAML indicator. Quoted values and block scalars are legal and are not judged inside. Extra keys are not forbidden. No baseline. | [rule-authoring.md](../rule-authoring.md) |
@@ -705,30 +706,164 @@ count is per file, so one site replaced by another in the same file at the same
 count is invisible to this baseline; review must refuse that substitution and
 enforce payoff when the file is touched.
 
-## Planned Moment Storage Check
+## Moment Storage Checks
 
 [Database Moment Storage](../architecture/time-zones.md#database-moment-storage)
-is mandatory for new changes now; reading and review enforce it while the
-storage guard is pending. `MOMENT-FORMAT` above checks display formatting, not
-database storage, and the existing integer-family schema audit proves neither
-physical signed `BIGINT` nor milliseconds.
+is the norm for new and changed moments. `MOMENT-FORMAT` above remains a display
+formatting check; it does not prove database storage. The source guard runs with
+the framework unit suite; live-schema checks have separate opt-in integration
+entries. The ordinary integer-family schema audit remains unchanged and proves
+neither signed `BIGINT` nor milliseconds.
 
-`MomentColumns::forEntity()` and `MomentColumns::forProvider()` read and
-validate declaration shape and explicit project storage exceptions. The
-framework extension guard calls `forEntity()` and includes invalid Entity
-declarations in its existing findings. These metadata readers do not check the
-live physical schema.
-The physical signed-`BIGINT` check and detection of obvious direct seconds or
-SQL-text writers, including non-Entity and bootstrap sources, belong to HIL-1917
-(not in the code yet — HIL-1917). This promises neither arbitrary `int` dataflow
-proof nor a general ban on `time()` or `date()`; exact declarations, APIs and
-check format are settled by their owners.
+### `MOMENT-WRITE`: source writers
 
-The named, closed list of existing storage debt belongs to HIL-1917
-(not in the code yet — HIL-1917). The
-[transition owners](../architecture/time-zones.md#transition-owners) are
-documentation addresses for that debt, not an executable baseline or a new
-entry in the table of running rules. Each source migration removes its own
+The framework unit suite runs `MomentStorageGuardTest`, which applies the
+token-based `MomentStorageSourceRule` to `framework/backend` and each available
+`demo/*/backend`. It uses the real `MomentColumns::forEntity()` and
+`MomentColumns::forProvider()` metadata: framework declarations, project Entity
+discovery through each demo's production Composer PSR-4 map, and configured
+non-Entity providers, including inherited framework ownership, mapped versus
+DB-only moments, and explicit project storage. Metadata loading does not run a
+demo bootstrap or execute arbitrary source bodies. The scan excludes tests and
+fixtures, dependency and generated code, and immutable
+`Database/Migration/Schema` and `Database/Migration/Change` sources. Standalone
+scripts with no proven moment sink are not restricted merely for using `time()`
+or `date()`.
+
+The detector reports `MOMENT-WRITE` only at a sink it can prove:
+
+- a direct property or array-entry write to a catalogued Entity moment, when
+  the receiver follows from a native type, resolved `@var`, `new Entity`, or
+  `$this->entity` on a known Object. Object receivers can also be a typed
+  `$this->object`, a directly constructed Object, or a local value from a
+  proven `OBJECT_CLASS` to `::create()` chain;
+- an ORM Object magic-property write only when its `__set()` match arm proves
+  the mapping to that Entity column; or
+- a direct `Database::sql()` / `Database::sqlRun()` call whose static INSERT
+  column list or UPDATE `SET` clause, SQL template, and inline parameter array
+  unambiguously bind a value to a declared moment. Named and positional
+  placeholders are read. An ambiguous table is not guessed.
+
+At those sinks it rejects `time()`,
+`DateTimeInterface::getTimestamp()`, `date()` / `gmdate()` with a SQL datetime
+format, `TimeHelper::getSqlDateTime()`, and a SQL-datetime string literal. A
+direct SQL current-time expression or bare `UNIX_TIMESTAMP(...)` is also
+rejected. Parentheses, explicit casts, import aliases, fully qualified names,
+and split string literals do not make a bad value pass. One simple local alias
+of the right-hand side is followed only when it is not reassigned before the
+sink.
+
+`TimeHelper::nowMs()`, `null`, signed integer values including zero, negatives
+and sub-second values, and arithmetic without evidence of a wrong unit pass.
+Calendar dates, durations, IDs, foreign keys and other non-moment columns are
+outside the sink catalog. A project's explicit `projectStorage` choice exempts
+its own moment from the standard writer check. A journal DB writer may use a
+proven epoch-millisecond SQL formula such as
+`UNIX_TIMESTAMP(CURRENT_TIMESTAMP(3)) * 1000` with its required integer
+conversion; seconds and datetime results still fail. This is not a general unit
+proof: arithmetic such as `TimeHelper::nowMs() * 1000`, arbitrary integer
+dataflow, and unit conversion through helper chains remain unproved.
+
+This is a bounded static check, not a census of every possible writer. Unknown
+receivers, variable methods, dynamic columns, arbitrary SQL hidden behind
+helpers, runtime values and inter-process behavior remain unproved. It does not
+ban `time()` or `date()` outside a proven moment sink. Silence from this rule
+does not prove that every writer was found; there are no annotations or blanket
+suppressions.
+
+### Physical schema axes
+
+The pure `MomentStorageAudit::audit()` receives declared moment metadata and
+raw live `information_schema.COLUMNS` rows; it does not query a database or
+consult the debt registry. `EntitySchemaAxis` reports these physical axes:
+
+| Axis | Finding |
+|---|---|
+| `moment_column_missing` | A declared moment column is absent. This finding is never covered by the historical baseline. |
+| `moment_type` | A standard moment is not signed `BIGINT` epoch milliseconds. |
+| `moment_auto_write` | A standard moment has a SQL current-time `DEFAULT` or `ON UPDATE` writer. |
+
+The type check uses `COLUMN_TYPE`, normalizes case and the `BIGINT` display
+width, and requires the result to be exactly signed `bigint`; an integer-family
+match or unsigned `BIGINT` does not pass. A `NULL` or numeric default is allowed.
+`CURRENT_TIMESTAMP`, `NOW`, `LOCALTIME`, and `LOCALTIMESTAMP`, including their
+fractional-precision forms, are reported in a default or `ON UPDATE` clause. An
+explicit project storage exception skips the standard type and automatic
+writer checks, but never excuses the column's presence.
+
+The live entry points are deliberately separate from `audit()`:
+`EntitySchemaAudit::auditMoments()` checks each Entity's declared moments,
+including DB-only moments that are absent from `_columns`;
+`EntitySchemaAudit::auditProviderMoments()` validates the provider declaration
+and checks all of its moments in tables that exist on the selected schema
+connection. An invalid declaration still fails even when a provider table is
+absent. The caller separately proves that required activated tables exist,
+using `FrameworkSchemaCatalog::selectedUnits()` where applicable. These opt-in
+methods do not make the existing `audit()` start reporting moment debt.
+
+The canonical framework integration pass audits framework Entities and
+providers. Each of the six existing demo integration owners also reports its
+own/mounted Entity and configured-provider findings separately per schema;
+framework subjects are shared, not copied under each demo's name. A demo pass
+does not claim coverage of another schema or an inactive optional table.
+
+### Exact historical baseline and coverage
+
+`framework/tests/CodeStyle/moment-storage-baseline.json` is separate from
+`framework/tests/CodeStyle/baseline.txt` and its `CODESTYLE_BASELINE_UPDATE`
+mode. It is a one-time freeze of concrete historical findings at the approved
+code base, with no automatic growth. The registry has exactly `version: 1` and
+a `records` list. Each record has exactly `rule`, `subject`, `actual`, `count`,
+and `owner`; `count` is a positive integer and `owner` is one of HIL-1918 through
+HIL-1930. The only rules are `MOMENT-WRITE`, `MOMENT-TYPE`, and
+`MOMENT-AUTO-WRITE`.
+
+Subjects are compact canonical JSON tuple strings. A schema subject is
+`["schema", declaration, table, column]`; a source subject is
+`["source", repositoryPath, "FQN::method", schemaSubject]`, where the final
+member is itself the canonical schema-subject string. All tuple members,
+including numeric-looking names, remain strings. A finding key is the canonical
+JSON tuple `[rule, subject, actual]`, without whitespace and with slashes and
+Unicode unescaped. Schema `actual` is the normalized physical representation;
+source `actual` is the SHA-256 fingerprint of significant expression tokens,
+without comments, whitespace or line numbers. The diagnostic keeps a readable
+source fragment. Each source sink has its own subject. `count` covers identical
+occurrences for that exact key; replacing one with the same expression at the
+same subject and count is structurally indistinguishable to this detector.
+
+For example, this is an exact schema record from the checked-in registry:
+
+```json
+{
+  "rule": "MOMENT-AUTO-WRITE",
+  "subject": "[\"schema\",\"Demo\\\\Chat\\\\Database\\\\Entity\\\\Item\\\\Event\",\"event\",\"timestamp\"]",
+  "actual": "DEFAULT current_timestamp()",
+  "count": 1,
+  "owner": "HIL-1930"
+}
+```
+
+Malformed JSON or shape, wrong field types, extra or missing keys, duplicate
+records, an unknown version or rule, or an unapproved owner disables all
+allowances and fails the check. A new subject, changed finding, or count
+increase is not covered by old debt. A decrease or disappearance in a covered
+subject makes the old record stale and requires lowering its count or deleting
+it. Only the source migrations named by the records remove or reduce their own
+debt. Correct signed-millisecond
+columns do not receive records merely because a historical census listed them;
+the 133 columns in 72 tables describe that census, not the live registry size.
+
+Reconciliation pays debt off only inside explicit coverage. A successful full
+source pass covers current sinks and old source subjects beneath every fully
+scanned root, so removing a file, method, or last sink requires removing its
+record. The canonical framework live pass covers framework schema subjects;
+each demo pass covers only its checked schema domain and old subjects belonging
+to that domain. Unactivated tables and other databases do not pay debt off.
+Read, discovery, or scan failures are failures, never empty green domains.
+
+The shared
+[transition owners](../architecture/time-zones.md#transition-owners) remain the
+migration map, not a second baseline. Each source migration removes its own
 records and documentation markers with its behavior. Final shared bridge,
 transition-text and residual-debt cleanup follows all sources
 (not in the code yet — HIL-1931).

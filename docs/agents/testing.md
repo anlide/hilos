@@ -62,7 +62,12 @@ and opens its root control connection on `information_schema`; it needs no
 piece schemas or application account from `test:framework:databases`. The
 service inherits the remote service's image, tmpfs, healthcheck and network,
 with no published port. Other framework integration classes keep using the
-primary and remote services in parallel.
+primary and remote services in parallel. `MomentStorageSchemaIntegrationTest`
+uses the existing remote service for its own disposable pair of named schemas,
+with a root control connection to `information_schema`; it creates and removes
+that pair on every outcome. This keeps its live DDL away from the primary
+service's server-wide metadata observers and introduces no new test service or
+environment variable.
 
 ---
 
@@ -108,6 +113,28 @@ purpose so the diff gets reviewed. Regeneration goes downwards only: it lowers
 counts and drops records, while raising a count or adding a record stays a
 person's hand-written decision. Full command and the `--user` caveat are in
 [code-style/automated-checks.md](code-style/automated-checks.md).
+
+Moment storage has a separate source guard and historical registry. The source
+check is `MomentStorageGuardTest`, run by `composer run test:framework:unit`;
+it scans the available framework and demo backend roots and reconciles exact
+findings against
+`framework/tests/CodeStyle/moment-storage-baseline.json`. That versioned JSON
+registry is independent of `baseline.txt`; `CODESTYLE_BASELINE_UPDATE=1` does
+not update it. Its exact tuple, ownership, coverage and payoff rules are in
+[Moment Storage Checks](code-style/automated-checks.md#moment-storage-checks).
+
+Live schema checks are an opt-in integration door, separate from the unit
+source scan. `composer run test:framework:integration` includes
+`MomentStorageSchemaIntegrationTest`; run it after
+`composer run test:framework:up` and `composer run test:framework:databases` as
+in the framework setup above. Each of the six existing demo suites — chat,
+polls, tasks, binance-btc-tracker, online-testing and ecommerce-shop — runs its
+existing live moment audit through `EntitySchemaConsistencyTest` with that demo's usual
+`composer run test:integration` command from its root after the documented
+`test:up` and `test:db-reset` setup. These runs cover the physical axes
+`moment_column_missing`, `moment_type` and `moment_auto_write`; the framework
+unit source rule reports `MOMENT-WRITE`. A source-only green result does not
+replace the live schema pass.
 
 ---
 

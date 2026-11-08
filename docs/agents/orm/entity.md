@@ -238,8 +238,14 @@ public const array _momentStorage = [
 and a non-empty string carries the declared project exception. `mapped` is
 derived from the requested Entity's `_columns`; it is false for a DB-only
 moment, which remains declared without adding an ORM property, `_types` entry,
-or mapped column. The metadata reader does not prove that a physical column
-exists; the planned HIL-1917 schema check owns that proof.
+or mapped column. The metadata reader does not inspect the physical schema.
+`EntitySchemaAudit::auditMoments()` checks every declared Entity moment,
+including DB-only columns, and reports missing columns as
+`moment_column_missing`; standard storage also reports wrong physical types as
+`moment_type` and SQL current-time defaults or `ON UPDATE` as
+`moment_auto_write`. A project storage exception still requires the physical
+column to exist. See
+[Moment Storage Checks](../code-style/automated-checks.md#moment-storage-checks).
 
 `MomentColumns::forProvider(string $providerClass)` reads a
 `TablesWithoutEntityProvider` directly and returns an
@@ -254,15 +260,21 @@ database context; `forProvider()` reads the provider it receives, and the
 caller retains connection and schema identity. Both readers reject malformed
 lists/maps, duplicate or empty names, and storage entries without a declared
 moment and non-empty explanation. Invalid declarations raise
-`InvalidMomentDeclarationException`, an `HilosException`.
+`InvalidMomentDeclarationException`, an `HilosException`. The opt-in
+`EntitySchemaAudit::auditProviderMoments()` validates the provider and checks
+all declared moments in its tables that exist on the selected schema
+connection; the caller separately proves that required activated tables exist.
 
 The shared normalizer preserves inherited moment semantics and refuses a
 framework-owned moment's removal or project storage exception, and rejects a
 project storage entry for any framework-owned moment. The framework extension
 guard reports invalid Entity declarations through its existing findings.
 The [transition table](../architecture/time-zones.md#transition-owners) still
-owns the migration map; the physical-type and direct writer-error checks remain
-planned under HIL-1917. Today's broad integer-family audit is not that check.
+owns the migration map. The separate `MOMENT-WRITE` source guard rejects
+second-based and SQL-datetime writes only at proven moment sinks; it does not
+infer arbitrary integer dataflow or claim to find every writer. The broad
+integer-family audit is not a physical moment check. See
+[the source and schema guard boundaries](../code-style/automated-checks.md#moment-storage-checks).
 
 ### Who owns the value of a column with a DB-level DEFAULT
 
