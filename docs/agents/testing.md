@@ -158,7 +158,7 @@ wall-clock, so they are a **deliberate, infrequent** run — never an inner loop
 | FE core / SDK or a view (`@hilos/*`, TS) | `test:framework:frontend` (check + vitest + lint + format) | every change |
 | An Angular view's template | `test:framework:frontend` — plain `tsc` does not read templates, so the `@hilos/angular` check runs a second pass, `ngc --noEmit` over the `tsconfig.build.json` the ng-packagr build uses; a template error — and an Angular extended template diagnostic (`NG8xxx`), which `tsconfig.build.json` raises to an error — is red here, not only in `test:framework:frontend:build` | every Angular template change |
 | Wire / signal / subscription **contract** (backend + FE together) | the above **plus** one affected demo's `test:e2e-full` — the cross-boundary path only e2e exercises | when the contract moves |
-| Cluster behavior — consensus, membership, placement, the peer link and its TLS, what a write on one node does on another (`framework/backend/Cluster/`, the cluster seams of `DaemonManager` and `WorkerServer`, the harness in `framework/docker/cluster/`) | the scenarios that cover it, on the stand that carries them, pointed: `composer -d demo/<demo> run test:cluster:scenarios -- <numbers>` — a fresh stand every time; that stand's whole matrix before the merge. Which stand carries which scenario: section "The cluster stands — three demos, three shapes" below | when cluster code moves |
+| Cluster behavior — consensus, membership, placement, the peer link and its TLS, what a write on one node does on another (`framework/backend/Cluster/`, the cluster seams of `DaemonManager` and `WorkerServer`, the harness in `framework/docker/cluster/`) | the scenarios that cover it, on the stand that carries them, pointed: `composer -d demo/<demo> run test:cluster:scenarios -- <numbers>` — a fresh stand every time; that stand's whole matrix before the merge. Which stand carries which scenario: section "The cluster stands — six demos, six shapes" below | when cluster code moves |
 | An e2e spec or a selector | that demo's full cycle, pointed: `composer run test:e2e-full -- <spec file>` or `-- --grep "<title>"` — the same clean stand as the full run, so a repeat is a fresh verdict | while editing the spec |
 | Cross-connection behavior — subscription, viewport, pending/Apply, presence | the **two-window** e2e across the affected demos (and a full pass) | rarely — see below |
 | Accessibility — ARIA roles/names, keyboard, focus, screen-reader semantics | the **a11y** e2e (`a11y.spec.ts`) across the affected demos (and a full pass) | rarely — see below |
@@ -519,7 +519,7 @@ Today `pmd`, `roblox-game-server`, `solar-system-model` and
 `demo/preferans` and `demo/concert-tickets` do not exist.
 [`scripts/test-suite.php`](../../scripts/test-suite.php) names the six active
 ordinary demos; [`scripts/test-stands.php`](../../scripts/test-stands.php)
-registers those six, the three existing cluster stands and the framework
+registers those six, the existing cluster stands and the framework
 stands. An activation updates these facts and documents its actual commands
 when its code lands, clearing its markers in that same commit under
 [the rule-authoring contract](rule-authoring.md#a-rule-written-ahead-of-its-code).
@@ -592,9 +592,11 @@ Analytics, whole-area transfers, runner registration, isolation, cleanup and
 measurement. `roblox-game-server`, `file-gallery-manager` and `concert-tickets`
 are ordinary carriers in this phase. Their additional Hilos clusters,
 specialized MariaDB topologies, journals across the database topology,
-fault/recovery proofs and cluster-browser transfers belong to HIL-1985. Its
-detailed phase-two matrix belongs to HIL-2024 and the following HIL-1985
-leaves; the existing three cluster stands and their proofs remain in place.
+fault/recovery proofs and cluster-browser transfers belong to HIL-1985. The
+phase-two matrix is in [The cluster stands](#the-cluster-stands--six-demos-six-shapes).
+The three existing stands retain their proofs except for cluster-browser areas
+that move within their view framework under the
+[approved target](frontend/testing-strategy.md#approved-cluster-browser-target--hil-1985).
 
 The six demos' products, PMD without a service database or with managed external
 databases, CLI/MCP/3D/MCP Apps, and Software Factory are outside this phase.
@@ -602,25 +604,71 @@ Solar's Model product belongs to HIL-193/HIL-132; Software Factory waits for
 the Tasks product. Analytics here means activating the existing section, not
 the future Visits/cubes/rebuild work of HIL-1402.
 
-## The cluster stands — three demos, three shapes
+## The cluster stands — six demos, six shapes
 
-These are the existing cluster stands, separate from the twelve ordinary-demo
-target. See the [ordinary/cluster phase boundary](#ordinary-and-cluster-phases)
-for HIL-1984 and HIL-1985; it does not retire or unpark a scenario below.
+The six cluster carriers are separate from the twelve ordinary-demo target:
+three phase-one stands work today, and three phase-two stands are approved
+targets under the owner's decision of 2026-11-04 (HIL-1985). The marked rows
+below name the leaves that will build them; they are not working stands yet.
+See the [ordinary/cluster phase boundary](#ordinary-and-cluster-phases) for
+HIL-1984 and HIL-1985; it does not retire or unpark a scenario below.
 
-The framework's multi-node behavior is proved on the cluster stands of three
-empty demos, each with its own shape of Hilos cluster. All three use one ordinary
-MariaDB 11.4 server per stand, holding the primary database and its derived
-`<primary>-change-log` journal (the owner's decision, 2026-10-14, HIL-1453).
-All of it runs in docker on one machine: a multi-machine stand does
-not exist, and HIL-348 closed without one. The one stand that carried every
-scenario on a single shape is retired (HIL-1218).
+The phase-one stands — binance-btc-tracker, ecommerce-shop and online-testing —
+each use one ordinary MariaDB 11.4 server, holding the primary database and its
+derived `<primary>-change-log` journal (the owner's decision, 2026-10-14,
+HIL-1453). Every carrier uses MariaDB. `pmd`, `solar-system-model` and `preferans`
+receive no cluster stands of their own.
+All of it runs in docker on one machine: a multi-machine stand does not exist,
+and HIL-348 closed without one. These stands test process and network failures
+on one host, not physical-server or data-center failures. A single HAProxy or
+entry provides no high-availability promise of its own. The one stand that
+carried every scenario on a single shape is retired (HIL-1218).
 
 | Demo | View | Hilos cluster | MariaDB | Scenarios |
 |---|---|---|---|---|
 | binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere, 38 manual maintenance from any node, 41 i18n catalog taken once and skipped after holder restart, 42 a node with another default language refused on both ends, 44 replicated waiting fleet survives leader death and quorum loss, then starts when slots return without another ask, 45 upload pool across nodes: reservations, worker receipts, crossing waits and peer generations, 46 browser liveness across masters, 47 a node with another project time zone refused on both ends |
 | ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4`, each with `slots=64` | one server, primary + derived journal | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed, 19 worker death on a live node, 37 costless agents consume slots, 39 person agents across nodes, 43 waiting ballast retries after a slave returns without another ask (cleanup checked with `composer -d demo/ecommerce-shop run test:cluster:scenarios -- 43 37 18`) |
 | online-testing | Angular | three equal masters that host work themselves | one server, primary + derived journal | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 40 journal triggers installed once and unchanged on ordinary restart |
+| roblox-game-server | Vue | three masters and one slave: `m1` without capacity — it votes and hosts no placed work; `m2`, `m3` workers with `ram=10`, `slots=64`; slave `s1` worker with `ram=4`, `slots=64` (not in the code yet — HIL-2029) | Galera of two data nodes and the `garbd` arbitrator, which votes and stores no data, behind HAProxy; the application uses both data nodes (not in the code yet — HIL-2029) | role and placement proofs below (not in the code yet — HIL-2036); Galera fault proofs below (not in the code yet — HIL-2040) |
+| file-gallery-manager | React | two masters without capacity and three slave workers with `ram=10` / `6` / `4`, each with `slots=64` (not in the code yet — HIL-2032) | primary and one read-only replica behind one address that always leads to the primary, no automatic promotion (not in the code yet — HIL-2032) | 31 (not in the code yet — HIL-2032) |
+| concert-tickets | Angular | five equal master workers with `ram=10`, `slots=64`, no slaves (not in the code yet — HIL-2033) | Galera of three data nodes behind HAProxy; the application uses all three (not in the code yet — HIL-2033) | 26/27/28 (not in the code yet — HIL-2041) |
+
+`ram` means abstract units of declared placement capacity, not gigabytes of RAM
+or a container memory limit.
+
+**What each new shape must keep — continue or stop safely**
+
+| Carrier | Layer | Fault or condition | Expected outcome | Proof owner |
+|---|---|---|---|---|
+| roblox-game-server | Hilos | `m1` alive without capacity | It votes and never hosts placed work; work runs on `m2`/`m3`/`s1`. | (not in the code yet — HIL-2036) |
+| roblox-game-server | Hilos | A working master or the slave is lost | Its work moves to the remaining capacity, never two executors at once; no rebalance is owed on return. | (not in the code yet — HIL-2036) |
+| roblox-game-server | DB | `garbd` is lost | The two data nodes keep quorum and writes continue. | (not in the code yet — HIL-2040) |
+| roblox-game-server | DB | One data node is lost, `garbd` alive | Survivor and arbitrator keep quorum and writes continue; the returned node takes connections only when Synced. | (not in the code yet — HIL-2040) |
+| roblox-game-server | DB | Data node + `garbd` are cut off from the other data node | The majority continues; the minority takes no operations. | (not in the code yet — HIL-2040) |
+| file-gallery-manager | Hilos | Either of the two masters is lost | Quorum 2 of 2 is gone: leadership and placed work stop safely, never two executors; the three slaves add no votes; the returned pair elects one leader and work resumes. | (not in the code yet — HIL-2037) |
+| file-gallery-manager | Hilos | One slave is lost, masters healthy | Its work moves to the remaining capacity. | (not in the code yet — HIL-2037) |
+| file-gallery-manager | DB | Replica is lost | The primary is unaffected. | (not in the code yet — HIL-2042) |
+| file-gallery-manager | DB | Primary is lost | The database is unavailable until the primary is safely restored; no promotion and no read from the replica. | (not in the code yet — HIL-2042) |
+| concert-tickets | Hilos | Two of five masters are lost | Quorum 3 of 5 holds and work continues. | (not in the code yet — HIL-2038) |
+| concert-tickets | Hilos | Three masters are lost | Work stops. | (not in the code yet — HIL-2038) |
+| concert-tickets | Hilos | 3:2 partition, with the old leader and its working agents in the minority | The majority continues; the minority leader stops its work; one executor after recovery. | (not in the code yet — HIL-2038) |
+| concert-tickets | DB | One of three data nodes is lost and returned | Writes continue through the survivors without restarting Hilos; the returned member catches up and takes new connections only when Synced. | (not in the code yet — HIL-2041) |
+
+Acceptance proves Hilos and database failures separately, keeping the other
+layer healthy (not in the code yet — HIL-2043). New fleets enter after ordinary
+activations HIL-2017/HIL-2019/HIL-2021 and phase-one acceptance HIL-2023, with
+isolation in every instance extending HIL-2015 (not in the code yet — HIL-2025).
+Do not add lanes or instances: the full run accepts all six carriers and
+measures their resource budget on the existing lanes
+(not in the code yet — HIL-2043).
+
+Every carrier owes [the database guarantees](app-topology.md#database-guarantees-hil-1206)
+`ONE_LOGICAL_DATABASE` and `READ_AFTER_WRITE` for both primary and
+`<primary>-change-log`. Roblox sets `wsrep_sync_wait=1` (the READ bit) in every
+application session, reconnects included, with `wsrep_dirty_reads` off
+(not in the code yet — HIL-2029). Concert-tickets uses that same session setup
+(not in the code yet — HIL-2033). Hilos does not read the replica; losing
+acknowledged writes by promoting a lagging replica is not an accepted outcome.
 
 Scenario **45** on binance-btc-tracker proves the
 [upload raw-byte pool](architecture/uploads.md#the-raw-byte-pool) on real
@@ -766,12 +814,23 @@ what the observer was told.
 The Hilos shapes keep their original purpose: quorum, network partitions and
 TLS on binance-btc-tracker; placement and failover with a stable leader on
 ecommerce-shop; shared database facts and simultaneous schema rollout on
-online-testing. The former primary/replica and Galera database topologies were
-replaced by one MariaDB per existing stand by the owner's decision above.
-Specialized database topologies and six new demos are deferred in P-567 until
-2026-10-24. Scenarios **26/27/28/31 have no current carrier**: their implementations,
-registry entries and shape guards stay in the harness for future stands. They
-are not run or counted as passed by any current matrix.
+online-testing. Roblox adds roles with and without capacity and a Galera
+arbitrator (not in the code yet — HIL-2029). Gallery adds the even quorum of
+two masters that must stop safely, and primary/replica
+(not in the code yet — HIL-2032). Tickets adds a quorum of five masters and
+three-node Galera (not in the code yet — HIL-2033). The owner's decision of
+2026-11-04 (HIL-1985) chooses different shapes for meaningful tests.
+The former primary/replica and Galera database topologies were replaced by
+one MariaDB on binance-btc-tracker, ecommerce-shop and online-testing by the
+owner's decision of 2026-10-14.
+Scenarios **26/27/28/31 have no current carrier**: their implementations,
+registry entries and shape guards stay in the harness for future stands.
+They are not run or counted as passed by any current matrix.
+Scenario 31 belongs on file-gallery-manager (not in the code yet — HIL-2032).
+Scenarios 26/27/28 return on concert-tickets (not in the code yet — HIL-2041);
+their component model and preconditions count votes separately from data
+members (not in the code yet — HIL-2026). Their two-data-node + `garbd` form
+belongs on roblox-game-server (not in the code yet — HIL-2040).
 
 The one-time schema rollout is needed on one server too (HIL-1228). Nodes that
 start together also read one marker of their database — the first write is
@@ -830,7 +889,7 @@ container target, retaining per-node logs and the stand's export storage.
 Binance shares one named export volume among its nodes and entry. Online-testing
 shares its host `data/data_export` and serves Angular's `frontend/dist` at
 `/usr/share/nginx/html`. Ecommerce-shop has no entry, cluster browser suite or
-additional export volume. Each of the three stands gives Status a separate named
+additional export volume. Each cluster stand gives Status a separate named
 volume, suffixed with `${HILOS_STAND_SUFFIX:-}` and shared by all its nodes and
 the entry where one exists.
 
@@ -952,8 +1011,8 @@ forward arbitrary host environment variables. A mistaken direct call to `cluster
 under Python earlier than 3.10 exits before imports with a shell-runner hint;
 Python 3.10+ is not a host prerequisite.
 
-The harness retains multi-server database capabilities for P-567. Such a stand
-labels every member `hilos.database.member: "true"` and exactly one
+The harness retains multi-server database capabilities for the planned carriers
+above. Such a stand labels every member `hilos.database.member: "true"` and exactly one
 `hilos.role: database` — the one `db-sql` and the artifact collector reach.
 The nodes use one address leading to the writable database. A replica is
 declared by `MARIADB_MASTER_HOST` and has no `MYSQL_DATABASE`, `MYSQL_USER` or
@@ -961,8 +1020,12 @@ declared by `MARIADB_MASTER_HOST` and has no `MYSQL_DATABASE`, `MYSQL_USER` or
 The harness uses the database service's application credentials. Scenario 26
 asks every member of a multi-primary; scenario 31 asks every replica. A proxy
 is labeled `hilos.database.proxy: "true"`; scenario 28 reads its server states.
-None of the three current stands declares a database member or proxy label;
-each labels its single MariaDB `hilos.role: database`.
+A Galera arbitrator (`garbd`) votes and stores no data: it is declared apart
+from the data members, never labeled `hilos.database.member` and never asked
+SQL (not in the code yet — HIL-2026). Scenario 26 asks for the READ bit of
+`wsrep_sync_wait`, not a value of at least 1 (not in the code yet — HIL-2027).
+binance-btc-tracker, ecommerce-shop and online-testing declare no database
+member or proxy label; each labels its single MariaDB `hilos.role: database`.
 
 Every server of a fleet's database, whether one server or a member of a cluster,
 keeps its data in a host directory under `/dev/shm` and mounts
@@ -971,13 +1034,16 @@ same. The harness wipes these directories on `down --volumes`; a member killed
 and started again keeps its data, as does ordinary `down/up` or `restart`.
 This is host-memory persistence only: a host reboot clears `/dev/shm`.
 Stand suffixes keep those directories separate, alongside namespaced projects,
-containers, networks and named volumes. Each current stand mounts its existing
+containers, networks and named volumes. The binance-btc-tracker, ecommerce-shop
+and online-testing stands each mount their existing
 `mysql/init-change-log.sh` at `/docker-entrypoint-initdb.d/init-change-log.sh`
 and `mysql/provision-change-log.sh` at `/usr/local/bin/provision-change-log.sh`.
 Fresh initialization creates and grants the derived journal before Hilos
 starts; an existing ordinary MariaDB directory is provisioned with the root
 script before the new Hilos code starts, without DROP or reset. Repeating that
 script and restarting on the same directory preserve primary and journal data.
+For Galera and primary/replica, journal preparation runs once through the
+replicating path, as specified in [On A Cluster](architecture/change-log.md#on-a-cluster).
 
 Before changing an older compose, stop it through its old file without
 `--volumes`, so removed replica/proxy/member containers do not become orphans.
@@ -999,9 +1065,9 @@ ecommerce-shop's and online-testing's.
 
 A new scenario is written on the stand whose shape it needs. When two shapes
 would do, the reasons above decide. A scenario that needs a shape none of the
-three has is a question for the owner, not a fourth stand grown on the way:
-the three shapes are one decision, and a quiet fourth would rewrite it from
-inside a leaf.
+six has is a question for the owner, not a seventh stand grown on the way:
+the six shapes are one decision of the owner, 2026-11-04 (HIL-1985). A scenario
+that needs a shape not built yet lands with its carrier or after it.
 
 Nodes that start together on one database roll the schema out once, under
 the rollout claim in the database itself (HIL-1228,
@@ -1178,9 +1244,10 @@ paths, plus Playwright evidence and `SNAPSHOT.txt`, before teardown, under the s
 missing-source rules as binance. It never substitutes `data/logs-test` for these
 journals. Save direct-run logs before another fresh stand empties them.
 
-The full run carries three fleets now instead of one. An e2e step may stand
-beside any of them in the lane plan: nothing keeps them apart, and each fleet
-leaves with its own step (HIL-1227).
+The full run carries the phase-one fleets binance-btc-tracker, ecommerce-shop
+and online-testing; the planned carriers above enter under the same rule.
+An e2e step may stand beside any fleet in the lane plan: nothing keeps them
+apart, and each fleet leaves with its own step (HIL-1227).
 
 The ports and the subnet of every stand are in the registry of
 [../new-project/README.md](../new-project/README.md); which demo carries an

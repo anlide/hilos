@@ -86,10 +86,10 @@ in [status-page.md](status-page.md#static-publication).
 All six demo contexts register this directory at `data/status`, and their nginx
 containers mount the same directory read-only. A test stand binds `data/status-test`
 over both, the daemon's `/app/data/status` and nginx's `/status`, so the local and
-the test installation of one demo never publish into the same files. Each of the
-three demo cluster stands (`binance-btc-tracker`, `ecommerce-shop` and
-`online-testing`) uses its own named Status volume, suffixed with
+the test installation of one demo never publish into the same files.
+Each demo cluster stand uses its own named Status volume, suffixed with
 `${HILOS_STAND_SUFFIX:-}` and separate from `data/status` and `data/status-test`.
+The current carriers are `binance-btc-tracker`, `ecommerce-shop` and `online-testing`.
 Every node and the entry, where present, share that stand's volume; ecommerce-shop
 has no entry. The registrations are in
 `demo/chat/backend/Fs/ChatFsContext.php`,

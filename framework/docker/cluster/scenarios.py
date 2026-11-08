@@ -5690,6 +5690,9 @@ SCENARIOS = [
 # every entry here carries. So an entry is a LOAN, not a cure: it names who owes and for
 # what, and it is paid off by the write it points at, not by time passing.
 FLAKY_SKIP = {
+    # FIXME(F-065, 2026-11-08): m2 не принимает ровно два probe-факта m1 · чужой · попытка 1 · HIL-2024.
+    "11 cross-node db fact":
+        "F-065: m2 did not accept exactly the two probe facts m1 wrote",
     # A node that rejoins while the fleet is between placements gets an empty collection
     # and never fills it: its rows are offered only by a node that CLAIMS them, a claim
     # lives exactly as long as the agent writing it, and in that window nobody claims

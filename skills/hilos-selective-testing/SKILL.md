@@ -50,8 +50,8 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
 7. Cluster behavior runs the scenarios that cover it on the stand that carries
    them — `composer run test:cluster:scenarios -- <numbers>` from the directory of
    the demo whose stand it is, a fresh stand every time; which stand carries which
-   scenario: `docs/agents/testing.md`, section "The cluster stands — three demos,
-   three shapes".
+   scenario: `docs/agents/testing.md`, section "The cluster stands — six demos,
+   six shapes".
 8. Use narrow runs for debugging and evidence as described in
    `docs/agents/testing.md`, "Narrow runs collect evidence". The full run owns the
    verdict; a narrow green run on the same HEAD cannot replace a full red one.

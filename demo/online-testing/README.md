@@ -208,7 +208,7 @@ the scenarios it names — 11 cross-node db fact, 15 db interest addressing
 database refused, 24 cut-off leader stops its work (skipped as flaky since
 2026-10-10), and 40 journal triggers installed once and unchanged on ordinary
 non-leader restart
-(`docs/agents/testing.md`, "The cluster stands — three demos, three shapes"). The framework's probe fleet and
+(`docs/agents/testing.md`, "The cluster stands — six demos, six shapes"). The framework's probe fleet and
 database probe are in this demo's `AGENTS`, and they start only here: on one
 node, on the Playwright stand and in production the rows are carried and
 nothing is run.
@@ -394,9 +394,10 @@ stays at `/dev/shm/hilos-online-testing-cluster-galera1-data`,
 paths or mount them as an ordinary MariaDB data directory. No automatic data
 transfer from Galera is provided. Stop its old members and proxy with the old
 compose file before switching. The Galera scripts and proxy configuration stay
-in Git history. Scenarios 26/27/28 remain in the shared harness, with no current
-stand carrying them; specialized database topologies and six new demos are
-P-567, deferred to 2026-10-24. They are not passing checks of this stand.
+in Git history. Scenarios 26/27/28 remain in the shared harness; their planned
+carrier is the concert-tickets cluster stand
+([The cluster stands](../../docs/agents/testing.md#the-cluster-stands--six-demos-six-shapes)).
+They are not passing checks of this stand.
 
 ### TLS fixtures
 

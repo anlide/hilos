@@ -262,14 +262,17 @@ What Hilos checks and what it believes:
   passes it. A check of the server's own setting would refuse a correct
   configuration — Galera behind a proxy that sends everything to one server
   keeps the promise with the setting off.
+  The cluster stands check both the setting and an actual read through the
+  application's own connections with a test-only diagnostic
+  (not in the code yet — HIL-2027); production still only declares.
 
 What keeps each promise for each logical database name on each topology:
 
 | Topology | `ONE_LOGICAL_DATABASE` | `READ_AFTER_WRITE` |
 |---|---|---|
-| one server | kept | kept; all three existing cluster stands run this row (HIL-1453) |
-| primary + replica behind one address that always leads to the primary | kept | kept; no current stand, specialized carriers deferred in P-567 until 2026-10-24 |
-| multi-primary, nodes on different servers | kept | only with `wsrep_sync_wait` ≥ 1 (Galera) or `group_replication_consistency` `BEFORE` or stronger (MySQL); no current stand, specialized carriers deferred in P-567 until 2026-10-24 |
+| one server | kept | kept; the binance-btc-tracker, ecommerce-shop and online-testing cluster stands run this row (HIL-1453) |
+| primary + replica behind one address that always leads to the primary | kept | kept; the file-gallery-manager cluster stand runs this row (not in the code yet — HIL-2032) |
+| multi-primary, nodes on different servers | kept | only with the READ bit (1) of `wsrep_sync_wait` set in every application session, reconnects included, and `wsrep_dirty_reads` off (Galera) — the variable is a bitmask, and 2 or 4 pass a ≥ 1 comparison without causal reads; or `group_replication_consistency` `BEFORE` or stronger (MySQL); the concert-tickets cluster stand runs this row (not in the code yet — HIL-2033); so does roblox-game-server's, with two data nodes and an arbitrator (not in the code yet — HIL-2029) |
 | a proxy that hands reads to replicas, or reads from an asynchronous replica | kept | **not kept — not supported** |
 
 Two operator moves split a cluster through the marker, and both are the

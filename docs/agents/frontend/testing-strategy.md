@@ -559,6 +559,40 @@ under [rule authoring](../rule-authoring.md#a-rule-written-ahead-of-its-code).
 The subsequent React/Angular parity pass belongs to HIL-2022
 (not in the code yet — HIL-2022); it is not evidence of readiness today.
 
+#### Approved cluster-browser target — HIL-1985
+
+The [six cluster carriers and their shapes](../testing.md#the-cluster-stands--six-demos-six-shapes)
+are cataloged in the testing guide. This matrix is the approved **target**,
+not a completed transfer; each marker names the leaf that moves the area.
+Names identify whole areas, including additions before execution. Transfers
+stay within their view framework and carry their quarantine status unchanged
+(F-016, F-023, F-036, F-060); moving a spec does not heal a flake. Use shared
+helpers from `framework/frontend/e2e/`, fixed browser time zones and the
+existing behavior assertions; do not bring back decorative checks.
+
+Here `donor/live/{a,b}` means
+`demo/<donor>/tests/e2e/cluster/live/a.spec.ts` and `b.spec.ts`; `daemon` and
+`after-loss` use the same path convention. The destination is
+`demo/<target>/tests/e2e/cluster/`.
+
+| Target / view | Whole areas and current source specs | Transfer owner |
+|---|---|---|
+| `roblox-game-server` / Vue | **Daemon and delivery:** `binance-btc-tracker/daemon/daemon`, `binance-btc-tracker/live/{daemon-clock,daemon-env-mismatch,daemon-env-orphans,daemon-section,delivery-window}`. | (not in the code yet — HIL-2030) |
+| `roblox-game-server` / Vue | **Sessions, theme, i18n, protected mode:** `binance-btc-tracker/live/{sessions,theme,i18n,protected-mode}`. | (not in the code yet — HIL-2031) |
+| `concert-tickets` / Angular | **Moderation:** `online-testing/live/moderation`, with five rotations of three distinct roles instead of three; F-060 stays on its identified variant. | (not in the code yet — HIL-2033) |
+
+Binance keeps `live/{backup,logs,change-log}` and `after-loss/{backup,logs}`:
+these need an archive holder and journal writer on a slave, which Roblox's
+mixed roles do not guarantee. Online-testing keeps `live/analytics` with its
+three source/viewer rotations.
+
+React has no cluster-browser corpus to transfer. Cross-node sign-in, sign-out
+and grant/revoke on the new React and Angular carriers are new proofs
+(not in the code yet — HIL-2034). Browser phases and fixtures are chosen from
+the stand declaration, not the binance name (not in the code yet — HIL-2028).
+After the transfers each source file exists exactly once
+(not in the code yet — HIL-2035).
+
 #### Current owners during activation
 
 The inventory and explanations below describe the working placement before the

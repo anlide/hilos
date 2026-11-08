@@ -226,7 +226,7 @@ lived on, 32 a node with another admin view mode refused on both ends,
 33 every master takes browsers, 34 a tab is the same on every master under
 protected mode, 35 rt row deleted while cut off is swept, and 36 a slave
 cut off with its leader stops its work (skipped as flaky since 2026-10-10;
-`docs/agents/testing.md`, "The cluster stands — three demos, three shapes"),
+`docs/agents/testing.md`, "The cluster stands — six demos, six shapes"),
 38 manual maintenance from any node, 41 i18n catalog taken once, 42 another
 default language refused, 44 waiting work survives leadership changes, 45
 upload pool across nodes, and 47 another project time zone refused. The
@@ -301,6 +301,8 @@ header, with the leader and term unchanged. Point it with
 The backup spec asks
 the harness to stop the slave holding its archive; after placement moves,
 `cluster/after-loss` checks the archive's out-of-reach row and offline log refusal.
+Which suites stay here and which move to roblox-game-server is specified in the
+[approved cluster-browser target](../../docs/agents/frontend/testing-strategy.md#approved-cluster-browser-target--hil-1985).
 The stand remains up after this command, as it does after `test:cluster:scenarios`.
 Every browser run starts with empty node log directories, rotation archives
 included, except `.gitkeep` and `protected-mode.state.json*` stores and unfinished

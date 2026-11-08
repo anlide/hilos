@@ -1078,8 +1078,8 @@ after owner loss, or mail replay from public or DB history is provided.
 `DirectoryScope::CLUSTER`; `Hilos::init()` refuses Status activation when the
 directory is missing or declared `NODE`. The installation chooses the backing
 shared disk volume. All six demos register `data/status` as this cluster
-directory and mount the same directory read-only into nginx. Each of the three
-demo cluster stands provides this directory through its own named volume, shared
+directory and mount the same directory read-only into nginx. Each demo cluster
+stand provides this directory through its own named volume, shared
 by its nodes and entry where present ([filesystem.md](filesystem.md)). The one
 cluster Status owner publishes the sanitized projection independently of visitors.
 The general registration, cluster marker and shared-volume rules are in

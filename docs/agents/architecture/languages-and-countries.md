@@ -444,7 +444,7 @@ HIL-1505's cluster proofs are scenarios **41/42** and the five live i18n browser
 checks on binance-btc-tracker: one startup and committed reflow, no repeat after
 holder restart, another default language refused on both ends, and edits
 delivered between masters. Their checks and pointed commands are in
-[the cluster testing guide](../testing.md#the-cluster-stands--three-demos-three-shapes).
+[the cluster testing guide](../testing.md#the-cluster-stands--six-demos-six-shapes).
 Manual reflow and its history belong to the languages and countries section in
 HIL-1424.
 

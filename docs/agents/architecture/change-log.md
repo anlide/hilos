@@ -451,8 +451,9 @@ checks column coverage.
 
 Every demo's fresh local volume, test tmpfs or cluster data directory runs
 `init-change-log.sh` and grants the app access to exactly the derived database.
-All existing cluster stands use one ordinary MariaDB 11.4 server each, holding
-both primary and journal. Before updating an existing ordinary MariaDB data
+The binance-btc-tracker, ecommerce-shop and online-testing cluster stands each
+use one ordinary MariaDB 11.4 server, holding both primary and journal.
+Before updating an existing ordinary MariaDB data
 directory, run its repeatable root provisioning script. Provisioning
 creates a missing database and grants access without clearing existing data.
 It uses the same `MYSQL_DATABASE`, `MYSQL_USER` and `MYSQL_ROOT_PASSWORD`; no
@@ -469,7 +470,8 @@ actual service key, `<demo>-mysql-local`: `binance-btc-tracker-mysql-local`,
 or `polls-mysql-local`. Local volumes stay in place; the test database remains
 tmpfs. Dev compose with an external database adds no MariaDB service.
 
-The three cluster compose files mount the same pair of scripts at
+The binance-btc-tracker, ecommerce-shop and online-testing cluster compose
+files mount the same pair of scripts at
 `/docker-entrypoint-initdb.d/init-change-log.sh` and
 `/usr/local/bin/provision-change-log.sh`. Use the cluster compose file and
 `<demo>-cluster-mysql` service for binance-btc-tracker, ecommerce-shop and
@@ -479,6 +481,14 @@ without `--volumes` before replacing it, so removed replica/proxy/member
 containers do not remain. Online-testing starts on a new disposable directory;
 its old Galera directories stay untouched, with no automatic transfer or reuse
 as ordinary MariaDB data. Exact paths and commands are in the demo READMEs.
+
+On Galera and primary/replica, create the journal database, its grant and
+triggers once through the replicating path, not through independent
+`CREATE`/`GRANT`/`TRIGGER` statements on every server. Roblox's two-data-node
+Galera follows this path (not in the code yet — HIL-2029).
+File-gallery-manager's primary/replica follows it
+(not in the code yet — HIL-2032). Concert-tickets' three-data-node Galera
+follows it (not in the code yet — HIL-2033).
 
 An external MariaDB operator does the same two statements, with the actual
 main name, app user and host. Escape `_` and `%` in the database part of the
@@ -906,10 +916,15 @@ explicit operator action ([protected-mode.md](protected-mode.md)).
 
 ## On A Cluster
 
-All three existing Hilos cluster stands use one ordinary MariaDB server with
-the primary and derived journal provisioned before nodes start (HIL-1453).
+The binance-btc-tracker, ecommerce-shop and online-testing cluster stands each
+use one ordinary MariaDB server with the primary and derived journal
+provisioned before nodes start (HIL-1453).
 Startup prepares journal partitions and installs triggers under the existing
 primary schema rollout claim.
+
+The planned Galera and primary/replica carriers prepare the journal once
+through the replicating path described in
+[Where The Journal Lives](#where-the-journal-lives).
 
 Scenario 40 in `framework/docker/cluster/scenarios.py`, carried by online-testing,
 checks the exact live trigger set against the project's 12 SQL trigger files:
@@ -953,11 +968,22 @@ The journal agent applies attribution through that frame path under its declared
 `Update` operation (HIL-1618).
 
 The existing stands no longer carry primary/replica or Galera topologies, by
-the owner's decision of 2026-10-14. Specialized database carriers and six new
-demos are P-567, deferred until 2026-10-24. The shared harness retains scenarios
-26/27/28/31 and their shape guards, but no current stand carries them. This leaf
-does not establish non-duplication on Galera or trigger behavior on a replica;
-those guarantees need their future carriers as well as journal scenarios.
+the owner's decision of 2026-10-14. The shared harness retains scenarios
+26/27/28/31 and their shape guards; their planned carriers are in
+[The cluster stands](../testing.md#the-cluster-stands--six-demos-six-shapes).
+This leaf (HIL-1621) does not establish non-duplication on Galera or trigger
+behavior on a replica; those guarantees need their future carriers as well as
+journal scenarios.
+
+Every Galera data member and replica must have the same schema, grants,
+trigger definitions and logical set of journal entries before and after an
+ordinary restart and catch-up; physical copies of one entry on different
+servers do not count as duplicates (not in the code yet — HIL-2039).
+Roblox proves the journal after Galera data-node and arbitrator failures
+(not in the code yet — HIL-2040). Concert-tickets proves it after a member is
+lost and returned (not in the code yet — HIL-2041). File-gallery-manager proves
+it after primary and replica recovery (not in the code yet — HIL-2042).
+These proofs do not promise exactly-once business operations when a reply is lost.
 
 ## What Phase 1 Leaves Out
 

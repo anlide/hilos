@@ -215,7 +215,7 @@ the scenarios it names — 3 placement, 4 slave-kill failover, 6 hot-join,
 19 worker death on a live node, 37 costless agents consume slots, and
 39 person agents across nodes (skipped as flaky since 2026-10-17),
 43 waiting work retries when a node returns
-(`docs/agents/testing.md`, "The cluster stands — three demos, three shapes"). The framework's probe fleet, claimer and ballast
+(`docs/agents/testing.md`, "The cluster stands — six demos, six shapes"). The framework's probe fleet, claimer and ballast
 are in this demo's `AGENTS`, and they start only here: on one node, on the
 Playwright stand and in production the rows are carried and nothing is run.
 
@@ -415,8 +415,9 @@ memory: container replacement retains it, but a host reboot clears it.
 
 Historical migration: the former replica is removed by the old compose file's `down`; its data
 stays at `/dev/shm/hilos-ecommerce-shop-cluster-replica-data`. Scenario 31
-remains in the shared harness, with no current stand carrying it. Specialized
-database topologies and six new demos are P-567, deferred to 2026-10-24;
+remains in the shared harness; its planned carrier is the file-gallery-manager
+cluster stand
+([The cluster stands](../../docs/agents/testing.md#the-cluster-stands--six-demos-six-shapes));
 replication is not a passing check of this stand.
 
 ### TLS fixtures
