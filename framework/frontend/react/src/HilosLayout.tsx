@@ -752,19 +752,21 @@ export function HilosLayout({
                   </button>
                 )}
                 <span
-                  className={`navbar-text d-inline-flex align-items-center fs-5 ${visual.color}`}
+                  className={`navbar-text d-inline-flex align-items-center ${visual.color}`}
                   data-id="conn-state"
                   role="status"
                   aria-live="polite"
                   title={connLabel}
                 >
                   <span className="position-relative d-inline-flex">
-                    <i className={`bi ${connIcon}`} aria-hidden="true" />
+                    <i className={`bi fs-5 ${connIcon}`} aria-hidden="true" />
                     {showsDraggingRepair && (
-                      <i
-                        className="bi bi-exclamation-triangle-fill text-danger position-absolute hilos-conn-dragging-mark"
+                      <span
+                        className="badge p-0 position-absolute bottom-0 start-100 translate-middle"
                         aria-hidden="true"
-                      />
+                      >
+                        <i className="bi bi-exclamation-triangle-fill text-danger" />
+                      </span>
                     )}
                   </span>
                   <span

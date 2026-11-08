@@ -740,7 +740,7 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
             <i class="bi bi-list" aria-hidden="true"></i>
           </button>
           <span
-            class="navbar-text d-inline-flex align-items-center fs-5"
+            class="navbar-text d-inline-flex align-items-center"
             :class="connVisual.color"
             data-id="conn-state"
             role="status"
@@ -748,12 +748,14 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
             :title="connLabel"
           >
             <span class="position-relative d-inline-flex">
-              <i class="bi" :class="connIcon" aria-hidden="true"></i>
-              <i
+              <i class="bi fs-5" :class="connIcon" aria-hidden="true"></i>
+              <span
                 v-if="showsDraggingRepair"
-                class="bi bi-exclamation-triangle-fill text-danger position-absolute hilos-conn-dragging-mark"
+                class="badge p-0 position-absolute bottom-0 start-100 translate-middle"
                 aria-hidden="true"
-              ></i>
+              >
+                <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+              </span>
             </span>
             <span
               :id="HILOS_CONNECTION_STATUS_TEXT_ID"

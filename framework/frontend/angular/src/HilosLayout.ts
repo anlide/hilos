@@ -345,10 +345,14 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                 <span class="position-relative d-inline-flex">
                   <i [class]="connIconClass()" aria-hidden="true"></i>
                   @if (showsDraggingRepair()) {
-                    <i
-                      class="bi bi-exclamation-triangle-fill text-danger position-absolute hilos-conn-dragging-mark"
+                    <span
+                      class="badge p-0 position-absolute bottom-0 start-100 translate-middle"
                       aria-hidden="true"
-                    ></i>
+                    >
+                      <i
+                        class="bi bi-exclamation-triangle-fill text-danger"
+                      ></i>
+                    </span>
                   }
                 </span>
                 <span [id]="connectionStatusTextId" class="visually-hidden">{{
@@ -759,7 +763,7 @@ export class HilosLayout {
   )
   protected readonly connSpanClass = computed(
     () =>
-      'navbar-text d-inline-flex align-items-center fs-5 ' +
+      'navbar-text d-inline-flex align-items-center ' +
       CONN_VISUAL[this.connState()].color,
   )
   // A live socket that is nonetheless showing part of a frozen replica
@@ -778,8 +782,8 @@ export class HilosLayout {
   })
   protected readonly connIconClass = computed(() =>
     this.showsFrozenData()
-      ? 'bi bi-snow'
-      : 'bi ' + CONN_VISUAL[this.connState()].icon,
+      ? 'bi fs-5 bi-snow'
+      : 'bi fs-5 ' + CONN_VISUAL[this.connState()].icon,
   )
   // A repair that has been running long enough for the backoff pauses to have
   // reached their ceiling (HIL-831): the same amber arrows, with a small red
