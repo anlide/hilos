@@ -259,6 +259,37 @@ export {
   type ModalControllerOptions,
 } from '../primitives/modal.js'
 export {
+  createDateTimePickerController,
+  type DateTimePickerCommonOptions,
+  type DateTimePickerOptions,
+  type DateTimePickerController,
+} from '../primitives/dateTimePicker.js'
+export {
+  DEFAULT_DATE_TIME_PICKER_FACTORS,
+  DEFAULT_DATE_TIME_PICKER_LABELS,
+  type DateTimePickerWeekday,
+  type DateTimePickerDatePart,
+  type DateTimePickerName,
+  type DateTimePickerFactors,
+  type DateTimePickerLabels,
+} from '../primitives/dateTimePickerFactors.js'
+export type {
+  DateTimePickerKind,
+  DateTimePickerCount,
+  ClockTime,
+  DateTimePickerValueMap,
+  DateTimePickerValue,
+  DateTimePickerEdge,
+  DateTimePickerPart,
+  DateTimePickerNumericPart,
+  DateTimePickerPartDraft,
+  DateTimePickerOffsetChoice,
+  DateTimePickerEndpointResult,
+  DateTimePickerEndpointSnapshot,
+  DateTimePickerResult,
+  DateTimePickerSnapshot,
+} from '../primitives/dateTimePickerValue.js'
+export {
   createHilosUploadField,
   HILOS_UPLOAD_FIELD_CHIP_CALM_CLASS,
   HILOS_UPLOAD_FIELD_CHIP_CANCELING_CLASS,

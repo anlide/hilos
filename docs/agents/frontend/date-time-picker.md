@@ -2,8 +2,8 @@
 
 Read this before implementing or consuming the shared date, time or datetime
 picker, its calendar, its time-zone adapter, or its SDK views. This is the
-normative contract for HIL-1965. It specifies future implementation; the
-markers identify the leaf that makes each block true, following
+normative contract for HIL-1965. The markers identify the leaf that makes each
+block true, following
 [rule-authoring.md](../rule-authoring.md#a-rule-written-ahead-of-its-code).
 
 ## Existing foundations and scope
@@ -69,10 +69,21 @@ type DateTimePickerNumericPart = Exclude<DateTimePickerPart, 'meridiem' | 'offse
 interface DateTimePickerPartDraft {
   readonly part: DateTimePickerPart
   readonly text: string
+  readonly prefix: string
+  readonly placeholder: string
+  readonly label: string
+  readonly valueNow: number | null
+  readonly valueMin: number
+  readonly valueMax: number
+  readonly valueText: string
+}
+interface DateTimePickerOffsetChoice {
+  readonly epochMs: number
+  readonly offsetSeconds: number
+  readonly text: string
+  readonly selected: boolean
 }
 ```
-
-(not in the code yet — HIL-1968)
 
 All six combinations have the following value types. `null` is the external
 empty value; a partial range exists only as a draft, never as a canonical pair.
@@ -86,8 +97,6 @@ empty value; a partial range exists only as a draft, never as a canonical pair.
 | `datetime` | `single` | `number` |
 | `datetime` | `range` | `readonly [number, number]` |
 
-(not in the code yet — HIL-1968)
-
 String aliases do not prove validity. Accept only real Gregorian dates in years
 `0001..9999`, clock times from `00:00:00` through `23:59:59`, and finite integer
 epoch milliseconds whose local Gregorian year can be edited. Zero and negative
@@ -96,7 +105,6 @@ date into a different date. Clock times carry no date, zone or fractions;
 datetime values identify moments, not a number adjusted to look like a local
 epoch. The constructor, `setValue()` and `setEndpointValue()` reject invalid
 configuration or external values with `RangeError` before changing state.
-(not in the code yet — HIL-1968)
 
 ## Time-zone facts
 
@@ -226,6 +234,8 @@ type DateTimePickerEndpointResult<K extends DateTimePickerKind> =
 interface DateTimePickerEndpointSnapshot<K extends DateTimePickerKind> {
   readonly parts: readonly DateTimePickerPartDraft[]
   readonly result: DateTimePickerEndpointResult<K>
+  readonly reason: string | null
+  readonly offsetChoices: readonly DateTimePickerOffsetChoice[]
 }
 type DateTimePickerResult<
   K extends DateTimePickerKind,
@@ -244,16 +254,29 @@ interface DateTimePickerSnapshot<
 }
 ```
 
-(not in the code yet — HIL-1968)
-
 Publish one immutable snapshot: visible parts and results must agree in every
-publication. `parts` holds the visible parts in factor order and their raw
-text, including incomplete input. Hidden precision lives inside the same
-controller, not in the SDK view or a form's copy. For `single`, `end` is `null`.
+publication, and publish a new snapshot only when its state changes. `parts`
+holds visible parts in factor order, with raw text and ready-to-render display
+and accessible values, including incomplete input. Each part's `prefix`,
+`placeholder` and `label` provide its separator, empty hint and accessible name;
+the latter two come from `factors.placeholders[part]` and `labels[part]`.
+`text` is the current input; meridiem uses the factor's AM/PM label and offset
+uses the selected candidate's text. `valueNow` is set only for a readable
+in-range value; an h12 hour is `1..12`, meridiem is `0` for AM or `1` for PM,
+and offset is the selected candidate index. `valueMin` and `valueMax` give the
+part's range; offset's maximum is candidate count minus one, or zero when there
+are no choices. `valueText` is the full month name, the meridiem or offset text,
+a zero-padded number, the placeholder when empty, or raw text when incomplete
+or out of range. `reason` contains the ready-to-render invalid, gap or
+ambiguous message, otherwise `null`; `offsetChoices` contains the fold
+candidates with each choice's `selected` flag, or `[]` when the local time is
+not ambiguous. Offset text is `UTC±HH:MM`, includes seconds only when the
+offset has them (for example, `UTC+05:41:16`), and uses `UTC+00:00` for zero.
+Hidden precision lives inside the same controller, not in the SDK view or a
+form's copy. For `single`, `end` is `null`.
 For `range`, both endpoint snapshots remain available even while neither can
 be saved. Date-only and time-only endpoints do not produce `gap` or
 `ambiguous` during valid operation.
-(not in the code yet — HIL-1968)
 
 The whole result is `empty` only when the whole field is empty. Any nonempty
 field without all required valid endpoints is `unresolved`, including a range
@@ -265,7 +288,6 @@ the previous value unavailable for saving. A form must not substitute its
 last valid moment or pair. This is conversion of an editing draft into a
 representable value; business permission, ordering and admissibility remain
 with the consuming form/server.
-(not in the code yet — HIL-1968)
 
 ## Explicit display factors and labels
 
@@ -289,9 +311,7 @@ interface DateTimePickerFactors {
   readonly hourCycle: 'h12' | 'h23'
   readonly monthNames: readonly DateTimePickerName[]
   readonly weekdayNames: readonly DateTimePickerName[]
-  readonly placeholders: Readonly<Record<
-    'year' | 'month' | 'day' | 'hour' | 'minute' | 'second', string
-  >>
+  readonly placeholders: Readonly<Record<DateTimePickerPart, string>>
   readonly amLabel: string
   readonly pmLabel: string
 }
@@ -321,8 +341,6 @@ interface DateTimePickerLabels {
 }
 ```
 
-(not in the code yet — HIL-1968)
-
 `firstWeekday` and `weekdayNames` use Sunday = 0; `monthNames` uses month minus
 one. Supply exactly 12 month names and seven weekday names. `dateOrder` is a
 permutation of three distinct date parts; `weekendDays` is a set of weekdays,
@@ -332,23 +350,75 @@ values whole; there is no implicit locale/`Intl` fallback. `setFactors()` may
 change order, names and hour cycle without losing the value, hidden precision
 or the semantic parts already entered. An unresolved draft stays unresolved;
 missing input is not guessed.
-(not in the code yet — HIL-1968)
 
-The temporary default set uses English month/day names, day/month/year with
-`/`, `h23`, Monday (`1`), weekends `[0, 6]`, placeholders `yyyy`, `mm`, `dd`,
-`hh`, `mm`, `ss` for their named parts, and `AM`/`PM`. Default labels include
-`From`, `To`, `Today`, `Done` and English accessible names and reasons.
-`showSeconds` defaults to `false`. This concrete default is not a permanent
-product-language requirement; the later i18n provider uses the same factor
-input without changing picker semantics.
-(not in the code yet — HIL-1968)
+The controller validates factor and label values before changing state:
+`dateSeparator` and every placeholder must be strings; name fields, `amLabel`,
+`pmLabel` and labels must be nonempty. Invalid values raise `RangeError`;
+unknown keys are ignored at runtime.
+
+The default factors are `firstWeekday: 1`, `weekendDays: [0, 6]`,
+`dateOrder: ['day', 'month', 'year']`, `dateSeparator: '/'`, and
+`hourCycle: 'h23'`. Month names are January–December with short names Jan–Dec;
+weekday names are Sunday–Saturday with short names Sun–Sat (index `0` is
+Sunday). These names are the pairs Jan/January through Dec/December and
+Sun/Sunday through Sat/Saturday. The eight placeholders are `year: 'yyyy'`,
+`month: 'mm'`, `day: 'dd'`,
+`hour: '--'`, `minute: '--'`, `second: '--'`, `meridiem: '--'`, and
+`offset: 'UTC±--'`; the default `amLabel` and `pmLabel` are `'AM'` and `'PM'`.
+`DEFAULT_DATE_TIME_PICKER_FACTORS` is frozen, including its arrays, name objects
+and placeholders. `DEFAULT_DATE_TIME_PICKER_LABELS` is frozen and contains
+`from: 'From'`, `to: 'To'`, `today: 'Today'`, `done: 'Done'`,
+`previousMonth: 'Previous month'`, `nextMonth: 'Next month'`,
+`chooseDate: 'Choose date'`, `chooseTime: 'Choose time'`,
+`chooseOffset: 'Choose UTC offset'`, `year: 'Year'`, `month: 'Month'`,
+`day: 'Day'`, `hour: 'Hours'`, `minute: 'Minutes'`, `second: 'Seconds'`,
+`meridiem: 'AM/PM'`, `offset: 'UTC offset'`,
+`invalidDate: 'This date does not exist.'`,
+`invalidTime: 'This time does not exist.'`,
+`invalidZone: '{zone} is not a usable time zone.'`,
+`gap: '{time} does not exist on {date} in {zone}: at {from} the clocks jump to {to}.'`,
+and `ambiguous: '{time} happens twice on {date} in {zone}. Which one?'`.
+`showSeconds` defaults to `false`. These defaults do not constrain the later
+i18n provider, which supplies explicit factors and labels without changing
+picker semantics.
+
+Reason templates substitute the five known slots `{time}`, `{date}`, `{zone}`,
+`{from}` and `{to}`; an unknown slot remains literal text. Visible date parts
+follow `dateOrder`; time parts follow the fixed order hour, minute, optional
+second, optional meridiem, and datetime adds offset only while the local time is
+ambiguous. The prefix before each part is empty for the first part, the date
+separator between date parts, `, ` before time, `:` between time fields, and a
+space before meridiem or offset; these delimiters are fixed outputs, not extra
+factors. Numeric fields have width four for year and two otherwise. Their
+ranges are year `1..9999`, month `1..12`, day `1..` the known month's length
+(or `31` until its month and, for February, year are known), hour `0..23` in
+h23 or `1..12` in h12, and minute/second `0..59`. `inputDigit()` appends a
+digit unless the field already has full
+width or the newly full-width value is out of range, in which case it starts
+with the new digit. A completed value receives a leading zero, and the method
+returns `true` when the view should advance; completion means full width or no
+next digit can fit.
+Year is readable only at four digits; other numeric fields are readable from
+one in-range digit. `leavePart()` pads an unambiguous one-digit reading when
+focus leaves without changing its value or calling `onChange()`. Numeric
+stepping wraps within the
+part's range; an hour step crosses a gap using the projected boundary in its
+direction while preserving smaller units, checks at most one full hour cycle,
+and does not cross a skipped local date. Minute and second steps do not cross a
+gap. Endpoint status is evaluated in this order: all visible parts empty gives
+`empty`; any entered value outside its range gives `invalid`; missing or
+unreadable required input gives `incomplete` (a short prefix below its minimum
+is incomplete, not invalid); an impossible calendar date gives
+`invalid/date`; then a complete datetime is resolved as invalid zone, gap,
+ambiguous, or valid by the adapter. Date and time endpoints become valid after
+their own complete, in-range parts.
 
 ## Controller and lifetime
 
 The public core vocabulary in this document, including the adapter types and
-factory, belongs to `@hilos/core/base`. The declarations below complete that
-future API. Keep it at that existing entry; add no compatibility-root import
-or new package subpath for the picker.
+factory, belongs to `@hilos/core/base`. The declarations below describe the
+implemented public API. Keep it at that existing entry; add no compatibility-
+root import or new package subpath for the picker.
 
 ```ts
 interface DateTimePickerCommonOptions<
@@ -397,12 +467,16 @@ interface DateTimePickerController<
   readonly kind: K
   readonly count: C
   readonly state: ReadonlySignal<DateTimePickerSnapshot<K, C>>
+  readonly labels: Readonly<DateTimePickerLabels>
+  readonly disabled: ReadonlySignal<boolean>
+  readonly busy: ReadonlySignal<boolean>
   setValue(value: DateTimePickerValue<K, C> | null): void
   setEndpointValue(edge: DateTimePickerEdge, value: DateTimePickerValueMap[K] | null): void
   setFactors(factors: Partial<DateTimePickerFactors>): void
   setShowSeconds(show: boolean): void
   setPartText(edge: DateTimePickerEdge, part: DateTimePickerNumericPart, text: string): void
-  inputDigit(edge: DateTimePickerEdge, part: DateTimePickerNumericPart, digit: string): void
+  inputDigit(edge: DateTimePickerEdge, part: DateTimePickerNumericPart, digit: string): boolean
+  leavePart(edge: DateTimePickerEdge, part: DateTimePickerPart): void
   setMeridiem(edge: DateTimePickerEdge, value: 'am' | 'pm'): void
   clearPart(edge: DateTimePickerEdge, part: DateTimePickerPart): void
   stepPart(edge: DateTimePickerEdge, part: DateTimePickerPart, direction: -1 | 1): void
@@ -418,36 +492,39 @@ declare const DEFAULT_DATE_TIME_PICKER_FACTORS: Readonly<DateTimePickerFactors>
 declare const DEFAULT_DATE_TIME_PICKER_LABELS: Readonly<DateTimePickerLabels>
 ```
 
-(not in the code yet — HIL-1968)
-
 `kind`, `count`, `timeZone`, `adapter`, `labels` and `minDate` are instance
 configuration. A different meaning requires an explicit new instance, not
 reinterpretation of the old draft. Only `start` is addressable in `single`;
 addressing `end` is a caller error. With no adapter supplied for `datetime`,
 use `createIntlDateTimeZoneAdapter()`. A date receives `today()` but no zone or
 adapter; a time receives no calendar, `minDate`, `today()` or `timeZone`.
-(not in the code yet — HIL-1968)
 
 `setValue()` is the owner's explicit full replacement or reset of the draft.
 `setEndpointValue()` replaces or clears only the addressed endpoint, preserving
-the other endpoint's incomplete draft. Both publish state without calling
-`onChange`, preventing echo writes. `setPartText()` edits numeric raw text and
-may leave it incomplete or invalid. `inputDigit()` accepts exactly one ASCII
-digit. `setMeridiem()` takes `am` or `pm` independently of their labels.
-`clearPart()` and `stepPart()` also accept the meridiem and offset parts;
-offset choices must come from the current candidates.
-(not in the code yet — HIL-1968)
+the other endpoint's incomplete draft. When either changes the draft, it
+publishes state without calling `onChange()`, preventing echo writes. Changing
+factors or seconds visibility also publishes state without calling
+`onChange()`. `setPartText()` edits numeric raw
+text and may leave it incomplete or invalid; it accepts `''` or ASCII digits no
+longer than the part width, otherwise it throws `RangeError`. `inputDigit()`
+accepts exactly one ASCII digit. `setMeridiem()` takes `am` or `pm` independently of
+their labels. `clearPart()` and `stepPart()` also accept the meridiem and offset
+parts; offset choices must come from the current candidates.
+The controller exposes the resolved labels and computed read-only `disabled`
+and `busy` signals to the view. Each user method rechecks both option callbacks;
+when either is true, the method is a no-op and `inputDigit()` returns `false`.
 
-Call `onChange` once after a user draft edit, including a transition to
-incomplete or invalid, with the coherent snapshot. Focus changes, month
-navigation, hover, factor changes and `showSeconds` changes are not value
-edits. `disabled` and `busy` default to false and block user editing methods;
+Call `onChange` once after a user draft edit that changes the draft, including a
+transition to incomplete or invalid, with the coherent snapshot. A no-op user
+edit does not publish. `leavePart()` pads a readable one-digit number on focus
+departure without calling `onChange()`. Focus changes, month navigation,
+hover, factor changes and `showSeconds` changes are not value edits. `disabled`
+and `busy` default to false and block user editing methods;
 they do not prevent the owner's explicit `setValue()` or
 `setEndpointValue()`. The parent owns the instance lifetime, subscriptions,
 reset and merge. Release the controller and associated effects on replacement
 or unmount. `dispose()` is idempotent; a disposed instance no longer publishes
-user changes.
-(not in the code yet — HIL-1968)
+user changes, every method is a no-op, and the state keeps its last snapshot.
 
 ## Preserve every part the person did not edit
 
@@ -458,14 +535,12 @@ changing seconds to `15` gives `06:00:15.123`. An untouched datetime preserves
 its exact epoch-ms number and loaded fold occurrence. Do not reconstruct it
 through the old parser, which loses milliseconds. Time-only has no fractions
 by its canonical contract; date-only creates no time parts.
-(not in the code yet — HIL-1968)
 
 For a new value, hidden seconds and fractions start at zero. Visible unfilled
 required parts remain incomplete. Clearing an entire endpoint also removes
 its retained hidden precision. `setShowSeconds()` only changes visibility; it
 does not zero seconds. Hiding an incomplete or invalid segment does not make
 it valid: retain its input until correction or an explicit reset.
-(not in the code yet — HIL-1968)
 
 `setDate()` changes calendar date parts and preserves time, then resolves the
 new local coordinate in the same zone. It does not sort a range or choose its
@@ -474,17 +549,18 @@ time incomplete until entered. In `h12`, display hours `1..12` with a required
 separate meridiem; canonical hours remain `0..23`. Stepping wraps only the
 chosen part without carrying into its neighbors (`59` to `00`). A month change
 with day `31` may become invalid; do not silently move the day.
-(not in the code yet — HIL-1968)
 
 ## Gaps, folds and the captured zone
 
 A typed or selected local time in a gap produces no value and is not silently
-shifted. Hour stepping skips the missing interval using adapter facts and
-their projections, retaining minutes and seconds while seeking an existing
-local part. Do not assume the gap is one hour, or skip a whole date by adding
-24 elapsed hours. The adapter reports facts; the controller owns the user
-choice and the labels explaining it.
-(not in the code yet — HIL-1968)
+shifted. Hour stepping skips a missing interval using adapter facts and their
+projections, retaining minutes, seconds and fractions. It uses the projected
+edge in the step direction; if that projected hour is still missing, it
+continues stepping through hours for at most one full cycle. Do not assume the
+gap is one hour or skip a whole date by adding 24 elapsed hours: on a wholly
+skipped date the hour remains at the neighboring value and the endpoint stays
+`gap`. Minute and second stepping does not skip gaps. The adapter reports facts;
+the controller owns the user choice and the labels explaining it.
 
 Map an unresolved fold to `ambiguous` with its candidates and offsets; publish
 no value until a choice. `selectOffset()` accepts only an `epochMs` belonging
@@ -494,7 +570,6 @@ previous manual choice; a new ambiguous set requires a new choice. The same
 unchanged ambiguous set retains its choice. A loaded epoch-ms value already
 identifies its occurrence. Display factors and `showSeconds` do not demand
 another offset choice.
-(not in the code yet — HIL-1968)
 
 `today()` supplies an explicit calendar date when opening the calendar or
 invoking Today. For datetime, the owner computes it in the supplied zone; for
@@ -503,7 +578,6 @@ may supply a fixed day. The controller does not read the OS zone, global
 `hilosTimeZone` or locale itself. `minDate` is a lower calendar-day bound for
 disabling calendar cells; it neither prevents typing an earlier date nor
 proves business validity.
-(not in the code yet — HIL-1968)
 
 ## Calendar ownership and interaction
 
@@ -693,11 +767,10 @@ the desktop popup squeezed smaller.
 (not in the code yet — HIL-1975)
 (not in the code yet — HIL-1978)
 
-## Future usage examples
+## Core API examples
 
-These are contract examples, not runnable imports in today's tree. The core
-types, controller and constants below will be available from the existing
-`/base` entry.
+The core types, controller and constants are available from the existing
+`@hilos/core/base` entry. These examples use that public API.
 
 ```ts
 import {
@@ -745,7 +818,7 @@ const rangePicker = createDateTimePickerController<'datetime', 'range'>({
 The moment is 17 October 2026 at 06:00 in Europe/Warsaw; the range ends at
 07:00 on that day. The fixed `today()` is an explicit example input, not a
 clock the component discovers. This example does not replace the maintenance
-form. (not in the code yet — HIL-1968)
+form.
 
 The same types also accept date and time ranges without a zone:
 
@@ -755,8 +828,6 @@ const dates: DateTimePickerValue<'date', 'range'> = [
 ]
 const times: DateTimePickerValue<'time', 'range'> = ['06:00:00', '07:00:00']
 ```
-
-(not in the code yet — HIL-1968)
 
 A full factor object can reuse the explicit default names and placeholders
 while changing first weekday, order and hour cycle. It contains every factor;
@@ -779,8 +850,6 @@ const alternateFactors: DateTimePickerFactors = {
 momentPicker.setFactors(alternateFactors)
 ```
 
-(not in the code yet — HIL-1968)
-
 Reset explicitly, or apply an accepted programmatic merge to just one edge.
 Neither call invokes `onChange`; the second does not copy or replace the
 other edge's draft, even if that draft is incomplete.
@@ -789,8 +858,6 @@ other edge's draft, even if that draft is incomplete.
 datePicker.setValue(null)
 rangePicker.setEndpointValue('end', 1792213200000)
 ```
-
-(not in the code yet — HIL-1968)
 
 A form reads the current result on both Save enablement and submit. The
 following helpers express only whether a pair exists; the form combines that
@@ -817,7 +884,9 @@ When `hasPair()` is false, Save is unavailable and Enter sends nothing. These
 functions illustrate the future form boundary, not a second value store or
 business validator. (not in the code yet — HIL-1979)
 
-The SDK imports below are also future exports. Mount the stable controller
+## Future SDK view imports
+
+The SDK imports below are future exports. Mount the stable controller
 with the same `picker`, `id`, `label`, optional `describedBy` and optional
 `dataId` contract in each framework. A datetime range label may read
 `Maintenance window, Europe/Warsaw`, naming the configured zone.
@@ -864,10 +933,9 @@ adoption, separate from the generic component:
 
 Shared Gregorian math and its `/base` exports are implemented by HIL-1966.
 Exact zone facts and their standard `/base` adapter are implemented by HIL-1967.
-The remaining markers name the implementation owner at each boundary:
-HIL-1968 for picker values, draft, factors, controller and core exports; HIL-1969
-for calendar
-selection/navigation; the SDK field/calendar/narrow sequences HIL-1970–1972,
+HIL-1968 implemented picker values, draft, factors, controller and core exports.
+The remaining markers name the implementation owner at each boundary: HIL-1969
+for calendar selection/navigation; the SDK field/calendar/narrow sequences HIL-1970–1972,
 HIL-1973–1975 and HIL-1976–1978 for Vue, React and Angular; and HIL-1979–1982
 for maintenance integration and adoption. Do not invent new internal file
 names from this contract or implement a neighboring leaf to make an example

@@ -58,6 +58,8 @@ import * as restoreProgress from '../../src/connection/restoreProgress.js'
 import * as tableFocusReturn from '../../src/dom/tableFocusReturn.js'
 import * as core from '../../src/index.js'
 import * as publicStatus from '../../src/status/index.js'
+import * as dateTimePicker from '../../src/primitives/dateTimePicker.js'
+import * as dateTimePickerFactors from '../../src/primitives/dateTimePickerFactors.js'
 import * as notificationPreferences from '../../src/notifications/notificationPreferences.js'
 import * as publicStatusDerived from '../../src/status/derivedStatus.js'
 import * as dateTimeZoneAdapter from '../../src/timeZone/dateTimeZoneAdapter.js'
@@ -191,6 +193,36 @@ const dateTimeZoneTypes = [
   'DateTimeZoneResolution',
   'DateTimeZoneProjection',
   'DateTimeZoneAdapter',
+]
+/** Picker foundations belong only to base, with their original declarations. */
+const dateTimePickerValues = [
+  'createDateTimePickerController',
+  'DEFAULT_DATE_TIME_PICKER_FACTORS',
+  'DEFAULT_DATE_TIME_PICKER_LABELS',
+]
+const dateTimePickerTypes = [
+  'DateTimePickerKind',
+  'DateTimePickerCount',
+  'ClockTime',
+  'DateTimePickerValueMap',
+  'DateTimePickerValue',
+  'DateTimePickerEdge',
+  'DateTimePickerPart',
+  'DateTimePickerNumericPart',
+  'DateTimePickerPartDraft',
+  'DateTimePickerOffsetChoice',
+  'DateTimePickerEndpointResult',
+  'DateTimePickerEndpointSnapshot',
+  'DateTimePickerResult',
+  'DateTimePickerSnapshot',
+  'DateTimePickerWeekday',
+  'DateTimePickerDatePart',
+  'DateTimePickerName',
+  'DateTimePickerFactors',
+  'DateTimePickerLabels',
+  'DateTimePickerCommonOptions',
+  'DateTimePickerOptions',
+  'DateTimePickerController',
 ]
 /** Channel icons belong to base without extending the compatibility root. */
 const notificationChannelValues = ['notificationChannelIcon']
@@ -1081,6 +1113,13 @@ describe('core public entries', () => {
           expect(value, name).toBe(
             dateTimeZoneAdapter[name as keyof typeof dateTimeZoneAdapter],
           )
+        } else if (entry === './base' && dateTimePickerValues.includes(name)) {
+          expect(root, name).not.toHaveProperty(name)
+          const owner: Record<string, unknown> =
+            name === 'createDateTimePickerController'
+              ? dateTimePicker
+              : dateTimePickerFactors
+          expect(value, name).toBe(owner[name])
         } else if (
           entry === './base' &&
           notificationChannelValues.includes(name)
@@ -1421,6 +1460,7 @@ describe('core public entries', () => {
         ...expectedValues,
         ...calendarValues,
         ...dateTimeZoneValues,
+        ...dateTimePickerValues,
         ...notificationChannelValues,
         ...publicStatusDerivedValues,
         ...analyticsOverviewValues,
@@ -2032,6 +2072,15 @@ describe('core public entries', () => {
     const calendarNames = [...calendarValues, ...calendarTypes]
     const dateTimeZoneExports = exportsOf('timeZone/dateTimeZoneAdapter.ts')
     const dateTimeZoneNames = [...dateTimeZoneValues, ...dateTimeZoneTypes]
+    const dateTimePickerExports = new Map([
+      ...exportsOf('primitives/dateTimePickerValue.ts'),
+      ...exportsOf('primitives/dateTimePickerFactors.ts'),
+      ...exportsOf('primitives/dateTimePicker.ts'),
+    ])
+    const dateTimePickerNames = [
+      ...dateTimePickerValues,
+      ...dateTimePickerTypes,
+    ]
     for (const entry of entries.slice(1)) {
       for (const [name, symbol] of exportsOf(entry)) {
         if (entry === 'base/index.ts' && calendarNames.includes(name)) {
@@ -2043,6 +2092,14 @@ describe('core public entries', () => {
         ) {
           expect(root.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(dateTimeZoneExports.get(name))
+        } else if (
+          entry === 'base/index.ts' &&
+          dateTimePickerNames.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(
+            dateTimePickerExports.get(name),
+          )
         } else if (
           entry === 'base/index.ts' &&
           notificationChannelValues.includes(name)
@@ -2288,6 +2345,7 @@ describe('core public entries', () => {
         ...root.keys(),
         ...calendarNames,
         ...dateTimeZoneNames,
+        ...dateTimePickerNames,
         ...notificationChannelValues,
         ...publicDerivedNames,
         ...overviewNames,
@@ -2439,6 +2497,9 @@ describe('core public entries', () => {
     'timeZone/timeZoneState.ts',
     'timeZone/timeZonePicker.ts',
     'timeZone/dateTimeZoneAdapter.ts',
+    'primitives/dateTimePicker.ts',
+    'primitives/dateTimePickerFactors.ts',
+    'primitives/dateTimePickerValue.ts',
     'subscription/PageSubscription.ts',
     'subscription/bindTableViewport.ts',
     'table/TableViewportController.ts',
