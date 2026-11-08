@@ -309,6 +309,21 @@ export function datePickerEndpoint(
   )
 }
 
+/** Clear the date while retaining time input and hidden precision. */
+export function clearPickerEndpointDate(
+  draft: PickerEndpointDraft,
+  context: PickerEndpointContext,
+): PickerEndpointDraft {
+  return finishEdit(
+    draft,
+    {
+      ...draft,
+      texts: { ...draft.texts, year: '', month: '', day: '' },
+    },
+    context,
+  )
+}
+
 export function leavePickerPart(
   draft: PickerEndpointDraft,
   part: DateTimePickerNumericPart,

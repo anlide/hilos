@@ -223,6 +223,12 @@ const dateTimePickerTypes = [
   'DateTimePickerCommonOptions',
   'DateTimePickerOptions',
   'DateTimePickerController',
+  'DateTimePickerCalendar',
+  'DateTimePickerCalendarDay',
+  'DateTimePickerCalendarGrid',
+  'DateTimePickerCalendarSnapshot',
+  'DateTimePickerCalendarSpan',
+  'DateTimePickerCalendarWeekday',
 ]
 /** Channel icons belong to base without extending the compatibility root. */
 const notificationChannelValues = ['notificationChannelIcon']
@@ -2076,6 +2082,7 @@ describe('core public entries', () => {
       ...exportsOf('primitives/dateTimePickerValue.ts'),
       ...exportsOf('primitives/dateTimePickerFactors.ts'),
       ...exportsOf('primitives/dateTimePicker.ts'),
+      ...exportsOf('primitives/dateTimePickerCalendar.ts'),
     ])
     const dateTimePickerNames = [
       ...dateTimePickerValues,

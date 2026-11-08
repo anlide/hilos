@@ -289,6 +289,14 @@ export type {
   DateTimePickerResult,
   DateTimePickerSnapshot,
 } from '../primitives/dateTimePickerValue.js'
+export type {
+  DateTimePickerCalendar,
+  DateTimePickerCalendarDay,
+  DateTimePickerCalendarGrid,
+  DateTimePickerCalendarSnapshot,
+  DateTimePickerCalendarSpan,
+  DateTimePickerCalendarWeekday,
+} from '../primitives/dateTimePickerCalendar.js'
 export {
   createHilosUploadField,
   HILOS_UPLOAD_FIELD_CHIP_CALM_CLASS,

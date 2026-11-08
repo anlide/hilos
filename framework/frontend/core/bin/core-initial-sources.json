@@ -75,6 +75,7 @@
   "src/notifications/notificationPreferences.ts",
   "src/notifications/pushSubscription.ts",
   "src/primitives/dateTimePicker.ts",
+  "src/primitives/dateTimePickerCalendar.ts",
   "src/primitives/dateTimePickerEndpoint.ts",
   "src/primitives/dateTimePickerFactors.ts",
   "src/primitives/dateTimePickerPart.ts",

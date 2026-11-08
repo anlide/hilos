@@ -12,6 +12,11 @@ import {
   type DateTimeZoneAdapter,
 } from '../timeZone/dateTimeZoneAdapter.js'
 import {
+  createPickerCalendar,
+  type DateTimePickerCalendar,
+} from './dateTimePickerCalendar.js'
+import {
+  clearPickerEndpointDate,
   datePickerEndpoint,
   digitPickerEndpoint,
   editPickerText,
@@ -94,6 +99,7 @@ export interface DateTimePickerController<
   readonly kind: K
   readonly count: C
   readonly state: ReadonlySignal<DateTimePickerSnapshot<K, C>>
+  readonly calendar: DateTimePickerCalendar
   readonly labels: Readonly<DateTimePickerLabels>
   readonly disabled: ReadonlySignal<boolean>
   readonly busy: ReadonlySignal<boolean>
@@ -305,10 +311,43 @@ export function createDateTimePickerController<
     drafts = { ...drafts, [edge]: next }
     publish(user)
   }
+  function applyCalendarDates(
+    start: CalendarDate | null | undefined,
+    end: CalendarDate | null | undefined,
+  ): void {
+    if (blocked()) return
+    const apply = (
+      draft: PickerEndpointDraft,
+      date: CalendarDate | null | undefined,
+    ): PickerEndpointDraft =>
+      date === undefined
+        ? draft
+        : date === null
+          ? clearPickerEndpointDate(draft, context)
+          : datePickerEndpoint(draft, date, context)
+    const next = {
+      start: apply(drafts.start, start),
+      end: drafts.end === null ? null : apply(drafts.end, end),
+    }
+    if (JSON.stringify(next) === JSON.stringify(drafts)) return
+    drafts = next
+    publish(true)
+  }
   return {
     kind,
     count,
     state,
+    calendar: createPickerCalendar({
+      kind,
+      count,
+      state,
+      today: options.today,
+      minDate: options.minDate,
+      factors: () => context.factors,
+      blocked,
+      disposed: () => disposed,
+      applyDates: applyCalendarDates,
+    }),
     labels,
     disabled,
     busy,

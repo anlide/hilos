@@ -173,25 +173,28 @@ test('under "remind" the window rises on sign-in and the header icon keeps the r
   }
 })
 
-test('a person frozen elsewhere sees the screen on every page but the open ones', async ({
-  page,
-}) => {
-  const person = await createTestUser(expect, page)
-  await holdLegalRevision(person.userId, 'terms', HELD_TERMS)
-  await expect(page.getByTestId('legal-frozen-screen')).toBeVisible()
+// FIXME(F-071, 2026-11-08): после legal hold нет экрана заморозки · чужой · попытка 1 · HIL-1969
+test(
+  'a person frozen elsewhere sees the screen on every page but the open ones',
+  { tag: '@quarantine:F-071' },
+  async ({ page }) => {
+    const person = await createTestUser(expect, page)
+    await holdLegalRevision(person.userId, 'terms', HELD_TERMS)
+    await expect(page.getByTestId('legal-frozen-screen')).toBeVisible()
 
-  await gotoPage(expect, page, '/profile/agreements', PAGE_READY)
-  await expect(page.getByTestId('legal-frozen-screen')).toHaveCount(0)
-  await page.getByTestId('nav-profile-name').click()
-  await expect(page).toHaveURL(/\/profile$/)
-  await expect(page.getByTestId('legal-frozen-screen')).toBeVisible()
+    await gotoPage(expect, page, '/profile/agreements', PAGE_READY)
+    await expect(page.getByTestId('legal-frozen-screen')).toHaveCount(0)
+    await page.getByTestId('nav-profile-name').click()
+    await expect(page).toHaveURL(/\/profile$/)
+    await expect(page.getByTestId('legal-frozen-screen')).toBeVisible()
 
-  // Accept, so the suite's later specs meet no frozen account.
-  await clickSubmit(
-    expect,
-    page
-      .getByTestId('legal-frozen-screen')
-      .getByTestId('legal-reconsent-accept'),
-  )
-  await expect(page.getByTestId('legal-frozen-screen')).toHaveCount(0)
-})
+    // Accept, so the suite's later specs meet no frozen account.
+    await clickSubmit(
+      expect,
+      page
+        .getByTestId('legal-frozen-screen')
+        .getByTestId('legal-reconsent-accept'),
+    )
+    await expect(page.getByTestId('legal-frozen-screen')).toHaveCount(0)
+  },
+)

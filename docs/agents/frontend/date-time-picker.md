@@ -467,6 +467,7 @@ interface DateTimePickerController<
   readonly kind: K
   readonly count: C
   readonly state: ReadonlySignal<DateTimePickerSnapshot<K, C>>
+  readonly calendar: DateTimePickerCalendar
   readonly labels: Readonly<DateTimePickerLabels>
   readonly disabled: ReadonlySignal<boolean>
   readonly busy: ReadonlySignal<boolean>
@@ -658,26 +659,131 @@ weekendColumns([5, 6]) // [false, false, false, false, true, true, false]
 ```
 
 Weekend marking reads `weekdays`; it does not change `weeks` or remove empty
-columns/cells. The future controller supplies the current month and owns
+columns/cells. The picker controller supplies the current month and owns
 navigation, focus, today, selection and bounds. This example only consumes
 the shared math.
 
-Compose the day/range selection and navigation model with the same picker
-controller. It owns selection policy and navigation, not a second copy of the
-value draft. Its internal cells, coordinates and DOM bindings are not another
-public contract specified here. Open on the selected month, or the month from
-`today()` when there is no selected day, with the selected or today's day as
-the initial focus target. Today uses the explicit calendar context.
-(not in the code yet — HIL-1969)
+The picker composes `picker.calendar` with its existing draft. The model owns
+navigation, focus, today, preview and selection policy; it holds no second
+value draft. Its public types belong only to `@hilos/core/base`. The factory
+and its host bridge stay internal. Views render the following snapshot and
+send intents to this model; DOM focus, tabindex, positioning and dismissal
+listeners belong to the views.
 
-A range has one calendar and a separately accessible active endpoint. In the
-two-click range sequence, the first click chooses the start, hover previews
-the interval, and the next click chooses the end. An earlier second click
-starts again from that day and leaves the end waiting. One day may serve as
-both endpoints. This is calendar selection policy over `setDate()`, not behavior
-inside `setDate()`. Manual entry never sorts or swaps the pair. Range ordering,
-inclusivity and business admissibility belong to the consumer.
-(not in the code yet — HIL-1969)
+```ts
+type DateTimePickerCalendarSpan = 'none' | 'inside' | 'preview' | 'preview-end'
+interface DateTimePickerCalendarDay {
+  readonly date: CalendarDate
+  readonly day: number
+  readonly label: string
+  readonly weekend: boolean
+  readonly today: boolean
+  readonly selected: boolean
+  readonly disabled: boolean
+  readonly focusTarget: boolean
+  readonly span: DateTimePickerCalendarSpan
+}
+interface DateTimePickerCalendarWeekday {
+  readonly weekday: DateTimePickerWeekday
+  readonly short: string
+  readonly full: string
+  readonly weekend: boolean
+}
+interface DateTimePickerCalendarGrid {
+  readonly year: number
+  readonly month: number
+  readonly title: string
+  readonly weekdays: readonly DateTimePickerCalendarWeekday[]
+  readonly weeks: readonly (readonly (DateTimePickerCalendarDay | null)[])[]
+  readonly focusDate: CalendarDate
+  readonly canPreviousMonth: boolean
+  readonly canNextMonth: boolean
+}
+interface DateTimePickerCalendarSnapshot {
+  readonly open: boolean
+  readonly activeEdge: DateTimePickerEdge
+  readonly grid: DateTimePickerCalendarGrid | null
+}
+interface DateTimePickerCalendar {
+  readonly state: ReadonlySignal<DateTimePickerCalendarSnapshot>
+  open(): void
+  close(): void
+  setActiveEdge(edge: DateTimePickerEdge): void
+  showPreviousMonth(): void
+  showNextMonth(): void
+  showToday(): void
+  pressKey(key: string, shiftKey: boolean): boolean
+  hoverDay(date: CalendarDate | null): void
+  selectDay(date: CalendarDate): void
+}
+```
+
+Before the first `open()`, the snapshot is
+`{ open: false, activeEdge: 'start', grid: null }`. Closed panels and time-only
+controls have `grid: null`. A time control can open and close without reading
+`today()`. Opening an already open, disabled or busy picker is a no-op. For a
+date or datetime, opening reads `today()` once and retains it until closing;
+an invalid returned date raises `RangeError('today() must return a calendar date')`
+without changing the snapshot.
+
+An endpoint's date comes from its published year/month/day `valueNow` parts,
+validated by `parseCalendarDate()`, rather than from its result. Incomplete
+time, a gap or an unresolved fold still has a selected day. An incomplete or
+impossible date has none. Opening sets the active edge to `start`, except a
+range with a start date and no end date resumes at `end`. Focus uses the active
+edge's date, otherwise the other edge's date, otherwise today. The visible
+month always follows focus; there is no separate displayed-month state.
+
+`setActiveEdge()` works on an open panel and moves focus to that edge's date
+when one exists. A single picker always addresses `start`; addressing `end`
+raises `RangeError`. `selectDay()` raises `RangeError` for time-only or an
+invalid calendar date. On a closed, disabled or busy picker, or before
+`minDate`, a valid selection is a no-op. For a single picker it changes the
+start date, closes date-only, and leaves datetime open.
+
+A range has one calendar and a separately accessible active endpoint. Let
+`S` and `E` be the dates before selection, `A` the active edge, and `d` the
+selected day. Apply the first matching row:
+
+| Condition | Start date | End date | Next active edge |
+|---|---|---|---|
+| `A=start`, `E` exists, `d>E` | `d` | Clear date | `end` |
+| `A=start`, otherwise | `d` | Preserve | `end` |
+| `A=end`, `S` exists, `d<S` | `d` | Clear date | `end` |
+| `A=end`, `S` exists, `d>=S` | Preserve | `d` | `start` |
+| `A=end`, `S` absent | Preserve | `d` | `start` |
+
+One day may serve as both endpoints. Date-only closes when the gesture leaves
+both dates present and either selects the end with a start already present,
+or fills a previously absent start. Editing the start of a completed pair
+leaves the panel open for the next end selection. Datetime stays open.
+Clearing the end date clears only year/month/day, preserving its time and
+hidden seconds/milliseconds while resetting its offset choice on coordinate
+change. For date-only, that clears the whole endpoint. Each gesture publishes
+one coherent picker snapshot and calls `onChange` once, including a restart
+that changes both edges. An unchanged draft calls no `onChange`, while active
+edge, focus and closing still follow the table. Focus moves to `d`.
+`setDate()` itself does not acquire this selection policy. Manual entry never
+sorts or swaps a pair; ordering, inclusivity and business admissibility remain
+with the consumer. Selecting a gap/fold date preserves time and exposes the
+existing endpoint's gap/ambiguous state.
+
+While the active edge is `end`, a start date exists and no end date exists,
+`hoverDay()` supplies the preview target; without a pointer target, focus is
+the target. A target later than the start gives strictly intervening days
+`preview` and the target `preview-end`; an earlier or equal target gives no
+span. A completed, forward pair marks only its strict interior `inside`, with
+no preview. A manually reversed pair has selected endpoints and no interior.
+
+Grid titles use the full month name and year, such as `October 2026`. Day
+labels use the full weekday name followed by the date in `dateOrder`, with
+spaces and a full month name, such as `Saturday, 17 October 2026`. Years have
+four digits. `weekend` follows `weekendDays` for both cells and column headers;
+unused matrix edges remain `null`. `selected` matches either endpoint date,
+`today` matches the captured today, and `disabled` means before `minDate`.
+Exactly one real day has `focusTarget`, including when that day is disabled.
+`setFactors()` rebuilds names and marks without moving month or focus. Typing
+and `setValue()` change selection marks without moving month or focus.
 
 The calendar model supplies these keyboard transitions. Disabled dates cannot
 be selected through the calendar.
@@ -691,7 +797,25 @@ be selected through the calendar.
 | Home / End | First / last day of the week, using `firstWeekday` |
 | Enter / Space | Select the focused day |
 
-(not in the code yet — HIL-1969)
+`pressKey()` accepts the literal keys `ArrowLeft`, `ArrowRight`, `ArrowUp`,
+`ArrowDown`, `PageUp`, `PageDown`, `Home`, `End`, `Enter` and `' '`. It returns
+`true` for a handled key, including a no-op at the calendar boundary or Enter
+on a disabled day. It returns `false` for an unknown key, a closed panel or a
+time-only control. Escape is the view's call to `close()`. Month/year shifts
+clamp from the current focus without remembering an earlier preferred day:
+January 31 → February 28 → March 28. Home/End and arrows can cross a month
+boundary. A shift outside `0001..9999` is a no-op; month-button availability
+is exposed by `canPreviousMonth` and `canNextMonth`.
+
+Month buttons shift focus the same way; their actual DOM focus stays with the
+view. `showToday()` rereads and validates today, refreshing both focus and the
+today mark without selecting a day. It does nothing on a closed panel or a
+time control. `close()` neither saves, reverts nor completes the draft.
+Navigation, hover, active edge and closing work while disabled/busy, and none
+of these operations or opening calls `onChange` or publishes `picker.state`.
+A repeated hover or unchanged navigation does not publish a new calendar
+snapshot. After picker disposal every calendar method is a no-op,
+`pressKey()` returns `false`, and the last snapshot remains available.
 
 ## SDK field contract
 
@@ -934,8 +1058,9 @@ adoption, separate from the generic component:
 Shared Gregorian math and its `/base` exports are implemented by HIL-1966.
 Exact zone facts and their standard `/base` adapter are implemented by HIL-1967.
 HIL-1968 implemented picker values, draft, factors, controller and core exports.
-The remaining markers name the implementation owner at each boundary: HIL-1969
-for calendar selection/navigation; the SDK field/calendar/narrow sequences HIL-1970–1972,
+HIL-1969 implemented `picker.calendar`, atomic range selection, navigation and
+its `/base` types. The remaining markers name the implementation owner at each
+boundary: the SDK field/calendar/narrow sequences HIL-1970–1972,
 HIL-1973–1975 and HIL-1976–1978 for Vue, React and Angular; and HIL-1979–1982
 for maintenance integration and adoption. Do not invent new internal file
 names from this contract or implement a neighboring leaf to make an example
