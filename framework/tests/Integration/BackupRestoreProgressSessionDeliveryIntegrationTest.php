@@ -242,7 +242,7 @@ final class BackupRestoreProgressSessionDeliveryIntegrationTest extends TestCase
 }
 
 /**
- * Daemon manager standing on a websocket server and nothing else, able to run one dispatch pass.
+ * Daemon manager standing on a websocket server and advancing its finite ready dispatch work.
  */
 final class RestoreProgressDeliveryTestManager extends DaemonManager
 {
@@ -263,13 +263,15 @@ final class RestoreProgressDeliveryTestManager extends DaemonManager
     }
 
     /**
-     * Runs the master's real dispatch pass, which queues deliveries for the websocket server.
+     * Finishes the master's ready portions before the fixture reads the exact socket delivery.
      */
     public function dispatch(): void
     {
         $dispatch = Closure::bind(
             static function (DaemonManager $manager): void {
-                $manager->dispatchSignals();
+                do {
+                    $manager->dispatchSignals();
+                } while ($manager->hasRunnableSignalDispatch());
             },
             null,
             DaemonManager::class,
@@ -352,7 +354,7 @@ final class RestoreProgressDeliveryTestServer extends WebSocketServer
             . "Sec-WebSocket-Version: 13\r\n"
             . "\r\n",
         );
-        $this->clients[] = $probe;
+        $this->addClient($probe);
 
         return $probe;
     }

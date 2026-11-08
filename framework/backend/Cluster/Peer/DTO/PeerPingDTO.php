@@ -9,7 +9,7 @@ namespace Hilos\Cluster\Peer\DTO;
  * interval, to prove the connection is still alive before the timeout closes it.
  *
  * The recipient answers with a {@see PeerPongDTO} echoing the optional nonce. The nonce
- * is not required for liveness — any inbound frame refreshes the peer's last-heard clock —
+ * is not required for liveness — new inbound application bytes refresh the last-heard clock —
  * so it travels only when a sender wants to correlate a specific pong. A busy link never
  * emits a ping, so this frame is silent on an established, chatty connection.
  */

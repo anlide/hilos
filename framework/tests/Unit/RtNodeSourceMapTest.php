@@ -136,6 +136,86 @@ final class RtNodeSourceMapTest extends TestCase
         $this->assertSame(['unitRtNodeSourceOther'], $map->collections());
     }
 
+    public function testReplacingDuplicateNamedClaimsRetiresEveryOldRightWithoutTouchingTheOtherOwner(): void
+    {
+        $map = new RtNodeSourceMap();
+        $map->note(self::AGENT, [self::COLLECTION, self::COLLECTION], [], [self::COLLECTION => ['7', '7', '8']]);
+        $map->note(self::OTHER_AGENT, [self::COLLECTION], [self::COLLECTION]);
+        $this->assertFalse($map->ownsFully(self::COLLECTION));
+        $this->assertTrue($map->ownsFully(self::COLLECTION, '7'));
+        $this->assertTrue($map->ownsFully(self::COLLECTION, '8'));
+        $this->assertTrue($map->owns(self::COLLECTION, 'other'), 'The partial unrestricted owner still holds every row');
+
+        $map->note(self::AGENT, [self::COLLECTION], [self::COLLECTION], [self::COLLECTION => ['8']]);
+        $this->assertFalse($map->ownsFully(self::COLLECTION, '7'));
+        $this->assertFalse($map->ownsFully(self::COLLECTION, '8'));
+        $map->release(self::OTHER_AGENT);
+        $this->assertFalse($map->owns(self::COLLECTION, '7'));
+        $this->assertTrue($map->owns(self::COLLECTION, '8'));
+        $this->assertFalse($map->owns(self::COLLECTION, 'other'));
+
+        $map->note(self::AGENT, [self::COLLECTION]);
+        $this->assertTrue($map->ownsFully(self::COLLECTION));
+        $this->assertTrue($map->ownsFully(self::COLLECTION, 'other'));
+        $map->note(self::AGENT, []);
+        $map->release(self::AGENT);
+        $this->assertSame([], $map->collections());
+        $this->assertFalse($map->owns(self::COLLECTION));
+        foreach (['7', '8', 'other'] as $key) {
+            $this->assertFalse($map->owns(self::COLLECTION, $key));
+            $this->assertFalse($map->ownsFully(self::COLLECTION, $key));
+        }
+    }
+
+    public function testReleasingTheFullOwnerOfAnOverlappingKeyLeavesOnlyThePartialRight(): void
+    {
+        $map = new RtNodeSourceMap();
+        $map->note(self::AGENT, [self::COLLECTION], [], [self::COLLECTION => ['0', '07']]);
+        $map->note(self::OTHER_AGENT, [self::COLLECTION], [self::COLLECTION], [self::COLLECTION => ['0', '07']]);
+        $map->release(self::AGENT);
+        foreach (['0', '07'] as $key) {
+            $this->assertTrue($map->owns(self::COLLECTION, $key));
+            $this->assertFalse($map->ownsFully(self::COLLECTION, $key));
+        }
+        $this->assertFalse($map->owns(self::COLLECTION, '7'), 'A numeric-looking row key keeps its exact string identity');
+        $map->note(self::OTHER_AGENT, [self::COLLECTION], [], [self::COLLECTION => ['0']]);
+        $this->assertTrue($map->ownsFully(self::COLLECTION, '0'));
+        $this->assertFalse($map->owns(self::COLLECTION, '07'));
+        $map->release(self::OTHER_AGENT);
+        $this->assertFalse($map->owns(self::COLLECTION, '0'));
+        $this->assertFalse($map->ownsFully(self::COLLECTION, '0'));
+    }
+
+    public function testAggregateDeduplicationKeepsDeclarationOrderAndPartialClaimExclusions(): void
+    {
+        $map = new RtNodeSourceMap();
+        $map->note(self::AGENT, [self::COLLECTION, 'sets'], [], [self::COLLECTION => ['0', '07', '0'], 'sets' => []], ['sets' => '42']);
+        $map->note(self::OTHER_AGENT, [self::COLLECTION, 'sets'], [], [self::COLLECTION => ['07', '9'], 'sets' => []], ['sets' => '7']);
+        $this->assertSame([self::COLLECTION, 'sets'], $map->collections());
+        $this->assertSame([self::COLLECTION => ['0', '07', '9']], $map->keyScopedCollections());
+        $this->assertSame(['sets' => ['42', '7']], $map->setScopedCollections());
+        $this->assertSame(['42', '7'], $map->claimedSetKeys('sets'));
+        $this->assertSame([], $map->fullyOwnedCollections());
+
+        $map->note(self::AGENT, [self::COLLECTION, 'sets'], [self::COLLECTION],
+            [self::COLLECTION => ['9', '11'], 'sets' => []], ['sets' => '7']);
+        $this->assertSame([self::COLLECTION => ['07', '9']], $map->keyScopedCollections());
+        $this->assertSame(['sets' => ['7']], $map->setScopedCollections());
+        $map->release(self::OTHER_AGENT);
+        $map->note(self::AGENT, [self::COLLECTION], [], [self::COLLECTION => []]);
+        $this->assertSame([self::COLLECTION => []], $map->keyScopedCollections(), 'An empty declared scope remains present');
+    }
+
+    public function testAggregateIndexesKeepStrictMatchingForNumericCollectionMapKeys(): void
+    {
+        $map = new RtNodeSourceMap();
+        $map->note(self::AGENT, ['0', '07'], [], ['0' => ['zero'], '07' => ['leading']]);
+        $this->assertSame(['0', '07'], $map->collections());
+        $this->assertSame(['07' => ['leading']], $map->keyScopedCollections());
+        $map->note(self::AGENT, ['0', '07'], [], ['0' => [], '07' => []], ['0' => 'zero', '07' => 'leading']);
+        $this->assertSame(['07' => ['leading']], $map->setScopedCollections());
+    }
+
     /**
      * @throws InvalidFormatException When the frame is not the object its DTO needs
      */

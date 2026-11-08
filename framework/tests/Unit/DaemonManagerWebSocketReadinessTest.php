@@ -18,10 +18,22 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\SignalName;
+use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Socket\Worker\DTO\SystemSignalDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Server\WebSocketServer;
+use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\SocketException;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
@@ -38,6 +50,9 @@ final class DaemonManagerWebSocketReadinessTest extends TestCase
 
     private ?ClusterContext $previousCluster = null;
 
+    /** @var list<array{ReadinessTestManager, EventLoop}> Native bindings released after each case */
+    private array $bindings = [];
+
     protected function setUp(): void
     {
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
@@ -47,6 +62,11 @@ final class DaemonManagerWebSocketReadinessTest extends TestCase
 
     protected function tearDown(): void
     {
+        foreach ($this->bindings as [$manager, $loop]) {
+            new ReflectionMethod(DaemonManager::class, 'detachReadinessEventLoop')->invoke($manager);
+            new ReflectionMethod(DaemonManager::class, 'detachCronEventLoop')->invoke($manager);
+            $loop->close();
+        }
         Hilos::$env = $this->previousEnv;
         Hilos::$cluster = $this->previousCluster;
         foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE'] as $key) {
@@ -164,6 +184,270 @@ final class DaemonManagerWebSocketReadinessTest extends TestCase
         $this->assertSame([], $manager->liveAcceptKeys());
     }
 
+    public function testWorkersReadySignalWakesTheNativeGateWithoutAMasterTick(): void
+    {
+        Hilos::$cluster = null;
+        [$manager, $server] = $this->readyManager();
+        $manager->agentStarted = true;
+        $manager->registerServer(new ReadinessTestWorkerServer());
+        new ReflectionProperty(DaemonManager::class, 'workersReady')->setValue($manager, false);
+        $loop = $this->bind($manager);
+        new ReflectionMethod(DaemonManager::class, 'addCronRule')->invoke($manager, 'native-ready', '* * * * *');
+        new ReflectionMethod(DaemonManager::class, 'attachCronEventLoop')->invoke($manager);
+        $cronTimer = new ReflectionProperty(DaemonManager::class, 'cronMinuteTimer')->getValue($manager);
+        $this->assertNull($cronTimer->getDeadline());
+        $loop->tick();
+        $this->assertSame(0, $manager->requiredAgentReads);
+        Hilos::$sr->queueSignal(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::SYSTEM),
+            new SignalName(SignalConstants::WORKERS_READY),
+            new SystemSignalDTO(systemName: SignalConstants::WORKERS_READY),
+        );
+        new ReflectionMethod(DaemonManager::class, 'dispatchSignals')->invoke($manager);
+        $loop->tick();
+        new ReflectionMethod(DaemonManager::class, 'dispatchCronMinute')->invoke($manager);
+        $this->assertNotNull($cronTimer->getDeadline());
+        $this->assertSame(1, $server->startCount);
+        $this->assertFalse($loop->hasReadyWork());
+    }
+
+    public function testRealAgentStartReportOpensWithoutAnyMasterTickOrIoScan(): void
+    {
+        Hilos::$cluster = null;
+        [$manager, $server] = $this->readyManager();
+        $manager->useRealRoster = true;
+        $agents = $manager->getAgentManagerDaemon();
+        $agents->addAgent('critical', $this->createMock(AgentDaemonInterface::class), 1, false);
+        $loop = $this->bind($manager);
+        $loop->tick();
+        $deadline = $this->timer($manager)->getDeadline();
+        $this->assertSame(0, $server->startCount);
+        $this->assertSame(1, $manager->requiredAgentReads);
+        $loop->createReadyWork(static function (): void {})->markReady();
+        $loop->tick();
+        $loop->tick();
+        $this->assertSame(1, $manager->requiredAgentReads, 'unrelated work never scans startup agents');
+        $this->assertSame($deadline, $this->timer($manager)->getDeadline());
+        $this->assertFalse($loop->hasReadyWork());
+
+        $agents->handleAgentStarted(new WorkerAgentStartedDTO('critical', 'critical'));
+        $loop->tick();
+        $this->assertSame(1, $server->startCount);
+        $this->assertNull($this->timer($manager));
+        $agents->handleAgentStarted(new WorkerAgentStartedDTO('critical', 'critical'));
+        $loop->tick();
+        $this->assertSame(1, $server->startCount);
+        $this->assertFalse($loop->hasReadyWork());
+    }
+
+    public function testLeaderHeartbeatWakesOnlyForAChangedReadinessFact(): void
+    {
+        $coordinator = $this->cluster('master');
+        [$manager, $server] = $this->readyManager();
+        $loop = $this->bind($manager);
+        $loop->tick();
+        $deadline = $this->timer($manager)->getDeadline();
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'm1', false));
+        $loop->tick();
+        $this->assertFalse($loop->hasReadyWork());
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'm1', false));
+        $this->assertFalse($loop->hasReadyWork(), 'the same heartbeat verdict owes no gate reevaluation');
+        $this->assertSame($deadline, $this->timer($manager)->getDeadline());
+        $coordinator->noteNodeOffline('m1');
+        $this->assertTrue($loop->hasReadyWork(), 'leader loss is a readiness fact');
+        $loop->tick();
+        $this->assertSame($deadline, $this->timer($manager)->getDeadline());
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(2, 'm3', false));
+        $loop->tick();
+        $this->assertSame(0, $server->startCount);
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(2, 'm3', true));
+        $loop->tick();
+        $this->assertSame(1, $server->startCount);
+        $this->assertNull($this->timer($manager));
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(3, 'm1', true));
+        $this->assertFalse($loop->hasReadyWork(), 'opened gate releases the coordinator callback');
+    }
+
+    public function testNativeTimeoutOpensDegradedAndNullTimeoutKeepsWaiting(): void
+    {
+        foreach ([false, true] as $follower) {
+            if ($follower) {
+                $this->cluster('master');
+            } else {
+                Hilos::$cluster = null;
+            }
+            [$manager, $server] = $this->readyManager();
+            $loop = $this->bind($manager);
+            $loop->tick();
+            $timer = $this->timer($manager);
+            $this->assertNotNull($timer->getDeadline());
+            new ReflectionProperty(DaemonManager::class, 'readinessWaitSince')->setValue($manager, hrtime(true) / 1e9 - 61.0);
+            $timer->armAt(hrtime(true) / 1e9 - 1.0);
+            $this->pump($loop);
+            $this->assertSame(0, $server->startCount, 'null timeout remains an unlimited wait after the stuck log');
+            $this->assertNotNull(new ReflectionProperty(DaemonManager::class, 'lastReadinessLogAt')->getValue($manager));
+            $this->assertNotNull($timer->getDeadline(), 'only the next stuck log remains armed');
+            $this->assertFalse($loop->hasReadyWork());
+
+            $manager->setTimeout(self::READINESS_TIMEOUT_SECONDS);
+            $timer->armAt(hrtime(true) / 1e9 - 1.0);
+            $this->pump($loop);
+            $this->assertSame(1, $server->startCount);
+            $this->assertNull($this->timer($manager));
+        }
+    }
+
+    public function testNativeReadinessCannotOpenOnSlaveOrAfterShutdown(): void
+    {
+        $coordinator = $this->cluster('slave');
+        [$manager, $server] = $this->readyManager();
+        $manager->setTimeout(0.0);
+        $loop = $this->bind($manager);
+        $this->pump($loop);
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'm1', true));
+        $this->assertSame(0, $server->startCount);
+        $this->assertNull($this->timer($manager));
+        $this->assertFalse($loop->hasReadyWork());
+
+        $this->cluster('master');
+        [$manager, $server] = $this->readyManager();
+        $loop = $this->bind($manager);
+        $loop->tick();
+        $timer = $this->timer($manager);
+        $timer->armAt(hrtime(true) / 1e9 - 1.0);
+        new ReflectionProperty(DaemonManager::class, 'shutdownStartTime')->setValue($manager, microtime(true));
+        new ReflectionMethod(DaemonManager::class, 'initiateShutdown')->invoke($manager);
+        $this->pump($loop);
+        $manager->agentStarted = true;
+        $manager->onAgentStarted('critical');
+        $this->pump($loop);
+        $this->assertSame(0, $server->startCount);
+        $this->assertNull($this->timer($manager));
+        $this->assertFalse($loop->hasReadyWork());
+    }
+
+    public function testStopAndFailureFactsInvalidateABoundedAgentWalk(): void
+    {
+        Hilos::$cluster = null;
+        [$manager, $server] = $this->readyManager();
+        $manager->useRealRoster = true;
+        $manager->requiredAgents = array_merge(['critical'], array_fill(0, 129, 'supporting'));
+        $agents = $manager->getAgentManagerDaemon();
+        $agents->addAgent('critical', $this->createMock(AgentDaemonInterface::class), 1, false);
+        $agents->handleAgentStarted(new WorkerAgentStartedDTO('critical', 'critical'));
+        $agents->addAgent('supporting', $this->createMock(AgentDaemonInterface::class), 2, false);
+        $agents->handleAgentStarted(new WorkerAgentStartedDTO('supporting', 'supporting'));
+        $loop = $this->bind($manager);
+        $loop->tick();
+        $this->assertSame(0, $server->startCount);
+        $this->assertTrue($loop->hasReadyWork(), 'an unfinished bounded walk continues without waiting');
+        $agents->handleAgentStopped(new WorkerAgentStoppedDTO('critical'));
+        $this->pump($loop);
+        $this->assertSame(0, $server->startCount, 'a stop invalidates the already checked prefix');
+        $this->assertFalse($loop->hasReadyWork(), 'pending agents wait for a real fact');
+        $agents->handleAgentStartFailed(new WorkerAgentStartFailedDTO('critical', 'critical', reason: 'refused'));
+        $this->assertTrue($loop->hasReadyWork());
+        $this->pump($loop);
+        $this->assertSame(0, $server->startCount);
+        $agents->addAgent('critical', $this->createMock(AgentDaemonInterface::class), 1, false);
+        $agents->handleAgentStarted(new WorkerAgentStartedDTO('critical', 'critical'));
+        $this->pump($loop);
+        $this->assertSame(1, $server->startCount);
+        $this->assertFalse($loop->hasReadyWork());
+    }
+
+    public function testElectionFactsReevaluateTheGateWithoutResettingItsWait(): void
+    {
+        $coordinator = $this->cluster('master');
+        [$manager, $server] = $this->readyManager();
+        $manager->agentStarted = true;
+        $loop = $this->bind($manager);
+        $loop->tick();
+        $waitSince = new ReflectionProperty(DaemonManager::class, 'readinessWaitSince')->getValue($manager);
+        $coordinator->tick(0.0);
+        $coordinator->tick(1.0);
+        $loop->tick();
+        $this->assertSame(0, $server->startCount, 'a candidate still waits for a leader');
+        $this->assertSame($waitSince, new ReflectionProperty(DaemonManager::class, 'readinessWaitSince')->getValue($manager));
+        $coordinator->onVoteReply(new PeerVoteReplyDTO(1, true, 'm1'));
+        $loop->tick();
+        $this->assertSame(1, $server->startCount);
+        $this->assertSame(1, $manager->requiredAgentReads);
+        $this->assertFalse($loop->hasReadyWork());
+    }
+
+    public function testWorkerLossInvalidatesAnAlreadyCheckedAgentPrefix(): void
+    {
+        Hilos::$cluster = null;
+        [$manager, $server] = $this->readyManager();
+        $manager->useRealRoster = true;
+        $manager->requiredAgents = array_merge(['critical'], array_fill(0, 129, 'supporting'));
+        $agents = $manager->getAgentManagerDaemon();
+        foreach (['critical' => 1, 'supporting' => 2] as $id => $worker) {
+            $agents->addAgent($id, $this->createMock(AgentDaemonInterface::class), $worker, false);
+            $agents->handleAgentStarted(new WorkerAgentStartedDTO($id, $id));
+        }
+        $loop = $this->bind($manager);
+        $loop->tick();
+        $this->assertTrue($loop->hasReadyWork());
+        $agents->forgetAgentsOfWorker(1, false);
+        $this->pump($loop);
+        $this->assertSame(0, $server->startCount, 'a lost worker invalidates the already checked prefix');
+        $this->assertFalse($loop->hasReadyWork());
+    }
+
+    public function testRebindingCancelsAnActivatedOldDeadlineAndQueuedGate(): void
+    {
+        Hilos::$cluster = null;
+        [$manager, $server] = $this->readyManager();
+        $loop = $this->bind($manager);
+        $loop->tick();
+        $timer = $this->timer($manager);
+        $timer->armAt(hrtime(true) / 1e9 - 1.0);
+        $replacement = null;
+        $loop->createReadyWork(function () use ($manager, &$replacement): void {
+            $replacement = $this->bind($manager);
+        })->markReady();
+        $loop->tick();
+        $manager->agentStarted = true;
+        $this->pump($loop);
+        $this->assertSame(0, $server->startCount, 'the replaced generation cannot evaluate the gate');
+        $this->assertNull($timer->getDeadline());
+        $this->pump($replacement);
+        $this->assertSame(1, $server->startCount);
+    }
+
+    /** @param EventLoop $loop Native loop whose bounded portions are drained without waiting */
+    private function pump(EventLoop $loop): void
+    {
+        for ($portion = 0; $portion < 8; ++$portion) {
+            $loop->tick();
+        }
+    }
+
+    /**
+     * @param ReadinessTestManager $manager Master to bind to a real native loop
+     * @return EventLoop Same loop the production startup seam uses
+     */
+    private function bind(ReadinessTestManager $manager): EventLoop
+    {
+        $loop = new EventLoop();
+        new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($manager, $loop);
+        new ReflectionMethod(DaemonManager::class, 'attachReadinessEventLoop')->invoke($manager);
+        $this->bindings[] = [$manager, $loop];
+        return $loop;
+    }
+
+    /**
+     * @param ReadinessTestManager $manager Owner of the readiness deadline
+     * @return ?EventLoopTimer Currently bound timer, null once the gate closes
+     */
+    private function timer(ReadinessTestManager $manager): ?EventLoopTimer
+    {
+        return new ReflectionProperty(DaemonManager::class, 'readinessTimer')->getValue($manager);
+    }
+
     /**
      * @param string $role Local cluster role
      * @param ?ReadinessTestMesh $mesh Mesh to observe, or a fresh one
@@ -198,7 +482,7 @@ final class DaemonManagerWebSocketReadinessTest extends TestCase
         new ReflectionProperty(DaemonManager::class, 'workersReady')->setValue($manager, true);
         new ReflectionProperty(DaemonManager::class, 'readinessWaitSince')->setValue(
             $manager,
-            microtime(true) - self::EXPIRED_READINESS_WAIT_SECONDS,
+            hrtime(true) / 1e9 - self::EXPIRED_READINESS_WAIT_SECONDS,
         );
 
         return [$manager, $server];
@@ -218,6 +502,11 @@ final class ReadinessTestManager extends DaemonManager
 
     public int $requiredAgentReads = 0;
 
+    public bool $useRealRoster = false;
+
+    /** @var list<string> Required startup agents for the portioned walk */
+    public array $requiredAgents = ['critical'];
+
     protected function createSignalRouter(): SignalRouter
     {
         return new SignalRouter();
@@ -232,7 +521,7 @@ final class ReadinessTestManager extends DaemonManager
     protected function getRequiredReadinessAgents(): array
     {
         $this->requiredAgentReads++;
-        return ['critical'];
+        return $this->requiredAgents;
     }
 
     /** @param ?float $seconds Readiness timeout in seconds */
@@ -256,7 +545,7 @@ final class ReadinessTestAgentManager extends AgentManagerDaemon
      */
     public function isAgentStarted(string $agentId): bool
     {
-        return $this->manager->agentStarted;
+        return $this->manager->useRealRoster ? parent::isAgentStarted($agentId) : $this->manager->agentStarted;
     }
 
     /**
@@ -328,6 +617,18 @@ final class ReadinessTestMesh implements ConsensusMesh
      * @param PeerDTO $frame Unused frame
      */
     public function sendToMaster(string $nodeId, PeerDTO $frame): void
+    {
+    }
+}
+
+/** An empty worker transport lets the real signal dispatcher consume WORKERS_READY. */
+final class ReadinessTestWorkerServer extends WorkerServer
+{
+    public function __construct()
+    {
+    }
+
+    protected function onStart(): void
     {
     }
 }

@@ -25,6 +25,7 @@ use Hilos\Utils\ClientReadFailureLog;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
+use ReflectionProperty;
 use RuntimeException;
 use Throwable;
 
@@ -74,6 +75,7 @@ final class DaemonManagerContainedFailureHookTest extends TestCase
         $manager = new DaemonManagerContainedFailureHookTestManager();
         $server = new DaemonManagerContainedFailureHookTestServer();
         $manager->registerServer($server);
+        new ReflectionProperty(AbstractServer::class, 'clientSocketAttacher')->setValue($server, null);
         $server->seedClient(new InvalidJsonException('Payload does not decode as JSON: Syntax error'));
 
         $server->onTick();
@@ -143,6 +145,7 @@ final class DaemonManagerContainedFailureHookTest extends TestCase
         $manager->hookFails = true;
         $server = new DaemonManagerContainedFailureHookTestServer();
         $manager->registerServer($server);
+        new ReflectionProperty(AbstractServer::class, 'clientSocketAttacher')->setValue($server, null);
         $client = $server->seedClient(new InvalidJsonException('Payload does not decode as JSON: Syntax error'));
 
         $server->onTick();
@@ -166,6 +169,7 @@ final class DaemonManagerContainedFailureHookTest extends TestCase
         $manager = new DaemonManagerContainedFailureHookTestManager();
         $server = new DaemonManagerContainedFailureHookTestServer();
         $manager->registerServer($server);
+        new ReflectionProperty(AbstractServer::class, 'clientSocketAttacher')->setValue($server, null);
         $seeded = ClientReadFailureLog::BURST_LINES + 2;
         for ($index = 0; $index < $seeded; $index++) {
             $server->seedClient(new InvalidJsonException('Payload does not decode as JSON: Syntax error'));
@@ -317,7 +321,7 @@ final class DaemonManagerContainedFailureHookTestServer extends AbstractServer
     public function seedClient(Throwable $failure): DaemonManagerContainedFailureHookTestClient
     {
         $client = new DaemonManagerContainedFailureHookTestClient($failure);
-        $this->clients[] = $client;
+        $this->addClient($client);
 
         return $client;
     }
@@ -416,7 +420,14 @@ final class DaemonManagerContainedFailureHookTestClient extends WebSocketClient
         $this->closed = true;
     }
 
+    /** @throws Throwable The same per-client refusal under the periodic tick guard */
     public function onTick(): void
+    {
+        throw $this->failure;
+    }
+
+    /** No native binding: this fixture deliberately skips the socket constructor. */
+    public function detachEventLoop(): void
     {
     }
 

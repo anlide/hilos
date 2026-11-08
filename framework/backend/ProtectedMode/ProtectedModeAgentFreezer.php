@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Core\Exception\InvalidFormatException;
 
@@ -39,6 +40,7 @@ interface ProtectedModeAgentFreezer
      * @param string $initiatorAgentType Initiator agent type left running
      * @param ?string $initiatorAgentIndex Initiator agent index, or null for a singleton initiator
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function stopAgentsForProtectedMode(string $initiatorAgentType, ?string $initiatorAgentIndex): void;
 

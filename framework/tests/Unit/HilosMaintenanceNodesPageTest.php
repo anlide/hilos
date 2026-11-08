@@ -318,7 +318,10 @@ final class HilosMaintenanceNodesPageTest extends MaintenanceNodesTestCase
         socket_set_nonblock($far);
         $link = new PeerLink($near, $server, NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []), false,
             new NamedPeerTestTransport($near, 'node-b'));
-        Closure::bind(static function () use ($server, $link): void { $server->clients[] = $link; }, null, PeerServer::class)();
+        Closure::bind(static function () use ($server, $link): void {
+            $server->addClient($link);
+            $server->attachClient($link);
+        }, null, PeerServer::class)();
         foreach ([new PeerHelloDTO(PeerProtocol::VERSION, 'node-b', 'Node node-b', NodeRole::Master, [], PeerTestMarkers::onWire(), null),
             new PeerReadyDTO(false), new PeerProtectedModeNodeReportDTO('verifying', 7, ['node-a', 'node-b'], ['node-a'], 'node-a')] as $frame) {
             socket_write($far, $frame->toJson() . "\n");

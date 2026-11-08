@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use ReflectionMethod;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonManager;
@@ -12,6 +13,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\Validation\PositiveIntegerRule;
 use Hilos\Hilos;
+use Hilos\ProtectedMode\ProtectedModeSourceBinding;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\AbstractServer;
@@ -95,7 +97,7 @@ final class DeliverySettingsTest extends TestCase
         $workers = new DeliverySettingsWorkerServer();
         $webSockets = new DeliverySettingsWebSocketServer('127.0.0.1', 0);
         $worker = new DeliverySettingsReceivingClient();
-        new ReflectionProperty(AbstractServer::class, 'clients')->setValue($workers, [$worker]);
+        new ReflectionMethod(AbstractServer::class, 'addClient')->invoke($workers, $worker);
         $manager->registerServer($webSockets);
         $manager->registerServer($workers);
         $mirror = new ReflectionProperty(WebSocketServer::class, 'deliverySettingsMirror')->getValue($webSockets);
@@ -121,6 +123,7 @@ final class DeliverySettingsReceivingClient extends WorkerClient
 {
     public function __construct()
     {
+        new ReflectionProperty(WorkerClient::class, 'workerServer')->setValue($this, new DeliverySettingsWorkerServer());
     }
 
     /** @param WorkerDTO $frame Worker frame passed through the actual parser */
@@ -133,8 +136,10 @@ final class DeliverySettingsReceivingClient extends WorkerClient
 
 final class DeliverySettingsMaster extends DaemonManager
 {
+    /** Initializes the shared source binding used by real server registration. */
     public function __construct()
     {
+        new ReflectionProperty(DaemonManager::class, 'protectedModeSourceBinding')->setValue($this, new ProtectedModeSourceBinding());
     }
 
     /** @return SignalRouter Unused in this socket-free fixture */

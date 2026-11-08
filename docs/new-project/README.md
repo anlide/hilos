@@ -43,7 +43,7 @@ demo/<name>/
     .env.example       # test DB coordinates
     e2e/               # Playwright package (own package.json; own eslint and prettier configs)
   docker/
-    Dockerfile         # php:8.4.27-cli + sockets/pcntl/posix/mysqli/pdo + pecl event
+    Dockerfile         # php:8.4.27-cli + sockets/pcntl/posix/mysqli/pdo + pinned, patched event 3.1.6
     Dockerfile.nginx   # pinned nginx:1.31.8-alpine + envsubst + self-signed TLS entrypoint
     nginx.conf.template
     docker-entrypoint-nginx.sh
@@ -55,6 +55,16 @@ demo/<name>/
 
 The exact PHP image digest is pinned in the
 [canonical minimal demo Dockerfile](../../demo/binance-btc-tracker/docker/Dockerfile).
+It loads sockets before the shared event installer, which builds PECL event
+3.1.6 with OpenSSL and sockets support and the Hilos peer-certificate and
+buffer-event lifetime patch.
+The required APIs are `EventBufferEvent::sslSocket()` and
+`EventBufferEvent::sslGetPeerCertificate(): ?string`; the version alone does
+not establish that the patch is present, and the getter alone does not prove
+the lifetime repair. Rebuild consumers after native asset updates. Follow the
+[native build guide](../../framework/docker/native/event/README.md) for
+installation, patch updates and license notices, and the
+[root README](../../README.md) for the environment required outside Docker.
 
 ## Minimal backend file set
 
@@ -155,6 +165,48 @@ Two compose files per project; every `container_name` is prefixed with the
 app key (`chat-…`, `polls-…`, `tasks-…`) so it stays globally unique
 (`container_name` and explicitly named volumes are docker-GLOBAL, not
 project-scoped — never reuse another project's).
+
+**PHP build context.** When copying a minimal demo's Dockerfile, preserve
+`COPY --from=hilos-event . /tmp/hilos-event/` and the following installer run.
+Before the first build, supply the named context `hilos-event` pointing at
+`framework/docker/native/event`. With Docker Compose 2.17 or later and a
+BuildKit builder supporting additional contexts, declare
+`build.additional_contexts` on every PHP build: daemon, cli, monitor and gateway
+where present, including test and cluster tooling. Keep each principal build
+context as it is; the shared installer and patch stay in the native directory.
+
+For example, these build entries come from
+[the minimal demo's local stack](../../demo/binance-btc-tracker/docker/docker-compose.local.yml)
+(other service settings omitted):
+
+```yaml
+services:
+  binance-btc-tracker-daemon-local:
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
+  binance-btc-tracker-cli-local:
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
+```
+
+Those paths are for `demo/binance-btc-tracker/docker/docker-compose.local.yml`.
+Resolve paths from the corresponding Compose model when adapting a stack,
+including its `include` and `extends` relationships; do not assume a fragment's
+directory is always the base. Check the resolved builds with `docker compose
+-f <compose-file> config` before building.
+
+For a direct build, pass `--build-context hilos-event=<native directory>`.
+This example runs from the repository root and keeps the demo's principal
+context at its Docker directory:
+
+```sh
+docker build --build-context hilos-event=framework/docker/native/event \
+  -f demo/binance-btc-tracker/docker/Dockerfile demo/binance-btc-tracker/docker
+```
 
 **Local** (`docker-compose.local.yml`, the developer sandbox): mysql (datadir
 bind-mounted at `data/mysql`, `mysql/init.sql`), the daemon, a cli

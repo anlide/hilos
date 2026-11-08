@@ -146,6 +146,40 @@ final class WebSocketClientBinaryFrameTest extends TestCase
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
+    /** Parser yields keep fragments and their admission receipts until one whole message leaves. */
+    public function testFragmentedUploadCrossesParserPortionsWithoutDuplicatingDebt(): void
+    {
+        $probe = $this->handshakenProbe();
+        $pool = new UploadMemoryPool(150, 'node:boot');
+        $sink = new WebSocketBinaryMemorySink($pool);
+        $probe->setUploadMemoryPoolSink($sink);
+        $grant = $this->grantInput($pool, $sink, $probe->acceptKey, 'file', 150);
+        $payload = $this->binaryPayload(150);
+        $wire = $this->binaryFrame("\x04file" . $payload[0], true, false);
+        for ($index = 1; $index < 150; ++$index) {
+            $wire .= $this->binaryFrame($payload[$index], true, $index === 149, 0x0);
+        }
+
+        $probe->feed($wire);
+        $this->assertNotSame('', $probe->inputBytes(), 'one portion must retain some complete fragments');
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+        $this->assertSame([], $sink->receipts);
+        $this->assertSame(150, $pool->getUsedBytes());
+        for ($pass = 0; $pass < 12; ++$pass) {
+            $probe->feed('');
+        }
+
+        $this->assertSame('', $probe->inputBytes());
+        $this->assertNextBinaryPayload($probe, "\x04file" . $payload);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+        $this->assertCount(1, $sink->receipts);
+        $this->assertSame(150, $sink->receipts[0]->byteCount);
+        $this->assertSame([$grant->id => 150], $sink->receipts[0]->reservationBytes);
+        $this->assertSame(150, $pool->getUsedBytes());
+        $pool->discardPending($sink->receipts[0]->id);
+        $this->assertSame(0, $pool->getUsedBytes());
+    }
+
     /** @return iterable<string, array{int, bool}> Every header form with signed input */
     public static function boundedFrames(): iterable
     {

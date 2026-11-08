@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Closure;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Cluster\Clock\ClusterClock;
 use Hilos\Cluster\Connections\ClusterClientLocation;
@@ -31,6 +33,7 @@ use Hilos\Core\Daemon\Module\PeerModule;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeClientNotifier;
@@ -58,6 +61,8 @@ use Hilos\Runtime\State\Item\HilosClusterNode;
  */
 final class ClusterContext
 {
+    private ?Closure $protectedModeWake = null;
+
     /** @var ?NodeIdentity Resolved local node identity, memoized on first access. */
     private ?NodeIdentity $identity = null;
 
@@ -308,7 +313,10 @@ final class ClusterContext
      */
     public function registerLeadership(Leadership $leadership): void
     {
-        $this->leadership = $leadership;
+        if ($this->leadership !== $leadership) {
+            $this->leadership = $leadership;
+            $this->protectedModeWake?->__invoke();
+        }
     }
 
     /**
@@ -557,7 +565,24 @@ final class ClusterContext
      */
     public function registerProtectedMode(ProtectedModeSwitch $protectedMode): void
     {
-        $this->protectedMode = $protectedMode;
+        if ($this->protectedMode !== $protectedMode) {
+            $this->protectedMode = $protectedMode;
+            $this->protectedModeWake?->__invoke();
+        }
+    }
+
+    /** @param Closure(): void $wake Concrete protected source fan-out */
+    public function setProtectedModeWake(Closure $wake): void
+    {
+        $this->protectedModeWake = $wake;
+    }
+
+    /** @param Closure(): void $wake Exact departing source binding */
+    public function removeProtectedModeWake(Closure $wake): void
+    {
+        if ($this->protectedModeWake === $wake) {
+            $this->protectedModeWake = null;
+        }
     }
 
     /**
@@ -992,6 +1017,7 @@ final class ClusterContext
      * Forwards a node-joined transition to the registered observer, if any.
      *
      * @param ClusterNode $node Node that joined (or came back online)
+     * @throws EventLoopException When the observer cannot arm a placement retry deadline
      */
     public function notifyNodeJoined(ClusterNode $node): void
     {
@@ -1004,6 +1030,7 @@ final class ClusterContext
      * @param ClusterNode $node Node that left (went offline)
      * @throws InvalidFormatException When a pending page recovery address is malformed
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function notifyNodeLeft(ClusterNode $node): void
     {
@@ -1030,6 +1057,7 @@ final class ClusterContext
      * @throws ClusterDisabledException When cluster mode is disabled
      * @throws ClusterConfigurationException When the reloaded node config is missing or invalid
      * @throws EnvException When a cluster env value cannot be read
+     * @throws HilosException When the reloaded membership fails its quorum duties
      */
     public function reload(): bool
     {

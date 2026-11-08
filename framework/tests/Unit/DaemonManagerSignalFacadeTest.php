@@ -383,7 +383,7 @@ final class DaemonManagerSignalFacadeTestWorkerServer extends WorkerServer
      */
     public function addWorker(): void
     {
-        $this->clients[] = new DaemonManagerSignalFacadeTestWorkerClient();
+        $this->addClient(new DaemonManagerSignalFacadeTestWorkerClient());
     }
 
     /**

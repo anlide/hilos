@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Closure;
+use Hilos\Constants\TimeConstants;
+use Generator;
 use Hilos\Constants\SocketConstants;
 use Hilos\Core\Daemon\ClientSocketDetacher;
 use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\ContainedFailureSink;
 use Hilos\Core\Daemon\Master\MasterFailureUnit;
+use Hilos\Core\Daemon\SignalHoldIndex;
 use Hilos\HilosException;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\Client\ClientInterface;
@@ -47,6 +51,16 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
 
     /** @var ?ClientSocketDetacher Master seam a departing client is announced to, wired at registration */
     private ?ClientSocketDetacher $clientSocketDetacher = null;
+
+    /** @var ?Closure(ClientInterface): void One loop binding for accepted and dialed clients */
+    private ?Closure $clientSocketAttacher = null;
+
+    /** @var array<int, int> Transport identity to its stable local roster slot */
+    private array $clientSlots = [];
+
+    private int $clientSequence = 0;
+
+    private ?SignalHoldIndex $clientIndex = null;
 
     /**
      * Create server with host and port.
@@ -90,6 +104,14 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     }
 
     /**
+     * @param Closure(ClientInterface): void $attacher Bind accepted and dialed clients before their first handshake
+     */
+    public function setClientSocketAttacher(Closure $attacher): void
+    {
+        $this->clientSocketAttacher = $attacher;
+    }
+
+    /**
      * Get all active client connections.
      *
      * @return list<TClient> Array of client connections
@@ -97,6 +119,27 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     public function getClients(): array
     {
         return $this->clients;
+    }
+
+    /**
+     * Captures a finite scalar tail before returning, without retaining transport snapshots.
+     * Departed slots are skipped; later transports cannot enter this original cohort.
+     *
+     * @return Generator<int, ?TClient> Still-live original slots in connection order
+     */
+    public function clientCandidates(): Generator
+    {
+        return $this->walkClients(($this->clientIndex ??= new SignalHoldIndex())->candidates());
+    }
+
+    /**
+     * @param int $slot Original captured roster slot
+     * @param ClientInterface $client Original captured connection
+     * @return bool Whether that exact transport still occupies its original live slot
+     */
+    public function isCurrentClient(int $slot, ClientInterface $client): bool
+    {
+        return ($this->clients[$slot] ?? null) === $client && !$client->shouldClose();
     }
 
     /** @return string Host the server was configured to bind */
@@ -182,6 +225,15 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
         }
         $this->clients = [];
 
+        $this->closeListener();
+    }
+
+    /**
+     * Releases only the entrance; client disposal and worker stop waves have separate owners.
+     * The master removes the exact listener watch before entering this door.
+     */
+    public function closeListener(): void
+    {
         if ($this->socket !== null) {
             socket_close($this->socket);
             $this->socket = null;
@@ -207,9 +259,11 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      */
     public function removeClient(ClientInterface $client): void
     {
-        $key = array_search($client, $this->clients, true);
-        if ($key !== false) {
-            unset($this->clients[$key]);
+        $identity = spl_object_id($client);
+        $slot = $this->clientSlots[$identity] ?? null;
+        if ($slot !== null && ($this->clients[$slot] ?? null) === $client) {
+            $this->clientIndex?->remove($slot);
+            unset($this->clients[$slot], $this->clientSlots[$identity]);
         }
     }
 
@@ -227,6 +281,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      */
     public function dropClient(ClientInterface $client): void
     {
+        $client->detachEventLoop();
         $this->clientSocketDetacher?->detachClientSocket($client);
 
         try {
@@ -268,7 +323,8 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
         }
 
         $client = $this->onCreateClient($clientSocket);
-        $this->clients[] = $client;
+        $this->addClient($client);
+        $this->attachClient($client);
 
         return $client;
     }
@@ -282,6 +338,25 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     {
         // Servers don't auto-close on socket errors
         // They continue running or are explicitly stopped via stop()
+    }
+
+    /** @param TClient $client Newly accepted transport, registered before its first handshake or I/O binding */
+    protected function addClient(ClientInterface $client): void
+    {
+        $slot = $this->clientSequence++;
+        $this->clients[$slot] = $client;
+        $this->clientSlots[spl_object_id($client)] = $slot;
+        ($this->clientIndex ??= new SignalHoldIndex())->add($slot);
+    }
+
+    /**
+     * @param ClientInterface $client Newly accepted or dialed client
+     */
+    protected function attachClient(ClientInterface $client): void
+    {
+        if ($this->clientSocketAttacher !== null) {
+            ($this->clientSocketAttacher)($client);
+        }
     }
 
     /**
@@ -347,9 +422,11 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      */
     public function onTick(): void
     {
+        if ($this->clientSocketAttacher !== null) {
+            return;
+        }
         foreach ($this->clients as $client) {
             try {
-                // Read from client
                 $client->read();
 
                 // Call client tick method
@@ -382,7 +459,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
                     $this->getServerName(),
                     ClientReadFailureLog::READER_TICK,
                     $exception,
-                    microtime(true)
+                    hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND
                 );
 
                 // Told after the line and before the close: the project answers a
@@ -435,5 +512,18 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     {
         // Default implementation - ready immediately
         return true;
+    }
+
+    /**
+     * @param Generator<int, int> $slots Finite scalar roster identities captured by clientCandidates()
+     * @return Generator<int, ?TClient> Still-live original connections, or null while closing
+     */
+    protected function walkClients(Generator $slots): Generator
+    {
+        foreach ($slots as $slot) {
+            $client = $this->clients[$slot] ?? null;
+            yield $slot => $client !== null && $this->isCurrentClient($slot, $client) ? $client : null;
+            unset($client);
+        }
     }
 }

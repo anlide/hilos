@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Core;
 
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Daemon\TickDrivenIo;
 use Hilos\Core\Daemon\TickDrivenIoRegistry;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+use Hilos\Core\EventLoop\ReadyWork;
 use Hilos\Core\Exception\Process\CouldNotStartException;
 use Hilos\Core\Exception\Process\FailedToClosePipeException;
 use Hilos\Core\Exception\Process\FailedToGetStatusException;
@@ -46,6 +51,9 @@ class Process implements TickDrivenIo
     public const string PIPE_WRITE = 'w';
     public const string PIPE_APPEND = 'a';
 
+    /** Maximum bytes read from each output pipe in one master-owned portion. */
+    private const int OUTPUT_PORTION_BYTES = 65_536;
+
     /** @var resource Child process resource */
     private $process;
 
@@ -70,7 +78,7 @@ class Process implements TickDrivenIo
     /** @var string Buffered stdin content not yet written to the child (non-blocking back-pressure) */
     private string $unwrittenStdIn = '';
 
-    /** @var ?float Time when halt() should be called (microtime) or null if not set */
+    /** @var ?float Monotonic seconds when halt() should be called, or null without a deadline */
     private ?float $haltTime = null;
 
     /** @var bool Whether the process resource has already been closed via proc_close() */
@@ -84,6 +92,23 @@ class Process implements TickDrivenIo
 
     /** @var array<string, mixed> Last observed status; returned after the process is closed */
     private array $lastStatus = [self::STATUS_RUNNING => false];
+
+    private ?EventLoop $eventLoop = null;
+
+    private ?ReadyWork $processWork = null;
+
+    private ?EventLoopTimer $stopTimer = null;
+
+    /** Master-owned resources must never synchronously wait, including after detach. */
+    private bool $nonblockingClose = false;
+
+    private bool $killSent = false;
+
+    private bool $exitObserved = false;
+
+    private bool $stdinWatched = false;
+
+    private bool $outputPortionPending = false;
 
     /**
      * Create and start child process with non-blocking streams.
@@ -150,6 +175,56 @@ class Process implements TickDrivenIo
     }
 
     /**
+     * Opts this child's lifetime into bounded master I/O and nonblocking termination.
+     * Pipe and timer callbacks only wake the existing owner; it calls tick() under its guard.
+     * Other Process users keep the manual tick/halt contract without binding a loop.
+     *
+     * @param EventLoop $loop Existing master's loop, never a separate pump
+     * @param callable(): void $onReady Exact child's guarded owner portion
+     * @throws EventLoopException When an existing stop deadline cannot be armed
+     */
+    public function attachEventLoop(EventLoop $loop, callable $onReady): void
+    {
+        $this->detachEventLoop();
+        $this->nonblockingClose = true;
+        if ($this->closed) {
+            return;
+        }
+
+        $this->eventLoop = $loop;
+        $this->processWork = $loop->createReadyWork($onReady);
+        $this->stopTimer = $loop->createTimer(function (): void {
+            $this->processWork?->markReady();
+        });
+        foreach ([1, 2] as $descriptor) {
+            if (isset($this->pipes[$descriptor]) && is_resource($this->pipes[$descriptor])) {
+                $loop->registerRead($this->pipes[$descriptor], function (): void {
+                    $this->processWork?->markReady();
+                });
+            }
+        }
+        $this->watchStdIn();
+        $this->stopTimer->armAt($this->haltTime);
+        $this->processWork->markReady();
+    }
+
+    /** Cancels every queued generation and native watch before any pipe is closed or rebound. */
+    public function detachEventLoop(): void
+    {
+        $this->stopTimer?->close();
+        $this->stopTimer = null;
+        $this->processWork?->close();
+        $this->processWork = null;
+        foreach ($this->pipes as $pipe) {
+            if (is_resource($pipe)) {
+                $this->eventLoop?->unregister($pipe);
+            }
+        }
+        $this->stdinWatched = false;
+        $this->eventLoop = null;
+    }
+
+    /**
      * Convert shell-like command string into an argv array suitable for proc_open().
      *
      * Example:
@@ -194,31 +269,22 @@ class Process implements TickDrivenIo
      * @throws FailedToWriteStdInException If buffered stdin data cannot be written
      * @throws FailedToTerminateProcessException If process cannot be terminated
      * @throws FailedToClosePipeException If pipes cannot be closed
+     * @throws EventLoopException When a bound stdin watch cannot be installed
      */
     public function tick(): void
     {
+        $this->processWork?->cancel();
+        if ($this->closed) {
+            return;
+        }
         $status = $this->getStatus();
 
         $this->flushStdIn();
 
-        if (isset($this->pipes[1]) && is_resource($this->pipes[1])) {
-            $stdoutContent = stream_get_contents($this->pipes[1]);
-            if ($stdoutContent === false) {
-                throw new FailedToReadStdOutException('Failed to read from stdout.');
-            }
-            $this->unreadStdOut .= $stdoutContent;
-        }
-
-        if (isset($this->pipes[2]) && is_resource($this->pipes[2])) {
-            $stderrContent = stream_get_contents($this->pipes[2]);
-            if ($stderrContent === false) {
-                throw new FailedToSetStdErrException('Failed to read from stderr.');
-            }
-            $this->unreadStdErr .= $stderrContent;
-        }
+        $this->readOutput();
 
         // Check if halt time reached
-        if ($this->haltTime !== null && microtime(true) >= $this->haltTime) {
+        if ($this->haltTime !== null && $this->monotonicNow() >= $this->haltTime) {
             $this->halt(); // Force kill - timeout exceeded
             return;
         }
@@ -239,7 +305,7 @@ class Process implements TickDrivenIo
      */
     public function getStatus(): array
     {
-        if ($this->closed) {
+        if ($this->closed || $this->exitObserved) {
             return $this->lastStatus;
         }
 
@@ -267,6 +333,7 @@ class Process implements TickDrivenIo
             $this->termSignal = $status[self::STATUS_TERM_SIGNAL];
         }
 
+        $this->exitObserved = !$status[self::STATUS_RUNNING];
         $this->lastStatus = $status;
         return $status;
     }
@@ -343,7 +410,14 @@ class Process implements TickDrivenIo
         if ($status[self::STATUS_RUNNING]) {
             // Set halt time if timeout specified
             if ($shutdownTimeout !== null && $shutdownTimeout > 0) {
-                $this->haltTime = microtime(true) + $shutdownTimeout;
+                if (!$this->nonblockingClose || $this->haltTime === null) {
+                    $this->haltTime = $this->monotonicNow() + $shutdownTimeout;
+                }
+                try {
+                    $this->stopTimer?->armAt($this->haltTime);
+                } catch (EventLoopException $failure) {
+                    throw new FailedToTerminateProcessException('Failed to arm the process stop deadline.', previous: $failure);
+                }
             }
         }
     }
@@ -366,6 +440,8 @@ class Process implements TickDrivenIo
      * Force terminate process, drain remaining output and release the process resource.
      *
      * Idempotent: once the process has been closed, subsequent calls are no-ops.
+     * A master-bound child stays in flight after SIGKILL until its own exit is observed;
+     * manual callers retain the synchronous halt contract.
      *
      * @throws FailedToGetStatusException If process status cannot be retrieved
      * @throws FailedToTerminateProcessException If process cannot be forcefully terminated
@@ -376,8 +452,17 @@ class Process implements TickDrivenIo
         if (!$this->closed) {
             $status = $this->getStatus();
             if ($status[self::STATUS_RUNNING]) {
-                if (!proc_terminate($this->process, 9)) { // Send SIGKILL
+                if (!$this->killSent && !proc_terminate($this->process, SIGKILL)) {
                     throw new FailedToTerminateProcessException('Failed to forcefully terminate the process.');
+                }
+                $this->killSent = true;
+                $this->haltTime = null;
+                $this->stopTimer?->close();
+                $this->stopTimer = null;
+                if ($this->nonblockingClose) {
+                    // SIGKILL is a request, not an observed exit. SIGCHLD resumes the owner.
+                    $this->readFinalOutput();
+                    return;
                 }
             }
 
@@ -396,6 +481,7 @@ class Process implements TickDrivenIo
      *
      * @param string $input Data to send to stdin
      * @throws FailedToWriteStdInException If data cannot be written to stdin
+     * @throws EventLoopException When a bound stdin watch cannot be installed
      */
     public function sendInput(string $input): void
     {
@@ -439,6 +525,8 @@ class Process implements TickDrivenIo
             $this->halt();
         } catch (Throwable) {
             // Best-effort cleanup; nothing useful can be done if teardown fails here.
+        } finally {
+            $this->detachEventLoop();
         }
     }
 
@@ -451,10 +539,19 @@ class Process implements TickDrivenIo
     private function closeProcess(): void
     {
         // Keep the final burst emitted just before exit, including on the general halt path.
-        $this->drainPipes();
+        if ($this->nonblockingClose) {
+            $this->readFinalOutput();
+            if ($this->outputPortionPending) {
+                return;
+            }
+        } else {
+            $this->drainPipes();
+        }
+        $this->detachEventLoop();
         $this->closePipes();
 
-        // A force kill may leave proc_close() as the last chance to learn the exit code.
+        // Manual halt may wait. The master reaches proc_close only after this child's
+        // proc_get_status(WNOHANG) observed its exit, so there is no live child to wait on.
         $exitCode = proc_close($this->process);
         if ($this->exitCode === null && $exitCode !== -1) {
             $this->exitCode = $exitCode;
@@ -485,6 +582,76 @@ class Process implements TickDrivenIo
         }
 
         $this->unwrittenStdIn = substr($this->unwrittenStdIn, $written);
+        $this->watchStdIn();
+    }
+
+    /** Arms WRITE only while stdin has backpressure; no periodic pipe polling is needed. */
+    private function watchStdIn(): void
+    {
+        if ($this->eventLoop === null || !isset($this->pipes[0])) {
+            return;
+        }
+        if ($this->unwrittenStdIn !== '' && !$this->stdinWatched) {
+            $this->stdinWatched = true;
+            $this->eventLoop->registerWrite($this->pipes[0], function (): void {
+                $this->processWork?->markReady();
+            });
+        } elseif ($this->unwrittenStdIn === '' && $this->stdinWatched) {
+            $this->eventLoop->unregisterWrite($this->pipes[0]);
+            $this->stdinWatched = false;
+        }
+    }
+
+    /**
+     * Reads at most one portion per pipe; a full final portion needs another guarded turn.
+     *
+     * @throws FailedToReadStdOutException When stdout cannot be read
+     * @throws FailedToSetStdErrException When stderr cannot be read
+     */
+    private function readOutput(): void
+    {
+        $this->outputPortionPending = false;
+        foreach ([1, 2] as $descriptor) {
+            if (!isset($this->pipes[$descriptor]) || !is_resource($this->pipes[$descriptor])) {
+                continue;
+            }
+            $content = stream_get_contents($this->pipes[$descriptor], $this->nonblockingClose ? self::OUTPUT_PORTION_BYTES : -1);
+            if ($content === false) {
+                throw $descriptor === 1
+                    ? new FailedToReadStdOutException('Failed to read from stdout.')
+                    : new FailedToSetStdErrException('Failed to read from stderr.');
+            }
+            if ($descriptor === 1) {
+                $this->unreadStdOut .= $content;
+            } else {
+                $this->unreadStdErr .= $content;
+            }
+            if (feof($this->pipes[$descriptor])) {
+                $this->eventLoop?->unregisterRead($this->pipes[$descriptor]);
+            } elseif ($this->nonblockingClose && strlen($content) === self::OUTPUT_PORTION_BYTES) {
+                $this->outputPortionPending = true;
+            }
+        }
+        if ($this->outputPortionPending) {
+            $this->processWork?->markReady();
+        }
+    }
+
+    /** Final drain remains best effort, including EOF or the pipe that caused retirement. */
+    private function readFinalOutput(): void
+    {
+        try {
+            $this->readOutput();
+        } catch (FailedToReadStdOutException | FailedToSetStdErrException) {
+            $this->outputPortionPending = false;
+            $this->detachEventLoop();
+        }
+    }
+
+    /** @return float Current process-local monotonic seconds */
+    private function monotonicNow(): float
+    {
+        return hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
     }
 
     /**

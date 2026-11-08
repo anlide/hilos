@@ -36,6 +36,7 @@ use Hilos\Files\Upload\UploadMemoryInput;
 use Hilos\Files\Upload\UploadMemoryReceipt;
 use Hilos\Hilos;
 use Hilos\Socket\Client\WorkerClient;
+use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -932,6 +933,7 @@ final class WorkerUploadReceiptReceivingClient extends WorkerClient
      */
     public function __construct()
     {
+        new ReflectionProperty(WorkerClient::class, 'workerServer')->setValue($this, new WorkerUploadReceiptRegistrationServer());
     }
 
     /** @param WorkerDTO $frame Incoming worker control frame */
@@ -1032,5 +1034,17 @@ final class WorkerUploadReceiptSocketClient extends WorkerDaemonClient
     {
         $this->socket = $socket;
         $this->state = DaemonConnectionState::CONNECTED;
+    }
+}
+
+/** Socket-free owner receives registration facts without opening a listener or starting workers. */
+final class WorkerUploadReceiptRegistrationServer extends WorkerServer
+{
+    public function __construct()
+    {
+    }
+
+    protected function onStart(): void
+    {
     }
 }

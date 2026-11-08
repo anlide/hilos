@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Router;
 
+use Closure;
+use Generator;
 use Hilos\API\Router\Exception\GroupSubscriptionNotFoundException;
 use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
 use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
@@ -22,6 +24,7 @@ use Hilos\Core\Group\GroupMembership;
 use Hilos\Core\Group\GroupNameMatch;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Page\Config\PageAgentIndexRoute;
+use Hilos\Core\Page\Config\PageAgentIndexSource;
 use Hilos\Core\Page\PageResource;
 use Hilos\Core\Router\Destination\AgentAddressedDestination;
 use Hilos\Core\Router\Destination\AgentDestination;
@@ -54,6 +57,8 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
+use Hilos\Socket\WebSocket\Delivery\DeliveryCleanup;
+use WeakReference;
 use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
@@ -88,11 +93,17 @@ use Throwable;
  * Page subscription, page actions, page-owned non-action signals, and agent-owned
  * agent signals are derived from the active project Hilos facade at dispatch time.
  *
- * For dynamic routing (agentIndex depends on signal content), override getDestinations()
- * in the child router.
+ * Payload-dependent agent indexes use the declared indexed agent routes. A legacy
+ * getDestinations() override opts into USE_DESTINATION_CALLBACK for master dispatch.
  */
 class SignalRouter
 {
+    /** Explicit opt-in to a legacy getDestinations() override as one atomic project callback. */
+    protected const bool USE_DESTINATION_CALLBACK = false;
+
+    /** Independent opt-in for a legacy localClientDestinations() override on one-hop receive. */
+    protected const bool USE_LOCAL_CLIENT_CALLBACK = false;
+
     /**
      * @var array<string, list<string>> Signal sources each source-constrained signal type is
      *     accepted from. A type absent from this table is not source-constrained at all.
@@ -150,8 +161,11 @@ class SignalRouter
     /** @var string Separates the parts of a destination dedupe key; never appears inside a part */
     private const string DESTINATION_KEY_SEPARATOR = '|';
 
-    /** @var SplQueue<SignalDTO> Queued signals awaiting dispatch (FIFO, O(1) enqueue/dequeue) */
+    /** @var SplQueue<SignalDTO|LocalClientSignalBatch> Original FIFO; local batches occupy one finite obligation */
     private SplQueue $queuedSignals;
+
+    /** @var ?Closure(): void Local dispatch cue; worker routers leave it unbound */
+    private ?Closure $queueWake = null;
 
     /** @var bool Whether DB sync broadcast is enabled (false for CLI/migrations) */
     public bool $dbSyncBroadcastEnabled = true;
@@ -211,6 +225,12 @@ class SignalRouter
         $this->rtSelfBroadcast = new SelfBroadcastRegistry();
         $this->subscriptions = new SubscriptionRegistry();
         $this->emitter = RandomHelper::hex(self::EMITTER_RANDOM_BYTES);
+    }
+
+    /** @param DeliveryCleanup $cleanup Master-local guarded owner; worker mirrors retain consuming cleanup */
+    public function setSubscriptionCleanup(DeliveryCleanup $cleanup): void
+    {
+        $this->subscriptions->setCleanup($cleanup);
     }
 
     /**
@@ -431,6 +451,7 @@ class SignalRouter
             Hilos::$ac?->captureSignalMeta() ?? [],
         );
         $this->queuedSignals->enqueue($signal);
+        $this->queueWake?->__invoke();
     }
 
     /**
@@ -614,17 +635,75 @@ class SignalRouter
     }
 
     /**
+     * Cues only local work, after enqueue. Binding also announces an existing queue without consuming it.
+     *
+     * @param ?Closure(): void $wake Local readiness sink, null to detach this router's binding
+     */
+    public function setQueueWake(?Closure $wake): void
+    {
+        $this->queueWake = $wake;
+        if ($this->hasQueuedSignals()) {
+            $this->queueWake?->__invoke();
+        }
+    }
+
+    /** @param LocalClientSignalBatch $batch Finite local browser notifications at this exact FIFO position */
+    public function queueLocalClientSignals(LocalClientSignalBatch $batch): void
+    {
+        $this->queuedSignals->enqueue($batch);
+        $this->queueWake?->__invoke();
+    }
+
+    /** @return SignalDTO|LocalClientSignalBatch|null One original FIFO entry without expanding a local cohort */
+    public function consumeDispatchEntry(): SignalDTO|LocalClientSignalBatch|null
+    {
+        return $this->queuedSignals->isEmpty() ? null : $this->queuedSignals->dequeue();
+    }
+
+    /** @param Closure(): void $wake Exact binding being detached, leaving a replacement owner intact */
+    public function removeQueueWake(Closure $wake): void
+    {
+        if ($this->queueWake === $wake) {
+            $this->queueWake = null;
+        }
+    }
+
+    /**
+     * @return int Current queued prefix length, excluding any already consumed signal
+     */
+    public function getQueuedSignalCount(): int
+    {
+        return $this->queuedSignals->count();
+    }
+
+    /**
      * Get next queued signal
      *
      * Returns one signal from queue and removes it.
      * Returns null if queue is empty.
-     * Used by DaemonManager to dispatch signals one by one.
+     * Synchronous consuming compatibility. The master uses consumeDispatchEntry() so a local
+     * browser cohort remains one finite obligation and advances only inside guarded portions.
      *
      * @return ?SignalDTO Queued signal DTO or null
+     * @throws InvalidArgumentException When a local notification carries an empty signal name
+     * @throws Throwable When a local notification's candidate source or admission callback fails
      */
     public function getNextQueuedSignal(): ?SignalDTO
     {
-        return $this->queuedSignals->isEmpty() ? null : $this->queuedSignals->dequeue();
+        while (!$this->queuedSignals->isEmpty()) {
+            $entry = $this->queuedSignals->bottom();
+            if ($entry instanceof SignalDTO) {
+                return $this->queuedSignals->dequeue();
+            }
+            $signal = $entry->consumeSignal();
+            if ($entry->isComplete()) {
+                $this->queuedSignals->dequeue();
+            }
+            if ($signal !== null) {
+                return $signal;
+            }
+        }
+        return null;
     }
 
     /**
@@ -636,6 +715,7 @@ class SignalRouter
     public function subscribeToPage(string $page, WebSocketPageSubscribeSignalDTO $data): void
     {
         $this->subscriptions->subscribeToPage($data->acceptKey, $page, $data->params);
+        $this->indexNodePage($data->acceptKey);
     }
 
     /**
@@ -695,6 +775,7 @@ class SignalRouter
     public function updatePageSubscription(string $page, WebSocketPageUpdateSubscriptionSignalDTO $data): void
     {
         $this->subscriptions->updatePageSubscription($data->acceptKey, $page, $data->params);
+        $this->indexNodePage($data->acceptKey);
     }
 
     /**
@@ -738,6 +819,44 @@ class SignalRouter
     public function groupSubscriptionName(string $acceptKey, string $group): ?string
     {
         return $this->subscriptions->groupSubscriptionName($acceptKey, $group);
+    }
+
+    /**
+     * @param string $acceptKey Original subscribed connection
+     * @param string $group Group name written by the browser
+     * @return Generator<int, void, void, ?string> Bounded membership lookup returning its first live full name
+     */
+    public function groupSubscriptionNameCandidates(string $acceptKey, string $group): Generator
+    {
+        return $this->subscriptions->groupNameCandidates($acceptKey, $group);
+    }
+
+    /**
+     * @param string $acceptKey Original connection
+     * @return ?int Local membership-set revision for validating an absent bounded lookup
+     */
+    public function groupSubscriptionRevision(string $acceptKey): ?int
+    {
+        return $this->subscriptions->groupSubscriptionRevision($acceptKey);
+    }
+
+    /**
+     * Capture after the operation's own local mutation, before another dispatch yield.
+     * An exact replacement or a new exact alias can change a worker's original target.
+     * An originally absent lookup observes every name its unchanged request could resolve.
+     *
+     * @param string $acceptKey Original connection
+     * @param string $requested Name written by the client
+     * @param ?string $resolved Original full name, absent for the ordinary worker refusal
+     * @return GroupOperationAuthority Qualification for this operation's remaining physical sends
+     */
+    public function groupOperationAuthority(string $acceptKey, string $requested, ?string $resolved): GroupOperationAuthority
+    {
+        $bases = [$this->subscriptions->groupOperationBasis($acceptKey, $resolved ?? $requested, $resolved === null)];
+        if ($resolved !== null && $resolved !== $requested) {
+            $bases[] = $this->subscriptions->groupOperationBasis($acceptKey, $requested, false);
+        }
+        return new GroupOperationAuthority(WeakReference::create($this), $bases);
     }
 
     /**
@@ -1062,6 +1181,25 @@ class SignalRouter
     }
 
     /**
+     * @param string $nodeId Requested node whose membership changed
+     * @return Generator<int, int> Original indexed subscription slots, excluding later navigation
+     */
+    public function nodePageCandidates(string $nodeId): Generator
+    {
+        return $this->subscriptions->nodePageCandidates($nodeId);
+    }
+
+    /**
+     * @param int $slot Original indexed subscription
+     * @param string $nodeId Original requested node
+     * @return ?string Original connection, absent after replacement or leave
+     */
+    public function nodePageAcceptKey(int $slot, string $nodeId): ?string
+    {
+        return $this->subscriptions->nodePageAcceptKey($slot, $nodeId);
+    }
+
+    /**
      * @param string $agentType Serving agent type
      * @param ?string $agentIndex Serving agent index, or null for an unindexed agent
      * @return list<string> Accept keys whose page is bound to that agent
@@ -1128,6 +1266,75 @@ class SignalRouter
         ];
 
         return $this->applyClientLocation($this->applyPlacement($this->dedupeDestinations($destinations)));
+    }
+
+    /**
+     * Master-only lazy counterpart of getDestinations(); the worker's consuming API is unchanged.
+     * A null candidate still spends a visit, including a filtered subscription or duplicate.
+     * A project selecting USE_DESTINATION_CALLBACK retains its existing getDestinations()
+     * callback and exact output. That project's atomic callback must itself remain bounded.
+     *
+     * @param SignalDTO $signal Original envelope
+     * @return Generator<int, ?Destination> Ordered candidates, with one visit per original subscription
+     * @throws EnvException When destination placement reads invalid cluster configuration
+     * @throws ClusterConfigurationException When a named-node route cannot read its local node
+     * @throws InvalidArgumentException When a moderation kind directory is malformed
+     */
+    public function destinationCandidates(SignalDTO $signal): Generator
+    {
+        if (static::USE_DESTINATION_CALLBACK) {
+            return $this->walkDestinationArray($this->getDestinations($signal));
+        }
+
+        return $this->walkDestinationContributors($this->webSocketCandidates($signal), [
+            $this->getClientFanoutDestinations($signal),
+            $this->getPageSubscriptionDestinations($signal),
+            $this->getGroupSubscriptionDestinations($signal),
+            $this->getActionDestinations($signal),
+            $this->getCommandDestinations($signal),
+            $this->getHttpDestinations($signal),
+            $this->getAgentDestinations($signal),
+            $this->getPageOwnedSignalDestinations($signal),
+            $this->additionalDestinations($signal),
+        ]);
+    }
+
+    /**
+     * Captures only this node's client subscriptions, preserving the one-hop peer boundary.
+     *
+     * USE_LOCAL_CLIENT_CALLBACK selects the project's localClientDestinations() callback.
+     *
+     * @param SignalDTO $signal Forwarded fan-out
+     * @return Generator<int, ?Destination> Local candidates, including nonmatching membership visits
+     */
+    public function localClientCandidates(SignalDTO $signal): Generator
+    {
+        if (static::USE_LOCAL_CLIENT_CALLBACK) {
+            return $this->walkDestinationArray($this->localClientDestinations($signal));
+        }
+
+        return $this->webSocketCandidates($signal);
+    }
+
+    /**
+     * Rechecked at the physical send after any lookup portions; equal params are insufficient.
+     * An explicitly addressed destination without a captured subscription keeps its old contract.
+     *
+     * @param WebSocketDestination $destination Original local browser candidate
+     * @return bool Whether its original subscription is still present
+     */
+    public function isCurrentClientDestination(WebSocketDestination $destination): bool
+    {
+        if ($destination->subscription instanceof PageSubscription) {
+            return $this->subscriptions->pageSubscription($destination->acceptKey) === $destination->subscription;
+        }
+        if ($destination->subscription instanceof GroupSubscription && $destination->group !== null) {
+            return $this->subscriptions->isCurrentGroupSubscription(
+                $destination->acceptKey, $destination->group, $destination->subscription,
+            );
+        }
+
+        return true;
     }
 
     /**
@@ -1293,7 +1500,8 @@ class SignalRouter
 
             $nodeId = $location->nodeFor($destination->acceptKey);
             if ($nodeId !== null) {
-                $destinations[$index] = new RemoteClientDestination($nodeId, $destination->acceptKey);
+                $destinations[$index] = new RemoteClientDestination($nodeId, $destination->acceptKey,
+                    $destination->subscription === null ? null : $destination);
             }
         }
 
@@ -1394,30 +1602,7 @@ class SignalRouter
         $seen = [];
         $unique = [];
         foreach ($destinations as $destination) {
-            $keyParts = match (true) {
-                $destination instanceof AgentDestination =>
-                    [AgentDestination::class, $destination->agentType, $destination->agentIndex],
-                $destination instanceof RemoteAgentDestination =>
-                    [RemoteAgentDestination::class, $destination->nodeId, $destination->agentType, $destination->agentIndex],
-                $destination instanceof WebSocketDestination =>
-                    [WebSocketDestination::class, $destination->acceptKey],
-                $destination instanceof AllClientsDestination =>
-                    [
-                        AllClientsDestination::class,
-                        $destination->excludeAcceptKey,
-                        $destination->excludeSessionTokenHash,
-                    ],
-                $destination instanceof SessionClientsDestination =>
-                    [SessionClientsDestination::class, $destination->sessionTokenHash],
-                default => [(string) spl_object_id($destination)],
-            };
-            // A part that is absent contributes nothing to the key rather than an
-            // empty segment: the key is built from typed fields, not from strings
-            // that had to stand in for a missing one.
-            $key = implode(self::DESTINATION_KEY_SEPARATOR, array_filter(
-                $keyParts,
-                static fn(string|int|null $part): bool => $part !== null,
-            ));
+            $key = $this->destinationKey($destination);
             if (isset($seen[$key])) {
                 continue;
             }
@@ -1426,6 +1611,112 @@ class SignalRouter
         }
 
         return $unique;
+    }
+
+    /**
+     * @param Destination $destination One contributor's target
+     * @return string Existing deduplication identity, before placement
+     */
+    private function destinationKey(Destination $destination): string
+    {
+        $parts = match (true) {
+            $destination instanceof AgentDestination =>
+                [AgentDestination::class, $destination->agentType, $destination->agentIndex],
+            $destination instanceof RemoteAgentDestination =>
+                [RemoteAgentDestination::class, $destination->nodeId, $destination->agentType, $destination->agentIndex],
+            $destination instanceof WebSocketDestination => [WebSocketDestination::class, $destination->acceptKey],
+            $destination instanceof AllClientsDestination =>
+                [AllClientsDestination::class, $destination->excludeAcceptKey, $destination->excludeSessionTokenHash],
+            $destination instanceof SessionClientsDestination => [SessionClientsDestination::class, $destination->sessionTokenHash],
+            default => [(string) spl_object_id($destination)],
+        };
+
+        return implode(self::DESTINATION_KEY_SEPARATOR, array_filter(
+            $parts,
+            static fn(string|int|null $part): bool => $part !== null,
+        ));
+    }
+
+    /**
+     * @param SignalDTO $signal Browser-addressed envelope
+     * @return Generator<int, ?Destination> Captured subscriptions or a fixed-size addressing marker
+     */
+    private function webSocketCandidates(SignalDTO $signal): Generator
+    {
+        $targeting = $signal->data instanceof WebSocketSignalData ? $signal->data : null;
+        if ($signal->signalType->getType() === SignalTypeConstants::WS_ALL) {
+            return $this->walkSubscribedClients($this->subscriptions->pageSubscriptionCandidates(), $targeting?->excludeAcceptKey);
+        }
+        if ($signal->signalType->getType() === SignalTypeConstants::WS_GROUP && $targeting?->targetGroup !== null) {
+            return $this->walkSubscribedClients(
+                $this->subscriptions->groupSubscriptionCandidates($targeting->targetGroup),
+                $targeting->excludeAcceptKey,
+                $targeting->targetGroup,
+            );
+        }
+
+        return $this->walkDestinationArray($this->getWebSocketDestinations($signal));
+    }
+
+    /**
+     * @param Generator<string, PageSubscription|GroupSubscription|null> $subscriptions Original connection roster
+     * @param ?string $excludeAcceptKey Excluded connection
+     * @param ?string $group Full group name, or null for page subscriptions
+     * @return Generator<int, ?Destination> One visit for every original connection
+     */
+    private function walkSubscribedClients(Generator $subscriptions, ?string $excludeAcceptKey, ?string $group = null): Generator
+    {
+        foreach ($subscriptions as $acceptKey => $subscription) {
+            yield $subscription !== null && $acceptKey !== $excludeAcceptKey
+                ? new WebSocketDestination($acceptKey, $subscription, $group)
+                : null;
+        }
+    }
+
+    /**
+     * @param list<Destination> $destinations Existing callback's exact result
+     * @return Generator<int, Destination> Targets in their original order
+     */
+    private function walkDestinationArray(array $destinations): Generator
+    {
+        yield from $destinations;
+    }
+
+    /**
+     * @param Generator<int, ?Destination> $clients Lazy browser contributor
+     * @param list<list<Destination>> $contributors Fixed framework contributors and the existing project callback result
+     * @return Generator<int, ?Destination> Ordered, deduplicated and placed candidates
+     * @throws EnvException When placement configuration is invalid
+     */
+    private function walkDestinationContributors(Generator $clients, array $contributors): Generator
+    {
+        $seen = [];
+        foreach ($this->walkUnplacedContributors($clients, $contributors) as $destination) {
+            if ($destination === null) {
+                yield null;
+                continue;
+            }
+            $key = $this->destinationKey($destination);
+            if (isset($seen[$key])) {
+                yield null;
+                continue;
+            }
+            $seen[$key] = true;
+            yield $this->applyClientLocation($this->applyPlacement([$destination]))[0];
+        }
+    }
+
+    /**
+     * @param Generator<int, ?Destination> $clients Browser snapshot
+     * @param list<list<Destination>> $contributors Other contributor snapshots
+     * @return Generator<int, ?Destination> One candidate at a time, without concatenating a growing list
+     */
+    private function walkUnplacedContributors(Generator $clients, array $contributors): Generator
+    {
+        yield from $clients;
+        foreach ($contributors as $destinations) {
+            yield from $destinations;
+        }
     }
 
     /**
@@ -2256,5 +2547,23 @@ class SignalRouter
         $this->actionSecretFields[$action] = is_array($fields) ? $fields : null;
 
         return $this->actionSecretFields[$action];
+    }
+
+    /** @param string $acceptKey Page whose merged parameters now select its requested node */
+    private function indexNodePage(string $acceptKey): void
+    {
+        $subscription = $this->subscriptions->pageSubscription($acceptKey);
+        if ($subscription === null) {
+            return;
+        }
+        $route = $this->pageAgentIndexRoute($subscription->page);
+        $value = $route?->source === PageAgentIndexSource::NODE_PARAM && $route->param !== null
+            ? ($subscription->params[$route->param] ?? null) : null;
+        $nodeId = match (true) {
+            is_string($value) && $value !== '' => $value,
+            is_int($value) && $value > 0 => (string) $value,
+            default => null,
+        };
+        $this->subscriptions->indexNodePage($acceptKey, $nodeId);
     }
 }

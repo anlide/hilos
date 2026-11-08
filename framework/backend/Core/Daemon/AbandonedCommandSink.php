@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Socket\Client\CommandClient;
 use Hilos\Socket\Server\CommandServer;
 
@@ -35,6 +36,7 @@ interface AbandonedCommandSink
      * implementation walking its own records finds the channel's already gone.
      *
      * @param string $correlationId Correlation id nobody is waiting on any more
+     * @throws EventLoopException When the owner cannot arm or cancel a native command deadline
      */
     public function onCommandAbandoned(string $correlationId): void;
 }

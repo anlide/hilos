@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Analytics;
 
+use Closure;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
@@ -48,18 +49,41 @@ final class AnalyticsJournalOutbox
     /** @var int Bytes of the descriptions and records gathered */
     private int $bytes = 0;
 
+    /** @var ?Closure(): void Observer of pending data and the single interval basis */
+    private ?Closure $scheduleWake = null;
+
     /**
-     * @param int $lastFlushAtMs Moment the interval is counted from, in milliseconds
+     * @param int $lastFlushAtMs Monotonic milliseconds the process interval is counted from
      */
     public function __construct(private int $lastFlushAtMs)
     {
+    }
+
+    /** @param Closure(): void $wake Exact process-local scheduling observer */
+    public function setScheduleWake(Closure $wake): void
+    {
+        $this->scheduleWake = $wake;
+    }
+
+    /** @param Closure(): void $wake Original observer, never a replacement binding */
+    public function removeScheduleWake(Closure $wake): void
+    {
+        if ($this->scheduleWake === $wake) {
+            $this->scheduleWake = null;
+        }
+    }
+
+    /** @return ?int Original monotonic-millisecond deadline, or null for an empty batch */
+    public function nextFlushAt(): ?int
+    {
+        return $this->hasPendingData() ? $this->lastFlushAtMs + self::FLUSH_INTERVAL_MS : null;
     }
 
     /**
      * Names sessions for the next batch without a record: a session just opened has a row even if nothing happens in it.
      *
      * @param array<string, array<string, mixed>> $sessions Session key to its description record, the worker first
-     * @param int $nowMs Moment of the call, in milliseconds
+     * @param int $nowMs Monotonic milliseconds, used only for a full-batch flush
      * @throws InvalidArgumentException When a batch that grew full cannot be named
      */
     public function describe(array $sessions, int $nowMs): void
@@ -79,6 +103,7 @@ final class AnalyticsJournalOutbox
         }
 
         $this->flushWhenFull($nowMs);
+        ($this->scheduleWake)?->__invoke();
     }
 
     /**
@@ -86,25 +111,26 @@ final class AnalyticsJournalOutbox
      *
      * @param array<string, mixed> $record Record built by {@see AnalyticsJournalRecord}
      * @param array<string, array<string, mixed>> $sessions Session key to the description of every session the record names, the worker first
-     * @param int $nowMs Moment of the call, in milliseconds
+     * @param int $recordAtMs Epoch milliseconds for record/payload loss accounting
+     * @param int $intervalNowMs Monotonic milliseconds for a full-batch flush
      * @throws InvalidArgumentException When a batch that grew full cannot be named
      */
-    public function add(array $record, array $sessions, int $nowMs): void
+    public function add(array $record, array $sessions, int $recordAtMs, int $intervalNowMs): void
     {
         $encoded = AnalyticsJournalRecord::encodeEvent($record);
         if ($encoded->line === null) {
-            $this->countLoss(AnalyticsLossReason::RECORD_DROPPED, 1, $nowMs, $nowMs);
+            $this->countLoss(AnalyticsLossReason::RECORD_DROPPED, 1, $recordAtMs, $recordAtMs);
             return;
         }
 
         if ($encoded->payloadDropped) {
-            $this->countLoss(AnalyticsLossReason::PAYLOAD_DROPPED, 1, $nowMs, $nowMs);
+            $this->countLoss(AnalyticsLossReason::PAYLOAD_DROPPED, 1, $recordAtMs, $recordAtMs);
         }
 
         $this->records[] = $encoded->line;
         $this->events++;
         $this->bytes += strlen($encoded->line);
-        $this->describe($sessions, $nowMs);
+        $this->describe($sessions, $intervalNowMs);
     }
 
     /**
@@ -112,8 +138,8 @@ final class AnalyticsJournalOutbox
      *
      * @param AnalyticsLossReason $reason Why the events were lost
      * @param int $events Number of events lost; nonpositive counts change nothing
-     * @param int $fromMs First loss moment in milliseconds
-     * @param int $toMs Last loss moment in milliseconds
+     * @param int $fromMs First loss moment in epoch milliseconds
+     * @param int $toMs Last loss moment in epoch milliseconds
      */
     public function countLoss(AnalyticsLossReason $reason, int $events, int $fromMs, int $toMs): void
     {
@@ -128,6 +154,7 @@ final class AnalyticsJournalOutbox
             $previous === null ? $fromMs : min($previous->fromTs, $fromMs),
             $previous === null ? $toMs : max($previous->toTs, $toMs),
         );
+        ($this->scheduleWake)?->__invoke();
     }
 
     /** @return bool Whether descriptions, records or loss counts still need a flush */
@@ -137,7 +164,7 @@ final class AnalyticsJournalOutbox
     }
 
     /**
-     * @param int $nowMs Moment of the check, in milliseconds
+     * @param int $nowMs Monotonic milliseconds of the check
      * @return bool True when the interval since the last flush has elapsed
      */
     public function isFlushDue(int $nowMs): bool
@@ -148,7 +175,7 @@ final class AnalyticsJournalOutbox
     /**
      * Sends the batch when a second has passed since the last one.
      *
-     * @param int $nowMs Moment of the tick, in milliseconds
+     * @param int $nowMs Monotonic milliseconds of the tick
      * @throws InvalidArgumentException When the batch cannot be named
      */
     public function flushIfDue(int $nowMs): void
@@ -161,13 +188,14 @@ final class AnalyticsJournalOutbox
     /**
      * Sends what was gathered as one frame to the journal agent of this node; nothing when nothing was.
      *
-     * @param int $nowMs Moment of the flush, in milliseconds
+     * @param int $nowMs Monotonic milliseconds of the actual flush, including an empty flush
      * @throws InvalidArgumentException When the batch cannot be named
      */
     public function flush(int $nowMs): void
     {
         $this->lastFlushAtMs = $nowMs;
         if ($this->descriptions === [] && $this->records === [] && $this->losses === []) {
+            ($this->scheduleWake)?->__invoke();
             return;
         }
 
@@ -176,6 +204,7 @@ final class AnalyticsJournalOutbox
         $losses = array_values($this->losses);
         $this->clear();
         $this->losses = [];
+        ($this->scheduleWake)?->__invoke();
 
         Hilos::$sr?->queueSignal(
             signalSource: new SignalSource(SignalSource::WORKER),
@@ -197,12 +226,13 @@ final class AnalyticsJournalOutbox
         $this->records = [];
         $this->bytes = 0;
         $this->events = 0;
+        ($this->scheduleWake)?->__invoke();
 
         return $events;
     }
 
     /**
-     * @param int $nowMs Moment of the call, in milliseconds
+     * @param int $nowMs Monotonic milliseconds of the call
      * @throws InvalidArgumentException When the batch cannot be named
      */
     private function flushWhenFull(int $nowMs): void

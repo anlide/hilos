@@ -2,7 +2,10 @@
 services:
   node:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
-    build: ..
+    build:
+      context: ..
+      additional_contexts:
+        hilos-event: ../../../../framework/docker/native/event
     restart: "no"
     command: ["php", "backend/Bootstrap/docker.php"]
     env_file:

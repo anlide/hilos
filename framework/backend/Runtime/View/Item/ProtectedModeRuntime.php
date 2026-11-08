@@ -6,6 +6,7 @@ namespace Hilos\Runtime\View\Item;
 
 use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
+use Hilos\Runtime\ProtectedModeAdmission;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
 use Hilos\HilosException;
@@ -121,6 +122,29 @@ final class ProtectedModeRuntime extends RtItem
     public function locksOut(?string $acceptKey, ?string $sessionTokenHash): bool
     {
         return $this->_state->locksOut($acceptKey, $sessionTokenHash);
+    }
+
+    /**
+     * Detached admission rules for a notification already queued. Later phase and admission
+     * writes must not choose its recipients again. No diagnostics or sync baseline is copied.
+     *
+     * @return self Read-only original admission rule, using the same locksOut() implementation
+     */
+    public function admissionSnapshot(): self
+    {
+        $copy = StateProtectedModeRuntime::create();
+        $copy->phase = $this->_state->phase;
+        $copy->initiatorAcceptKey = $this->_state->initiatorAcceptKey;
+        $copy->initiatorSessionTokenHash = $this->_state->initiatorSessionTokenHash;
+        $copy->admittedSessionTokenHashes = $this->_state->admittedSessionTokenHashes;
+        $copy->circleSessionTokenHashes = $this->_state->circleSessionTokenHashes;
+        return new self($copy);
+    }
+
+    /** @return ProtectedModeAdmission Original rule whose large admission lists are indexed over retained portions */
+    public function admissionPlan(): ProtectedModeAdmission
+    {
+        return new ProtectedModeAdmission($this->admissionSnapshot());
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Socket\Server\AbstractServer;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
@@ -401,6 +402,9 @@ final class CronFireTransportIntegrationTest extends FrameworkIntegrationTestCas
         $frame = new CommandRequestDTO('schedule-1', $command, $payload)->toJson() . "\n";
         self::assertSame(strlen($frame), socket_write($this->terminal, $frame));
         $this->caller->read();
+        $this->caller->onTick();
+        self::assertFalse($this->caller->hasPendingWrite(), 'The owner read/tick portion must keep waiting for the asynchronous ACK');
+        self::assertSame(1, $this->pendingCount());
     }
 
     /** Delivers the schedule frame to the real worker handler without ticking any agent. */
@@ -546,13 +550,13 @@ final class CronTransportServer extends WorkerServer
     /** @param WorkerClient $worker Test socket accepted by this server */
     public function attach(WorkerClient $worker): void
     {
-        $this->clients[] = $worker;
+        $this->addClient($worker);
     }
 
     /** @param WorkerClient $worker Channel taken out of the registry */
     public function detach(WorkerClient $worker): void
     {
-        $this->clients = array_values(array_filter($this->clients, static fn (WorkerClient $client): bool => $client !== $worker));
+        new ReflectionMethod(AbstractServer::class, 'removeClient')->invoke($this, $worker);
     }
 
     /** No listening socket or child process is needed by the test. */

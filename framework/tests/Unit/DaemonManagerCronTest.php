@@ -19,6 +19,7 @@ use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Daemon\CronFireTestRequests;
 use Hilos\Core\Daemon\DaemonContext;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Environment\EnvAccessor;
@@ -78,6 +79,38 @@ final class DaemonManagerCronTest extends TestCase
         $this->assertInstanceOf(CronSignalDTO::class, $signal->data);
         $this->assertSame('cleanup_history', $signal->data->cronName);
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    /** Consensus reports loss before changing its role; the fact itself cancels activated calendar work. */
+    public function testLeadershipLossCancelsNativeCronWhileTheOldRoleIsStillVisible(): void
+    {
+        $this->environment('test');
+        $leadership = new DaemonManagerCronTestLeadership();
+        $leadership->leader = true;
+        $cluster = new ClusterContext();
+        $cluster->registerLeadership($leadership);
+        Hilos::$cluster = $cluster;
+        $manager = new DaemonManagerCronTestManager();
+        $manager->markWorkersReady();
+        $manager->addRule('native-loss', '* * * * *');
+        $loop = new EventLoop();
+        new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($manager, $loop);
+        try {
+            new ReflectionMethod(DaemonManager::class, 'attachCronEventLoop')->invoke($manager);
+            $timer = new ReflectionProperty(DaemonManager::class, 'cronMinuteTimer')->getValue($manager);
+            $this->assertNotNull($timer->getDeadline());
+            $manager->onLostLeadership(1);
+            $this->assertTrue($leadership->leader, 'the coordinator has not changed its role yet');
+            $this->assertNull($timer->getDeadline());
+            $this->assertFalse(new ReflectionProperty(DaemonManager::class, 'cronMinuteDue')->getValue($manager));
+            $leadership->leader = false;
+            $loop->tick();
+            new ReflectionMethod(DaemonManager::class, 'dispatchCronMinute')->invoke($manager);
+            $this->assertFalse($loop->hasReadyWork());
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'detachCronEventLoop')->invoke($manager);
+            $loop->cleanup();
+        }
     }
 
     public function testClockCheckRuleIsRegisteredOnlyInClusterMode(): void

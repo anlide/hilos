@@ -8,6 +8,7 @@ use ErrorException;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Utils\Logger;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Throwable;
@@ -56,6 +57,8 @@ abstract class BaseManager
      *
      * SIGTERM and SIGINT request shutdown. SIGHUP reloads environment
      * configuration and requests restart.
+     *
+     * @throws HilosException When a concrete manager cannot install its process receiver
      */
     protected function setupSignalHandlers(): void
     {

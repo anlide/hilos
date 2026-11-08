@@ -11,6 +11,9 @@ use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Core\Daemon\CronFireTestRequests;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Constants\TimeConstants;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Socket\Client\WorkerClient;
@@ -24,6 +27,7 @@ use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleResultDTO;
 use Hilos\Core\Daemon\Cron\CronScheduleTestOperation;
 use LogicException;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 use Socket;
 
 /**
@@ -181,6 +185,83 @@ final class CronFireTestRequestsTest extends TestCase
 
         $this->requests->accept($this->transport->live[self::WORKER_ID], new WorkerTestCronFiredDTO('c-8', true, 1_000, null), 200.0);
         self::assertCount(1, $this->replies);
+    }
+
+    public function testRemovingTheEarliestWaitMovesTheDeadlineToTheNextLiveAsk(): void
+    {
+        $this->requests->request($this->ask('first'), self::AGENT, self::RULE, 100.0);
+        $this->requests->request($this->ask('second'), self::AGENT, self::RULE, 102.0);
+
+        $this->requests->abandon('first');
+
+        self::assertSame(
+            102.0 + CommandChannelWindows::AGENT_WAIT_SECONDS,
+            new ReflectionProperty(CronFireTestRequests::class, 'nextDeadline')->getValue($this->requests),
+        );
+        $this->requests->abandon('second');
+        self::assertSame(INF, new ReflectionProperty(CronFireTestRequests::class, 'nextDeadline')->getValue($this->requests));
+    }
+
+    public function testNativeScheduleRearmsToTheNextLiveWaitAndRebindPreservesIt(): void
+    {
+        $loop = new EventLoop();
+        $other = new EventLoop();
+        $wakes = 0;
+        $wake = static function () use (&$wakes): void {
+            ++$wakes;
+        };
+        $now = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        try {
+            $this->requests->attachEventLoop($loop, $wake);
+            $this->requests->request($this->ask('first'), self::AGENT, self::RULE, $now);
+            $this->requests->request($this->ask('second'), self::AGENT, self::RULE, $now + 2);
+            $old = new ReflectionProperty(CronFireTestRequests::class, 'deadlineTimer')->getValue($this->requests);
+            self::assertInstanceOf(EventLoopTimer::class, $old);
+            self::assertSame($now + CommandChannelWindows::AGENT_WAIT_SECONDS, $old->getDeadline());
+            $this->requests->abandon('first');
+            $deadline = $now + 2 + CommandChannelWindows::AGENT_WAIT_SECONDS;
+            self::assertSame($deadline, $old->getDeadline());
+            $this->requests->attachEventLoop($other, $wake);
+            $timer = new ReflectionProperty(CronFireTestRequests::class, 'deadlineTimer')->getValue($this->requests);
+            self::assertNull($old->getDeadline());
+            self::assertSame($deadline, $timer->getDeadline());
+            $loop->tick();
+            $other->tick();
+            self::assertSame(0, $wakes, 'Pending maps alone never wake a portion');
+            $this->requests->accept($this->transport->live[self::WORKER_ID], new WorkerTestCronFiredDTO('second', true, 1_000, null), $now + 3);
+            self::assertNull($timer->getDeadline());
+            self::assertCount(1, $this->replies);
+        } finally {
+            $this->requests->detachEventLoop();
+            $loop->close();
+            $other->close();
+        }
+    }
+
+    public function testNativeDueOnlyCuesTheGuardAndDoesNotRunTheProtocolInTheCallback(): void
+    {
+        $loop = new EventLoop();
+        $due = false;
+        $now = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        try {
+            $this->requests->attachEventLoop($loop, static function () use (&$due): void {
+                $due = true;
+            });
+            $this->requests->request($this->ask('expired'), self::AGENT, self::RULE, $now - CommandChannelWindows::AGENT_WAIT_SECONDS);
+            for ($pass = 0; $pass < 4; ++$pass) {
+                $loop->tick();
+            }
+            self::assertTrue($due);
+            self::assertSame([], $this->replies, 'Native callbacks cue; the manager owns dispatch');
+            $this->requests->tick();
+            $this->assertRefused('expired', 'Agent mailer did not check cron rule nightly-digest in time.');
+            $this->requests->tick();
+            self::assertCount(1, $this->replies);
+            self::assertFalse($loop->hasReadyWork());
+        } finally {
+            $this->requests->detachEventLoop();
+            $loop->close();
+        }
     }
 
     public function testAnOutcomePastTheDeadlineIsRefusedBeforeTheNextTick(): void

@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Cluster\ClusterContext;
-use Hilos\Cluster\Consensus\ConsensusInspection;
-use Hilos\Cluster\Consensus\ConsensusRole;
-use Hilos\Cluster\Leadership;
+use Hilos\Cluster\Consensus\ClusterConsensusConfig;
+use Hilos\Cluster\Consensus\ClusterCoordinator;
+use Hilos\Cluster\Consensus\ConsensusMesh;
+use Hilos\Cluster\NullLeadershipObserver;
+use Hilos\Cluster\Peer\DTO\PeerDTO;
+use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
+use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Config\AgentPlacement;
@@ -16,12 +20,15 @@ use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Page\DTO\PageResubscribeSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\ProtectedMode\ProtectedModeSwitch;
+use Hilos\ProtectedMode\ProtectedModeSyncScheduler;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Server\WebSocketServer;
@@ -30,6 +37,7 @@ use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use ReflectionProperty;
 use stdClass;
+use WeakReference;
 
 /** Exact source-master frames; the live cross-node reproduction lives in cluster/daemon. */
 final class DaemonManagerLeaderPageRecoveryTest extends TestCase
@@ -39,7 +47,9 @@ final class DaemonManagerLeaderPageRecoveryTest extends TestCase
     private ?ClusterContext $previousCluster;
     private LeaderPageRecoveryManager $manager;
     private LeaderPageRecoveryServer $server;
-    private LeaderPageRecoveryConsensus $consensus;
+    private ClusterCoordinator $consensus;
+    private LeaderPageRecoveryMesh $mesh;
+    private EventLoop $loop;
 
     protected function setUp(): void
     {
@@ -55,15 +65,23 @@ final class DaemonManagerLeaderPageRecoveryTest extends TestCase
         Hilos::$env = new EnvAccessor();
         Hilos::$sr = new SignalRouter();
         Hilos::$cluster = new ClusterContext();
-        $this->consensus = new LeaderPageRecoveryConsensus();
+        $this->mesh = new LeaderPageRecoveryMesh();
+        $this->consensus = $this->coordinator();
         Hilos::$cluster->registerLeadership($this->consensus);
         $this->manager = new LeaderPageRecoveryManager();
         $this->server = new LeaderPageRecoveryServer();
         $this->manager->registerServer($this->server);
+        $this->loop = new EventLoop();
+        new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($this->manager, $this->loop);
+        new ReflectionProperty(DaemonManager::class, 'webSocketStarted')->setValue($this->manager, true);
+        $this->attach();
     }
 
     protected function tearDown(): void
     {
+        if (isset($this->manager)) {
+            $this->detach();
+        }
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->previousApp);
         Hilos::$env = $this->previousEnv;
         Hilos::$cluster = $this->previousCluster;
@@ -73,14 +91,32 @@ final class DaemonManagerLeaderPageRecoveryTest extends TestCase
         }
     }
 
+    public function testActualEpochChangesCueSlaveSyncWithoutReplacingPageRecovery(): void
+    {
+        $sync = $this->createMockForIntersectionOfInterfaces([ProtectedModeSwitch::class, ProtectedModeSyncScheduler::class]);
+        $sync->expects(self::exactly(2))->method('noteSlaveSyncChanged');
+        Hilos::$cluster->registerProtectedMode($sync);
+        $this->subscribe('tab');
+        $this->tick();
+        $this->assertFrame('tab');
+        $this->consensus->onHeartbeat(new PeerHeartbeatDTO(4, 'first', true));
+        $this->tick();
+        $this->assertFrame('tab');
+        $this->consensus->onHeartbeat(new PeerHeartbeatDTO(4, 'first', true));
+        $this->tick();
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+        $this->consensus->onHeartbeat(new PeerHeartbeatDTO(4, 'first', false));
+        $this->tick();
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
     public function testASourceThatStaysFollowerAsksItsExactSocketToSubscribeToTheNewLeader(): void
     {
         $params = ['room' => '42', 'view' => ['active' => true, 'limit' => 2]];
         $this->subscribe('tab', 'leader', $params);
         $this->tick();
         $this->assertFrame('tab', $params);
-        $this->consensus->leader = 'other';
-        $this->consensus->epoch++;
+        $this->consensus->onHeartbeat(new PeerHeartbeatDTO(4, 'other', true));
         $this->tick();
         $this->assertFalse($this->consensus->amLeader());
         $this->assertFrame('tab', $params);
@@ -93,8 +129,9 @@ final class DaemonManagerLeaderPageRecoveryTest extends TestCase
         $this->subscribe('tab');
         $this->tick();
         $this->assertFrame('tab');
-        $this->consensus->leader = 'source';
-        $this->consensus->epoch++;
+        $this->consensus->triggerDesignatedElection();
+        $this->consensus->tick(0.0);
+        $this->consensus->onVoteReply(new PeerVoteReplyDTO(4, true, 'first'));
         $this->tick();
         $this->assertTrue($this->consensus->amLeader());
         $this->assertFrame('tab');
@@ -105,7 +142,7 @@ final class DaemonManagerLeaderPageRecoveryTest extends TestCase
         $this->subscribe('tab');
         $this->tick();
         $this->assertFrame('tab');
-        $this->consensus->epoch++;
+        $this->consensus->onHeartbeat(new PeerHeartbeatDTO(4, 'first', true));
         $this->tick();
         $this->assertFrame('tab');
     }
@@ -113,19 +150,25 @@ final class DaemonManagerLeaderPageRecoveryTest extends TestCase
     public function testNoLeaderOrNoQuorumSendsNothingAndTheNextAvailableEpochRecovers(): void
     {
         $this->subscribe('tab');
-        $this->consensus->leader = null;
+        $this->consensus->noteNodeOffline('first');
         $this->tick();
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
-        $this->consensus->leader = 'first';
-        $this->consensus->quorum = false;
+        $this->assertFalse($this->loop->hasReadyWork());
+        $this->consensus->onHeartbeat(new PeerHeartbeatDTO(3, 'first', true));
+        $this->mesh->online = ['source'];
+        $this->consensus->tick(0.0);
         $this->tick();
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
-        $this->consensus->quorum = true;
+        $this->assertFalse($this->loop->hasReadyWork());
+        $this->mesh->online = ['source', 'first', 'other'];
+        $this->consensus->tick(0.0);
         $this->tick();
         $this->assertFrame('tab');
-        $this->consensus->quorum = false;
+        $this->mesh->online = ['source'];
+        $this->consensus->tick(0.0);
         $this->tick();
-        $this->consensus->quorum = true;
+        $this->mesh->online = ['source', 'first', 'other'];
+        $this->consensus->tick(0.0);
         $this->tick();
         $this->assertFrame('tab');
     }
@@ -161,7 +204,7 @@ final class DaemonManagerLeaderPageRecoveryTest extends TestCase
         for ($index = 0; $index < 64; $index++) {
             $this->assertFrame('tab-' . $index);
         }
-        $this->consensus->epoch++;
+        $this->consensus->onHeartbeat(new PeerHeartbeatDTO(4, 'first', true));
         $this->tick();
         for ($index = 0; $index < 64; $index++) {
             $this->assertFrame('tab-' . $index);
@@ -222,9 +265,232 @@ final class DaemonManagerLeaderPageRecoveryTest extends TestCase
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
+    public function testNativeContinuationNeedsNoInputAndDoesNotDeliverInsideTheCallback(): void
+    {
+        for ($index = 0; $index < 65; ++$index) {
+            $this->subscribe('tab-' . $index);
+        }
+        $this->loop->runOnce();
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+        $this->tick();
+        for ($index = 0; $index < 64; ++$index) {
+            $this->assertFrame('tab-' . $index);
+        }
+        $this->assertTrue($this->loop->hasReadyWork());
+        $this->subscribe('later');
+        $this->consensus->onHeartbeat(new PeerHeartbeatDTO(3, 'first', true));
+        $this->tick();
+        $this->assertFrame('tab-64');
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+        $this->assertFalse($this->loop->hasReadyWork());
+        $this->consensus->onHeartbeat(new PeerHeartbeatDTO(3, 'first', false));
+        $this->consensus->onHeartbeat(new PeerHeartbeatDTO(2, 'other', true));
+        $this->consensus->onHeartbeat(new PeerHeartbeatDTO(9, 'source', true));
+        $this->consensus->tick(0.0);
+        $this->assertFalse($this->loop->hasReadyWork());
+        $this->tick();
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testUnavailableEpochCancelsContinuationAndSleepsUntilAnActualFact(): void
+    {
+        for ($index = 0; $index < 65; ++$index) {
+            $this->subscribe('tab-' . $index);
+        }
+        $this->tick();
+        for ($index = 0; $index < 64; ++$index) {
+            $this->assertFrame('tab-' . $index);
+        }
+        $this->mesh->online = ['source'];
+        $this->consensus->tick(0.0);
+        $this->tick();
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+        $this->assertFalse($this->loop->hasReadyWork());
+        $this->consensus->tick(0.0);
+        $this->assertFalse($this->loop->hasReadyWork());
+        $this->mesh->online = ['source', 'first'];
+        $this->consensus->tick(0.0);
+        $this->assertTrue($this->loop->hasReadyWork());
+        $this->tick();
+        for ($index = 0; $index < 64; ++$index) {
+            $this->assertFrame('tab-' . $index);
+        }
+    }
+
+    public function testCoalescedQuorumLossAndReturnRestoresTheSameLeaderAndTerm(): void
+    {
+        $this->subscribe('tab');
+        $this->tick();
+        $this->assertFrame('tab');
+        $this->mesh->online = ['source'];
+        $this->consensus->tick(0.0);
+        $this->mesh->online = ['source', 'first'];
+        $this->consensus->tick(0.0);
+        $this->loop->runOnce();
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+        $this->tick();
+        $this->assertFrame('tab');
+        $this->assertFalse($this->loop->hasReadyWork());
+    }
+
+    public function testNativeMembershipEdgesRecoverTheSameLeaderWithoutPeriodicConsensusTicks(): void
+    {
+        $this->consensus->attachEventLoop($this->loop);
+        $this->consensus->onHeartbeat(new PeerHeartbeatDTO(3, 'first', true));
+        $this->consensus->dispatchReady();
+        try {
+            $this->subscribe('tab');
+            $this->tick();
+            $this->assertFrame('tab');
+            $revision = $this->consensus->epochRevision();
+            $this->mesh->online = ['source'];
+            $this->consensus->noteMembershipChanged();
+            $this->mesh->online = ['source', 'first'];
+            $this->consensus->noteMembershipChanged();
+            $this->assertSame($revision + 2, $this->consensus->epochRevision());
+            $this->assertSame('first', $this->consensus->leaderId());
+            $this->assertSame(3, $this->consensus->term());
+            $this->loop->runOnce();
+            $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'native callbacks only cue guarded recovery');
+            $this->consensus->dispatchReady();
+            $this->tick();
+            $this->assertFrame('tab');
+            $this->assertFalse($this->consensus->hasReadyWork());
+            $this->assertFalse($this->loop->hasReadyWork());
+        } finally {
+            $this->consensus->detachEventLoop();
+        }
+    }
+
+    public function testRebindKeepsTheUnfinishedCohortAndRejectsEscapedOldCallbacks(): void
+    {
+        for ($index = 0; $index < 65; ++$index) {
+            $this->subscribe('tab-' . $index);
+        }
+        $this->tick();
+        for ($index = 0; $index < 64; ++$index) {
+            $this->assertFrame('tab-' . $index);
+        }
+        $oldWake = new ReflectionProperty(DaemonManager::class, 'leaderPageRecoveryWake')->getValue($this->manager);
+        $oldWork = new ReflectionProperty(DaemonManager::class, 'leaderPageRecoveryWork')->getValue($this->manager);
+        $this->detach();
+        $this->assertTrue($oldWork->isClosed());
+        $oldWake();
+        $this->assertFalse($this->loop->hasReadyWork());
+        $this->consensus->removeEpochWake($oldWake);
+        $this->subscribe('later');
+        $oldLoop = $this->loop;
+        $this->loop = new EventLoop();
+        new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($this->manager, $this->loop);
+        $this->attach();
+        $oldWake();
+        $this->assertFalse($oldLoop->hasReadyWork());
+        $this->tick();
+        $this->assertFrame('tab-64');
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+        $this->assertFalse($this->loop->hasReadyWork());
+        $oldWake();
+        $this->consensus->removeEpochWake($oldWake);
+        $this->assertFalse($this->loop->hasReadyWork());
+        $this->attach();
+        $this->tick();
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+        $this->consensus->onHeartbeat(new PeerHeartbeatDTO(4, 'other', true));
+        $this->assertTrue($this->loop->hasReadyWork());
+    }
+
+    public function testDetachedMutationAndReplacementOwnerOrRouterStartTheCorrectBasis(): void
+    {
+        $this->subscribe('tab');
+        $this->tick();
+        $this->assertFrame('tab');
+        $this->detach();
+        $this->consensus->onHeartbeat(new PeerHeartbeatDTO(4, 'other', true));
+        $this->assertFalse($this->loop->hasReadyWork());
+        $this->attach();
+        $this->tick();
+        $this->assertFrame('tab');
+        $old = $this->consensus;
+        $this->consensus = $this->coordinator();
+        Hilos::$cluster->registerLeadership($this->consensus);
+        $this->tick();
+        $this->assertFrame('tab');
+        $old->onHeartbeat(new PeerHeartbeatDTO(5, 'first', true));
+        $this->assertFalse($this->loop->hasReadyWork());
+        Hilos::$sr = new SignalRouter();
+        $this->subscribe('replacement');
+        $this->tick();
+        $this->assertFrame('replacement');
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testReadinessBindingAndItsDepartureRemainIndependentAfterWebSocketOpening(): void
+    {
+        $readiness = 0;
+        $wake = static function () use (&$readiness): void { ++$readiness; };
+        $this->consensus->setReadinessWake($wake);
+        $this->attach();
+        $this->assertSame($wake, new ReflectionProperty(ClusterCoordinator::class, 'readinessWake')->getValue($this->consensus));
+        $this->subscribe('tab');
+        $this->tick();
+        $this->assertFrame('tab');
+        $this->consensus->onHeartbeat(new PeerHeartbeatDTO(3, 'other', true));
+        $this->assertSame(2, $readiness);
+        $this->tick();
+        $this->assertFrame('tab');
+        new ReflectionProperty(DaemonManager::class, 'readinessCoordinator')->setValue($this->manager, $this->consensus);
+        new ReflectionMethod(DaemonManager::class, 'detachReadinessEventLoop')->invoke($this->manager);
+        $this->consensus->onHeartbeat(new PeerHeartbeatDTO(4, 'other', true));
+        $this->assertSame(2, $readiness);
+        $this->tick();
+        $this->assertFrame('tab');
+    }
+
+    public function testDiscardClosesQueuedWorkAndAnEscapedCueDoesNotRetainTheManager(): void
+    {
+        $this->subscribe('tab');
+        $wake = new ReflectionProperty(DaemonManager::class, 'leaderPageRecoveryWake')->getValue($this->manager);
+        new ReflectionMethod(DaemonManager::class, 'discardSignalDispatch')->invoke($this->manager);
+        $this->assertFalse($this->loop->hasReadyWork());
+        $wake();
+        $this->consensus->onHeartbeat(new PeerHeartbeatDTO(4, 'other', true));
+        $this->assertFalse($this->loop->hasReadyWork());
+        $owner = WeakReference::create($this->manager);
+        unset($this->manager, $this->server);
+        gc_collect_cycles();
+        $this->assertNull($owner->get());
+        $wake();
+    }
+
     private function tick(): void
     {
-        new ReflectionMethod(DaemonManager::class, 'tickLeaderPageRecovery')->invoke($this->manager);
+        if ($this->loop->hasReadyWork()) {
+            $this->loop->runOnce();
+        }
+        new ReflectionMethod(DaemonManager::class, 'dispatchLeaderPageRecovery')->invoke($this->manager);
+    }
+
+    private function attach(): void
+    {
+        new ReflectionMethod(DaemonManager::class, 'attachLeaderPageRecoveryEventLoop')->invoke($this->manager);
+    }
+
+    private function detach(): void
+    {
+        new ReflectionMethod(DaemonManager::class, 'detachLeaderPageRecoveryEventLoop')->invoke($this->manager);
+    }
+
+    private function coordinator(): ClusterCoordinator
+    {
+        $coordinator = new ClusterCoordinator(
+            new ClusterConsensusConfig('source', ['source', 'first', 'other'], 2, 1000, 1000, 100),
+            $this->mesh,
+            new NullLeadershipObserver(),
+        );
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(3, 'first', true));
+        $coordinator->tick(0.0);
+        $coordinator->noteWebSocketOpen();
+        return $coordinator;
     }
 
     private function subscribe(string $key, string $agent = 'leader', array $params = []): LeaderPageRecoveryClient
@@ -305,7 +571,7 @@ final class LeaderPageRecoveryServer extends WebSocketServer
     /** @param WebSocketClient $client Socket to include in the epoch walk */
     public function attach(WebSocketClient $client): void
     {
-        $this->clients[] = $client;
+        $this->addClient($client);
     }
 
     /** This unit fixture never starts a listening server. */
@@ -356,63 +622,27 @@ final class LeaderPageRecoveryClient extends WebSocketClient
     }
 }
 
-final class LeaderPageRecoveryConsensus implements Leadership, ConsensusInspection
+final class LeaderPageRecoveryMesh implements ConsensusMesh
 {
-    public ?string $leader = 'first';
-    public int $epoch = 3;
-    public bool $quorum = true;
+    /** @var list<string> Live fixture masters */
+    public array $online = ['source', 'first', 'other'];
 
-    /** @return bool Whether the scripted election selected the source */
-    public function amLeader(): bool
+    /** @return list<string> Current live master set */
+    public function onlineMasterIds(): array
     {
-        return $this->leader === 'source';
+        return $this->online;
     }
 
-    /** @return ?string Scripted available leader */
-    public function leaderId(): ?string
+    /** @param PeerDTO $frame Consensus frame with no transport in this fixture */
+    public function broadcastToMasters(PeerDTO $frame): void
     {
-        return $this->leader;
     }
 
-    /** @return bool Always available on this fixture */
-    public function leaderWebSocketOpen(): bool
+    /**
+     * @param string $nodeId Fixture target
+     * @param PeerDTO $frame Consensus frame with no transport in this fixture
+     */
+    public function sendToMaster(string $nodeId, PeerDTO $frame): void
     {
-        return true;
-    }
-
-    /** @return bool Scripted availability of a quorum */
-    public function hasQuorum(): bool
-    {
-        return $this->quorum;
-    }
-
-    /** @return int Scripted consensus term */
-    public function term(): int
-    {
-        return $this->epoch;
-    }
-
-    /** @return ConsensusRole Role of the source in the scripted election */
-    public function consensusRole(): ConsensusRole
-    {
-        return $this->amLeader() ? ConsensusRole::Leader : ConsensusRole::Follower;
-    }
-
-    /** @return int Visible masters of the fixture */
-    public function onlineMasterCount(): int
-    {
-        return 3;
-    }
-
-    /** @return int Configured fixture masters */
-    public function masterSetSize(): int
-    {
-        return 3;
-    }
-
-    /** @return int Majority of the fixture masters */
-    public function quorumSize(): int
-    {
-        return 2;
     }
 }

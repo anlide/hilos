@@ -1308,18 +1308,74 @@ def node_log_path(node):
     return node.log_file
 
 
-def node_log(node, offset=0):
+def node_log(node, offset=0, *, incarnation=False):
     """The daemon log a node wrote from a byte offset on: its text, or '' when there is no
     file. Read from the host - the files inside the mount are root-owned but world-readable,
     so no sudo and no docker exec are needed. An offset names a byte of ONE file, so it holds
     only while the node does not start between measuring and reading; a node that does is
-    read by node_log_mark() instead."""
+    read by node_log_mark() instead. With incarnation=True, replay rotation batches before
+    the current file back to the latest daemon start; offsets retain their single-file meaning."""
+    if incarnation:
+        if offset != 0:
+            raise ValueError("an incarnation replay cannot use a single-file offset")
+        return _node_log_incarnation(node)
     try:
         with open(node_log_path(node), "rb") as f:
             f.seek(offset)
             return f.read().decode("utf-8", errors="replace")
     except FileNotFoundError:
         return ""
+
+
+def _node_log_incarnation(node):
+    """Read append order within UTC-named rotation batches, never sort individual log lines.
+
+    Open current first: if rotation moves that inode during the walk, do not replay it twice.
+    A complete archive batch wins over its staging copy; incoming copies are never visible.
+    Both directories belong to this node's mounted log root. Missing files may have moved
+    from staging to archive between enumeration and open, so try both locations.
+    """
+    path = node_log_path(node)
+    seen = set()
+    parts = []
+
+    def read(candidate):
+        try:
+            with candidate.open("rb") as stream:
+                identity = (os.fstat(stream.fileno()).st_dev, os.fstat(stream.fileno()).st_ino)
+                if identity in seen:
+                    return None
+                seen.add(identity)
+                return stream.read().decode("utf-8", errors="replace")
+        except FileNotFoundError:
+            return None
+
+    def append(text):
+        if text is None:
+            return None
+        parts.insert(0, text)
+        starts = list(re.finditer(r"^.*\] Daemon started with epoll$", text, re.MULTILINE))
+        if starts:
+            parts[0] = text[starts[-1].start():]
+            return "\n".join(parts)
+        return None
+
+    current = append(read(path))
+    if current is not None:
+        return current
+    roots = [path.parent / "archive", path.parent / "staging"]
+    # LogRotationConstants uses fixed-width, descending-significance UTC components.
+    names = {batch.name for root in roots for batch in root.glob("*")
+             if re.fullmatch(r"\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}Z", batch.name)}
+    for name in sorted(names, reverse=True):
+        for root in roots:
+            text = read(root / name / path.name)
+            if text is not None:
+                result = append(text)
+                if result is not None:
+                    return result
+                break
+    return "\n".join(parts)
 
 
 def node_log_size(node):

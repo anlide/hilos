@@ -703,7 +703,7 @@ final class DbSyncPeerTestWorkerServer extends WorkerServer
      */
     public function addWorker(): void
     {
-        $this->clients[] = new DbSyncPeerTestWorkerClient();
+        $this->addClient(new DbSyncPeerTestWorkerClient());
     }
 
     /**

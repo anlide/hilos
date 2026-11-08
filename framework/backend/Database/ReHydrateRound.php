@@ -61,7 +61,7 @@ final class ReHydrateRound
     /** @var list<string> Human-readable problems, one per participant that failed or went quiet */
     private array $problems = [];
 
-    /** Deadline on the {@see microtime()} scale, after which the pending participants are written off. */
+    /** Original absolute monotonic seconds (hrtime), after which pending participants are written off. */
     private float $deadline = 0.0;
 
     /**
@@ -102,7 +102,7 @@ final class ReHydrateRound
      *
      * @param int $round Number this round answers under, issued by whoever owns the barrier
      * @param list<string> $participants Human-readable participant labels ('daemon', 'worker #2', 'node-b')
-     * @param float $deadline Wall-clock deadline on the {@see microtime()} scale
+     * @param float $deadline Absolute monotonic seconds, on the process's hrtime scale
      */
     public function start(int $round, array $participants, float $deadline): void
     {
@@ -113,11 +113,36 @@ final class ReHydrateRound
     }
 
     /**
+     * The master holds verdict polling while its captured roster is prepared in portions.
+     *
+     * @param string $participant One original participant, before any announcement is sent
+     */
+    public function includeParticipant(string $participant): void
+    {
+        $this->pending[$participant] = true;
+    }
+
+    /**
      * @return int Number this round answers under, 0 before it was started
      */
     public function round(): int
     {
         return $this->round;
+    }
+
+    /** @return float Original absolute monotonic deadline; participant changes never renew it */
+    public function deadline(): float
+    {
+        return $this->deadline;
+    }
+
+    /**
+     * @param string $participant Original participant label
+     * @return bool Whether this participant still owes an answer
+     */
+    public function isPending(string $participant): bool
+    {
+        return isset($this->pending[$participant]);
     }
 
     /**
@@ -181,10 +206,10 @@ final class ReHydrateRound
     /**
      * Writes off everyone still silent once the deadline has passed.
      *
-     * Called from the daemon loop on every iteration; a no-op before the deadline. Afterwards the
-     * round is settled but not complete, which is what keeps the node closed.
+     * Observed after a round fact or its native deadline, once announcement dispatch completes.
+     * Afterwards the round is settled but not complete, which keeps the node closed.
      *
-     * @param float $now Current time on the {@see microtime()} scale
+     * @param float $now Current absolute monotonic seconds, on the process's hrtime scale
      */
     public function expire(float $now): void
     {

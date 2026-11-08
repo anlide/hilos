@@ -55,6 +55,32 @@ final class RtNodeSourceMap
     /** @var array<string, array<string, string>> Of those, the ones claimed by a set, and the set key, keyed by the same agent */
     private array $setKeyByAgent = [];
 
+    /** @var array<string, int> Live claim references by collection, including partial and set claims */
+    private array $collectionClaims = [];
+
+    /** @var array<string, int> Claim references without a named-row restriction */
+    private array $wholeClaims = [];
+
+    /** @var array<string, int> Unrestricted claim references covering every operation */
+    private array $fullWholeClaims = [];
+
+    /** @var array<string, array<string, int>> Named-row claim references, including partial operations */
+    private array $rowClaims = [];
+
+    /** @var array<string, array<string, int>> Named-row claim references covering every operation */
+    private array $fullRowClaims = [];
+
+    /** Advances for every applied claim report or actual agent release, including identical re-reports. */
+    private int $revision = 0;
+
+    /** @var array<string, int> Agent insertion positions, advanced on full release/rejoin */
+    private array $reportPositions = [];
+
+    private int $reportSequence = 0;
+
+    /** Immutable report paths; finite readers never clone the mutable raw ledgers. */
+    private ?RtSourceReports $reportSnapshot = null;
+
     /**
      * Records what one agent of this node owns, replacing whatever it owned before.
      *
@@ -77,10 +103,16 @@ final class RtNodeSourceMap
             return;
         }
 
+        $this->adjustAgentClaimCounts($agentId, false);
         $this->byAgent[$agentId] = $collectionKeys;
         $this->partialByAgent[$agentId] = $partialCollectionKeys;
         $this->keysByAgent[$agentId] = $keysByCollection;
         $this->setKeyByAgent[$agentId] = $setKeyByCollection;
+        $this->adjustAgentClaimCounts($agentId, true);
+        $position = $this->reportPositions[$agentId] ??= ++$this->reportSequence;
+        $this->reportSnapshot = $this->sourceReports()->withReport($position,
+            new RtSourceReport($agentId, $collectionKeys, $partialCollectionKeys, $keysByCollection, $setKeyByCollection));
+        $this->revision++;
     }
 
     /**
@@ -90,12 +122,37 @@ final class RtNodeSourceMap
      */
     public function release(string $agentId): void
     {
+        if (!isset($this->byAgent[$agentId])) {
+            return;
+        }
+        $this->adjustAgentClaimCounts($agentId, false);
+        $this->reportSnapshot = $this->sourceReports()->withoutReport($this->reportPositions[$agentId]);
         unset(
             $this->byAgent[$agentId],
             $this->partialByAgent[$agentId],
             $this->keysByAgent[$agentId],
             $this->setKeyByAgent[$agentId],
+            $this->reportPositions[$agentId],
         );
+        $this->revision++;
+    }
+
+    /** @return int Revision of the original local report ledger, without walking or serializing its claims */
+    public function revision(): int
+    {
+        return $this->revision;
+    }
+
+    /**
+     * Freezes report values in O(1). The existing mutable scalar index answers live ownership;
+     * immutable paths supply the missing finite value snapshot without a whole-map COW write.
+     * Both belong to this process, never a shared domain collection or a database query.
+     *
+     * @return RtSourceReports Exact original reports, with original agent and inner declaration order
+     */
+    public function sourceReports(): RtSourceReports
+    {
+        return $this->reportSnapshot ??= new RtSourceReports();
     }
 
     /**
@@ -111,17 +168,10 @@ final class RtNodeSourceMap
      */
     public function owns(string $collectionKey, ?string $stateId = null): bool
     {
-        foreach ($this->byAgent as $agentId => $collectionKeys) {
-            if (!in_array($collectionKey, $collectionKeys, true)) {
-                continue;
-            }
-            $claimedKeys = $this->keysByAgent[$agentId][$collectionKey] ?? null;
-            if ($claimedKeys === null || $stateId === null || in_array($stateId, $claimedKeys, true)) {
-                return true;
-            }
+        if ($stateId === null) {
+            return isset($this->collectionClaims[$collectionKey]);
         }
-
-        return false;
+        return isset($this->wholeClaims[$collectionKey]) || isset($this->rowClaims[$collectionKey][$stateId]);
     }
 
     /**
@@ -143,23 +193,20 @@ final class RtNodeSourceMap
      */
     public function ownsFully(string $collectionKey, ?string $stateId = null): bool
     {
-        foreach ($this->byAgent as $agentId => $collectionKeys) {
-            if (!in_array($collectionKey, $collectionKeys, true)) {
-                continue;
-            }
-            if (in_array($collectionKey, $this->partialByAgent[$agentId] ?? [], true)) {
-                continue;
-            }
-            $claimedKeys = $this->keysByAgent[$agentId][$collectionKey] ?? null;
-            if ($claimedKeys === null) {
-                return true;
-            }
-            if ($stateId !== null && in_array($stateId, $claimedKeys, true)) {
-                return true;
-            }
-        }
+        return isset($this->fullWholeClaims[$collectionKey])
+            || ($stateId !== null && isset($this->fullRowClaims[$collectionKey][$stateId]));
+    }
 
-        return false;
+    /**
+     * Qualifies collection resets without walking the named scopes. Set and partial-operation
+     * claims have no full named-row references, and a whole owner suppresses the narrower offer.
+     *
+     * @param string $collectionKey Collection whose presence basis changed
+     * @return bool Whether a reset can change this node's held named-key basis
+     */
+    public function hasFullNamedRows(string $collectionKey): bool
+    {
+        return isset($this->fullRowClaims[$collectionKey]) && !isset($this->fullWholeClaims[$collectionKey]);
     }
 
     /**
@@ -201,9 +248,11 @@ final class RtNodeSourceMap
     public function collections(): array
     {
         $collections = [];
+        $seen = [];
         foreach ($this->byAgent as $collectionKeys) {
             foreach ($collectionKeys as $collectionKey) {
-                if (!in_array($collectionKey, $collections, true)) {
+                if (!isset($seen[$collectionKey])) {
+                    $seen[$collectionKey] = true;
                     $collections[] = $collectionKey;
                 }
             }
@@ -257,23 +306,30 @@ final class RtNodeSourceMap
     public function keyScopedCollections(): array
     {
         $keysByCollection = [];
+        $seen = [];
         foreach ($this->keysByAgent as $agentId => $claims) {
+            if ($claims === []) {
+                continue;
+            }
+            $owned = array_fill_keys($this->byAgent[$agentId] ?? [], true);
+            $partial = array_fill_keys($this->partialByAgent[$agentId] ?? [], true);
             foreach ($claims as $collectionKey => $claimedKeys) {
                 if (
-                    !in_array($collectionKey, $this->byAgent[$agentId] ?? [], true)
-                    || in_array($collectionKey, $this->partialByAgent[$agentId] ?? [], true)
+                    !is_string($collectionKey)
+                    || !isset($owned[$collectionKey])
+                    || isset($partial[$collectionKey])
                     || isset($this->setKeyByAgent[$agentId][$collectionKey])
                     || $this->ownsFully($collectionKey)
                 ) {
                     continue;
                 }
-                $collected = $keysByCollection[$collectionKey] ?? [];
+                $keysByCollection[$collectionKey] ??= [];
                 foreach ($claimedKeys as $stateId) {
-                    if (!in_array($stateId, $collected, true)) {
-                        $collected[] = $stateId;
+                    if (!isset($seen[$collectionKey][$stateId])) {
+                        $seen[$collectionKey][$stateId] = true;
+                        $keysByCollection[$collectionKey][] = $stateId;
                     }
                 }
-                $keysByCollection[$collectionKey] = $collected;
             }
         }
 
@@ -294,13 +350,15 @@ final class RtNodeSourceMap
     public function claimedSetKeys(string $collectionKey): array
     {
         $setKeys = [];
+        $seen = [];
         foreach ($this->setKeyByAgent as $agentId => $setKeyByCollection) {
             $setKey = $setKeyByCollection[$collectionKey] ?? null;
             if (
                 $setKey !== null
                 && in_array($collectionKey, $this->byAgent[$agentId] ?? [], true)
-                && !in_array($setKey, $setKeys, true)
+                && !isset($seen[$setKey])
             ) {
+                $seen[$setKey] = true;
                 $setKeys[] = $setKey;
             }
         }
@@ -322,23 +380,82 @@ final class RtNodeSourceMap
     public function setScopedCollections(): array
     {
         $setKeysByCollection = [];
+        $seen = [];
         foreach ($this->setKeyByAgent as $agentId => $setKeyByCollection) {
+            if ($setKeyByCollection === []) {
+                continue;
+            }
+            $owned = array_fill_keys($this->byAgent[$agentId] ?? [], true);
+            $partial = array_fill_keys($this->partialByAgent[$agentId] ?? [], true);
             foreach ($setKeyByCollection as $collectionKey => $setKey) {
                 if (
-                    !in_array($collectionKey, $this->byAgent[$agentId] ?? [], true)
-                    || in_array($collectionKey, $this->partialByAgent[$agentId] ?? [], true)
+                    !is_string($collectionKey)
+                    || !isset($owned[$collectionKey])
+                    || isset($partial[$collectionKey])
                     || $this->ownsFully($collectionKey)
                 ) {
                     continue;
                 }
-                $collected = $setKeysByCollection[$collectionKey] ?? [];
-                if (!in_array($setKey, $collected, true)) {
-                    $collected[] = $setKey;
+                if (!isset($seen[$collectionKey][$setKey])) {
+                    $seen[$collectionKey][$setKey] = true;
+                    $setKeysByCollection[$collectionKey][] = $setKey;
                 }
-                $setKeysByCollection[$collectionKey] = $collected;
             }
         }
 
         return $setKeysByCollection;
+    }
+
+    /**
+     * Changes only the replaced agent's reference counts. Queries never scan the raw report
+     * ledgers; aggregations retain their original declaration order.
+     *
+     * @param string $agentId Original claim ledger to register or release
+     * @param bool $add Whether these claim references are being registered
+     */
+    private function adjustAgentClaimCounts(string $agentId, bool $add): void
+    {
+        $partial = array_fill_keys($this->partialByAgent[$agentId] ?? [], true);
+        foreach ($this->byAgent[$agentId] ?? [] as $collectionKey) {
+            self::adjustClaimCount($this->collectionClaims, $collectionKey, $add);
+            $full = !isset($partial[$collectionKey]);
+            $keys = $this->keysByAgent[$agentId][$collectionKey] ?? null;
+            if ($keys === null) {
+                self::adjustClaimCount($this->wholeClaims, $collectionKey, $add);
+                if ($full) {
+                    self::adjustClaimCount($this->fullWholeClaims, $collectionKey, $add);
+                }
+                continue;
+            }
+            foreach ($keys as $stateId) {
+                $this->rowClaims[$collectionKey] ??= [];
+                self::adjustClaimCount($this->rowClaims[$collectionKey], $stateId, $add);
+                if ($full) {
+                    $this->fullRowClaims[$collectionKey] ??= [];
+                    self::adjustClaimCount($this->fullRowClaims[$collectionKey], $stateId, $add);
+                }
+            }
+            if (($this->rowClaims[$collectionKey] ?? null) === []) {
+                unset($this->rowClaims[$collectionKey]);
+            }
+            if (($this->fullRowClaims[$collectionKey] ?? null) === []) {
+                unset($this->fullRowClaims[$collectionKey]);
+            }
+        }
+    }
+
+    /**
+     * @param array<string, int> $counts Private reference-count index, never returned as a snapshot
+     * @param string $key Collection or row identifier
+     * @param bool $add Whether this reference is being registered
+     */
+    private static function adjustClaimCount(array &$counts, string $key, bool $add): void
+    {
+        if ($add) {
+            $counts[$key] ??= 0;
+            $counts[$key]++;
+        } elseif (--$counts[$key] === 0) {
+            unset($counts[$key]);
+        }
     }
 }

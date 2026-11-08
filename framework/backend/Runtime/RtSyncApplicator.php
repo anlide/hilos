@@ -216,6 +216,7 @@ final class RtSyncApplicator
 
         if ($collectionKey === StateProtectedModeRuntime::RT_ITEM) {
             Hilos::$ac?->invalidateProtectedMode();
+            Hilos::$rt?->noteProtectedModeChanged();
         }
 
         try {

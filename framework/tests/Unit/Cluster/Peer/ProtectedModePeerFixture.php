@@ -101,7 +101,8 @@ trait ProtectedModePeerFixture
             transport: new NamedPeerTestTransport($near, $nodeId),
         );
         Closure::bind(static function () use ($server, $link): void {
-            $server->clients[] = $link;
+            $server->addClient($link);
+            $server->attachClient($link);
         }, null, PeerServer::class)();
         socket_write($far, new PeerHelloDTO(
             PeerProtocol::VERSION, $nodeId, 'Node ' . $nodeId, $role, [], PeerTestMarkers::onWire(), null,

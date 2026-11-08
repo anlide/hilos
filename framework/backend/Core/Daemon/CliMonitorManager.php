@@ -59,6 +59,7 @@ class CliMonitorManager extends BaseManager
      *
      * @throws MissingRequiredParameterException When required process-control functions are unavailable
      * @throws EnvException When the command channel env values are missing or invalid
+     * @throws HilosException When the process signal receiver cannot be installed
      */
     public function run(): void
     {

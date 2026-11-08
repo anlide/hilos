@@ -7,6 +7,7 @@ namespace Hilos\TruthSource;
 use Hilos\Cluster\RtSyncSink;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Runtime\RtStaleness;
+use WeakReference;
 
 /**
  * Which node each replicated RT row came from, as far as the daemon master knows.
@@ -34,6 +35,64 @@ final class RtReplicaOriginMap
     /** @var array<string, array<string, string>> [collectionKey => [stateId => originNodeId]] */
     private array $byCollection = [];
 
+    /** @var array<string, array<string, int>> Exact origin admission of each current row */
+    private array $rowAdmissions = [];
+
+    private int $admissionSequence = 0;
+
+    /** @var array<string, int> Original outer collection positions, retired when the last row leaves */
+    private array $collectionPositions = [];
+
+    /** @var array<string, array<string, int>> Original row positions, retained when the row changes origin */
+    private array $rowPositions = [];
+
+    /** @var array<string, array<int, string>> Only this node's collections, keyed by original outer position */
+    private array $collectionsByNode = [];
+
+    /** @var array<string, array<string, array<int, string>>> Only this node's rows, keyed by original row position */
+    private array $rowsByNode = [];
+
+    /** @var array<string, true> Origins that received an older collection position after a newer one */
+    private array $collectionsNeedingSort = [];
+
+    /** @var array<string, array<string, true>> Origins that received an older row position after a newer one */
+    private array $rowsNeedingSort = [];
+
+    private int $collectionSequence = 0;
+
+    private int $rowSequence = 0;
+
+    /** @var array<string, WeakReference<RtReplicaConfirmation>> Only retained receipts keep these ordering tokens alive */
+    private array $confirmations = [];
+
+    /**
+     * @param string $nodeId Origin confirming rows now
+     * @param RtNodeSourceMap $sources Current ownership source
+     * @return RtReplicaConfirmation Shared receipt interval, ended by the next loss of this origin
+     */
+    public function captureConfirmation(string $nodeId, RtNodeSourceMap $sources): RtReplicaConfirmation
+    {
+        $confirmation = ($this->confirmations[$nodeId] ?? null)?->get();
+        if ($confirmation === null || !$confirmation->isCurrent($this, $sources)) {
+            $confirmation = new RtReplicaConfirmation($this, $sources);
+            $this->confirmations[$nodeId] = WeakReference::create($confirmation);
+        }
+        return $confirmation;
+    }
+
+    /**
+     * @param string $nodeId Origin whose last link closed
+     * @param float $at Receiver's loss moment, also applicable to rows not yet applied
+     */
+    public function loseConfirmations(string $nodeId, float $at): void
+    {
+        $confirmation = ($this->confirmations[$nodeId] ?? null)?->get();
+        if ($confirmation !== null) {
+            $confirmation->lostAt = $at;
+        }
+        unset($this->confirmations[$nodeId]);
+    }
+
     /**
      * Records which node the named rows of a collection arrived from.
      *
@@ -49,7 +108,36 @@ final class RtReplicaOriginMap
     public function note(string $originNodeId, string $collectionKey, array $stateIds): void
     {
         foreach ($stateIds as $stateId) {
+            $previous = $this->byCollection[$collectionKey][$stateId] ?? null;
+            if ($previous === $originNodeId) {
+                continue;
+            }
+            if (!isset($this->collectionPositions[$collectionKey])) {
+                $position = ++$this->collectionSequence;
+                $this->collectionPositions[$collectionKey] = $position;
+            }
+            if ($previous === null) {
+                $position = ++$this->rowSequence;
+                $this->rowPositions[$collectionKey][$stateId] = $position;
+            } else {
+                $position = $this->rowPositions[$collectionKey][$stateId];
+                $this->removeNodeRow($previous, $collectionKey, $position);
+            }
             $this->byCollection[$collectionKey][$stateId] = $originNodeId;
+            $this->rowAdmissions[$collectionKey][$stateId] = ++$this->admissionSequence;
+            if (!isset($this->rowsByNode[$originNodeId][$collectionKey])) {
+                $collectionPosition = $this->collectionPositions[$collectionKey];
+                $last = array_key_last($this->collectionsByNode[$originNodeId] ?? []);
+                if ($last !== null && $collectionPosition < $last) {
+                    $this->collectionsNeedingSort[$originNodeId] = true;
+                }
+                $this->collectionsByNode[$originNodeId][$collectionPosition] = $collectionKey;
+            }
+            $last = array_key_last($this->rowsByNode[$originNodeId][$collectionKey] ?? []);
+            if ($last !== null && $position < $last) {
+                $this->rowsNeedingSort[$originNodeId][$collectionKey] = true;
+            }
+            $this->rowsByNode[$originNodeId][$collectionKey][$position] = $stateId;
         }
     }
 
@@ -61,9 +149,17 @@ final class RtReplicaOriginMap
      */
     public function forget(string $collectionKey, string $stateId): void
     {
-        unset($this->byCollection[$collectionKey][$stateId]);
-        if (($this->byCollection[$collectionKey] ?? []) === []) {
-            unset($this->byCollection[$collectionKey]);
+        $nodeId = $this->byCollection[$collectionKey][$stateId] ?? null;
+        if ($nodeId === null) {
+            return;
+        }
+        $position = $this->rowPositions[$collectionKey][$stateId];
+        $this->removeNodeRow($nodeId, $collectionKey, $position);
+        unset($this->byCollection[$collectionKey][$stateId], $this->rowPositions[$collectionKey][$stateId],
+            $this->rowAdmissions[$collectionKey][$stateId]);
+        if ($this->byCollection[$collectionKey] === []) {
+            unset($this->byCollection[$collectionKey], $this->rowPositions[$collectionKey],
+                $this->collectionPositions[$collectionKey], $this->rowAdmissions[$collectionKey]);
         }
     }
 
@@ -73,6 +169,8 @@ final class RtReplicaOriginMap
      * The question asked the moment a link to that node closes: those rows are the ones whose
      * source has just become unreachable ({@see DaemonManager::noteNodeUnreachable()}), and the
      * transport knows only the node id ({@see RtSyncSink}).
+     * Only the requested origin's index is visited. Original collection and row positions are
+     * sorted once after an older position moves here; later reads reuse that order.
      *
      * @param string $nodeId Node to ask about
      * @return array<string, list<string>> Rows of that node, keyed by RT collection; collections
@@ -81,14 +179,22 @@ final class RtReplicaOriginMap
     public function rowsOfNode(string $nodeId): array
     {
         $rowsByCollection = [];
-        foreach ($this->byCollection as $collectionKey => $originByRow) {
-            // Cast back to string because a numeric state id - a fleet index, say - comes off
-            // array_keys() as an int, and these ids travel on to a worker frame that declares
-            // them strings.
-            $rows = array_map(strval(...), array_keys($originByRow, $nodeId, true));
-            if ($rows !== []) {
-                $rowsByCollection[(string)$collectionKey] = $rows;
+        if (!isset($this->collectionsByNode[$nodeId])) {
+            return $rowsByCollection;
+        }
+        if (isset($this->collectionsNeedingSort[$nodeId])) {
+            ksort($this->collectionsByNode[$nodeId]);
+            unset($this->collectionsNeedingSort[$nodeId]);
+        }
+        foreach ($this->collectionsByNode[$nodeId] as $collectionKey) {
+            if (isset($this->rowsNeedingSort[$nodeId][$collectionKey])) {
+                ksort($this->rowsByNode[$nodeId][$collectionKey]);
+                unset($this->rowsNeedingSort[$nodeId][$collectionKey]);
+                if ($this->rowsNeedingSort[$nodeId] === []) {
+                    unset($this->rowsNeedingSort[$nodeId]);
+                }
             }
+            $rowsByCollection[$collectionKey] = array_values($this->rowsByNode[$nodeId][$collectionKey]);
         }
 
         return $rowsByCollection;
@@ -99,10 +205,47 @@ final class RtReplicaOriginMap
      *
      * @param string $collectionKey RT collection to look in
      * @param string $stateId Row to ask about
-     * @return ?string Node that wrote it, or null when this node wrote it itself
+     * @param ?int $admittedThrough Finite original origin cohort; absent for the current origin
+     * @return ?string Current original origin, absent for local rows or a later origin incarnation
      */
-    public function nodeOfRow(string $collectionKey, string $stateId): ?string
+    public function nodeOfRow(string $collectionKey, string $stateId, ?int $admittedThrough = null): ?string
     {
+        $admission = $this->rowAdmissions[$collectionKey][$stateId] ?? null;
+        if ($admittedThrough !== null && ($admission === null || $admission > $admittedThrough)) {
+            return null;
+        }
         return $this->byCollection[$collectionKey][$stateId] ?? null;
+    }
+
+    /**
+     * Captured independently of insertion positions: an older row may move here after capture.
+     * Repeated facts from the same origin keep admission; moving away and back never does.
+     *
+     * @return int Last origin admission, without walking or copying the reverse index
+     */
+    public function admissionCutoff(): int
+    {
+        return $this->admissionSequence;
+    }
+
+    /**
+     * @param string $nodeId Previous origin losing this row
+     * @param string $collectionKey Collection retaining its original outer position
+     * @param int $position Original row position being removed from this origin
+     */
+    private function removeNodeRow(string $nodeId, string $collectionKey, int $position): void
+    {
+        unset($this->rowsByNode[$nodeId][$collectionKey][$position]);
+        if ($this->rowsByNode[$nodeId][$collectionKey] !== []) {
+            return;
+        }
+        unset($this->rowsByNode[$nodeId][$collectionKey], $this->rowsNeedingSort[$nodeId][$collectionKey],
+            $this->collectionsByNode[$nodeId][$this->collectionPositions[$collectionKey]]);
+        if ($this->rowsByNode[$nodeId] === []) {
+            unset($this->rowsByNode[$nodeId], $this->collectionsByNode[$nodeId],
+                $this->rowsNeedingSort[$nodeId], $this->collectionsNeedingSort[$nodeId]);
+        } elseif (($this->rowsNeedingSort[$nodeId] ?? null) === []) {
+            unset($this->rowsNeedingSort[$nodeId]);
+        }
     }
 }

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\TimeConstants;
+use Closure;
+
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
@@ -87,7 +90,7 @@ final class DaemonManagerClusterReactionTest extends TestCase
         unlink($logFile);
 
         $this->assertTrue($manager->fenceArmedAtWorkStop, 'The fence is armed before the project hook runs');
-        $placement->tick(microtime(true) + 1.0);
+        $placement->tick((hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND) + 1.0);
         $this->assertSame([['render', '9']], $executor->revoked, 'The placed work stops once the grace has run out');
     }
 
@@ -247,6 +250,12 @@ final class DaemonManagerClusterReactionTestServer implements ServerInterface
     public function setClientSocketDetacher(ClientSocketDetacher $detacher): void
     {
     }
+
+    /** @param Closure(ClientInterface): void $attacher Unused by this fixture's manually driven clients */
+    public function setClientSocketAttacher(Closure $attacher): void
+    {
+    }
+
 
     /**
      * @throws Throwable The refusal this server was built with, when it was built with one

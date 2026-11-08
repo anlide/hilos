@@ -423,7 +423,7 @@ final class StandingTestWebSocketServer extends WebSocketServer
         $client = WebSocketClientTestProbe::createSocketless();
         $client->acceptKey = $acceptKey;
         new ReflectionProperty(WebSocketClient::class, 'sessionTokenHashValue')->setValue($client, $sessionHash);
-        $this->clients[] = $client;
+        $this->addClient($client);
     }
 
     /** Starts no real socket in this browser server. */

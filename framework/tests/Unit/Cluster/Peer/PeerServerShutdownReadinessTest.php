@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Peer;
 
+use ReflectionMethod;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Socket\Server\AbstractServer;
@@ -21,14 +22,14 @@ final class PeerServerShutdownReadinessTest extends TestCase
         $link = new ReflectionClass(PeerLink::class)->newInstanceWithoutConstructor();
         new ReflectionProperty(PeerLink::class, 'outboundSegments')->setValue($link, new SplQueue());
         new ReflectionProperty(PeerLink::class, 'stagedOutbound')->setValue($link, new SplQueue());
-        new ReflectionProperty(AbstractServer::class, 'clients')->setValue($server, [$link]);
+        new ReflectionMethod(AbstractServer::class, 'addClient')->invoke($server, $link);
 
         $this->assertTrue($server->isReadyToShutdown());
 
         $link->sendEncodedFrame('{}');
         $this->assertFalse($server->isReadyToShutdown());
 
-        new ReflectionProperty(AbstractServer::class, 'clients')->setValue($server, []);
+        $server->removeClient($link);
         $this->assertTrue($server->isReadyToShutdown());
     }
 }

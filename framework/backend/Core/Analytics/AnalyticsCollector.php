@@ -6,6 +6,7 @@ namespace Hilos\Core\Analytics;
 
 use Closure;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -15,6 +16,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Logger;
+use WeakReference;
 
 /**
  * Collects raw analytics data - the facade every process reaches as `Hilos::$ac`.
@@ -79,9 +81,53 @@ final class AnalyticsCollector
     /** @var ?RtContext Identity of the context last checked; never a source of runtime values */
     private ?RtContext $protectedModeContext = null;
 
+    private bool $protectedModeHeld = false;
+
+    /** @var ?Closure(): void Optional master observer; workers retain their existing cadence */
+    private ?Closure $scheduleWake = null;
+
+    /** Starts the single monotonic interval owner without reading shared state. */
     public function __construct()
     {
-        $this->outbox = new AnalyticsJournalOutbox($this->nowTs());
+        $this->outbox = new AnalyticsJournalOutbox($this->intervalNowMs());
+        $owner = WeakReference::create($this);
+        $this->outbox->setScheduleWake(static function () use ($owner): void {
+            $owner->get()?->notifySchedule();
+        });
+    }
+
+    /** @param Closure(): void $wake Exact scheduling observer of this master binding */
+    public function setScheduleWake(Closure $wake): void
+    {
+        $this->scheduleWake = $wake;
+    }
+
+    /** @param Closure(): void $wake Original observer; an old binding cannot remove a replacement */
+    public function removeScheduleWake(Closure $wake): void
+    {
+        if ($this->scheduleWake === $wake) {
+            $this->scheduleWake = null;
+        }
+    }
+
+    /** Reconciles facade identity only; the guarded tick reads the current row. */
+    public function reconcileProtectedModeContext(): void
+    {
+        if ($this->protectedModeContext !== Hilos::$rt && !$this->protectedModeDirty) {
+            $this->invalidateProtectedMode();
+        }
+    }
+
+    /** @return ?int Monotonic-millisecond deadline, zero for a dirty pending gate, null for empty or held work */
+    public function nextFlushAt(): ?int
+    {
+        if (!$this->hasPendingData()) {
+            return null;
+        }
+        if ($this->protectedModeDirty) {
+            return 0;
+        }
+        return $this->protectedModeHeld ? null : $this->outbox->nextFlushAt();
     }
 
     /**
@@ -337,7 +383,7 @@ final class AnalyticsCollector
         );
 
         if ($this->recordable()) {
-            $this->toOutbox(fn() => $this->outbox->describe($this->sessionsNamedBy(null), $this->nowTs()));
+            $this->toOutbox(fn() => $this->outbox->describe($this->sessionsNamedBy(null), $this->intervalNowMs()));
         }
     }
 
@@ -379,7 +425,7 @@ final class AnalyticsCollector
         $this->agentSessions[$this->buildAgentKey($agentType, $agentIndex)] = $session;
 
         if ($this->recordable()) {
-            $this->toOutbox(fn() => $this->outbox->describe($this->sessionsNamedBy($session), $this->nowTs()));
+            $this->toOutbox(fn() => $this->outbox->describe($this->sessionsNamedBy($session), $this->intervalNowMs()));
         }
     }
 
@@ -407,9 +453,13 @@ final class AnalyticsCollector
         );
 
         if ($this->isHeld()) {
+            $this->protectedModeHeld = true;
+            $this->protectedModeContext = Hilos::$rt;
+            $this->protectedModeDirty = false;
             $lost = $this->outbox->clear();
             $this->outbox->countLoss(AnalyticsLossReason::RESTORE, $lost, $this->nowTs(), $this->nowTs());
             $this->heldStops[] = $stop;
+            $this->notifySchedule();
 
             return;
         }
@@ -669,7 +719,7 @@ final class AnalyticsCollector
      */
     public function tick(): void
     {
-        $nowMs = $this->nowTs();
+        $nowMs = $this->intervalNowMs();
         if (!$this->protectedModeDirty && $this->protectedModeContext === Hilos::$rt && !$this->outbox->isFlushDue($nowMs)) {
             return;
         }
@@ -687,6 +737,7 @@ final class AnalyticsCollector
     public function invalidateProtectedMode(): void
     {
         $this->protectedModeDirty = true;
+        $this->notifySchedule();
     }
 
     /**
@@ -698,7 +749,7 @@ final class AnalyticsCollector
             return;
         }
 
-        $this->toOutbox(fn() => $this->outbox->flush($this->nowTs()));
+        $this->toOutbox(fn() => $this->outbox->flush($this->intervalNowMs()));
     }
 
     /**
@@ -765,7 +816,7 @@ final class AnalyticsCollector
         }
 
         $named = $sessions ?? ($agentSession === null ? [] : $this->sessionsNamedBy($agentSession));
-        $this->toOutbox(fn() => $this->outbox->add($record, $named, $this->nowTs()));
+        $this->toOutbox(fn() => $this->outbox->add($record, $named, $this->nowTs(), $this->intervalNowMs()));
     }
 
     /**
@@ -778,6 +829,7 @@ final class AnalyticsCollector
     private function recordable(): bool
     {
         $isHeld = $this->isHeld();
+        $this->protectedModeHeld = $isHeld;
         $this->protectedModeContext = Hilos::$rt;
         $this->protectedModeDirty = false;
         if ($isHeld) {
@@ -790,10 +842,23 @@ final class AnalyticsCollector
         $held = $this->heldStops;
         $this->heldStops = [];
         foreach ($held as $stop) {
-            $this->toOutbox(fn() => $this->outbox->add($stop->record, $stop->sessions, $this->nowTs()));
+            $this->toOutbox(fn() => $this->outbox->add($stop->record, $stop->sessions, $this->nowTs(), $this->intervalNowMs()));
         }
 
+        $this->notifySchedule();
         return true;
+    }
+
+    /** Notifies only the local scheduler, never running the collector recursively. */
+    private function notifySchedule(): void
+    {
+        ($this->scheduleWake)?->__invoke();
+    }
+
+    /** @return int Process-local monotonic milliseconds for the outbox interval only */
+    private function intervalNowMs(): int
+    {
+        return (int)(hrtime(true) / TimeConstants::NS_PER_MILLISECOND);
     }
 
     /**
@@ -859,7 +924,7 @@ final class AnalyticsCollector
      */
     private function nowTs(): int
     {
-        return (int)floor(microtime(true) * 1000);
+        return (int)floor(microtime(true) * TimeConstants::MS_PER_SECOND);
     }
 
     /**

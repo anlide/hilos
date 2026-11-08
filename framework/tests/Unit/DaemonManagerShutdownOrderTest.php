@@ -69,6 +69,9 @@ final class DaemonManagerShutdownOrderTest extends TestCase
 
         $workers->ready = true;
         $release->invoke($manager);
+        $this->assertSame(0, $browsers->releaseCount, 'Worker departure still owes the independent final dispatch prefix');
+        new ReflectionMethod(DaemonManager::class, 'dispatchSignals')->invoke($manager);
+        $release->invoke($manager);
         $release->invoke($manager);
         $this->assertSame(1, $browsers->releaseCount);
     }

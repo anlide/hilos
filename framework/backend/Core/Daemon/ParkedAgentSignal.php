@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\GroupOperationAuthority;
 
 /**
  * One signal the master holds for one agent that is not up yet (HIL-629).
@@ -43,6 +44,7 @@ final readonly class ParkedAgentSignal
      * @param bool $awaitingPlacement Whether the wait is for a placement verdict rather than a start here
      * @param bool $localOnly Whether this frame already crossed the mesh, so it is never placed again
      * @param bool $awaitingResume Whether the frame is a connection's close waiting for the protected-mode lift to bring its agent back
+     * @param ?GroupOperationAuthority $groupOperation Original prepared authority, never recaptured at release
      */
     public function __construct(
         public SignalDTO $signal,
@@ -51,6 +53,7 @@ final readonly class ParkedAgentSignal
         public bool $awaitingPlacement,
         public bool $localOnly = false,
         public bool $awaitingResume = false,
+        public ?GroupOperationAuthority $groupOperation = null,
     ) {
     }
 
@@ -66,6 +69,7 @@ final readonly class ParkedAgentSignal
             false,
             $this->localOnly,
             $this->awaitingResume,
+            $this->groupOperation,
         );
     }
 
@@ -81,6 +85,7 @@ final readonly class ParkedAgentSignal
             $this->awaitingPlacement,
             $this->localOnly,
             false,
+            $this->groupOperation,
         );
     }
 }

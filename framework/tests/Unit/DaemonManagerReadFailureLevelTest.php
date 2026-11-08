@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\EventLoop\EventLoop;
+use Closure;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
@@ -182,6 +184,12 @@ final class DaemonManagerReadFailureLevelTestServer implements ServerInterface
     {
     }
 
+    /** @param Closure(ClientInterface): void $attacher Unused by this fixture's manually driven clients */
+    public function setClientSocketAttacher(Closure $attacher): void
+    {
+    }
+
+
     public function onTick(): void
     {
     }
@@ -280,6 +288,19 @@ final class DaemonManagerReadFailureLevelTestClient implements ClientInterface
      * @param Throwable $failure Failure the read hands back
      */
     public function __construct(private readonly Throwable $failure)
+    {
+    }
+
+    /**
+     * @param EventLoop $loop Test owner's loop
+     * @param Closure(): void $wake Test owner's bounded portion
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+    }
+
+    /** Releases the test transport's loop binding, when it has one. */
+    public function detachEventLoop(): void
     {
     }
 

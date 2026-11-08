@@ -27,7 +27,7 @@ final readonly class AwaitingWorkerAgent
      * @param ?string $agentIndex Agent index, for the same start; null for a singleton
      * @param bool $placedByLeader Whether the start carried the placement sanction, which the start that
      *     seats it must carry again - a policy-placed agent is refused without it off the leader
-     * @param float $deadline Unix seconds after which the agent gives up and its start is refused
+     * @param float $deadline Monotonic seconds after which the agent gives up and its start is refused
      * @param bool $requiresMonopolistic Whether the agent waits for a monopolistic worker rather than a regular one
      */
     public function __construct(

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
@@ -66,7 +67,7 @@ final class DaemonManagerClientExitTest extends TestCase
 
         $this->assertSame(1, $loop->registeredCount());
 
-        $server->onTick();
+        $loop->tick();
 
         $this->assertSame(0, $loop->registeredCount());
         $this->assertSame([], $server->getClients());
@@ -162,7 +163,8 @@ final class DaemonManagerClientExitTestServer extends AbstractServer
      */
     public function seedClient(DaemonManagerClientExitTestClient $client): void
     {
-        $this->clients[] = $client;
+        $this->addClient($client);
+        $this->attachClient($client);
     }
 
     /**
@@ -198,6 +200,20 @@ final class DaemonManagerClientExitTestClient implements ClientInterface
      * @param resource|object $socket The watched end of the test's socket pair
      */
     public function __construct(private $socket)
+    {
+    }
+
+    /**
+     * @param EventLoop $loop Test owner's loop
+     * @param Closure(): void $wake Test owner's bounded portion
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+        $loop->createReadyWork($wake)->markReady();
+    }
+
+    /** Releases the test transport's loop binding, when it has one. */
+    public function detachEventLoop(): void
     {
     }
 

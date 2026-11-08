@@ -72,9 +72,50 @@ that needs no I/O — a random token — and let the worker persist and verify i
 - **A frame going to several addressees is packed once per broadcast**, not once per
   link: the string is the same for all of them, and the second `json_encode` is work the
   master pays for nothing. `DaemonManager::writeFrameToWorkers()` is where this is done for
-  the worker links, `encodeSignalFrame()` / `sendToAllClients()` for the WebSocket ones, and
+  the worker links, `clientDestinationDelivery()` for the WebSocket ones, and
   `PeerServer::fanOutFrame()` for the links to other nodes — the single loop every peer
   broadcast goes through, each of them supplying only its own question of whom to reach.
+- **Signal delivery retains its unfinished portion.** `DaemonManager::dispatchSignals()`
+  advances at most 64 steps of its original FIFO and physical continuations. Finite stop
+  and browser prefixes get validation slots, and blocked-wait discovery keeps its share;
+  an unused slot goes to delivery. The ordinary guarded master phase repeats portions
+  within a 2ms monotonic budget, checked between portions, before returning to the other
+  owners. The master waits on their actual readiness and deadlines; see the
+  [event loop](../architecture/event-loop.md#timing). Native callbacks cue this
+  phase without delivering ahead of ownership and reader-interest announcements.
+  `WebSocketServer::clientTarget()` resolves an address through its accept-key index and
+  captures the exact socket slot and key generation. It never scans the browser roster
+  for each addressed recipient. Physical fan-outs still spend one step per original
+  candidate. Packing remains one atomic operation; the browser's 8 MiB outbound cap does
+  not bound worker or peer source payloads.
+- **Source hand-overs and replica answers retain their row construction.** The live
+  master uses its existing effect FIFO; incoming peer RT writes and DB facts enter that
+  same FIFO, so a query sees earlier applied writes and its completed frames precede
+  later source writes. Claim reports, reader-interest announcements and queries use
+  that FIFO too; inbound reader-interest reports cannot change filtering ahead of an
+  older retained answer. A replaced peer cannot inherit its old report.
+  Row readers capture exact incarnations without copying the row
+  map. A replacement, remove/recreate, whole clear, rollback or remount cannot admit a
+  newer incarnation to an old read. Origin admission is separate from insertion order:
+  transferring an old row position to another origin is a new admission. Owned snapshots
+  publish only after the whole source is built; replica answers keep own-first and then
+  original origin/row order. The recipient is the original peer transport slot.
+  Immutable report paths capture claim values in O(1), copying O(log agents) nodes on
+  a report change. Plans visit one report transition, collection or scope key per step;
+  source discovery and scope indexes also advance by individual names or keys. One
+  cross-source row admission cutoff precedes this preparation, so a source discovered
+  later cannot admit a row created during the plan fold. Completed plans are reused;
+  abandoned partial plans cannot poison the same original basis.
+  A row or key visit still costs its input's fields and bytes. Changed ownership
+  signatures, reader-union and linked-node list construction, complete DTO packing and
+  retirement of retained trees remain input-sized costs. Count those inputs separately;
+  an outer step counter does not bound their bytes or destruction.
+- **Legacy project callbacks are declared.** A router overriding `getDestinations()`
+  selects `USE_DESTINATION_CALLBACK`; one overriding `localClientDestinations()` selects
+  `USE_LOCAL_CLIENT_CALLBACK`. A manager overriding `updateSubscriptions()` selects
+  `USE_SUBSCRIPTION_CALLBACK`. These protected constants default to false; the framework
+  uses its portioned paths. An opted-in callback runs once with its existing output and
+  must keep its own work bounded. Do not infer an override by comparing callables.
 - **The master now also asks** (HIL-619): `onContainedFailure()` tells the project
   about a failure a master guard swallowed, and it is master-loop code like the hooks
   above — a line or a counter, and `MasterSignalSender` for anything more. It is called

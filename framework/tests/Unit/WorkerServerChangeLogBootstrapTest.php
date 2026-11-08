@@ -405,11 +405,12 @@ final class ChangeLogBootstrapTestWorkerServer extends WorkerServer
         $client = new ReflectionClass(ChangeLogBootstrapTestWorkerClient::class)->newInstanceWithoutConstructor();
         $client->setWorkerIndex($index);
         $client->setIsMonopolistic($monopolistic);
+        new ReflectionProperty(WorkerClient::class, 'isRegistered')->setValue($client, true);
         new ReflectionProperty(WorkerClient::class, 'agentManager')->setValue(
             $client,
             new ReflectionProperty(WorkerServer::class, 'agentManager')->getValue($this),
         );
-        $this->clients[] = $client;
+        $this->addClient($client);
 
         return $client;
     }

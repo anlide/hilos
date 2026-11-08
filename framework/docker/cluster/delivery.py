@@ -79,7 +79,7 @@ class DeliveryController:
         self.stable_views()
         holders = []
         for node in self.stand.members:
-            active = active_workers(scenarios.node_log(node))
+            active = active_workers(control.node_log(self.stand.members[node], incarnation=True))
             if agent_id in active:
                 holders.append((node, active[agent_id]))
         if len(holders) != 1:

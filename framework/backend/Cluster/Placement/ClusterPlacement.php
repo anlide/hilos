@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Placement;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+use Closure;
+use WeakReference;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\ReadyWork;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Cluster\Consensus\ConsensusInspection;
@@ -134,6 +139,9 @@ final class ClusterPlacement implements WorkerPlacement
     /** @var float Seconds one agent's placement ask silences the next one for */
     private const float PLACEMENT_ASK_INTERVAL_SEC = 5.0;
 
+    /** Maximum retired deadline entries released by one addressed placement request. */
+    private const int PLACEMENT_ASK_EXPIRATIONS_PER_CALL = 16;
+
     /** @var float Minimum seconds between ordinary attempts of one waiting agent */
     private const float PLACEMENT_RETRY_INTERVAL_SEC = 5.0;
 
@@ -144,6 +152,9 @@ final class ClusterPlacement implements WorkerPlacement
     private const string RETRY_NEW_LEADER = 'new_leader';
 
     private const string PLACEMENT_CANCELED_REASON = 'placement canceled';
+
+    /** Maximum addressed entries visited by each scheduling phase. */
+    private const int SCHEDULING_PORTION_SIZE = 32;
 
     /** @var string Id of the node this coordinator runs on */
     private string $selfNodeId;
@@ -187,13 +198,13 @@ final class ClusterPlacement implements WorkerPlacement
      * tells the leader whether that deadline still speaks about where the agent is. A placement
      * the leader sends over the mesh calls it off at once ({@see callOffFailoverOf()}).
      *
-     * @var array<string, array{nodeId: string, deadline: float}>
+     * @var array<string, PlacementFailover>
      */
     private array $failoverDeadlines = [];
 
     /**
      * The nodes a fresh leader's rebuild still waits for, by node id: null while it waits for the
-     * node's placement report, a microtime while it waits out the failover grace of a node that
+     * node's placement report, a monotonic time while it waits out the failover grace of a node that
      * went away. An empty set permits settlement on tick; rebuildPending still holds new work
      * until the winning complete snapshot has been imported (HIL-446).
      *
@@ -234,9 +245,12 @@ final class ClusterPlacement implements WorkerPlacement
      * speaks about the placement it was armed for. The ask flag is what keeps the query at one
      * per record instead of one per tick.
      *
-     * @var array<string, array{nodeId: string, deadline: float, asked: bool}>
+     * @var array<string, PlacementAcknowledgement>
      */
     private array $placementAckDeadlines = [];
+
+    /** Reports are ordered at entrance, so reentrant questions cannot credit an older report. */
+    private int $reportSequence = 0;
 
     /** @var array<string, array{host: string, target: string, placing: bool}> Pending POLICY moves */
     private array $restartsElsewhere = [];
@@ -274,7 +288,7 @@ final class ClusterPlacement implements WorkerPlacement
     private ?string $placingLeaderId = null;
 
     /**
-     * @var ?float Self-fence deadline (microtime) after the placing leader was lost, released this
+     * @var ?float Self-fence deadline (monotonic seconds) after the placing leader was lost, released this
      * node or the quorum was, or null when not isolated
      */
     private ?float $selfFenceDeadline = null;
@@ -282,8 +296,11 @@ final class ClusterPlacement implements WorkerPlacement
     /** @var ?string Why the armed self-fence was armed, as its firing line names it; null when none is armed */
     private ?string $selfFenceCause = null;
 
-    /** @var array<string, float> Deadline (microtime) an agent's placement counts as already asked for until */
-    private array $placementAsks = [];
+    /** Local ask suppression and expiry metadata; contains no shared placement or waiting payload. */
+    private ?PlacementAsks $placementAsks = null;
+
+    /** @var ?Closure(?string): void Address fact, or newly available placement basis for unresolved demand */
+    private ?Closure $holdWake = null;
 
     /**
      * @var array<string, list<string>> Node ids owed a verdict for an agent, by agent id
@@ -323,6 +340,74 @@ final class ClusterPlacement implements WorkerPlacement
     /** @var ?float Supplied tick time for all work inside that pass; null outside a tick */
     private ?float $tickNow = null;
 
+    private ?EventLoop $eventLoop = null;
+
+    private ?ReadyWork $placementWork = null;
+
+    private int $bindingGeneration = 0;
+
+    private bool $placementReady = true;
+
+    private bool $dispatching = false;
+
+    private ?int $dispatchBinding = null;
+
+    /** @var array<int, array<string, PlacementTimer>> Native waits, indexed by duty and exact address */
+    private array $timers = [];
+
+    /** @var array<int, array<string, PlacementTimer>> Fired waits, retained while rebuild blocks their duty */
+    private array $readyTimers = [];
+
+    /** @var array<string, int> Changed registry keys and original admission order */
+    private array $dirtyAgents = [];
+
+    private int $dirtySequence = 0;
+
+    /** @var array<string, true> Previously indexed keys awaiting reset reconciliation */
+    private array $resetAgents = [];
+
+    /** @var array<string, true> Current indexed registry keys */
+    private array $indexedAgents = [];
+
+    /** @var array<string, true> Current waiting records eligible for capacity release */
+    private array $unplacedAgents = [];
+
+    private bool $registryIndexed = false;
+
+    /** @var ?float Latest actual capacity fact awaiting its own finite cohort */
+    private ?float $capacityWakeAt = null;
+
+    private string $capacityWakeTrigger = self::RETRY_CAPACITY_RELEASED;
+
+    private int $capacityPrepareThrough = 0;
+
+    private ?float $capacityFollowupAt = null;
+
+    private string $capacityFollowupTrigger = self::RETRY_CAPACITY_RELEASED;
+
+    private int $capacityFollowupThrough = 0;
+
+    /** @var array<string, true> Original capacity cohort; later facts cannot reset its prefix */
+    private array $capacityCohort = [];
+
+    private float $capacityCohortAt = 0.0;
+
+    private string $capacityCohortTrigger = self::RETRY_CAPACITY_RELEASED;
+
+    /** @var int Local authority decisions, including synchronous loss and takeover */
+    private int $authorityGeneration = 0;
+
+    private int $placementAttemptSequence = 0;
+
+    /** @var array<string, int> Exact in-flight placement/stop incarnations across synchronous ports */
+    private array $placementAttempts = [];
+
+    private ?WeakReference $observedLeadership = null;
+
+    private ?int $observedTerm = null;
+
+    private ?string $observedLeaderId = null;
+
     /**
      * @param string $selfNodeId Id of the node this coordinator runs on
      * @param PlacementMesh $mesh Outbound port to reach nodes and read capabilities
@@ -354,7 +439,149 @@ final class ClusterPlacement implements WorkerPlacement
         $this->slaveWorkGraceSec = $slaveWorkGraceMs / TimeConstants::MS_PER_SECOND;
         $this->placementAckTimeoutSec = $placementAckTimeoutMs / TimeConstants::MS_PER_SECOND;
         $this->policy = $policy ?? new BestFitPlacementPolicy();
-        $this->registry = new PlacementRegistry();
+        $this->registry = new PlacementRegistry(function (?string $agentId): void {
+            $this->noteRegistryChanged($agentId);
+            $this->holdWake?->__invoke($agentId);
+        });
+    }
+
+    /**
+     * Binds process-private timers to the peer's existing base, retaining every original due.
+     * Callbacks record readiness only; effects remain in the guarded placement phase.
+     *
+     * @param EventLoop $loop Existing master event loop
+     * @throws EventLoopException When an original placement deadline cannot be armed
+     */
+    public function attachEventLoop(EventLoop $loop): void
+    {
+        if ($this->eventLoop === $loop) {
+            return;
+        }
+        $this->detachEventLoop();
+        $this->eventLoop = $loop;
+        $owner = WeakReference::create($this);
+        $generation = $this->bindingGeneration;
+        $this->placementWork = $loop->createReadyWork(static function () use ($owner, $generation): void {
+            $placement = $owner->get();
+            if ($placement !== null && $placement->bindingGeneration === $generation) {
+                $placement->placementReady = true;
+            }
+        });
+        if (!$this->registryIndexed) {
+            $this->registryIndexed = true;
+            foreach ($this->registry->all() as $record) {
+                $this->dirtyAgents[$record->agentId()] ??= ++$this->dirtySequence;
+            }
+        }
+        foreach ($this->timers as $duty => $timers) {
+            foreach ($timers as $key => $timer) {
+                $this->bindTimer(PlacementDuty::from($duty), (string)$key, $timer);
+            }
+        }
+        $this->markPlacementReady();
+    }
+
+    /** Releases native handles and queued notifications, retaining domain waits and ready facts. */
+    public function detachEventLoop(): void
+    {
+        ++$this->bindingGeneration;
+        foreach ($this->timers as $timers) {
+            foreach ($timers as $timer) {
+                $timer->handle?->close();
+                $timer->handle = null;
+            }
+        }
+        $this->placementWork?->close();
+        $this->placementWork = null;
+        $this->eventLoop = null;
+    }
+
+    /** @return bool Runnable facts or due work; future waits and rebuild-blocked failures sleep */
+    public function hasReadyWork(): bool
+    {
+        return $this->eventLoop !== null && ($this->placementReady || $this->hasRunnableTimers());
+    }
+
+    /**
+     * @throws EnvException When early-view authority cannot be read
+     * @throws PeerTransportException When snapshot metadata is invalid
+     * @throws InvalidFormatException When a tracked completion address is invalid
+     * @throws EventLoopException When a placement or restart deadline cannot be armed or canceled
+     */
+    public function dispatchReady(): void
+    {
+        if ($this->dispatching || !$this->hasReadyWork()) {
+            return;
+        }
+        $this->dispatching = true;
+        $this->dispatchBinding = $this->bindingGeneration;
+        $this->placementReady = false;
+        $this->placementWork?->cancel();
+        $previousNow = $this->tickNow;
+        $this->tickNow = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        try {
+            $this->advancePlacement($this->tickNow, true);
+        } finally {
+            $this->tickNow = $previousNow;
+            $this->dispatching = false;
+            $this->dispatchBinding = null;
+            if ($this->dirtyAgents !== [] || $this->resetAgents !== [] || $this->capacityCohort !== []
+                || $this->capacityWakeAt !== null || $this->hasRunnableTimers()) {
+                $this->markPlacementReady();
+            }
+        }
+    }
+
+    /**
+     * Reconciles only an early candidate's independent authority, without requiring a browser
+     * recovery consumer or claiming its epoch callback. The peer calls this before guarded work
+     * and the master must do so before a later native wait.
+     * @throws EnvException When the current cluster leadership configuration cannot be read
+     */
+    public function reconcileAuthority(): void
+    {
+        if ($this->candidateView === null) {
+            return;
+        }
+        $leadership = Hilos::$cluster?->leadership();
+        $term = $leadership instanceof ConsensusInspection ? $leadership->term() : null;
+        $leaderId = $leadership?->leaderId();
+        if ($this->observedLeadership?->get() !== $leadership || $this->observedTerm !== $term
+            || $this->observedLeaderId !== $leaderId) {
+            $this->observedLeadership = $leadership !== null ? WeakReference::create($leadership) : null;
+            $this->observedTerm = $term;
+            $this->observedLeaderId = $leaderId;
+            $this->markPlacementReady();
+        }
+    }
+
+    /** @param ?Closure(?string): void $wake Local hold owner, null to detach */
+    public function setHoldWake(?Closure $wake): void
+    {
+        $this->holdWake = $wake;
+    }
+
+    /** @param Closure(?string): void $wake Exact departing binding; a replacement stays installed */
+    public function removeHoldWake(Closure $wake): void
+    {
+        if ($this->holdWake === $wake) {
+            $this->holdWake = null;
+        }
+    }
+
+    /**
+     * @param string $agentId Unresolved address
+     * @return ?float Existing on-demand ask deadline in monotonic seconds; leader waits are event-only
+     */
+    public function onDemandRetryAt(string $agentId): ?float
+    {
+        return $this->isLeader ? null : $this->placementAsks?->deadlineOf($agentId);
+    }
+
+    /** @param string $agentId Unresolved address whose actual placement basis changed */
+    public function invalidateOnDemandAsk(string $agentId): void
+    {
+        $this->placementAsks?->forget($agentId);
     }
 
     /**
@@ -506,11 +733,17 @@ final class ClusterPlacement implements WorkerPlacement
             $this->registry->forget($agentId);
             $previous = null;
         }
+        $selectionGeneration = $this->authorityGeneration;
+        $selectionAttempt = $this->placementAttempts[$agentId] ?? null;
         try {
             $this->requirePlacementFit($agentType, $agentIndex, $nodeId);
         } catch (PlacementCapabilityException $e) {
             throw $e;
         } catch (Throwable $e) {
+            if ($selectionGeneration !== $this->authorityGeneration
+                || ($this->placementAttempts[$agentId] ?? null) !== $selectionAttempt) {
+                throw $e;
+            }
             $failure = $this->failedAttempt($agentType, $agentIndex, $e);
             if ($previous !== null && $previous->state->hostsAgent()) {
                 $this->rememberRefusal($failure);
@@ -520,27 +753,53 @@ final class ClusterPlacement implements WorkerPlacement
             throw $e;
         }
 
+        if ($selectionGeneration !== $this->authorityGeneration || ($this->placementAttempts[$agentId] ?? null) !== $selectionAttempt
+            || $this->registry->get($agentId) !== $previous) {
+            return;
+        }
+        unset($this->placementAckDeadlines[$agentId]);
+        $this->cancelTimer(PlacementDuty::Acknowledgement, $agentId);
+        $failover = $this->timers[PlacementDuty::Failover->value][$agentId] ?? null;
         if ($nodeId === $this->selfNodeId) {
             $this->placeLocally($agentType, $agentIndex);
+            if ($this->registry->get($agentId)?->nodeId === $nodeId) {
+                $this->callOffFailoverOf($agentId, $nodeId, $failover);
+            }
             return;
         }
 
+        $attempt = ++$this->placementAttemptSequence;
+        $this->placementAttempts[$agentId] = $attempt;
+        $generation = $this->authorityGeneration;
         try {
             $delivered = $this->mesh->sendToNode($nodeId, new PeerPlaceAgentDTO($agentType, $agentIndex));
+        } catch (EventLoopException $e) {
+            throw $e;
         } catch (Throwable $e) {
-            $failure = $this->failedAttempt($agentType, $agentIndex, $e);
-            if ($previous !== null && $previous->state->hostsAgent()) {
-                $this->rememberRefusal($failure);
-            } else {
-                $this->recordFailure($nodeId, $failure);
+            if ($generation === $this->authorityGeneration && ($this->placementAttempts[$agentId] ?? null) === $attempt
+                && $this->registry->get($agentId) === $previous) {
+                $failure = $this->failedAttempt($agentType, $agentIndex, $e);
+                if ($previous !== null && $previous->state->hostsAgent()) {
+                    $this->rememberRefusal($failure);
+                } else {
+                    $this->recordFailure($nodeId, $failure);
+                }
             }
             throw $e;
         }
+        if ($generation !== $this->authorityGeneration || ($this->placementAttempts[$agentId] ?? null) !== $attempt) {
+            return;
+        }
         if ($delivered) {
-            $this->registry->put(new PlacementRecord($agentType, $agentIndex, $nodeId, PlacementState::Placing));
-            unset($this->lastPlacementRefusals[$agentId]);
-            $this->callOffFailoverOf($agentId, $nodeId);
-        } else {
+            if ($this->registry->get($agentId) === $previous) {
+                $this->registry->put(new PlacementRecord($agentType, $agentIndex, $nodeId, PlacementState::Placing));
+            }
+            $current = $this->registry->get($agentId);
+            if ($current !== null && $current->nodeId === $nodeId && $current->state->hostsAgent()) {
+                unset($this->lastPlacementRefusals[$agentId]);
+                $this->callOffFailoverOf($agentId, $nodeId, $failover);
+            }
+        } elseif ($this->registry->get($agentId) === $previous) {
             $failure = new PlacementRefusalSnapshot($agentType, $agentIndex, "node '{$nodeId}' is not linked", []);
             if ($previous !== null && $previous->state->hostsAgent()) {
                 $this->rememberRefusal($failure);
@@ -548,11 +807,7 @@ final class ClusterPlacement implements WorkerPlacement
                 $this->recordFailure($nodeId, $failure);
             }
         }
-        // A re-placement routinely lands on the very node the agent left — best-fit reads the
-        // emptied node as the least loaded one — so the fresh wait would inherit the old one's
-        // `asked` flag and never send its own query. Drop the entry and let the sweep re-arm it.
-        unset($this->placementAckDeadlines[$agentId]);
-
+        $this->noteRegistryChanged($agentId);
         Logger::info("Placing agent '{$agentId}' on node '{$nodeId}'" . ($delivered ? '' : ' failed: node is not linked'));
     }
 
@@ -630,12 +885,22 @@ final class ClusterPlacement implements WorkerPlacement
         $agentId = $this->agentId($agentType, $agentIndex);
         $previous = $this->registry->get($agentId);
         $target = null;
+        $generation = $this->authorityGeneration;
+        $attempt = $this->placementAttempts[$agentId] ?? null;
         try {
             $required = $this->executor->requiredCapabilities($agentType, $agentIndex);
             $cost = $this->placementCost($agentType, $agentIndex);
             $target = $this->pickBestNode($agentType, $agentIndex, $required, $cost, '');
+            if ($generation !== $this->authorityGeneration || ($this->placementAttempts[$agentId] ?? null) !== $attempt
+                || $this->registry->get($agentId) !== $previous) {
+                return null;
+            }
             if ($target === null) {
                 $failure = $this->noFittingNode($agentType, $agentIndex, $required, $cost, '');
+                if ($generation !== $this->authorityGeneration || ($this->placementAttempts[$agentId] ?? null) !== $attempt
+                    || $this->registry->get($agentId) !== $previous) {
+                    return null;
+                }
                 if ($previous !== null && $previous->state->hostsAgent()) {
                     $this->rememberRefusal($failure);
                 } else {
@@ -647,7 +912,12 @@ final class ClusterPlacement implements WorkerPlacement
             $this->placeAgentOnNode($agentType, $agentIndex, $target);
 
             return $target;
+        } catch (EventLoopException $e) {
+            throw $e;
         } catch (Throwable $e) {
+            if ($generation !== $this->authorityGeneration || ($this->placementAttempts[$agentId] ?? null) !== $attempt) {
+                throw $e;
+            }
             $current = $this->registry->get($agentId);
             // The named-node path may already have recorded a more precise failure on its target.
             if ($target === null && $current === $previous && !($previous?->state->hostsAgent() ?? false)) {
@@ -703,10 +973,11 @@ final class ClusterPlacement implements WorkerPlacement
      * @param string $agentType Agent type that was addressed
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @throws EnvException When the cluster-enabled flag value is invalid
+     * @throws EventLoopException When a native placement deadline cannot be armed
      */
     public function requirePlacement(string $agentType, ?string $agentIndex): void
     {
-        $now = $this->placementTime();
+        $now = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
         $agentId = $this->agentId($agentType, $agentIndex);
         if ($this->isLeader) {
             $this->rememberPlacementAsker($agentId, $this->selfNodeId);
@@ -715,20 +986,13 @@ final class ClusterPlacement implements WorkerPlacement
             return;
         }
 
-        // Expiry is swept here rather than on a timer, which keeps the map to the asks of the
-        // last few seconds: an instance agent per user would otherwise leave a row per user id
-        // this node ever addressed.
-        foreach ($this->placementAsks as $askedAgentId => $deadline) {
-            if ($now >= $deadline) {
-                unset($this->placementAsks[$askedAgentId]);
-            }
-        }
-
-        if (isset($this->placementAsks[$agentId])) {
+        $asks = $this->placementAsks ??= new PlacementAsks();
+        $asks->expire($now, self::PLACEMENT_ASK_EXPIRATIONS_PER_CALL);
+        if ($asks->isPending($agentId, $now)) {
             return;
         }
 
-        $this->placementAsks[$agentId] = $now + self::PLACEMENT_ASK_INTERVAL_SEC;
+        $asks->remember($agentId, $now + self::PLACEMENT_ASK_INTERVAL_SEC);
 
         // Slaves have no consensus coordinator. Like locate(), they follow the leader that
         // placed their work; a master's real consensus verdict must never fall back to it.
@@ -754,6 +1018,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param ?string $nodeId Host to revoke, or null for work that runs nowhere
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function stopAgentOnNode(string $agentType, ?string $agentIndex, ?string $nodeId): void
     {
@@ -764,14 +1029,19 @@ final class ClusterPlacement implements WorkerPlacement
             $nodeId = $existing->nodeId;
         }
         if ($existing?->state !== PlacementState::Refused) {
+            $this->placementAttempts[$agentId] = ++$this->placementAttemptSequence;
             $this->registry->put(new PlacementRecord($agentType, $agentIndex, $nodeId, PlacementState::Stopped));
         }
         $restarting = isset($this->restartsElsewhere[$agentId]) || isset($this->restartsInPlace[$agentId]);
         unset($this->lastPlacementRefusals[$agentId]);
         unset($this->retryAt[$agentId], $this->retryTriggers[$agentId]);
-        unset($this->placementAsks[$agentId], $this->heldOnDemand[$agentId], $this->afterStopTargets[$agentId]);
+        $this->cancelTimer(PlacementDuty::Retry, $agentId);
+        $this->placementAsks?->forget($agentId);
+        unset($this->heldOnDemand[$agentId], $this->afterStopTargets[$agentId]);
         unset($this->heldNamedPlacements[$agentId]);
         unset($this->placementAckDeadlines[$agentId], $this->failoverDeadlines[$agentId]);
+        $this->cancelTimer(PlacementDuty::Acknowledgement, $agentId);
+        $this->cancelTimer(PlacementDuty::Failover, $agentId);
         unset($this->restartsElsewhere[$agentId], $this->restartsInPlace[$agentId]);
         unset($this->deferredPlacementAnswers[$agentId]);
         Logger::info("Placement canceled: '{$agentId}'");
@@ -800,6 +1070,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param string $targetNodeId Policy's selected target
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function restartElsewhere(
         string $agentType,
@@ -843,6 +1114,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param ?string $agentIndex Agent index
      * @param bool $running Whether an instance is running after the attempt
      * @param string $reason Failure reason when no instance runs
+     * @throws EventLoopException When a native placement deadline cannot be armed
      */
     public function endInPlaceRestart(string $agentType, ?string $agentIndex, bool $running, string $reason): void
     {
@@ -882,6 +1154,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param string $nodeId Node the agent runs on
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function refusePlacement(string $agentType, ?string $agentIndex, string $nodeId): void
     {
@@ -905,9 +1178,12 @@ final class ClusterPlacement implements WorkerPlacement
             $agentId = $this->agentId($agentType, $agentIndex);
             // Drop the deferred answer before the revoke: stopping a waiting agent reports the
             // start failed on this same stack, and that callback must not rewrite this record.
+            $hosted = $this->hosted[$agentId] ?? null;
             unset($this->deferredPlacementAnswers[$agentId]);
             $this->executor->revokePlacement($agentType, $agentIndex);
-            unset($this->hosted[$agentId]);
+            if (($this->hosted[$agentId] ?? null) === $hosted) {
+                unset($this->hosted[$agentId]);
+            }
 
             return true;
         }
@@ -984,6 +1260,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function noteAgentStarted(string $agentType, ?string $agentIndex): void
     {
@@ -1043,6 +1320,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param string $agentType Agent type whose start failed
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param string $reason Why the start did not finish
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function noteAgentStartFailed(string $agentType, ?string $agentIndex, string $reason): void
     {
@@ -1108,11 +1386,17 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param string $fromNodeId Id of the leader node that requested the placement
      * @param PeerPlaceAgentDTO $frame Received place-agent frame
+     * @throws InvalidFormatException When an abandoned start has an invalid stop completion address
+     * @throws EventLoopException When the existing executor cannot arm an abandoned start stop deadline
      */
     public function onPlaceAgent(string $fromNodeId, PeerPlaceAgentDTO $frame): void
     {
         $agentType = $frame->agentType;
         $agentIndex = $frame->agentIndex;
+        $agentId = $this->agentId($agentType, $agentIndex);
+        $attempt = ++$this->placementAttemptSequence;
+        $this->placementAttempts[$agentId] = $attempt;
+        $generation = $this->authorityGeneration;
 
         try {
             $this->requireLocalFit($agentType, $agentIndex);
@@ -1130,6 +1414,10 @@ final class ClusterPlacement implements WorkerPlacement
             return;
         }
 
+        if ($generation !== $this->authorityGeneration || ($this->placementAttempts[$agentId] ?? null) !== $attempt) {
+            $this->revokeAbandonedStart($agentType, $agentIndex);
+            return;
+        }
         if ($workerId === null) {
             $this->deferPlacementAnswer($fromNodeId, $agentType, $agentIndex);
 
@@ -1191,15 +1479,25 @@ final class ClusterPlacement implements WorkerPlacement
      * @param string $fromNodeId Id of the leader node that requested the stop
      * @param PeerStopAgentDTO $frame Received stop-agent frame
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onStopAgent(string $fromNodeId, PeerStopAgentDTO $frame): void
     {
         $agentId = $this->agentId($frame->agentType, $frame->agentIndex);
         // Drop the deferred answer before the revoke: stopping a waiting agent reports the start
         // failed on this same stack, and `stopped` below is the only answer that stop owes.
+        $hosted = $this->hosted[$agentId] ?? null;
+        $attempt = ++$this->placementAttemptSequence;
+        $this->placementAttempts[$agentId] = $attempt;
+        $generation = $this->authorityGeneration;
         unset($this->deferredPlacementAnswers[$agentId]);
         $this->executor->revokePlacement($frame->agentType, $frame->agentIndex);
-        unset($this->hosted[$agentId]);
+        if (($this->hosted[$agentId] ?? null) === $hosted) {
+            unset($this->hosted[$agentId]);
+        }
+        if ($generation !== $this->authorityGeneration || ($this->placementAttempts[$agentId] ?? null) !== $attempt) {
+            return;
+        }
         $this->mesh->sendToNode($fromNodeId, PeerAgentStatusDTO::stopped($frame->agentType, $frame->agentIndex));
     }
 
@@ -1230,6 +1528,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param PeerAgentStatusDTO $frame Received agent-status frame
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onAgentStatus(string $fromNodeId, PeerAgentStatusDTO $frame): void
     {
@@ -1406,7 +1705,8 @@ final class ClusterPlacement implements WorkerPlacement
      * nor is what armed it.
      *
      * @param string $fromNodeId Id of the node that stopped leading
-     * @param float $now Current microtime
+     * @param float $now Local monotonic observation in seconds
+     * @throws EventLoopException When a native placement deadline cannot be armed
      */
     public function onPlacementRelease(string $fromNodeId, float $now): void
     {
@@ -1420,6 +1720,7 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         $this->selfFenceDeadline = $now + $this->slaveWorkGraceSec;
+        $this->armTimer(PlacementDuty::SelfFence, $this->selfNodeId, $this->selfFenceDeadline);
         $this->selfFenceCause = "placing leader '{$fromNodeId}' stopped leading";
         Logger::info("Self-fence armed: {$this->selfFenceCause}, {$this->placedCount()} placed agent(s) stop in "
             . sprintf('%.1f', $this->slaveWorkGraceSec) . 's unless a leader takes them over');
@@ -1433,6 +1734,7 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param string $fromNodeId Id of the node that asked
      * @param PeerPlacementRequestDTO $frame Received placement-request frame
+     * @throws EventLoopException When a native placement deadline cannot be armed
      */
     public function onPlacementRequest(string $fromNodeId, PeerPlacementRequestDTO $frame): void
     {
@@ -1476,6 +1778,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param string $fromNodeId Id of the node that reported
      * @param PeerPlacementReportDTO $frame Received placement report
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onPlacementReport(string $fromNodeId, PeerPlacementReportDTO $frame): void
     {
@@ -1483,7 +1786,11 @@ final class ClusterPlacement implements WorkerPlacement
             return;
         }
 
+        $reportSequence = ++$this->reportSequence;
+        $generation = $this->authorityGeneration;
         unset($this->rebuildAwaited[$fromNodeId]);
+        $this->cancelTimer(PlacementDuty::Rebuild, $fromNodeId);
+        $this->markPlacementReady();
 
         if ($this->rebuildPending && $frame->placementSnapshot !== null) {
             $snapshot = $frame->placementSnapshot;
@@ -1495,6 +1802,9 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         foreach ($frame->agents as $entry) {
+            if (!$this->isLeader || $generation !== $this->authorityGeneration) {
+                return;
+            }
             $agentId = $this->agentId($entry->agentType, $entry->agentIndex);
             $existing = $this->registry->get($agentId);
             if ($existing?->state === PlacementState::Stopped) {
@@ -1521,10 +1831,12 @@ final class ClusterPlacement implements WorkerPlacement
             unset($this->lastPlacementRefusals[$agentId]);
         }
 
-        $this->reconcileMissingAgents($fromNodeId, array_map(
-            fn(PeerPlacedAgentEntry $entry): string => $this->agentId($entry->agentType, $entry->agentIndex),
-            $frame->agents,
-        ));
+        if ($this->isLeader && $generation === $this->authorityGeneration) {
+            $this->reconcileMissingAgents($fromNodeId, array_map(
+                fn(PeerPlacedAgentEntry $entry): string => $this->agentId($entry->agentType, $entry->agentIndex),
+                $frame->agents,
+            ), $reportSequence);
+        }
     }
 
     /**
@@ -1578,6 +1890,7 @@ final class ClusterPlacement implements WorkerPlacement
             return;
         }
         $this->candidateView = $frame;
+        $this->markPlacementReady();
         $this->confirmCandidateView();
     }
 
@@ -1658,6 +1971,8 @@ final class ClusterPlacement implements WorkerPlacement
      */
     private function acceptPlacementView(PeerPlacementViewDTO $frame): void
     {
+        $newLeader = $this->retainedSnapshot?->leaderNodeId !== $frame->placementSnapshot->leaderNodeId
+            || $this->retainedSnapshot?->term !== $frame->placementSnapshot->term;
         $candidate = $this->candidateView?->placementSnapshot;
         if ($candidate !== null && ($candidate->term < $frame->placementSnapshot->term
             || ($candidate->term === $frame->placementSnapshot->term
@@ -1677,7 +1992,22 @@ final class ClusterPlacement implements WorkerPlacement
             }
         }
 
+        $previous = $this->placementView;
         $this->placementView = $view;
+        foreach ($view as $agentId => $nodeId) {
+            if (($previous[$agentId] ?? null) !== $nodeId) {
+                $this->holdWake?->__invoke($agentId);
+            }
+        }
+        foreach ($previous as $agentId => $nodeId) {
+            if (($view[$agentId] ?? null) !== $nodeId) {
+                $this->holdWake?->__invoke($agentId);
+                $this->holdWake?->__invoke(null);
+            }
+        }
+        if ($newLeader) {
+            $this->holdWake?->__invoke(null);
+        }
         $this->reportAgentsPlacedElsewhere($frame->leaderNodeId);
     }
 
@@ -1709,6 +2039,8 @@ final class ClusterPlacement implements WorkerPlacement
             $nodeId = $frame->nodeId;
             if ($nodeId !== null) {
                 $this->placementView[$agentId] = $nodeId;
+                $this->placementAsks?->forget($agentId);
+                $this->holdWake?->__invoke($agentId);
             }
 
             return;
@@ -1719,7 +2051,7 @@ final class ClusterPlacement implements WorkerPlacement
             return;
         }
 
-        unset($this->placementAsks[$agentId]);
+        $this->placementAsks?->forget($agentId);
         Hilos::$cluster?->placementVerdictSink()?->onAgentNotPlaced(
             $frame->agentType,
             $frame->agentIndex,
@@ -1788,11 +2120,19 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * Waiting diagnoses and the local retry schedule are rebuilt from the winning copy.
      *
-     * @param float $now Current microtime
+     * @param float $now Local monotonic observation in seconds
      * @param int $term Consensus term, defaulting to zero for older isolated fixtures
+     * @throws EventLoopException When a native placement deadline cannot be armed
      */
     public function onBecameLeader(float $now, int $term = 0): void
     {
+        ++$this->authorityGeneration;
+        $this->clearLeaderTimers();
+        $this->failoverDeadlines = [];
+        $this->placementAckDeadlines = [];
+        $this->placementAttempts = [];
+        $this->markPlacementReady();
+        $this->holdWake?->__invoke(null);
         $this->isLeader = true;
         $this->leaderTerm = $term;
         $this->snapshotRevisionOffset = 0;
@@ -1800,6 +2140,7 @@ final class ClusterPlacement implements WorkerPlacement
         if ($this->selfFenceDeadline !== null) {
             Logger::info('Self-fence called off: this node leads now');
             $this->selfFenceDeadline = null;
+            $this->cancelTimer(PlacementDuty::SelfFence, $this->selfNodeId);
             $this->selfFenceCause = null;
         }
         $this->placingLeaderId = null;
@@ -1827,7 +2168,7 @@ final class ClusterPlacement implements WorkerPlacement
      * Lists what a fresh leader's rebuild waits for: the report of every node online to it, and
      * the failover grace of every node that went away less than that grace ago.
      *
-     * @param float $now Current microtime
+     * @param float $now Local monotonic observation in seconds
      */
     private function awaitRebuild(float $now): void
     {
@@ -1846,6 +2187,9 @@ final class ClusterPlacement implements WorkerPlacement
             }
         }
 
+        foreach ($this->rebuildAwaited as $nodeId => $deadline) {
+            $this->armTimer(PlacementDuty::Rebuild, (string)$nodeId, $deadline);
+        }
         $this->rebuildPending = $this->rebuildAwaited !== [] || $this->retainedSnapshot !== null;
         if ($this->rebuildAwaited !== []) {
             Logger::info('Placement rebuild: ' . count($this->rebuildAwaited) . ' node(s) to account for their agents'
@@ -1878,7 +2222,12 @@ final class ClusterPlacement implements WorkerPlacement
         if ($wasLeader) {
             $this->retainedSnapshot = $this->placementSnapshot();
         }
+        if ($wasLeader) {
+            ++$this->authorityGeneration;
+        }
         $this->isLeader = false;
+        $this->placementAttempts = [];
+        $this->clearLeaderTimers();
         $this->registry->clear();
         $this->restartsElsewhere = [];
         $this->restartsInPlace = [];
@@ -1917,10 +2266,12 @@ final class ClusterPlacement implements WorkerPlacement
      * report waits out that grace instead, from now (HIL-1217).
      *
      * @param string $nodeId Node id the transport just marked offline
-     * @param float $now Current microtime
+     * @param float $now Local monotonic observation in seconds
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function noteNodeOffline(string $nodeId, float $now): void
     {
+        $this->offlineSince[$nodeId] ??= $now;
         foreach ($this->restartsElsewhere as $agentId => $restart) {
             if ((!$restart['placing'] && $restart['host'] !== $nodeId)
                 || ($restart['placing'] && $restart['target'] !== $nodeId)) {
@@ -1936,9 +2287,12 @@ final class ClusterPlacement implements WorkerPlacement
                 );
             }
         }
-        $this->offlineSince[$nodeId] ??= $now;
+        if (!isset($this->offlineSince[$nodeId])) {
+            return;
+        }
         if ($this->isLeader && array_key_exists($nodeId, $this->rebuildAwaited) && $this->rebuildAwaited[$nodeId] === null) {
-            $this->rebuildAwaited[$nodeId] = $now + $this->failoverGraceSec;
+            $this->rebuildAwaited[$nodeId] = $this->offlineSince[$nodeId] + $this->failoverGraceSec;
+            $this->armTimer(PlacementDuty::Rebuild, $nodeId, $this->rebuildAwaited[$nodeId]);
         }
 
         if ($this->isLeader) {
@@ -1946,10 +2300,11 @@ final class ClusterPlacement implements WorkerPlacement
                 if ($record->nodeId === $nodeId
                     && $record->state->hostsAgent()
                     && !isset($this->failoverDeadlines[$record->agentId()])) {
-                    $this->failoverDeadlines[$record->agentId()] = [
-                        'nodeId' => $nodeId,
-                        'deadline' => $now + $this->failoverGraceSec,
-                    ];
+                    $this->failoverDeadlines[$record->agentId()] = new PlacementFailover(
+                        $nodeId,
+                        $this->offlineSince[$nodeId] + $this->failoverGraceSec,
+                    );
+                    $this->armTimer(PlacementDuty::Failover, $record->agentId(), $this->failoverDeadlines[$record->agentId()]->deadline);
                 }
             }
         }
@@ -1959,6 +2314,7 @@ final class ClusterPlacement implements WorkerPlacement
             && $this->hostsPlacedWork()
             && $this->selfFenceDeadline === null) {
             $this->selfFenceDeadline = $now + $this->slaveWorkGraceSec;
+        $this->armTimer(PlacementDuty::SelfFence, $this->selfNodeId, $this->selfFenceDeadline);
             $this->selfFenceCause = "isolated from placing leader '{$nodeId}'";
             Logger::info("Self-fence armed: placing leader '{$nodeId}' went offline, {$this->placedCount()}"
                 . ' placed agent(s) stop in ' . sprintf('%.1f', $this->slaveWorkGraceSec) . 's unless it returns');
@@ -1979,25 +2335,31 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * A node hosting nothing arms nothing, and a deadline already armed is not moved.
      *
-     * @param float $now Current microtime
+     * @param float $now Local monotonic observation in seconds
      * @throws PeerTransportException When the departing leader's snapshot metadata is invalid
+     * @throws EventLoopException When a native placement deadline cannot be armed
      */
     public function noteQuorumLost(float $now): void
     {
         if ($this->isLeader) {
+            $retiredGeneration = $this->authorityGeneration + 1;
             $this->onLostLeadership();
+            if ($this->authorityGeneration !== $retiredGeneration) {
+                return;
+            }
         }
+        $this->placingLeaderId = null;
         if (!$this->hostsPlacedWork()) {
             return;
         }
 
-        $this->placingLeaderId = null;
         $this->selfFenceCause = 'quorum lost';
         if ($this->selfFenceDeadline !== null) {
             return;
         }
 
         $this->selfFenceDeadline = $now + $this->slaveWorkGraceSec;
+        $this->armTimer(PlacementDuty::SelfFence, $this->selfNodeId, $this->selfFenceDeadline);
         Logger::info("Self-fence armed: quorum lost, {$this->placedCount()} placed agent(s) stop in "
             . sprintf('%.1f', $this->slaveWorkGraceSec) . 's unless a leader takes them over');
     }
@@ -2034,13 +2396,16 @@ final class ClusterPlacement implements WorkerPlacement
      * which it sends on the link that brought it back (HIL-1217).
      *
      * @param string $nodeId Node id the transport just marked online
-     * @param float $now Current microtime
+     * @param float $now Local monotonic observation in seconds
+     * @throws EventLoopException When a native placement deadline cannot be armed
      */
     public function noteNodeOnline(string $nodeId, float $now): void
     {
         unset($this->offlineSince[$nodeId]);
+        $this->holdWake?->__invoke(null);
         if (array_key_exists($nodeId, $this->rebuildAwaited)) {
             $this->rebuildAwaited[$nodeId] = null;
+            $this->cancelTimer(PlacementDuty::Rebuild, $nodeId);
         }
 
         $this->callOffLossOf($nodeId);
@@ -2065,6 +2430,7 @@ final class ClusterPlacement implements WorkerPlacement
                 Logger::info("Self-fence disarmed: placing leader '{$nodeId}' is back before the grace elapsed");
             }
             $this->selfFenceDeadline = null;
+            $this->cancelTimer(PlacementDuty::SelfFence, $this->selfNodeId);
             $this->selfFenceCause = null;
         }
 
@@ -2076,6 +2442,7 @@ final class ClusterPlacement implements WorkerPlacement
         foreach ($this->registry->all() as $record) {
             if ($record->nodeId === $nodeId && isset($this->failoverDeadlines[$record->agentId()])) {
                 unset($this->failoverDeadlines[$record->agentId()]);
+                $this->cancelTimer(PlacementDuty::Failover, $record->agentId());
                 $calledOff++;
             }
         }
@@ -2099,15 +2466,20 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param string $agentId Agent id just placed
      * @param string $nodeId Node id the placement was sent to
+     * @param ?PlacementTimer $expected Exact wait observed before the external placement port
      */
-    private function callOffFailoverOf(string $agentId, string $nodeId): void
+    private function callOffFailoverOf(string $agentId, string $nodeId, ?PlacementTimer $expected): void
     {
-        $lostNodeId = $this->failoverDeadlines[$agentId]['nodeId'] ?? null;
+        if ($expected === null || ($this->timers[PlacementDuty::Failover->value][$agentId] ?? null) !== $expected) {
+            return;
+        }
+        $lostNodeId = ($this->failoverDeadlines[$agentId] ?? null)?->nodeId;
         if ($lostNodeId === null) {
             return;
         }
 
         unset($this->failoverDeadlines[$agentId]);
+        $this->cancelTimer(PlacementDuty::Failover, $agentId);
         Logger::info("Failover of '{$agentId}' armed by the loss of '{$lostNodeId}' called off: placed afresh on '{$nodeId}'");
     }
 
@@ -2132,10 +2504,14 @@ final class ClusterPlacement implements WorkerPlacement
             Logger::info("Self-fence called off: leader '{$leaderNodeId}' took over this node's placements"
                 . ($this->placingLeaderId === null ? '' : " from '{$this->placingLeaderId}'"));
             $this->selfFenceDeadline = null;
+            $this->cancelTimer(PlacementDuty::SelfFence, $this->selfNodeId);
             $this->selfFenceCause = null;
         }
 
+        ++$this->authorityGeneration;
         $this->placingLeaderId = $leaderNodeId;
+        $this->markPlacementReady();
+        $this->holdWake?->__invoke(null);
     }
 
     /**
@@ -2143,55 +2519,348 @@ final class ClusterPlacement implements WorkerPlacement
      * at most one waiting record on the leader. Every deadline inside the pass uses the supplied
      * time, including failures raised by synchronous callbacks.
      *
-     * @param float $now Current microtime
+     * @param float $now Local monotonic observation in seconds
      * @throws EnvException When cluster mode cannot be read while confirming an early view
      * @throws PeerTransportException When the leader's snapshot metadata is invalid
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function tick(float $now): void
     {
+        $previousNow = $this->tickNow;
         $this->tickNow = $now;
         try {
             $this->advancePlacement($now);
         } finally {
-            $this->tickNow = null;
+            $this->tickNow = $previousNow;
+        }
+    }
+
+    private function markPlacementReady(): void
+    {
+        $this->placementReady = true;
+        $this->placementWork?->markReady();
+    }
+
+    /**
+     * @param int $authority Authority captured before a synchronous port call
+     * @return bool Whether the old guarded pass still owns this authority and native binding
+     */
+    private function isCurrentPass(int $authority): bool
+    {
+        return $authority === $this->authorityGeneration
+            && (!$this->dispatching || ($this->eventLoop !== null && $this->dispatchBinding === $this->bindingGeneration));
+    }
+
+    /** @return bool Due duties that the current rebuild barrier permits */
+    private function hasRunnableTimers(): bool
+    {
+        return ($this->readyTimers[PlacementDuty::Rebuild->value] ?? []) !== []
+            || ($this->readyTimers[PlacementDuty::Acknowledgement->value] ?? []) !== []
+            || ($this->readyTimers[PlacementDuty::SelfFence->value] ?? []) !== []
+            || (!$this->rebuildPending && (($this->readyTimers[PlacementDuty::Failover->value] ?? []) !== []
+                || ($this->readyTimers[PlacementDuty::Retry->value] ?? []) !== []));
+    }
+
+    /**
+     * @param PlacementDuty $duty Exact owner phase
+     * @param string $key Agent or node address
+     * @param ?float $at Original due, null to retire the request
+     * @throws EventLoopException When the native deadline cannot be armed
+     */
+    private function armTimer(PlacementDuty $duty, string $key, ?float $at): void
+    {
+        $old = $this->timers[$duty->value][$key] ?? null;
+        if ($at !== null && $old?->at === $at) {
+            return;
+        }
+        $this->cancelTimer($duty, $key);
+        if ($at !== null) {
+            $timer = new PlacementTimer($at);
+            $this->timers[$duty->value][$key] = $timer;
+            $this->bindTimer($duty, $key, $timer);
+        }
+    }
+
+    /**
+     * @param PlacementDuty $duty Exact owner phase
+     * @param string $key Agent or node address
+     * @param PlacementTimer $timer Exact logical request incarnation
+     * @throws EventLoopException When the original deadline cannot be armed
+     */
+    private function bindTimer(PlacementDuty $duty, string $key, PlacementTimer $timer): void
+    {
+        if ($this->eventLoop === null || $timer->handle !== null
+            || ($this->readyTimers[$duty->value][$key] ?? null) === $timer) {
+            return;
+        }
+        $owner = WeakReference::create($this);
+        $request = WeakReference::create($timer);
+        $generation = $this->bindingGeneration;
+        $timer->handle = $this->eventLoop->createTimer(static function () use ($owner, $request, $generation, $duty, $key): void {
+            $placement = $owner->get();
+            $timer = $request->get();
+            if ($placement !== null && $timer !== null && $placement->bindingGeneration === $generation
+                && ($placement->timers[$duty->value][$key] ?? null) === $timer) {
+                $placement->readyTimers[$duty->value][$key] = $timer;
+                $placement->markPlacementReady();
+            }
+        });
+        $timer->handle->armAt($timer->at);
+    }
+
+    /**
+     * @param PlacementDuty $duty Exact owner phase
+     * @param string $key Retiring request address
+     */
+    private function cancelTimer(PlacementDuty $duty, string $key): void
+    {
+        ($this->timers[$duty->value][$key] ?? null)?->handle?->close();
+        unset($this->timers[$duty->value][$key], $this->readyTimers[$duty->value][$key]);
+    }
+
+    private function clearLeaderTimers(): void
+    {
+        foreach ([PlacementDuty::Rebuild, PlacementDuty::Failover, PlacementDuty::Retry, PlacementDuty::Acknowledgement] as $duty) {
+            $this->clearTimers($duty);
+        }
+        $this->capacityWakeAt = null;
+        $this->capacityFollowupAt = null;
+        $this->capacityCohort = [];
+    }
+
+    /** @param PlacementDuty $duty Retiring term-local native cohort */
+    private function clearTimers(PlacementDuty $duty): void
+    {
+        foreach ($this->timers[$duty->value] ?? [] as $timer) {
+            $timer->handle?->close();
+        }
+        unset($this->timers[$duty->value], $this->readyTimers[$duty->value]);
+    }
+
+    /**
+     * @param PlacementDuty $duty Exact owner phase
+     * @param int $limit Maximum addresses consumed, including stale keys
+     * @return list<string> One finite prefix of fired addresses, consumed before external effects
+     */
+    private function consumeReadyTimers(PlacementDuty $duty, int $limit = self::SCHEDULING_PORTION_SIZE): array
+    {
+        $keys = [];
+        $remaining = $limit;
+        while ($remaining-- > 0 && ($key = array_key_first($this->readyTimers[$duty->value] ?? [])) !== null) {
+            unset($this->readyTimers[$duty->value][$key]);
+            $keys[] = (string)$key;
+        }
+
+        return $keys;
+    }
+
+    /**
+     * Registry callbacks only record keys; mutation callers may still be retiring old waits.
+     *
+     * @param ?string $agentId Changed address, null for a clear or capacity basis fact
+     */
+    private function noteRegistryChanged(?string $agentId): void
+    {
+        if ($agentId !== null) {
+            $this->dirtyAgents[$agentId] ??= ++$this->dirtySequence;
+        } elseif ($this->registry->count() === 0) {
+            $this->resetAgents += $this->indexedAgents;
+        }
+        $this->markPlacementReady();
+    }
+
+    /**
+     * @param float $now Guarded discovery time, shared by ACK and retry derivation
+     * @throws EventLoopException When an addressed native deadline cannot be armed
+     */
+    private function reconcileRegistry(float $now): void
+    {
+        $remaining = self::SCHEDULING_PORTION_SIZE;
+        while ($remaining-- > 0) {
+            $key = array_key_first($this->resetAgents) ?? array_key_first($this->dirtyAgents);
+            if ($key === null) {
+                break;
+            }
+            unset($this->resetAgents[$key], $this->dirtyAgents[$key]);
+            $agentId = (string)$key;
+            $record = $this->registry->get($agentId);
+            if ($record === null) {
+                unset($this->indexedAgents[$key], $this->unplacedAgents[$key]);
+            } else {
+                $this->indexedAgents[$key] = true;
+                if ($record->state === PlacementState::Unplaced) {
+                    $this->unplacedAgents[$key] = true;
+                } else {
+                    unset($this->unplacedAgents[$key]);
+                }
+            }
+            $this->reconcileAcknowledgement($agentId, $record, $now);
+            if ($this->isLeader && $record !== null && $this->isWaiting($record)) {
+                $this->scheduleWaiting($record, $now);
+            } elseif ($this->isLeader && $record?->state === PlacementState::Started && $record->nodeId !== null) {
+                $this->placementStarted($agentId, $record->nodeId);
+            } elseif ($this->isLeader && $record?->state === PlacementState::Placing) {
+                // The timer sleeps; Started still owes the original attempt its resumed fact.
+                $this->cancelTimer(PlacementDuty::Retry, $agentId);
+            } else {
+                unset($this->retryAt[$agentId], $this->retryTriggers[$agentId]);
+                $this->cancelTimer(PlacementDuty::Retry, $agentId);
+            }
+            $lostNode = ($this->failoverDeadlines[$agentId] ?? null)?->nodeId;
+            if ($lostNode !== null && ($record === null || !$record->state->hostsAgent() || $record->nodeId !== $lostNode)) {
+                unset($this->failoverDeadlines[$agentId]);
+                $this->cancelTimer(PlacementDuty::Failover, $agentId);
+            }
+        }
+    }
+
+    /**
+     * @param string $agentId Changed address
+     * @param ?PlacementRecord $record Current registry incarnation
+     * @param float $now First guarded observation of a new ACK wait
+     * @throws EventLoopException When a new native acknowledgement deadline cannot be armed
+     */
+    private function reconcileAcknowledgement(string $agentId, ?PlacementRecord $record, float $now): void
+    {
+        if (!$this->isLeader || $record === null || $record->nodeId === null
+            || ($record->state !== PlacementState::Placing && $record->state !== PlacementState::Stopped)) {
+            unset($this->placementAckDeadlines[$agentId]);
+            $this->cancelTimer(PlacementDuty::Acknowledgement, $agentId);
+            return;
+        }
+        $armed = $this->placementAckDeadlines[$agentId] ?? null;
+        if ($armed === null || $armed->nodeId !== $record->nodeId || $armed->state !== $record->state) {
+            $this->cancelTimer(PlacementDuty::Acknowledgement, $agentId);
+            $armed = new PlacementAcknowledgement($record->nodeId, $record->state, $now + $this->placementAckTimeoutSec);
+            $this->placementAckDeadlines[$agentId] = $armed;
+        }
+        $this->armTimer(PlacementDuty::Acknowledgement, $agentId, $armed->asked ? null : $armed->deadline);
+    }
+
+    /**
+     * @param float $now Actual source fact time
+     * @param string $trigger Capacity or online fact
+     */
+    private function queueCapacityWake(float $now, string $trigger): void
+    {
+        if ($this->capacityWakeAt === null && $this->capacityCohort === []) {
+            $this->capacityWakeAt = $now;
+            $this->capacityWakeTrigger = $trigger;
+            $this->capacityPrepareThrough = $this->dirtySequence;
+        } else {
+            $this->capacityFollowupAt = $now;
+            $this->capacityFollowupTrigger = $trigger;
+            $this->capacityFollowupThrough = $this->dirtySequence;
+        }
+        $this->markPlacementReady();
+    }
+
+    /**
+     * @param float $now Current guarded placement time
+     * @throws EventLoopException When a waiting record's native retry cannot be armed
+     */
+    private function advanceCapacityCohort(float $now): void
+    {
+        $released = $this->registry->capacityReleaseRevision();
+        if ($released !== $this->capacityReleaseRevision) {
+            $this->capacityReleaseRevision = $released;
+            $this->queueCapacityWake($now, self::RETRY_CAPACITY_RELEASED);
+        }
+        $firstDirty = array_key_first($this->dirtyAgents);
+        if ($this->capacityCohort === [] && $this->capacityWakeAt !== null
+            && ($firstDirty === null || $this->dirtyAgents[$firstDirty] > $this->capacityPrepareThrough)) {
+            $this->capacityCohort = $this->unplacedAgents;
+            $this->capacityCohortAt = $this->capacityWakeAt;
+            $this->capacityCohortTrigger = $this->capacityWakeTrigger;
+            $this->capacityWakeAt = null;
+        }
+        $remaining = self::SCHEDULING_PORTION_SIZE;
+        while ($remaining-- > 0 && ($key = array_key_first($this->capacityCohort)) !== null) {
+            unset($this->capacityCohort[$key]);
+            $record = $this->registry->get((string)$key);
+            if (!$this->isLeader || $record?->state !== PlacementState::Unplaced) {
+                continue;
+            }
+            $this->scheduleWaiting($record, $now);
+            $this->retryAt[$key] = min($this->retryAt[$key], $this->capacityCohortAt);
+            $this->retryTriggers[$key] = $this->capacityCohortTrigger;
+            $this->armTimer(PlacementDuty::Retry, (string)$key, $this->retryAt[$key]);
+        }
+        if ($this->capacityCohort === [] && $this->capacityWakeAt === null && $this->capacityFollowupAt !== null) {
+            $this->capacityWakeAt = $this->capacityFollowupAt;
+            $this->capacityWakeTrigger = $this->capacityFollowupTrigger;
+            $this->capacityPrepareThrough = $this->capacityFollowupThrough;
+            $this->capacityFollowupAt = null;
         }
     }
 
     /**
      * @param float $now Supplied time shared by timers and the bounded retry pass
+     * @param bool $native Whether only addressed ready work may advance
      * @throws EnvException When cluster mode cannot be read while confirming an early view
      * @throws PeerTransportException When the leader's snapshot metadata is invalid
      */
-    private function advancePlacement(float $now): void
+    private function advancePlacement(float $now, bool $native = false): void
     {
+        $generation = $this->authorityGeneration;
         $this->confirmCandidateView();
+        if (!$this->isCurrentPass($generation)) {
+            return;
+        }
         // Import first: no failover, request or automatic retry can outrun inherited cancellation.
-        $this->settleRebuild($now);
-        foreach ($this->failoverDeadlines as $agentId => ['nodeId' => $lostNodeId, 'deadline' => $deadline]) {
-            if ($this->rebuildPending) {
-                break;
-            }
-            if ($now >= $deadline) {
-                unset($this->failoverDeadlines[$agentId]);
-                $this->failOver($agentId, $lostNodeId);
+        $this->settleRebuild($now, $native);
+        if (!$this->isCurrentPass($generation)) {
+            return;
+        }
+        if (!$this->rebuildPending) {
+            $keys = $native ? $this->consumeReadyTimers(PlacementDuty::Failover) : array_keys($this->failoverDeadlines);
+            foreach ($keys as $key) {
+                $agentId = (string)$key;
+                $armed = $this->failoverDeadlines[$agentId] ?? null;
+                if (!$this->isCurrentPass($generation) || !$this->isLeader || $this->rebuildPending) {
+                    break;
+                }
+                if ($armed !== null && $now >= $armed->deadline) {
+                    unset($this->failoverDeadlines[$agentId]);
+                    $this->cancelTimer(PlacementDuty::Failover, $agentId);
+                    $this->failOver($agentId, $armed->nodeId);
+                }
             }
         }
 
-        $this->retryWaiting($now);
+        if (!$this->isCurrentPass($generation)) {
+            return;
+        }
+        if ($native) {
+            $this->reconcileRegistry($now);
+            $this->advanceCapacityCohort($now);
+        }
+        $this->retryWaiting($now, $native);
+        if (!$this->isCurrentPass($generation)) {
+            return;
+        }
 
-        // After failover, not before: a failover re-places a record out of `Placing` onto
-        // another node, and arming on the far side of it means arming for the node the record
-        // actually names now.
-        $this->sweepPlacementAcks($now);
+        // Discover ACK waits after failover, against the host the current record names.
+        $this->sweepPlacementAcks($now, $native);
+        if (!$this->isCurrentPass($generation)) {
+            return;
+        }
 
         if ($this->selfFenceDeadline !== null && $now >= $this->selfFenceDeadline) {
+            $cause = $this->selfFenceCause;
             $this->selfFenceDeadline = null;
-            $this->selfFence();
             $this->selfFenceCause = null;
+            $this->cancelTimer(PlacementDuty::SelfFence, $this->selfNodeId);
+            $this->selfFence($cause);
+        }
+        if (!$this->isCurrentPass($generation)) {
+            return;
         }
 
-        $this->publishPlacementView();
+        if (!$native || ($this->dirtyAgents === [] && $this->resetAgents === [])) {
+            $this->publishPlacementView();
+        }
     }
 
     /**
@@ -2201,13 +2870,18 @@ final class ClusterPlacement implements WorkerPlacement
      * The held agents go through {@see placeOnDemand()}, so the nodes that asked for them are
      * answered from there, exactly as they would have been had the rebuild not held them.
      *
-     * @param float $now Current microtime
+     * @param float $now Local monotonic observation in seconds
+     * @param bool $native Whether only addressed due work may advance
      */
-    private function settleRebuild(float $now): void
+    private function settleRebuild(float $now, bool $native = false): void
     {
-        foreach ($this->rebuildAwaited as $nodeId => $deadline) {
+        $keys = $native ? $this->consumeReadyTimers(PlacementDuty::Rebuild) : array_keys($this->rebuildAwaited);
+        foreach ($keys as $key) {
+            $nodeId = (string)$key;
+            $deadline = $this->rebuildAwaited[$nodeId] ?? null;
             if ($deadline !== null && $now >= $deadline) {
                 unset($this->rebuildAwaited[$nodeId]);
+                $this->cancelTimer(PlacementDuty::Rebuild, $nodeId);
             }
         }
 
@@ -2215,25 +2889,41 @@ final class ClusterPlacement implements WorkerPlacement
             return;
         }
 
+        $generation = $this->authorityGeneration;
         $this->inheritPlacementSnapshot($now);
+        if (!$this->isLeader || !$this->isCurrentPass($generation)) {
+            return;
+        }
         $this->rebuildPending = false;
+        $this->holdWake?->__invoke(null);
+        if (!$this->isLeader || !$this->isCurrentPass($generation)) {
+            return;
+        }
         Logger::info('Placement rebuild settled: every node accounted for its agents');
         $named = $this->heldNamedPlacements;
+        $held = $this->heldOnDemand;
         $this->heldNamedPlacements = [];
+        $this->heldOnDemand = [];
         foreach ($named as $record) {
+            if (!$this->isLeader || !$this->isCurrentPass($generation)) {
+                return;
+            }
             $existing = $this->registry->get($record->agentId());
             if ($existing?->state->hostsAgent() || $existing?->state === PlacementState::Refused) {
                 continue;
             }
             try {
                 $this->placeAgentOnNode($record->agentType, $record->agentIndex, $record->nodeId);
+            } catch (EventLoopException $e) {
+                throw $e;
             } catch (Throwable $e) {
                 Logger::warning("Held placement of '{$record->agentId()}' failed: {$e->getMessage()}");
             }
         }
-        $held = $this->heldOnDemand;
-        $this->heldOnDemand = [];
         foreach ($held as ['agentType' => $agentType, 'agentIndex' => $agentIndex]) {
+            if (!$this->isLeader || !$this->isCurrentPass($generation)) {
+                return;
+            }
             $this->placeOnDemand($agentType, $agentIndex);
         }
     }
@@ -2246,9 +2936,13 @@ final class ClusterPlacement implements WorkerPlacement
      */
     private function inheritPlacementSnapshot(float $now): void
     {
+        $generation = $this->authorityGeneration;
         $snapshot = $this->retainedSnapshot;
         if ($snapshot !== null) {
             foreach ($snapshot->records as $record) {
+                if (!$this->isLeader || !$this->isCurrentPass($generation)) {
+                    return;
+                }
                 $agentId = $record->agentId();
                 $live = $this->registry->get($agentId);
                 // A cancellation or truth-source verdict made in this rebuild remains final.
@@ -2261,6 +2955,9 @@ final class ClusterPlacement implements WorkerPlacement
                     unset($this->lastPlacementRefusals[$agentId], $this->retryAt[$agentId], $this->retryTriggers[$agentId]);
                     if ($host !== null) {
                         $this->revokeOnNode($record->agentType, $record->agentIndex, $host);
+                        if (!$this->isLeader || !$this->isCurrentPass($generation)) {
+                            return;
+                        }
                         if ($host === $this->selfNodeId) {
                             $this->confirmCanceledStop($agentId, $host);
                         }
@@ -2285,7 +2982,11 @@ final class ClusterPlacement implements WorkerPlacement
             }
         }
 
+        if (!$this->isLeader || !$this->isCurrentPass($generation)) {
+            return;
+        }
         $waiting = 0;
+        $this->clearTimers(PlacementDuty::Retry);
         $this->retryAt = [];
         $this->retryTriggers = [];
         foreach ($this->registry->all() as $record) {
@@ -2301,6 +3002,7 @@ final class ClusterPlacement implements WorkerPlacement
             );
             $this->retryAt[$agentId] = $record->state === PlacementState::Failed ? $now + self::PLACEMENT_RETRY_INTERVAL_SEC : $now;
             $this->retryTriggers[$agentId] = self::RETRY_NEW_LEADER;
+            $this->armTimer(PlacementDuty::Retry, $agentId, $this->retryAt[$agentId]);
             $waiting++;
         }
         $this->capacityReleaseRevision = $this->registry->capacityReleaseRevision();
@@ -2338,52 +3040,54 @@ final class ClusterPlacement implements WorkerPlacement
      * late `started` from the old node would point the record back at it while the new copy
      * runs unnamed, and two copies is what placement exists to prevent.
      *
-     * Arming is DERIVED from the registry rather than done where the registry is written: eight
-     * paths write it, and one that forgot to arm would leave its record waiting forever. Only
+     * Arming is derived from changed registry keys in the guarded phase, after failover. Only
      * one query goes out per record — a node that answers nothing has a dead link, and that is
      * `CLUSTER_LINK_TIMEOUT_MS` and failover's case, not this one.
      *
-     * @param float $now Current microtime
+     * @param float $now Local monotonic observation in seconds
+     * @param bool $native Whether only addressed due work may advance
      */
-    private function sweepPlacementAcks(float $now): void
+    private function sweepPlacementAcks(float $now, bool $native = false): void
     {
         if (!$this->isLeader) {
             return;
         }
-
+        $generation = $this->authorityGeneration;
+        $keys = $native ? $this->consumeReadyTimers(PlacementDuty::Acknowledgement) : array_map(
+            static fn(PlacementRecord $record): string => $record->agentId(),
+            $this->registry->all(),
+        );
         $live = [];
-        foreach ($this->registry->all() as $record) {
-            if (($record->state !== PlacementState::Placing && $record->state !== PlacementState::Stopped)
-                || $record->nodeId === null) {
-                continue;
+        foreach ($keys as $agentId) {
+            if (!$this->isLeader || !$this->isCurrentPass($generation)) {
+                break;
             }
-
-            $agentId = $record->agentId();
-            $live[$agentId] = true;
+            $record = $this->registry->get($agentId);
             $armed = $this->placementAckDeadlines[$agentId] ?? null;
-            if ($armed === null || $armed['nodeId'] !== $record->nodeId) {
-                $this->placementAckDeadlines[$agentId] = [
-                    'nodeId' => $record->nodeId,
-                    'deadline' => $now + $this->placementAckTimeoutSec,
-                    'asked' => false,
-                ];
+            $this->reconcileAcknowledgement($agentId, $record, $now);
+            $live[$agentId] = true;
+            if ($armed === null || ($this->placementAckDeadlines[$agentId] ?? null) !== $armed
+                || $armed->asked || $now < $armed->deadline) {
                 continue;
             }
 
-            if ($armed['asked'] || $now < $armed['deadline']) {
-                continue;
-            }
-
-            $delivered = $this->mesh->sendToNode($record->nodeId, new PeerPlacementQueryDTO());
-            // Asked either way: an undelivered query means the link is gone, and a gone link is
-            // closed by `CLUSTER_LINK_TIMEOUT_MS` into the failover that owns that case.
-            $this->placementAckDeadlines[$agentId]['asked'] = true;
-            $ack = $record->state === PlacementState::Stopped ? 'Stop' : 'Placement';
-            Logger::info("{$ack} ack of '{$agentId}' timed out on node '{$record->nodeId}'; asking what it hosts"
+            // Consume the question before a synchronous report, replacement or term change.
+            $armed->asked = true;
+            $armed->askedAfterReport = $this->reportSequence;
+            $this->cancelTimer(PlacementDuty::Acknowledgement, $agentId);
+            $delivered = $this->mesh->sendToNode($armed->nodeId, new PeerPlacementQueryDTO());
+            $ack = $armed->state === PlacementState::Stopped ? 'Stop' : 'Placement';
+            Logger::info("{$ack} ack of '{$agentId}' timed out on node '{$armed->nodeId}'; asking what it hosts"
                 . ($delivered ? '' : ' failed: node is not linked'));
         }
-
-        $this->placementAckDeadlines = array_intersect_key($this->placementAckDeadlines, $live);
+        if (!$native && $this->isCurrentPass($generation)) {
+            foreach ($this->placementAckDeadlines as $agentId => $armed) {
+                if (!isset($live[$agentId])) {
+                    unset($this->placementAckDeadlines[$agentId]);
+                    $this->cancelTimer(PlacementDuty::Acknowledgement, (string)$agentId);
+                }
+            }
+        }
     }
 
     /**
@@ -2418,26 +3122,26 @@ final class ClusterPlacement implements WorkerPlacement
      */
     public function onPeerHandshaked(string $nodeId): void
     {
-        $snapshot = $this->placementSnapshot();
+        $this->holdWake?->__invoke(null);
+        $generation = $this->authorityGeneration;
         if ($this->isLeader) {
             $this->mesh->sendToNode($nodeId, new PeerPlacementQueryDTO());
-            if (!$this->rebuildPending && $snapshot !== null) {
-                $this->mesh->sendToNode($nodeId, new PeerPlacementViewDTO($this->selfNodeId, $this->placementViewAgents(), $snapshot));
+            if ($this->isLeader && $generation === $this->authorityGeneration && !$this->rebuildPending) {
+                $snapshot = $this->placementSnapshot();
+                if ($snapshot !== null) {
+                    $this->mesh->sendToNode($nodeId, new PeerPlacementViewDTO($this->selfNodeId, $this->placementViewAgents(), $snapshot));
+                }
             }
         }
 
-        $this->mesh->sendToNode($nodeId, new PeerPlacementReportDTO($this->hostedEntries(), $snapshot));
+        $this->mesh->sendToNode($nodeId, new PeerPlacementReportDTO($this->hostedEntries(), $this->placementSnapshot()));
     }
 
     /**
      * Leader side: broadcasts the placement view whenever it has changed (HIL-668).
      *
-     * Driven by a per-tick comparison rather than by a call at each place the registry is
-     * written, and for the reason the connection index is: the registry is written from eight
-     * places — a status reply, a rejoin report, a placement, a stop, a failover, a degrade, a
-     * retry, a fresh term — and the one that got no call would leave every other node holding a
-     * picture that is wrong forever, with nothing to correct it. A comparison cannot miss a
-     * path because it never looks at them, and it turns a failover storm into one frame.
+     * Registry writes cue its owner through the internal changed-key callback. Publication
+     * follows the current finite mutation cohort, coalescing its changes into a complete view.
      *
      * Registry revision includes diagnoses, waiting work, tombstones and deletions even when
      * addresses stay identical. Silent on an unchanged revision, a follower, or an unfinished
@@ -2560,22 +3264,30 @@ final class ClusterPlacement implements WorkerPlacement
             return;
         }
 
+        $generation = $this->authorityGeneration;
         try {
             $required = $this->executor->requiredCapabilities($record->agentType, $record->agentIndex);
             $cost = $this->placementCost($record->agentType, $record->agentIndex);
             $target = $this->pickBestNode($record->agentType, $record->agentIndex, $required, $cost, $record->nodeId);
+            if (!$this->isLeader || !$this->isCurrentPass($generation) || $this->registry->get($agentId) !== $record) {
+                return;
+            }
             if ($target !== null) {
                 Logger::info("Failover: re-placing '{$agentId}' from lost node '{$record->nodeId}' onto '{$target}'");
                 $this->placeAgentOnNode($record->agentType, $record->agentIndex, $target);
                 return;
             }
             $failure = $this->noFittingNode($record->agentType, $record->agentIndex, $required, $cost, $record->nodeId);
+        } catch (EventLoopException $e) {
+            throw $e;
         } catch (Throwable $e) {
             Logger::warning("Failover of '{$agentId}' could not re-place: {$e->getMessage()}");
             $failure = $this->failedAttempt($record->agentType, $record->agentIndex, $e);
         }
 
-        $this->degrade($record, $failure);
+        if ($this->isLeader && $this->isCurrentPass($generation) && $this->registry->get($agentId) === $record) {
+            $this->degrade($record, $failure);
+        }
     }
 
     /**
@@ -2609,13 +3321,18 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param string $fromNodeId Id of the node that reported
      * @param list<string> $reportedIds Agent ids the report named
+     * @param int $reportSequence Entrance order of this complete report
      */
-    private function reconcileMissingAgents(string $fromNodeId, array $reportedIds): void
+    private function reconcileMissingAgents(string $fromNodeId, array $reportedIds, int $reportSequence): void
     {
+        $generation = $this->authorityGeneration;
         foreach ($this->registry->all() as $record) {
             $agentId = $record->agentId();
-            if ($record->nodeId !== $fromNodeId
-                || !$this->isJudgedByReport($record, $fromNodeId)
+            if (!$this->isLeader || !$this->isCurrentPass($generation)) {
+                return;
+            }
+            if ($this->registry->get($agentId) !== $record || $record->nodeId !== $fromNodeId
+                || !$this->isJudgedByReport($record, $fromNodeId, $reportSequence)
                 || in_array($agentId, $reportedIds, true)
             ) {
                 continue;
@@ -2640,11 +3357,20 @@ final class ClusterPlacement implements WorkerPlacement
                 }
                 // The refusal of every node, which the attempt has just kept as this agent's last.
                 $failure = $this->lastPlacementRefusals[$agentId];
+            } catch (EventLoopException $e) {
+                throw $e;
             } catch (Throwable $e) {
                 Logger::warning("Reconcile of '{$agentId}' could not re-place: {$e->getMessage()}");
                 $failure = $this->failedAttempt($record->agentType, $record->agentIndex, $e);
             }
 
+            if (!$this->isLeader || !$this->isCurrentPass($generation)) {
+                return;
+            }
+            $current = $this->registry->get($agentId);
+            if ($current !== null && !$this->isWaiting($current)) {
+                continue;
+            }
             $this->degrade($record, $failure);
         }
     }
@@ -2660,9 +3386,10 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param PlacementRecord $record Record the report is being read against
      * @param string $fromNodeId Id of the node that reported
+     * @param int $reportSequence Entrance order of the judging report
      * @return bool True when the report decides this record's fate
      */
-    private function isJudgedByReport(PlacementRecord $record, string $fromNodeId): bool
+    private function isJudgedByReport(PlacementRecord $record, string $fromNodeId, int $reportSequence): bool
     {
         if ($record->state === PlacementState::Started) {
             return true;
@@ -2672,45 +3399,67 @@ final class ClusterPlacement implements WorkerPlacement
 
         return ($record->state === PlacementState::Placing || $record->state === PlacementState::Stopped)
             && $armed !== null
-            && $armed['asked']
-            && $armed['nodeId'] === $fromNodeId;
+            && $armed->asked
+            && $armed->askedAfterReport !== null && $reportSequence > $armed->askedAfterReport
+            && $armed->state === $record->state
+            && $armed->nodeId === $fromNodeId;
     }
 
-    /** @param float $now Supplied tick time; at most one actual attempt is made */
-    private function retryWaiting(float $now): void
+    /**
+     * @param float $now Supplied guarded time; at most one actual attempt is made
+     * @param bool $native Whether only addressed due work may advance
+     */
+    private function retryWaiting(float $now, bool $native = false): void
     {
         if (!$this->isLeader || $this->rebuildPending) {
             return;
         }
 
-        foreach ($this->registry->all() as $record) {
-            if ($this->isWaiting($record)) {
-                $this->scheduleWaiting($record, $now);
+        if (!$native) {
+            foreach ($this->registry->all() as $record) {
+                if ($this->isWaiting($record)) {
+                    $this->scheduleWaiting($record, $now);
+                }
+            }
+            $released = $this->registry->capacityReleaseRevision();
+            if ($released !== $this->capacityReleaseRevision) {
+                $this->capacityReleaseRevision = $released;
+                $this->wakeUnplaced($now, self::RETRY_CAPACITY_RELEASED);
             }
         }
-        $released = $this->registry->capacityReleaseRevision();
-        if ($released !== $this->capacityReleaseRevision) {
-            $this->capacityReleaseRevision = $released;
-            $this->wakeUnplaced($now, self::RETRY_CAPACITY_RELEASED);
-        }
 
-        foreach ($this->retryAt as $agentId => $deadline) {
+        $remaining = $native ? self::SCHEDULING_PORTION_SIZE : count($this->retryAt);
+        $keys = $native ? [] : array_keys($this->retryAt);
+        while ($remaining-- > 0) {
+            $key = $native ? ($this->consumeReadyTimers(PlacementDuty::Retry, 1)[0] ?? null) : array_shift($keys);
+            if ($key === null) {
+                return;
+            }
+            $agentId = (string)$key;
+            $deadline = $this->retryAt[$agentId] ?? null;
             $record = $this->registry->get($agentId);
             if ($record === null || $record->state === PlacementState::Refused || $record->state === PlacementState::Stopped) {
                 unset($this->retryAt[$agentId], $this->retryTriggers[$agentId]);
+                $this->cancelTimer(PlacementDuty::Retry, $agentId);
                 continue;
             }
             if ($record->state === PlacementState::Started && $record->nodeId !== null) {
                 $this->placementStarted($agentId, $record->nodeId);
                 continue;
             }
-            if (!$this->isWaiting($record) || $now < $deadline) {
+            if (!$this->isWaiting($record)) {
+                $this->cancelTimer(PlacementDuty::Retry, $agentId);
+                continue;
+            }
+            if ($deadline === null || $now < $deadline) {
                 continue;
             }
 
             $this->beginRetry($record, $now, $this->retryTriggers[$agentId] ?? self::RETRY_PERIODIC);
             try {
                 $this->placeOnBestFitNode($record->agentType, $record->agentIndex);
+            } catch (EventLoopException $e) {
+                throw $e;
             } catch (Throwable $e) {
                 Logger::warning("Placement retry of '{$agentId}' failed: {$e->getMessage()}");
             }
@@ -2726,6 +3475,10 @@ final class ClusterPlacement implements WorkerPlacement
      */
     private function wakeUnplaced(float $now, string $trigger): void
     {
+        if ($this->eventLoop !== null) {
+            $this->queueCapacityWake($now, $trigger);
+            return;
+        }
         foreach ($this->registry->all() as $record) {
             if ($record->state !== PlacementState::Unplaced) {
                 continue;
@@ -2734,6 +3487,7 @@ final class ClusterPlacement implements WorkerPlacement
             $this->scheduleWaiting($record, $now);
             $this->retryAt[$agentId] = min($this->retryAt[$agentId], $now);
             $this->retryTriggers[$agentId] = $trigger;
+            $this->armTimer(PlacementDuty::Retry, $agentId, $this->retryAt[$agentId]);
         }
     }
 
@@ -2758,6 +3512,7 @@ final class ClusterPlacement implements WorkerPlacement
             $this->retryTriggers[$agentId] = self::RETRY_PERIODIC;
             Logger::info("Placement waiting: '{$agentId}' state={$record->state->value}: {$record->reason}");
         }
+        $this->armTimer(PlacementDuty::Retry, $agentId, $this->retryAt[$agentId]);
     }
 
     /**
@@ -2771,8 +3526,10 @@ final class ClusterPlacement implements WorkerPlacement
     {
         $agentId = $record->agentId();
         unset($this->retryAt[$agentId]);
+        $this->cancelTimer(PlacementDuty::Retry, $agentId);
         $this->retryAt[$agentId] = $now + self::PLACEMENT_RETRY_INTERVAL_SEC;
         $this->retryTriggers[$agentId] = self::RETRY_PERIODIC;
+        $this->armTimer(PlacementDuty::Retry, $agentId, $this->retryAt[$agentId]);
         Logger::info("Placement retry: '{$agentId}' trigger={$trigger}");
     }
 
@@ -2786,12 +3543,13 @@ final class ClusterPlacement implements WorkerPlacement
             Logger::info("Placement resumed: '{$agentId}' on '{$nodeId}'");
         }
         unset($this->retryAt[$agentId], $this->retryTriggers[$agentId]);
+        $this->cancelTimer(PlacementDuty::Retry, $agentId);
     }
 
     /** @return float Tick's supplied time, or the time of an external placement event */
     private function placementTime(): float
     {
-        return $this->tickNow ?? microtime(true);
+        return $this->tickNow ?? hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
     }
 
     /**
@@ -3016,6 +3774,7 @@ final class ClusterPlacement implements WorkerPlacement
         $now = $this->placementTime();
         $this->scheduleWaiting($record, $now);
         $this->retryAt[$record->agentId()] = $now + self::PLACEMENT_RETRY_INTERVAL_SEC;
+        $this->armTimer(PlacementDuty::Retry, $record->agentId(), $this->retryAt[$record->agentId()]);
         $this->retryTriggers[$record->agentId()] = self::RETRY_PERIODIC;
     }
 
@@ -3158,28 +3917,38 @@ final class ClusterPlacement implements WorkerPlacement
      * started; with it, it places them again ({@see reconcileMissingAgents()}).
      * The empty hosted set still carries this node's retained complete registry separately.
      *
+     * @param ?string $cause Consumed fence reason, independent of reentrant authority
      * @throws PeerTransportException When the leader's snapshot metadata is invalid
      */
-    private function selfFence(): void
+    private function selfFence(?string $cause): void
     {
         if (!$this->hostsPlacedWork()) {
             return;
         }
 
-        Logger::warning("Self-fence: {$this->selfFenceCause}, stopping {$this->placedCount()} placed agent(s)");
-        foreach ($this->hosted as $record) {
-            $this->executor->revokePlacement($record->agentType, $record->agentIndex);
-        }
-
-        $this->hosted = [];
+        Logger::warning("Self-fence: {$cause}, stopping {$this->placedCount()} placed agent(s)");
+        $hosted = $this->hosted;
         $deferredAnswers = $this->deferredPlacementAnswers;
+        $this->hosted = [];
         $this->deferredPlacementAnswers = [];
         $this->placingLeaderId = null;
-        foreach ($deferredAnswers as $deferred) {
-            $this->executor->revokePlacement($deferred['agentType'], $deferred['agentIndex']);
+        $generation = ++$this->authorityGeneration;
+        // Logical revocation is atomic. The existing executor API queues the worker's stop;
+        // a later worker stop report remains a separate fact, never a new fence barrier.
+        foreach ($hosted as $agentId => $record) {
+            if (!isset($this->hosted[$agentId]) && !isset($this->deferredPlacementAnswers[$agentId])) {
+                $this->executor->revokePlacement($record->agentType, $record->agentIndex);
+            }
+        }
+        foreach ($deferredAnswers as $agentId => $deferred) {
+            if (!isset($hosted[$agentId]) && !isset($this->hosted[$agentId]) && !isset($this->deferredPlacementAnswers[$agentId])) {
+                $this->executor->revokePlacement($deferred['agentType'], $deferred['agentIndex']);
+            }
         }
 
-        $this->mesh->broadcastToNodes(new PeerPlacementReportDTO([], $this->placementSnapshot()));
+        if ($this->isCurrentPass($generation) && !$this->hostsPlacedWork()) {
+            $this->mesh->broadcastToNodes(new PeerPlacementReportDTO([], $this->placementSnapshot()));
+        }
     }
 
     /**
@@ -3387,6 +4156,8 @@ final class ClusterPlacement implements WorkerPlacement
 
         try {
             $target = $this->placeAgentOnBestNode($agentType, $agentIndex);
+        } catch (EventLoopException $e) {
+            throw $e;
         } catch (Throwable $e) {
             Logger::warning("On-demand placement of '{$agentId}' failed: {$e->getMessage()}");
             $failure = $this->lastPlacementRefusals[$agentId] ?? $this->failedAttempt($agentType, $agentIndex, $e);
@@ -3465,6 +4236,7 @@ final class ClusterPlacement implements WorkerPlacement
         }
         $this->registry->put(new PlacementRecord($record->agentType, $record->agentIndex, null, PlacementState::Stopped));
         unset($this->placementAckDeadlines[$agentId]);
+        $this->cancelTimer(PlacementDuty::Acknowledgement, $agentId);
         if (!array_key_exists($agentId, $this->afterStopTargets)) {
             return;
         }
@@ -3476,6 +4248,8 @@ final class ClusterPlacement implements WorkerPlacement
             } else {
                 $this->placeAgentOnNode($record->agentType, $record->agentIndex, $target);
             }
+        } catch (EventLoopException $e) {
+            throw $e;
         } catch (Throwable $e) {
             Logger::warning("Placement after cancellation of '{$agentId}' failed: {$e->getMessage()}");
         }
@@ -3527,7 +4301,9 @@ final class ClusterPlacement implements WorkerPlacement
 
         foreach ($waiters as $nodeId) {
             if ($nodeId === $this->selfNodeId) {
-                if ($verdict->state !== PlacementState::Started && $reason !== null) {
+                if ($verdict->state === PlacementState::Started) {
+                    $this->holdWake?->__invoke($agentId);
+                } elseif ($reason !== null) {
                     Hilos::$cluster?->placementVerdictSink()?->onAgentNotPlaced(
                         $verdict->agentType,
                         $verdict->agentIndex,
@@ -3555,14 +4331,24 @@ final class ClusterPlacement implements WorkerPlacement
      * @throws NoSuitableWorkerException When no worker is available to host it
      * @throws AgentNotLinkedToWorkerException When the agent did not link to a worker
      * @throws HilosException Whatever the project's agent-daemon factory raises
+     * @throws InvalidFormatException When an abandoned start has an invalid stop completion address
      */
     private function placeLocally(string $agentType, ?string $agentIndex): void
     {
         $record = new PlacementRecord($agentType, $agentIndex, $this->selfNodeId, PlacementState::Started);
 
+        $agentId = $record->agentId();
+        $generation = $this->authorityGeneration;
+        $attempt = ++$this->placementAttemptSequence;
+        $this->placementAttempts[$agentId] = $attempt;
         try {
             $workerId = $this->executor->executePlacement($agentType, $agentIndex);
+        } catch (EventLoopException $e) {
+            throw $e;
         } catch (Throwable $e) {
+            if ($generation !== $this->authorityGeneration || ($this->placementAttempts[$agentId] ?? null) !== $attempt) {
+                throw $e;
+            }
             $failure = $this->failedAttempt($agentType, $agentIndex, $e);
             $previous = $this->registry->get($record->agentId());
             if ($previous !== null && $previous->state->hostsAgent()) {
@@ -3573,6 +4359,10 @@ final class ClusterPlacement implements WorkerPlacement
             throw $e;
         }
 
+        if ($generation !== $this->authorityGeneration || ($this->placementAttempts[$agentId] ?? null) !== $attempt) {
+            $this->revokeAbandonedStart($agentType, $agentIndex);
+            return;
+        }
         unset($this->lastPlacementRefusals[$record->agentId()]);
         // Accepted while it waits for a worker of its type (HIL-998, HIL-1671): placing until the answer is known
         if ($workerId === null) {
@@ -3585,6 +4375,23 @@ final class ClusterPlacement implements WorkerPlacement
         $this->hosted[$record->agentId()] = $record;
         $this->registry->put($record);
         $this->placementStarted($record->agentId(), $this->selfNodeId);
+    }
+
+    /**
+     * A successful old executor return cannot leave untracked work after losing its authority.
+     * A newer accepted incarnation remains the current executor's responsibility.
+     *
+     * @param string $agentType Agent accepted by the old executor call
+     * @param ?string $agentIndex Agent index
+     * @throws InvalidFormatException When a tracked stop completion address is invalid
+     * @throws EventLoopException When the existing executor cannot arm its stop deadline
+     */
+    private function revokeAbandonedStart(string $agentType, ?string $agentIndex): void
+    {
+        $agentId = $this->agentId($agentType, $agentIndex);
+        if (!isset($this->hosted[$agentId]) && !isset($this->deferredPlacementAnswers[$agentId])) {
+            $this->executor->revokePlacement($agentType, $agentIndex);
+        }
     }
 
     /**

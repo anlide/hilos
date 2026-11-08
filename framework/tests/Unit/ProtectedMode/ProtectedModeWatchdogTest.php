@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\ProtectedMode;
 
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+use Hilos\Constants\TimeConstants;
+use ReflectionProperty;
+use WeakReference;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -88,6 +94,9 @@ final class ProtectedModeWatchdogTest extends TestCase
 
     private ?ClusterContext $previousCluster = null;
 
+    /** @var list<EventLoop> Native bases owned by these cases */
+    private array $loops = [];
+
     /** Prepares isolated facade state and log streams for each verdict. */
     protected function setUp(): void
     {
@@ -119,6 +128,9 @@ final class ProtectedModeWatchdogTest extends TestCase
     /** Restores facade state and removes the logs each case owns. */
     protected function tearDown(): void
     {
+        foreach ($this->loops as $loop) {
+            $loop->close();
+        }
         Logger::resetLogFile();
         Logger::setWriteLevel($this->previousWriteLevel ?? LogLevel::Info);
         if (is_file($this->logFile)) {
@@ -1021,6 +1033,265 @@ final class ProtectedModeWatchdogTest extends TestCase
 
         $this->expectException(InvalidFormatException::class);
         ProtectedModeWatchdogSnapshot::fromArray($data);
+    }
+
+    public function testPairedClockPreservesStrictBoundaryAndOriginalDueAcrossWallChanges(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVATING, activatedAt: null);
+        $watchdog = new ProtectedModeWatchdog();
+        $watchdog->tick(self::STARTED_AT, 100.0, self::STARTED_AT + 0.75);
+        $deadline = $this->watchdogField($watchdog, 'quiesceDeadline');
+        self::assertSame(130.25, $deadline);
+        $equal = $watchdog->tick(self::STARTED_AT + 30, 129.25, self::STARTED_AT + 30.75);
+        self::assertNull($equal->watchdogVerdict);
+        // A changed wall clock and an unrelated fact cannot spend or renew process time.
+        $watchdog->noteChanged();
+        self::assertNull($watchdog->tick(self::STARTED_AT + 50_000, 130.0, self::STARTED_AT + 50_000.5)->watchdogVerdict);
+        self::assertSame($deadline, $this->watchdogField($watchdog, 'quiesceDeadline'));
+        self::assertSame('quiesce-overdue', $watchdog->tick(self::STARTED_AT + 31, 130.25, self::STARTED_AT + 31.0)->watchdogVerdict);
+    }
+
+    public function testSilenceUsesFallbackChainAndAnIdenticalEpochProgressDoesNotRenewItsWindow(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, activatedAt: self::STARTED_AT + 100, progressAt: self::STARTED_AT + 5);
+        $watchdog = new ProtectedModeWatchdog();
+        $watchdog->tick(self::STARTED_AT, 100.0, self::STARTED_AT + 0.25);
+        self::assertSame(705.75, $this->watchdogField($watchdog, 'silenceDeadline'));
+        $watchdog->noteChanged();
+        $watchdog->tick(self::STARTED_AT + 5, 105.4, self::STARTED_AT + 5.4);
+        self::assertSame(705.75, $this->watchdogField($watchdog, 'silenceDeadline'));
+        self::assertNull($watchdog->tick(self::STARTED_AT + 605, 704.75, self::STARTED_AT + 605.0)->watchdogVerdict);
+        self::assertSame('silent', $watchdog->tick(self::STARTED_AT + 606, 705.75, self::STARTED_AT + 606.0)->watchdogVerdict);
+    }
+
+    /**
+     * @param string $phase Phase whose own original deadline wakes the quiet native base
+     * @param int $timeout Existing production threshold, never shortened
+     * @param string $verdict Cause expected at its first strictly overdue integer second
+     */
+    #[DataProvider('nativeThresholds')]
+    public function testNativeDueWakesWithoutInputAndArmsOnlyTheReminder(string $phase, int $timeout, string $verdict): void
+    {
+        $this->freeze($phase, activatedAt: null);
+        $mailer = $this->mailTo('ops@example.com');
+        $watchdog = new ProtectedModeWatchdog();
+        $loop = $this->watchdogLoop($watchdog);
+        $mono = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND - $timeout - 2.0;
+        // Observe before the threshold on a paired axis whose original due is already native-due.
+        $watchdog->dispatchReady((float)self::STARTED_AT, $mono);
+        self::assertFalse($watchdog->hasReadyWork());
+        self::assertSame([], $mailer->sent);
+        $loop->tick();
+        self::assertTrue($watchdog->hasReadyWork());
+        $watchdog->dispatchReady((float)(self::STARTED_AT + $timeout + 1), $mono + $timeout + 1);
+        self::assertCount(1, $mailer->sent);
+        self::assertSame($verdict, $this->watchdogField($watchdog, 'reported')->value);
+        self::assertSame($mono + $timeout + 1 + self::ALERT_INTERVAL, $this->watchdogTimer($watchdog)->getDeadline());
+        $loop->tick();
+        self::assertFalse($watchdog->hasReadyWork());
+        self::assertFalse($loop->hasReadyWork());
+        // Its next native due is the real reminder, including equality.
+        $watchdog->noteChanged();
+        $watchdog->dispatchReady((float)(self::STARTED_AT + $timeout + self::ALERT_INTERVAL), $mono + $timeout + self::ALERT_INTERVAL);
+        self::assertCount(1, $mailer->sent);
+        $watchdog->noteChanged();
+        $watchdog->dispatchReady((float)(self::STARTED_AT + $timeout + 1 + self::ALERT_INTERVAL),
+            $mono + $timeout + 1 + self::ALERT_INTERVAL);
+        self::assertCount(2, $mailer->sent);
+    }
+
+    /** @return iterable<string, array{string, int, string}> Independent native causes */
+    public static function nativeThresholds(): iterable
+    {
+        yield 'quiesce' => [StateProtectedModeRuntime::PHASE_ACTIVATING, 30, 'quiesce-overdue'];
+        yield 'silence' => [StateProtectedModeRuntime::PHASE_ACTIVE, 600, 'silent'];
+    }
+
+    public function testQuietNativeReminderWakesAtItsOriginalDueWithoutAnotherFact(): void
+    {
+        $mailer = $this->mailTo('ops@example.com');
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, activatedAt: self::STARTED_AT);
+        $watchdog = new ProtectedModeWatchdog();
+        $watchdog->onAgentStopped(self::INITIATOR_ID);
+        $loop = $this->watchdogLoop($watchdog);
+        $mono = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND - 901.0;
+        $watchdog->dispatchReady((float)self::STARTED_AT, $mono);
+        self::assertCount(1, $mailer->sent);
+        self::assertFalse($watchdog->hasReadyWork());
+        $loop->tick();
+        self::assertTrue($watchdog->hasReadyWork());
+        self::assertCount(1, $mailer->sent, 'Native dispatch only cues the guarded phase');
+        $watchdog->dispatchReady((float)(self::STARTED_AT + 900), $mono + 900.0);
+        self::assertCount(2, $mailer->sent);
+        self::assertSame($mono + 1800.0, $this->watchdogTimer($watchdog)->getDeadline());
+        $loop->tick();
+        self::assertFalse($loop->hasReadyWork());
+        self::assertFalse($watchdog->hasReadyWork());
+    }
+
+    public function testFutureDeadlineSurvivesUnrelatedFactsSelfSyncAndRebinding(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, activatedAt: self::STARTED_AT);
+        $watchdog = new ProtectedModeWatchdog();
+        $loop = $this->watchdogLoop($watchdog);
+        $mono = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        $watchdog->dispatchReady(self::STARTED_AT + 0.5, $mono);
+        $deadline = $this->watchdogTimer($watchdog)->getDeadline();
+        $generation = new ReflectionProperty(EventLoopTimer::class, 'generation')->getValue($this->watchdogTimer($watchdog));
+        for ($offset = 1; $offset < 5; ++$offset) {
+            $watchdog->noteChanged();
+            $watchdog->dispatchReady(self::STARTED_AT + $offset + 0.8, $mono + $offset);
+            $loop->tick();
+            self::assertSame($deadline, $this->watchdogTimer($watchdog)->getDeadline());
+            self::assertSame($generation, new ReflectionProperty(EventLoopTimer::class, 'generation')->getValue($this->watchdogTimer($watchdog)));
+            self::assertFalse($loop->hasReadyWork());
+        }
+        $oldTimer = $this->watchdogTimer($watchdog);
+        $stale = new ReflectionProperty(EventLoopTimer::class, 'callback')->getValue($oldTimer);
+        $watchdog->detachEventLoop();
+        $this->watchdogLoop($watchdog);
+        $watchdog->dispatchReady(self::STARTED_AT + 5.9, $mono + 5.0);
+        self::assertSame($deadline, $this->watchdogTimer($watchdog)->getDeadline());
+        $stale();
+        $oldTimer->close();
+        self::assertFalse($watchdog->hasReadyWork());
+        self::assertSame($deadline, $this->watchdogTimer($watchdog)->getDeadline());
+    }
+
+    public function testDemotionCancelsNativeWorkAndPromotionKeepsStickyInitiatorAndMailHistory(): void
+    {
+        $mailer = $this->mailTo('ops@example.com');
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, activatedAt: self::STARTED_AT);
+        $watchdog = new ProtectedModeWatchdog();
+        $watchdog->onAgentStopped(self::INITIATOR_ID);
+        $leader = true;
+        $loop = new EventLoop();
+        $this->loops[] = $loop;
+        $watchdog->attachEventLoop($loop, static function () use (&$leader): bool { return $leader; }, static function (): void {});
+        $mono = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        $watchdog->dispatchReady((float)self::STARTED_AT, $mono);
+        $reminder = $this->watchdogTimer($watchdog)->getDeadline();
+        self::assertCount(1, $mailer->sent);
+        $leader = false;
+        $watchdog->noteChanged();
+        $watchdog->dispatchReady();
+        self::assertNull($this->watchdogTimer($watchdog)->getDeadline());
+        self::assertFalse($watchdog->hasReadyWork());
+        $leader = true;
+        $watchdog->noteChanged();
+        $watchdog->dispatchReady((float)(self::STARTED_AT + 1), $mono + 1.0);
+        self::assertSame($reminder, $this->watchdogTimer($watchdog)->getDeadline());
+        self::assertCount(1, $mailer->sent);
+        self::assertSame('initiator-lost', $this->watchdogField($watchdog, 'reported')->value);
+        $this->lift();
+        $watchdog->noteChanged();
+        $watchdog->dispatchReady((float)(self::STARTED_AT + 2), $mono + 2.0);
+        self::assertCount(2, $mailer->sent);
+        self::assertNull($this->watchdogTimer($watchdog)->getDeadline());
+    }
+
+    public function testProgressClearsTheScreenWithoutRearmingAPastReminderOrMailingAllClear(): void
+    {
+        $mailer = $this->mailTo('ops@example.com');
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, activatedAt: self::STARTED_AT);
+        $watchdog = new ProtectedModeWatchdog();
+        $this->watchdogLoop($watchdog);
+        $mono = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        $watchdog->dispatchReady((float)self::STARTED_AT, $mono);
+        $stuckAt = self::STARTED_AT + 601;
+        $watchdog->noteChanged();
+        $watchdog->dispatchReady((float)$stuckAt, $mono + 601.0);
+        self::assertCount(1, $mailer->sent);
+        $at = $stuckAt + self::ALERT_INTERVAL + 1;
+        $this->stampProgress($at);
+        $snapshot = $watchdog->tick($at, $mono + 1502.0, (float)$at);
+        self::assertNull($snapshot->watchdogVerdict);
+        self::assertCount(1, $mailer->sent);
+        self::assertSame($mono + 2103.0, $this->watchdogTimer($watchdog)->getDeadline());
+        $this->lift();
+        $watchdog->tick($at + 1, $mono + 1503.0, (float)($at + 1));
+        self::assertCount(2, $mailer->sent);
+        self::assertNull($this->watchdogTimer($watchdog)->getDeadline());
+    }
+
+    public function testRestoredManualPolicyBeforeBindingSuppressesNativeRemindersButRetainsAllClear(): void
+    {
+        $mailer = $this->mailTo('ops@example.com');
+        $this->manualWindow();
+        $watchdog = new ProtectedModeWatchdog();
+        $watchdog->markRestoredFromDisk();
+        $loop = $this->watchdogLoop($watchdog);
+        $mono = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        $watchdog->dispatchReady((float)self::STARTED_AT, $mono);
+        self::assertSame([], $mailer->sent);
+        self::assertSame('', $this->written());
+        self::assertNull($this->watchdogTimer($watchdog)->getDeadline());
+        $watchdog->onProtectedModeSettings(true);
+        $watchdog->dispatchReady((float)(self::STARTED_AT + 1), $mono + 1.0);
+        self::assertSame([], $mailer->sent);
+        self::assertNull($this->watchdogTimer($watchdog)->getDeadline());
+        $watchdog->onProtectedModeSettings(false);
+        $watchdog->dispatchReady((float)(self::STARTED_AT + 2), $mono + 2.0);
+        self::assertCount(1, $mailer->sent);
+        self::assertSame($mono + 902.0, $this->watchdogTimer($watchdog)->getDeadline());
+        $watchdog->onProtectedModeSettings(true);
+        $watchdog->dispatchReady((float)(self::STARTED_AT + 3), $mono + 3.0);
+        self::assertNull($this->watchdogTimer($watchdog)->getDeadline());
+        self::assertSame(self::STARTED_AT + 2, $this->watchdogField($watchdog, 'alarmRaisedAt'));
+        $loop->tick();
+        self::assertFalse($watchdog->hasReadyWork());
+        self::assertFalse($loop->hasReadyWork());
+        $this->lift();
+        $watchdog->noteChanged();
+        $watchdog->dispatchReady((float)(self::STARTED_AT + 4), $mono + 4.0);
+        self::assertCount(2, $mailer->sent);
+    }
+
+    public function testNativeHandlesDoNotRetainWatchdogAndRealArmingFailurePropagates(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, activatedAt: self::STARTED_AT);
+        $watchdog = new ProtectedModeWatchdog();
+        $this->watchdogLoop($watchdog);
+        $weak = WeakReference::create($watchdog);
+        unset($watchdog);
+        self::assertNull($weak->get());
+        $watchdog = new ProtectedModeWatchdog();
+        $this->watchdogLoop($watchdog);
+        $this->watchdogTimer($watchdog)->close();
+        $this->expectException(EventLoopException::class);
+        $watchdog->dispatchReady();
+    }
+
+    /**
+     * @param ProtectedModeWatchdog $watchdog Owner to bind; no source or publication side effects
+     * @return EventLoop Existing native scheduler shape
+     */
+    private function watchdogLoop(ProtectedModeWatchdog $watchdog): EventLoop
+    {
+        $loop = new EventLoop();
+        $this->loops[] = $loop;
+        $watchdog->attachEventLoop($loop, static fn (): bool => true, static function (): void {});
+
+        return $loop;
+    }
+
+    /**
+     * @param ProtectedModeWatchdog $watchdog Owner whose private wait is observed
+     * @return EventLoopTimer Exact current native handle
+     */
+    private function watchdogTimer(ProtectedModeWatchdog $watchdog): EventLoopTimer
+    {
+        return $this->watchdogField($watchdog, 'timer');
+    }
+
+    /**
+     * @param ProtectedModeWatchdog $watchdog Owner whose original basis is observed
+     * @param string $field Private native state name
+     * @return mixed Current local state
+     */
+    private function watchdogField(ProtectedModeWatchdog $watchdog, string $field): mixed
+    {
+        return new ReflectionProperty(ProtectedModeWatchdog::class, $field)->getValue($watchdog);
     }
 
     /**

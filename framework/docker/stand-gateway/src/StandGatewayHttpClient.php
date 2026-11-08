@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace Hilos\StandGateway;
 
+use Closure;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\HilosException;
 use Hilos\Socket\Client\HttpClient;
+use Hilos\Socket\Exception\SocketTlsHandshakeException;
 use Hilos\Socket\SocketException;
 
 /**
@@ -23,18 +28,17 @@ use Hilos\Socket\SocketException;
  * spec released one answer of the call's route and key, and with a delay as well it leaves
  * when both are over.
  *
- * Every wait is a deadline the gateway's tick checks, never a pause inside the call: the
- * gateway is one process serving every connection, and a call that stopped to wait would
- * stall its neighbors. A deadline does not come before the declared moment and comes at most
- * one tick later.
+ * Delay and hold use one-shot monotonic timers; a release mutation wakes only its pair's
+ * subscribers. These notifications enqueue the same guarded client portion as native I/O.
+ * Pending output alone never makes a held answer runnable.
  *
- * Three traps this class is shaped around:
+ * The boundaries this class preserves:
  *
  * - The socket keeps being read while the answer waits. A peer's end of stream closes the
  *   connection only there, and a ready socket nobody reads keeps the gateway's non-blocking
  *   loop turning without end - so read() is not overridden.
  * - The delay counts from the moment the behavior was dictated, not from the first attempt to
- *   write, which would add a tick to every declared delay.
+ *   write, which would extend every declared delay.
  * - A release is spent once, by the first write that finds it; the writes after it do not ask
  *   for another, or one held answer would spend the releases of its neighbors on the pair.
  * - An encrypted stream may take none or part of the bytes offered. The cut is made once, over
@@ -45,13 +49,13 @@ final class StandGatewayHttpClient extends HttpClient
     /** @var ?Behavior Behavior dictated for the call being answered, null when none was */
     private ?Behavior $behavior = null;
 
-    /** @var ?float Moment the answer may start to leave, as microtime(true); null when nothing is dictated */
+    /** @var ?float Monotonic seconds when the answer may leave; null without a behavior */
     private ?float $releaseAt = null;
 
     /** @var bool Whether the dictated cut has already shortened the answer */
     private bool $cutApplied = false;
 
-    /** @var ?float Moment the held connection is closed, as microtime(true); null while none is held */
+    /** @var ?float Monotonic seconds when the held connection closes; null before its actual drain */
     private ?float $closeAt = null;
 
     /** @var ?string Provider route of the call being answered, null when nothing is dictated */
@@ -63,6 +67,46 @@ final class StandGatewayHttpClient extends HttpClient
     /** @var bool Whether a spec's release has already let the held answer out */
     private bool $released = false;
 
+    private ?EventLoopTimer $waitTimer = null;
+
+    /** @var ?Closure(): void Removes the current route/key subscription */
+    private ?Closure $releaseSubscription = null;
+
+    /** @var bool Whether arrival, rebinding or a release mutation warrants a token lookup */
+    private bool $releasePending = true;
+
+    /** @var int Invalidates callbacks belonging to an earlier binding or behavior */
+    private int $waitGeneration = 0;
+
+    /**
+     * Rebinds native I/O and restores only this connection's current waits.
+     *
+     * @param EventLoop $loop Gateway's native base and ready queue
+     * @param Closure(): void $wake Existing guarded read/tick/write/drop portion
+     * @throws SocketTlsHandshakeException When TLS is rebound to another native base
+     * @throws EventLoopException When the current deadline cannot be armed
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+        parent::attachEventLoop($loop, $wake);
+        if ($this->getSocket() === null) {
+            return;
+        }
+
+        $this->waitTimer = $loop->createTimer($this->markReady(...));
+        $this->releasePending = true;
+        $this->scheduleWaits();
+    }
+
+    /** Cancels native and queued waits before I/O detaches; retains the accepted answer for rebinding. */
+    public function detachEventLoop(): void
+    {
+        $this->cancelReleaseSubscription();
+        $this->waitTimer?->close();
+        $this->waitTimer = null;
+        parent::detachEventLoop();
+    }
+
     /**
      * Takes the behavior declared for the call being routed.
      *
@@ -73,13 +117,19 @@ final class StandGatewayHttpClient extends HttpClient
      * @param Behavior $behavior Behavior to send the coming answer with
      * @param string $path Provider route that was called
      * @param string $key Value of the call the behavior was taken by
+     * @throws EventLoopException When the delay cannot be armed
      */
     public function dictate(Behavior $behavior, string $path, string $key): void
     {
+        $this->cancelReleaseSubscription();
         $this->behavior = $behavior;
-        $this->releaseAt = microtime(true) + $behavior->delayMs / TimeConstants::MS_PER_SECOND;
+        $this->releaseAt = self::monotonicSeconds() + $behavior->delayMs / TimeConstants::MS_PER_SECOND;
         $this->path = $path;
         $this->key = $key;
+        $this->cutApplied = false;
+        $this->released = false;
+        $this->releasePending = true;
+        $this->scheduleWaits();
     }
 
     /**
@@ -98,13 +148,18 @@ final class StandGatewayHttpClient extends HttpClient
     {
         if ($this->behavior !== null && $this->writeBuffer !== '') {
             if ($this->behavior->awaitRelease && !$this->released) {
+                if ($this->waitTimer !== null && !$this->releasePending) {
+                    return;
+                }
+                $this->releasePending = false;
                 if (!Store::takeRelease($this->path, $this->key)) {
                     return;
                 }
                 $this->released = true;
+                $this->cancelReleaseSubscription();
             }
 
-            if (microtime(true) < $this->releaseAt) {
+            if (self::monotonicSeconds() < $this->releaseAt) {
                 return;
             }
 
@@ -125,13 +180,12 @@ final class StandGatewayHttpClient extends HttpClient
     }
 
     /**
-     * Periodic tick: closes a held connection once its hold is over.
-     *
-     * The server drops the connection in the same tick, right after it writes.
+     * Checks the held connection after its timer wakes the existing guarded client portion.
+     * Isolated unbound fixtures may also call this directly.
      */
     public function onTick(): void
     {
-        if ($this->closeAt !== null && microtime(true) >= $this->closeAt) {
+        if ($this->closeAt !== null && self::monotonicSeconds() >= $this->closeAt) {
             $this->markShouldClose();
         }
     }
@@ -166,21 +220,61 @@ final class StandGatewayHttpClient extends HttpClient
      * @throws SocketException When outbound write fails while handling a subsequent request
      * @throws InvalidFormatException When the request query string carries a non-string value
      * @throws HilosException When a pipelined follow-up request refuses to become a response
+     * @throws EventLoopException When the hold cannot be armed
      */
     protected function onAfterOutboundDrained(): void
     {
+        $this->cancelReleaseSubscription();
         if ($this->behavior !== null && $this->behavior->holdMs > 0) {
-            $this->closeAt = microtime(true) + $this->behavior->holdMs / TimeConstants::MS_PER_SECOND;
+            $this->closeAt = self::monotonicSeconds() + $this->behavior->holdMs / TimeConstants::MS_PER_SECOND;
+            $this->waitTimer?->armAt($this->closeAt);
 
             return;
         }
 
+        $this->waitTimer?->armAt(null);
         $this->behavior = null;
         $this->releaseAt = null;
         $this->path = null;
         $this->key = null;
         $this->released = false;
+        $this->cutApplied = false;
 
         parent::onAfterOutboundDrained();
+    }
+
+    /** @throws EventLoopException When the current monotonic deadline cannot be armed */
+    private function scheduleWaits(): void
+    {
+        if ($this->waitTimer === null) {
+            return;
+        }
+
+        if ($this->behavior?->awaitRelease && !$this->released && $this->releaseSubscription === null) {
+            $generation = $this->waitGeneration;
+            $this->releaseSubscription = Store::subscribeRelease($this->path, $this->key, function () use ($generation): void {
+                if ($generation === $this->waitGeneration) {
+                    $this->releasePending = true;
+                    $this->markReady();
+                }
+            });
+        }
+
+        $this->waitTimer->armAt($this->closeAt ?? (
+            $this->releaseAt !== null && $this->releaseAt > self::monotonicSeconds() ? $this->releaseAt : null
+        ));
+    }
+
+    private function cancelReleaseSubscription(): void
+    {
+        ++$this->waitGeneration;
+        $this->releaseSubscription?->__invoke();
+        $this->releaseSubscription = null;
+    }
+
+    /** @return float Process-local monotonic seconds, independent of Store's epoch fields */
+    private static function monotonicSeconds(): float
+    {
+        return hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
     }
 }

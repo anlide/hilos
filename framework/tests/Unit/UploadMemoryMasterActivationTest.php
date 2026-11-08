@@ -561,7 +561,8 @@ final class UploadMemoryMasterActivationTest extends TestCase
         new ReflectionProperty(PeerLink::class, 'outboundSegments')->setValue($link, new SplQueue());
         new ReflectionProperty(PeerLink::class, 'stagedOutbound')->setValue($link, new SplQueue());
         $link->activate(NodeIdentity::of('B', 'Node B', NodeRole::Master, []));
-        new ReflectionProperty(AbstractServer::class, 'clients')->setValue($server, [$link]);
+        new ReflectionMethod(AbstractServer::class, 'addClient')->invoke($server, $link);
+        new ReflectionMethod(PeerServer::class, 'attachClient')->invoke($server, $link);
         new ReflectionProperty(PeerServer::class, 'activeLinks')->setValue($server, ['B' => $link]);
         $server->setUploadMemoryMaster($this->memory);
         $router = new class extends SignalRouter {
@@ -719,7 +720,11 @@ final class UploadMemoryActivationManager extends DaemonManager
 
     public function drain(): void
     {
-        new ReflectionMethod(DaemonManager::class, 'dispatchSignals')->invoke($this);
+        $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignals');
+        $runnable = new ReflectionMethod(DaemonManager::class, 'hasRunnableSignalDispatch');
+        do {
+            $dispatch->invoke($this);
+        } while ($runnable->invoke($this));
     }
 
     public function started(): void
@@ -779,7 +784,7 @@ final class UploadMemoryActivationServer extends WorkerServer
         new ReflectionProperty(WorkerServer::class, 'agentManager')->setValue($this, $roster);
         new ReflectionProperty(WorkerServer::class, 'cachedLogDirectory')->setValue($this, '/tmp');
         $this->worker = new UploadMemoryActivationWorker($roster, $this);
-        $this->clients = [$this->worker];
+        $this->addClient($this->worker);
         $this->process = new class extends Process {
             public function __construct()
             {
@@ -852,6 +857,11 @@ final class UploadMemoryActivationWorker extends WorkerClient
             array_map(WorkerDTO::factoryWorkerDTO(...), array_filter(explode("\n", $this->writeBuffer))),
             static fn (WorkerDTO $dto): bool => $dto instanceof DaemonAgentMessageDTO,
         ));
+    }
+
+    /** This fixture has no socket or transport binding to release. */
+    public function detachEventLoop(): void
+    {
     }
 
     public function close(): void

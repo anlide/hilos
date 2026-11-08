@@ -120,6 +120,31 @@ class RepeatedFailureWindows
     }
 
     /**
+     * Reads the earliest useful summary without consuming even an expired window.
+     *
+     * @param float $now Current time in the same clock as admits()
+     * @return ?float Original window deadline, now for a replaced summary, or null when nothing was suppressed
+     */
+    public function nextSummaryAt(float $now): ?float
+    {
+        foreach ($this->replaced as $window) {
+            if ($window[self::FIELD_HELD] > 0) {
+                return $now;
+            }
+        }
+
+        $next = null;
+        foreach ($this->windows as $window) {
+            if ($window[self::FIELD_HELD] > 0) {
+                $deadline = $window[self::FIELD_OPENED_AT] + $this->windowSeconds;
+                $next = $next === null ? $deadline : min($next, $deadline);
+            }
+        }
+
+        return $next;
+    }
+
+    /**
      * Hands over every window whose length has run out, and forgets it.
      *
      * Meant to be called from the owner's loop rather than from the next failure of the

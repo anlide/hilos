@@ -200,7 +200,7 @@ final class PeerPageAccessReassessTestWorkerServer extends WorkerServer
     {
         $client = new PeerPageAccessReassessTestWorkerClient();
         $client->setWorkerIndex(count($this->clients));
-        $this->clients[] = $client;
+        $this->addClient($client);
     }
 
     /**

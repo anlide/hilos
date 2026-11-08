@@ -124,6 +124,7 @@ final class HttpClientRequestBodyTest extends TestCase
 
         $this->send($peer, $this->post('first=1') . $this->post('second=2'));
         $client->read();
+        $client->read();
 
         $this->assertSame(['first=1', 'second=2'], $this->receivedBodies);
         $this->assertSame([HttpConstants::HTTP_OK, HttpConstants::HTTP_OK], $this->statuses($this->receive($peer)));

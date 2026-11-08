@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Closure;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncDTO;
 use Hilos\Database\DTO\ReHydrateVerdict;
@@ -68,6 +69,7 @@ interface ProtectedModeExecutor
      *                                    no initiator connection to name
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function enterActivating(
         ProtectedModeQuiesceData $freeze,

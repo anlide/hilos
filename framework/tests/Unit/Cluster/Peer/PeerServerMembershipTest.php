@@ -7,6 +7,17 @@ namespace Hilos\Tests\Unit\Cluster\Peer;
 use Closure;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\ClusterNode;
+use Hilos\Cluster\Consensus\ClusterConsensusConfig;
+use Hilos\Cluster\Consensus\ClusterCoordinator;
+use Hilos\Cluster\NullLeadershipObserver;
+use Hilos\Cluster\LeadershipObserver;
+use Hilos\Cluster\MembershipObserver;
+use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
+use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use ReflectionMethod;
+use ReflectionProperty;
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
@@ -64,6 +75,11 @@ final class PeerServerMembershipTest extends TestCase
     /** @var list<Socket> Every socket opened for the links under test, closed together */
     private array $sockets = [];
 
+    private ?EventLoop $nativeLoop = null;
+
+    /** @var list<PeerServer> Native owners released before closing the fixture sockets */
+    private array $nativeServers = [];
+
     protected function setUp(): void
     {
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
@@ -84,6 +100,10 @@ final class PeerServerMembershipTest extends TestCase
 
     protected function tearDown(): void
     {
+        foreach ($this->nativeServers as $server) {
+            $server->detachEventLoop();
+        }
+        $this->nativeLoop?->close();
         foreach ($this->sockets as $socket) {
             socket_close($socket);
         }
@@ -189,8 +209,9 @@ final class PeerServerMembershipTest extends TestCase
         $this->assertInstanceOf(PeerDrainDTO::class, $oldFrames[1]);
         $this->assertInstanceOf(PeerReadyAckDTO::class, $newFrames[1]);
         $this->assertTrue($newFrames[1]->keepNew);
-        $this->assertInstanceOf(PeerSourceInterestDTO::class, $newFrames[2]);
-        $this->assertCount(3, $newFrames, 'An online duplicate must not repeat roster or reader-interest hand-over');
+        $this->assertEquals(new PeerSourceInterestDTO('node-a', ['readRt'], ['readDb']), $newFrames[2]);
+        $this->assertEquals(new PeerSourceInterestDTO('node-a', [], []), $newFrames[3]);
+        $this->assertCount(4, $newFrames, 'An online duplicate sends one targeted reader repair without a full hand-over');
         $this->assertSame([], array_filter($newFrames, static fn(PeerDTO $frame): bool => $frame instanceof PeerRosterDTO));
 
         $this->feed($old, $oldFar, new PeerDrainDTO());
@@ -561,6 +582,228 @@ final class PeerServerMembershipTest extends TestCase
         $this->assertSame('', $this->drain($linkC, $farC));
     }
 
+    public function testNativeMembershipLossReturnKeepsTheSameLeaderAndTermButPublishesBothEdges(): void
+    {
+        $server = $this->makeServer();
+        [$old, $far] = $this->linkTo($server, 'node-b');
+        $coordinator = $this->installNativeConsensus($server);
+        $server->onHeartbeat(new PeerHeartbeatDTO(5, 'node-b', true));
+        $coordinator->dispatchReady();
+        $revision = $coordinator->epochRevision();
+        $deadline = $this->roleTimer($coordinator)->getDeadline();
+
+        $this->feed($old, $far, new PeerNodeLeavingDTO('node-b', false, null));
+        $this->assertFalse($coordinator->hasQuorum(), 'the actual leave observes loss before the next owner pass');
+        $this->linkTo($server, 'node-b');
+        $this->assertTrue($coordinator->hasQuorum(), 'the actual replacement handshake observes return');
+        $this->closeLink($server, $old);
+        $this->assertSame($revision + 2, $coordinator->epochRevision());
+        $this->assertSame('node-b', $coordinator->leaderId());
+        $this->assertSame(5, $coordinator->term());
+        $this->nativeLoop->tick();
+        $coordinator->dispatchReady();
+        $this->assertSame($deadline, $this->roleTimer($coordinator)->getDeadline());
+        $this->assertFalse($coordinator->hasReadyWork());
+    }
+
+    public function testNativeConsensusUsesOwnRoleAnnouncementsAndIgnoresUnrelatedMembership(): void
+    {
+        $server = $this->makeServer();
+        [$link, $far] = $this->linkTo($server, 'node-b');
+        $coordinator = $this->installNativeConsensus($server);
+        $coordinator->dispatchReady();
+        $deadline = $this->roleTimer($coordinator)->getDeadline();
+        $revision = $coordinator->epochRevision();
+        $this->feed($link, $far, new PeerAnnounceDTO($this->entry('node-c')));
+        $this->feed($link, $far, new PeerAnnounceDTO(new PeerNodeEntry('node-b', 'Renamed', NodeRole::Master, ['gpu'], null)));
+        $this->assertSame(2, $coordinator->onlineMasterCount(), 'third-party gossip does not make a node online');
+        $this->assertSame($revision, $coordinator->epochRevision());
+        $this->assertSame($deadline, $this->roleTimer($coordinator)->getDeadline());
+        $this->assertFalse($coordinator->hasReadyWork(), 'name and capacity edits are not election resets');
+        $this->feed($link, $far, new PeerAnnounceDTO(new PeerNodeEntry('node-b', 'Renamed', NodeRole::Slave, ['gpu'], null)));
+        $this->assertFalse($coordinator->hasQuorum());
+        $this->feed($link, $far, new PeerAnnounceDTO($this->entry('node-b')));
+        $this->assertTrue($coordinator->hasQuorum());
+        $this->assertSame($revision + 2, $coordinator->epochRevision());
+        $coordinator->dispatchReady();
+        $this->assertSame($deadline, $this->roleTimer($coordinator)->getDeadline());
+
+        Hilos::$cluster->registry()->merge(NodeIdentity::of('node-a', 'Local', NodeRole::Slave, []), true, microtime(true));
+        $server->announceLocalNode();
+        $this->assertFalse($coordinator->hasQuorum(), 'local reload is a membership source too');
+    }
+
+    public function testNativeQuorumObserversPrecedeMembershipHooksWithoutADaemonParentCall(): void
+    {
+        $server = $this->makeServer();
+        [$link, $far] = $this->linkTo($server, 'node-b');
+        $events = [];
+        $observer = $this->createMock(LeadershipObserver::class);
+        $observer->method('onQuorumLost')->willReturnCallback(static function () use (&$events): void {
+            $events[] = 'quorumLost';
+        });
+        $observer->method('onQuorumGained')->willReturnCallback(static function () use (&$events): void {
+            $events[] = 'quorumGained';
+        });
+        $coordinator = $this->installNativeConsensus($server, $observer);
+        $coordinator->dispatchReady();
+        $events = [];
+        $membership = $this->createMock(MembershipObserver::class);
+        $membership->method('onNodeJoined')->willReturnCallback(static function (ClusterNode $node) use ($coordinator, &$events): void {
+            $events[] = $coordinator->hasQuorum() ? 'membershipWithQuorum' : 'membershipWithoutQuorum';
+        });
+        Hilos::$cluster->registerMembershipObserver($membership);
+        $this->feed($link, $far, new PeerAnnounceDTO(new PeerNodeEntry('node-b', 'Remote', NodeRole::Slave, [], null)));
+        $this->feed($link, $far, new PeerAnnounceDTO($this->entry('node-b')));
+        $this->assertSame(['quorumLost', 'membershipWithoutQuorum', 'quorumGained', 'membershipWithQuorum'], $events);
+    }
+
+    public function testMissingRegistryRetiresNativeLeadershipWithoutWaitingForItsHeartbeat(): void
+    {
+        $server = $this->makeServer();
+        $this->linkTo($server, 'node-b');
+        $coordinator = $this->installNativeConsensus($server);
+        $coordinator->dispatchReady();
+        $coordinator->triggerDesignatedElection();
+        $coordinator->dispatchReady();
+        $coordinator->onVoteReply(new PeerVoteReplyDTO(1, true, 'node-b'));
+        $coordinator->dispatchReady();
+        $this->assertTrue($coordinator->amLeader());
+        Hilos::$cluster = null;
+        $server->onTick();
+        $this->assertFalse($coordinator->hasQuorum());
+        $this->assertFalse($coordinator->amLeader());
+        $this->assertSame(0, $coordinator->onlineMasterCount());
+        $this->assertFalse($coordinator->hasReadyWork());
+    }
+
+    public function testNativeHeartbeatThenLastActiveCloseUsesTheFastElectionPath(): void
+    {
+        $server = $this->makeServer();
+        [$leader, $far] = $this->linkTo($server, 'node-b');
+        $this->linkTo($server, 'node-c');
+        $coordinator = $this->installNativeConsensus($server);
+        $coordinator->dispatchReady();
+        $this->feed($leader, $far, new PeerHeartbeatDTO(1, 'node-b', false));
+        $this->assertTrue(socket_shutdown($far, 1));
+        $leader->read();
+        $this->assertTrue($leader->shouldClose());
+        $this->closeLink($server, $leader);
+        $server->onTick();
+        $this->assertSame(2, $coordinator->term());
+        $this->assertNull($coordinator->leaderId());
+        $this->assertFalse($server->hasConsensusReadyWork(), 'pending votes alone are not runnable');
+    }
+
+    public function testSameBaseAttachBindsLateAndReplacedPrivateOwnersIndependentlyOfTheFacade(): void
+    {
+        $server = $this->makeServer();
+        $this->nativeLoop = new EventLoop();
+        $server->attachEventLoop($this->nativeLoop);
+        $old = $this->installNativeConsensus($server);
+        $old->dispatchReady();
+        $timer = $this->roleTimer($old);
+        $cue = new ReflectionProperty($timer, 'callback')->getValue($timer);
+        $replacement = new ClusterCoordinator(
+            new ClusterConsensusConfig('node-a', ['node-a', 'node-b', 'node-c'], 2, 1500, 3000, 500),
+            $server, new NullLeadershipObserver(),
+        );
+        Hilos::$cluster->registerLeadership($replacement);
+        $server->attachEventLoop($this->nativeLoop);
+        $this->assertSame($timer, $this->roleTimer($old), 'facade replacement does not replace the actual peer owner');
+        new ReflectionProperty($server, 'coordinator')->setValue($server, $replacement);
+        $server->attachEventLoop($this->nativeLoop);
+        $this->assertNull($timer->getDeadline());
+        $this->assertFalse($old->hasReadyWork());
+        $replacement->dispatchReady();
+        $cue();
+        $this->assertFalse($replacement->hasReadyWork());
+        $server->detachEventLoop();
+        $this->assertFalse($replacement->hasReadyWork());
+        $this->assertNull(new ReflectionProperty($replacement, 'roleTimer')->getValue($replacement));
+    }
+
+    public function testStartupAfterLoopAttachBindsItsActualCoordinator(): void
+    {
+        $server = $this->makeServer();
+        $this->nativeLoop = new EventLoop();
+        $this->nativeServers[] = $server;
+        $server->attachEventLoop($this->nativeLoop);
+        $previousSet = getenv('CLUSTER_MASTER_SET');
+        putenv('CLUSTER_MASTER_SET=node-a,node-b,node-c');
+        try {
+            new ReflectionMethod($server, 'onStart')->invoke($server);
+            $this->assertTrue($server->hasConsensusReadyWork());
+            $coordinator = new ReflectionProperty($server, 'coordinator')->getValue($server);
+            $this->assertSame($coordinator, Hilos::$cluster->leadership());
+            $coordinator->dispatchReady();
+            $this->assertGreaterThan(hrtime(true) / 1e9, $this->roleTimer($coordinator)->getDeadline());
+        } finally {
+            putenv($previousSet === false ? 'CLUSTER_MASTER_SET' : 'CLUSTER_MASTER_SET=' . $previousSet);
+        }
+    }
+
+    public function testPrepareShutdownRetainsConsensusUntilQueuedOutputDrainsAndStopRetiresIt(): void
+    {
+        $server = $this->makeServer();
+        [$link, $far] = $this->linkTo($server, 'node-b');
+        $coordinator = $this->installNativeConsensus($server);
+        $coordinator->dispatchReady();
+        $coordinator->triggerDesignatedElection();
+        $coordinator->dispatchReady();
+        $server->onVoteReply(new PeerVoteReplyDTO(1, true, 'node-b'));
+        $coordinator->dispatchReady();
+        $this->drain($link, $far);
+        $timer = $this->roleTimer($coordinator);
+        $server->prepareShutdown();
+        $this->assertFalse($server->isReadyToShutdown(), 'graceful leave is still queued');
+        $deadline = hrtime(true) / 1e9 - 1.0;
+        new ReflectionProperty($coordinator, 'heartbeatDueAt')->setValue($coordinator, $deadline);
+        $timer->armAt($deadline);
+        $server->attachEventLoop($this->nativeLoop);
+        $this->nativeLoop->runOnce();
+        $this->assertTrue($server->hasConsensusReadyWork(), 'preparation must retain the live consensus duty');
+        $server->onTick();
+        $frames = $this->framesOf($this->drain($link, $far));
+        $this->assertCount(1, array_filter($frames, static fn(PeerDTO $frame): bool => $frame instanceof PeerNodeLeavingDTO));
+        $this->assertCount(1, array_filter($frames, static fn(PeerDTO $frame): bool => $frame instanceof PeerHeartbeatDTO));
+        $this->assertTrue($server->isReadyToShutdown());
+        $this->closeLink($server, $link);
+        $server->stop();
+        $this->assertNull($timer->getDeadline());
+        $this->assertFalse($coordinator->hasReadyWork());
+        $this->assertNull(new ReflectionProperty($server, 'dialLoop')->getValue($server));
+        $this->assertFalse($this->nativeLoop->hasReadyWork());
+    }
+
+    /**
+     * @param PeerServer $server Actual registry-backed consensus mesh
+     * @param ?LeadershipObserver $observer Transition-order observer, null for no project effects
+     * @return ClusterCoordinator Concrete owner on the same existing base
+     */
+    private function installNativeConsensus(PeerServer $server, ?LeadershipObserver $observer = null): ClusterCoordinator
+    {
+        $this->nativeLoop ??= new EventLoop();
+        $this->nativeServers[] = $server;
+        $coordinator = new ClusterCoordinator(
+            new ClusterConsensusConfig('node-a', ['node-a', 'node-b', 'node-c'], 2, 1500, 3000, 500),
+            $server, $observer ?? new NullLeadershipObserver(),
+        );
+        new ReflectionProperty($server, 'coordinator')->setValue($server, $coordinator);
+        Hilos::$cluster->registerLeadership($coordinator);
+        $server->attachEventLoop($this->nativeLoop);
+        return $coordinator;
+    }
+
+    /**
+     * @param ClusterCoordinator $coordinator Exact peer owner
+     * @return EventLoopTimer Bound role timer
+     */
+    private function roleTimer(ClusterCoordinator $coordinator): EventLoopTimer
+    {
+        return new ReflectionProperty($coordinator, 'roleTimer')->getValue($coordinator);
+    }
+
     /**
      * Drives either handshake road while the old generation's EOF waits on its socket.
      *
@@ -798,7 +1041,8 @@ final class PeerServerMembershipTest extends TestCase
     {
         $attach = Closure::bind(
             static function (PeerServer $server, PeerLink $link): void {
-                $server->clients[] = $link;
+                $server->addClient($link);
+                $server->attachClient($link);
             },
             null,
             PeerServer::class,

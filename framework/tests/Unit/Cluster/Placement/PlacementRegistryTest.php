@@ -17,6 +17,26 @@ use PHPUnit\Framework\TestCase;
  */
 final class PlacementRegistryTest extends TestCase
 {
+    /** Repeated values stay quiet; address changes and released capacity announce their actual scope. */
+    public function testLocalCuesDescribeOnlyActualRegistryChanges(): void
+    {
+        $facts = [];
+        $registry = new PlacementRegistry(static function (?string $agentId) use (&$facts): void {
+            $facts[] = $agentId;
+        });
+        $record = new PlacementRecord('worker', '7', 'node', PlacementState::Started);
+        $registry->put($record);
+        $registry->put(new PlacementRecord('worker', '7', 'node', PlacementState::Started));
+        $registry->forget('missing');
+        self::assertSame(['worker:7'], $facts);
+        $registry->forget('worker:7');
+        self::assertSame(['worker:7', 'worker:7', null], $facts);
+        $registry->put($record);
+        $registry->clear();
+        $registry->clear();
+        self::assertSame(['worker:7', 'worker:7', null, 'worker:7', null], $facts);
+    }
+
     public function testAFailureForAnotherReasonReplacesTheFirst(): void
     {
         $registry = new PlacementRegistry();

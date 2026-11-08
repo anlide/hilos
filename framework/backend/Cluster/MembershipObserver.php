@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Core\Exception\InvalidFormatException;
 
@@ -25,6 +26,7 @@ interface MembershipObserver
 {
     /**
      * @param ClusterNode $node Node that joined (or came back online)
+     * @throws EventLoopException When a placement retry deadline cannot be armed
      */
     public function onNodeJoined(ClusterNode $node): void;
 
@@ -32,6 +34,7 @@ interface MembershipObserver
      * @param ClusterNode $node Node that left (went offline)
      * @throws InvalidFormatException When a pending page recovery address is malformed
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onNodeLeft(ClusterNode $node): void;
 }

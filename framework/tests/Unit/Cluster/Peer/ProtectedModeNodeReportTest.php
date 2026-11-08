@@ -370,7 +370,10 @@ final class ProtectedModeNodeReportTest extends TestCase
         $this->sockets = [...$this->sockets, $near, $far];
         $link = new PeerLink($near, $server, NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []), false,
             new NamedPeerTestTransport($near, $certifiedName ?? $nodeId));
-        Closure::bind(static function () use ($server, $link): void { $server->clients[] = $link; }, null, PeerServer::class)();
+        Closure::bind(static function () use ($server, $link): void {
+            $server->addClient($link);
+            $server->attachClient($link);
+        }, null, PeerServer::class)();
         $this->feed($link, $far, new PeerHelloDTO(PeerProtocol::VERSION, $nodeId, 'Node ' . $nodeId, $role, [], PeerTestMarkers::onWire(), null));
         if ($ready) {
             $this->feed($link, $far, new PeerReadyDTO(false));

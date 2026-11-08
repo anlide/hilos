@@ -18,6 +18,7 @@ use Hilos\Files\Upload\UploadMemoryReceipt;
 use Hilos\Files\Upload\UploadsSettingsCatalog;
 use Hilos\Hilos;
 use Hilos\Socket\Client\WorkerClient;
+use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeSettingsDTO;
@@ -27,6 +28,7 @@ use Hilos\Socket\Worker\DTO\WorkerUploadSettingsDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 use stdClass;
 
 /** Upload control frames are strict, backward compatible and attributed to their registered channel. */
@@ -309,6 +311,7 @@ final class UploadMemoryReceivingWorker extends WorkerClient
 {
     public function __construct()
     {
+        new ReflectionProperty(WorkerClient::class, 'workerServer')->setValue($this, new UploadMemoryRegistrationServer());
     }
 
     public function receive(WorkerDTO $frame): void
@@ -365,6 +368,18 @@ final class UploadMemoryRecordingSink implements UploadMemoryPoolSink
      * @param list<string> $receiptIds Terminal ids, unused by settings cases
      */
     public function onUploadConsumed(WorkerClient $worker, array $receiptIds): void
+    {
+    }
+}
+
+/** Socket-free owner receives registration facts without opening a listener or starting workers. */
+final class UploadMemoryRegistrationServer extends WorkerServer
+{
+    public function __construct()
+    {
+    }
+
+    protected function onStart(): void
     {
     }
 }

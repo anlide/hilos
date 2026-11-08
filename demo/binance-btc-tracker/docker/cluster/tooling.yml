@@ -3,7 +3,10 @@
 services:
   binance-btc-tracker-cluster-cli:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
-    build: ..
+    build:
+      context: ..
+      additional_contexts:
+        hilos-event: ../../../../framework/docker/native/event
     container_name: binance-btc-tracker-cluster-cli${HILOS_STAND_SUFFIX:-}
     working_dir: /app
     command: ["sleep", "infinity"]

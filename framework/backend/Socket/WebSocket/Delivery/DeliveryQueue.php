@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\WebSocket\Delivery;
 
+use Generator;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -44,14 +45,31 @@ final class DeliveryQueue
     /** Survivors inside the closed packages; the rest of the coalescer's are the open run. */
     private int $closedFrameCount = 0;
 
+    private DeliveryCleanup $cleanup;
+
+    /** @var ?Generator<int, ?string> Original packet; later enqueues cannot change its captured survivors */
+    private ?Generator $packing = null;
+
+    /** Transport bytes still owned by packing, transferred once when a complete package leaves. */
+    private int $packingBytes = 0;
+
     /**
      * @param int $windowMs Effective positive delivery window in milliseconds
+     * @param ?DeliveryCleanup $cleanup Master's guarded owner, absent for standalone consuming queues
      * @throws InvalidFormatException When the window is not positive
      */
-    public function __construct(int $windowMs = DeliverySettingsCatalog::DEFAULT_WINDOW_MS)
+    public function __construct(int $windowMs = DeliverySettingsCatalog::DEFAULT_WINDOW_MS, ?DeliveryCleanup $cleanup = null)
     {
         $this->setWindowMs($windowMs);
-        $this->coalescer = new DeliveryCoalescer();
+        $this->cleanup = $cleanup ?? new DeliveryCleanup();
+        $this->coalescer = new DeliveryCoalescer($this->cleanup);
+    }
+
+    /** @param DeliveryCleanup $cleanup Master's guarded cleanup owner */
+    public function setCleanup(DeliveryCleanup $cleanup): void
+    {
+        $this->cleanup = $cleanup;
+        $this->coalescer->setCleanup($cleanup);
     }
 
     /**
@@ -80,6 +98,32 @@ final class DeliveryQueue
         return $this->nextDueAt;
     }
 
+    /**
+     * An admitted packet continues through a later hold; a new packet follows drainPortion's admission.
+     * Reading this deadline neither captures a packet nor opens a delivery window.
+     *
+     * @param int $nowMs Caller-supplied monotonic milliseconds
+     * @param bool $force Whether graceful close is releasing completed work
+     * @return ?int Actionable packing/admission moment, absent for an empty or held queue
+     */
+    public function nextWorkAt(int $nowMs, bool $force = false): ?int
+    {
+        if ($this->packing !== null) {
+            return $nowMs;
+        }
+        if ($this->isHeld() || !$this->coalescer->hasFrames()) {
+            return null;
+        }
+        if (!$force && !$this->urgent
+            && ($this->immediateUntil === null || $nowMs >= $this->immediateUntil)
+            && $this->lastDeliveryAt !== null && $nowMs < $this->nextDueAt
+        ) {
+            return $this->nextDueAt;
+        }
+
+        return $nowMs;
+    }
+
     /** @return bool Whether an incomplete subscription blocks all application text */
     public function isHeld(): bool
     {
@@ -89,7 +133,13 @@ final class DeliveryQueue
     /** @return bool Whether application text is waiting */
     public function hasFrames(): bool
     {
-        return $this->coalescer->hasFrames();
+        return $this->packing !== null || $this->coalescer->hasFrames();
+    }
+
+    /** @return bool Whether the original packet has runnable packing work, independent of a later subscription hold */
+    public function hasPendingPacking(): bool
+    {
+        return $this->packing !== null;
     }
 
     /**
@@ -101,7 +151,7 @@ final class DeliveryQueue
      */
     public function getPendingBytes(): int
     {
-        return $this->closedPackageBytes + self::packageBytes(
+        return $this->packingBytes + $this->closedPackageBytes + self::packageBytes(
             $this->coalescer->getFrameCount() - $this->closedFrameCount,
             $this->coalescer->getHeldBytes() - $this->closedTextBytes,
         );
@@ -151,7 +201,7 @@ final class DeliveryQueue
             $this->coalescer->clear();
             $this->forgetClosedPackages();
         }
-        $this->updates = [];
+        $this->cleanup->retire($this->updates);
         $this->subscriptionId = $deliveryId;
         $this->acceptRequest($nowMs);
     }
@@ -205,6 +255,15 @@ final class DeliveryQueue
         }
     }
 
+    /** Invalidates every pending completion while preserving completed, unrelated application text. */
+    public function cancelPending(): void
+    {
+        if ($this->subscriptionId !== null) {
+            $this->cancelDelivery($this->subscriptionId);
+        }
+        $this->cleanup->retire($this->updates);
+    }
+
     /**
      * Quiet first delivery happens here, never during enqueue. Even forced shutdown cannot
      * release an incomplete subscription. Opaque text and prebuilt batches split packages.
@@ -215,36 +274,57 @@ final class DeliveryQueue
      */
     public function drain(int $nowMs, bool $force = false): array
     {
-        if ($this->isHeld() || !$this->hasFrames()) {
+        return $this->drainPortion($nowMs, PHP_INT_MAX, $force);
+    }
+
+    /**
+     * Captures one due packet before advancing it. Deadlines and urgency move at that original
+     * decision, so later input keeps its own cadence and cannot join a half-packed batch.
+     * Each step visits one survivor or emits one COMPLETE package. String bytes, PHP buffer
+     * growth and eventual decoded-frame destruction remain separate costs.
+     *
+     * @param int $nowMs Caller-supplied monotonic milliseconds of this drain decision
+     * @param int $steps Maximum survivor or package transitions
+     * @param bool $force Drain completed work before graceful close
+     * @return list<string> Complete packages, at most one per step; a batch never leaves partially
+     */
+    public function drainPortion(int $nowMs, int $steps, bool $force = false): array
+    {
+        if ($steps <= 0) {
             return [];
         }
-        if (!$force && !$this->urgent
-            && ($this->immediateUntil === null || $nowMs >= $this->immediateUntil)
-            && $this->lastDeliveryAt !== null && $nowMs < $this->nextDueAt
-        ) {
-            return [];
+        if ($this->packing === null) {
+            if ($this->isHeld() || !$this->coalescer->hasFrames()) {
+                return [];
+            }
+            if (!$force && !$this->urgent
+                && ($this->immediateUntil === null || $nowMs >= $this->immediateUntil)
+                && $this->lastDeliveryAt !== null && $nowMs < $this->nextDueAt
+            ) {
+                return [];
+            }
+            $this->packingBytes = $this->getPendingBytes();
+            $this->packing = self::packetDelivery($this->coalescer->takeFrames(), $this->cleanup);
+            $this->forgetClosedPackages();
+            $this->urgent = false;
+            $this->lastDeliveryAt = $nowMs;
+            $this->nextDueAt = $nowMs + $this->windowMs;
         }
 
         $packages = [];
-        $envelopes = [];
-        foreach ($this->coalescer->drain() as $frame) {
-            if (self::standsAlone($frame)) {
-                if ($envelopes !== []) {
-                    $packages[] = self::pack($envelopes);
-                    $envelopes = [];
-                }
-                $packages[] = $frame->json;
-            } else {
-                $envelopes[] = $frame;
+        $this->packing->valid();
+        for ($step = 0; $step < $steps && $this->packing !== null; $step++) {
+            $this->packing->next();
+            if (!$this->packing->valid()) {
+                $this->packing = null;
+                break;
+            }
+            $package = $this->packing->current();
+            if ($package !== null) {
+                $packages[] = $package;
+                $this->packingBytes -= WebSocketClient::frameHeaderBytes(strlen($package)) + strlen($package);
             }
         }
-        if ($envelopes !== []) {
-            $packages[] = self::pack($envelopes);
-        }
-        $this->forgetClosedPackages();
-        $this->urgent = false;
-        $this->lastDeliveryAt = $nowMs;
-        $this->nextDueAt = $nowMs + $this->windowMs;
 
         return $packages;
     }
@@ -252,10 +332,12 @@ final class DeliveryQueue
     /** Discard all socket-local delivery state; the effective setting remains configured. */
     public function close(): void
     {
+        $this->packing = null;
+        $this->packingBytes = 0;
         $this->coalescer->clear();
         $this->forgetClosedPackages();
         $this->subscriptionId = null;
-        $this->updates = [];
+        $this->cleanup->retire($this->updates);
         $this->lastDeliveryAt = null;
         $this->nextDueAt = null;
         $this->immediateUntil = null;
@@ -283,18 +365,49 @@ final class DeliveryQueue
     }
 
     /**
-     * @param non-empty-list<DeliveryFrame> $frames Existing envelope JSON parts, reused byte for byte
-     * @return string Bare envelope or one non-nested batch
+     * @param array<int, DeliveryFrame> $frames Original sparse survivors, transferred without array_values()
+     * @param DeliveryCleanup $cleanup Existing owner of the detached packet after packing or cancellation
+     * @return Generator<int, ?string> Effect-free admission, then one survivor transition or complete package
      */
-    private static function pack(array $frames): string
+    private static function packetDelivery(array $frames, DeliveryCleanup $cleanup): Generator
     {
-        if (count($frames) === 1) {
-            return $frames[0]->json;
+        $text = null;
+        $count = 0;
+        try {
+            yield null;
+            foreach ($frames as $frame) {
+                if (self::standsAlone($frame)) {
+                    if ($text !== null) {
+                        if ($count > 1) {
+                            $text .= self::BATCH_CLOSE;
+                        }
+                        yield $text;
+                        $text = null;
+                        $count = 0;
+                    }
+                    yield $frame->json;
+                } else {
+                    if ($count === 0) {
+                        $text = $frame->json;
+                    } elseif ($count === 1) {
+                        $text = self::BATCH_OPEN . $text . self::BATCH_SEPARATOR . $frame->json;
+                    } else {
+                        $text .= self::BATCH_SEPARATOR;
+                        $text .= $frame->json;
+                    }
+                    $count++;
+                    yield null;
+                }
+            }
+            if ($text !== null) {
+                if ($count > 1) {
+                    $text .= self::BATCH_CLOSE;
+                }
+                yield $text;
+            }
+        } finally {
+            $cleanup->retire($frames);
         }
-
-        return self::BATCH_OPEN
-            . implode(self::BATCH_SEPARATOR, array_map(static fn (DeliveryFrame $frame): string => $frame->json, $frames))
-            . self::BATCH_CLOSE;
     }
 
     /**

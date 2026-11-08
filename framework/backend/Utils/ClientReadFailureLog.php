@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Utils;
 
+use Closure;
 use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\MalformedInput;
@@ -71,6 +72,36 @@ class ClientReadFailureLog
     /** @var ?RepeatedFailureWindows Limiter for the warning branch, built on first use */
     private static ?RepeatedFailureWindows $windows = null;
 
+    /** @var ?Closure(): void Exact scheduling observer of the master, absent in other consumers */
+    private static ?Closure $summaryWake = null;
+
+    /**
+     * @param Closure(): void $wake Observer notified after a useful deadline may have changed
+     */
+    public static function setSummaryWake(Closure $wake): void
+    {
+        self::$summaryWake = $wake;
+    }
+
+    /**
+     * @param Closure(): void $wake Only this observer may remove its binding
+     */
+    public static function removeSummaryWake(Closure $wake): void
+    {
+        if (self::$summaryWake === $wake) {
+            self::$summaryWake = null;
+        }
+    }
+
+    /**
+     * @param float $now Monotonic seconds, matching every production writer
+     * @return ?float Earliest useful summary in monotonic seconds; idle reads allocate nothing
+     */
+    public static function nextSummaryAt(float $now): ?float
+    {
+        return self::$windows?->nextSummaryAt($now);
+    }
+
     /**
      * Names one connection the way a contained failure addresses it.
      *
@@ -102,7 +133,7 @@ class ClientReadFailureLog
      * @param string $serverName Name of the server the client belongs to
      * @param string $reader Reader that caught the failure, one of the READER_* constants
      * @param Throwable $failure Failure the read ended with
-     * @param float $now Current time, as the caller reads it
+     * @param float $now Monotonic seconds in production; all window calls must share one clock
      */
     public static function write(string $serverName, string $reader, Throwable $failure, float $now): void
     {
@@ -129,6 +160,7 @@ class ClientReadFailureLog
         if (self::windows()->admits(self::windowKey($serverName, $failure), $now)) {
             Logger::warning($entry);
         }
+        (self::$summaryWake)?->__invoke();
     }
 
     /**
@@ -143,9 +175,10 @@ class ClientReadFailureLog
      */
     public static function flushClosedWindows(float $now): void
     {
-        foreach (self::windows()->closeExpired($now) as $closed) {
+        foreach (self::$windows?->closeExpired($now) ?? [] as $closed) {
             self::summarize($closed['key'], $closed['held']);
         }
+        (self::$summaryWake)?->__invoke();
     }
 
     /**
@@ -156,7 +189,8 @@ class ClientReadFailureLog
      */
     public static function reset(): void
     {
-        self::windows()->reset();
+        self::$windows?->reset();
+        (self::$summaryWake)?->__invoke();
     }
 
     /**

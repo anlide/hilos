@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Closure;
 use Hilos\Cluster\ClusterNode;
+use Hilos\Cluster\DbSyncMesh;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydratedDTO;
@@ -22,6 +23,9 @@ use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
@@ -44,6 +48,8 @@ use Hilos\Tests\Unit\Cluster\Peer\ProtectedModePeerFixture;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
+use ReflectionProperty;
 use RuntimeException;
 
 /**
@@ -139,6 +145,403 @@ final class DaemonManagerDbReHydrateBarrierTest extends TestCase
         yield 'slave' => [NodeRole::Slave];
     }
 
+    /** @param bool $departure Whether loss, rather than an answer, releases the last participant */
+    #[DataProvider('completionFacts')]
+    public function testARealCompletionFactWakesWithoutInputAndDeliversOnlyInTheGuardedPhase(bool $departure): void
+    {
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+        $daemon->announce(self::INITIATOR);
+        $daemon->tickBarrier();
+        self::assertNotNull($daemon->barrierTimer()->getDeadline());
+        self::assertFalse($daemon->barrierLoop()->hasReadyWork());
+
+        if ($departure) {
+            $daemon->workerLeaves(1);
+        } else {
+            $daemon->workerAnswers(1, true);
+        }
+        self::assertTrue($daemon->barrierLoop()->hasReadyWork());
+        $daemon->barrierLoop()->runOnce();
+        self::assertSame([], $daemon->workerServer->verdicts, 'Native dispatch only marks readiness');
+        $daemon->tickBarrier();
+        self::assertTrue($daemon->singleVerdict()->complete);
+        self::assertNull($daemon->barrierTimer()->getDeadline());
+        self::assertFalse($daemon->barrierLoop()->hasReadyWork());
+        $daemon->workerAnswers(1, true);
+        $daemon->tickBarrier();
+        self::assertCount(1, $daemon->workerServer->verdicts);
+        self::assertFalse($daemon->barrierLoop()->hasReadyWork());
+    }
+
+    /** @return iterable<string, array{bool}> Facts that end the wait */
+    public static function completionFacts(): iterable
+    {
+        yield 'answer' => [false];
+        yield 'departure' => [true];
+    }
+
+    public function testAFutureRoundKeepsItsDeadlineAcrossUnrelatedIoFactsAndRebind(): void
+    {
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1, 2);
+        $daemon->announce(self::INITIATOR);
+        $daemon->tickBarrier();
+        $deadline = $daemon->barrierTimer()->getDeadline();
+        $oldTimer = $daemon->barrierTimer();
+        $oldWake = new ReflectionProperty(DaemonManager::class, 'reHydrateWake')->getValue($daemon);
+        $loop = $daemon->barrierLoop();
+        $sockets = [];
+        self::assertTrue(socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $sockets));
+        try {
+            $reads = 0;
+            $loop->registerRead($sockets[0], static function () use ($sockets, &$reads): void {
+                socket_read($sockets[0], 1);
+                ++$reads;
+            });
+            for ($pass = 0; $pass < 3; ++$pass) {
+                socket_write($sockets[1], 'x');
+                $loop->runOnce();
+                $daemon->tickBarrier();
+                self::assertSame($deadline, $daemon->barrierTimer()->getDeadline());
+                self::assertFalse($loop->hasReadyWork());
+            }
+            self::assertSame(3, $reads);
+            $daemon->workerAnswers(1, true);
+            $daemon->tickBarrier();
+            self::assertSame($deadline, $daemon->barrierTimer()->getDeadline());
+            $daemon->workerAnswers(1, true);
+            $daemon->workerAnswers(2, true, round: $daemon->currentRound() - 1);
+            $daemon->workerLeaves(999);
+            self::assertFalse($loop->hasReadyWork(), 'Duplicates, mismatches and unknown departures change no round fact');
+            $daemon->bindBarrierLoop($loop);
+            $daemon->tickBarrier();
+            self::assertNull($oldTimer->getDeadline());
+            self::assertSame($deadline, $daemon->barrierTimer()->getDeadline());
+            $oldWake();
+            self::assertFalse($loop->hasReadyWork(), 'An escaped binding cannot wake its replacement');
+            self::assertSame([], $daemon->workerServer->verdicts);
+            $daemon->workerAnswers(2, true);
+            $daemon->tickBarrier();
+            self::assertTrue($daemon->singleVerdict()->complete);
+        } finally {
+            $loop->unregister($sockets[0]);
+            foreach ($sockets as $socket) {
+                socket_close($socket);
+            }
+        }
+    }
+
+    public function testTheOriginalNativeDeadlineEndsAQuietRoundWithoutInput(): void
+    {
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager();
+        $deadline = hrtime(true) / 1e9 - 1.0;
+        $daemon->barrierOwner()->openReHydrateRound(self::INITIATOR, null, null,
+            [ReHydrateRound::workerParticipant(1)], $deadline);
+        // Observe before the original deadline, then let the actual due-now native event wake it.
+        $daemon->tickBarrier($deadline - 1.0);
+        self::assertSame($deadline, $daemon->barrierTimer()->getDeadline());
+        self::assertFalse($daemon->barrierLoop()->hasReadyWork());
+        $daemon->barrierLoop()->runOnce();
+        self::assertSame([], $daemon->workerServer->verdicts);
+        $daemon->tickBarrier();
+        self::assertFalse($daemon->singleVerdict()->complete);
+        self::assertSame(['worker #1: timeout'], $daemon->singleVerdict()->problems);
+        self::assertNull($daemon->barrierTimer()->getDeadline());
+        self::assertFalse($daemon->barrierLoop()->hasReadyWork());
+    }
+
+    public function testExpiryDuringIncompleteDispatchSleepsUntilCompletionWithoutRenewingTheDeadline(): void
+    {
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager();
+        $owner = $daemon->barrierOwner();
+        $deadline = hrtime(true) / 1e9 - 1.0;
+        $round = $owner->beginReHydrateDispatch(self::INITIATOR, null, null, $deadline);
+        $owner->ackReHydrateParticipant($round, ReHydrateRound::daemonParticipant(), true, null);
+        $daemon->tickBarrier($deadline - 1.0);
+        $daemon->barrierLoop()->runOnce();
+        $daemon->tickBarrier();
+        self::assertSame($round, $daemon->currentRound(), 'An empty partial roster cannot complete');
+        self::assertSame([], $daemon->workerServer->verdicts);
+        self::assertNull($daemon->barrierTimer()->getDeadline(), 'A past deadline cannot rearm a ready spin');
+        self::assertFalse($daemon->barrierLoop()->hasReadyWork());
+        $owner->dropReHydrateParticipant(ReHydrateRound::workerParticipant(2));
+        $owner->includeReHydrateParticipant($round, ReHydrateRound::workerParticipant(2));
+        $owner->includeReHydrateParticipant($round, ReHydrateRound::workerParticipant(1));
+        $daemon->tickBarrier();
+        self::assertSame($deadline, $owner->reHydrateDeadline());
+        self::assertFalse($daemon->barrierLoop()->hasReadyWork());
+        self::assertNull($daemon->barrierTimer()->getDeadline());
+        $owner->completeReHydrateDispatch($round);
+        self::assertTrue($daemon->barrierLoop()->hasReadyWork());
+        $daemon->barrierLoop()->runOnce();
+        $daemon->tickBarrier();
+        self::assertFalse($daemon->singleVerdict()->complete);
+        self::assertSame(['worker #1: timeout'], $daemon->singleVerdict()->problems);
+        self::assertFalse($daemon->barrierLoop()->hasReadyWork());
+    }
+
+    public function testAnActivatedOldDeadlineCannotConsumeTheSupersedingRound(): void
+    {
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+        $deadline = hrtime(true) / 1e9 - 1.0;
+        $first = $daemon->barrierOwner()->openReHydrateRound(self::INITIATOR, null, null,
+            [ReHydrateRound::workerParticipant(1)], $deadline);
+        $daemon->tickBarrier($deadline - 1.0);
+        $timer = $daemon->barrierTimer();
+        $activated = false;
+        $daemon->barrierLoop()->createReadyWork(function () use ($daemon, $timer, &$activated): void {
+            $activated = $timer->getDeadline() === null;
+            $daemon->announce(self::INITIATOR);
+            $daemon->tickBarrier();
+        })->markReady();
+        $daemon->barrierLoop()->runOnce();
+        self::assertTrue($activated, 'Native activation precedes replacement of the queued deadline callback');
+        $newDeadline = $daemon->barrierOwner()->reHydrateDeadline();
+        self::assertSame($newDeadline, $timer->getDeadline());
+        self::assertFalse($daemon->singleVerdict()->complete);
+        self::assertSame(["round #{$first}: superseded by a newer re-hydrate announcement"], $daemon->singleVerdict()->problems);
+        $daemon->workerAnswers(1, true, round: $first);
+        $daemon->barrierOwner()->completeReHydrateDispatch($first);
+        $daemon->barrierLoop()->tick();
+        $daemon->tickBarrier();
+        self::assertSame($newDeadline, $timer->getDeadline());
+        self::assertCount(1, $daemon->workerServer->verdicts);
+        self::assertFalse($daemon->barrierLoop()->hasReadyWork());
+        $daemon->workerAnswers(1, true);
+        $daemon->tickBarrier();
+        self::assertCount(2, $daemon->workerServer->verdicts);
+        self::assertTrue($daemon->workerServer->verdicts[1]->complete);
+    }
+
+    public function testACompletionMayReenterWithANewContinuationAndRebindWithoutLosingEitherResult(): void
+    {
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+        $verdicts = [];
+        $daemon->catchUpProtectedModeDatabase(function (ReHydrateVerdict $verdict) use ($daemon, &$verdicts): void {
+            $verdicts[] = $verdict;
+            $daemon->catchUpProtectedModeDatabase(static function (ReHydrateVerdict $next) use (&$verdicts): void {
+                $verdicts[] = $next;
+            });
+            $daemon->bindBarrierLoop($daemon->barrierLoop());
+        });
+        $first = $daemon->currentRound();
+        $daemon->workerAnswers(1, true);
+        $daemon->tickBarrier();
+        self::assertCount(1, $verdicts);
+        self::assertTrue($verdicts[0]->complete);
+        self::assertGreaterThan($first, $daemon->currentRound());
+        $deadline = $daemon->barrierOwner()->reHydrateDeadline();
+        $daemon->tickBarrier();
+        self::assertSame($deadline, $daemon->barrierTimer()->getDeadline());
+        self::assertFalse($daemon->barrierLoop()->hasReadyWork());
+        $daemon->workerAnswers(1, true, round: $first);
+        $daemon->workerAnswers(1, true);
+        $daemon->tickBarrier();
+        $daemon->tickBarrier();
+        self::assertCount(2, $verdicts);
+        self::assertTrue($verdicts[1]->complete);
+        self::assertSame([], $daemon->workerServer->verdicts);
+        self::assertNull($daemon->barrierTimer()->getDeadline());
+        self::assertFalse($daemon->barrierLoop()->hasReadyWork());
+    }
+
+    public function testASupersededContinuationMayOpenAnotherRoundBeforeTheOldDispatchReturns(): void
+    {
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+        $verdicts = [];
+        $daemon->catchUpProtectedModeDatabase(function (ReHydrateVerdict $verdict) use ($daemon, &$verdicts): void {
+            $verdicts[] = $verdict;
+            $daemon->catchUpProtectedModeDatabase(static function (ReHydrateVerdict $next) use (&$verdicts): void {
+                $verdicts[] = $next;
+            });
+        });
+        $first = $daemon->currentRound();
+        $daemon->announce(self::INITIATOR);
+        while ($daemon->hasDispatchWork()) {
+            $daemon->drainAnnouncements();
+        }
+        $last = $daemon->currentRound();
+        self::assertGreaterThan($first + 1, $last);
+        self::assertCount(1, $verdicts);
+        self::assertFalse($verdicts[0]->complete);
+        self::assertSame(["round #{$first}: superseded by a newer re-hydrate announcement"], $verdicts[0]->problems);
+        self::assertFalse($daemon->singleVerdict()->complete, 'The intervening ordinary round gets its own refusal');
+        $daemon->tickBarrier();
+        $deadline = $daemon->barrierTimer()->getDeadline();
+        $daemon->workerAnswers(1, true, round: $first);
+        $daemon->barrierOwner()->completeReHydrateDispatch($first + 1);
+        $daemon->tickBarrier();
+        self::assertSame($deadline, $daemon->barrierTimer()->getDeadline());
+        $daemon->workerAnswers(1, true);
+        $daemon->tickBarrier();
+        self::assertCount(2, $verdicts);
+        self::assertTrue($verdicts[1]->complete);
+        self::assertCount(1, $daemon->workerServer->verdicts);
+        self::assertNull($daemon->barrierTimer()->getDeadline());
+        self::assertFalse($daemon->barrierLoop()->hasReadyWork());
+    }
+
+    public function testAnOldOwnerBindingCannotRemoveItsReplacementOrWakeForDuplicateFacts(): void
+    {
+        $owner = new DaemonManagerDbReHydrateBarrierTestAgentManagerDaemon();
+        $oldCalls = 0;
+        $newCalls = 0;
+        $oldWake = static function () use (&$oldCalls): void { ++$oldCalls; };
+        $newWake = static function () use (&$newCalls): void { ++$newCalls; };
+        $owner->setReHydrateWake($oldWake);
+        $round = $owner->beginReHydrateDispatch(self::INITIATOR, null, null, PHP_FLOAT_MAX);
+        self::assertSame(1, $oldCalls);
+        $owner->setReHydrateWake($newWake);
+        self::assertSame(1, $newCalls, 'Rebind observes a live round');
+        $owner->removeReHydrateWake($oldWake);
+        $owner->ackReHydrateParticipant($round, ReHydrateRound::daemonParticipant(), true, null);
+        self::assertSame(2, $newCalls);
+        $owner->ackReHydrateParticipant($round, ReHydrateRound::daemonParticipant(), true, null);
+        $owner->completeReHydrateDispatch($round + 1);
+        self::assertSame(2, $newCalls);
+        $owner->completeReHydrateDispatch($round);
+        self::assertSame(3, $newCalls);
+        self::assertTrue($owner->pollReHydrateVerdict(0.0)->complete);
+        self::assertSame(4, $newCalls, 'Verdict consumption is a round mutation');
+        self::assertNull($owner->pollReHydrateVerdict(0.0));
+        self::assertSame(4, $newCalls);
+        self::assertSame(1, $oldCalls);
+    }
+
+    /**
+     * @param bool $replacePeer Whether the original peer is replaced during participant preparation
+     * @param bool $renumberWorker Whether an original connection registers a different worker index
+     */
+    #[DataProvider('peerChangesDuringPreparation')]
+    public function testPortionsKeepTheOriginalRegistrationAndConnectionCohorts(bool $replacePeer, bool $renumberWorker): void
+    {
+        $server = $this->protectedModePeerServer(NodeRole::Master);
+        $original = $this->protectedModePeerLink($server, 'original', NodeRole::Master);
+        $this->protectedModePeerFrames($original);
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(...range(1, 130));
+        $loop = new EventLoop();
+        $daemon->bindBarrierLoop($loop);
+        try {
+            $daemon->connectPeers($server);
+            $daemon->addUnregisteredWorker(131);
+            $clients = $daemon->workerServer->getClients();
+            $daemon->announce(self::INITIATOR);
+            $round = $daemon->currentRound();
+            self::assertGreaterThan(0, $round);
+            self::assertSame([], $daemon->workerServer->announcedRounds(), 'Preparation itself must yield before physical fanout');
+            $daemon->tickBarrier(PHP_FLOAT_MAX);
+            self::assertSame([], $daemon->workerServer->verdicts, 'A partially populated round cannot expire or settle');
+
+            $clients[130]->finishRegistration($daemon->workerServer);
+            $clients[129]->markShouldClose();
+            $daemon->workerServer->addWorker(130, registered: true);
+            if ($renumberWorker) {
+                $clients[0]->setWorkerIndex(999);
+                $clients[0]->finishRegistration($daemon->workerServer);
+            }
+            if ($replacePeer) {
+                $server->removeClient($original[0]);
+            }
+            $later = $this->protectedModePeerLink($server, $replacePeer ? 'original' : 'later', NodeRole::Master);
+            $this->protectedModePeerFrames($original);
+            $this->protectedModePeerFrames($later);
+            for ($portion = 0; $portion < 1000 && $daemon->hasDispatchWork(); $portion++) {
+                $before = count($daemon->workerServer->announcedRounds());
+                $daemon->drainAnnouncements();
+                self::assertLessThanOrEqual(64, count($daemon->workerServer->announcedRounds()) - $before);
+            }
+            self::assertFalse($daemon->hasDispatchWork());
+            self::assertSame(1, $daemon->dbAnnouncements, 'The existing project announcement hook still runs once');
+            self::assertSame(array_fill(0, $renumberWorker ? 129 : 130, $round), $daemon->workerServer->announcedRounds());
+            if ($renumberWorker) {
+                self::assertSame([], $clients[0]->announcedRounds(), 'A changed registered identity cannot receive the old announcement');
+            }
+            self::assertSame([], $clients[129]->announcedRounds(), 'Closed original worker does not receive the old announcement');
+            self::assertSame([$round], $clients[130]->announcedRounds(), 'The original unregistered connection still receives the frame');
+            $currentClients = $daemon->workerServer->getClients();
+            self::assertSame([], $currentClients[131]->announcedRounds(), 'A replacement with the same index is outside the original cohort');
+            self::assertSame([], $this->protectedModePeerFrames($later), 'A late neighbor or replacement receives no old fanout');
+            $peerFrames = $this->protectedModePeerFrames($original);
+            self::assertCount($replacePeer ? 0 : 1, $peerFrames);
+            if (!$replacePeer) {
+                self::assertInstanceOf(PeerDbReHydrateDTO::class, $peerFrames[0]);
+                self::assertSame($round, $peerFrames[0]->round);
+                $server->onDbReHydratedReceived($original[0], new PeerDbReHydratedDTO('original', $round, true, []));
+            }
+            for ($index = 1; $index < 130; $index++) {
+                if (!$renumberWorker || $index !== 1) {
+                    $daemon->workerAnswers($index, true);
+                }
+            }
+            $daemon->tickBarrier();
+            self::assertTrue($daemon->singleVerdict()->complete, 'Late registration and replacement do not add new participants');
+            self::assertSame([], $daemon->singleVerdict()->problems);
+        } finally {
+            $loop->cleanup();
+        }
+    }
+
+    /** @return iterable<string, array{bool, bool}> Connection and registration changes after cohort capture */
+    public static function peerChangesDuringPreparation(): iterable
+    {
+        yield 'new neighbor' => [false, false];
+        yield 'same-node replacement' => [true, false];
+        yield 'changed worker index' => [false, true];
+    }
+
+    public function testAStaleDispatchCompletionCannotReleaseTheNextRound(): void
+    {
+        $owner = new DaemonManagerDbReHydrateBarrierTestAgentManagerDaemon();
+        $first = $owner->beginReHydrateDispatch(self::INITIATOR, null, null, 0.0);
+        $owner->ackReHydrateParticipant($first, ReHydrateRound::daemonParticipant(), true, null);
+        self::assertNull($owner->pollReHydrateVerdict(PHP_FLOAT_MAX));
+        self::assertFalse($owner->supersedeReHydrateRound()->complete);
+        $second = $owner->beginReHydrateDispatch(self::INITIATOR, null, null, PHP_FLOAT_MAX);
+        $owner->includeReHydrateParticipant($second, ReHydrateRound::workerParticipant(2));
+        $owner->includeReHydrateParticipant($first, 'stale participant');
+        $owner->ackReHydrateParticipant($second, ReHydrateRound::daemonParticipant(), true, null);
+        $owner->completeReHydrateDispatch($first);
+        self::assertNull($owner->pollReHydrateVerdict(PHP_FLOAT_MAX));
+        $owner->completeReHydrateDispatch($second);
+        self::assertNull($owner->pollReHydrateVerdict(0.0));
+        $owner->ackReHydrateParticipant($second, ReHydrateRound::workerParticipant(2), true, null);
+        $verdict = $owner->pollReHydrateVerdict(0.0);
+        self::assertTrue($verdict->complete);
+        self::assertSame([], $verdict->problems);
+    }
+
+    public function testAnAnnouncementFailureReleasesPreparationWithoutCreditingTheUnappliedDaemon(): void
+    {
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+        $client = $daemon->workerServer->getClients()[0];
+        $failure = new RuntimeException('worker announcement refused');
+        $client->sendFailure = $failure;
+        try {
+            $daemon->announce(self::INITIATOR);
+            self::fail('The actual send failure must reach the existing guard');
+        } catch (RuntimeException $caught) {
+            self::assertSame($failure, $caught);
+        }
+        self::assertSame([], $daemon->workerServer->announcedRounds());
+        $daemon->tickBarrier(PHP_FLOAT_MAX);
+        self::assertFalse($daemon->singleVerdict()->complete);
+        self::assertSame(['daemon: timeout', 'worker #1: timeout'], $daemon->singleVerdict()->problems);
+        self::assertSame(0, $daemon->currentRound());
+    }
+
+    public function testADepartureBeforeItsRosterVisitCannotBeReintroducedDuringPreparation(): void
+    {
+        $owner = new DaemonManagerDbReHydrateBarrierTestAgentManagerDaemon();
+        $round = $owner->beginReHydrateDispatch(self::INITIATOR, null, null, PHP_FLOAT_MAX);
+        $owner->dropReHydrateParticipant(ReHydrateRound::workerParticipant(1));
+        $owner->includeReHydrateParticipant($round, ReHydrateRound::workerParticipant(1));
+        $owner->ackReHydrateParticipant($round, ReHydrateRound::daemonParticipant(), true, null);
+        $owner->completeReHydrateDispatch($round);
+        $verdict = $owner->pollReHydrateVerdict(0.0);
+        self::assertNotNull($verdict, 'A later visit cannot undo the actual departure fact');
+        self::assertTrue($verdict->complete);
+        self::assertSame([], $verdict->problems);
+    }
+
     public function testSlaveExecutorWaitsForEveryLocalWorkerWithoutRebroadcastingOrReplyingToAnAgent(): void
     {
         $server = $this->protectedModePeerServer(NodeRole::Slave);
@@ -175,6 +578,7 @@ final class DaemonManagerDbReHydrateBarrierTest extends TestCase
         $verdicts = [];
         $db->expects($this->once())->method('reHydrateDbBackedCollections')->willReturnCallback(function () use ($daemon, &$verdicts): void {
             $daemon->workerAnswers(1, true);
+            $daemon->barrierLoop()->tick();
             $daemon->tickBarrier();
             $this->assertSame([], $verdicts, 'Workers cannot stand in for the daemon participant');
         });
@@ -591,6 +995,8 @@ final class DaemonManagerDbReHydrateBarrierTestManager extends DaemonManager
     /** The stand-in worker server the announcement and the verdict travel through */
     public readonly DaemonManagerDbReHydrateBarrierTestWorkerServer $workerServer;
 
+    public int $dbAnnouncements = 0;
+
     /**
      * @param int ...$registeredWorkerIndexes Indexes of the workers registered on this node
      */
@@ -603,6 +1009,39 @@ final class DaemonManagerDbReHydrateBarrierTestManager extends DaemonManager
             $this->workerServer->addWorker($workerIndex, registered: true);
         }
         $this->registerServer($this->workerServer);
+        $this->bindBarrierLoop(new EventLoop());
+    }
+
+    /** Releases native and queued callbacks when this test manager leaves scope. */
+    public function __destruct()
+    {
+        new ReflectionMethod(DaemonManager::class, 'detachReHydrateEventLoop')->invoke($this);
+        $this->eventLoop->cleanup();
+    }
+
+    /** @param EventLoop $loop Replacement native base for the same live barrier */
+    public function bindBarrierLoop(EventLoop $loop): void
+    {
+        $this->eventLoop = $loop;
+        new ReflectionMethod(DaemonManager::class, 'attachReHydrateEventLoop')->invoke($this);
+    }
+
+    /** @return EventLoop Actual native base, without any socket input */
+    public function barrierLoop(): EventLoop
+    {
+        return $this->eventLoop;
+    }
+
+    /** @return AgentManagerDaemon Actual round owner, shared by worker and peer answers */
+    public function barrierOwner(): AgentManagerDaemon
+    {
+        return $this->agentManagerDaemon;
+    }
+
+    /** @return EventLoopTimer Actual deadline handle owned by the current loop binding */
+    public function barrierTimer(): EventLoopTimer
+    {
+        return new ReflectionProperty(DaemonManager::class, 'reHydrateTimer')->getValue($this);
     }
 
     /** @param PeerServer $server Real mesh whose answers close this daemon's barrier */
@@ -649,7 +1088,7 @@ final class DaemonManagerDbReHydrateBarrierTestManager extends DaemonManager
             null,
             null,
             [ReHydrateRound::daemonParticipant(), ReHydrateRound::nodeParticipant($nodeId)],
-            microtime(true) + self::BARRIER_TEST_DEADLINE_SECONDS,
+            hrtime(true) / 1e9 + self::BARRIER_TEST_DEADLINE_SECONDS,
         );
         $this->agentManagerDaemon->ackReHydrateParticipant($round, ReHydrateRound::daemonParticipant(), true, null);
     }
@@ -720,12 +1159,15 @@ final class DaemonManagerDbReHydrateBarrierTestManager extends DaemonManager
         ));
     }
 
-    /** @param ?float $now Explicit observation time, or the loop's clock */
+    /** @param ?float $now Explicit monotonic deadline observation, or a fact-driven guarded pass */
     public function tickBarrier(?float $now = null): void
     {
         $tick = Closure::bind(
             static function (DaemonManager $daemon) use ($now): void {
-                $daemon->tickReHydrateRound($now);
+                if ($now !== null) {
+                    $daemon->reHydrateRoundReady = true;
+                }
+                $daemon->dispatchReHydrateRound($now);
             },
             null,
             DaemonManager::class,
@@ -758,6 +1200,22 @@ final class DaemonManagerDbReHydrateBarrierTestManager extends DaemonManager
         );
 
         $drain($this);
+    }
+
+    /** @return bool Actual production remainder predicate */
+    public function hasDispatchWork(): bool
+    {
+        return Closure::bind(fn(): bool => $this->hasRunnableSignalDispatch(), $this, DaemonManager::class)();
+    }
+
+    /**
+     * @param ?DbSyncMesh $mesh Original peer port
+     * @param SignalDTO $signal Original sync envelope
+     */
+    protected function broadcastDbSyncToPeers(?DbSyncMesh $mesh, SignalDTO $signal): void
+    {
+        $this->dbAnnouncements++;
+        parent::broadcastDbSyncToPeers($mesh, $signal);
     }
 
     protected function createSignalRouter(): SignalRouter
@@ -817,7 +1275,11 @@ final class DaemonManagerDbReHydrateBarrierTestWorkerServer extends WorkerServer
      */
     public function addWorker(int $workerIndex, bool $registered): void
     {
-        $this->clients[] = new DaemonManagerDbReHydrateBarrierTestWorkerClient($workerIndex, $registered);
+        $client = new DaemonManagerDbReHydrateBarrierTestWorkerClient($workerIndex, $registered);
+        $this->addClient($client);
+        if ($registered) {
+            $this->noteWorkerRegistered($client);
+        }
     }
 
     /**
@@ -868,6 +1330,8 @@ final class DaemonManagerDbReHydrateBarrierTestWorkerServer extends WorkerServer
  */
 final class DaemonManagerDbReHydrateBarrierTestWorkerClient extends WorkerClient
 {
+    public ?RuntimeException $sendFailure = null;
+
     /** @var list<string> Raw frames the daemon wrote to this link, in order */
     private array $written = [];
 
@@ -875,7 +1339,7 @@ final class DaemonManagerDbReHydrateBarrierTestWorkerClient extends WorkerClient
      * @param int $workerIndex Index this worker answers under
      * @param bool $registered Whether it finished registering that index
      */
-    public function __construct(int $workerIndex, private readonly bool $registered)
+    public function __construct(int $workerIndex, private bool $registered)
     {
         $this->setWorkerIndex($workerIndex);
     }
@@ -885,11 +1349,21 @@ final class DaemonManagerDbReHydrateBarrierTestWorkerClient extends WorkerClient
         return $this->registered;
     }
 
+    /** @param WorkerServer $server Exact owner receiving the real registration fact */
+    public function finishRegistration(WorkerServer $server): void
+    {
+        $this->registered = true;
+        $server->noteWorkerRegistered($this);
+    }
+
     /**
      * @param string $data Frame the daemon wants written to this worker
      */
     public function send(string $data): void
     {
+        if ($this->sendFailure !== null) {
+            throw $this->sendFailure;
+        }
         $this->written[] = $data;
     }
 

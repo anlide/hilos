@@ -14,6 +14,10 @@ use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Socket\WebSocket\Liveness\WebSocketLiveness;
+use ReflectionMethod;
+use ReflectionProperty;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
@@ -391,6 +395,76 @@ final class WebSocketLivenessSignalTest extends TestCase
             $this->tickAt($client, $nowMs);
         }
         $this->assertSame([], $this->toldOwner($client, $manager));
+    }
+
+    /** A native check uses the current registry, even after absence, remount and a missed return. */
+    public function testNativeReconcileReadsReturnedReplacedAndClearedRegistriesWithoutASweep(): void
+    {
+        [$manager, $client] = $this->socketWithOwnedRow(false);
+        $origin = intdiv(hrtime(true), 1_000_000);
+        $client->now = $origin;
+        $life = new ReflectionProperty(WebSocketClient::class, 'liveness')->getValue($client);
+        foreach (['lastReceivedAtMs', 'nextPingAtMs', 'nextReconcileAtMs'] as $field) {
+            $observation = new ReflectionProperty(WebSocketLiveness::class, $field);
+            $observation->setValue($life, $observation->getValue($life) + $origin);
+        }
+        $loop = new EventLoop();
+        $client->attachEventLoop($loop, static function () use ($client): void {
+            $client->read();
+            $client->onTick();
+            $client->write();
+        });
+        $check = function () use ($life, $client, $loop, $origin): void {
+            new ReflectionProperty(WebSocketLiveness::class, 'nextReconcileAtMs')->setValue($life, $origin - 1);
+            new ReflectionMethod(WebSocketClient::class, 'rearmSocketWork')->invoke($client);
+            for ($pass = 0; $pass < 4; ++$pass) {
+                $loop->tick();
+            }
+            self::assertSame($origin + 50000,
+                new ReflectionProperty(WebSocketLiveness::class, 'nextReconcileAtMs')->getValue($life));
+            self::assertFalse($loop->hasReadyWork());
+        };
+        try {
+            $loop->tick();
+            $client->bringLivenessMomentToNow(WebSocketLivenessMoment::ProbablyOffline);
+            self::assertSame([true], $this->toldOwner($client, null));
+            $copy = Hilos::$rt;
+            Hilos::$rt = new LivenessTestBareRtContext();
+            Hilos::$rt->configure();
+            $check();
+            self::assertSame([], $this->toldOwner($client, null));
+            Hilos::$rt = $copy;
+            $check();
+            self::assertSame([true], $this->toldOwner($client, $manager));
+            self::assertTrue($this->connectionsRegistry()[$client->acceptKey]->probablyOffline);
+            self::assertSame([[StateHilosConnection::probablyOffline => true]], $this->queuedUpdateDiffs());
+            $this->arrangeOwner();
+            $this->registerOwnedRow($client->acceptKey, false);
+            $check();
+            self::assertSame([true], $this->toldOwner($client, $manager), 'A remounted registry cannot leave a captured old row');
+            self::assertSame([[StateHilosConnection::probablyOffline => true]], $this->queuedUpdateDiffs());
+            $this->writeFromBrowser($client, self::PONG);
+            for ($pass = 0; $pass < 4; ++$pass) {
+                $loop->tick();
+            }
+            self::assertSame([false], $this->toldOwner($client, null));
+            self::assertTrue($this->connectionsRegistry()[$client->acceptKey]->probablyOffline);
+            $check();
+            self::assertSame([false], $this->toldOwner($client, $manager));
+            self::assertSame([[StateHilosConnection::probablyOffline => false]], $this->queuedUpdateDiffs());
+            $check();
+            self::assertSame([], $this->toldOwner($client, $manager), 'An equal current row needs no repeat');
+            ExecutionContext::setCurrentAgentId(LivenessTestWorkerManager::OWNER_ID);
+            $this->connectionsRegistry()->actions->clear();
+            ExecutionContext::clear();
+            while (Hilos::$sr->getNextQueuedSignal() !== null) {
+            }
+            $check();
+            self::assertSame([], $this->toldOwner($client, null), 'A cleared registry is still reconciled on schedule');
+        } finally {
+            $client->detachEventLoop();
+            $loop->close();
+        }
     }
 
     /**

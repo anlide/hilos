@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncedDTO;
@@ -51,6 +53,7 @@ interface ProtectedModeCoordinator
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
      * @throws PeerTransportException When an acknowledgement cannot be built
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onSync(string $fromNodeId, PeerProtectedModeSyncDTO $frame): void;
 
@@ -70,6 +73,7 @@ interface ProtectedModeCoordinator
      * @throws PeerTransportException When a snapshot or acknowledgement is invalid
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function tickSlaveSync(int $now): void;
 
@@ -84,6 +88,7 @@ interface ProtectedModeCoordinator
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      * @throws PeerTransportException When the cluster descriptor has no barrier generation
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onEnable(string $fromNodeId, ProtectedModeEnableSignalData $data): void;
 
@@ -132,6 +137,7 @@ interface ProtectedModeCoordinator
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onQuiesce(string $fromNodeId, ProtectedModeQuiesceData $data): void;
 
@@ -271,6 +277,7 @@ interface ProtectedModeCoordinator
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      * @throws PeerTransportException When the cluster descriptor has no barrier generation
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onRefreeze(string $fromNodeId, string $agentType, ?int $agentIndex): void;
 }

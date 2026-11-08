@@ -72,7 +72,10 @@ services:
   # creates it for you, and a fresh checkout starts without one - the values
   # come from this stack and, for anything it does not name, from .env.example.
   online-testing-daemon-local:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../.env
         required: false
@@ -142,7 +145,10 @@ services:
         ipv4_address: ${DOCKER_DAEMON_IP:-10.203.0.11}
 
   online-testing-cli-local:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../.env
         required: false

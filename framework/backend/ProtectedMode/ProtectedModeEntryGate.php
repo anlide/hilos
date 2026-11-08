@@ -5,10 +5,15 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+use Hilos\Core\EventLoop\ReadyWork;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
+use WeakReference;
 
 /**
  * Holds a freeze request back until the lift before it has finished putting the roster together
@@ -50,8 +55,66 @@ final class ProtectedModeEntryGate
     /** @var ?ProtectedModeEnableSignalData Enable held until the roster settles, or null when none is */
     private ?ProtectedModeEnableSignalData $pendingEnable = null;
 
-    /** @var float Microtime the held enable arrived at */
+    /** @var float Monotonic seconds at admission, retained across loop bindings */
     private float $pendingSince = 0.0;
+
+    private ?float $pendingDeadline = null;
+
+    private ?EventLoopTimer $timer = null;
+
+    private ?ReadyWork $work = null;
+
+    private int $bindingGeneration = 0;
+
+    private bool $checkReady = false;
+
+    /**
+     * Rebinds native work without changing the held request or its original deadline.
+     * Native callbacks only cue; the ready portion runs under the master's normal guard.
+     *
+     * @param EventLoop $loop Existing master loop
+     * @throws EventLoopException When the original settle deadline cannot be armed
+     */
+    public function attachEventLoop(EventLoop $loop): void
+    {
+        $this->detachEventLoop();
+        $owner = WeakReference::create($this);
+        $generation = $this->bindingGeneration;
+        $this->work = $loop->createReadyWork(static function () use ($owner, $generation): void {
+            $gate = $owner->get();
+            if ($gate !== null && $gate->bindingGeneration === $generation) {
+                $gate->dispatchReady();
+            }
+        });
+        $this->timer = $loop->createTimer(static function () use ($owner, $generation): void {
+            $gate = $owner->get();
+            if ($gate !== null && $gate->bindingGeneration === $generation) {
+                $gate->noteRosterChanged();
+            }
+        });
+        $this->timer->armAt($this->pendingDeadline);
+        // Facts may have arrived while detached; one check covers that gap.
+        $this->noteRosterChanged();
+    }
+
+    /** Detaches only this binding; a held request remains held until reattachment or another request. */
+    public function detachEventLoop(): void
+    {
+        ++$this->bindingGeneration;
+        $this->timer?->close();
+        $this->timer = null;
+        $this->work?->close();
+        $this->work = null;
+    }
+
+    /** Coalesces actual starting-roster mutations; an idle gate schedules and reads nothing. */
+    public function noteRosterChanged(): void
+    {
+        if ($this->pendingEnable !== null) {
+            $this->checkReady = true;
+            $this->work?->markReady();
+        }
+    }
 
     /**
      * Takes one enable request, entering the freeze now or holding it until the roster settles.
@@ -62,12 +125,14 @@ final class ProtectedModeEntryGate
      * the order they were asked in.
      *
      * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
+     * @param ?float $now Explicit monotonic admission observation, current clock by default
+     * @throws EventLoopException When the settle deadline cannot be armed or canceled
      */
-    public function requestEnter(ProtectedModeEnableSignalData $data): void
+    public function requestEnter(ProtectedModeEnableSignalData $data, ?float $now = null): void
     {
         $held = $this->pendingEnable;
         if ($held !== null) {
-            $this->pendingEnable = null;
+            $this->consumePending();
             $this->enter($held);
             $this->enter($data);
 
@@ -88,7 +153,10 @@ final class ProtectedModeEntryGate
         }
 
         $this->pendingEnable = $data;
-        $this->pendingSince = microtime(true);
+        $this->pendingSince = $now ?? hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        $this->pendingDeadline = $this->pendingSince + self::SETTLE_DEADLINE_SECONDS;
+        $this->checkReady = false;
+        $this->timer?->armAt($this->pendingDeadline);
         Logger::info("Protected mode: holding the freeze for '{$data->operation}' until the roster settles -"
             . ' still starting: ' . implode(', ', $starting));
     }
@@ -96,20 +164,26 @@ final class ProtectedModeEntryGate
     /**
      * Enters a held freeze as soon as the roster settles, or once the hold has waited long enough.
      *
-     * Called once per daemon loop pass, which is also what makes the hold cost nothing when there
-     * is nothing held: the first line answers that case.
+     * A concrete worker report may consume the same cue inside its existing client guard,
+     * so a long burst releases the hold before its next frame. No per-frame probe is needed.
+     *
+     * @param ?float $now Explicit monotonic observation, current clock by default
+     * @throws EventLoopException When the original settle deadline cannot be armed or canceled
      */
-    public function tick(): void
+    public function dispatchReady(?float $now = null): void
     {
         $held = $this->pendingEnable;
-        if ($held === null) {
+        if ($held === null || !$this->checkReady) {
             return;
         }
 
+        $this->checkReady = false;
+        $this->work?->cancel();
+        $now ??= hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
         $starting = $this->agentsStillStarting();
-        $waitedMs = (int)round((microtime(true) - $this->pendingSince) * TimeConstants::MS_PER_SECOND);
+        $waitedMs = (int)round(($now - $this->pendingSince) * TimeConstants::MS_PER_SECOND);
         if ($starting === []) {
-            $this->pendingEnable = null;
+            $this->consumePending();
             Logger::info("Protected mode: the roster settled after {$waitedMs}ms, entering the freeze"
                 . " for '{$held->operation}'");
             $this->enter($held);
@@ -117,14 +191,26 @@ final class ProtectedModeEntryGate
             return;
         }
 
-        if ((microtime(true) - $this->pendingSince) < self::SETTLE_DEADLINE_SECONDS) {
+        if ($now < $this->pendingDeadline) {
+            $this->timer?->armAt($this->pendingDeadline);
             return;
         }
 
-        $this->pendingEnable = null;
+        $this->consumePending();
         Logger::warning("Protected mode: the roster did not settle in {$waitedMs}ms, entering the freeze"
             . " for '{$held->operation}' on top of: " . implode(', ', $starting));
         $this->enter($held);
+    }
+
+    /** @throws EventLoopException When canceling the consumed request's native deadline fails */
+    private function consumePending(): void
+    {
+        $this->pendingEnable = null;
+        $this->pendingSince = 0.0;
+        $this->pendingDeadline = null;
+        $this->checkReady = false;
+        $this->work?->cancel();
+        $this->timer?->armAt(null);
     }
 
     /**

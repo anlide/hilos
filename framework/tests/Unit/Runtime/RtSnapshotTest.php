@@ -5,12 +5,17 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Runtime;
 
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Hilos;
 use Hilos\Runtime\RtSnapshot;
+use Hilos\Runtime\RtSnapshotBasis;
+use Hilos\Runtime\RtSnapshotRead;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Context\RtContext;
 use PHPUnit\Framework\TestCase;
+use WeakReference;
 
 /**
  * The hand-over of a standalone RT item between nodes (HIL-586), and the rows of a set a node
@@ -135,6 +140,141 @@ final class RtSnapshotTest extends TestCase
         );
     }
 
+    public function testRowCandidatesCaptureBeforeAdvancementAndRejectReplacementAndRejoin(): void
+    {
+        $this->arrangeContext('Ada');
+        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::SETS);
+        RtSnapshot::replaceScope(RtSnapshotTestRtContext::SETS, ['b'], ['b' => ['id' => 'b', 'ownerId' => '42']]);
+        RtSnapshot::replaceScope(RtSnapshotTestRtContext::SETS, ['c'], []);
+        RtSnapshot::replaceScope(RtSnapshotTestRtContext::SETS, ['c'], ['c' => ['id' => 'c', 'ownerId' => '42']]);
+        RtSnapshot::replaceScope(RtSnapshotTestRtContext::SETS, ['late'], ['late' => ['id' => 'late', 'ownerId' => '42']]);
+
+        $this->assertSame(['a' => ['id' => 'a', 'ownerId' => '42'], 'b' => null], iterator_to_array($rows));
+        $this->assertSame(['a', 'b', 'c', 'late'], array_keys(iterator_to_array(RtSnapshot::rowCandidates(RtSnapshotTestRtContext::SETS))));
+    }
+
+    public function testDelayedSourceDiscoveryUsesTheOriginalCrossSourceRowAdmission(): void
+    {
+        $this->arrangeContext('Ada');
+        $basis = new RtSnapshotBasis();
+        RtSnapshot::replaceScope(RtSnapshotTestRtContext::SETS, ['b'], ['b' => ['id' => 'b', 'ownerId' => '7']]);
+        RtSnapshot::replaceScope(RtSnapshotTestRtContext::SETS, ['late'], ['late' => ['id' => 'late', 'ownerId' => '42']]);
+        $read = new RtSnapshotRead(RtSnapshotTestRtContext::SETS, basis: $basis);
+        $this->assertTrue($read->isCurrent());
+        $this->assertSame([
+            'a' => ['id' => 'a', 'ownerId' => '42'], 'b' => null,
+            'c' => ['id' => 'c', 'ownerId' => '42'], 'late' => null,
+        ], iterator_to_array($read->rows));
+        $this->assertSame(['a', 'b', 'c', 'late'], array_keys(RtSnapshot::rows(RtSnapshotTestRtContext::SETS)));
+    }
+
+    public function testRowCandidatesKeepNumericMapKeysAndSampleOriginalRowsOnce(): void
+    {
+        $context = $this->arrangeContext('Ada');
+        $states = $context->getStateCollection(RtSnapshotTestRtContext::SETS);
+        RtSnapshot::replace(RtSnapshotTestRtContext::SETS, [
+            '0' => ['id' => '0', 'ownerId' => '42'],
+            '07' => ['id' => '07', 'ownerId' => '42'],
+            '7' => ['id' => '7', 'ownerId' => '42'],
+        ]);
+        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::SETS);
+        $rows->rewind();
+        $this->assertSame('0', $rows->key());
+        $this->assertSame(['id' => '0', 'ownerId' => '42'], $rows->current());
+        $states->get('07')->applyDiff(['ownerId' => '7']);
+        $this->assertSame(RtSnapshot::rows(RtSnapshotTestRtContext::SETS), iterator_to_array($rows));
+    }
+
+    public function testClearInvalidatesAnUnadvancedCohortEvenWhenTheSameRowsReturn(): void
+    {
+        $context = $this->arrangeContext('Ada');
+        $states = $context->getStateCollection(RtSnapshotTestRtContext::SETS);
+        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::SETS);
+        $original = $states->get('a')->toArray();
+        RtSnapshot::replace(RtSnapshotTestRtContext::SETS, []);
+        RtSnapshot::replaceScope(RtSnapshotTestRtContext::SETS, ['a'], ['a' => $original]);
+        $this->assertSame([], iterator_to_array($rows));
+        $this->assertSame(['a' => ['id' => 'a', 'ownerId' => '42']], iterator_to_array($states->snapshotRows()));
+    }
+
+    public function testRowCandidatesDoNotRetainAnUnmountedRuntimeOrItsRowsWithoutGc(): void
+    {
+        $context = $this->arrangeContext('Ada');
+        $weakContext = WeakReference::create($context);
+        $weakSets = WeakReference::create($context->getStateCollection(RtSnapshotTestRtContext::SETS));
+        $weakState = WeakReference::create($context->getStateCollection(RtSnapshotTestRtContext::SETS)->get('b'));
+        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::SETS);
+        $rows->rewind();
+        Hilos::$rt = null;
+        unset($context);
+        $this->assertNull($weakContext->get());
+        $this->assertNull($weakSets->get());
+        $this->assertNull($weakState->get());
+        $rows->next();
+        $this->assertFalse($rows->valid());
+    }
+
+    public function testTheSameSourceCannotReenterAnOlderReadThroughRemountOrRebind(): void
+    {
+        $context = $this->arrangeContext('Ada');
+        $source = $context->getStateCollection(RtSnapshotTestRtContext::SETS);
+        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::SETS);
+        $context->mountFeatureCollection(RtSnapshotTestRtContext::SETS, $source);
+        $this->assertSame([], iterator_to_array($rows));
+        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::SETS);
+        $context->bindStateCollectionNames();
+        $this->assertSame([], iterator_to_array($rows));
+
+        $standalone = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::ITEM);
+        $context->mountFeatureItem(RtSnapshotTestRtContext::ITEM, $context->item);
+        $this->assertSame([], iterator_to_array($standalone));
+        $this->assertSame(
+            [RtSnapshotTestState::ID => ['id' => RtSnapshotTestState::ID, 'name' => 'Ada']],
+            iterator_to_array(RtSnapshot::rowCandidates(RtSnapshotTestRtContext::ITEM)),
+        );
+        SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(RtSnapshotTestRtContext::SETS));
+    }
+
+    public function testStandaloneRowCandidatesCaptureTheOriginalMountedItemBeforeAdvancement(): void
+    {
+        $context = $this->arrangeContext('Ada');
+        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::ITEM);
+        $this->assertSame(RtSnapshot::rows(RtSnapshotTestRtContext::ITEM), iterator_to_array($rows));
+        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::ITEM);
+        $replacement = $this->arrangeContext('Grace');
+        $this->assertSame([], iterator_to_array($rows));
+        $weak = WeakReference::create($replacement->item);
+        $unadvanced = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::ITEM);
+        Hilos::$rt = null;
+        unset($replacement);
+        $this->assertNull($weak->get());
+        $this->assertSame([], iterator_to_array($unadvanced));
+        $this->assertSame('Ada', $context->item->name);
+    }
+
+    public function testSparseRowCandidatesSerializeOneRowPerAdvancementAndNoRowsAtCapture(): void
+    {
+        $this->arrangeContext('Ada');
+        $initial = [];
+        for ($id = 0; $id < 8192; $id++) {
+            $initial[(string)$id] = ['id' => (string)$id, 'ownerId' => '42'];
+        }
+        RtSnapshot::replace(RtSnapshotTestRtContext::SETS, $initial);
+        RtSnapshot::replaceScope(RtSnapshotTestRtContext::SETS, array_map(strval(...), range(1, 8190)), []);
+        RtSnapshotTestSetState::$serializations = 0;
+        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::SETS);
+        $this->assertSame(0, RtSnapshotTestSetState::$serializations);
+        $rows->rewind();
+        $this->assertSame('0', $rows->key());
+        $this->assertSame(1, RtSnapshotTestSetState::$serializations);
+        $rows->next();
+        $this->assertSame('8191', $rows->key());
+        $this->assertSame(2, RtSnapshotTestSetState::$serializations);
+        $rows->next();
+        $this->assertFalse($rows->valid());
+        $this->assertSame(2, RtSnapshotTestSetState::$serializations);
+    }
+
     /**
      * Mounts the context these cases hand over.
      *
@@ -218,6 +358,8 @@ final class RtSnapshotTestSetState extends RtState
 
     public const string SET_VIA = self::ownerId;
 
+    public static int $serializations = 0;
+
     private(set) string $id = '';
 
     private(set) string $ownerId = '';
@@ -250,6 +392,7 @@ final class RtSnapshotTestSetState extends RtState
      */
     public function toArray(): array
     {
+        self::$serializations++;
         return [self::id => $this->id, self::ownerId => $this->ownerId];
     }
 }

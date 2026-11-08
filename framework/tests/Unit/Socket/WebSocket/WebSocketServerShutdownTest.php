@@ -78,7 +78,7 @@ final class WebSocketServerShutdownTestServer extends WebSocketServer
     /** @param WebSocketServerShutdownTestClient $client Browser held by this server */
     public function seedClient(WebSocketServerShutdownTestClient $client): void
     {
-        $this->clients[] = $client;
+        $this->addClient($client);
     }
 
     protected function onStart(): void

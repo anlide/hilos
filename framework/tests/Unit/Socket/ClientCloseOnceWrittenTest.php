@@ -29,6 +29,33 @@ final class ClientCloseOnceWrittenTest extends TestCase
         parent::tearDown();
     }
 
+    /** Native enqueue keeps the application buffer and close intent alive until the drain acknowledgement. */
+    public function testTlsCloseOnceWrittenWaitsForNativeDrain(): void
+    {
+        $fixture = new MutualTlsFixture();
+        $authority = $fixture->issueAuthority('Drain CA');
+        $trust = $fixture->trustFile($authority);
+        $exchange = new TlsTestExchange($fixture,
+            $fixture->issueNode('server', $authority), $fixture->issueNode('client', $authority), null, $trust);
+        $client = new TlsTestClient($exchange->sockets['accepting'], $exchange->transports['accepting']);
+        $exchange->bindClient('accepting', $client);
+        try {
+            $exchange->handshake();
+            $client->queue('farewell');
+            $client->closeOnceWritten();
+            $client->write();
+            $this->assertSame('farewell', $client->pendingOutbound());
+            $this->assertFalse($client->shouldClose(), 'enqueue is not native drain');
+            $exchange->runUntil(fn(): bool => $client->shouldClose() && $exchange->received['dialing'] === 'farewell');
+            $this->assertSame('', $client->pendingOutbound());
+            $this->assertSame('farewell', $exchange->received['dialing']);
+            $this->assertSame(0, $client->drains, 'closing does not call the keep-alive drain hook');
+        } finally {
+            $exchange->close();
+            $fixture->close();
+        }
+    }
+
     public function testAnEmptyBufferMarksTheClientForImmediateClose(): void
     {
         $client = $this->client();
@@ -72,8 +99,10 @@ final class ClientCloseOnceWrittenTest extends TestCase
 
             $this->assertSame(0, $client->processedReads);
             $this->assertSame('incomplete', $client->getReadBuffer());
-            $this->assertFalse((new PlainSocketTransport($client->getSocket()))->read(1));
-            $this->assertContains(socket_last_error($client->getSocket()), [SOCKET_EAGAIN, SOCKET_EWOULDBLOCK]);
+            $transport = new PlainSocketTransport($client->getSocket());
+            $this->assertSame('', $transport->read(1));
+            $this->assertSame(0, socket_last_error($client->getSocket()));
+            $this->assertFalse($transport->isEndOfStream());
             $this->assertFalse($client->shouldClose());
         } finally {
             $client->close();
@@ -215,7 +244,7 @@ final class ClientCloseOnceWrittenTestServer extends AbstractServer
     /** @param ClientCloseOnceWrittenTestClient $client Connected client to tick */
     public function seedClient(ClientCloseOnceWrittenTestClient $client): void
     {
-        $this->clients[] = $client;
+        $this->addClient($client);
     }
 
     /** @return string Server name for failures */

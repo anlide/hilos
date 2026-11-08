@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Closure;
 use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandChannelWindows;
@@ -13,6 +14,9 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Core\Daemon\CronFireTestRequests;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalData;
@@ -32,6 +36,7 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\Exception\SocketTlsHandshakeException;
 use Hilos\Socket\WebSocket\Liveness\WebSocketLivenessMoment;
 use Hilos\Utils\Logger;
 use Random\RandomException;
@@ -64,11 +69,15 @@ class CommandClient extends AbstractClient implements CommandClientInterface
     /** @var ?string Correlation id of the request held awaiting an agent reply, or null when not held */
     private ?string $heldCorrelationId = null;
 
-    /** @var float Start time (microtime) of the held request */
+    /** @var float Monotonic seconds when the held request began */
     private float $heldSince = 0.0;
 
     /** @var string Command name of the held request, so the trace of a mute one can name it */
     private string $heldCommand = '';
+
+    private ?float $heldDeadline = null;
+
+    private ?EventLoopTimer $heldTimer = null;
 
     /**
      * Create command client with socket and owning server.
@@ -84,7 +93,104 @@ class CommandClient extends AbstractClient implements CommandClientInterface
     }
 
     /**
-     * Parse command requests and either answer `ping` synchronously or park and route.
+     * Rebinding preserves the original hold; the timer only cues the guarded client portion.
+     *
+     * @param EventLoop $loop Owning master's native loop
+     * @param Closure(): void $wake Existing guarded read/tick/write portion
+     * @throws EventLoopException When the original held deadline cannot be armed
+     * @throws SocketTlsHandshakeException When a transport refuses binding to the native base
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+        parent::attachEventLoop($loop, $wake);
+        if ($this->socket === null) {
+            return;
+        }
+        $this->heldTimer = $loop->createTimer($this->markReady(...));
+        $this->heldTimer->armAt($this->heldDeadline);
+    }
+
+    /** Releases native and queued timer work without abandoning a live held request. */
+    public function detachEventLoop(): void
+    {
+        $this->heldTimer?->close();
+        $this->heldTimer = null;
+        parent::detachEventLoop();
+    }
+
+    /**
+     * Write an agent reply to the held connection and clear the held state.
+     *
+     * Says how long the round trip took, because that is the one number that separates the two
+     * ways this channel goes wrong: an agent that answered late and an agent that never answered
+     * at all look identical from the far end, where both arrive as silence (HIL-1000).
+     *
+     * @param CommandReplyDTO $reply Reply to write
+     * @throws EventLoopException When the held timer cannot be canceled
+     */
+    public function writeReply(CommandReplyDTO $reply): void
+    {
+        Logger::info("Command channel: answered {$this->traceOfHeldRequest()}");
+        $this->queueWrite($reply->toJson() . "\n");
+        $wasHeld = $this->heldCorrelationId !== null;
+        $this->heldCorrelationId = null;
+        $this->heldCommand = '';
+        $this->heldDeadline = null;
+        $this->heldTimer?->armAt(null);
+        if ($wasHeld) {
+            // A real release is one new parsing opportunity, even without another peer write.
+            $this->continueReadBuffer();
+        }
+    }
+
+    /**
+     * Fail a held request that has waited longer than {@see CommandChannelWindows::CHANNEL_HELD_SECONDS}.
+     *
+     * Given up on rather than forgotten: the caller stops waiting here, and a frame the master
+     * holds for a starting agent on this request's behalf is dropped with it (HIL-1040).
+     *
+     * @throws EventLoopException When releasing the held request cannot cancel its native deadline
+     */
+    public function onTick(): void
+    {
+        if ($this->heldCorrelationId === null) {
+            return;
+        }
+
+        if (hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND >= $this->heldDeadline) {
+            $correlationId = $this->heldCorrelationId;
+            // The outermost window, which nothing is meant to reach: whatever the request was
+            // routed to neither answered nor refused inside its own window.
+            Logger::warning("Command channel: gave up holding {$this->traceOfHeldRequest()}");
+            $this->server->abandon($correlationId);
+            $this->writeReply(CommandReplyDTO::error($correlationId, 'Command timed out'));
+        }
+    }
+
+    /**
+     * Drop the held request from the server registry on disconnect.
+     *
+     * A disconnect with a request still held is the caller having given up first, and it is
+     * written down for that reason: from here on the reply, whenever it arrives, has nowhere to
+     * go, and the only account of the request that ever existed is this line. It is also the
+     * moment a frame held for a starting agent on this request's behalf stops being owed to
+     * anybody, which the master is told through the same door (HIL-1040).
+     *
+     * @throws EventLoopException When the master cannot rearm remaining command deadlines
+     */
+    protected function onClose(): void
+    {
+        if ($this->heldCorrelationId !== null) {
+            Logger::warning("Command channel: the caller left while holding {$this->traceOfHeldRequest()}");
+            $this->server->abandon($this->heldCorrelationId);
+            $this->heldCorrelationId = null;
+            $this->heldCommand = '';
+            $this->heldDeadline = null;
+        }
+    }
+
+    /**
+     * Parse a bounded portion of requests; a held command blocks every following request.
      *
      * @throws SocketException When the read buffer or JSON depth exceeds limits
      * @throws HilosException When a decoded command line refuses to become a DTO at all
@@ -98,10 +204,10 @@ class CommandClient extends AbstractClient implements CommandClientInterface
             return;
         }
 
-        while ($this->readBuffer !== '') {
-            $message = $this->extractCompleteJsonMessage($this->readBuffer);
+        for ($processed = 0; $this->readBuffer !== ''; ++$processed) {
+            $message = $this->extractReadBufferJsonMessage($processed);
             if ($message === null) {
-                // Incomplete message, wait for more data
+                // Incomplete input waits for bytes; a complete remainder already owes a portion.
                 break;
             }
 
@@ -120,18 +226,18 @@ class CommandClient extends AbstractClient implements CommandClientInterface
             try {
                 $request = CommandRequestDTO::fromJson($message);
             } catch (InvalidFormatException) {
-                $this->writeBuffer .= CommandReplyDTO::error(
+                $this->queueWrite(CommandReplyDTO::error(
                     self::correlationIdOf($message),
                     'Command request must carry a correlation id and a command name',
-                )->toJson() . "\n";
+                )->toJson() . "\n");
                 continue;
             }
 
             if ($request->correlationId === '' || $request->command === '') {
-                $this->writeBuffer .= CommandReplyDTO::error(
+                $this->queueWrite(CommandReplyDTO::error(
                     $request->correlationId,
                     'Command request must carry a correlation id and a command name',
-                )->toJson() . "\n";
+                )->toJson() . "\n");
                 continue;
             }
 
@@ -144,15 +250,15 @@ class CommandClient extends AbstractClient implements CommandClientInterface
             // different answers.
             if (TestOnlyCommandRegistry::isTestOnly($request->command) && !NonProductionGate::admitted()) {
                 Logger::warning("Refused test-only command {$request->command}: APP_ENV is production-like or unset");
-                $this->writeBuffer .= CommandReplyDTO::error(
+                $this->queueWrite(CommandReplyDTO::error(
                     $request->correlationId,
                     TestOnlyCommandOnProductionException::message($request->command),
-                )->toJson() . "\n";
+                )->toJson() . "\n");
                 continue;
             }
 
             if ($request->command === CommandConstants::COMMAND_PING) {
-                $this->writeBuffer .= CommandReplyDTO::ok($request->correlationId, $request->payload)->toJson() . "\n";
+                $this->queueWrite(CommandReplyDTO::ok($request->correlationId, $request->payload)->toJson() . "\n");
                 continue;
             }
 
@@ -164,7 +270,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 $reply = $snapshot === null
                     ? CommandReplyDTO::error($request->correlationId, 'This daemon reports no status')
                     : CommandReplyDTO::ok($request->correlationId, $snapshot->toArray());
-                $this->writeBuffer .= $reply->toJson() . "\n";
+                $this->queueWrite($reply->toJson() . "\n");
                 continue;
             }
 
@@ -175,7 +281,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 } catch (HilosException $e) {
                     $reply = CommandReplyDTO::error($request->correlationId, $e->getMessage());
                 }
-                $this->writeBuffer .= $reply->toJson() . "\n";
+                $this->queueWrite($reply->toJson() . "\n");
                 continue;
             }
 
@@ -190,7 +296,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 } catch (HilosException $e) {
                     $reply = CommandReplyDTO::error($request->correlationId, $e->getMessage());
                 }
-                $this->writeBuffer .= $reply->toJson() . "\n";
+                $this->queueWrite($reply->toJson() . "\n");
                 continue;
             }
 
@@ -200,7 +306,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 } catch (HilosException $e) {
                     $reply = CommandReplyDTO::error($request->correlationId, $e->getMessage());
                 }
-                $this->writeBuffer .= $reply->toJson() . "\n";
+                $this->queueWrite($reply->toJson() . "\n");
                 continue;
             }
 
@@ -212,14 +318,14 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 } catch (HilosException $e) {
                     $reply = CommandReplyDTO::error($request->correlationId, $e->getMessage());
                 }
-                $this->writeBuffer .= $reply->toJson() . "\n";
+                $this->queueWrite($reply->toJson() . "\n");
                 continue;
             }
 
             if ($request->command === CliCommands::CLUSTER_TEST_CLOCK_SHIFT) {
                 // Test-only: change the local clock probe answer, held by the master process.
                 $reply = $this->answerClockShift($request);
-                $this->writeBuffer .= $reply->toJson() . "\n";
+                $this->queueWrite($reply->toJson() . "\n");
                 continue;
             }
 
@@ -231,7 +337,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 // is the only way to give the mesh a browser to argue about; everything past
                 // the socket - the announcement, the lookup, the forward - is the real path.
                 $reply = $this->answerClientAttachment($request);
-                $this->writeBuffer .= $reply->toJson() . "\n";
+                $this->queueWrite($reply->toJson() . "\n");
                 continue;
             }
 
@@ -243,7 +349,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 // node it belongs to. Answered here rather than parked, because the point is the
                 // master's own routing and no agent stands behind these commands to park them at.
                 $reply = $this->answerClientSignal($request);
-                $this->writeBuffer .= $reply->toJson() . "\n";
+                $this->queueWrite($reply->toJson() . "\n");
                 continue;
             }
 
@@ -253,7 +359,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 // reason the client signals above are - what is being exercised is the master's
                 // own dispatch, and no agent stands behind these commands to park them at.
                 $reply = $this->answerDbAnnounce($request);
-                $this->writeBuffer .= $reply->toJson() . "\n";
+                $this->queueWrite($reply->toJson() . "\n");
                 continue;
             }
 
@@ -263,7 +369,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 // Answered here rather than parked for the plainest of reasons: the agent it asks
                 // for is not running, so there is nobody to park it at.
                 $reply = $this->answerAgentPlace($request);
-                $this->writeBuffer .= $reply->toJson() . "\n";
+                $this->queueWrite($reply->toJson() . "\n");
                 continue;
             }
 
@@ -278,7 +384,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 } catch (HilosException $e) {
                     $reply = CommandReplyDTO::error($request->correlationId, $e->getMessage());
                 }
-                $this->writeBuffer .= $reply->toJson() . "\n";
+                $this->queueWrite($reply->toJson() . "\n");
                 continue;
             }
 
@@ -300,7 +406,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                         $reply = CommandReplyDTO::error($request->correlationId, $e->getMessage());
                     }
                 }
-                $this->writeBuffer .= $reply->toJson() . "\n";
+                $this->queueWrite($reply->toJson() . "\n");
                 continue;
             }
 
@@ -309,7 +415,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 // keeps their liveness on the spot. Answered here rather than parked, because the
                 // sockets and their clocks are the master's own and no agent holds them.
                 $reply = $this->answerConnectionLiveness($request);
-                $this->writeBuffer .= $reply->toJson() . "\n";
+                $this->queueWrite($reply->toJson() . "\n");
                 continue;
             }
 
@@ -318,7 +424,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 // (HIL-1020). Answered here rather than parked, because the lag is a row of the
                 // master's own runtime state and no agent owns it.
                 $reply = $this->answerTableLag($request);
-                $this->writeBuffer .= $reply->toJson() . "\n";
+                $this->queueWrite($reply->toJson() . "\n");
                 continue;
             }
 
@@ -327,7 +433,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 // rather than parked, because the refused table is a row of the master's own runtime
                 // state and no agent owns it.
                 $reply = $this->answerTableRefusal($request);
-                $this->writeBuffer .= $reply->toJson() . "\n";
+                $this->queueWrite($reply->toJson() . "\n");
                 continue;
             }
 
@@ -336,23 +442,20 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 // Answered here rather than parked, because the mode is a row of the master's own
                 // runtime state and no agent owns it; refused on a node of a cluster (HIL-1274).
                 $reply = $this->answerAdminViewMode($request);
-                $this->writeBuffer .= $reply->toJson() . "\n";
+                $this->queueWrite($reply->toJson() . "\n");
                 continue;
             }
 
             if ($request->command === CliCommands::ORM_TEST_FORGET) {
                 $door = $this->server->testOrmForgetDoor();
                 if ($door === null) {
-                    $this->writeBuffer .= CommandReplyDTO::error(
+                    $this->queueWrite(CommandReplyDTO::error(
                         $request->correlationId,
                         'This daemon has no ORM forget door',
-                    )->toJson() . "\n";
+                    )->toJson() . "\n");
                     continue;
                 }
-                $this->heldCorrelationId = $request->correlationId;
-                $this->heldSince = microtime(true);
-                $this->heldCommand = $request->command;
-                $this->server->hold($request->correlationId, $this);
+                $this->hold($request);
                 $door->requestOrmForget($request);
                 return;
             }
@@ -362,16 +465,13 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 // frames first and asks its node agent only once the process roster has gone out.
                 $door = $this->server->daemonNodeReportTestDoor();
                 if ($door === null) {
-                    $this->writeBuffer .= CommandReplyDTO::error(
+                    $this->queueWrite(CommandReplyDTO::error(
                         $request->correlationId,
                         'This daemon has no Daemon node report door',
-                    )->toJson() . "\n";
+                    )->toJson() . "\n");
                     continue;
                 }
-                $this->heldCorrelationId = $request->correlationId;
-                $this->heldSince = microtime(true);
-                $this->heldCommand = $request->command;
-                $this->server->hold($request->correlationId, $this);
+                $this->hold($request);
                 $door->requestNodeReport($request);
                 return;
             }
@@ -379,16 +479,13 @@ class CommandClient extends AbstractClient implements CommandClientInterface
             if ($request->command === CliCommands::CRON_TEST_PAUSE || $request->command === CliCommands::CRON_TEST_CANCEL_PAUSE) {
                 $door = $this->server->cronFireTestDoor();
                 if ($door === null) {
-                    $this->writeBuffer .= CommandReplyDTO::error(
+                    $this->queueWrite(CommandReplyDTO::error(
                         $request->correlationId,
                         'This daemon has no cron schedule door',
-                    )->toJson() . "\n";
+                    )->toJson() . "\n");
                     continue;
                 }
-                $this->heldCorrelationId = $request->correlationId;
-                $this->heldSince = microtime(true);
-                $this->heldCommand = $request->command;
-                $this->server->hold($request->correlationId, $this);
+                $this->hold($request);
                 $door->requestCronSchedule($request);
                 return;
             }
@@ -399,10 +496,10 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 // answer comes after the tick that fired it.
                 $door = $this->server->cronFireTestDoor();
                 if ($door === null) {
-                    $this->writeBuffer .= CommandReplyDTO::error(
+                    $this->queueWrite(CommandReplyDTO::error(
                         $request->correlationId,
                         'This daemon has no cron fire door',
-                    )->toJson() . "\n";
+                    )->toJson() . "\n");
                     continue;
                 }
                 $agentId = $request->payload[CommandConstants::FIELD_AGENT_ID] ?? null;
@@ -410,16 +507,13 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 if (!array_key_exists(CommandConstants::FIELD_AGENT_ID, $request->payload)
                     || ($agentId !== null && (!is_string($agentId) || $agentId === ''))
                     || !is_string($ruleName) || $ruleName === '') {
-                    $this->writeBuffer .= CommandReplyDTO::error(
+                    $this->queueWrite(CommandReplyDTO::error(
                         $request->correlationId,
                         CronFireTestRequests::INVALID_PAYLOAD,
-                    )->toJson() . "\n";
+                    )->toJson() . "\n");
                     continue;
                 }
-                $this->heldCorrelationId = $request->correlationId;
-                $this->heldSince = microtime(true);
-                $this->heldCommand = $request->command;
-                $this->server->hold($request->correlationId, $this);
+                $this->hold($request);
                 $door->requestCronFire($request);
                 return;
             }
@@ -427,17 +521,14 @@ class CommandClient extends AbstractClient implements CommandClientInterface
             if ($request->command === CliCommands::AGENT_RESTART) {
                 $door = $this->server->agentRestartDoor();
                 if ($door === null) {
-                    $this->writeBuffer .= CommandReplyDTO::error(
+                    $this->queueWrite(CommandReplyDTO::error(
                         $request->correlationId,
                         'This daemon restarts no agents',
-                    )->toJson() . "\n";
+                    )->toJson() . "\n");
                     continue;
                 }
 
-                $this->heldCorrelationId = $request->correlationId;
-                $this->heldSince = microtime(true);
-                $this->heldCommand = $request->command;
-                $this->server->hold($request->correlationId, $this);
+                $this->hold($request);
                 $door->requestAgentRestart($request->withOriginNodeId(
                     Hilos::$cluster?->isEnabled() === true ? Hilos::$cluster->localNodeId() : null,
                 ));
@@ -446,10 +537,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
             }
 
             // Async: park, then route to the owning agent; the reply returns via writeReply().
-            $this->heldCorrelationId = $request->correlationId;
-            $this->heldSince = microtime(true);
-            $this->heldCommand = $request->command;
-            $this->server->hold($request->correlationId, $this);
+            $this->hold($request);
             Logger::info("Command channel: parked {$request->command} #{$request->correlationId} for its agent");
             Hilos::$sr->queueSignal(
                 signalSource: new SignalSource(SignalSource::DAEMON),
@@ -462,6 +550,22 @@ class CommandClient extends AbstractClient implements CommandClientInterface
 
             return;
         }
+    }
+
+    /**
+     * Install the hold before a door can answer synchronously.
+     *
+     * @param CommandRequestDTO $request Newly held command
+     * @throws EventLoopException When the original channel deadline cannot be armed
+     */
+    private function hold(CommandRequestDTO $request): void
+    {
+        $this->heldCorrelationId = $request->correlationId;
+        $this->heldSince = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        $this->heldDeadline = $this->heldSince + CommandChannelWindows::CHANNEL_HELD_SECONDS;
+        $this->heldCommand = $request->command;
+        $this->server->hold($request->correlationId, $this);
+        $this->heldTimer?->armAt($this->heldDeadline);
     }
 
     /**
@@ -844,64 +948,6 @@ class CommandClient extends AbstractClient implements CommandClientInterface
     }
 
     /**
-     * Write an agent reply to the held connection and clear the held state.
-     *
-     * Says how long the round trip took, because that is the one number that separates the two
-     * ways this channel goes wrong: an agent that answered late and an agent that never answered
-     * at all look identical from the far end, where both arrive as silence (HIL-1000).
-     *
-     * @param CommandReplyDTO $reply Reply to write
-     */
-    public function writeReply(CommandReplyDTO $reply): void
-    {
-        Logger::info("Command channel: answered {$this->traceOfHeldRequest()}");
-        $this->writeBuffer .= $reply->toJson() . "\n";
-        $this->heldCorrelationId = null;
-        $this->heldCommand = '';
-    }
-
-    /**
-     * Fail a held request that has waited longer than {@see CommandChannelWindows::CHANNEL_HELD_SECONDS}.
-     *
-     * Given up on rather than forgotten: the caller stops waiting here, and a frame the master
-     * holds for a starting agent on this request's behalf is dropped with it (HIL-1040).
-     */
-    public function onTick(): void
-    {
-        if ($this->heldCorrelationId === null) {
-            return;
-        }
-
-        if ((microtime(true) - $this->heldSince) >= CommandChannelWindows::CHANNEL_HELD_SECONDS) {
-            $correlationId = $this->heldCorrelationId;
-            // The outermost window, which nothing is meant to reach: whatever the request was
-            // routed to neither answered nor refused inside its own window.
-            Logger::warning("Command channel: gave up holding {$this->traceOfHeldRequest()}");
-            $this->server->abandon($correlationId);
-            $this->writeReply(CommandReplyDTO::error($correlationId, 'Command timed out'));
-        }
-    }
-
-    /**
-     * Drop the held request from the server registry on disconnect.
-     *
-     * A disconnect with a request still held is the caller having given up first, and it is
-     * written down for that reason: from here on the reply, whenever it arrives, has nowhere to
-     * go, and the only account of the request that ever existed is this line. It is also the
-     * moment a frame held for a starting agent on this request's behalf stops being owed to
-     * anybody, which the master is told through the same door (HIL-1040).
-     */
-    protected function onClose(): void
-    {
-        if ($this->heldCorrelationId !== null) {
-            Logger::warning("Command channel: the caller left while holding {$this->traceOfHeldRequest()}");
-            $this->server->abandon($this->heldCorrelationId);
-            $this->heldCorrelationId = null;
-            $this->heldCommand = '';
-        }
-    }
-
-    /**
      * Names the held request the way every line of the channel's trace names one.
      *
      * One spelling for all of them, so a mute command is read by grepping its correlation id and
@@ -911,7 +957,8 @@ class CommandClient extends AbstractClient implements CommandClientInterface
      */
     private function traceOfHeldRequest(): string
     {
-        $heldMs = (int)round((microtime(true) - $this->heldSince) * TimeConstants::MS_PER_SECOND);
+        $heldMs = (int)round((hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND
+            - $this->heldSince) * TimeConstants::MS_PER_SECOND);
 
         return "{$this->heldCommand} #{$this->heldCorrelationId} after {$heldMs}ms";
     }

@@ -19,6 +19,8 @@ use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\DaemonNodeReportTestRequests;
 use Hilos\Core\Daemon\MasterSignalSender;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\DaemonSection\DaemonWorkerPicture;
@@ -98,7 +100,7 @@ final class DaemonNodeReportTestRequestsTest extends TestCase
     {
         $this->environment('prod');
 
-        $this->requests->request($this->ask('c-1'), 100.0);
+        $this->requests->request($this->ask('c-1'), 100.0, 100.0);
 
         $this->assertRefusedAtOnce('c-1', "Test-only command 'test:daemon:node:report' is refused: APP_ENV is production-like or unset");
         self::assertSame(
@@ -113,7 +115,7 @@ final class DaemonNodeReportTestRequestsTest extends TestCase
         $runtime->hilosProtectedModeRuntime->phase = StateProtectedModeRuntime::PHASE_ACTIVE;
         Hilos::$rt = $runtime;
 
-        $this->requests->request($this->ask('c-2'), 100.0);
+        $this->requests->request($this->ask('c-2'), 100.0, 100.0);
 
         $this->assertRefusedAtOnce('c-2', 'No Daemon node report during protected mode.');
     }
@@ -122,21 +124,21 @@ final class DaemonNodeReportTestRequestsTest extends TestCase
     {
         $this->agents->started = false;
 
-        $this->requests->request($this->ask('c-3'), 100.0);
+        $this->requests->request($this->ask('c-3'), 100.0, 100.0);
 
         $this->assertRefusedAtOnce('c-3', 'The Daemon node agent is not running on this node.');
     }
 
     public function testARosterSentBeforeTheAskDoesNotAnswerIt(): void
     {
-        $this->requests->request($this->ask('c-4'), 100.0);
+        $this->requests->request($this->ask('c-4'), 100.0, 100.0);
         self::assertSame(1, $this->forced);
 
-        $this->requests->dispatchDue(0.0);
-        $this->requests->dispatchDue(99.9);
+        $this->requests->dispatchDue(0.0, 100.5);
+        $this->requests->dispatchDue(99.9, 100.5);
         self::assertSame([], $this->signals->sent);
 
-        $this->requests->dispatchDue(100.0);
+        $this->requests->dispatchDue(100.0, 100.5);
         self::assertCount(1, $this->signals->sent);
         self::assertSame(HilosSignalConstants::DAEMON_MASTER_REPORT_NOW, $this->signals->sent[0][2]);
         self::assertSame([], $this->replies, 'The node agent answers the console, not the master');
@@ -144,8 +146,8 @@ final class DaemonNodeReportTestRequestsTest extends TestCase
 
     public function testAFailedRosterAnswersEveryWait(): void
     {
-        $this->requests->request($this->ask('c-5'), 100.0);
-        $this->requests->request($this->ask('c-6'), 100.2);
+        $this->requests->request($this->ask('c-5'), 100.0, 100.0);
+        $this->requests->request($this->ask('c-6'), 100.2, 100.2);
 
         $this->requests->fail('The node could not build its process roster: LogicException: no workers');
 
@@ -157,13 +159,13 @@ final class DaemonNodeReportTestRequestsTest extends TestCase
                 $reply->payload[CommandConstants::FIELD_MESSAGE] ?? null,
             );
         }
-        $this->requests->dispatchDue(200.0);
+        $this->requests->dispatchDue(200.0, 100.5);
         self::assertSame([], $this->signals->sent);
     }
 
     public function testAnUnansweredWaitEndsAtTheAgentWindow(): void
     {
-        $this->requests->request($this->ask('c-7'), 100.0);
+        $this->requests->request($this->ask('c-7'), 100.0, 100.0);
 
         $this->requests->tick(100.0 + CommandChannelWindows::AGENT_WAIT_SECONDS - 0.1);
         self::assertSame([], $this->replies);
@@ -173,29 +175,127 @@ final class DaemonNodeReportTestRequestsTest extends TestCase
         self::assertSame('c-7', $this->replies[0]->correlationId);
         self::assertSame('The Daemon node agent did not report in time.', $this->replies[0]->payload[CommandConstants::FIELD_MESSAGE] ?? null);
 
-        $this->requests->dispatchDue(200.0);
+        $this->requests->dispatchDue(200.0, 100.5);
         self::assertSame([], $this->signals->sent);
     }
 
     public function testACallerWhoLeftIsNeitherAskedForNorAnswered(): void
     {
-        $this->requests->request($this->ask('c-8'), 100.0);
+        $this->requests->request($this->ask('c-8'), 100.0, 100.0);
 
         $this->requests->abandon('c-8');
-        $this->requests->dispatchDue(100.0);
+        $this->requests->dispatchDue(100.0, 100.5);
         $this->requests->tick(200.0);
 
         self::assertSame([], $this->signals->sent);
         self::assertSame([], $this->replies);
     }
 
+    public function testRemovingTheEarliestWaitMovesTheDeadlineToTheNextLiveAsk(): void
+    {
+        $this->requests->request($this->ask('first'), 100.0, 100.0);
+        $this->requests->request($this->ask('second'), 102.0, 102.0);
+
+        $this->requests->abandon('first');
+
+        self::assertSame(
+            102.0 + CommandChannelWindows::AGENT_WAIT_SECONDS,
+            new ReflectionProperty(DaemonNodeReportTestRequests::class, 'nextDeadline')->getValue($this->requests),
+        );
+        $this->requests->abandon('second');
+        self::assertSame(INF, new ReflectionProperty(DaemonNodeReportTestRequests::class, 'nextDeadline')->getValue($this->requests));
+    }
+
+    public function testEpochOrderingAndMonotonicDeadlineStaySeparateAcrossRebind(): void
+    {
+        $loop = new EventLoop();
+        $other = new EventLoop();
+        $wakes = 0;
+        $wake = static function () use (&$wakes): void {
+            ++$wakes;
+        };
+        $now = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        try {
+            $this->requests->attachEventLoop($loop, $wake);
+            $this->requests->request($this->ask('first'), 1_767_225_600.0, $now);
+            $this->requests->request($this->ask('second'), 1_767_225_601.0, $now + 2);
+            $old = new ReflectionProperty(DaemonNodeReportTestRequests::class, 'deadlineTimer')->getValue($this->requests);
+            self::assertSame($now + CommandChannelWindows::AGENT_WAIT_SECONDS, $old->getDeadline());
+            $this->requests->dispatchDue(1_767_225_600.0, $now + 1);
+            self::assertCount(1, $this->signals->sent);
+            $deadline = $now + 2 + CommandChannelWindows::AGENT_WAIT_SECONDS;
+            self::assertSame($deadline, $old->getDeadline());
+            $this->requests->attachEventLoop($other, $wake);
+            $timer = new ReflectionProperty(DaemonNodeReportTestRequests::class, 'deadlineTimer')->getValue($this->requests);
+            self::assertSame($deadline, $timer->getDeadline());
+            self::assertNull($old->getDeadline());
+            $loop->tick();
+            $other->tick();
+            self::assertSame(0, $wakes);
+            $this->requests->dispatchDue(1_767_225_601.0, $now + 3);
+            self::assertCount(2, $this->signals->sent);
+            self::assertNull($timer->getDeadline());
+            self::assertSame([], $this->replies);
+        } finally {
+            $this->requests->detachEventLoop();
+            $loop->close();
+            $other->close();
+        }
+    }
+
+    public function testManagerRebindingPreservesOverdueWaitsButCancelsTheOldCue(): void
+    {
+        $manager = new NodeReportTestDaemonManager();
+        $loop = new EventLoop();
+        $other = new EventLoop();
+        $owner = new ReflectionProperty(DaemonManager::class, 'daemonNodeReportTestRequests')->getValue($manager);
+        $due = new ReflectionProperty(DaemonManager::class, 'nodeReportDeadlineDue');
+        try {
+            new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($manager, $loop);
+            new ReflectionMethod(DaemonManager::class, 'attachCommandRequestEventLoop')->invoke($manager);
+            $now = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+            $owner->request($this->ask('expired'), 1_767_225_600.0, $now - CommandChannelWindows::AGENT_WAIT_SECONDS);
+            for ($pass = 0; $pass < 4; ++$pass) {
+                $loop->tick();
+            }
+            self::assertTrue($due->getValue($manager));
+            self::assertNotSame([], new ReflectionProperty(DaemonNodeReportTestRequests::class, 'deadlines')->getValue($owner));
+            new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($manager, $other);
+            new ReflectionMethod(DaemonManager::class, 'attachCommandRequestEventLoop')->invoke($manager);
+            self::assertFalse($due->getValue($manager));
+            $loop->tick();
+            self::assertFalse($due->getValue($manager), 'The retired binding cannot cue this manager');
+            for ($pass = 0; $pass < 4; ++$pass) {
+                $other->tick();
+            }
+            self::assertTrue($due->getValue($manager));
+            new ReflectionMethod(DaemonManager::class, 'dispatchCommandRequestDeadlines')->invoke($manager);
+            self::assertFalse($due->getValue($manager));
+            self::assertSame([], new ReflectionProperty(DaemonNodeReportTestRequests::class, 'deadlines')->getValue($owner));
+            self::assertFalse($other->hasReadyWork());
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'detachCommandRequestEventLoop')->invoke($manager);
+            $loop->close();
+            $other->close();
+        }
+    }
+
+    public function testRosterCompletionCannotForwardAnExpiredWaitBeforeTheTimerPortion(): void
+    {
+        $this->requests->request($this->ask('expired'), 1_767_225_600.0, 100.0);
+        $this->requests->dispatchDue(1_767_225_600.0, 100.0 + CommandChannelWindows::AGENT_WAIT_SECONDS);
+        self::assertSame([], $this->signals->sent);
+        self::assertCount(1, $this->replies);
+        self::assertSame('The Daemon node agent did not report in time.', $this->replies[0]->payload[CommandConstants::FIELD_MESSAGE]);
+    }
+
     public function testTwoAsksGetTwoSignals(): void
     {
-        $this->requests->request($this->ask('c-9'), 100.0);
-        $this->requests->request($this->ask('c-10'), 100.0);
+        $this->requests->request($this->ask('c-9'), 100.0, 100.0);
+        $this->requests->request($this->ask('c-10'), 100.0, 100.0);
 
-        $this->requests->dispatchDue(100.0);
-        $this->requests->dispatchDue(100.5);
+        $this->requests->dispatchDue(100.0, 100.5);
+        $this->requests->dispatchDue(100.5, 100.5);
 
         self::assertCount(2, $this->signals->sent);
         $asked = [];
@@ -213,16 +313,16 @@ final class DaemonNodeReportTestRequestsTest extends TestCase
     /** A correlation of digits only is kept under an int key; the signal to the node agent still names it as a string. */
     public function testADigitOnlyCorrelationIsNamedByTheSignalToTheNodeAgent(): void
     {
-        $this->requests->request($this->ask('1234567890123456'), 100.0);
+        $this->requests->request($this->ask('1234567890123456'), 100.0, 100.0);
 
-        $this->requests->dispatchDue(100.0);
+        $this->requests->dispatchDue(100.0, 100.5);
 
         self::assertCount(1, $this->signals->sent);
         $data = $this->signals->sent[0][3];
         self::assertInstanceOf(DaemonMasterReportNowSignalData::class, $data);
         self::assertSame('1234567890123456', $data->correlationId);
         self::assertSame([], $this->replies, 'The node agent answers the console, not the master');
-        $this->requests->dispatchDue(200.0);
+        $this->requests->dispatchDue(200.0, 100.5);
         $this->requests->tick(200.0);
         self::assertCount(1, $this->signals->sent);
         self::assertSame([], $this->replies);
@@ -231,8 +331,8 @@ final class DaemonNodeReportTestRequestsTest extends TestCase
     /** A correlation of digits only is kept under an int key; the failed roster still names it as a string. */
     public function testADigitOnlyCorrelationIsAnsweredByAFailedRoster(): void
     {
-        $this->requests->request($this->ask('1234567890123456'), 100.0);
-        $this->requests->request($this->ask('6543210987654321'), 100.2);
+        $this->requests->request($this->ask('1234567890123456'), 100.0, 100.0);
+        $this->requests->request($this->ask('6543210987654321'), 100.2, 100.2);
 
         $this->requests->fail('The node could not build its process roster: LogicException: no workers');
 
@@ -247,14 +347,14 @@ final class DaemonNodeReportTestRequestsTest extends TestCase
                 $reply->payload[CommandConstants::FIELD_MESSAGE] ?? null,
             );
         }
-        $this->requests->dispatchDue(200.0);
+        $this->requests->dispatchDue(200.0, 100.5);
         self::assertSame([], $this->signals->sent);
     }
 
     /** A correlation of digits only is kept under an int key; the agent window still names it as a string. */
     public function testADigitOnlyCorrelationIsAnsweredByTheAgentWindow(): void
     {
-        $this->requests->request($this->ask('1234567890123456'), 100.0);
+        $this->requests->request($this->ask('1234567890123456'), 100.0, 100.0);
 
         $this->requests->tick(100.0 + CommandChannelWindows::AGENT_WAIT_SECONDS);
 
@@ -262,7 +362,7 @@ final class DaemonNodeReportTestRequestsTest extends TestCase
         self::assertSame('1234567890123456', $this->replies[0]->correlationId);
         self::assertFalse($this->replies[0]->isOk());
         self::assertSame('The Daemon node agent did not report in time.', $this->replies[0]->payload[CommandConstants::FIELD_MESSAGE] ?? null);
-        $this->requests->dispatchDue(200.0);
+        $this->requests->dispatchDue(200.0, 100.5);
         self::assertSame([], $this->signals->sent);
     }
 
@@ -277,27 +377,45 @@ final class DaemonNodeReportTestRequestsTest extends TestCase
     {
         $manager = new NodeReportTestDaemonManager();
         $server = $manager->addWorkers(150);
-        $manager->passAt(100.0);
-        $manager->passAt(100.1);
-        self::assertSame(1, $server->count(HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER));
+        $loop = new EventLoop();
+        new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($manager, $loop);
+        new ReflectionMethod(DaemonManager::class, 'attachProcessRosterEventLoop')->invoke($manager);
+        new ReflectionMethod(DaemonManager::class, 'attachReportFramesEventLoop')->invoke($manager);
+        new ReflectionMethod(DaemonManager::class, 'attachMeasurementsEventLoop')->invoke($manager);
+        try {
+            $manager->pass();
+            self::assertTrue($loop->hasReadyWork(), 'The second portion needs no incoming frame');
+            $manager->pass();
+            self::assertSame(1, $server->count(HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER));
 
-        $manager->askDuringPassAt(101.0, $this->ask('c-11'));
-        self::assertSame(1, $server->count(HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER));
-        self::assertSame(0, $server->count(HilosSignalConstants::DAEMON_MASTER_REPORT_NOW));
+            $manager->askDuringPass($this->ask('c-11'));
+            self::assertSame(1, $server->count(HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER));
+            self::assertSame(0, $server->count(HilosSignalConstants::DAEMON_MASTER_REPORT_NOW));
 
-        $manager->passAt(101.1);
-        self::assertSame(2, $server->count(HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER));
-        self::assertSame(1, $server->count(HilosSignalConstants::DAEMON_MASTER_REPORT_NOW));
-        $last = array_key_last($server->delivered);
-        self::assertSame(HilosSignalConstants::DAEMON_MASTER_REPORT_NOW, $server->name($last));
-        $ask = $server->delivered[$last]->signal->data->data;
-        self::assertInstanceOf(DaemonMasterReportNowSignalData::class, $ask);
-        self::assertSame('standalone', $ask->nodeId);
-        self::assertSame('c-11', $ask->correlationId);
-        self::assertSame(0, $server->count(HilosSignalConstants::DAEMON_MASTER_HTTP));
+            self::assertTrue($loop->hasReadyWork(), 'The forced whole roster continues natively');
+            $manager->pass();
+            self::assertSame(2, $server->count(HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER));
+            self::assertSame(1, $server->count(HilosSignalConstants::DAEMON_MASTER_REPORT_NOW));
+            $last = array_key_last($server->delivered);
+            self::assertSame(HilosSignalConstants::DAEMON_MASTER_REPORT_NOW, $server->name($last));
+            foreach ([HilosSignalConstants::DAEMON_MASTER_CRON, HilosSignalConstants::DAEMON_MASTER_STANDING,
+                HilosSignalConstants::DAEMON_MASTER_MEASUREMENTS] as $name) {
+                self::assertSame(2, $server->count($name), 'Each forced whole frame preceded the report ask');
+            }
+            $ask = $server->delivered[$last]->signal->data->data;
+            self::assertInstanceOf(DaemonMasterReportNowSignalData::class, $ask);
+            self::assertSame('standalone', $ask->nodeId);
+            self::assertSame('c-11', $ask->correlationId);
+            self::assertSame(0, $server->count(HilosSignalConstants::DAEMON_MASTER_HTTP));
 
-        $manager->passAt(101.2);
-        self::assertSame(1, $server->count(HilosSignalConstants::DAEMON_MASTER_REPORT_NOW));
+            $manager->pass();
+            self::assertSame(1, $server->count(HilosSignalConstants::DAEMON_MASTER_REPORT_NOW));
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'detachMeasurementsEventLoop')->invoke($manager);
+            new ReflectionMethod(DaemonManager::class, 'detachReportFramesEventLoop')->invoke($manager);
+            new ReflectionMethod(DaemonManager::class, 'detachProcessRosterEventLoop')->invoke($manager);
+            $loop->cleanup();
+        }
     }
 
     /**
@@ -327,7 +445,7 @@ final class DaemonNodeReportTestRequestsTest extends TestCase
         self::assertFalse($this->replies[0]->isOk());
         self::assertSame($message, $this->replies[0]->payload[CommandConstants::FIELD_MESSAGE] ?? null);
         self::assertSame(0, $this->forced, 'A refused ask forces no frames');
-        $this->requests->dispatchDue(200.0);
+        $this->requests->dispatchDue(200.0, 100.5);
         $this->requests->tick(200.0);
         self::assertSame([], $this->signals->sent);
         self::assertCount(1, $this->replies);
@@ -337,7 +455,7 @@ final class DaemonNodeReportTestRequestsTest extends TestCase
 /** Master test double driving the frame part of one main-loop pass. */
 final class NodeReportTestDaemonManager extends DaemonManager
 {
-    private const array FRAME_TICKS = ['tickProcessRoster', 'tickCronFrame', 'tickStanding', 'tickHttpFrame', 'tickMeasurements'];
+    private const array FRAME_PHASES = ['dispatchCronFrame', 'dispatchStanding', 'dispatchHttpFrame', 'dispatchMeasurements'];
 
     /**
      * @param int $count Live workers without a pid, one roster row each
@@ -350,22 +468,17 @@ final class NodeReportTestDaemonManager extends DaemonManager
         return $server;
     }
 
-    /** @param float $now Controlled start of the pass */
-    public function passAt(float $now): void
+    /** Drives the native roster and all available report phases. */
+    public function pass(): void
     {
-        new ReflectionProperty(DaemonManager::class, 'loopPassStartedAt')->setValue($this, $now);
-        $this->framesAndAsks($now);
+        $this->framesAndAsks();
     }
 
-    /**
-     * @param float $now Controlled start of the pass
-     * @param CommandRequestDTO $request Ask arriving on the command socket in this pass
-     */
-    public function askDuringPassAt(float $now, CommandRequestDTO $request): void
+    /** @param CommandRequestDTO $request Ask arriving on the command socket in this pass */
+    public function askDuringPass(CommandRequestDTO $request): void
     {
-        new ReflectionProperty(DaemonManager::class, 'loopPassStartedAt')->setValue($this, $now);
         $this->requestNodeReport($request);
-        $this->framesAndAsks($now);
+        $this->framesAndAsks();
     }
 
     /** @return SignalRouter Empty routing table for directly addressed master frames */
@@ -380,14 +493,15 @@ final class NodeReportTestDaemonManager extends DaemonManager
         return new NodeReportAgentManager();
     }
 
-    /** @param float $now Controlled start of the pass */
-    private function framesAndAsks(float $now): void
+    /** Native callbacks cue only; the whole-roster business phase precedes the completion barrier. */
+    private function framesAndAsks(): void
     {
-        foreach (self::FRAME_TICKS as $tick) {
-            new ReflectionMethod(DaemonManager::class, $tick)->invoke($this, $now);
+        new ReflectionProperty(DaemonManager::class, 'eventLoop')->getValue($this)->tick();
+        new ReflectionMethod(DaemonManager::class, 'dispatchProcessRoster')->invoke($this);
+        foreach (self::FRAME_PHASES as $phase) {
+            new ReflectionMethod(DaemonManager::class, $phase)->invoke($this);
         }
-        $requests = new ReflectionProperty(DaemonManager::class, 'daemonNodeReportTestRequests')->getValue($this);
-        $requests->dispatchDue(new ReflectionProperty(DaemonManager::class, 'processRosterLastSentAt')->getValue($this));
+        new ReflectionMethod(DaemonManager::class, 'dispatchCompletedNodeReport')->invoke($this);
     }
 }
 

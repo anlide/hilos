@@ -4,6 +4,16 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Peer;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+use Closure;
+use Generator;
+use Hilos\Constants\TimeConstants;
+use Hilos\Core\Daemon\ContainedFailure;
+use Hilos\Core\Daemon\Master\MasterFailureUnit;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\ReadyWork;
+use Hilos\Utils\ClientReadFailureLog;
+use Hilos\Core\EventLoop\Exception\NativeEventUnavailableException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Cluster\Exception\PeerTransportException;
@@ -121,23 +131,29 @@ use Hilos\ProtectedMode\ProtectedModeCoordinator;
 use Hilos\ProtectedMode\ProtectedModeMesh;
 use Hilos\ProtectedMode\ProtectedModeNodesCollector;
 use Hilos\ProtectedMode\ProtectedModeQuiesceRoster;
+use Hilos\ProtectedMode\ProtectedModeSyncScheduler;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Server\AbstractTlsServer;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\Exception\SocketTlsHandshakeException;
 use Hilos\Socket\Transport\TlsSocketTransport;
+use Hilos\Socket\Transport\TlsContext;
 use Hilos\Utils\Logger;
+use SplQueue;
+use WeakReference;
 use Random\RandomException;
 use Throwable;
+use WeakMap;
 
 /**
  * Inter-daemon peer transport: accepts peer links and dials out to form the mesh.
  *
  * Runs beside the worker and command servers on the daemon master loop. It
- * accepts inbound peer links from other nodes and, in the same non-blocking
- * onTick, dials out to form direct links: the configured seeds to join an
+ * accepts inbound peer links from other nodes and dials on readiness and each
+ * target's own deadline to form direct links: the configured seeds to join an
  * existing cluster, and — driven by a {@see ConnectionPolicy}, full mesh by
  * default — every peer learned through gossip, so two nodes that only know each
  * other transitively still raise a direct link. Both directions become framed
@@ -194,6 +210,8 @@ final class PeerServer extends AbstractTlsServer implements
     /** @var ClusterTlsConfig This node's certificate and the authorities it trusts, for both sides of a link */
     private ClusterTlsConfig $tls;
 
+    private TlsContext $dialingContext;
+
     /** @var PeerMarkers What this node reads that every node must share, named on every handshake */
     private PeerMarkers $localMarkers;
 
@@ -206,8 +224,31 @@ final class PeerServer extends AbstractTlsServer implements
     /** @var array<string, PeerDial> Dial-on-learn state for gossip-learned peers, keyed by node id */
     private array $peerDials = [];
 
+    /** The master's existing base; dial handles and deadlines are private to this process. */
+    private ?EventLoop $dialLoop = null;
+
+    private ?ReadyWork $dialReconcileReady = null;
+
+    /** @var array<string, ClusterNode> Initial or reload facts awaiting one bounded policy decision each */
+    private array $pendingDialNodes = [];
+
     /** @var array<string, PeerLink> One application-frame route per remote node */
     private array $activeLinks = [];
+
+    /** @var ?WeakMap<PeerLink, int> Exact accepted/dialed roster slots, private to this server */
+    private ?WeakMap $peerSlots = null;
+
+    /** @var ?SplQueue<Generator<int, void>> Broadcasts captured only during one synchronous announcement hook */
+    private ?SplQueue $capturedBroadcasts = null;
+
+    /** @var ?Closure(Generator<int, void>): void Existing master FIFO, absent for standalone servers */
+    private ?Closure $sourceInterestDelivery = null;
+
+    private ?string $deliveryNodeId = null;
+
+    private ?PeerLink $deliveryLink = null;
+
+    private ?int $deliverySlot = null;
 
     /** @var array<string, PeerLink> Certified links awaiting a ready verdict, one per remote node */
     private array $candidateLinks = [];
@@ -215,8 +256,14 @@ final class PeerServer extends AbstractTlsServer implements
     /** @var ?ClusterCoordinator Consensus coordinator, built at start for a master node; null for a slave */
     private ?ClusterCoordinator $coordinator = null;
 
+    /** Exact scheduler owner; the facade leadership slot may be independently replaced. */
+    private ?ClusterCoordinator $boundCoordinator = null;
+
     /** @var ?ClusterPlacement Agent-placement coordinator, built at start on any clustered node; null when no worker executor is registered */
     private ?ClusterPlacement $placement = null;
+
+    /** Exact native owner, independent of the replaceable facade placement slot. */
+    private ?ClusterPlacement $boundPlacement = null;
 
     /** @var ?ClusterClock Master-local clock exchanges, registered at peer startup */
     private ?ClusterClock $clock = null;
@@ -323,6 +370,18 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
+     * Preloads both TLS roles before this server starts accepting or dialing.
+     *
+     * @throws EnvException When the TLS input budget is invalid
+     * @throws NativeEventUnavailableException When the required native TLS API is unavailable
+     */
+    public function prepareTlsContexts(): void
+    {
+        parent::prepareTlsContexts();
+        $this->dialingContext ??= TlsContext::dialing($this->tls->certificateFile, $this->tls->trustFile);
+    }
+
+    /**
      * Registers as the local-node announcer and, on a master, starts consensus.
      *
      * A clustered master builds its {@see ClusterCoordinator} here and installs it as
@@ -331,6 +390,7 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * @throws ClusterConfigurationException When the master consensus config is missing or invalid
      * @throws EnvException When a consensus or failover env value cannot be read
+     * @throws EventLoopException When a native placement deadline cannot be armed
      */
     protected function onStart(): void
     {
@@ -343,6 +403,7 @@ final class PeerServer extends AbstractTlsServer implements
                 Hilos::$cluster->leadershipObserver(),
             );
             Hilos::$cluster->registerLeadership($this->coordinator);
+            $this->bindConsensusEventLoop();
         }
 
         // Agent placement runs on every clustered node: a master issues placements and
@@ -362,6 +423,7 @@ final class PeerServer extends AbstractTlsServer implements
                 restartSink: Hilos::$cluster->placementRestartSink(),
             );
             Hilos::$cluster->registerPlacement($this->placement);
+            $this->reconcilePlacementEventLoop();
             // The placement coordinator doubles as the router's read-only placement lookup, so
             // cross-node signal routing (HIL-180) can ask where a placed agent lives.
             Hilos::$cluster->registerWorkerPlacement($this->placement);
@@ -427,10 +489,27 @@ final class PeerServer extends AbstractTlsServer implements
      * @param resource $socket Accepted peer socket
      * @return ClientInterface Peer link awaiting a hello
      * @throws EnvException When the socket read buffer env value is missing or invalid
+     * @throws SocketTlsHandshakeException When the TLS server has not prepared its certificates
      */
     protected function onCreateClient($socket): ClientInterface
     {
         return new PeerLink($socket, $this, $this->localIdentity, dialer: false, transport: $this->createTransport($socket));
+    }
+
+    /**
+     * Records membership before a handshake can make the link addressable. Roster slots
+     * are never renumbered, and a removed slot cannot authorize a replacement connection.
+     *
+     * @param ClientInterface $client Newly appended accepted or dialed peer
+     */
+    protected function attachClient(ClientInterface $client): void
+    {
+        $slot = array_key_last($this->clients);
+        if ($client instanceof PeerLink && $slot !== null && $this->clients[$slot] === $client) {
+            $this->peerSlots ??= new WeakMap();
+            $this->peerSlots[$client] = $slot;
+        }
+        parent::attachClient($client);
     }
 
     /**
@@ -470,26 +549,40 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
-     * Drives the seed dials, services all links, then advances consensus.
+     * Services legacy link timers, then only ready consensus work; dials have their own cues.
      *
-     * The coordinator ticks after the links are serviced so any request-vote,
+     * The coordinator dispatches after the links are serviced so any request-vote,
      * vote-reply, or heartbeat that arrived this iteration is already folded in
-     * before it recomputes deadlines, quorum, and leadership.
+     * before its ready role duty runs. Registry mutations have already updated quorum.
      *
      * @throws RandomException When the secure random source refuses a handshake secret
-     * @throws HilosException Whatever the project's own leadership duties raise when this node wins a term
+     * @throws HilosException When native consensus arming or the project's leadership/quorum duties fail
      */
     public function onTick(): void
     {
-        $this->driveDials();
-
         parent::onTick();
 
+        $this->bindConsensusEventLoop();
+        if ($this->coordinator !== null && $this->registry() === null) {
+            $this->coordinator->noteMembershipChanged();
+        }
+        try {
+            $this->coordinator?->dispatchReady();
+        } catch (Throwable $failure) {
+            $this->coordinator?->detachEventLoop();
+            throw $failure;
+        }
+        try {
+            $this->reconcilePlacementEventLoop();
+            $this->placement?->dispatchReady();
+        } catch (Throwable $failure) {
+            $this->placement?->detachEventLoop();
+            throw $failure;
+        }
         $now = microtime(true);
-        $this->coordinator?->tick($now);
-        // Placement failover and slave self-fence run off their grace timers on the same loop.
-        $this->placement?->tick($now);
-        $this->protectedMode?->tickSlaveSync((int)$now);
+        if ($this->protectedMode instanceof ProtectedModeSyncScheduler) {
+            $this->protectedMode->dispatchSlaveSyncReady();
+        }
         $this->tickProtectedModeNodeReports($now);
     }
 
@@ -507,6 +600,7 @@ final class PeerServer extends AbstractTlsServer implements
         $this->broadcastGracefulLeave();
 
         parent::prepareShutdown();
+        $this->closePendingDials();
     }
 
     /**
@@ -582,36 +676,208 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function stop(): void
     {
-        foreach ($this->allDials() as $dial) {
-            if ($dial->socket !== null) {
-                socket_close($dial->socket);
-                $dial->socket = null;
-                $dial->connecting = false;
-            }
-        }
-
+        $this->closePendingDials();
+        $this->detachEventLoop();
         parent::stop();
     }
 
+    /** Terminal entrance retirement also cancels dial watches before closing their raw sockets. */
+    public function closeListener(): void
+    {
+        $this->preparingShutdown = true;
+        $this->closePendingDials();
+        parent::closeListener();
+    }
+
     /**
-     * Ensures a dial for every seed and every policy-selected peer, then advances
-     * each one through the connect state machine.
+     * Binds dial work to the same base as accepted and promoted peer links.
+     * Initial membership and seeds are reconciled once, never from the master tick.
+     *
+     * @param EventLoop $loop Master's existing event loop
+     * @throws EventLoopException When a native placement deadline cannot be armed
+     * @throws EnvException When early placement-view authority configuration cannot be read
      */
-    private function driveDials(): void
+    public function attachEventLoop(EventLoop $loop): void
     {
         if ($this->preparingShutdown) {
             return;
         }
+        if ($this->dialLoop === $loop) {
+            $this->bindConsensusEventLoop();
+            $this->reconcilePlacementEventLoop();
+            if ($this->protectedMode instanceof ProtectedModeSyncScheduler) {
+                $this->protectedMode->attachSlaveSyncEventLoop($loop);
+            }
+            return;
+        }
 
+        $this->detachEventLoop();
+        $this->dialLoop = $loop;
+        $this->bindConsensusEventLoop();
+        $this->reconcilePlacementEventLoop();
+        if ($this->protectedMode instanceof ProtectedModeSyncScheduler) {
+            $this->protectedMode->attachSlaveSyncEventLoop($loop);
+        }
+        $this->dialReconcileReady = $loop->createReadyWork($this->advanceDialReconcile(...));
         foreach ($this->seeds as $index => $seed) {
             $this->seedDials[$index] ??= new PeerDial($seed);
         }
         $this->reconcilePeerDials();
-
-        $now = microtime(true);
         foreach ($this->allDials() as $dial) {
-            $this->driveDial($dial, $now);
+            $this->bindDial($dial);
+            if ($dial->connecting && $dial->socket !== null) {
+                $this->watchConnectingDial($dial);
+            }
+            $dial->ready->markReady();
         }
+    }
+
+    /** Releases exact peer owners before base cleanup; established links retain their lifecycle. */
+    public function detachEventLoop(): void
+    {
+        $this->boundCoordinator?->detachEventLoop();
+        $this->boundCoordinator = null;
+        $this->boundPlacement?->detachEventLoop();
+        $this->boundPlacement = null;
+        if ($this->protectedMode instanceof ProtectedModeSyncScheduler) {
+            $this->protectedMode->detachSlaveSyncEventLoop();
+        }
+        $this->releaseDialWork();
+        $this->dialLoop = null;
+    }
+
+    /** @return bool Consensus duty to dispatch before the master waits */
+    public function hasConsensusReadyWork(): bool
+    {
+        return $this->coordinator?->hasReadyWork() ?? false;
+    }
+
+    /** @return bool Placement work to dispatch before waiting; pending reports or future timers sleep */
+    public function hasPlacementReadyWork(): bool
+    {
+        return $this->placement?->hasReadyWork() ?? false;
+    }
+
+    /**
+     * Reconciles the exact current owner and early-view authority before guarded work or wait.
+     * Shutdown drain keeps existing duties without binding a new owner or renewing its waits.
+     *
+     * @throws EventLoopException When an original placement deadline cannot be armed
+     * @throws EnvException When early-view authority configuration cannot be read
+     */
+    public function reconcilePlacementEventLoop(): void
+    {
+        if (!$this->preparingShutdown && $this->dialLoop !== null) {
+            if ($this->boundPlacement !== $this->placement) {
+                $this->boundPlacement?->detachEventLoop();
+                $this->boundPlacement = $this->placement;
+            }
+            $this->boundPlacement?->attachEventLoop($this->dialLoop);
+        }
+        $this->placement?->reconcileAuthority();
+    }
+
+    /** Reconciles the private current owner, including late creation and same-base replacement. */
+    private function bindConsensusEventLoop(): void
+    {
+        if ($this->preparingShutdown || $this->dialLoop === null) {
+            return;
+        }
+        if ($this->boundCoordinator !== $this->coordinator) {
+            $this->boundCoordinator?->detachEventLoop();
+            $this->boundCoordinator = $this->coordinator;
+        }
+        $this->boundCoordinator?->attachEventLoop($this->dialLoop);
+    }
+
+    /** Dial retirement is separate from consensus duties still owed during shutdown drain. */
+    private function releaseDialWork(): void
+    {
+        $this->dialReconcileReady?->close();
+        $this->dialReconcileReady = null;
+        $this->pendingDialNodes = [];
+        foreach ($this->allDials() as $dial) {
+            $this->cancelDialWait($dial);
+            $dial->ready?->close();
+            $dial->ready = null;
+        }
+    }
+
+    /** Releases every dial cue before closing pending sockets; established links keep their lifecycle. */
+    private function closePendingDials(): void
+    {
+        $this->releaseDialWork();
+        if ($this->protectedMode instanceof ProtectedModeSyncScheduler) {
+            $this->protectedMode->detachSlaveSyncEventLoop();
+        }
+        foreach ($this->allDials() as $dial) {
+            if ($dial->socket !== null) {
+                socket_close($dial->socket);
+                $dial->socket = null;
+            }
+            $dial->connecting = false;
+        }
+    }
+
+    /** @param PeerDial $dial Target whose coalesced owner portion is bound once */
+    private function bindDial(PeerDial $dial): void
+    {
+        if ($this->preparingShutdown || $this->dialLoop === null || $dial->ready !== null) {
+            return;
+        }
+        $dial->ready = $this->dialLoop->createReadyWork(fn() => $this->runDialReady($dial));
+    }
+
+    /**
+     * Contains a target's failure while preserving the node-wide entropy refusal.
+     *
+     * @param PeerDial $dial Ready target, never the whole registry
+     * @throws RandomException When the secure source refuses the peer handshake
+     */
+    private function runDialReady(PeerDial $dial): void
+    {
+        if ($this->preparingShutdown) {
+            return;
+        }
+        try {
+            $this->driveDial($dial, self::dialNow());
+        } catch (RandomException $exception) {
+            $this->discardFailedDial($dial);
+            throw $exception;
+        } catch (Throwable $exception) {
+            ClientReadFailureLog::write(
+                $this->getServerName(),
+                ClientReadFailureLog::READER_EVENT_LOOP,
+                $exception,
+                hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND,
+            );
+            $this->reportContainedFailure(new ContainedFailure(
+                MasterFailureUnit::CONNECTION,
+                $this->getServerName() . ' ' . $dial->address->toString(),
+                $exception,
+            ));
+            $this->discardFailedDial($dial);
+        }
+    }
+
+    /** @param PeerDial $dial Failed target whose socket or promoted client still has one owner */
+    private function discardFailedDial(PeerDial $dial): void
+    {
+        if ($dial->link !== null) {
+            try {
+                $this->dropClient($dial->link);
+            } catch (Throwable) {
+                // The original failure remains the one reported by the owner guard.
+            }
+            return;
+        }
+        $this->abortDial($dial, self::dialNow());
+    }
+
+    /** @return float Monotonic seconds used only for process-local dial waits */
+    private static function dialNow(): float
+    {
+        return hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
     }
 
     /**
@@ -637,26 +903,55 @@ final class PeerServer extends AbstractTlsServer implements
         }
 
         foreach ($registry->snapshot() as $node) {
-            if ($node->address === null) {
-                continue;
+            if ($this->dialReconcileReady === null) {
+                // Isolated fixtures may inspect policy selection without opening a native loop.
+                $this->reconcilePeerDial($node);
+            } else {
+                $this->pendingDialNodes[$node->nodeId] = $node;
             }
-
-            $existing = $this->peerDials[$node->nodeId] ?? null;
-            if ($existing !== null) {
-                if ($existing->address->toString() !== $node->address->toString()) {
-                    $this->refreshPeerDial($existing, $node->address);
-                }
-                continue;
-            }
-
-            if (!$this->connectionPolicy->shouldDial($this->localIdentity, $node)) {
-                continue;
-            }
-
-            $dial = new PeerDial($node->address);
-            $dial->remoteNodeId = $node->nodeId;
-            $this->peerDials[$node->nodeId] = $dial;
         }
+        if ($this->pendingDialNodes !== []) {
+            $this->dialReconcileReady->markReady();
+        }
+    }
+
+    /** Consumes one initial/reload fact; newer direct facts remove their queued predecessor. */
+    private function advanceDialReconcile(): void
+    {
+        $nodeId = key($this->pendingDialNodes);
+        if ($nodeId === null || $this->preparingShutdown) {
+            return;
+        }
+        $this->reconcilePeerDial($this->pendingDialNodes[$nodeId]);
+        if ($this->pendingDialNodes !== []) {
+            $this->dialReconcileReady?->markReady();
+        }
+    }
+
+    /** @param ClusterNode $node Changed membership fact, or one entry of the initial snapshot */
+    private function reconcilePeerDial(ClusterNode $node): void
+    {
+        unset($this->pendingDialNodes[$node->nodeId]);
+        if ($this->preparingShutdown || $node->address === null) {
+            return;
+        }
+
+        $dial = $this->peerDials[$node->nodeId] ?? null;
+        if ($dial !== null) {
+            if ($dial->address->toString() !== $node->address->toString()) {
+                $this->refreshPeerDial($dial, $node->address);
+            }
+            return;
+        }
+        if (!$this->connectionPolicy->shouldDial($this->localIdentity, $node)) {
+            return;
+        }
+
+        $dial = new PeerDial($node->address);
+        $dial->remoteNodeId = $node->nodeId;
+        $this->peerDials[$node->nodeId] = $dial;
+        $this->bindDial($dial);
+        $dial->ready?->markReady();
     }
 
     /**
@@ -671,6 +966,7 @@ final class PeerServer extends AbstractTlsServer implements
      */
     private function refreshPeerDial(PeerDial $dial, PeerAddress $address): void
     {
+        $this->cancelDialWait($dial);
         $dial->address = $address;
 
         if ($dial->connecting && $dial->socket !== null) {
@@ -680,6 +976,7 @@ final class PeerServer extends AbstractTlsServer implements
         }
 
         $dial->nextAttemptAt = 0.0;
+        $dial->ready?->markReady();
     }
 
     /**
@@ -693,13 +990,16 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
-     * Advances one seed dial: detect drops, poll a pending connect, or redial.
+     * Advances one target on a link fact, WRITE readiness, or its own deadline.
      *
      * @param PeerDial $dial Seed dial state
-     * @param float $now Current microtime
+     * @param float $now Current monotonic seconds
      */
     private function driveDial(PeerDial $dial, float $now): void
     {
+        if ($this->preparingShutdown) {
+            return;
+        }
         // Our own dialed link is still alive (handshaking or established): leave it be.
         // A link discarded by the duplicate collapse is marked to close, so it counts as dropped.
         if ($dial->link !== null) {
@@ -720,16 +1020,19 @@ final class PeerServer extends AbstractTlsServer implements
         // The peer at this seed already reaches us over another link (an inbound dial, or the
         // link that won a duplicate collapse): do not open a second connection to the same node.
         if ($dial->remoteNodeId !== null && $this->hasHandshakedLinkToNode($dial->remoteNodeId)) {
+            $this->clearConnectingDial($dial);
             return;
         }
 
         if ($dial->connecting) {
-            $this->pollConnectingDial($dial, $now);
+            $this->completeConnectingDial($dial, $now);
             return;
         }
 
         if ($now >= $dial->nextAttemptAt) {
             $this->beginDial($dial, $now);
+        } else {
+            $this->armDialDeadline($dial, $dial->nextAttemptAt);
         }
     }
 
@@ -737,19 +1040,21 @@ final class PeerServer extends AbstractTlsServer implements
      * Opens a non-blocking connect to a seed, promoting immediately if it lands.
      *
      * @param PeerDial $dial Seed dial state
-     * @param float $now Current microtime
+     * @param float $now Current monotonic seconds
      */
     private function beginDial(PeerDial $dial, float $now): void
     {
         $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
         if ($socket === false) {
-            $dial->nextAttemptAt = $now + self::DIAL_RETRY_INTERVAL_SEC;
+            $this->abortDial($dial, $now);
             return;
         }
 
+        $this->cancelDialWait($dial);
+        $dial->socket = $socket;
         socket_set_nonblock($socket);
 
-        // A non-blocking connect returns false with EINPROGRESS; completion is polled next tick.
+        // The pending connect is completed only by WRITE readiness or its own deadline.
         // warning-suppressed: the result is the branch condition, socket_last_error is read below
         if (@socket_connect($socket, $dial->address->host, $dial->address->port)) {
             $this->promoteDial($dial, $socket, $now);
@@ -757,25 +1062,26 @@ final class PeerServer extends AbstractTlsServer implements
         }
 
         $error = socket_last_error($socket);
-        if (in_array($error, [SOCKET_EINPROGRESS, SOCKET_EALREADY, SOCKET_EWOULDBLOCK], true)) {
+        if (in_array($error, [SOCKET_EINPROGRESS, SOCKET_EALREADY, SOCKET_EWOULDBLOCK, SOCKET_EINTR], true)) {
             socket_clear_error($socket);
             $dial->socket = $socket;
             $dial->connecting = true;
             $dial->connectStartedAt = $now;
+            $this->watchConnectingDial($dial);
+            $this->armDialDeadline($dial, $now + self::CONNECT_TIMEOUT_SEC);
             return;
         }
 
-        socket_close($socket);
-        $dial->nextAttemptAt = $now + self::DIAL_RETRY_INTERVAL_SEC;
+        $this->abortDial($dial, $now);
     }
 
     /**
-     * Polls a pending connect for completion, timeout, or failure.
+     * Completes a ready connect under the target guard; a pending socket never self-queues.
      *
      * @param PeerDial $dial Seed dial state
-     * @param float $now Current microtime
+     * @param float $now Current monotonic seconds
      */
-    private function pollConnectingDial(PeerDial $dial, float $now): void
+    private function completeConnectingDial(PeerDial $dial, float $now): void
     {
         $socket = $dial->socket;
         if ($socket === null) {
@@ -788,33 +1094,27 @@ final class PeerServer extends AbstractTlsServer implements
             return;
         }
 
-        $read = null;
-        $write = [$socket];
-        $except = null;
-        // warning-suppressed: a false return is told apart from 0 below, by socket_last_error
-        $ready = @socket_select($read, $write, $except, 0);
-        if ($ready === false) {
-            // The error of a failed select lands in the global slot, not on any one socket:
-            // socket_last_error($socket) reads 0 here and would abort every dial.
-            $error = socket_last_error();
-            // An interrupted or would-block select says nothing about the connect, so it waits
-            // for the next tick like a plain 0. Any other code means the poll itself is broken,
-            // and waiting on it would cost the connect timeout on top of the retry interval.
+        if (!$dial->connectReady) {
+            $this->armDialDeadline($dial, $dial->connectStartedAt + self::CONNECT_TIMEOUT_SEC);
+            return;
+        }
+        $dial->connectReady = false;
+
+        // warning-suppressed: false and the socket errno are checked before interpreting SO_ERROR
+        $error = @socket_get_option($socket, SOL_SOCKET, SO_ERROR);
+        if ($error === false) {
+            $error = socket_last_error($socket);
             if (!in_array($error, [SOCKET_EINTR, SOCKET_EAGAIN, SOCKET_EWOULDBLOCK], true)) {
                 $this->abortDial($dial, $now);
                 return;
             }
-
-            socket_clear_error();
+        }
+        if (in_array($error, [SOCKET_EINTR, SOCKET_EAGAIN, SOCKET_EWOULDBLOCK, SOCKET_EINPROGRESS, SOCKET_EALREADY], true)) {
+            socket_clear_error($socket);
+            $this->watchConnectingDial($dial);
             return;
         }
-
-        if ($ready === 0) {
-            // Still connecting; re-check on a later tick.
-            return;
-        }
-
-        if (socket_get_option($socket, SOL_SOCKET, SO_ERROR) !== 0) {
+        if ($error !== 0) {
             $this->abortDial($dial, $now);
             return;
         }
@@ -822,15 +1122,76 @@ final class PeerServer extends AbstractTlsServer implements
         $this->promoteDial($dial, $socket, $now);
     }
 
+    /** @param PeerDial $dial Pending connect whose WRITE notification is consumed once */
+    private function watchConnectingDial(PeerDial $dial): void
+    {
+        if ($this->preparingShutdown || $this->dialLoop === null || $dial->socket === null) {
+            return;
+        }
+        $socket = $dial->socket;
+        $generation = $dial->generation;
+        $this->dialLoop->registerWrite($socket, function () use ($dial, $socket, $generation): void {
+            if ($generation !== $dial->generation || $dial->socket !== $socket) {
+                return;
+            }
+            $this->dialLoop->unregisterWrite($socket);
+            $dial->connectReady = true;
+            $dial->ready?->markReady();
+        });
+    }
+
+    /**
+     * @param PeerDial $dial Target waiting on one unchanged connect or retry deadline
+     * @param float $deadline Absolute monotonic seconds
+     */
+    private function armDialDeadline(PeerDial $dial, float $deadline): void
+    {
+        if ($this->preparingShutdown || $this->dialLoop === null) {
+            return;
+        }
+        $generation = $dial->generation;
+        $dial->timer ??= $this->dialLoop->createTimer(function () use ($dial, $generation): void {
+            if ($generation === $dial->generation) {
+                $dial->ready?->markReady();
+            }
+        });
+        $dial->timer->armAt($deadline);
+    }
+
+    /** @param PeerDial $dial Target whose old completion facts must not survive a transition */
+    private function cancelDialWait(PeerDial $dial): void
+    {
+        ++$dial->generation;
+        if ($dial->socket !== null) {
+            $this->dialLoop?->unregisterWrite($dial->socket);
+        }
+        $dial->timer?->close();
+        $dial->timer = null;
+        $dial->ready?->cancel();
+        $dial->connectReady = false;
+    }
+
+    /** @param PeerDial $dial Pending socket whose native ownership is released before close */
+    private function clearConnectingDial(PeerDial $dial): void
+    {
+        $this->cancelDialWait($dial);
+        if ($dial->socket !== null) {
+            socket_close($dial->socket);
+            $dial->socket = null;
+        }
+        $dial->connecting = false;
+    }
+
     /**
      * Wraps a connected socket in a dialing peer link and starts the handshake.
      *
      * @param PeerDial $dial Seed dial state
      * @param resource|object $socket Connected socket
-     * @param float $now Current microtime
+     * @param float $now Current monotonic seconds
      */
     private function promoteDial(PeerDial $dial, $socket, float $now): void
     {
+        $this->cancelDialWait($dial);
         socket_set_nonblock($socket);
 
         try {
@@ -839,21 +1200,20 @@ final class PeerServer extends AbstractTlsServer implements
                 $this,
                 $this->localIdentity,
                 dialer: true,
-                transport: TlsSocketTransport::dialing($socket, $this->tls->certificateFile, $this->tls->trustFile),
+                transport: TlsSocketTransport::dialing($socket, $this->dialingContext),
             );
         } catch (EnvException $e) {
             Logger::error("Failed to open dialed peer link: {$e->getMessage()}");
-            socket_close($socket);
             $this->abortDial($dial, $now);
             return;
         }
 
-        $link->startHandshake();
-        $this->clients[] = $link;
-
         $dial->socket = null;
         $dial->connecting = false;
         $dial->link = $link;
+        $this->addClient($link);
+        $this->attachClient($link);
+        $link->startHandshake();
         Logger::info($dial->remoteNodeId !== null
             ? "Dialed peer {$dial->remoteNodeId}"
             : "Dialed seed {$dial->address->host}:{$dial->address->port}");
@@ -863,17 +1223,15 @@ final class PeerServer extends AbstractTlsServer implements
      * Closes a failed connect socket and schedules a retry.
      *
      * @param PeerDial $dial Seed dial state
-     * @param float $now Current microtime
+     * @param float $now Current monotonic seconds
      */
     private function abortDial(PeerDial $dial, float $now): void
     {
-        if ($dial->socket !== null) {
-            socket_close($dial->socket);
-        }
-
-        $dial->socket = null;
-        $dial->connecting = false;
+        $this->clearConnectingDial($dial);
         $dial->nextAttemptAt = $now + self::DIAL_RETRY_INTERVAL_SEC;
+        if (!$this->preparingShutdown) {
+            $this->armDialDeadline($dial, $dial->nextAttemptAt);
+        }
     }
 
     /**
@@ -884,10 +1242,15 @@ final class PeerServer extends AbstractTlsServer implements
      * @param NodeIdentity $remote Remote node identity learned from the handshake
      * @throws PeerTransportException When the placement snapshot metadata is invalid
      * @throws EnvException When the leadership configuration is invalid
+     * @throws HilosException When the observed membership changes quorum and its duties fail
      */
     public function onHandshakeComplete(PeerLink $link, NodeIdentity $remote): void
     {
         $this->activeLinks[$remote->nodeId] = $link;
+        $this->wakeNodeDials($remote->nodeId);
+        if ($this->protectedMode instanceof ProtectedModeSyncScheduler) {
+            $this->protectedMode->noteSlaveSyncChanged();
+        }
         $this->uploadMemory?->onPeerChanged();
         $registry = $this->registry();
         if ($registry === null) {
@@ -896,6 +1259,10 @@ final class PeerServer extends AbstractTlsServer implements
 
         $now = microtime(true);
         $changed = $registry->merge($remote, true, $now);
+        if ($changed) {
+            $this->coordinator?->noteMembershipChanged();
+            $this->reconcilePeerDial(ClusterNode::fromIdentity($remote, true, $now));
+        }
         $this->sendRoster($link, $registry);
 
         if ($changed) {
@@ -980,6 +1347,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @param PeerLink $link Candidate connection
      * @param NodeIdentity $remote Identity certified by the peer transport
      * @throws PeerTransportException When a preferred candidate is already in progress
+     * @throws EventLoopException When the superseded candidate's silence deadline cannot be armed
      */
     public function registerCandidate(PeerLink $link, NodeIdentity $remote): void
     {
@@ -1010,7 +1378,10 @@ final class PeerServer extends AbstractTlsServer implements
         return isset($this->candidateLinks[$nodeId]);
     }
 
-    /** @param string $nodeId Remote node id whose candidate sent a control frame out of order */
+    /**
+     * @param string $nodeId Remote node id whose candidate sent a control frame out of order
+     * @throws EventLoopException When the rejected candidate's silence deadline cannot be armed
+     */
     public function rejectCandidateFor(string $nodeId): void
     {
         ($this->candidateLinks[$nodeId] ?? null)?->discardAsDuplicate();
@@ -1046,6 +1417,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @param NodeIdentity $remote Certified remote identity
      * @throws PeerTransportException When this link lost its candidate slot
      * @throws EnvException When leadership configuration is invalid
+     * @throws HilosException When the observed membership changes quorum and its duties fail
      */
     public function activateCandidate(PeerLink $link, NodeIdentity $remote): void
     {
@@ -1057,6 +1429,10 @@ final class PeerServer extends AbstractTlsServer implements
         unset($this->candidateLinks[$remote->nodeId]);
         $link->activate($remote);
         $this->activeLinks[$remote->nodeId] = $link;
+        $this->wakeNodeDials($remote->nodeId);
+        if ($this->protectedMode instanceof ProtectedModeSyncScheduler) {
+            $this->protectedMode->noteSlaveSyncChanged();
+        }
         unset($this->protectedModeNodeReports[$remote->nodeId]);
         if ($old === null) {
             $this->onHandshakeComplete($link, $remote);
@@ -1064,6 +1440,7 @@ final class PeerServer extends AbstractTlsServer implements
         }
 
         $old->beginDrain();
+        $this->reconcilePeerDial(ClusterNode::fromIdentity($remote, true, microtime(true)));
         $this->uploadMemory?->onPeerChanged();
         Logger::info("Replaced duplicate peer link to {$remote->nodeId}");
         $registry = $this->registry();
@@ -1071,6 +1448,14 @@ final class PeerServer extends AbstractTlsServer implements
             $this->onHandshakeComplete($link, $remote);
             return;
         }
+        // The old transport's pending inbound report is canceled by its exact source guard.
+        // Both writers therefore announce their last complete pair afresh after ready/ack,
+        // including an empty pair. No cursor or full handshake hand-over moves to this link.
+        $link->sendFrame(new PeerSourceInterestDTO(
+            $this->localIdentity->nodeId,
+            $this->announcedRtInterest,
+            $this->announcedDbInterest,
+        ));
         if ($remote->role === NodeRole::Slave) {
             $this->protectedMode?->onSlaveConnected($remote->nodeId);
         }
@@ -1088,6 +1473,7 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * @param PeerLink $link Link the roster arrived on
      * @param PeerRosterDTO $roster Received roster
+     * @throws HilosException When the observed membership changes quorum and its duties fail
      */
     public function onRosterReceived(PeerLink $link, PeerRosterDTO $roster): void
     {
@@ -1115,6 +1501,7 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * @param PeerLink $link Link the announcement arrived on
      * @param PeerAnnounceDTO $announce Received announcement
+     * @throws HilosException When the observed membership changes quorum and its duties fail
      */
     public function onAnnounceReceived(PeerLink $link, PeerAnnounceDTO $announce): void
     {
@@ -1133,6 +1520,7 @@ final class PeerServer extends AbstractTlsServer implements
      * coordinator answers by sending a vote-reply back through this server's mesh.
      *
      * @param PeerRequestVoteDTO $frame Received request-vote frame
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onRequestVote(PeerRequestVoteDTO $frame): void
     {
@@ -1154,6 +1542,7 @@ final class PeerServer extends AbstractTlsServer implements
      * Routes a received heartbeat to the consensus coordinator, if one runs.
      *
      * @param PeerHeartbeatDTO $frame Received heartbeat frame
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onHeartbeat(PeerHeartbeatDTO $frame): void
     {
@@ -1175,6 +1564,8 @@ final class PeerServer extends AbstractTlsServer implements
      * @param PeerNodeLeavingDTO $frame Received graceful-leave frame
      * @throws InvalidFormatException When a pending page recovery address is malformed
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
+     * @throws HilosException When the observed membership changes quorum and its duties fail
      */
     public function onNodeLeaving(PeerNodeLeavingDTO $frame): void
     {
@@ -1183,7 +1574,10 @@ final class PeerServer extends AbstractTlsServer implements
             $leaving = $this->onlineNodeById($registry, $frame->nodeId);
             $now = microtime(true);
             if ($leaving !== null && $registry->markOffline($frame->nodeId, $now)) {
+                $this->coordinator?->noteMembershipChanged();
                 $identity = NodeIdentity::of($leaving->nodeId, $leaving->name, $leaving->role, $leaving->capabilities, $leaving->address);
+                $this->reconcilePeerDial(ClusterNode::fromIdentity($identity, false, $now));
+                $this->wakeNodeDials($frame->nodeId);
                 $this->notifyLeft($identity, $now);
             }
         }
@@ -1201,6 +1595,8 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * @param PeerLink $link Link the request arrived on
      * @param PeerPlaceAgentDTO $frame Received place-agent frame
+     * @throws InvalidFormatException When an abandoned start has an invalid stop completion address
+     * @throws EventLoopException When the existing executor cannot arm an abandoned start stop deadline
      */
     public function onPlaceAgentReceived(PeerLink $link, PeerPlaceAgentDTO $frame): void
     {
@@ -1216,6 +1612,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @param PeerLink $link Link the request arrived on
      * @param PeerStopAgentDTO $frame Received stop-agent frame
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onStopAgentReceived(PeerLink $link, PeerStopAgentDTO $frame): void
     {
@@ -1232,6 +1629,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @param PeerAgentStatusDTO $frame Received agent-status frame
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onAgentStatusReceived(PeerLink $link, PeerAgentStatusDTO $frame): void
     {
@@ -1260,12 +1658,19 @@ final class PeerServer extends AbstractTlsServer implements
      * to the sender forgets it and fences its placed work.
      *
      * @param PeerLink $link Link the release arrived on
+     * @throws EventLoopException When a native placement deadline cannot be armed
      */
     public function onPlacementReleaseReceived(PeerLink $link): void
     {
         $from = $link->remoteIdentity()?->nodeId;
         if ($from !== null) {
-            $this->placement?->onPlacementRelease($from, microtime(true));
+            $this->placement?->onPlacementRelease(
+                $from,
+                hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND,
+            );
+            if ($this->protectedMode instanceof ProtectedModeSyncScheduler) {
+                $this->protectedMode->noteSlaveSyncChanged();
+            }
         }
     }
 
@@ -1274,6 +1679,7 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * @param PeerLink $link Link the request arrived on
      * @param PeerPlacementRequestDTO $frame Received placement-request frame
+     * @throws EventLoopException When a native placement deadline cannot be armed
      */
     public function onPlacementRequestReceived(PeerLink $link, PeerPlacementRequestDTO $frame): void
     {
@@ -1289,6 +1695,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @param PeerLink $link Link the frame arrived on
      * @param PeerAgentRestartDTO $frame Received restart request
      * @throws EnvException When the leader id cannot be read
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onAgentRestartReceived(PeerLink $link, PeerAgentRestartDTO $frame): void
     {
@@ -1309,6 +1716,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @param PeerLink $link Link the report arrived on
      * @param PeerPlacementReportDTO $frame Received placement-report frame
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onPlacementReportReceived(PeerLink $link, PeerPlacementReportDTO $frame): void
     {
@@ -1422,7 +1830,19 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function registerProtectedMode(ProtectedModeCoordinator $coordinator): void
     {
+        if ($this->protectedMode !== $coordinator && $this->protectedMode instanceof ProtectedModeSyncScheduler) {
+            $this->protectedMode->detachSlaveSyncEventLoop();
+        }
         $this->protectedMode = $coordinator;
+        if (!$this->preparingShutdown && $this->dialLoop !== null && $coordinator instanceof ProtectedModeSyncScheduler) {
+            $coordinator->attachSlaveSyncEventLoop($this->dialLoop);
+        }
+    }
+
+    /** @return bool Finite slave-sync work that the master must dispatch before waiting */
+    public function hasProtectedModeSyncReadyWork(): bool
+    {
+        return $this->protectedMode instanceof ProtectedModeSyncScheduler && $this->protectedMode->hasSlaveSyncReadyWork();
     }
 
     /**
@@ -1457,6 +1877,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @throws EnvException When the cluster-enabled flag value is invalid during initiator placement lookup
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onProtectedModeEnableReceived(PeerLink $link, PeerProtectedModeEnableDTO $frame): void
     {
@@ -1522,6 +1943,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onProtectedModeQuiesceReceived(PeerLink $link, PeerProtectedModeQuiesceDTO $frame): void
     {
@@ -1768,6 +2190,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @throws PeerTransportException When the coordinator cannot build its cluster descriptor
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onProtectedModeRefreezeReceived(PeerLink $link, PeerProtectedModeRefreezeDTO $frame): void
     {
@@ -1788,6 +2211,16 @@ final class PeerServer extends AbstractTlsServer implements
     public function followerNodeIds(): array
     {
         return $this->linkedNodeIds();
+    }
+
+    /**
+     * Entries retain exact route identities; a caller still checks current membership per visit.
+     *
+     * @return array<string, PeerLink> Original node-to-link map, captured without walking connections
+     */
+    public function activeLinkSnapshot(): array
+    {
+        return $this->activeLinks;
     }
 
     /** @return list<string> Working authenticated slaves only */
@@ -1850,6 +2283,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
      * @throws PeerTransportException When an acknowledgement cannot be built
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onProtectedModeSyncReceived(PeerLink $link, PeerProtectedModeSyncDTO $frame): void
     {
@@ -2169,10 +2603,16 @@ final class PeerServer extends AbstractTlsServer implements
      * Candidate and draining-link closes leave membership and reader interest intact.
      *
      * @param PeerLink $link Link that closed
-     * @throws HilosException When unused upload capacity is inconsistent
+     * @throws HilosException When upload accounting or a membership/quorum observer fails
      */
     public function onLinkClosed(PeerLink $link): void
     {
+        $dial = $this->dialForLink($link);
+        $dial?->ready?->markReady();
+        $nodeId = $link->remoteIdentity()?->nodeId ?? $dial?->remoteNodeId;
+        if ($nodeId !== null) {
+            $this->wakeNodeDials($nodeId);
+        }
         $this->uploadMemory?->onPeerClosed($link);
         $this->clock?->onLinkClosed($link);
         foreach ($this->candidateLinks as $nodeId => $candidate) {
@@ -2193,6 +2633,9 @@ final class PeerServer extends AbstractTlsServer implements
         }
         unset($this->activeLinks[$remote->nodeId]);
         unset($this->protectedModeNodeReports[$remote->nodeId]);
+        if ($this->protectedMode instanceof ProtectedModeSyncScheduler) {
+            $this->protectedMode->noteSlaveSyncChanged();
+        }
 
         $registry = $this->registry();
         if ($registry === null) {
@@ -2210,6 +2653,8 @@ final class PeerServer extends AbstractTlsServer implements
         Hilos::$cluster?->rtSyncSink()?->noteNodeUnreachable($remote->nodeId, $now);
 
         if ($registry->markOffline($remote->nodeId, $now)) {
+            $this->coordinator?->noteMembershipChanged();
+            $this->reconcilePeerDial(ClusterNode::fromIdentity($remote, false, $now));
             $this->notifyLeft($remote, $now);
         }
 
@@ -2243,6 +2688,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @param NodeIdentity $identity Node that went offline
      * @param float $now Microtime of the transition
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function notifyLeft(NodeIdentity $identity, float $now): void
     {
@@ -2288,6 +2734,9 @@ final class PeerServer extends AbstractTlsServer implements
             return false;
         }
 
+        $this->coordinator?->noteMembershipChanged();
+        $this->reconcilePeerDial(ClusterNode::fromIdentity($identity, $registry->isOnline($identity->nodeId), $now));
+        $this->wakeNodeDials($identity->nodeId);
         if ($this->onlineNodeById($registry, $entry->nodeId) !== null) {
             $this->notifyJoined($identity, $now);
         }
@@ -2318,6 +2767,8 @@ final class PeerServer extends AbstractTlsServer implements
      * address were refreshed: it reads the freshly-merged local record from the
      * master registry and gossips it to all handshaked links so peers converge on
      * the new identity. A no-op when the registry or the local record is absent.
+     *
+     * @throws HilosException When the observed membership changes quorum and its duties fail
      */
     public function announceLocalNode(): void
     {
@@ -2326,6 +2777,8 @@ final class PeerServer extends AbstractTlsServer implements
             return;
         }
 
+        $this->coordinator?->noteMembershipChanged();
+        $this->reconcilePeerDials();
         foreach ($registry->snapshot() as $node) {
             if ($node->nodeId === $this->localIdentity->nodeId) {
                 $this->broadcastAnnounce(PeerNodeEntry::fromNode($node));
@@ -2606,18 +3059,25 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function onSourceInterestReceived(PeerLink $link, PeerSourceInterestDTO $frame): void
     {
-        // Both halves of the frame are written down, and only one of them is owed anything back
-        // (HIL-750). A node taking up a DB collection is owed no hand-over at all: the rows are
-        // in the database it is already connected to, so the entry in this map is the whole of
-        // what changes - from now on its frames stop being filtered away.
-        $this->nodeReaderMap->note($frame->nodeId, SourceChange::KIND_DB, $frame->dbCollections);
-
-        $added = $this->nodeReaderMap->note($frame->nodeId, SourceChange::KIND_RT, $frame->rtCollections);
-        if ($added === []) {
+        if ($this->sourceInterestDelivery !== null) {
+            ($this->sourceInterestDelivery)($this->sourceInterestFrameDelivery($link, $frame));
             return;
         }
+        $this->applySourceInterest($frame);
+    }
 
-        Hilos::$cluster?->rtSyncSink()?->handOverRtSnapshots($frame->nodeId);
+    /** @param Closure(Generator<int, void>): void $deliver Exact master's existing guarded source FIFO */
+    public function setSourceInterestDelivery(Closure $deliver): void
+    {
+        $this->sourceInterestDelivery = $deliver;
+    }
+
+    /** @param Closure(Generator<int, void>): void $deliver Original binding; an old owner cannot remove its replacement */
+    public function removeSourceInterestDelivery(Closure $deliver): void
+    {
+        if ($this->sourceInterestDelivery === $deliver) {
+            $this->sourceInterestDelivery = null;
+        }
     }
 
     /**
@@ -3167,6 +3627,78 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
+     * Captures exact links now; a replacement never receives the remainder of an old fan-out.
+     * The retained master dispatcher consumes this cursor across portions.
+     *
+     * @param SignalDTO $signal Original browser fan-out
+     * @return Generator<int, void> Effect-free initial yield, then one physical link visit per step
+     */
+    public function clientFanoutDelivery(SignalDTO $signal): Generator
+    {
+        return $this->walkFanoutFrame(
+            $this->clientCandidates(),
+            new PeerClientFanoutDTO($this->localIdentity->nodeId, $signal),
+            static fn(PeerLink $link): bool => $link->remoteIdentity() !== null,
+        );
+    }
+
+    /**
+     * Runs the existing announcement hook once, capturing its physical broadcasts at their
+     * original call sites. It neither drives the event loop nor changes any peer wire frame.
+     *
+     * @param Closure(): void $announce Existing master announcement hook
+     * @return Generator<int, void> Captured broadcasts in their original FIFO, one link visit per step
+     */
+    public function captureBroadcastDelivery(Closure $announce): Generator
+    {
+        $previous = $this->capturedBroadcasts;
+        $captured = new SplQueue();
+        $this->capturedBroadcasts = $captured;
+        try {
+            $announce();
+        } finally {
+            $this->capturedBroadcasts = $previous;
+        }
+
+        return $this->walkCapturedBroadcasts($captured);
+    }
+
+    /**
+     * Resolves the exact original roster slot before invoking the existing send door once.
+     * A missing or replaced route is still passed to that door as missing, preserving its refusal.
+     *
+     * @param string $nodeId Addressed node
+     * @param Closure(): void $deliver Existing addressed delivery and its outcome handling
+     * @return Generator<int, void> Constant-time membership preparation and one scoped delivery attempt
+     */
+    public function addressedDelivery(string $nodeId, Closure $deliver): Generator
+    {
+        $link = $this->activeLinks[$nodeId] ?? null;
+        return $this->walkAddressedDelivery($nodeId, $link, $link === null ? null : ($this->peerSlots[$link] ?? null), $deliver);
+    }
+
+    /**
+     * Captures a route before a retained source build. The predicate owns neither the server
+     * nor the link, and a route that was absent, replaced or detached cannot become valid later.
+     *
+     * @param string $nodeId Original addressed node
+     * @return Closure(): bool Whether that exact transport slot still answers for the node
+     */
+    public function nodeRouteGuard(string $nodeId): Closure
+    {
+        $server = WeakReference::create($this);
+        $link = $this->activeLinks[$nodeId] ?? null;
+        $slot = $link === null ? null : ($this->peerSlots[$link] ?? null);
+        $link = $link === null ? null : WeakReference::create($link);
+        return static function () use ($server, $link, $slot, $nodeId): bool {
+            $owner = $server->get();
+            $original = $link?->get();
+            return $owner !== null && $original !== null && $slot !== null
+                && $owner->isCurrentClient($slot, $original) && ($owner->activeLinks[$nodeId] ?? null) === $original;
+        };
+    }
+
+    /**
      * Asks all other masters to close sibling sockets of a rotated session.
      *
      * @param list<string> $acceptKeys Sibling keys not held by this master
@@ -3446,19 +3978,142 @@ final class PeerServer extends AbstractTlsServer implements
      */
     private function fanOutFrame(PeerDTO $frame, callable $reaches): void
     {
+        $delivery = $this->walkFanoutFrame($this->clientCandidates(), $frame, $reaches);
+        if ($this->capturedBroadcasts !== null) {
+            $this->capturedBroadcasts->enqueue($delivery);
+            return;
+        }
+        // The legacy entry still drains completely; the retained dispatcher uses the same
+        // physical walk a portion at a time, without a second implementation of its filters.
+        foreach ($delivery as $_) {
+        }
+    }
+
+    /**
+     * @param SplQueue<Generator<int, void>> $broadcasts Physical walks captured by one announcement hook
+     * @return Generator<int, void> Original broadcast order, including filtered link visits
+     */
+    private function walkCapturedBroadcasts(SplQueue $broadcasts): Generator
+    {
+        yield;
+        while (!$broadcasts->isEmpty()) {
+            $delivery = $broadcasts->dequeue();
+            yield from $delivery;
+            unset($delivery);
+        }
+    }
+
+    /**
+     * Reader interest cannot overtake a partial source answer. The cursor owns the frame,
+     * never its server or link; a new transport cannot inherit the original report.
+     *
+     * @param PeerLink $link Original inbound transport
+     * @param PeerSourceInterestDTO $frame Complete original interest report
+     * @return Generator<int, void> Private preparation by name, then one complete guarded report application
+     */
+    private function sourceInterestFrameDelivery(PeerLink $link, PeerSourceInterestDTO $frame): Generator
+    {
+        $server = WeakReference::create($this);
+        $slot = $this->peerSlots[$link] ?? null;
+        $nodeId = $link->remoteIdentity()?->nodeId;
+        $binding = $this->sourceInterestDelivery === null ? null : WeakReference::create($this->sourceInterestDelivery);
+        $link = WeakReference::create($link);
+        $isCurrent = static function () use ($server, $slot, $nodeId, $link, $binding): bool {
+            $owner = $server->get();
+            $original = $link->get();
+            return $owner !== null && $original !== null && $slot !== null && $nodeId !== null
+                && $binding?->get() !== null && $owner->sourceInterestDelivery === $binding->get()
+                && $owner->isCurrentClient($slot, $original)
+                && ($owner->activeLinks[$nodeId] ?? null) === $original;
+        };
+        $map = WeakReference::create($this->nodeReaderMap);
+        return (static function () use ($map, $frame, $isCurrent): Generator {
+            yield;
+            if (!$isCurrent() || $map->get() === null) {
+                return;
+            }
+            $delivery = $map->get()->noteReportDelivery($frame->nodeId, $frame->rtCollections, $frame->dbCollections, $isCurrent);
+            $added = yield from $delivery;
+            if ($added[SourceChange::KIND_RT] !== [] && $isCurrent()) {
+                Hilos::$cluster?->rtSyncSink()?->handOverRtSnapshots($frame->nodeId);
+            }
+            yield;
+        })();
+    }
+
+    /**
+     * DB interest changes filtering alone; new RT interest also requests the existing hand-over.
+     *
+     * @param PeerSourceInterestDTO $frame Complete reader-interest values in original source order
+     */
+    private function applySourceInterest(PeerSourceInterestDTO $frame): void
+    {
+        $this->nodeReaderMap->note($frame->nodeId, SourceChange::KIND_DB, $frame->dbCollections);
+        $added = $this->nodeReaderMap->note($frame->nodeId, SourceChange::KIND_RT, $frame->rtCollections);
+        if ($added !== []) {
+            Hilos::$cluster?->rtSyncSink()?->handOverRtSnapshots($frame->nodeId);
+        }
+    }
+
+    /**
+     * @param string $nodeId Addressed node
+     * @param ?PeerLink $link Original route, absent when the lookup began without a route
+     * @param ?int $slot Exact original roster slot, absent without an attached route
+     * @param Closure(): void $deliver Existing send door
+     * @return Generator<int, void> One membership check and one attempt, including the missing-route case
+     */
+    private function walkAddressedDelivery(string $nodeId, ?PeerLink $link, ?int $slot, Closure $deliver): Generator
+    {
+        yield;
+        $present = $link !== null && $slot !== null && $this->isCurrentClient($slot, $link)
+            && ($this->activeLinks[$nodeId] ?? null) === $link;
+        yield;
+        $this->invokeAddressedDelivery($nodeId, $present ? $link : null, $present ? $slot : null, $deliver);
+    }
+
+    /**
+     * @param string $nodeId Addressed node
+     * @param ?PeerLink $link Exact original live route, or null after absence/replacement
+     * @param ?int $slot Original roster slot, or null without a route
+     * @param Closure(): void $deliver Existing send door, executed once without a second roster scan
+     */
+    private function invokeAddressedDelivery(string $nodeId, ?PeerLink $link, ?int $slot, Closure $deliver): void
+    {
+        $previousNode = $this->deliveryNodeId;
+        $previousLink = $this->deliveryLink;
+        $previousSlot = $this->deliverySlot;
+        $this->deliveryNodeId = $nodeId;
+        $this->deliveryLink = $link;
+        $this->deliverySlot = $slot;
+        try {
+            $deliver();
+        } finally {
+            $this->deliveryNodeId = $previousNode;
+            $this->deliveryLink = $previousLink;
+            $this->deliverySlot = $previousSlot;
+        }
+    }
+
+    /**
+     * The roster cursor checks the original slot in O(1); the active map checks route identity.
+     * No per-recipient in_array scan through activeLinkToNode is needed in this walk.
+     *
+     * @param Generator<int, ?PeerLink> $clients Original peer roster, including stale slots
+     * @param PeerDTO $frame Shared broadcast frame
+     * @param callable(PeerLink): bool $reaches Existing broadcast filter
+     * @return Generator<int, void> One physical visit after the effect-free initial yield
+     */
+    private function walkFanoutFrame(Generator $clients, PeerDTO $frame, callable $reaches): Generator
+    {
         $encoded = null;
-
-        foreach ($this->clients as $client) {
-            $nodeId = $client->remoteIdentity()?->nodeId;
-            if ($nodeId === null || $this->activeLinkToNode($nodeId) !== $client) {
-                continue;
+        yield;
+        foreach ($clients as $client) {
+            $nodeId = $client?->remoteIdentity()?->nodeId;
+            if ($nodeId !== null && ($this->activeLinks[$nodeId] ?? null) === $client && $reaches($client)) {
+                $encoded ??= $frame->toJson();
+                $client->sendEncodedFrame($encoded);
             }
-            if (!$reaches($client)) {
-                continue;
-            }
-
-            $encoded ??= $frame->toJson();
-            $client->sendEncodedFrame($encoded);
+            yield;
         }
     }
 
@@ -3600,6 +4255,17 @@ final class PeerServer extends AbstractTlsServer implements
         return null;
     }
 
+    /** @param string $nodeId Peer whose link or membership fact changed */
+    private function wakeNodeDials(string $nodeId): void
+    {
+        ($this->peerDials[$nodeId] ?? null)?->ready?->markReady();
+        foreach ($this->seedDials as $dial) {
+            if ($dial->remoteNodeId === $nodeId) {
+                $dial->ready?->markReady();
+            }
+        }
+    }
+
     /**
      * Returns the sole working link, excluding closing and draining connections.
      *
@@ -3608,8 +4274,14 @@ final class PeerServer extends AbstractTlsServer implements
      */
     private function activeLinkToNode(string $nodeId): ?PeerLink
     {
+        if ($this->deliveryNodeId === $nodeId) {
+            return $this->deliveryLink !== null && $this->deliverySlot !== null
+                && $this->isCurrentClient($this->deliverySlot, $this->deliveryLink)
+                && ($this->activeLinks[$nodeId] ?? null) === $this->deliveryLink ? $this->deliveryLink : null;
+        }
         $link = $this->activeLinks[$nodeId] ?? null;
-        if ($link === null || $link->shouldClose() || !in_array($link, $this->clients, true)) {
+        $slot = $link === null ? null : ($this->peerSlots[$link] ?? null);
+        if ($link === null || $slot === null || !$this->isCurrentClient($slot, $link)) {
             return null;
         }
 

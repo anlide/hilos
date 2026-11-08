@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\API\Router\HttpRouter;
 use Hilos\API\Router\ParkedHttpRequest;
 use Hilos\Constants\EnvConstants;
@@ -101,7 +102,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Parse complete HTTP request(s) from the read buffer when outbound data is fully sent.
+     * Parse one complete HTTP request when outbound data is fully sent.
      *
      * Nothing is parsed while a request is parked: its answer has to leave first, and a request
      * behind it waits in the buffer the way it waits behind a response not yet sent.
@@ -113,52 +114,48 @@ class HttpClient extends AbstractClient implements HttpClientInterface
      */
     protected function processReadBuffer(): void
     {
-        if ($this->writeBuffer !== '' || $this->parked !== null) {
+        if ($this->shouldClose || $this->closeWhenOutputDrained || $this->writeBuffer !== '' || $this->parked !== null) {
             return;
         }
 
-        while (true) {
-            $pos = strpos($this->readBuffer, HttpConstants::HTTP_DELIMITER);
-            if ($pos === false) {
-                break;
-            }
-            $end = $pos + strlen(HttpConstants::HTTP_DELIMITER);
-            $rawHeaders = substr($this->readBuffer, 0, $end);
-            $headers = $this->parseHeaders(explode(HttpConstants::HTTP_LINE_SEPARATOR, $rawHeaders));
-
-            // A chunked body has no length to wait for, and staying silent on it would leave
-            // the sender hanging until its own timeout.
-            if (HttpHeaderHelper::get($headers, HttpConstants::HEADER_TRANSFER_ENCODING) !== null) {
-                $this->refuseRequest(HttpConstants::HTTP_LENGTH_REQUIRED);
-                break;
-            }
-
-            $declaredLength = HttpHeaderHelper::get($headers, HttpConstants::HEADER_CONTENT_LENGTH);
-            if ($declaredLength !== null && !ctype_digit($declaredLength)) {
-                $this->refuseRequest(HttpConstants::HTTP_BAD_REQUEST);
-                break;
-            }
-
-            // A length too long for an integer saturates to PHP_INT_MAX and is refused as too large.
-            $bodyLength = $declaredLength === null ? 0 : (int)$declaredLength;
-            if ($bodyLength > self::MAX_REQUEST_BODY_BYTES) {
-                $this->refuseRequest(HttpConstants::HTTP_PAYLOAD_TOO_LARGE);
-                break;
-            }
-
-            // The body has not arrived whole: the buffer stays as it is until the next read.
-            // Cutting here would hand the route a short body and read its rest as the next request.
-            if (strlen($this->readBuffer) < $end + $bodyLength) {
-                break;
-            }
-
-            $body = substr($this->readBuffer, $end, $bodyLength);
-            $this->readBuffer = substr($this->readBuffer, $end + $bodyLength);
-            $this->processSingleHttpRequest($rawHeaders, $body);
-            if ($this->writeBuffer !== '' || $this->parked !== null) {
-                break;
-            }
+        $pos = strpos($this->readBuffer, HttpConstants::HTTP_DELIMITER);
+        if ($pos === false) {
+            return;
         }
+        $end = $pos + strlen(HttpConstants::HTTP_DELIMITER);
+        $rawHeaders = substr($this->readBuffer, 0, $end);
+        $headers = $this->parseHeaders(explode(HttpConstants::HTTP_LINE_SEPARATOR, $rawHeaders));
+
+        // A chunked body has no length to wait for, and staying silent on it would leave
+        // the sender hanging until its own timeout.
+        if (HttpHeaderHelper::get($headers, HttpConstants::HEADER_TRANSFER_ENCODING) !== null) {
+            $this->refuseRequest(HttpConstants::HTTP_LENGTH_REQUIRED);
+            return;
+        }
+
+        $declaredLength = HttpHeaderHelper::get($headers, HttpConstants::HEADER_CONTENT_LENGTH);
+        if ($declaredLength !== null && !ctype_digit($declaredLength)) {
+            $this->refuseRequest(HttpConstants::HTTP_BAD_REQUEST);
+            return;
+        }
+
+        // A length too long for an integer saturates to PHP_INT_MAX and is refused as too large.
+        $bodyLength = $declaredLength === null ? 0 : (int)$declaredLength;
+        if ($bodyLength > self::MAX_REQUEST_BODY_BYTES) {
+            $this->refuseRequest(HttpConstants::HTTP_PAYLOAD_TOO_LARGE);
+            return;
+        }
+
+        // The body has not arrived whole: the buffer stays as it is until the next read.
+        // Cutting here would hand the route a short body and read its rest as the next request.
+        if (strlen($this->readBuffer) < $end + $bodyLength) {
+            return;
+        }
+
+        $body = substr($this->readBuffer, $end, $bodyLength);
+        $this->readBuffer = substr($this->readBuffer, $end + $bodyLength);
+        // One response per portion: its drain schedules the next request without recursion.
+        $this->processSingleHttpRequest($rawHeaders, $body);
     }
 
     /**
@@ -268,7 +265,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
             : HttpConstants::CONNECTION_VALUE_CLOSE;
         $response[HttpConstants::RESPONSE_KEY_HEADERS] = $headers;
 
-        $this->writeBuffer = $this->buildResponse($response);
+        $this->queueWrite($this->buildResponse($response), replace: true);
         $this->closeWhenOutputDrained = !$persistent;
     }
 
@@ -287,14 +284,14 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     {
         $this->router?->traffic()->recordUnrouted($status, 0, time());
         $this->readBuffer = '';
-        $this->writeBuffer = $this->buildResponse([
+        $this->queueWrite($this->buildResponse([
             HttpConstants::RESPONSE_KEY_STATUS => $status,
             HttpConstants::RESPONSE_KEY_HEADERS => [
                 HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_JSON,
                 HttpConstants::HEADER_CONNECTION => HttpConstants::CONNECTION_VALUE_CLOSE,
             ],
             HttpConstants::RESPONSE_KEY_BODY => json_encode(['error' => HttpConstants::HTTP_STATUS_TEXTS[$status]]),
-        ]);
+        ]), replace: true);
         $this->closeWhenOutputDrained = true;
         $this->write();
     }
@@ -399,15 +396,11 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * After a full response is sent on a keep-alive connection, parse any pipelined request in the buffer.
-     *
-     * @throws SocketException When outbound write fails while handling a subsequent request
-     * @throws InvalidFormatException When the request query string carries a non-string value
-     * @throws HilosException When a pipelined follow-up request refuses to become a response
+     * A full response drain releases the next request for a later owner portion.
      */
     protected function onAfterOutboundDrained(): void
     {
-        $this->processReadBuffer();
+        $this->continueReadBuffer();
     }
 
     /**
@@ -425,6 +418,8 @@ class HttpClient extends AbstractClient implements HttpClientInterface
      * drops the hold and tells the master, which drops a frame it keeps for a starting agent on
      * this request's behalf (HIL-1040); the reply, whenever it comes, finds nobody. The analytics
      * request becomes one journal record without a status: no response was ever written.
+     *
+     * @throws EventLoopException When the master cannot rearm remaining command deadlines
      */
     protected function onClose(): void
     {

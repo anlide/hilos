@@ -227,6 +227,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.test-cli
+      additional_contexts:
+        hilos-event: ./native/event
     container_name: hilos-cli-framework-test${HILOS_STAND_SUFFIX:-}
     volumes:
       - ../..:/hilos

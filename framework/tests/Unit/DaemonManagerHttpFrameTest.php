@@ -201,7 +201,7 @@ final class HttpFrameTestDaemonManager extends DaemonManager
     /** @param float $now Controlled loop time */
     public function tickHttpAt(float $now): void
     {
-        new ReflectionMethod(DaemonManager::class, 'tickHttpFrame')->invoke($this, $now);
+        new ReflectionMethod(DaemonManager::class, 'tickHttpFrame')->invoke($this, $now, (int)$now);
     }
 
     /**

@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Daemon;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+use Closure;
+use Generator;
+
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalConstants;
@@ -13,6 +17,7 @@ use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentDaemonNotRegisteredException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Group\DTO\GroupLeaveAllSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
@@ -20,6 +25,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Source\Interest\SourceReaderMap;
+use Hilos\Core\Source\Interest\SourceReaderUnion;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Daemon\AgentLossSink;
 use Hilos\Core\Daemon\DaemonManager;
@@ -54,6 +60,7 @@ use Hilos\TruthSource\RtNodeSourceMap;
 use Hilos\TruthSource\RtReplicaOriginMap;
 use Hilos\Utils\Logger;
 use Throwable;
+use WeakReference;
 
 /**
  * AgentManagerDaemon - Base class for managing agent daemons in daemon process.
@@ -89,6 +96,15 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * an agent - which is this class's subject.
      */
     private ?ReHydrateRound $reHydrateRound = null;
+
+    /** @var ?Closure(): void Private master-loop cue, independent of readiness and worker capacity */
+    private ?Closure $reHydrateWake = null;
+
+    /** Exact round whose captured participant roster and announcements are still being dispatched. */
+    private ?int $reHydrateDispatchingRound = null;
+
+    /** @var array<string, true> Actual departures that a later preparation visit must not undo */
+    private array $reHydrateDepartedParticipants = [];
 
     /** @var ?string Agent that announced the swap on this node; null when another node announced it */
     private ?string $reHydrateInitiator = null;
@@ -148,6 +164,12 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      */
     private ?array $changedReaderInterest = null;
 
+    /** @var ?WeakReference<SourceReaderMap> Exact source of the complete pending pair */
+    private ?WeakReference $changedReaderInterestMap = null;
+
+    /** @var ?Closure(Generator<int, void>): void Exact master's guarded source FIFO, absent for consuming callers */
+    private ?Closure $readerInterestDelivery = null;
+
     /**
      * @var ?ProtectedModeAgentStopSink Who to tell that an agent stopped, or null when nobody asked.
      *
@@ -175,6 +197,9 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * that was coming up (HIL-629) and lets them go unanswered when a stop ends that wait (HIL-1041).
      */
     private ?AgentStartSink $agentStartSink = null;
+
+    /** Local worker queue owner, notified only when a linked roster entry frees a seat. */
+    private ?Closure $workerCapacityWake = null;
 
     /**
      * Create agent daemon instance (factory method)
@@ -272,6 +297,15 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
         $this->agentDaemons[$agentId] = $agentDaemon;
         $this->agentToWorker[$agentId] = $this->calculateWorkerId($workerIndex, $isMonopolistic);
         $this->rosterRevision++;
+        Hilos::$cluster?->protectedModeEntryGate()?->noteRosterChanged();
+    }
+
+    /**
+     * @param ?Closure(): void $wake Local worker queue owner, null on detach
+     */
+    public function setWorkerCapacityWake(?Closure $wake): void
+    {
+        $this->workerCapacityWake = $wake;
     }
 
     /**
@@ -279,12 +313,20 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      */
     public function removeAgent(string $agentId): void
     {
-        if (isset($this->agentDaemons[$agentId])) {
+        $removed = isset($this->agentDaemons[$agentId]);
+        $releasedSeat = $removed && ($this->agentToWorker[$agentId] ?? 0) !== 0;
+        if ($removed) {
             $this->rosterRevision++;
         }
         unset($this->agentDaemons[$agentId]);
         unset($this->agentToWorker[$agentId]);
         unset($this->startedAgentIds[$agentId]);
+        if ($removed) {
+            Hilos::$cluster?->protectedModeEntryGate()?->noteRosterChanged();
+        }
+        if ($releasedSeat) {
+            ($this->workerCapacityWake)?->__invoke();
+        }
     }
 
     /**
@@ -431,6 +473,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * @param WorkerAgentStartedDTO $dto DTO with agent started data
      * @throws AgentDaemonNotRegisteredException When the roster does not name the agent reported
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function handleAgentStarted(WorkerAgentStartedDTO $dto): void
     {
@@ -447,8 +490,12 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
         }
 
         $this->getAgent($agentId)?->onStart();
+        $wasStarted = isset($this->startedAgentIds[$agentId]);
         $this->startedAgentIds[$agentId] = true;
         $this->rosterRevision++;
+        if (!$wasStarted) {
+            Hilos::$cluster?->protectedModeEntryGate()?->noteRosterChanged();
+        }
         $workerIndex = $this->getAgentWorkerInfo($agentId)?->workerIndex ?? 'unknown';
 
         Logger::info("Agent '{$agentId}' started on worker #{$workerIndex}");
@@ -470,6 +517,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * @param WorkerAgentStartFailedDTO $dto DTO naming the agent whose start did not finish, and why
      * @throws InvalidArgumentException When the start sink cannot name an answer it owes a held frame
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function handleAgentStartFailed(WorkerAgentStartFailedDTO $dto): void
     {
@@ -490,6 +538,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * @param string $reason Why the start did not finish
      * @throws InvalidArgumentException When the start sink cannot name an answer it owes a held frame
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function reportAgentStartFailed(string $agentId, string $reason): void
     {
@@ -499,7 +548,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     }
 
     /**
-     * Tells the start sink that an agent stopped before its start was reported.
+     * Tells the start sink that a removed agent no longer satisfies a startup wait.
      *
      * The caller has already taken the agent off the roster: this method does not. A stop is not
      * a failed start - the frames held for it are let go, not answered (HIL-1041).
@@ -518,6 +567,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * Removes agent daemon and calls onStop().
      *
      * @param WorkerAgentStoppedDTO $dto DTO with agent stopped data
+     * @throws InvalidFormatException When the start sink cannot resolve a pending page recovery
      */
     public function handleAgentStopped(WorkerAgentStoppedDTO $dto): void
     {
@@ -542,6 +592,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
         Hilos::$cluster?->placement()?->noteAgentStopped($stopped->type, $stopped->index);
 
         Logger::info("Agent '{$dto->agentId}' stopped on worker #{$workerIndex}");
+        $this->reportAgentStopped($dto->agentId);
     }
 
     /**
@@ -733,7 +784,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * @param ?string $replyToNodeId Node that announced the swap to this one, null when this node did
      * @param ?int $replyToRound Round number that node opened its own round under, null when this node did
      * @param list<string> $participants Participant labels, from {@see ReHydrateRound}'s factories
-     * @param float $deadline Wall-clock deadline on the {@see microtime()} scale
+     * @param float $deadline Original absolute monotonic seconds on the process's hrtime scale
      * @return int Number the round just opened answers under
      */
     public function openReHydrateRound(
@@ -752,8 +803,53 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
         $this->reHydrateInitiator = $agentId;
         $this->reHydrateReplyToNodeId = $replyToNodeId;
         $this->reHydrateReplyToRound = $replyToRound;
+        $this->reHydrateDispatchingRound = null;
+        $this->reHydrateDepartedParticipants = [];
+        $this->reHydrateWake?->__invoke();
 
         return $number;
+    }
+
+    /**
+     * Opens before any announcement, without exposing a partly populated roster to polling.
+     *
+     * @param ?string $agentId Local initiator
+     * @param ?string $replyToNodeId Remote initiator node
+     * @param ?int $replyToRound Remote round, absent for local initiation
+     * @param float $deadline Original absolute monotonic deadline
+     * @return int Exact round owned by this finite dispatch
+     */
+    public function beginReHydrateDispatch(?string $agentId, ?string $replyToNodeId, ?int $replyToRound, float $deadline): int
+    {
+        $number = $this->openReHydrateRound($agentId, $replyToNodeId, $replyToRound,
+            [ReHydrateRound::daemonParticipant()], $deadline);
+        $this->reHydrateDispatchingRound = $number;
+        return $number;
+    }
+
+    /**
+     * @param int $round Exact still-dispatching round
+     * @param string $participant One original live participant
+     */
+    public function includeReHydrateParticipant(int $round, string $participant): void
+    {
+        if ($this->reHydrateDispatchingRound === $round && $this->reHydrateRound?->round() === $round
+            && !isset($this->reHydrateDepartedParticipants[$participant]) && !$this->reHydrateRound->isPending($participant)) {
+            $this->reHydrateRound->includeParticipant($participant);
+            $this->reHydrateWake?->__invoke();
+        }
+    }
+
+    /**
+     * @param int $round Dispatch that finished or failed, never a replacement's generation
+     */
+    public function completeReHydrateDispatch(int $round): void
+    {
+        if ($this->reHydrateDispatchingRound === $round) {
+            $this->reHydrateDispatchingRound = null;
+            $this->reHydrateDepartedParticipants = [];
+            $this->reHydrateWake?->__invoke();
+        }
     }
 
     /**
@@ -786,6 +882,9 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
         $this->reHydrateInitiator = null;
         $this->reHydrateReplyToNodeId = null;
         $this->reHydrateReplyToRound = null;
+        $this->reHydrateDispatchingRound = null;
+        $this->reHydrateDepartedParticipants = [];
+        $this->reHydrateWake?->__invoke();
 
         return $verdict;
     }
@@ -802,6 +901,33 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     public function currentReHydrateRound(): int
     {
         return $this->reHydrateRound?->round() ?? 0;
+    }
+
+    /** @return ?float Original absolute monotonic deadline, absent without an open round */
+    public function reHydrateDeadline(): ?float
+    {
+        return $this->reHydrateRound?->deadline();
+    }
+
+    /**
+     * @param Closure(): void $wake Master-loop cue; it only marks readiness, never consumes a verdict
+     */
+    public function setReHydrateWake(Closure $wake): void
+    {
+        $this->reHydrateWake = $wake;
+        if ($this->reHydrateRound !== null) {
+            $wake();
+        }
+    }
+
+    /**
+     * @param Closure(): void $wake Exact old binding; an escaped detach cannot remove its replacement
+     */
+    public function removeReHydrateWake(Closure $wake): void
+    {
+        if ($this->reHydrateWake === $wake) {
+            $this->reHydrateWake = null;
+        }
     }
 
     /**
@@ -823,7 +949,14 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     public function ackReHydrateParticipant(int $round, string $participant, bool $ok, ?string $error): void
     {
         $openRound = $this->reHydrateRound;
-        if ($openRound === null || $openRound->ack($round, $participant, $ok, $error)) {
+        if ($openRound === null) {
+            return;
+        }
+        $pending = $openRound->isPending($participant);
+        if ($openRound->ack($round, $participant, $ok, $error)) {
+            if ($pending) {
+                $this->reHydrateWake?->__invoke();
+            }
             return;
         }
 
@@ -844,7 +977,15 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      */
     public function dropReHydrateParticipant(string $participant): void
     {
+        $changed = $this->reHydrateRound?->isPending($participant) ?? false;
+        if ($this->reHydrateDispatchingRound !== null && !isset($this->reHydrateDepartedParticipants[$participant])) {
+            $this->reHydrateDepartedParticipants[$participant] = true;
+            $changed = true;
+        }
         $this->reHydrateRound?->drop($participant);
+        if ($changed) {
+            $this->reHydrateWake?->__invoke();
+        }
     }
 
     /**
@@ -872,13 +1013,13 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * Consuming rather than peeking: the round exists to be answered exactly once, and leaving a
      * settled one in place would send the same verdict again on every following tick.
      *
-     * @param float $now Current time on the {@see microtime()} scale
+     * @param float $now Current absolute monotonic seconds on the process's hrtime scale
      * @return ?ReHydrateVerdict Verdict and who is waiting for it, or null while the barrier still waits
      */
     public function pollReHydrateVerdict(float $now): ?ReHydrateVerdict
     {
         $round = $this->reHydrateRound;
-        if ($round === null) {
+        if ($round === null || $this->reHydrateDispatchingRound === $round->round()) {
             return null;
         }
 
@@ -894,6 +1035,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
         $this->reHydrateInitiator = null;
         $this->reHydrateReplyToNodeId = null;
         $this->reHydrateReplyToRound = null;
+        $this->reHydrateWake?->__invoke();
 
         return new ReHydrateVerdict(
             $agentId,
@@ -984,10 +1126,11 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * @param int $workerIndex Index of the worker that reported
      * @return array{rt: list<string>, db: list<string>} Collections that worker did not read before, keyed
      *     by the kind constants of {@see SourceChange}
+     * @throws LogicException When an internal reader-union comparison precedes complete preparation
      */
     public function handleSourceInterest(WorkerSourceInterestDTO $dto, int $workerIndex): array
     {
-        $announced = $this->readerInterestUnion();
+        $announced = $this->workerReaderMap()->unionPlan();
         $holderId = self::workerHolderId($workerIndex);
         $added = [
             SourceChange::KIND_RT => $this->workerReaderMap()->note(
@@ -1014,46 +1157,88 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * the two lists empty on the same event but neither implies the other.
      *
      * @param int $workerIndex Index of the worker whose link closed
+     * @throws LogicException When an internal reader-union comparison precedes complete preparation
      */
     public function releaseReaderInterestOfWorker(int $workerIndex): void
     {
-        $announced = $this->readerInterestUnion();
+        $announced = $this->workerReaderMap()->unionPlan();
         $this->workerReaderMap()->release(self::workerHolderId($workerIndex));
         $this->noteReaderInterestChange($announced);
     }
 
-    /**
-     * Records the union for the mesh when a report moved it, and stays quiet when it did not.
-     *
-     * The lists are compared as they stand rather than as sets: a union that came back in another
-     * order says the same thing, and announcing it again costs one frame on an event that is
-     * already rare, while a set that really changed cannot come back looking identical.
-     *
-     * The comparison is over the pair and not over one kind at a time, because the mesh is told
-     * the pair: a node that took up a DB collection and dropped an RT one on the same report has
-     * moved, and either half looked at alone would say it had not.
-     *
-     * @param array{rt: list<string>, db: list<string>} $announced What this node read before the report
-     */
-    private function noteReaderInterestChange(array $announced): void
+    /** @param Closure(Generator<int, void>): void $deliver Exact master's existing guarded source FIFO */
+    public function setReaderInterestDelivery(Closure $deliver): void
     {
-        $reads = $this->readerInterestUnion();
-        if ($reads !== $announced) {
-            $this->changedReaderInterest = $reads;
+        $this->readerInterestDelivery = $deliver;
+    }
+
+    /** @param Closure(Generator<int, void>): void $deliver Original binding, unable to remove its replacement */
+    public function removeReaderInterestDelivery(Closure $deliver): void
+    {
+        if ($this->readerInterestDelivery === $deliver) {
+            $this->readerInterestDelivery = null;
         }
     }
 
     /**
-     * What the workers of this node read between them, of both kinds.
+     * Keeps the original BEFORE/AFTER pair on the existing source FIFO. Both kinds publish
+     * together after bounded construction and ordered comparison; later reports cannot rewrite
+     * this transition. The binding and progress are private to this master's instance, with no
+     * cross-process reader or shared domain state.
      *
-     * @return array{rt: list<string>, db: list<string>} Collections read on this node, by kind
+     * @param SourceReaderUnion $announced Original complete or privately preparing BEFORE basis
+     * @throws LogicException When an internal reader-union comparison precedes complete preparation
      */
-    private function readerInterestUnion(): array
+    private function noteReaderInterestChange(SourceReaderUnion $announced): void
     {
-        return [
-            SourceChange::KIND_RT => $this->workerReaderMap()->collections(SourceChange::KIND_RT),
-            SourceChange::KIND_DB => $this->workerReaderMap()->collections(SourceChange::KIND_DB),
-        ];
+        $reads = $this->workerReaderMap()->unionPlan();
+        $owner = WeakReference::create($this);
+        $map = WeakReference::create($this->workerReaderMap());
+        $isCurrent = static fn(): bool => $owner->get() !== null && $map->get() !== null
+            && $owner->get()->workerReaderMap === $map->get();
+        $delivery = (static function () use ($announced, $reads, $owner, $map, $isCurrent): Generator {
+            yield;
+            if (!$isCurrent()) {
+                return;
+            }
+            foreach ([$announced, $reads] as $basis) {
+                foreach ($basis->build() as $_) {
+                    if (!$isCurrent()) {
+                        return;
+                    }
+                    yield;
+                }
+            }
+            $comparison = $announced->compare($reads);
+            foreach ($comparison as $_) {
+                if (!$isCurrent()) {
+                    return;
+                }
+                yield;
+            }
+            if (!$comparison->getReturn() && $isCurrent()) {
+                $owner->get()->changedReaderInterest = $reads->collections;
+                $owner->get()->changedReaderInterestMap = $map;
+            }
+        })();
+        if ($this->readerInterestDelivery === null) {
+            foreach ($delivery as $_) {
+            }
+        } else {
+            ($this->readerInterestDelivery)($delivery);
+        }
+    }
+
+    /**
+     * The final source FIFO step can leave this debt after all native work has drained.
+     * Identity qualifies its original map; later reports do not invalidate completed pairs.
+     *
+     * @return bool Whether the current reader source owes a whole announcement, including an empty pair
+     */
+    public function hasChangedReaderInterest(): bool
+    {
+        return $this->changedReaderInterest !== null && $this->workerReaderMap !== null
+            && $this->changedReaderInterestMap?->get() === $this->workerReaderMap;
     }
 
     /**
@@ -1068,8 +1253,9 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      */
     public function consumeChangedReaderInterest(): ?array
     {
-        $reads = $this->changedReaderInterest;
+        $reads = $this->hasChangedReaderInterest() ? $this->changedReaderInterest : null;
         $this->changedReaderInterest = null;
+        $this->changedReaderInterestMap = null;
 
         return $reads;
     }
@@ -1152,6 +1338,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * @return list<string> Ids of the agents forgotten, in roster order; empty when it hosted none
      * @throws InvalidArgumentException When the loss sink cannot name an answer it owes a held frame
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function forgetAgentsOfWorker(int $workerIndex, bool $isMonopolistic): array
     {

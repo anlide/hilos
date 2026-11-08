@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\StandGateway;
 
+use Hilos\API\Router\HttpRouter;
+use Hilos\Constants\HttpConstants;
+use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Socket\Client\AbstractClient;
 use Hilos\Socket\Transport\PlainSocketTransport;
+use Hilos\StandGateway\Behavior;
 use Hilos\StandGateway\StandGatewayHttpClient;
 use Hilos\StandGateway\StandGatewayTlsServer;
 use Hilos\StandGateway\Store;
+use Hilos\Tests\Unit\Socket\MutualTlsFixture;
+use Hilos\Tests\Unit\Socket\TlsTestExchange;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
@@ -30,6 +36,11 @@ final class ReleaseBehaviorTest extends TestCase
 
     /** @var list<Socket> Sockets closed after each case */
     private array $sockets = [];
+
+    private ?EventLoop $loop = null;
+
+    /** @var list<StandGatewayHttpClient> Clients detached before fixture sockets close */
+    private array $boundClients = [];
 
     /** Loads the gateway's classes by name from the source directory its server loads them from. */
     public static function setUpBeforeClass(): void
@@ -56,6 +67,10 @@ final class ReleaseBehaviorTest extends TestCase
     /** Drops connections and arrangements even after a failure. */
     protected function tearDown(): void
     {
+        foreach ($this->boundClients as $client) {
+            $client->detachEventLoop();
+        }
+        $this->loop?->close();
         foreach ($this->sockets as $socket) {
             socket_close($socket);
         }
@@ -98,6 +113,226 @@ final class ReleaseBehaviorTest extends TestCase
         $this->assertSame('held answer', $this->answerOf($this->receive($peer))['response']);
     }
 
+    public function testReleaseWakesOnlyItsPairWithoutNewProviderInputAndSpendsOneToken(): void
+    {
+        $this->loop = new EventLoop();
+        $this->dictateHeld('release-a', 'first');
+        [$first, $firstPeer] = $this->send('POST', self::GENERATE, ['prompt' => 'release-a']);
+        $this->dictateHeld('release-a', 'second');
+        [$second, $secondPeer] = $this->send('POST', self::GENERATE, ['prompt' => 'release-a']);
+        $this->dictateHeld('release-b', 'neighbor');
+        [$neighbor, $neighborPeer] = $this->send('POST', self::GENERATE, ['prompt' => 'release-b']);
+        $pairWakes = $neighborWakes = 0;
+        $this->bind($first, $pairWakes);
+        $this->bind($second, $pairWakes);
+        $this->bind($neighbor, $neighborWakes);
+        $this->pump();
+        $this->assertFalse($this->loop->hasReadyWork(), 'Held buffers do not keep themselves runnable');
+        $before = $pairWakes;
+
+        Store::pushRelease(self::GENERATE, 'unrelated');
+        $this->pump();
+        $this->assertSame($before, $pairWakes, 'An unrelated mutation wakes no waiting client');
+        $this->assertSame(1, $neighborWakes);
+
+        $this->release('release-a');
+        $this->assertSame('', $this->receive($firstPeer), 'Mutation enqueues; it never writes reentrantly');
+        $this->pump();
+        $firstWire = $this->receive($firstPeer);
+        $secondWire = $this->receive($secondPeer);
+        $this->assertSame(1, (int)($firstWire !== '') + (int)($secondWire !== ''));
+        $answers = [$this->answerOf($firstWire !== '' ? $firstWire : $secondWire)['response']];
+        $this->assertFalse(Store::takeRelease(self::GENERATE, 'release-a'));
+        $this->assertSame('', $this->receive($neighborPeer));
+        $this->assertSame(1, $neighborWakes, 'No common client tick/write scan');
+
+        $this->release('release-a');
+        $this->pump();
+        $answers[] = $this->answerOf($this->receive($firstWire === '' ? $firstPeer : $secondPeer))['response'];
+        sort($answers);
+        $this->assertSame(['first', 'second'], $answers);
+        $this->assertFalse(Store::takeRelease(self::GENERATE, 'release-a'));
+        $this->assertFalse($this->loop->hasReadyWork());
+    }
+
+    public function testReleaseDrainsTheExactAnswerBeforeAPipelinedKeepAliveRequest(): void
+    {
+        $this->loop = new EventLoop();
+        $this->dictateHeld('release-a', 'held answer');
+        [$held, $peer] = $this->send('POST', self::GENERATE, ['prompt' => 'release-a']);
+        $expected = new ReflectionProperty(AbstractClient::class, 'writeBuffer')->getValue($held);
+        $wakes = 0;
+        $this->bind($held, $wakes);
+        $next = "GET /test/health HTTP/1.1\r\nHost: stand-gateway\r\n\r\n";
+        $this->assertSame(strlen($next), socket_write($peer, $next));
+        $this->pump();
+        $this->assertSame('', $this->receive($peer));
+
+        $this->release('release-a');
+        $this->pump();
+        $wire = $this->receive($peer);
+        $this->assertStringStartsWith($expected, $wire, 'The accepted response drains whole and first');
+        $this->assertSame(['ok' => true], $this->answerOf(substr($wire, strlen($expected))));
+        $this->assertFalse($this->loop->hasReadyWork());
+    }
+
+    /** @return iterable<string, array{bool}> Both orders of the two releasing facts */
+    public static function releaseOrders(): iterable
+    {
+        yield 'release before delay' => [true];
+        yield 'delay before release' => [false];
+    }
+
+    /** @param bool $releaseFirst Whether the release precedes the due delay */
+    #[DataProvider('releaseOrders')]
+    public function testActualDelayTimerAndReleaseNeedBothFacts(bool $releaseFirst): void
+    {
+        $this->loop = new EventLoop();
+        $this->request('POST', '/model/test/answer', ['key' => 'release-a', 'response' => 'late answer']);
+        $this->declareBehavior(['key' => 'release-a', 'awaitRelease' => true, 'delayMs' => 60000]);
+        [$held, $peer] = $this->send('POST', self::GENERATE, ['prompt' => 'release-a']);
+        $wakes = 0;
+        $this->bind($held, $wakes);
+        $this->pump();
+        if ($releaseFirst) {
+            $this->release('release-a');
+            $this->pump();
+        }
+        $this->assertSame('', $this->receive($peer));
+        $before = $wakes;
+        $this->request('GET', '/test/health');
+        $this->pump();
+        $this->assertSame($before, $wakes, 'Unrelated I/O does not probe a future delay');
+
+        new ReflectionProperty(StandGatewayHttpClient::class, 'releaseAt')->setValue($held, 0.0);
+        new ReflectionProperty(StandGatewayHttpClient::class, 'waitTimer')->getValue($held)->armAt(0.0);
+        $this->pump();
+        if (!$releaseFirst) {
+            $this->assertSame('', $this->receive($peer), 'A due delay cannot substitute for a release');
+            $this->assertFalse($this->loop->hasReadyWork());
+            $this->release('release-a');
+            $this->pump();
+        }
+        $this->assertSame('late answer', $this->answerOf($this->receive($peer))['response']);
+        $this->assertFalse($this->loop->hasReadyWork());
+    }
+
+    public function testDetachCancelsQueuedWaitsAndRebindKeepsAnAcceptedAnswerAcrossResetAndForget(): void
+    {
+        $this->loop = new EventLoop();
+        $this->dictateHeld('release-a', 'accepted');
+        [$held, $peer] = $this->send('POST', self::GENERATE, ['prompt' => 'release-a']);
+        $wakes = 0;
+        $this->bind($held, $wakes);
+        $this->pump();
+        Store::pushRelease(self::GENERATE, 'release-a');
+        $held->detachEventLoop();
+        Store::reset();
+        Store::forgetModel(self::GENERATE, 'release-a');
+        $this->pump();
+        $this->assertSame(1, $wakes, 'Detach cancels the old queued client portion');
+        $this->assertSame([], new ReflectionProperty(Store::class, 'releaseSubscribers')->getValue(null));
+
+        $this->bind($held, $wakes);
+        $this->pump();
+        $this->assertSame('', $this->receive($peer));
+        Store::reset();
+        Store::forgetModel(self::GENERATE, 'release-a');
+        $this->release('release-a');
+        $this->pump();
+        $this->assertSame('accepted', $this->answerOf($this->receive($peer))['response']);
+        $this->assertSame([], new ReflectionProperty(Store::class, 'releaseSubscribers')->getValue(null));
+        $this->assertFalse($this->loop->hasReadyWork());
+    }
+
+    public function testPeerEofCancelsTheDelayTimerAndReleaseSubscription(): void
+    {
+        $this->loop = new EventLoop();
+        $this->request('POST', '/model/test/answer', ['key' => 'release-a', 'response' => 'abandoned']);
+        $this->declareBehavior(['key' => 'release-a', 'awaitRelease' => true, 'delayMs' => 60000]);
+        [$held, $peer] = $this->send('POST', self::GENERATE, ['prompt' => 'release-a']);
+        $wakes = 0;
+        $this->bind($held, $wakes);
+        $this->pump();
+        $timer = new ReflectionProperty(StandGatewayHttpClient::class, 'waitTimer')->getValue($held);
+        $this->assertNotNull($timer->getDeadline());
+        $this->assertTrue(socket_shutdown($peer, 1));
+        $this->pump();
+        $this->assertTrue($held->shouldClose(), 'EOF wins over both held bytes and a future deadline');
+        $this->assertNull($timer->getDeadline());
+        $this->assertSame([], new ReflectionProperty(Store::class, 'releaseSubscribers')->getValue(null));
+        $before = $wakes;
+        Store::pushRelease(self::GENERATE, 'release-a');
+        $this->pump();
+        $this->assertSame($before, $wakes);
+        $this->assertTrue(Store::takeRelease(self::GENERATE, 'release-a'), 'A departed answer cannot spend a later release');
+        $this->assertSame(0, $this->loop->registeredCount());
+        $this->assertFalse($this->loop->hasReadyWork());
+    }
+
+    public function testNativeCutIsAppliedOnceAndHoldStartsOnlyAfterActualDrain(): void
+    {
+        $fixture = new MutualTlsFixture();
+        $exchange = null;
+        try {
+            $authority = $fixture->issueAuthority('Gateway wait CA');
+            $exchange = new TlsTestExchange($fixture,
+                $fixture->issueNode('gateway', $authority), $fixture->issueNode('caller', $authority),
+                null, $fixture->trustFile($authority));
+            $client = new StandGatewayHttpClient($exchange->sockets['accepting'], $exchange->transports['accepting']);
+            $exchange->bindClient('accepting', $client);
+            $exchange->handshake();
+            $this->assertSame([], $exchange->failures);
+            socket_set_option($exchange->sockets['accepting'], SOL_SOCKET, SO_SNDBUF, 4096);
+            $body = str_repeat('0123456789abcdef', 32768) . 'x';
+            $router = new HttpRouter();
+            $router->addRoute(HttpConstants::METHOD_GET, '/test/native', static fn(): string => $body);
+            $client->setRouter($router);
+            $client->dictate(Behavior::fromFields(['cut' => true, 'holdMs' => 60000]), self::GENERATE, 'native');
+            $request = "GET /test/native HTTP/1.1\r\nHost: gateway\r\n\r\n";
+            $this->assertSame(0, $exchange->transports['dialing']->write($request));
+            $exchange->runUntil(fn(): bool => $client->hasPendingWrite() || $exchange->failures !== []);
+            $this->assertSame([], $exchange->failures);
+            $closeAt = new ReflectionProperty(StandGatewayHttpClient::class, 'closeAt');
+            $buffer = new ReflectionProperty(AbstractClient::class, 'writeBuffer');
+            $this->assertNull($closeAt->getValue($client), 'A native enqueue has not started the hold');
+            $expected = $buffer->getValue($client);
+            $this->assertStringContainsString('Content-Length: 524289', $expected);
+            $this->assertSame(substr($body, 0, 262144), explode("\r\n\r\n", $expected, 2)[1]);
+            $client->write();
+            $client->write();
+            $this->assertSame($expected, $buffer->getValue($client), 'Retry cannot cut an in-flight prefix again');
+            $this->assertNull($closeAt->getValue($client));
+
+            $exchange->transports['dialing']->detachEventLoop();
+            for ($pass = 0; $pass < 100; ++$pass) {
+                $exchange->loop->tick();
+            }
+            $this->assertTrue($client->hasPendingWrite(), 'Real native backpressure retains the remaining cut answer');
+            $this->assertNull($closeAt->getValue($client), 'A partially drained answer still owes no hold deadline');
+            $reader = $exchange->loop->createReadyWork(static function () use ($exchange): void {
+                $exchange->received['dialing'] .= (string)$exchange->transports['dialing']->read(65536);
+            });
+            $exchange->transports['dialing']->attachEventLoop($exchange->loop, $reader->markReady(...));
+            $exchange->runUntil(fn(): bool => ($closeAt->getValue($client) !== null
+                && strlen($exchange->received['dialing']) === strlen($expected)) || $exchange->failures !== []);
+            $this->assertSame([], $exchange->failures);
+            $this->assertSame($expected, $exchange->received['dialing']);
+            $this->assertFalse($client->hasPendingWrite());
+            $this->assertFalse($client->shouldClose());
+            $timer = new ReflectionProperty(StandGatewayHttpClient::class, 'waitTimer')->getValue($client);
+            $this->assertSame($closeAt->getValue($client), $timer->getDeadline());
+            $closeAt->setValue($client, 0.0);
+            $timer->armAt(0.0);
+            $exchange->runUntil(fn(): bool => $client->shouldClose() || $exchange->failures !== []);
+            $this->assertSame([], $exchange->failures);
+            $this->assertTrue($client->shouldClose(), 'The real due hold timer wakes its guarded client');
+        } finally {
+            $exchange?->close();
+            $fixture->close();
+        }
+    }
+
     public function testOneReleaseLetsOutOneHeldAnswerOfThePair(): void
     {
         $this->dictateHeld('release-a', 'first');
@@ -122,8 +357,8 @@ final class ReleaseBehaviorTest extends TestCase
         [$held, $peer] = $this->send('POST', self::GENERATE, ['prompt' => 'release-a']);
         $this->assertSame('', $this->receive($peer), 'Released, but the delay is not over');
 
-        // The delay's deadline is private to the connection; moving it into the past stands in for a minute of ticks.
-        new ReflectionProperty(StandGatewayHttpClient::class, 'releaseAt')->setValue($held, microtime(true) - 1);
+        // The delay's monotonic deadline is private; moving it into the past avoids waiting a minute.
+        new ReflectionProperty(StandGatewayHttpClient::class, 'releaseAt')->setValue($held, 0.0);
         $held->write();
 
         $this->assertSame('late answer', $this->answerOf($this->receive($peer))['response']);
@@ -135,8 +370,8 @@ final class ReleaseBehaviorTest extends TestCase
         $this->declareBehavior(['key' => 'release-a', 'awaitRelease' => true, 'delayMs' => 60000]);
         [$held, $peer] = $this->send('POST', self::GENERATE, ['prompt' => 'release-a']);
 
-        // The delay's deadline is private to the connection; moving it into the past stands in for a minute of ticks.
-        new ReflectionProperty(StandGatewayHttpClient::class, 'releaseAt')->setValue($held, microtime(true) - 1);
+        // The delay's monotonic deadline is private; moving it into the past avoids waiting a minute.
+        new ReflectionProperty(StandGatewayHttpClient::class, 'releaseAt')->setValue($held, 0.0);
         $held->write();
         $this->assertSame('', $this->receive($peer), 'The delay is over, but no release came');
 
@@ -314,7 +549,8 @@ final class ReleaseBehaviorTest extends TestCase
         $this->assertTrue(socket_set_nonblock($pair[0]));
 
         // The connection the gateway builds for an accepted call - its residents' routes and its own.
-        $server = new StandGatewayTlsServer('127.0.0.1', 0, '');
+        $server = new StandGatewayTlsServer('127.0.0.1', 0, dirname(__DIR__, 3) . '/docker/stand-gateway/tls/server.pem');
+        $server->prepareTlsContexts();
         $client = new ReflectionMethod(StandGatewayTlsServer::class, 'onCreateClient')->invoke($server, $pair[0]);
         // A socket pair carries no TLS: the bare transport the framework's client uses when given none.
         new ReflectionProperty(AbstractClient::class, 'transport')->setValue($client, new PlainSocketTransport($pair[0]));
@@ -347,6 +583,32 @@ final class ReleaseBehaviorTest extends TestCase
                 return $response;
             }
             $response .= $chunk;
+        }
+    }
+
+    /**
+     * @param StandGatewayHttpClient $client Connection whose real EventLoop owns its waits
+     * @param int $wakes Number of this client's guarded portions
+     */
+    private function bind(StandGatewayHttpClient $client, int &$wakes): void
+    {
+        $this->boundClients[] = $client;
+        $client->attachEventLoop($this->loop, static function () use ($client, &$wakes): void {
+            ++$wakes;
+            $client->read();
+            $client->onTick();
+            $client->write();
+            if ($client->shouldClose()) {
+                $client->detachEventLoop();
+            }
+        });
+    }
+
+    /** Services a bounded number of nonblocking native/owner portions without a clock wait or client scan. */
+    private function pump(): void
+    {
+        for ($pass = 0; $pass < 16; ++$pass) {
+            $this->loop->tick();
         }
     }
 }

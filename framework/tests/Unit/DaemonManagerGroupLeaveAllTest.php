@@ -255,7 +255,7 @@ final class GroupLeaveAllTestWorkerServer extends WorkerServer
             $client,
             new GroupLeaveAllTestAgentManagerDaemon(),
         );
-        $this->clients[] = $client;
+        $this->addClient($client);
     }
 
     /**

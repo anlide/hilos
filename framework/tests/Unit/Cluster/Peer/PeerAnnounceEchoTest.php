@@ -17,6 +17,7 @@ use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 use ReflectionProperty;
 use Socket;
 
@@ -165,8 +166,8 @@ final class PeerAnnounceEchoTest extends TestCase
             transport: new NamedPeerTestTransport($near, $nodeId),
         );
 
-        $clients = new ReflectionProperty($server, 'clients');
-        $clients->setValue($server, [...$clients->getValue($server), $link]);
+        new ReflectionMethod(PeerServer::class, 'addClient')->invoke($server, $link);
+        new ReflectionMethod(PeerServer::class, 'attachClient')->invoke($server, $link);
 
         socket_write($far, new PeerWelcomeDTO(
             PeerProtocol::VERSION,

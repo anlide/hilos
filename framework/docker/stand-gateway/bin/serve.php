@@ -28,15 +28,6 @@ const LISTEN_PORT = 18000;
 /** Certificate and private key the gateway presents; the callers trust tls/ca.pem. */
 const CERTIFICATE_FILE = __DIR__ . '/../tls/server.pem';
 
-/**
- * Pause between two turns of the loop, in microseconds.
- *
- * A turn does not wait for an event: bytes OpenSSL has already decrypted into its own
- * buffer raise no readability on the socket, and only the server's tick, which reads every
- * client, picks them up.
- */
-const LOOP_PAUSE_US = 10000;
-
 spl_autoload_register(static function (string $class): void {
     // The gateway's prefix goes first: it is inside the framework's own.
     $roots = ['Hilos\\StandGateway\\' => GATEWAY_SOURCES, 'Hilos\\' => FRAMEWORK_BACKEND];
@@ -77,48 +68,54 @@ $server->setClientSocketDetacher(new readonly class ($loop) implements ClientSoc
     }
 });
 
+$server->prepareTlsContexts();
 if (!$server->start()) {
     error_log('stand gateway could not listen on port ' . LISTEN_PORT);
     exit(1);
 }
 
-$loop->registerRead($server->getSocket(), static function () use ($loop, $server): void {
-    $client = $server->acceptConnection();
-    if ($client === null) {
-        return;
-    }
-
-    $loop->registerRead($client->getSocket(), static function () use ($server, $client): void {
+$server->setClientSocketAttacher(static function (ClientInterface $client) use ($loop, $server): void {
+    $client->attachEventLoop($loop, static function () use ($server, $client): void {
         try {
             $client->read();
+            $client->onTick();
             $client->write();
-
             if ($client->shouldClose()) {
                 $server->dropClient($client);
             }
         } catch (Throwable $exception) {
-            // The loop swallows what a callback throws, so a client that failed here would
-            // stay on the watch; it is dropped instead, as the daemon drops it.
             error_log('stand gateway dropped a connection: ' . $exception->getMessage());
             $server->dropClient($client);
         }
     });
 });
 
+$loop->registerRead($server->getSocket(), static function () use ($server): void {
+    $server->acceptConnection();
+});
+
 // PID 1 of its container: without a handler SIGTERM is ignored, and every stack teardown
-// would wait out the stop timeout before the kill.
+// would wait out the stop timeout before the kill. The native base owns these signals so
+// they wake an idle runOnce() as well as a busy gateway.
 $running = true;
-pcntl_async_signals(true);
 foreach ([SIGTERM, SIGINT] as $stopSignal) {
-    pcntl_signal($stopSignal, static function () use (&$running): void {
+    $loop->registerSignal($stopSignal, static function () use (&$running): void {
         $running = false;
     });
 }
 
-while ($running) {
-    $loop->tick();
-    $server->onTick();
-    usleep(LOOP_PAUSE_US);
+try {
+    while ($running) {
+        $loop->runOnce();
+    }
+} finally {
+    $loop->unregister($server->getSocket());
+    foreach ([SIGTERM, SIGINT] as $stopSignal) {
+        $loop->unregisterSignal($stopSignal);
+    }
+    try {
+        $server->stop();
+    } finally {
+        $loop->cleanup();
+    }
 }
-
-$server->stop();

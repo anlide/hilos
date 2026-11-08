@@ -45,6 +45,9 @@ final class ClusterClientLocation implements ClientLocation
     /** @var array<string, true> Accept keys attached through the test door */
     private array $attachedLocal = [];
 
+    /** Revision of local test attachments only; remote indexes and delivery counters do not participate. */
+    private int $localAttachmentRevision = 0;
+
     /** @var int Cross-node deliveries this node has accepted for its browsers since start */
     private int $deliveries = 0;
 
@@ -237,7 +240,11 @@ final class ClusterClientLocation implements ClientLocation
      */
     public function attachLocal(string $acceptKey): void
     {
+        if (isset($this->attachedLocal[$acceptKey])) {
+            return;
+        }
         $this->attachedLocal[$acceptKey] = true;
+        ++$this->localAttachmentRevision;
     }
 
     /**
@@ -247,7 +254,17 @@ final class ClusterClientLocation implements ClientLocation
      */
     public function detachLocal(string $acceptKey): void
     {
+        if (!isset($this->attachedLocal[$acceptKey])) {
+            return;
+        }
         unset($this->attachedLocal[$acceptKey]);
+        ++$this->localAttachmentRevision;
+    }
+
+    /** @return int Nonconsuming local attachment membership revision, without diffing or reading announced keys */
+    public function localAttachmentRevision(): int
+    {
+        return $this->localAttachmentRevision;
     }
 
     /**

@@ -192,6 +192,7 @@ final class HttpClientParkTest extends TestCase
 
         $server->deliver($request->correlationId, HttpReplyDTO::refusal($request, HttpConstants::HTTP_NOT_FOUND));
         $client->write();
+        $client->read();
 
         $this->assertSame([HttpConstants::HTTP_NOT_FOUND, HttpConstants::HTTP_OK], $this->statuses($this->receive($peer)));
     }

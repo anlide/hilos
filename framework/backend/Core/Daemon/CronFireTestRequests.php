@@ -6,10 +6,14 @@ namespace Hilos\Core\Daemon;
 
 use Closure;
 use Hilos\Constants\CommandChannelWindows;
+use Hilos\Constants\TimeConstants;
 use Hilos\Constants\CommandConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Core\Daemon\Cron\CronScheduleTestOperation;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Environment\NonProductionGate;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -24,7 +28,7 @@ use Throwable;
 /**
  * Local console waits for an agent's cron rule fired once now, each answered by the worker running the agent.
  *
- * The master arms nothing itself: it hands the ask to the worker its roster names for the agent,
+ * The master arms no cron rule itself: it hands the ask to the worker its roster names for the agent,
  * over the existing link, and waits for that connection's outcome. The worker sends it after the
  * agent's tick in which the armed rule fired, behind that tick's cron report, so the node's Daemon
  * agent has the new run before the console has its answer.
@@ -57,6 +61,8 @@ final class CronFireTestRequests
 
     private float $nextDeadline = INF;
 
+    private ?EventLoopTimer $deadlineTimer = null;
+
     /**
      * @param AgentManagerDaemon $agents This master's agent roster, asked which worker runs the agent
      * @param Closure(): ?WorkerServer $workerServer This master's worker transport
@@ -70,13 +76,35 @@ final class CronFireTestRequests
     }
 
     /**
+     * The timer cues the manager; only its guarded phase executes overdue requests.
+     *
+     * @param EventLoop $loop This master's single native loop
+     * @param Closure(): void $wake Cue the existing guarded deadline phase
+     * @throws EventLoopException When a live original deadline cannot be armed
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+        $this->detachEventLoop();
+        $this->deadlineTimer = $loop->createTimer($wake);
+        $this->rearmDeadlineTimer();
+    }
+
+    /** Cancels this binding's native and queued work, preserving every live wait for rebind. */
+    public function detachEventLoop(): void
+    {
+        $this->deadlineTimer?->close();
+        $this->deadlineTimer = null;
+    }
+
+    /**
      * Sends the arming to the worker running the agent, or refuses the ask at once.
      *
      * @param CommandRequestDTO $request Held request, independently checked at this boundary
      * @param string $agentId Agent holding the rule
      * @param string $ruleName Rule to fire
-     * @param ?float $now Current seconds, injectable for deadline tests
+     * @param ?float $now Monotonic seconds, injectable for deadline tests
      * @param ?WorkerTestCronScheduleDTO $schedule Immediate pause mutation instead of a firing request
+     * @throws EventLoopException When the nearest live deadline cannot be armed or canceled
      */
     public function request(
         CommandRequestDTO $request,
@@ -104,7 +132,8 @@ final class CronFireTestRequests
                 ($this->reply)(CommandReplyDTO::error($request->correlationId, "No agent {$agentId} runs on this node."));
                 return;
             }
-            $deadline = ($now ?? microtime(true)) + CommandChannelWindows::AGENT_WAIT_SECONDS;
+            $deadline = ($now ?? hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND)
+                + CommandChannelWindows::AGENT_WAIT_SECONDS;
             $this->workers[$request->correlationId] = $worker;
             $this->agentIds[$request->correlationId] = $agentId;
             $this->ruleNames[$request->correlationId] = $ruleName;
@@ -112,10 +141,10 @@ final class CronFireTestRequests
                 $this->schedules[$request->correlationId] = $schedule;
             }
             $this->deadlines[$request->correlationId] = $deadline;
-            $this->nextDeadline = min($this->nextDeadline, $deadline);
         } catch (Throwable $failure) {
             ($this->reply)(CommandReplyDTO::error($request->correlationId, $failure->getMessage()));
         }
+        $this->rearmDeadlineTimer();
     }
 
     /**
@@ -123,7 +152,8 @@ final class CronFireTestRequests
      *
      * @param WorkerClient $worker Actual sender connection
      * @param WorkerTestCronFiredDTO|WorkerTestCronScheduleResultDTO $ack Parsed firing or schedule outcome
-     * @param ?float $now Current seconds, injectable for deadline tests
+     * @param ?float $now Monotonic seconds, injectable for deadline tests
+     * @throws EventLoopException When the nearest live deadline cannot be armed or canceled
      */
     public function accept(
         WorkerClient $worker,
@@ -136,7 +166,7 @@ final class CronFireTestRequests
             || (isset($this->schedules[$correlationId]) !== ($ack instanceof WorkerTestCronScheduleResultDTO))) {
             return;
         }
-        if (($now ?? microtime(true)) >= $this->deadlines[$correlationId]) {
+        if (($now ?? hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND) >= $this->deadlines[$correlationId]) {
             $this->refuse($correlationId, $this->lateRefusal($correlationId));
             return;
         }
@@ -160,7 +190,10 @@ final class CronFireTestRequests
         ($this->reply)(CommandReplyDTO::ok($correlationId, $payload));
     }
 
-    /** @param WorkerClient $worker Original connection that closed */
+    /**
+     * @param WorkerClient $worker Original connection that closed
+     * @throws EventLoopException When the nearest live deadline cannot be armed or canceled
+     */
     public function workerGone(WorkerClient $worker): void
     {
         foreach (array_keys($this->workers, $worker, true) as $key) {
@@ -174,9 +207,15 @@ final class CronFireTestRequests
         }
     }
 
-    /** @param string $correlationId Ask whose caller stopped waiting, or that has been answered */
+    /**
+     * @param string $correlationId Ask whose caller stopped waiting, or that has been answered
+     * @throws EventLoopException When the nearest live deadline cannot be armed or canceled
+     */
     public function abandon(string $correlationId): void
     {
+        if (!isset($this->workers[$correlationId])) {
+            return;
+        }
         unset(
             $this->workers[$correlationId],
             $this->agentIds[$correlationId],
@@ -184,23 +223,23 @@ final class CronFireTestRequests
             $this->schedules[$correlationId],
             $this->deadlines[$correlationId],
         );
-        if ($this->workers === []) {
-            $this->nextDeadline = INF;
-        }
+        $this->rearmDeadlineTimer();
     }
 
-    /** @param float $now Current seconds on the master's loop */
-    public function tick(float $now): void
+    /**
+     * @param ?float $now Monotonic seconds, injectable for deadline tests
+     * @throws EventLoopException When the next live deadline cannot be armed
+     */
+    public function tick(?float $now = null): void
     {
+        $now ??= hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
         if ($now < $this->nextDeadline) {
+            $this->rearmDeadlineTimer();
             return;
         }
-        $this->nextDeadline = INF;
         foreach ($this->deadlines as $correlationId => $deadline) {
             if ($now >= $deadline) {
                 $this->refuse((string)$correlationId, $this->lateRefusal((string)$correlationId));
-            } else {
-                $this->nextDeadline = min($this->nextDeadline, $deadline);
             }
         }
     }
@@ -220,10 +259,18 @@ final class CronFireTestRequests
     /**
      * @param string $correlationId Wait to consume before replying
      * @param string $error Refusal the held console is answered with
+     * @throws EventLoopException When the nearest live deadline cannot be armed or canceled
      */
     private function refuse(string $correlationId, string $error): void
     {
         $this->abandon($correlationId);
         ($this->reply)(CommandReplyDTO::error($correlationId, $error));
+    }
+
+    /** @throws EventLoopException When the nearest live wait cannot be armed or canceled */
+    private function rearmDeadlineTimer(): void
+    {
+        $this->nextDeadline = $this->deadlines === [] ? INF : min($this->deadlines);
+        $this->deadlineTimer?->armAt(is_finite($this->nextDeadline) ? $this->nextDeadline : null);
     }
 }

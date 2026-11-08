@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Peer;
 
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\EventLoop\ReadyWork;
+
 /**
  * Mutable per-target dial state owned by {@see PeerServer}.
  *
@@ -11,7 +14,7 @@ namespace Hilos\Cluster\Peer;
  * through the non-blocking connect state machine: idle (waiting for the next
  * attempt), connecting (socket opened, awaiting writability), or linked (promoted
  * to a {@see PeerLink}). It is an internal state holder, not a value object — the
- * server mutates it in place on each tick.
+ * server mutates it in place on readiness or a target's own deadline.
  */
 final class PeerDial
 {
@@ -21,11 +24,21 @@ final class PeerDial
     /** @var bool True while a non-blocking connect is in progress */
     public bool $connecting = false;
 
-    /** @var float Earliest microtime the next dial attempt may start */
+    /** @var float Earliest monotonic second the next dial attempt may start */
     public float $nextAttemptAt = 0.0;
 
-    /** @var float Microtime the current connect attempt started (for the connect timeout) */
+    /** @var float Monotonic second the current connect attempt started */
     public float $connectStartedAt = 0.0;
+
+    public ?ReadyWork $ready = null;
+
+    /** One deadline at a time: connect completion or retry, never a periodic wake. */
+    public ?EventLoopTimer $timer = null;
+
+    public bool $connectReady = false;
+
+    /** Invalidates queued completion facts before socket close or ownership transfer. */
+    public int $generation = 0;
 
     /** @var ?PeerLink Established link, or null while not connected */
     public ?PeerLink $link = null;

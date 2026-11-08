@@ -20,6 +20,7 @@ use Hilos\Core\Daemon\Module\DaemonModule;
 use Hilos\Core\Daemon\Module\PeerModule;
 use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Server\CommandServer;
@@ -46,6 +47,7 @@ final class ChatDaemonManager extends DaemonManager
      *
      * @throws InvalidFormatException When the initial daemon measurement violates its value contract
      * @throws CronRuleNameException When the history cleanup name uses the reserved framework prefix
+     * @throws EventLoopException When cron registration cannot rearm native scheduling
      */
     public function __construct()
     {

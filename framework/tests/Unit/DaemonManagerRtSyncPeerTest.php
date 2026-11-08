@@ -5,6 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Closure;
+use Generator;
+use ReflectionClass;
+use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\Peer\PeerLink;
+use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtReplicaOfferDTO;
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Cluster\NodeIdentity;
@@ -23,6 +30,10 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\RtReplicaOfferBuild;
+use Hilos\Core\Daemon\RtOwnedSnapshotBuild;
+use Hilos\Core\Daemon\SignalDispatch;
+use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -38,6 +49,7 @@ use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\RtStaleness;
+use Hilos\Runtime\RtSnapshotRead;
 use Hilos\Runtime\State\Collection\HilosSessionRotations;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
@@ -48,6 +60,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tests\Unit\Cluster\Peer\PeerTestMarkers;
 use Hilos\Tests\Unit\Cluster\Peer\PeerTestTls;
 use Hilos\TruthSource\RtReplicaOriginMap;
+use Hilos\TruthSource\RtNodeSourceMap;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\WorkerServer;
@@ -58,6 +71,9 @@ use Hilos\Socket\Worker\WorkerDTO;
 use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
+use ReflectionMethod;
+use ReflectionProperty;
+use WeakReference;
 
 /**
  * How an RT write travels between the nodes of a cluster (HIL-586).
@@ -337,6 +353,47 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         $this->assertCount(1, $daemon->mesh->interests);
     }
 
+    public function testLargeReaderUnionsUseTheGuardedSourceFifoAndAnnounceOnlyCompleteOrderedPairs(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->announceInterest();
+        $daemon->askForMissing();
+        $daemon->mesh->interests = [];
+        $daemon->mesh->dbInterests = [];
+        $loop = new EventLoop();
+        new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($daemon, $loop);
+        new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($daemon);
+        $names = [];
+        for ($index = 0; $index < 8192; $index++) {
+            $names[] = 'reader-' . $index;
+        }
+        try {
+            $daemon->workerReads(...$names);
+            $daemon->announceInterest();
+            self::assertSame([], $daemon->mesh->interests, 'A large AFTER pair cannot be built by the report callback');
+            $daemon->dispatch();
+            $daemon->announceInterest();
+            self::assertSame([], $daemon->mesh->interests, 'One guarded portion cannot publish a partial reader list');
+            for ($portion = 0; $portion < 1024 && $daemon->mesh->interests === []; $portion++) {
+                $daemon->dispatch();
+                $daemon->announceInterest();
+            }
+            self::assertSame([$names], $daemon->mesh->interests);
+            self::assertSame([[]], $daemon->mesh->dbInterests, 'Both original kinds leave in the same complete announcement');
+            $daemon->anotherWorkerReads(...$names);
+            for ($portion = 0; $portion < 1024; $portion++) {
+                $daemon->dispatch();
+                $daemon->announceInterest();
+            }
+            self::assertSame([$names], $daemon->mesh->interests, 'A large equal ordered pair remains silent after bounded comparison');
+            self::assertSame([[]], $daemon->mesh->dbInterests);
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'discardSignalDispatch')->invoke($daemon);
+            new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($daemon);
+            $loop->close();
+        }
+    }
+
     /**
      * A second worker taking up a collection this node already read changes who holds it here,
      * not whether the node does - and the mesh is told the latter. This is the ordinary case: a
@@ -361,6 +418,7 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     {
         $daemon = new DaemonManagerRtSyncPeerTestManager();
         $daemon->announceInterest();
+        $daemon->askForMissing();
 
         $daemon->workerReads(DaemonManagerRtSyncPeerTestRtContext::ROWS);
         $daemon->announceInterest();
@@ -380,6 +438,7 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     {
         $daemon = new DaemonManagerRtSyncPeerTestManager();
         $daemon->announceInterest();
+        $daemon->askForMissing();
 
         $daemon->workerLinkClosed(DaemonManagerRtSyncPeerTestWorkerClient::WORKER_INDEX);
         $daemon->announceInterest();
@@ -1517,6 +1576,65 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         $this->assertCount(1, $daemon->mesh->snapshots, 'The same ownership is offered once, not per pass');
     }
 
+    public function testUnchangedOwnershipDoesNotReadEveryClaimedKeyOnEachPass(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $collection->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => self::ROW_ID, 'name' => 'Ada']));
+        $daemon->mesh->linked = ['node-c'];
+        $daemon->noteOwnAgent('worker_agent', [DaemonManagerRtSyncPeerTestRtContext::ROWS], [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]]);
+        $daemon->offerOnOwnershipChange();
+        $reads = $collection->presenceReads;
+        $daemon->offerOnOwnershipChange();
+        $collection->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => self::ROW_ID, 'name' => 'Grace']));
+        $daemon->offerOnOwnershipChange();
+
+        $this->assertSame($reads, $collection->presenceReads, 'An unchanged presence basis must not scan the claim keys again');
+        $this->assertCount(1, $daemon->mesh->snapshots, 'Replacing a value under the same held key is not new ownership');
+        $collection->remove(self::ROW_ID);
+        $daemon->offerOnOwnershipChange();
+        $this->assertCount(2, $daemon->mesh->snapshots);
+        $this->assertSame([], $daemon->mesh->snapshots[1]['rows']);
+        $this->assertSame([self::ROW_ID], $daemon->mesh->snapshots[1]['scopeKeys']);
+    }
+
+    public function testOwnershipPresenceIsRecheckedWhenTheRuntimeContextDisappears(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $collection->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => self::ROW_ID, 'name' => 'Ada']));
+        $daemon->mesh->linked = ['node-c'];
+        $daemon->noteOwnAgent('worker_agent', [DaemonManagerRtSyncPeerTestRtContext::ROWS], [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]]);
+        $daemon->offerOnOwnershipChange();
+        $runtime = WeakReference::create(Hilos::$rt);
+        Hilos::$rt = null;
+        $this->assertNull($runtime->get(), 'The cached ownership basis must not retain a departed runtime context');
+        $daemon->offerOnOwnershipChange();
+        $this->assertCount(2, $daemon->mesh->snapshots);
+        $this->assertSame([], $daemon->mesh->snapshots[1]['rows']);
+        $this->assertSame([self::ROW_ID], $daemon->mesh->snapshots[1]['scopeKeys']);
+    }
+
+    public function testRebindingTheSameRuntimeContextInvalidatesItsOldMembershipBasis(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $collection->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => self::ROW_ID, 'name' => 'Ada']));
+        $daemon->mesh->linked = ['node-c'];
+        $daemon->noteOwnAgent('worker_agent', [DaemonManagerRtSyncPeerTestRtContext::ROWS], [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]]);
+        $daemon->offerOnOwnershipChange();
+        Hilos::$rt->configure();
+        Hilos::$rt->bindStateCollectionNames();
+        $daemon->offerOnOwnershipChange();
+
+        $this->assertCount(2, $daemon->mesh->snapshots);
+        $this->assertSame([], $daemon->mesh->snapshots[1]['rows']);
+        $this->assertSame([self::ROW_ID], $daemon->mesh->snapshots[1]['scopeKeys']);
+    }
+
     /**
      * An agent over a set that starts after the link is offered to the nodes already linked: the
      * sets claimed here are part of the ownership signature.
@@ -2109,13 +2227,17 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     public function testACollectionThisNodeAlreadyHoldsARowOfIsNotAskedAbout(): void
     {
         $daemon = new DaemonManagerRtSyncPeerTestManager();
-        $daemon->mountCollection();
+        $collection = $daemon->mountCollection();
         $daemon->writeOwnRow(self::ROW_ID, 'Ada');
         $daemon->announceInterest();
+        $row = $collection->get(self::ROW_ID);
+        $this->assertInstanceOf(DaemonManagerRtSyncPeerTestState::class, $row);
+        $serializations = $row->serializations;
 
         $daemon->askForMissing();
 
         $this->assertSame([], $daemon->mesh->snapshotQueries);
+        $this->assertSame($serializations, $row->serializations, 'Presence must not build any row payload');
     }
 
     /**
@@ -2227,6 +2349,45 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         );
     }
 
+    public function testRetainedSnapshotQueriesUseOriginalReaderValuesAndPublishOnlyTheWholeUnion(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $names = [];
+        for ($index = 0; $index < 8192; $index++) {
+            $names[] = 'missing-' . $index;
+        }
+        $daemon->workerReads(...$names);
+        $loop = new EventLoop();
+        new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($daemon, $loop);
+        new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($daemon);
+        try {
+            $daemon->announceInterest();
+            $daemon->askForMissing();
+            $daemon->askOnHandshake('node-c');
+            $daemon->workerReads('future');
+            $daemon->workerLinkClosed(DaemonManagerRtSyncPeerTestWorkerClient::WORKER_INDEX);
+            $daemon->workerReads('rejoined');
+            $daemon->askOnHandshake('node-c');
+            self::assertSame([], $daemon->mesh->snapshotQueries);
+            self::assertSame([], $daemon->mesh->snapshotQueriesByNode);
+            $daemon->dispatch();
+            self::assertSame([], $daemon->mesh->snapshotQueries, 'A portion cannot publish an incomplete union');
+            self::assertSame([], $daemon->mesh->snapshotQueriesByNode);
+            for ($portion = 0; $portion < 320; $portion++) {
+                $daemon->dispatch();
+            }
+            self::assertSame([$names], $daemon->mesh->snapshotQueries);
+            self::assertSame([
+                ['nodeId' => 'node-c', 'collectionKeys' => $names],
+                ['nodeId' => 'node-c', 'collectionKeys' => ['rejoined']],
+            ], $daemon->mesh->snapshotQueriesByNode);
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'discardSignalDispatch')->invoke($daemon);
+            $loop->close();
+        }
+    }
+
     /**
      * The leaf's other half: a node that owns nothing of the collection answers anyway, because
      * the request is what opens that right. Today nothing at all goes back from here.
@@ -2325,6 +2486,161 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         $this->assertSame([self::REMOTE_NODE], array_column($daemon->mesh->replicaOffers, 'originNodeId'));
     }
 
+    public function testRetainedReplicaAnswersKeepEarlierSourceWritesAndDelayLaterOnes(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $states = $daemon->mountCollection();
+        for ($id = 0; $id < 256; $id++) {
+            $daemon->receiveFrom($id % 2 === 0 ? self::REMOTE_NODE : '3', $daemon->rtSyncCreated('before', (string)$id));
+        }
+        $lastSerializations = $states->get('255')->serializations;
+        $loop = new EventLoop();
+        new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($daemon, $loop);
+        new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($daemon);
+        try {
+            $daemon->answerQuery('node-c', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
+            $this->assertSame([], $daemon->mesh->replicaOffers, 'A partial row build sends no origin frame');
+            $this->assertSame($lastSerializations, $states->get('255')->serializations, 'The first portion cannot serialize the whole collection');
+            $daemon->receive($daemon->rtSyncDeleted('0'));
+            $daemon->receive($daemon->rtSyncCreated('after', 'earlier-than-query'));
+            $daemon->answerQuery('node-c', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
+            $this->assertNotNull($states->get('0'), 'The later delete stays behind the original answer');
+            $this->assertNull($states->get('earlier-than-query'));
+            for ($portion = 0; $portion < 32; $portion++) {
+                $daemon->dispatch();
+            }
+            $this->assertSame([self::REMOTE_NODE, '3', '3', self::REMOTE_NODE],
+                array_column($daemon->mesh->replicaOffers, 'originNodeId'));
+            $first = $daemon->mesh->replicaOffers[0]['rows'];
+            $second = $daemon->mesh->replicaOffers[3]['rows'];
+            $this->assertCount(128, $first);
+            $this->assertCount(128, $second);
+            $this->assertArrayHasKey('0', $first);
+            $this->assertArrayNotHasKey('earlier-than-query', $first);
+            $this->assertArrayNotHasKey('0', $second);
+            $this->assertSame(['id' => 'earlier-than-query', 'name' => 'after'], $second['earlier-than-query']);
+            $this->assertNull($states->get('0'));
+            $this->assertSame('after', $states->get('earlier-than-query')->name);
+            $this->assertSame($lastSerializations + 2, $states->get('255')->serializations);
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'discardSignalDispatch')->invoke($daemon);
+            $loop->close();
+        }
+    }
+
+    public function testRetainedOwnerHandOverPublishesOnlyWholeSnapshotsInTheSourceFifo(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $states = $daemon->mountCollection();
+        for ($id = 0; $id < 256; $id++) {
+            $daemon->writeOwnRow((string)$id, 'before');
+        }
+        $daemon->noteOwnAgent('owner', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
+        $serializations = $states->get('255')->serializations;
+        $loop = new EventLoop();
+        new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($daemon, $loop);
+        new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($daemon);
+        try {
+            $daemon->handshaked('node-c');
+            $this->assertSame([], $daemon->mesh->snapshots);
+            $this->assertSame($serializations, $states->get('255')->serializations);
+            $daemon->applyRemoteRtSync(self::REMOTE_NODE, SignalTypeConstants::RT_SYNC_DELETED, $daemon->rtSyncDeleted('0'), true);
+            $daemon->handshaked('node-c');
+            $this->assertNotNull($states->get('0'));
+            for ($portion = 0; $portion < 32; $portion++) {
+                $daemon->dispatch();
+            }
+            $this->assertCount(2, $daemon->mesh->snapshots);
+            $this->assertCount(256, $daemon->mesh->snapshots[0]['rows']);
+            $this->assertCount(255, $daemon->mesh->snapshots[1]['rows']);
+            $this->assertSame(['id' => '0', 'name' => 'before'], $daemon->mesh->snapshots[0]['rows']['0']);
+            $this->assertArrayNotHasKey('0', $daemon->mesh->snapshots[1]['rows']);
+            $this->assertSame([], $daemon->mesh->snapshots[0]['scopeKeys']);
+            $this->assertSame([], $daemon->mesh->snapshots[1]['scopeSetKeys']);
+            $this->assertNull($states->get('0'));
+            $this->assertSame($serializations + 2, $states->get('255')->serializations);
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'discardSignalDispatch')->invoke($daemon);
+            $loop->close();
+        }
+    }
+
+    public function testAWholeClearCannotPublishAnUnfinishedReplacementAsACompleteSnapshot(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->writeOwnRow('a', 'first');
+        $daemon->writeOwnRow('b', 'second');
+        $source = new RtSnapshotRead(DaemonManagerRtSyncPeerTestRtContext::ROWS);
+        $delivery = new RtOwnedSnapshotBuild($daemon->mesh, 'node-c', [$source], static fn(): bool => true)->delivery();
+        $dispatch = new SignalDispatch(null, static fn() => $delivery);
+        $dispatch->runPortion(2);
+        $this->assertSame([], $daemon->mesh->snapshots);
+        $daemon->receiveSnapshot(DaemonManagerRtSyncPeerTestRtContext::ROWS, []);
+        $dispatch->runPortion(64);
+        $this->assertFalse($source->isCurrent());
+        $this->assertSame([], $daemon->mesh->snapshots);
+        $this->assertFalse($dispatch->hasWork());
+    }
+
+    public function testADepartedReplicaRecipientReceivesNoPartOfAnUnfinishedOriginGroup(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        for ($id = 0; $id < 130; $id++) {
+            $daemon->receive($daemon->rtSyncCreated('before', (string)$id));
+        }
+        $current = true;
+        $route = static function () use (&$current): bool { return $current; };
+        $delivery = new RtReplicaOfferBuild($daemon->mesh, 'node-c', $daemon->getAgentManagerDaemon()->rtNodeSourceMap()->sourceReports(),
+            $daemon->getAgentManagerDaemon()->rtReplicaOriginMap(), [new RtSnapshotRead(DaemonManagerRtSyncPeerTestRtContext::ROWS)],
+            $route)->delivery();
+        $dispatch = new SignalDispatch(null, static fn() => $delivery);
+        $dispatch->runPortion(64);
+        $this->assertSame([], $daemon->mesh->replicaOffers);
+        $current = false;
+        $dispatch->runPortion(64);
+        $this->assertFalse($dispatch->hasWork());
+        $this->assertSame([], $daemon->mesh->replicaOffers);
+    }
+
+    public function testReplicaBuilderCapturesExactRowsOriginsAndClaimValuesBeforeItsFirstStep(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $states = $daemon->mountCollection();
+        foreach (['0', '07', '7', 'moved', 'recreated'] as $id) {
+            $daemon->receiveFrom('3', $daemon->rtSyncCreated('before', $id));
+        }
+        $daemon->writeOwnRow('own', 'mine');
+        $daemon->noteOwnAgent('owner', [DaemonManagerRtSyncPeerTestRtContext::ROWS], [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => ['own']]);
+        $origins = $daemon->getAgentManagerDaemon()->rtReplicaOriginMap();
+        $build = new RtReplicaOfferBuild($daemon->mesh, 'node-c', $daemon->getAgentManagerDaemon()->rtNodeSourceMap()->sourceReports(),
+            $origins, [new RtSnapshotRead(DaemonManagerRtSyncPeerTestRtContext::ROWS)]);
+        $daemon->noteOwnAgent('owner', []);
+        $origins->note('node-d', DaemonManagerRtSyncPeerTestRtContext::ROWS, ['moved']);
+        $origins->note('3', DaemonManagerRtSyncPeerTestRtContext::ROWS, ['moved']);
+        $daemon->receive($daemon->rtSyncDeleted('recreated'));
+        $daemon->receiveFrom('3', $daemon->rtSyncCreated('replacement', 'recreated'));
+        $daemon->receiveFrom('3', $daemon->rtSyncCreated('late', 'late'));
+        $serializations = $states->get('7')->serializations;
+        $delivery = $build->delivery();
+        $dispatch = new SignalDispatch(null, static fn() => $delivery);
+        $dispatch->runPortion(2);
+        $this->assertSame([], $daemon->mesh->replicaOffers);
+        $this->assertSame($serializations, $states->get('7')->serializations);
+        $dispatch->runPortion(64);
+        $this->assertFalse($dispatch->hasWork());
+        $this->assertSame([null, '3'], array_column($daemon->mesh->replicaOffers, 'originNodeId'));
+        $this->assertSame(['own' => ['id' => 'own', 'name' => 'mine']], $daemon->mesh->replicaOffers[0]['rows']);
+        $this->assertSame([
+            '0' => ['id' => '0', 'name' => 'before'],
+            '07' => ['id' => '07', 'name' => 'before'],
+            '7' => ['id' => '7', 'name' => 'before'],
+        ], $daemon->mesh->replicaOffers[1]['rows']);
+        $this->assertSame($serializations + 1, $states->get('7')->serializations);
+    }
+
     /**
      * A row this node can name no writer for travels in no frame: there is nothing to sign it
      * with, and a row with no source is one the receiver could never freeze.
@@ -2362,9 +2678,18 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
             [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => []],
             [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => '42'],
         );
+        $collection = $daemon->mountSetCollection();
+        $own = $collection->get('a');
+        $replica = $collection->get('b');
+        $this->assertInstanceOf(DaemonManagerRtSyncPeerTestSetState::class, $own);
+        $this->assertInstanceOf(DaemonManagerRtSyncPeerTestSetState::class, $replica);
+        $ownSerializations = $own->serializations;
+        $replicaSerializations = $replica->serializations;
 
         $daemon->answerQuery('node-c', [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS]);
 
+        $this->assertSame($ownSerializations + 1, $own->serializations, 'Own-set classification must reuse the offered row');
+        $this->assertSame($replicaSerializations + 1, $replica->serializations, 'Replica classification must reuse the offered row');
         $this->assertSame(
             [
                 [
@@ -2691,6 +3016,168 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         $this->assertCount(1, $daemon->mesh->claimsByNode);
         $this->assertSame(DaemonManagerRtSyncPeerTest::REMOTE_NODE, $daemon->mesh->claimsByNode[0]['nodeId']);
         $this->assertSame('rooms_agent', $daemon->mesh->claimsByNode[0]['claims'][0]->agentId);
+    }
+
+    /**
+     * @param string $door Accepted RT source door
+     * @param bool $existing Whether the row was known before the last link closed
+     */
+    #[TestWith(['delta', true])]
+    #[TestWith(['delta', false])]
+    #[TestWith(['snapshot', true])]
+    #[TestWith(['snapshot', false])]
+    #[TestWith(['offer', false])]
+    public function testAcceptedRtWorkCannotThawAfterItsOriginWasLost(string $door, bool $existing): void
+    {
+        $previousCluster = Hilos::$cluster;
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $states = $daemon->mountCollection();
+        if ($existing) {
+            $daemon->receive($daemon->rtSyncCreated('before'));
+        }
+        Hilos::$cluster = new ClusterContext();
+        Hilos::$cluster->registerRtSyncSink($daemon);
+        $link = new ReflectionClass(PeerLink::class)->newInstanceWithoutConstructor();
+        $loop = new EventLoop();
+        new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($daemon, $loop);
+        new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($daemon);
+        try {
+            $head = 0;
+            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($daemon,
+                static function () use (&$head): Generator {
+                    yield;
+                    for ($step = 0; $step < 512; $step++) {
+                        $head++;
+                        yield;
+                    }
+                });
+            $this->acceptRtFrame($daemon, $link, $door, 'accepted', $existing);
+            self::assertLessThan(512, $head);
+            $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+            $daemon->noteNodeReachable(self::REMOTE_NODE);
+            $daemon->workerServer->forgetFrames();
+            for ($portion = 0; $portion < 32; $portion++) {
+                $daemon->dispatch();
+            }
+            self::assertSame('accepted', $states->get(self::ROW_ID)?->name, 'Keep the last accepted data');
+            self::assertSame(self::REMOTE_NODE, $daemon->originMap()->nodeOfRow(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID));
+            self::assertSame(self::FROZE_AT, RtStaleness::staleSince(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID));
+            foreach ($daemon->workerServer->getClients() as $worker) {
+                self::assertInstanceOf(DaemonManagerRtSyncPeerTestWorkerClient::class, $worker);
+                self::assertNotEmpty($worker->stalenessFrames(), 'A late-added replica must also freeze in the worker');
+                foreach ($worker->stalenessFrames() as $frame) {
+                    self::assertNotNull($frame[WorkerRtStalenessMessageDTO::FIELD_SINCE], 'Old accepted data must issue no worker thaw');
+                }
+            }
+            $this->acceptRtFrame($daemon, $link, 'delta', 'confirmed later', true);
+            for ($portion = 0; $portion < 8; $portion++) {
+                $daemon->dispatch();
+            }
+            self::assertSame('confirmed later', $states->get(self::ROW_ID)?->name);
+            self::assertNull(RtStaleness::staleSince(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID));
+            self::assertContains(WorkerConstants::MESSAGE_RT_STALENESS, $daemon->workerServer->frameTypes());
+            foreach ($daemon->workerServer->getClients() as $worker) {
+                $freshness = $worker->stalenessFrames();
+                self::assertNull($freshness[array_key_last($freshness)][WorkerRtStalenessMessageDTO::FIELD_SINCE]);
+            }
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($daemon);
+            $loop->close();
+            Hilos::$cluster = $previousCluster;
+        }
+    }
+
+    /** @param string $replacement Runtime/source replacement or a new receipt after reconnection */
+    #[TestWith(['runtime'])]
+    #[TestWith(['origins'])]
+    #[TestWith(['sources'])]
+    #[TestWith(['reconnect'])]
+    public function testRtReceiptLossNeverTransfersToAnotherSourceLifetime(string $replacement): void
+    {
+        $previousCluster = Hilos::$cluster;
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $states = $daemon->mountCollection();
+        Hilos::$cluster = new ClusterContext();
+        Hilos::$cluster->registerRtSyncSink($daemon);
+        $link = new ReflectionClass(PeerLink::class)->newInstanceWithoutConstructor();
+        $loop = new EventLoop();
+        new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($daemon, $loop);
+        new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($daemon);
+        try {
+            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($daemon, static function (): Generator {
+                yield;
+                for ($step = 0; $step < 512; $step++) {
+                    yield;
+                }
+            });
+            $this->acceptRtFrame($daemon, $link, 'delta', 'old source', false);
+            $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+            if ($replacement === 'runtime') {
+                Hilos::$rt = new DaemonManagerRtSyncPeerTestRtContext();
+                Hilos::$rt->configure();
+            } elseif ($replacement === 'origins') {
+                new ReflectionProperty(AgentManagerDaemon::class, 'rtReplicaOriginMap')->setValue(
+                    $daemon->getAgentManagerDaemon(), new RtReplicaOriginMap(),
+                );
+            } elseif ($replacement === 'sources') {
+                new ReflectionProperty(AgentManagerDaemon::class, 'rtNodeSourceMap')->setValue(
+                    $daemon->getAgentManagerDaemon(), new RtNodeSourceMap(),
+                );
+            }
+            $daemon->noteNodeReachable(self::REMOTE_NODE);
+            for ($portion = 0; $portion < 32; $portion++) {
+                $daemon->dispatch();
+            }
+            if ($replacement !== 'reconnect') {
+                self::assertNull(Hilos::$rt->rows->get(self::ROW_ID), 'An old receipt cannot write through a replaced source');
+                self::assertNull(RtStaleness::staleSince(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID));
+                self::assertNull($states->get(self::ROW_ID));
+            } else {
+                self::assertSame('old source', $states->get(self::ROW_ID)?->name);
+                self::assertSame(self::FROZE_AT, RtStaleness::staleSince(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID));
+            }
+            $this->acceptRtFrame($daemon, $link, 'snapshot', 'new confirmation', false);
+            for ($portion = 0; $portion < 8; $portion++) {
+                $daemon->dispatch();
+            }
+            self::assertSame('new confirmation', Hilos::$rt->rows->get(self::ROW_ID)?->name);
+            self::assertNull(RtStaleness::staleSince(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID));
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($daemon);
+            $loop->close();
+            Hilos::$cluster = $previousCluster;
+        }
+    }
+
+    /**
+     * @param DaemonManagerRtSyncPeerTestManager $daemon Real local sink and retained source FIFO
+     * @param PeerLink $link Typed peer callback context; these four callbacks do not inspect the link
+     * @param string $door RT source door to exercise
+     * @param string $name Accepted row content
+     * @param bool $existing Whether a delta updates an existing row
+     */
+    private function acceptRtFrame(
+        DaemonManagerRtSyncPeerTestManager $daemon,
+        PeerLink $link,
+        string $door,
+        string $name,
+        bool $existing,
+    ): void {
+        $rows = [self::ROW_ID => ['id' => self::ROW_ID, 'name' => $name]];
+        if ($door === 'snapshot') {
+            $frame = new PeerRtSnapshotDTO(self::REMOTE_NODE, DaemonManagerRtSyncPeerTestRtContext::ROWS, $rows);
+            $daemon->peerServer->onRtSnapshotReceived($link, PeerRtSnapshotDTO::fromArray($frame->toArray()));
+        } elseif ($door === 'offer') {
+            $frame = new PeerRtReplicaOfferDTO(self::REMOTE_NODE, DaemonManagerRtSyncPeerTestRtContext::ROWS, $rows);
+            $daemon->peerServer->onRtReplicaOfferReceived($link, PeerRtReplicaOfferDTO::fromArray($frame->toArray()));
+        } else {
+            $signal = $existing ? new SignalDTO(new SignalSource(SignalSource::RT), new SignalType(SignalTypeConstants::RT_SYNC_UPDATED),
+                new SignalName(SignalConstants::RT_SYNC_UPDATED),
+                new RtSyncUpdatedSignalData(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID, ['name' => $name]))
+                : $daemon->rtSyncCreated($name);
+            $frame = new PeerRtSyncDTO(self::REMOTE_NODE, $signal->signalType->getType(), $signal);
+            $daemon->peerServer->onRtSyncReceived($link, PeerRtSyncDTO::fromArray($frame->toArray()));
+        }
     }
 }
 
@@ -3567,7 +4054,7 @@ final class DaemonManagerRtSyncPeerTestWorkerServer extends WorkerServer
      */
     public function addWorker(): void
     {
-        $this->clients[] = new DaemonManagerRtSyncPeerTestWorkerClient();
+        $this->addClient(new DaemonManagerRtSyncPeerTestWorkerClient());
     }
 
     /**
@@ -3752,6 +4239,18 @@ final class DaemonManagerRtSyncPeerTestRtContext extends RtContext
 final class DaemonManagerRtSyncPeerTestStates extends RtStates
 {
     public const string STATE_CLASS = DaemonManagerRtSyncPeerTestState::class;
+
+    public int $presenceReads = 0;
+
+    /**
+     * @param ?string $id Queried source row
+     * @return bool Whether the original collection holds it, counting presence queries
+     */
+    public function has(?string $id): bool
+    {
+        $this->presenceReads++;
+        return parent::has($id);
+    }
 }
 
 /**
@@ -3766,6 +4265,8 @@ final class DaemonManagerRtSyncPeerTestState extends RtState
     private(set) string $id = '';
 
     public string $name = '';
+
+    public int $serializations = 0;
 
     /**
      * @param array<string, mixed> $row Serialized runtime row
@@ -3782,6 +4283,12 @@ final class DaemonManagerRtSyncPeerTestState extends RtState
         return $instance;
     }
 
+    /** @param array<string, mixed> $diff Changed fields from the remote owner */
+    public function applyDiff(array $diff): void
+    {
+        $this->name = self::patchString($diff, self::name, $this->name);
+    }
+
     /**
      * @return string Row key
      */
@@ -3795,6 +4302,7 @@ final class DaemonManagerRtSyncPeerTestState extends RtState
      */
     public function toArray(): array
     {
+        $this->serializations++;
         return [
             self::id => $this->id,
             self::name => $this->name,
@@ -3826,6 +4334,8 @@ final class DaemonManagerRtSyncPeerTestSetState extends RtState
 
     public string $name = '';
 
+    public int $serializations = 0;
+
     /**
      * @param array<string, mixed> $row Serialized runtime row
      * @return static Hydrated row
@@ -3855,6 +4365,7 @@ final class DaemonManagerRtSyncPeerTestSetState extends RtState
      */
     public function toArray(): array
     {
+        $this->serializations++;
         return [
             self::id => $this->id,
             self::ownerId => $this->ownerId,

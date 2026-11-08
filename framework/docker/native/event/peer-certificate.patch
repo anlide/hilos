@@ -1,0 +1,407 @@
+--- a/php8/classes/buffer_event.c
++++ b/php8/classes/buffer_event.c
+@@ -353,17 +353,16 @@
+ 	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
+ 
+ 	if (bev->bevent) {
+-#if 0
+-		bufferevent_lock(bev->bevent);
+-		bufferevent_disable(bev->bevent, EV_WRITE|EV_READ);
+-		bufferevent_setcb(bev->bevent, NULL, NULL, NULL, NULL);
+-		bufferevent_unlock(bev->bevent);
+-#endif
+-
+-		if (!bev->_internal) {
+-			bufferevent_free(bev->bevent);
++		if (bev->_internal) {
++			void *cbarg = NULL;
++
++			/* Retire only this wrapper's callbacks, never the HTTP handle or another alias. */
++			bufferevent_getcb(bev->bevent, NULL, NULL, NULL, &cbarg);
++			if (cbarg == (void *)bev) {
++				bufferevent_setcb(bev->bevent, NULL, NULL, NULL, NULL);
++			}
+ 		}
+-		bev->bevent = 0;
++		php_event_bevent_release(bev);
+ 
+ #if 0
+ 		/* Do it once */
+@@ -378,9 +377,19 @@
+ 		}
+ #endif
+ 		if (!Z_ISUNDEF(bev->base)) {
+-			Z_TRY_DELREF(bev->base);
++			zval_ptr_dtor(&bev->base);
+ 			ZVAL_UNDEF(&bev->base);
+ 		}
++#ifdef HAVE_EVENT_OPENSSL_LIB
++		if (!Z_ISUNDEF(bev->ssl_context)) {
++			zval_ptr_dtor(&bev->ssl_context);
++			ZVAL_UNDEF(&bev->ssl_context);
++		}
++		if (!Z_ISUNDEF(bev->underlying)) {
++			zval_ptr_dtor(&bev->underlying);
++			ZVAL_UNDEF(&bev->underlying);
++		}
++#endif
+ 	}
+ }
+ /* }}} */
+@@ -445,7 +454,7 @@
+ 		b[i] = Z_EVENT_BEVENT_OBJ_P(&zbev[i]);
+ 		b[i]->bevent = bevent_pair[i];
+ 
+-		ZVAL_COPY(&b[i]->self, &zbev[i]);
++		ZVAL_COPY_VALUE(&b[i]->self, &zbev[i]);
+ 		ZVAL_COPY(&b[i]->base, zbase);
+ 
+ 		add_next_index_zval(return_value, &zbev[i]);
+@@ -1071,6 +1080,9 @@
+ 			bev_underlying->bevent,
+ 			ssl, state, options);
+ 	if (bevent == NULL) {
++		if (!(options & BEV_OPT_CLOSE_ON_FREE)) {
++			SSL_free(ssl);
++		}
+ 		php_error_docref(NULL, E_WARNING, "Failed to allocate bufferevent filter");
+ 		RETURN_FALSE;
+ 	}
+@@ -1078,6 +1090,13 @@
+ 
+ 	ZVAL_COPY_VALUE(&bev->self, return_value);
+ 	ZVAL_COPY(&bev->base, &bev_underlying->base);
++	ZVAL_COPY(&bev->ssl_context, zctx);
++	ZVAL_COPY(&bev->underlying, zunderlying);
++	bev->ssl_owned = !(options & BEV_OPT_CLOSE_ON_FREE);
++	if (options & BEV_OPT_CLOSE_ON_FREE) {
++		/* The filter consumes this reference; the PHP wrapper keeps its own. */
++		bufferevent_incref(bev_underlying->bevent);
++	}
+ 
+ 	ZVAL_UNDEF(&bev->input);
+ 	ZVAL_UNDEF(&bev->output);
+@@ -1150,6 +1169,9 @@
+ #endif
+ 	bevent = bufferevent_openssl_socket_new(base->base, fd, ssl, state, options);
+ 	if (bevent == NULL) {
++		if (!(options & BEV_OPT_CLOSE_ON_FREE)) {
++			SSL_free(ssl);
++		}
+ 		php_error_docref(NULL, E_ERROR,
+ 				"Failed to allocate bufferevent filter");
+ 		RETURN_FALSE;
+@@ -1158,6 +1180,8 @@
+ 
+ 	ZVAL_COPY_VALUE(&bev->self, return_value);
+ 	ZVAL_COPY(&bev->base, zbase);
++	ZVAL_COPY(&bev->ssl_context, zctx);
++	bev->ssl_owned = !(options & BEV_OPT_CLOSE_ON_FREE);
+ }
+ /* }}} */
+ 
+@@ -1211,6 +1235,56 @@
+ 	_ret_if_invalid_bevent_ptr(bev);
+ 
+ 	bufferevent_ssl_renegotiate(bev->bevent);
++}
++/* }}} */
++
++/* {{{ proto ?string EventBufferEvent::sslGetPeerCertificate(void);
++ * Returns the peer leaf certificate as PEM, without asserting its trust. */
++PHP_EVENT_METHOD(EventBufferEvent, sslGetPeerCertificate)
++{
++	php_event_bevent_t *bev;
++	SSL               *ssl;
++	X509              *certificate;
++	BIO               *bio;
++	char              *pem;
++	long               length;
++
++	if (zend_parse_parameters_none() == FAILURE) {
++		return;
++	}
++
++	bev = Z_EVENT_BEVENT_OBJ_P(getThis());
++	if (!bev->bevent) {
++		RETURN_NULL();
++	}
++
++	/* The bufferevent owns ssl; only the certificate reference is ours. */
++	ssl = bufferevent_openssl_get_ssl(bev->bevent);
++	if (!ssl) {
++		RETURN_NULL();
++	}
++	certificate = SSL_get_peer_certificate(ssl);
++	if (!certificate) {
++		RETURN_NULL();
++	}
++
++	bio = BIO_new(BIO_s_mem());
++	if (!bio) {
++		X509_free(certificate);
++		zend_throw_error(NULL, "Failed to allocate peer certificate BIO");
++		return;
++	}
++	if (PEM_write_bio_X509(bio, certificate) != 1) {
++		X509_free(certificate);
++		BIO_free(bio);
++		zend_throw_error(NULL, "Failed to encode peer certificate as PEM");
++		return;
++	}
++	X509_free(certificate);
++
++	length = BIO_get_mem_data(bio, &pem);
++	RETVAL_STRINGL(pem, length);
++	BIO_free(bio);
+ }
+ /* }}} */
+ 
+--- a/php8/php_event.c
++++ b/php8/php_event.c
+@@ -160,37 +160,75 @@
+ 	zend_objects_destroy_object(object);
+ }/*}}}*/
+ 
++/* Retire native callbacks before dropping their PHP base/context dependencies. */
++void php_event_bevent_release(php_event_bevent_t *bev)/*{{{*/
++{
++	struct bufferevent *bevent = bev->bevent;
++#ifdef HAVE_EVENT_OPENSSL_LIB
++	SSL *ssl;
++#endif
++
++	/* Clear first: releasing native state must be idempotent, including reentry. */
++	bev->bevent = NULL;
++	if (!bevent || bev->_internal) {
++		/* An HTTP connection owns an internal wrapper's native handle. */
++		return;
++	}
++
++	bufferevent_setcb(bevent, NULL, NULL, NULL, NULL);
++	bufferevent_disable(bevent, EV_READ | EV_WRITE);
++#ifdef HAVE_EVENT_OPENSSL_LIB
++	ssl = bufferevent_openssl_get_ssl(bevent);
++	if (ssl && (Z_ISUNDEF(bev->underlying)
++			|| Z_EVENT_BEVENT_OBJ_P(&bev->underlying)->bevent)) {
++		/* At Zend shutdown the underlying owner may already have retired its SSL. */
++		SSL_set_shutdown(ssl, SSL_RECEIVED_SHUTDOWN);
++		SSL_shutdown(ssl);
++	}
++#endif
++	bufferevent_free(bevent);
++#ifdef HAVE_EVENT_OPENSSL_LIB
++	/* CLOSE_ON_FREE transfers SSL ownership to libevent, including deferred free. */
++	if (ssl && bev->ssl_owned) {
++		SSL_free(ssl);
++	}
++	bev->ssl_owned = 0;
++#endif
++}/*}}}*/
++
+ static void php_event_bevent_dtor_obj(zend_object *object)/*{{{*/
+ {
+ 	Z_EVENT_X_OBJ_T(bevent) *intern = Z_EVENT_X_FETCH_OBJ(bevent, object);
+ 	PHP_EVENT_ASSERT(intern);
+ 
+-#if 0
+-	if (intern->bevent) {
+-		bufferevent_lock(intern->bevent);
+-		bufferevent_disable(intern->bevent, EV_WRITE|EV_READ);
+-		bufferevent_setcb(intern->bevent, NULL, NULL, NULL, NULL);
+-		bufferevent_set_timeouts(intern->bevent, NULL, NULL);
+-		bufferevent_unlock(intern->bevent);
+-	}
+-#endif
++	php_event_bevent_release(intern);
+ 
+ 	if (!Z_ISUNDEF(intern->data)) {
+ 		zval_ptr_dtor(&intern->data);
++		ZVAL_UNDEF(&intern->data);
+ 	}
+ 
+ 	if (!Z_ISUNDEF(intern->self)) {
+-		if (Z_REFCOUNT(intern->self) > 1) {
++		if (intern->_internal) {
+ 			zval_ptr_dtor(&intern->self);
+ 		}
+ 		ZVAL_UNDEF(&intern->self);
+ 	}
+ 
+ 	if (!Z_ISUNDEF(intern->base)) {
+-		Z_TRY_DELREF(intern->base);
++		zval_ptr_dtor(&intern->base);
+ 		ZVAL_UNDEF(&intern->base);
+-		/*zval_ptr_dtor(&intern->base);*/
+-	}
++	}
++#ifdef HAVE_EVENT_OPENSSL_LIB
++	if (!Z_ISUNDEF(intern->ssl_context)) {
++		zval_ptr_dtor(&intern->ssl_context);
++		ZVAL_UNDEF(&intern->ssl_context);
++	}
++	if (!Z_ISUNDEF(intern->underlying)) {
++		zval_ptr_dtor(&intern->underlying);
++		ZVAL_UNDEF(&intern->underlying);
++	}
++#endif
+ 
+ 	if (!Z_ISUNDEF(intern->input)) {
+ 		zval_ptr_dtor(&intern->input);
+@@ -205,6 +243,9 @@
+ 	php_event_free_callback(&intern->cb_read);
+ 	php_event_free_callback(&intern->cb_write);
+ 	php_event_free_callback(&intern->cb_event);
++	php_event_init_callback(&intern->cb_read);
++	php_event_init_callback(&intern->cb_write);
++	php_event_init_callback(&intern->cb_event);
+ 
+ 	zend_objects_destroy_object(object);
+ }/*}}}*/
+@@ -270,25 +311,9 @@
+ 
+ static void php_event_bevent_free_obj(zend_object *object)/*{{{*/
+ {
+-#ifdef HAVE_EVENT_OPENSSL_LIB
+-	SSL *ctx;
+-#endif
+ 	Z_EVENT_X_OBJ_T(bevent) *b = Z_EVENT_X_FETCH_OBJ(bevent, object);
+ 
+-	if (!b->_internal && b->bevent) {
+-#if defined(HAVE_EVENT_OPENSSL_LIB)
+-		/* See www.wangafu.net/~nickm/libevent-book/Ref6a_advanced_bufferevents.html#_bufferevents_and_ssl */
+-		ctx = bufferevent_openssl_get_ssl(b->bevent);
+-		if (ctx) {
+-			SSL_set_shutdown(ctx, SSL_RECEIVED_SHUTDOWN);
+-			SSL_shutdown(ctx);
+-			SSL_free(ctx);
+-		}
+-#endif
+-
+-		bufferevent_free(b->bevent);
+-		b->bevent = NULL;
+-	}
++	php_event_bevent_release(b);
+ 
+ 	zend_object_std_dtor(object);
+ }/*}}}*/
+@@ -577,6 +602,11 @@
+ 
+ 	PHP_EVENT_OBJ_ALLOC(intern, ce, Z_EVENT_X_OBJ_T(bevent));
+ 	intern->zo.handlers = &event_bevent_object_handlers;
++#ifdef HAVE_EVENT_OPENSSL_LIB
++	ZVAL_UNDEF(&intern->ssl_context);
++	ZVAL_UNDEF(&intern->underlying);
++	intern->ssl_owned = 0;
++#endif
+ 
+ 	return &intern->zo;
+ }/*}}}*/
+@@ -861,6 +891,31 @@
+ 	return zend_std_get_properties(object);
+ }/*}}}*/
+ 
++
++static HashTable * php_event_bevent_get_gc(zend_object *object, zval **gc_data, int *gc_count)/*{{{*/
++{
++	php_event_bevent_t *bev = Z_EVENT_X_FETCH_OBJ(bevent, object);
++	zend_get_gc_buffer *gc = zend_get_gc_buffer_create();
++
++	zend_get_gc_buffer_add_zval(gc, &bev->data);
++	zend_get_gc_buffer_add_zval(gc, &bev->base);
++	zend_get_gc_buffer_add_zval(gc, &bev->input);
++	zend_get_gc_buffer_add_zval(gc, &bev->output);
++	zend_get_gc_buffer_add_zval(gc, &bev->cb_read.func_name);
++	zend_get_gc_buffer_add_zval(gc, &bev->cb_write.func_name);
++	zend_get_gc_buffer_add_zval(gc, &bev->cb_event.func_name);
++#ifdef HAVE_EVENT_OPENSSL_LIB
++	zend_get_gc_buffer_add_zval(gc, &bev->ssl_context);
++	zend_get_gc_buffer_add_zval(gc, &bev->underlying);
++#endif
++	/* A live HTTP handle's counted self is a native root, not a PHP cycle.
++	 * Explicit free retires its callback argument before exposing that reference. */
++	if (bev->_internal && !bev->bevent) {
++		zend_get_gc_buffer_add_zval(gc, &bev->self);
++	}
++	zend_get_gc_buffer_use(gc, gc_data, gc_count);
++	return zend_std_get_properties(object);
++}/*}}}*/
+ 
+ #define PHP_EVENT_X_PROP_WRITE_HND_DECL(x)                                                                  \
+ static zval *php_event_ ## x ## _write_property(zend_object *object, zend_string *member, zval *value, void **cache_slot) \
+@@ -1068,6 +1123,7 @@
+ 	PHP_EVENT_INIT_X_OBJ_HANDLERS(base);
+ 	PHP_EVENT_INIT_X_OBJ_HANDLERS(config);
+ 	PHP_EVENT_INIT_X_OBJ_HANDLERS(bevent);
++	event_bevent_object_handlers.get_gc = php_event_bevent_get_gc;
+ 	PHP_EVENT_INIT_X_OBJ_HANDLERS(buffer);
+ #if HAVE_EVENT_EXTRA_LIB
+ 	PHP_EVENT_INIT_X_OBJ_HANDLERS(dns_base);
+--- a/php8/php_event.stub.php.in
++++ b/php8/php_event.stub.php.in
+@@ -247,6 +247,7 @@
+     public static function sslSocket(EventBase $base, mixed $socket, EventSslContext $ctx, int $state, int $options = 0): EventBufferEvent {}
+     public function sslError(): string {}
+     public function sslRenegotiate(): void {}
++    public function sslGetPeerCertificate(): ?string {}
+     public function sslGetCipherInfo(): string {}
+     public function sslGetCipherName(): string {}
+     public function sslGetCipherVersion(): string {}
+--- a/php8/php_event_arginfo.h
++++ b/php8/php_event_arginfo.h
+@@ -786,6 +786,11 @@
+ 
+ #if defined(HAVE_EVENT_OPENSSL_LIB)
+ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_EventBufferEvent_sslRenegotiate, 0, 0, IS_VOID, 0)
++ZEND_END_ARG_INFO()
++#endif
++
++#if defined(HAVE_EVENT_OPENSSL_LIB)
++ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_EventBufferEvent_sslGetPeerCertificate, 0, 0, IS_STRING, 1)
+ ZEND_END_ARG_INFO()
+ #endif
+ 
+@@ -1158,6 +1163,9 @@
+ ZEND_METHOD(EventBufferEvent, sslRenegotiate);
+ #endif
+ #if defined(HAVE_EVENT_OPENSSL_LIB)
++ZEND_METHOD(EventBufferEvent, sslGetPeerCertificate);
++#endif
++#if defined(HAVE_EVENT_OPENSSL_LIB)
+ ZEND_METHOD(EventBufferEvent, sslGetCipherInfo);
+ #endif
+ #if defined(HAVE_EVENT_OPENSSL_LIB)
+@@ -1448,6 +1456,9 @@
+ 	ZEND_ME(EventBufferEvent, sslRenegotiate, arginfo_class_EventBufferEvent_sslRenegotiate, ZEND_ACC_PUBLIC)
+ #endif
+ #if defined(HAVE_EVENT_OPENSSL_LIB)
++	ZEND_ME(EventBufferEvent, sslGetPeerCertificate, arginfo_class_EventBufferEvent_sslGetPeerCertificate, ZEND_ACC_PUBLIC)
++#endif
++#if defined(HAVE_EVENT_OPENSSL_LIB)
+ 	ZEND_ME(EventBufferEvent, sslGetCipherInfo, arginfo_class_EventBufferEvent_sslGetCipherInfo, ZEND_ACC_PUBLIC)
+ #endif
+ #if defined(HAVE_EVENT_OPENSSL_LIB)
+--- a/php8/src/priv.h
++++ b/php8/src/priv.h
+@@ -36,6 +36,7 @@
+ extern zend_class_entry *php_event_base_ce;
+ extern zend_class_entry *php_event_config_ce;
+ extern zend_class_entry *php_event_bevent_ce;
++void php_event_bevent_release(php_event_bevent_t *bev);
+ extern zend_class_entry *php_event_buffer_ce;
+ extern zend_class_entry *php_event_util_ce;
+ #ifdef HAVE_EVENT_OPENSSL_LIB
+--- a/php8/src/structs.h
++++ b/php8/src/structs.h
+@@ -73,6 +73,11 @@
+ 	zval                  input;       /* Input buffer                 */
+ 	zval                  output;      /* Output buffer                */
+ 	zval                  base;
++#ifdef HAVE_EVENT_OPENSSL_LIB
++	zval                  ssl_context; /* Owns the ectx used by SSL callbacks */
++	zval                  underlying;  /* Keeps an SSL filter's PHP owner alive */
++	zend_bool             ssl_owned;   /* SSL is not freed by libevent */
++#endif
+ 	php_event_callback_t  cb_read;
+ 	php_event_callback_t  cb_write;
+ 	php_event_callback_t  cb_event;

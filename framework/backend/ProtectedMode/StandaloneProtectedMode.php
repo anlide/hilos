@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
@@ -156,6 +157,7 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
      * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function requestEnable(ProtectedModeEnableSignalData $data): void
     {
@@ -368,6 +370,7 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
      * @param ProtectedModeRefreezeSignalData $data Identity of the agent asking to close back
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function requestRefreeze(ProtectedModeRefreezeSignalData $data): void
     {

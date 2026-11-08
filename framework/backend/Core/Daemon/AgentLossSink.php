@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -48,6 +49,7 @@ interface AgentLossSink
      * @param list<string> $agentIds Ids of the agents it was hosting, in roster order
      * @throws InvalidArgumentException When a refusal owed to a page or a command cannot be named
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function reportAgentsLostWithWorker(int $workerIndex, bool $isMonopolistic, array $agentIds): void;
 }

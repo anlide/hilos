@@ -5,12 +5,18 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\SignalDispatch;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
 use Hilos\Hilos;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\WorkerServer;
@@ -18,6 +24,7 @@ use Hilos\Socket\Worker\DTO\DaemonWorkerSignalDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 
 /**
  * What one broadcast to the workers of this node COSTS the master loop.
@@ -77,6 +84,38 @@ final class DaemonManagerWorkerBroadcastTest extends TestCase
         foreach ($frames as $ofOneWorker) {
             $this->assertCount(1, $ofOneWorker);
         }
+    }
+
+    public function testRetainedWorkerPortionsPackOnceAndNeverReachLateConnections(): void
+    {
+        $manager = new DaemonManagerWorkerBroadcastTestManager();
+        $server = $manager->addWorkerServer();
+        for ($index = 0; $index < 66; $index++) {
+            $server->addWorker();
+        }
+        $payload = new DaemonManagerWorkerBroadcastTestPayload();
+        $signal = new SignalDTO(new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::SYSTEM),
+            new SignalName(self::SIGNAL_NAME), $payload);
+        $dispatch = new SignalDispatch($signal, fn() => new ReflectionMethod(DaemonManager::class, 'workerFrameDelivery')->invoke(
+            $manager, $server, new DaemonWorkerSignalDTO(self::SIGNAL_NAME, $payload),
+        ));
+        $dispatch->runPortion(64);
+        $frames = $server->framesPerWorker();
+        self::assertCount(66, $frames);
+        foreach (array_slice($frames, 0, 64) as $sent) {
+            self::assertCount(1, $sent);
+            self::assertSame($frames[0][0], $sent[0]);
+        }
+        self::assertSame([[], []], array_slice($frames, 64));
+        $server->removeClient($server->getClients()[64]);
+        $server->addWorker();
+        $dispatch->runPortion(64);
+        self::assertFalse($dispatch->hasWork());
+        self::assertSame(1, $payload->encodes);
+        $frames = $server->framesPerWorker();
+        self::assertCount(1, $frames[64]);
+        self::assertSame($frames[0][0], $frames[64][0]);
+        self::assertSame([], $frames[65]);
     }
 
     /**
@@ -187,7 +226,7 @@ final class DaemonManagerWorkerBroadcastTestWorkerServer extends WorkerServer
      */
     public function addWorker(): void
     {
-        $this->clients[] = new DaemonManagerWorkerBroadcastTestWorkerClient();
+        $this->addClient(new DaemonManagerWorkerBroadcastTestWorkerClient());
     }
 
     /**

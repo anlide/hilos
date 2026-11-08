@@ -64,6 +64,14 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Hilos\ProtectedMode\ProtectedModeCoordinator;
+use Hilos\ProtectedMode\ProtectedModeSourceBinding;
+use Hilos\ProtectedMode\ProtectedModeWatchdog;
+use Hilos\ProtectedMode\DTO\ProtectedModeWatchdogSnapshot;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+use WeakReference;
+use Hilos\Constants\TimeConstants;
+use ReflectionProperty;
 
 /**
  * Unit tests for the two-phase cluster freeze orchestration (HIL-267 slice 5).
@@ -113,6 +121,509 @@ final class ClusterProtectedModeTest extends TestCase
         parent::tearDown();
     }
 
+    public function testNativePromotionAndChangedSnapshotsContinueInFinitePortionsWithoutInput(): void
+    {
+        $loop = new EventLoop();
+        $this->mesh->leader = self::SELF;
+        $this->mesh->slaves = array_map(static fn(int $id): string => 'slave-' . $id, range(1, 70));
+        $this->coordinator->attachSlaveSyncEventLoop($loop);
+        try {
+            $this->coordinator->onBecameLeader();
+            self::assertSame([], $this->mesh->syncs, 'Promotion queues the finite cohort');
+            $this->coordinator->dispatchSlaveSyncReady();
+            self::assertCount(32, $this->mesh->syncs);
+            self::assertTrue($this->coordinator->hasSlaveSyncReadyWork());
+            // New facts join behind the already captured prefix instead of starting it over.
+            $this->coordinator->noteSlaveSyncChanged();
+            $this->coordinator->dispatchSlaveSyncReady();
+            self::assertCount(64, $this->mesh->syncs);
+            $this->drainSlaveSync($loop);
+            self::assertCount(70, $this->mesh->syncs);
+            self::assertSame(70, $this->mesh->syncSends);
+            $snapshots = $this->mesh->syncs;
+            $reads = $this->mesh->slaveReads;
+            for ($pass = 0; $pass < 3; ++$pass) {
+                $loop->tick();
+                $this->coordinator->dispatchSlaveSyncReady();
+            }
+            self::assertSame($snapshots, $this->mesh->syncs);
+            self::assertFalse($this->coordinator->hasSlaveSyncReadyWork());
+            self::assertSame($reads, $this->mesh->slaveReads, 'Idle does not query every slave again');
+            $this->coordinator->noteSlaveSyncChanged();
+            $this->drainSlaveSync($loop);
+            self::assertSame($snapshots, $this->mesh->syncs, 'An equal source never refreshes a request id');
+            $this->executor->applyRuntime = true;
+            $this->withDaemonTruthSource(function () use ($loop): void {
+                $this->coordinator->onEnable('node-b', $this->enableData());
+                $this->coordinator->onRosterStopped();
+                $this->coordinator->dispatchSlaveSyncReady();
+                self::assertSame(102, $this->mesh->syncSends);
+                $this->coordinator->noteSlaveSyncChanged();
+                $this->coordinator->dispatchSlaveSyncReady();
+                self::assertSame(134, $this->mesh->syncSends);
+                $this->drainSlaveSync($loop);
+                self::assertSame(140, $this->mesh->syncSends);
+                foreach ($this->mesh->syncs as $frame) {
+                    self::assertSame(StateProtectedModeRuntime::PHASE_ACTIVE, $frame->phase);
+                }
+                $this->coordinator->noteSlaveSyncChanged();
+                $this->coordinator->dispatchSlaveSyncReady();
+                foreach (range(33, 64) as $id) {
+                    $frame = $this->mesh->syncs['slave-' . $id];
+                    $this->coordinator->onSynced('slave-' . $id, new PeerProtectedModeSyncedDTO($frame->syncId, $frame->phase));
+                }
+                $this->coordinator->dispatchSlaveSyncReady();
+                $scan = new ReflectionProperty(ClusterProtectedMode::class, 'slaveSyncScan')->getValue($this->coordinator);
+                self::assertSame('slave-65', $scan->key(), 'Settled entries still spend the portion budget');
+                $this->drainSlaveSync($loop);
+                self::assertSame(140, $this->mesh->syncSends);
+            });
+        } finally {
+            $this->coordinator->detachSlaveSyncEventLoop();
+            $loop->close();
+        }
+    }
+
+    public function testNativeInactiveDueWarnsOnceAndRebindRetainsTheOriginalPendingClock(): void
+    {
+        $loop = new EventLoop();
+        $this->mesh->leader = self::SELF;
+        $this->mesh->slaves = ['slave'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onSlaveConnected('slave');
+        $requests = new ReflectionProperty(ClusterProtectedMode::class, 'slaveSyncRequests');
+        $original = $requests->getValue($this->coordinator)['slave'];
+        $this->coordinator->attachSlaveSyncEventLoop($loop);
+        $alerts = $this->captureSlaveAlerts(function () use ($loop, $requests, $original): void {
+            try {
+                $this->drainSlaveSync($loop);
+                $timerProperty = new ReflectionProperty(ClusterProtectedMode::class, 'slaveSyncTimer');
+                $firstTimer = $timerProperty->getValue($this->coordinator);
+                self::assertSame($original['deadline'], $firstTimer->getDeadline());
+                $this->coordinator->onSlaveConnected('slave');
+                $this->drainSlaveSync($loop);
+                self::assertSame($original['firstRequestedAt'], $requests->getValue($this->coordinator)['slave']['firstRequestedAt']);
+                self::assertSame($original['deadline'], $firstTimer->getDeadline());
+                $this->coordinator->detachSlaveSyncEventLoop();
+                self::assertNull($firstTimer->getDeadline());
+                $this->coordinator->attachSlaveSyncEventLoop($loop);
+                $this->drainSlaveSync($loop);
+                $timer = $timerProperty->getValue($this->coordinator);
+                self::assertNotSame($firstTimer, $timer);
+                self::assertSame($original['deadline'], $timer->getDeadline());
+                // Bring this private deadline to now; no clock replacement or expiry wait.
+                $pending = $requests->getValue($this->coordinator);
+                $pending['slave']['deadline'] = hrtime(true) / 1e9 - 1.0;
+                $requests->setValue($this->coordinator, $pending);
+                $timer->armAt($pending['slave']['deadline']);
+                self::assertFalse($this->coordinator->hasSlaveSyncReadyWork());
+                $loop->tick();
+                self::assertTrue($this->coordinator->hasSlaveSyncReadyWork());
+                $this->drainSlaveSync($loop);
+                self::assertTrue($requests->getValue($this->coordinator)['slave']['alerted']);
+                self::assertNull($timer->getDeadline());
+                $this->coordinator->onSlaveConnected('slave');
+                $this->drainSlaveSync($loop);
+                self::assertNull($timer->getDeadline(), 'Alerted history has no past timer spin');
+                $frame = $this->mesh->syncs['slave'];
+                $this->coordinator->onSynced('slave', new PeerProtectedModeSyncedDTO($frame->syncId, $frame->phase));
+                $this->drainSlaveSync($loop);
+                self::assertSame([], $requests->getValue($this->coordinator));
+                self::assertNull($timer->getDeadline());
+            } finally {
+                $this->coordinator->detachSlaveSyncEventLoop();
+                $loop->close();
+            }
+        });
+        self::assertCount(1, $alerts);
+        self::assertSame('inactive', $alerts[0]['params']['phase']);
+        self::assertSame('sync-overdue', $alerts[0]['params']['reason']);
+    }
+
+    public function testNativeDeadlineArmingFailureReachesTheGuardWithoutDroppingTheRequest(): void
+    {
+        $loop = new EventLoop();
+        $this->mesh->leader = self::SELF;
+        $this->mesh->slaves = ['slave'];
+        $this->coordinator->attachSlaveSyncEventLoop($loop);
+        $this->coordinator->onBecameLeader();
+        try {
+            $this->drainSlaveSync($loop);
+            $timer = new ReflectionProperty(ClusterProtectedMode::class, 'slaveSyncTimer')->getValue($this->coordinator);
+            $timer->close();
+            $this->coordinator->noteSlaveSyncChanged();
+            $this->expectException(EventLoopException::class);
+            $this->coordinator->dispatchSlaveSyncReady();
+        } finally {
+            self::assertCount(1, new ReflectionProperty(ClusterProtectedMode::class, 'slaveSyncRequests')->getValue($this->coordinator));
+            $this->coordinator->detachSlaveSyncEventLoop();
+            $loop->close();
+        }
+    }
+
+    public function testNativeQueuedCallbacksDoNotRetainADiscardedCoordinator(): void
+    {
+        $loop = new EventLoop();
+        $sync = new ClusterProtectedMode(self::SELF, $this->mesh, $this->executor);
+        $sync->attachSlaveSyncEventLoop($loop);
+        $weak = WeakReference::create($sync);
+        unset($sync);
+        try {
+            self::assertNull($weak->get());
+            $loop->tick();
+            self::assertFalse($loop->hasReadyWork());
+        } finally {
+            $loop->close();
+        }
+    }
+
+    public function testNativeAckCancelsEarliestThenLastDeadlineAndASettledRequestStartsFresh(): void
+    {
+        $loop = new EventLoop();
+        $this->mesh->leader = self::SELF;
+        $this->mesh->slaves = ['first', 'last'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->attachSlaveSyncEventLoop($loop);
+        try {
+            $this->drainSlaveSync($loop);
+            $requests = new ReflectionProperty(ClusterProtectedMode::class, 'slaveSyncRequests');
+            $pending = $requests->getValue($this->coordinator);
+            $mono = hrtime(true) / 1e9;
+            $pending['first']['deadline'] = $mono + 10.0;
+            $pending['last']['deadline'] = $mono + 20.0;
+            $requests->setValue($this->coordinator, $pending);
+            $this->coordinator->noteSlaveSyncChanged();
+            $this->drainSlaveSync($loop);
+            $timer = new ReflectionProperty(ClusterProtectedMode::class, 'slaveSyncTimer')->getValue($this->coordinator);
+            self::assertSame($mono + 10.0, $timer->getDeadline());
+            foreach (['first', 'last'] as $nodeId) {
+                $frame = $this->mesh->syncs[$nodeId];
+                $this->coordinator->onSynced($nodeId, new PeerProtectedModeSyncedDTO($frame->syncId, $frame->phase));
+                $this->drainSlaveSync($loop);
+                self::assertSame($nodeId === 'first' ? $mono + 20.0 : null, $timer->getDeadline());
+            }
+            self::assertSame([], $requests->getValue($this->coordinator));
+            $this->coordinator->onSlaveConnected('first');
+            $this->drainSlaveSync($loop);
+            $fresh = $requests->getValue($this->coordinator)['first'];
+            self::assertFalse($fresh['alerted']);
+            self::assertGreaterThan($mono + 20.0, $fresh['deadline']);
+            self::assertNotSame($pending['first']['frame'], $fresh['frame']);
+            $this->coordinator->onLostLeadership();
+            self::assertNull($timer->getDeadline());
+            $this->drainSlaveSync($loop);
+            self::assertSame([], $requests->getValue($this->coordinator));
+        } finally {
+            $this->coordinator->detachSlaveSyncEventLoop();
+            $loop->close();
+        }
+    }
+
+    public function testReentrantSyncSendAndStaleAckPreserveTheReplacementRequest(): void
+    {
+        $loop = new EventLoop();
+        $this->mesh->leader = self::SELF;
+        $this->mesh->slaves = ['slave'];
+        $this->coordinator->attachSlaveSyncEventLoop($loop);
+        $this->coordinator->onBecameLeader();
+        $old = null;
+        $this->mesh->onSyncSend = function (string $nodeId, PeerProtectedModeSyncDTO $frame) use (&$old): void {
+            $this->mesh->onSyncSend = null;
+            $old = $frame;
+            $this->coordinator->onSlaveConnected($nodeId);
+            $this->coordinator->onSynced($nodeId, new PeerProtectedModeSyncedDTO($frame->syncId, $frame->phase));
+            $this->coordinator->dispatchSlaveSyncReady();
+        };
+        try {
+            $this->drainSlaveSync($loop);
+            $requests = new ReflectionProperty(ClusterProtectedMode::class, 'slaveSyncRequests')->getValue($this->coordinator);
+            self::assertCount(1, $requests);
+            self::assertNotSame($old, $requests['slave']['frame']);
+            self::assertSame($this->mesh->syncs['slave'], $requests['slave']['frame']);
+            self::assertSame(2, $this->mesh->syncSends);
+            self::assertFalse($this->coordinator->hasSlaveSyncReadyWork());
+        } finally {
+            $this->coordinator->detachSlaveSyncEventLoop();
+            $loop->close();
+        }
+    }
+
+    /** @param string $change Authority or installed-link fact that invalidates the old round */
+    #[DataProvider('nativeDatabaseAuthorityChanges')]
+    public function testNativeLateDatabaseSuccessCannotCreditANewAuthorityOrLink(string $change): void
+    {
+        $loop = new EventLoop();
+        $this->executor->applyRuntime = true;
+        $this->executor->delayDatabase = true;
+        $this->mesh->leader = 'leader';
+        $this->coordinator->attachSlaveSyncEventLoop($loop);
+        $this->captureSlaveAlerts(function () use ($loop, $change): void {
+            $this->withDaemonTruthSource(function () use ($loop, $change): void {
+                try {
+                    $this->coordinator->onSync('leader', $this->slaveFrame('window', StateProtectedModeRuntime::PHASE_VERIFYING));
+                    $this->coordinator->onRosterStopped();
+                    $this->drainSlaveSync($loop);
+                    if ($change === 'leader') {
+                        $this->mesh->leader = 'next';
+                    } elseif ($change === 'link') {
+                        $this->mesh->syncCurrent = false;
+                    } else {
+                        $this->mesh->leader = self::SELF;
+                        $this->coordinator->onBecameLeader();
+                    }
+                    $this->coordinator->noteSlaveSyncChanged();
+                    $this->executor->databaseContinuations[0](new ReHydrateVerdict(null, null, true, []));
+                    $this->drainSlaveSync($loop);
+                    self::assertSame([], $this->mesh->synced);
+                    self::assertNotContains('enterVerifying', $this->executor->calls);
+                    self::assertNotContains('enterInactive', $this->executor->calls);
+                    self::assertFalse($this->coordinator->hasSlaveSyncReadyWork());
+                } finally {
+                    $this->coordinator->detachSlaveSyncEventLoop();
+                    $loop->close();
+                }
+            });
+        });
+    }
+
+    /** @return iterable<string, array{string}> Every local authority invalidation */
+    public static function nativeDatabaseAuthorityChanges(): iterable
+    {
+        foreach (['leader', 'link', 'promotion'] as $change) {
+            yield $change => [$change];
+        }
+    }
+
+    public function testNativeSourceFansOutAndPhaseLiftKeepDeadlineDespiteWallClockChanges(): void
+    {
+        $this->executor->applyRuntime = true;
+        $this->mesh->leader = self::SELF;
+        $this->mesh->slaves = ['slave'];
+        $loop = new EventLoop();
+        $watchdog = new ProtectedModeWatchdog();
+        $binding = new ProtectedModeSourceBinding();
+        Hilos::$cluster->registerProtectedMode($this->coordinator);
+        $binding->registerWatchdog($watchdog);
+        $binding->reconcile();
+        $this->coordinator->attachSlaveSyncEventLoop($loop);
+        $this->withDaemonTruthSource(function () use ($loop, $binding, $watchdog): void {
+            try {
+                $this->coordinator->onBecameLeader();
+                $this->coordinator->onEnable('node-b', $this->enableData());
+                $this->coordinator->onRosterStopped();
+                $this->drainSlaveSync($loop);
+                $requests = new ReflectionProperty(ClusterProtectedMode::class, 'slaveSyncRequests');
+                $first = $requests->getValue($this->coordinator)['slave'];
+                $this->coordinator->onVerify('node-b', 'backup', 0);
+                $this->drainSlaveSync($loop);
+                $window = $requests->getValue($this->coordinator)['slave'];
+                self::assertSame($first['deadline'], $window['deadline']);
+                self::assertSame($first['firstRequestedAt'], $window['firstRequestedAt']);
+                self::assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, $window['frame']->phase);
+                $this->coordinator->onDisable('node-b', 'backup', 0);
+                $this->coordinator->noteSlaveSyncChanged();
+                $this->coordinator->dispatchSlaveSyncReady(microtime(true) + 10000.0, $first['deadline'] - 1.0);
+                $this->drainSlaveSync($loop);
+                $lift = $requests->getValue($this->coordinator)['slave'];
+                self::assertSame($first['deadline'], $lift['deadline']);
+                self::assertSame($first['firstRequestedAt'], $lift['firstRequestedAt']);
+                self::assertSame('restore', $lift['operation']);
+                self::assertFalse($lift['alerted'], 'Wall-clock movement spends no private process time');
+                self::assertTrue($watchdog->hasReadyWork());
+                $binding->removeWatchdog($watchdog);
+                $this->coordinator->onSlaveConnected('slave');
+                $this->drainSlaveSync($loop);
+                self::assertSame($first['deadline'], $requests->getValue($this->coordinator)['slave']['deadline']);
+            } finally {
+                $binding->detach();
+                $this->coordinator->detachSlaveSyncEventLoop();
+                $loop->close();
+            }
+        });
+    }
+
+    /** @param bool $oldComplete Whether the superseded round succeeded */
+    #[DataProvider('oldDatabaseResults')]
+    public function testNativeDatabaseCompletionReleasesLatestTargetWithoutAnotherPeerFrame(bool $oldComplete): void
+    {
+        $this->executor->applyRuntime = true;
+        $this->executor->delayDatabase = true;
+        $this->mesh->leader = 'leader';
+        $loop = new EventLoop();
+        $this->coordinator->attachSlaveSyncEventLoop($loop);
+        $this->captureSlaveAlerts(function () use ($loop, $oldComplete): void {
+            $this->withDaemonTruthSource(function () use ($loop, $oldComplete): void {
+                try {
+                    $this->coordinator->onSync('leader', $this->slaveFrame('active'));
+                    $this->coordinator->onRosterStopped();
+                    $this->mesh->synced = [];
+                    $this->coordinator->onSync('leader', $this->slaveFrame('old', StateProtectedModeRuntime::PHASE_VERIFYING));
+                    $this->drainSlaveSync($loop);
+                    self::assertFalse($this->coordinator->hasSlaveSyncReadyWork(), 'DB pending sleeps');
+                    $this->coordinator->onSync('leader', $this->inactiveSlaveFrame('latest'));
+                    $this->drainSlaveSync($loop);
+                    $this->executor->databaseContinuations[0](new ReHydrateVerdict(null, null, $oldComplete, []));
+                    self::assertTrue($this->coordinator->hasSlaveSyncReadyWork());
+                    $this->drainSlaveSync($loop);
+                    self::assertCount(2, $this->executor->databaseContinuations);
+                    self::assertSame(StateProtectedModeRuntime::PHASE_ACTIVE, Hilos::$rt->hilosProtectedModeRuntime->phase);
+                    self::assertSame([], $this->mesh->synced);
+                    $this->executor->databaseContinuations[1](new ReHydrateVerdict(null, null, true, []));
+                    $this->drainSlaveSync($loop);
+                    self::assertSame(StateProtectedModeRuntime::PHASE_INACTIVE, Hilos::$rt->hilosProtectedModeRuntime->phase);
+                    self::assertSame([], $this->mesh->synced, 'Resume remains an external fact');
+                    $this->coordinator->onRosterResumed();
+                    $this->drainSlaveSync($loop);
+                    self::assertSame([['leader', 'latest', StateProtectedModeRuntime::PHASE_INACTIVE]], $this->mesh->synced);
+                } finally {
+                    $this->coordinator->detachSlaveSyncEventLoop();
+                    $loop->close();
+                }
+            });
+        });
+    }
+
+    /** @return iterable<string, array{bool}> Both actual verdicts of the old pending round */
+    public static function oldDatabaseResults(): iterable
+    {
+        yield 'old-success' => [true];
+        yield 'old-failure' => [false];
+    }
+
+    public function testNativeFailedCurrentDatabaseTargetStaysQuietAndClosed(): void
+    {
+        $loop = new EventLoop();
+        $this->executor->applyRuntime = true;
+        $this->executor->delayDatabase = true;
+        $this->mesh->leader = 'leader';
+        $this->coordinator->attachSlaveSyncEventLoop($loop);
+        $this->captureSlaveAlerts(function () use ($loop): void {
+            $this->withDaemonTruthSource(function () use ($loop): void {
+                try {
+                    $this->coordinator->onSync('leader', $this->slaveFrame('window', StateProtectedModeRuntime::PHASE_VERIFYING));
+                    $this->coordinator->onRosterStopped();
+                    $this->drainSlaveSync($loop);
+                    $finish = $this->executor->databaseContinuations[0];
+                    $finish(new ReHydrateVerdict(null, null, false, ['worker #1: read failed']));
+                    $this->drainSlaveSync($loop);
+                    $finish(new ReHydrateVerdict(null, null, true, []));
+                    $this->drainSlaveSync($loop);
+                    self::assertCount(1, $this->executor->databaseContinuations);
+                    self::assertSame([], $this->mesh->synced);
+                    self::assertSame(StateProtectedModeRuntime::PHASE_ACTIVATING, Hilos::$rt->hilosProtectedModeRuntime->phase);
+                    self::assertFalse($this->coordinator->hasSlaveSyncReadyWork());
+                } finally {
+                    $this->coordinator->detachSlaveSyncEventLoop();
+                    $loop->close();
+                }
+            });
+        });
+    }
+
+    public function testSynchronousRosterAndDatabaseCallbacksDoNotDuplicateEffectsOrEraseReentrantTarget(): void
+    {
+        $loop = new EventLoop();
+        $this->executor->applyRuntime = true;
+        $this->mesh->leader = 'leader';
+        $this->coordinator->attachSlaveSyncEventLoop($loop);
+        $this->executor->onActivating = $this->coordinator->onRosterStopped(...);
+        $this->executor->onVerifying = $this->coordinator->onRosterResumed(...);
+        $this->mesh->onSyncedSend = function (): void {
+            $this->mesh->onSyncedSend = null;
+            $this->coordinator->onRosterResumed();
+            $this->coordinator->onSync('leader', $this->inactiveSlaveFrame('next'));
+        };
+        $this->executor->clearWindow = $this->coordinator->onRosterResumed(...);
+        $this->captureSlaveAlerts(function () use ($loop): void {
+            $this->withDaemonTruthSource(function () use ($loop): void {
+                try {
+                    $this->coordinator->onSync('leader', $this->slaveFrame('window', StateProtectedModeRuntime::PHASE_VERIFYING));
+                    $this->drainSlaveSync($loop);
+                    self::assertSame([
+                        'enterActivating', 'catchUpSlaveDatabase', 'importSlaveSync', 'enterVerifying',
+                        'importSlaveSync', 'finishVerifying', 'catchUpSlaveDatabase', 'enterInactive', 'finishLift',
+                    ], $this->executor->calls);
+                    self::assertSame([
+                        ['leader', 'window', StateProtectedModeRuntime::PHASE_VERIFYING],
+                        ['leader', 'next', StateProtectedModeRuntime::PHASE_INACTIVE],
+                    ], $this->mesh->synced);
+                    self::assertFalse($this->coordinator->hasSlaveSyncReadyWork());
+                } finally {
+                    $this->coordinator->detachSlaveSyncEventLoop();
+                    $loop->close();
+                }
+            });
+        });
+    }
+
+    public function testConcretePendingShrinkCuesWatchdogBeforeItsReminderWithoutChangingThePhase(): void
+    {
+        $this->executor->applyRuntime = true;
+        $this->mesh->followers = ['node-b', 'node-c'];
+        $this->mesh->leader = self::SELF;
+        Hilos::$cluster->registerProtectedMode($this->coordinator);
+        $this->withDaemonTruthSource(function (): void {
+            $this->coordinator->onBecameLeader();
+            $this->coordinator->onEnable('node-b', $this->enableData());
+            $watchdog = new ProtectedModeWatchdog();
+            $binding = new ProtectedModeSourceBinding();
+            $binding->registerWatchdog($watchdog);
+            $binding->reconcile();
+            $loop = new EventLoop();
+            $snapshots = [];
+            $watchdog->attachEventLoop($loop, static fn (): bool => true,
+                static function (ProtectedModeWatchdogSnapshot $snapshot) use (&$snapshots): void { $snapshots[] = $snapshot; });
+            try {
+                $epoch = Hilos::$rt->hilosProtectedModeRuntime->startedAt;
+                $mono = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+                $watchdog->dispatchReady((float)$epoch, $mono);
+                $watchdog->noteChanged();
+                $watchdog->dispatchReady((float)($epoch + 31), $mono + 31.0);
+                self::assertSame(['node-b', 'node-c', self::SELF], end($snapshots)->watchdogPendingNodeIds);
+                $reminder = new ReflectionProperty(ProtectedModeWatchdog::class, 'reminderDeadline')->getValue($watchdog);
+                $this->coordinator->onQuiesced('node-b');
+                self::assertTrue($watchdog->hasReadyWork());
+                self::assertSame(StateProtectedModeRuntime::PHASE_ACTIVATING, Hilos::$rt->hilosProtectedModeRuntime->phase);
+                $watchdog->dispatchReady((float)($epoch + 32), $mono + 32.0);
+                self::assertSame(['node-c', self::SELF], end($snapshots)->watchdogPendingNodeIds);
+                self::assertSame($reminder, new ReflectionProperty(ProtectedModeWatchdog::class, 'reminderDeadline')->getValue($watchdog));
+                $this->coordinator->onQuiesced('node-b');
+                self::assertFalse($watchdog->hasReadyWork(), 'An already absent slot is not another fact');
+                $this->coordinator->onRosterStopped();
+                self::assertTrue($watchdog->hasReadyWork());
+                $watchdog->dispatchReady((float)($epoch + 33), $mono + 33.0);
+                self::assertSame(['node-c'], end($snapshots)->watchdogPendingNodeIds);
+            } finally {
+                $binding->removeWatchdog($watchdog);
+                $watchdog->detachEventLoop();
+                $loop->close();
+            }
+        });
+    }
+
+    public function testSwitchReplacementFencesOldPendingCueAndExactRemovalPreservesItsReplacement(): void
+    {
+        Hilos::$cluster->registerProtectedMode($this->coordinator);
+        $watchdog = new ProtectedModeWatchdog();
+        $binding = new ProtectedModeSourceBinding();
+        $binding->registerWatchdog($watchdog);
+        $binding->reconcile();
+        $stale = new ReflectionProperty(ClusterProtectedMode::class, 'changeWake')->getValue($this->coordinator);
+        $replacement = new ClusterProtectedMode(self::SELF, $this->mesh, $this->executor);
+        Hilos::$cluster->registerProtectedMode($replacement);
+        self::assertTrue($watchdog->hasReadyWork());
+        $binding->reconcile();
+        new ReflectionProperty(ProtectedModeWatchdog::class, 'checkReady')->setValue($watchdog, false);
+        $stale();
+        self::assertFalse($watchdog->hasReadyWork());
+        $calls = 0;
+        $replacement->setChangeWake(static function () use (&$calls): void { ++$calls; });
+        $binding->removeWatchdog($watchdog);
+        $replacement->onLostLeadership();
+        self::assertGreaterThan(0, $calls);
+        self::assertFalse($watchdog->hasReadyWork());
+    }
+
     #[DataProvider('legacyOccupiedPhases')]
     public function testLegacyPromotionBootstrapsLocallyWithoutReplayingEffects(string $phase): void
     {
@@ -129,6 +640,7 @@ final class ClusterProtectedModeTest extends TestCase
             $before = Hilos::$rt->hilosProtectedModeRuntime->toArray();
             $this->mesh->slaves = ['slave'];
             $this->coordinator->onBecameLeader();
+            $this->coordinator->tickSlaveSync(time());
             $id = Hilos::$rt->hilosProtectedModeRuntime->freezeId;
             $this->assertNotEmpty($id);
             $after = Hilos::$rt->hilosProtectedModeRuntime->toArray();
@@ -161,6 +673,7 @@ final class ClusterProtectedModeTest extends TestCase
             $this->mesh->followers = ['master', 'slave'];
             $this->mesh->slaves = ['slave'];
             $this->coordinator->onBecameLeader();
+            $this->coordinator->tickSlaveSync(time());
             $frame = $this->mesh->syncs['slave'];
             $this->assertFalse($frame->barrierClosed);
             $this->coordinator->onSynced('slave', new PeerProtectedModeSyncedDTO($frame->syncId, $frame->phase));
@@ -177,6 +690,8 @@ final class ClusterProtectedModeTest extends TestCase
     {
         $this->executor->applyRuntime = true;
         $this->withDaemonTruthSource(function (): void {
+            $facts = 0;
+            $this->coordinator->setChangeWake(static function () use (&$facts): void { ++$facts; });
             $this->mesh->leader = self::SELF;
             $this->coordinator->onBecameLeader();
             $this->coordinator->onEnable('node-b', $this->enableData());
@@ -186,17 +701,23 @@ final class ClusterProtectedModeTest extends TestCase
             $this->assertSame([self::SELF, 'slave'], $this->coordinator->quiesceNodeIds());
             $this->coordinator->onSlaveConnected('slave');
             $current = $this->mesh->syncs['slave'];
+            $before = $facts;
             $this->coordinator->onQuiesced('slave');
             $this->coordinator->onSynced('slave', new PeerProtectedModeSyncedDTO($first->syncId, $first->phase));
             $this->coordinator->onSynced('slave', new PeerProtectedModeSyncedDTO($current->syncId, StateProtectedModeRuntime::PHASE_ACTIVE));
+            self::assertSame($before, $facts, 'Stale sync or quiesced cannot change the current slave slot');
             $this->coordinator->onRosterStopped();
             $this->assertSame(['slave'], $this->coordinator->pendingNodeIds());
+            $before = $facts;
             $this->coordinator->onSynced('slave', new PeerProtectedModeSyncedDTO($current->syncId, $current->phase));
+            self::assertGreaterThan($before, $facts);
             $this->assertSame([], $this->coordinator->pendingNodeIds());
             $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVE, Hilos::$rt->hilosProtectedModeRuntime->phase);
             $calls = $this->mesh->calls;
+            $before = $facts;
             $this->coordinator->onSynced('slave', new PeerProtectedModeSyncedDTO($current->syncId, $current->phase));
             $this->assertSame($calls, $this->mesh->calls);
+            self::assertSame($before, $facts);
         });
     }
 
@@ -3204,6 +3725,19 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([], $this->mesh->calls);
     }
 
+    /** @param EventLoop $loop Native cue queue, with no real-clock expiry wait */
+    private function drainSlaveSync(EventLoop $loop): void
+    {
+        for ($pass = 0; $pass < 20; ++$pass) {
+            $loop->tick();
+            $this->coordinator->dispatchSlaveSyncReady();
+            if (!$loop->hasReadyWork() && !$this->coordinator->hasSlaveSyncReadyWork()) {
+                return;
+            }
+        }
+        self::fail('Finite sync work did not settle into an external wait');
+    }
+
     /**
      * @param string $syncId Request id
      * @param string $phase Requested phase
@@ -3562,6 +4096,14 @@ final class FakeProtectedModeMesh implements ProtectedModeMesh
 
     public bool $syncCurrent = true;
 
+    public int $syncSends = 0;
+
+    public int $slaveReads = 0;
+
+    public ?Closure $onSyncedSend = null;
+
+    public ?Closure $onSyncSend = null;
+
     /** @var ?string Leader node id to advertise to an initiator, or null when leadership is unknown */
     public ?string $leader = null;
 
@@ -3585,12 +4127,15 @@ final class FakeProtectedModeMesh implements ProtectedModeMesh
 
     public function slaveNodeIds(): array
     {
+        ++$this->slaveReads;
         return $this->slaves;
     }
 
     public function sendProtectedModeSync(string $nodeId, PeerProtectedModeSyncDTO $snapshot): void
     {
         $this->syncs[$nodeId] = $snapshot;
+        ++$this->syncSends;
+        $this->onSyncSend?->__invoke($nodeId, $snapshot);
     }
 
     public function isProtectedModeSyncCurrent(string $leaderNodeId, string $syncId): bool
@@ -3601,6 +4146,7 @@ final class FakeProtectedModeMesh implements ProtectedModeMesh
     public function sendProtectedModeSynced(string $leaderNodeId, string $syncId, string $phase): void
     {
         $this->synced[] = [$leaderNodeId, $syncId, $phase];
+        $this->onSyncedSend?->__invoke();
     }
 
     public function leaderNodeId(): ?string
@@ -3739,6 +4285,10 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
     /** @var ?Closure(): void Optional synchronous inactive write */
     public ?Closure $clearWindow = null;
 
+    public ?Closure $onActivating = null;
+
+    public ?Closure $onVerifying = null;
+
     /** @var bool Whether a case will deliver the local barrier's result explicitly */
     public bool $delayDatabase = false;
 
@@ -3786,6 +4336,7 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
         if ($this->applyRuntime) {
             Hilos::$rt->hilosProtectedModeRuntime->actions->enterActivating($freeze, $initiatorAcceptKey);
         }
+        $this->onActivating?->__invoke();
     }
 
     /**
@@ -3824,6 +4375,7 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
         if ($this->applyRuntime) {
             Hilos::$rt->hilosProtectedModeRuntime->actions->enterVerifying();
         }
+        $this->onVerifying?->__invoke();
     }
 
     public function finishVerifying(): void

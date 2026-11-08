@@ -118,10 +118,13 @@ final class FreezeResumesOnTheSameWorkerTest extends TestCase
             $client = new ReflectionClass(SameWorkerTestWorkerClient::class)->newInstanceWithoutConstructor();
             $client->setWorkerIndex($workerIndex);
             $client->setIsMonopolistic(true);
+            new ReflectionProperty(WorkerClient::class, 'isRegistered')->setValue($client, true);
             $clients[] = $client;
         }
 
-        new ReflectionProperty(WorkerServer::class, 'clients')->setValue($server, $clients);
+        foreach ($clients as $client) {
+            new ReflectionMethod(WorkerServer::class, 'addClient')->invoke($server, $client);
+        }
         new ReflectionProperty(WorkerServer::class, 'agentManager')
             ->setValue($server, new SameWorkerTestAgentManagerDaemon($occupied));
 

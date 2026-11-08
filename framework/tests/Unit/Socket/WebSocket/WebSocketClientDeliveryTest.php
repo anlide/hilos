@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Socket\WebSocket;
 
+use Hilos\Core\EventLoop\EventLoop;
+use Closure;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
@@ -98,6 +100,24 @@ final class WebSocketClientDeliveryTest extends TestCase
         $this->assertSame($client->acceptKey, $signal->data->acceptKey);
     }
 
+    public function testPendingSubscribeRemainsTheFirstRequestBesideManyUpdates(): void
+    {
+        [$client] = $this->connection();
+        $client->acceptJson('{"type":"page_subscribe","page":"p"}');
+        $subscribe = Hilos::$sr->getNextQueuedSignal()->data;
+        for ($index = 0; $index < 130; $index++) {
+            $client->acceptJson('{"type":"page_update_subscription","page":"p"}');
+        }
+        self::assertSame($subscribe, $client->pendingPageSubscribe());
+        $update = Hilos::$sr->getNextQueuedSignal()->data;
+        $client->completeDelivery('p', $subscribe->deliveryId);
+        self::assertNull($client->pendingPageSubscribe());
+        self::assertTrue($client->isDeliveryPending('p', $update->deliveryId));
+        $client->acceptJson('{"type":"page_subscribe","page":"other"}');
+        self::assertSame('other', $client->pendingPageSubscribe()?->page);
+        self::assertFalse($client->isDeliveryPending('p', $update->deliveryId));
+    }
+
     public function testAnEmptyViewportCorrelationIsAnInvalidClientFrame(): void
     {
         [$client] = $this->connection();
@@ -121,6 +141,115 @@ final class WebSocketClientDeliveryTest extends TestCase
         self::assertFalse($client->hasPendingWrite());
         $client->write();
         self::assertSame([], $this->readFrames($peer));
+    }
+
+    /** @return iterable<string, array{bool}> Ordinary cadence and graceful completion during an unfinished packet */
+    public static function packingEndings(): iterable
+    {
+        yield 'ordinary' => [false];
+        yield 'graceful close' => [true];
+    }
+
+    /**
+     * The private packet boundary is shorter than a stand tick; real handshakes, native work
+     * and the complete socket journal show its order without a second process or a wait.
+     *
+     * @param bool $close Whether graceful close must finish both the original packet and later admitted output
+     */
+    #[DataProvider('packingEndings')]
+    public function testNativePackingPreservesBinaryPongAndLaterTextOrderWhileAnotherBrowserProgresses(bool $close): void
+    {
+        $server = new CapTestServer();
+        $this->servers[] = $server;
+        $origin = intdiv(hrtime(true), 1_000_000);
+        [$bulk, $browser] = $this->handshaken($server, $origin);
+        [$other, $otherBrowser] = $this->handshaken($server);
+        $json = [];
+        for ($index = 0; $index < 8192; $index++) {
+            $json[] = '{"type":"event","data":' . $index . '}';
+            $bulk->sendFrame($json[$index]);
+        }
+        $bytes = $bulk->outboundBytes();
+        $loop = new EventLoop();
+        $bulk->attachEventLoop($loop, static function () use ($server): void { $server->onTick(); });
+        $ready = 0;
+        $due = $loop->createReadyWork(static function () use ($server, &$ready): void { $ready++; $server->onTick(); });
+        try {
+            $bulk->write();
+            self::assertSame('', $this->readBytes($browser), 'A first packing portion cannot publish half a batch');
+            self::assertSame($bytes, $bulk->outboundBytes(), 'Packing bytes remain charged before transport handoff');
+            $bulk->sendFrameBinary('after');
+            self::assertSame($bytes + 7, $bulk->outboundBytes());
+            $future = '{"type":"future","data":true}';
+            $bulk->sendFrame($future);
+            $ping = self::maskedFrame(0x89, 'probe');
+            self::assertSame(strlen($ping), socket_write($browser, $ping));
+            if ($close) {
+                $bulk->closeOnceWritten();
+                self::assertFalse($bulk->shouldClose(), 'An empty transport buffer cannot close an unfinished admitted packet');
+            }
+            $journal = '';
+            $otherTexts = [];
+            $expectedOther = [];
+            for ($portion = 0; $portion < 140; $portion++) {
+                $other->now = $portion * 1000;
+                $text = '{"type":"other","data":' . $portion . '}';
+                $expectedOther[] = $text;
+                $other->sendFrame($text);
+                if ($close) {
+                    $bulk->sendFrame('{"type":"outside-close","data":' . $portion . '}');
+                }
+                $due->markReady();
+                $loop->tick();
+                $journal .= $this->readBytes($browser);
+                foreach ($this->readFrames($otherBrowser) as $frame) {
+                    if ($frame['opcode'] === 1) {
+                        $otherTexts[] = $frame['text'];
+                    }
+                }
+            }
+            self::assertSame(140, $ready);
+            self::assertSame($expectedOther, $otherTexts);
+            if (!$close) {
+                self::assertTrue($bulk->hasPendingWrite(), 'The later packet retains its original cadence');
+                $bulk->now = $origin + 1000;
+                $bulk->write();
+                $journal .= $this->readBytes($browser);
+            }
+            $frames = self::parseFrames($journal);
+            self::assertSame([1, 2, 10, 1], array_column($frames, 'opcode'));
+            self::assertSame([
+                '{"type":"signal_batch","data":{"frames":[' . implode(',', $json) . ']}}',
+                'after', 'probe', $future,
+            ], array_column($frames, 'text'));
+            self::assertFalse($bulk->hasPendingWrite());
+            self::assertSame($close, $bulk->shouldClose());
+            self::assertSame(0, $bulk->outboundBytes());
+        } finally {
+            $bulk->detachEventLoop();
+            $due->close();
+            $loop->close();
+        }
+    }
+
+    public function testBinaryFramesBehindAnUnfinishedPacketKeepTheExistingExactOutboundCap(): void
+    {
+        [$client, $peer] = $this->connection();
+        for ($index = 0; $index < 130; $index++) {
+            $client->sendFrame('{"type":"event","data":' . $index . '}');
+        }
+        $client->write();
+        self::assertSame('', $this->readBytes($peer));
+        $bytes = $client->outboundBytes();
+        $client->sendFrameBinary(str_repeat('x', self::CAP - $bytes - self::LONG_HEADER_BYTES));
+        self::assertSame(self::CAP, $client->outboundBytes());
+        self::assertFalse($client->shouldClose());
+        $client->sendFrameBinary('x');
+        self::assertTrue($client->shouldClose());
+        self::assertSame('', $this->readBytes($peer));
+        $client->close();
+        self::assertFalse($client->hasPendingWrite());
+        self::assertSame(0, $client->outboundBytes());
     }
 
     public function testTenEntityChangesReachTheSocketAsOneLatestBareEnvelope(): void
@@ -714,15 +843,17 @@ final class WebSocketClientDeliveryTest extends TestCase
 
     /**
      * @param CapTestServer $server Server that holds the connection
-     * @return array{CapTestClient, Socket} Connection whose real handshake completed at moment 0, its 101 and welcome read
+     * @param int $nowMs Monotonic origin; native-bound cases use the process clock
+     * @return array{CapTestClient, Socket} Connection with its 101 and welcome read
      */
-    private function handshaken(CapTestServer $server): array
+    private function handshaken(CapTestServer $server, int $nowMs = 0): array
     {
         $pair = [];
         self::assertTrue(socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair));
         socket_set_nonblock($pair[0]);
         socket_set_nonblock($pair[1]);
         $client = new CapTestClient($pair[0]);
+        $client->now = $nowMs;
         $server->seedClient($client);
         $this->servedBrowsers[] = $pair[1];
         $request = "GET /ws HTTP/1.1\r\nHost: localhost:8092\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
@@ -869,6 +1000,21 @@ final class DeliveryTestPartialTransport implements SocketTransportInterface
         $this->plain = new PlainSocketTransport($socket);
     }
 
+    /**
+     * @param EventLoop $loop Test owner's loop
+     * @param Closure(): void $wake Test owner's bounded portion
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+        $this->plain->attachEventLoop($loop, $wake);
+    }
+
+    /** Releases the test transport's loop binding, when it has one. */
+    public function detachEventLoop(): void
+    {
+        $this->plain->detachEventLoop();
+    }
+
     public function read(int $length): string|false
     {
         return $this->plain->read($length);
@@ -924,7 +1070,7 @@ final class CapTestServer extends WebSocketServer
     /** @param CapTestClient $client Browser this server now holds */
     public function seedClient(CapTestClient $client): void
     {
-        $this->clients[] = $client;
+        $this->addClient($client);
     }
 
     /** @return list<WebSocketClientInterface> Browsers the server still holds */

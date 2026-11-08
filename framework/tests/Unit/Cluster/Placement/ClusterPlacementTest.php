@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Hilos\Constants\TimeConstants;
 use Hilos\Cluster\Exception\PlacementCapabilityException;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
@@ -203,7 +204,7 @@ final class ClusterPlacementTest extends TestCase
         $placement = new ClusterPlacement('gpu-node', $mesh, $executor);
 
         $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null));
-        $placement->tick(microtime(true));
+        $placement->tick((hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND));
 
         $this->assertSame([], $mesh->sent, 'Nothing is answered while the agent waits for its worker');
         $placement->onPlacementQuery('leader');
@@ -240,7 +241,7 @@ final class ClusterPlacementTest extends TestCase
         $placement = new ClusterPlacement('gpu-node', $mesh, $executor);
 
         $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null));
-        $placement->tick(microtime(true) + 60.0);
+        $placement->tick((hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND) + 60.0);
 
         $this->assertSame([], $mesh->sent, 'A deferred placement is not answered by a clock');
 
@@ -318,7 +319,7 @@ final class ClusterPlacementTest extends TestCase
         $placement->onBecameLeader(1000.0);
 
         $placement->placeAgentOnNode('chat', null, self::SELF);
-        $placement->tick(microtime(true) + 60.0);
+        $placement->tick((hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND) + 60.0);
 
         $this->assertSame(PlacementState::Placing, $placement->registry()->get('chat')?->state);
 

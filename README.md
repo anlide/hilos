@@ -70,11 +70,34 @@ Hilos is designed to run in Docker. If you need to run it outside Docker, you wi
 - PHP Extensions:
   - `ext-posix` — Process control
   - `ext-pcntl` — Process forking
-  - `ext-sockets` — Socket operations
+  - `ext-sockets` — Socket operations; load before `ext-event`
   - `ext-mysqli` — MySQL database
   - `ext-mbstring` — String operations
   - `ext-ctype` — Character type checking
-  - `ext-event` — Epoll-based event loop
+  - `ext-event` — Pinned PECL event 3.1.6 with the Hilos peer-certificate and
+    buffer-event lifetime patch, built with OpenSSL and sockets support
+
+The event build must provide `EventBufferEvent::sslSocket()` and
+`EventBufferEvent::sslGetPeerCertificate(): ?string`. Version 3.1.6 alone does
+not prove that the patch is installed, and the getter alone does not prove the
+lifetime repair. Rebuild consumers when the native assets change. The
+[native build guide](framework/docker/native/event/README.md) is the source for
+installation, Docker build contexts, patch updates, checks and license notices.
+
+Outside Docker, prepare a matching PHP 8 CLI and development toolchain
+(`phpize`, `php-config`, PHP headers, autoconf, a C compiler, make and
+pkg-config), libevent and OpenSSL development headers, curl with CA
+certificates, tar, patch, sha256sum and nproc. Install and load sockets first.
+
+Export `PHP_INI_DIR` so its existing `conf.d` directory is scanned by that CLI
+PHP (check `php --ini`); the official PHP image supplies this variable, but a
+host installation must configure it explicitly. Sockets must load before the
+installer's `30-event.ini`, for example through `20-sockets.ini`. Remove any
+other event-loading INI entry to avoid loading the extension twice. With that
+environment, run `sh framework/docker/native/event/install.sh` from the
+repository root, with permission to install into PHP's extension directory,
+write `$PHP_INI_DIR/conf.d`, and copy the license notice into
+`/usr/local/share/doc/hilos-event`.
 
 ## 🚀 Quick Start
 

@@ -71,6 +71,8 @@ services:
   stand-gateway-local:
     build:
       context: ../../../framework/docker/stand-gateway
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     container_name: chat-stand-gateway-local
     # The gateway runs on the framework's own TLS server (HIL-921) and loads the
     # classes it needs from the framework itself, so there is still no composer here.
@@ -95,7 +97,10 @@ services:
   # polls name theirs: the name is a deliberate difference between the stacks, kept
   # because renaming a service renames its container and every command that reaches for it.
   chat-local:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../.env
         required: false
@@ -191,7 +196,10 @@ services:
   # demos use: the composer scripts of this demo name it that way, and the profile is a word
   # in those scripts rather than anything the framework reads.
   chat-cli-local:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../.env
         required: false
@@ -229,7 +237,10 @@ services:
   # The live monitor view. Only this demo ships one, and only behind a profile, so it starts
   # when someone asks for it and never with the stack.
   chat-monitor-local:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../.env
         required: false

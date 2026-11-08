@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Source\Interest;
 
+use Closure;
+use Generator;
 use Hilos\Core\Source\SourceChange;
 use Hilos\TruthSource\RtNodeSourceMap;
+use WeakReference;
 
 /**
  * Who holds a collection, as far as the process doing the sending knows.
@@ -30,6 +33,20 @@ final class SourceReaderMap
     /** @var array<string, array<string, list<string>>> [holder id => [kind => collection keys]] */
     private array $byHolder = [];
 
+    /** @var array<string, array<string, array<string, true>>> Private membership lookup; raw reports retain their original order */
+    private array $membershipByHolder = [];
+
+    /** @var array<string, int> Stable outer-holder order; a full release followed by a rejoin receives a new position */
+    private array $reportPositions = [];
+
+    private int $reportSequence = 0;
+
+    /** Immutable scalar report paths; retained union readers never capture the mutable whole map. */
+    private ?SourceReaderReportNode $reportRoot = null;
+
+    /** Complete paired union for this exact report basis; old FIFO readers keep their own finite basis. */
+    private ?SourceReaderUnion $union = null;
+
     /**
      * Records everything one holder reads, replacing whatever it read before.
      *
@@ -44,27 +61,65 @@ final class SourceReaderMap
      */
     public function note(string $holderId, string $kind, array $collectionKeys): array
     {
-        $held = $this->byHolder[$holderId][$kind] ?? [];
+        $held = $this->membershipByHolder[$holderId][$kind] ?? [];
 
         $added = [];
         foreach ($collectionKeys as $collectionKey) {
-            if (!in_array($collectionKey, $held, true)) {
+            if (!isset($held[$collectionKey])) {
                 $added[] = $collectionKey;
             }
         }
 
-        if ($collectionKeys === []) {
-            unset($this->byHolder[$holderId][$kind]);
-            if (($this->byHolder[$holderId] ?? []) === []) {
-                unset($this->byHolder[$holderId]);
-            }
-
-            return $added;
-        }
-
-        $this->byHolder[$holderId][$kind] = $collectionKeys;
+        $this->replace($holderId, $kind, $collectionKeys, array_fill_keys($collectionKeys, true));
 
         return $added;
+    }
+
+    /**
+     * Builds both halves privately, then publishes the complete report without a yield between
+     * them. The caller serializes reports and validates the exact transport on every step.
+     * Original membership is read when this FIFO entry starts, after any earlier report.
+     * Each visit still costs that name's bytes/hash and possible PHP array growth; retirement
+     * of the old report remains separate from this construction bound.
+     *
+     * @param string $holderId Worker or node reporting its complete interest
+     * @param list<string> $rtCollections Every runtime collection in original report order
+     * @param list<string> $dbCollections Every database collection in original report order
+     * @param Closure(): bool $isCurrent Exact original transport and FIFO binding, false after departure
+     * @return Generator<int, void, void, array{db: list<string>, rt: list<string>}> Newly owed states, empty after departure
+     */
+    public function noteReportDelivery(string $holderId, array $rtCollections, array $dbCollections, Closure $isCurrent): Generator
+    {
+        $map = WeakReference::create($this);
+        return (static function () use ($map, $holderId, $rtCollections, $dbCollections, $isCurrent): Generator {
+            $added = [SourceChange::KIND_DB => [], SourceChange::KIND_RT => []];
+            yield;
+            if (!$isCurrent() || $map->get() === null) {
+                return $added;
+            }
+            $held = $map->get()->membershipByHolder[$holderId] ?? [];
+            $membership = [];
+            foreach ([SourceChange::KIND_DB => $dbCollections, SourceChange::KIND_RT => $rtCollections] as $kind => $keys) {
+                $membership[$kind] = [];
+                yield;
+                foreach ($keys as $collectionKey) {
+                    if (!$isCurrent() || $map->get() === null) {
+                        return [SourceChange::KIND_DB => [], SourceChange::KIND_RT => []];
+                    }
+                    if (!isset($held[$kind][$collectionKey])) {
+                        $added[$kind][] = $collectionKey;
+                    }
+                    $membership[$kind][$collectionKey] = true;
+                    yield;
+                }
+            }
+            if (!$isCurrent() || $map->get() === null) {
+                return [SourceChange::KIND_DB => [], SourceChange::KIND_RT => []];
+            }
+            $map->get()->replace($holderId, SourceChange::KIND_DB, $dbCollections, $membership[SourceChange::KIND_DB]);
+            $map->get()->replace($holderId, SourceChange::KIND_RT, $rtCollections, $membership[SourceChange::KIND_RT]);
+            return $added;
+        })();
     }
 
     /**
@@ -78,7 +133,12 @@ final class SourceReaderMap
      */
     public function release(string $holderId): void
     {
-        unset($this->byHolder[$holderId]);
+        if (isset($this->reportPositions[$holderId])) {
+            $this->union = null;
+            $this->reportRoot = SourceReaderReportNode::remove($this->reportRoot, $this->reportPositions[$holderId]);
+            unset($this->reportPositions[$holderId]);
+        }
+        unset($this->byHolder[$holderId], $this->membershipByHolder[$holderId]);
     }
 
     /**
@@ -89,7 +149,7 @@ final class SourceReaderMap
      */
     public function holds(string $holderId, string $kind, string $collectionKey): bool
     {
-        return in_array($collectionKey, $this->byHolder[$holderId][$kind] ?? [], true);
+        return isset($this->membershipByHolder[$holderId][$kind][$collectionKey]);
     }
 
     /**
@@ -100,8 +160,8 @@ final class SourceReaderMap
     public function holders(string $kind, string $collectionKey): array
     {
         $holders = [];
-        foreach ($this->byHolder as $holderId => $byKind) {
-            if (in_array($collectionKey, $byKind[$kind] ?? [], true)) {
+        foreach ($this->membershipByHolder as $holderId => $byKind) {
+            if (isset($byKind[$kind][$collectionKey])) {
                 $holders[] = (string)$holderId;
             }
         }
@@ -115,21 +175,118 @@ final class SourceReaderMap
      * The union rather than a holder's own list, because that is what the level above asks for:
      * a node tells the mesh what it reads as one list, and which of its workers is behind a key
      * is nobody else's business - the answer would be the same for the sender either way.
+     * Completed results are reused until a report changes that kind or a holder leaves, so the
+     * next report can capture its predecessor's union without walking every name again.
      *
      * @param string $kind Source kind, KIND_DB or KIND_RT of {@see SourceChange}
-     * @return list<string> Collections at least one holder reads, in the order they first appeared
+     * @return list<string> Collections at least one holder reads, in current holder/report order
      */
     public function collections(string $kind): array
     {
+        if ($kind === SourceChange::KIND_RT || $kind === SourceChange::KIND_DB) {
+            $union = $this->unionPlan();
+            foreach ($union->build() as $_) {
+            }
+            return $union->collections[$kind];
+        }
         $collections = [];
-        foreach ($this->byHolder as $byKind) {
-            foreach ($byKind[$kind] ?? [] as $collectionKey) {
-                if (!in_array($collectionKey, $collections, true)) {
-                    $collections[] = $collectionKey;
-                }
+        foreach ($this->collectionCandidates($kind) as $collectionKey) {
+            if ($collectionKey !== null) {
+                $collections[] = $collectionKey;
             }
         }
 
         return $collections;
+    }
+
+    /**
+     * Captures both kinds in O(1), sharing immutable report paths rather than the mutable map.
+     * A completed pair remains the next transition's BEFORE basis without rebuilding it.
+     *
+     * @return SourceReaderUnion Private restartable preparation for this exact original report basis
+     */
+    public function unionPlan(): SourceReaderUnion
+    {
+        if ($this->union === null) {
+            $root = $this->reportRoot;
+            $this->union = new SourceReaderUnion(
+                static fn(): Generator => self::unionCandidates($root, SourceChange::KIND_RT),
+                static fn(): Generator => self::unionCandidates($root, SourceChange::KIND_DB),
+            );
+        }
+        return $this->union;
+    }
+
+    /**
+     * Captures original holder and report values in O(1), before the first advancement. Null
+     * pays for a holder transition or duplicate, so a large duplicate input cannot hide in one
+     * next(). Each name still costs its bytes/hash and possible seen-map growth; immutable root
+     * retirement and final array destruction are separate costs, not a total byte bound.
+     *
+     * @param string $kind Source kind whose finite ordered union is needed
+     * @return Generator<int, ?string> Original unique names, with one visit per holder or raw name
+     */
+    public function collectionCandidates(string $kind): Generator
+    {
+        return self::unionCandidates($this->reportRoot, $kind);
+    }
+
+    /**
+     * @param ?SourceReaderReportNode $root Original immutable report cohort, never its mutable owner
+     * @param string $kind Source kind to fold
+     * @return Generator<int, ?string> One raw name or holder transition after O(log holders) tree transitions
+     */
+    private static function unionCandidates(?SourceReaderReportNode $root, string $kind): Generator
+    {
+        $seen = [];
+        foreach (self::orderedReports($root) as $report) {
+            yield null;
+            foreach ($report[$kind] ?? [] as $collectionKey) {
+                if (isset($seen[$collectionKey])) {
+                    yield null;
+                } else {
+                    $seen[$collectionKey] = true;
+                    yield $collectionKey;
+                }
+            }
+        }
+    }
+
+    /**
+     * @param ?SourceReaderReportNode $node Original immutable subtree
+     * @return Generator<int, array<string, list<string>>> Original holder reports in original outer order
+     */
+    private static function orderedReports(?SourceReaderReportNode $node): Generator
+    {
+        if ($node === null) {
+            return;
+        }
+        yield from self::orderedReports($node->left);
+        yield $node->position => $node->report;
+        yield from self::orderedReports($node->right);
+    }
+
+    /**
+     * @param string $holderId Original holder whose report is being replaced
+     * @param string $kind Source kind whose raw order and membership change together
+     * @param list<string> $collectionKeys Complete original report, including duplicate names
+     * @param array<string, true> $membership Prepared membership lookup
+     */
+    private function replace(string $holderId, string $kind, array $collectionKeys, array $membership): void
+    {
+        $this->union = null;
+        if ($collectionKeys === []) {
+            unset($this->byHolder[$holderId][$kind], $this->membershipByHolder[$holderId][$kind]);
+            if (($this->byHolder[$holderId] ?? []) === []) {
+                $this->release($holderId);
+            } elseif (isset($this->reportPositions[$holderId])) {
+                $this->reportRoot = SourceReaderReportNode::put($this->reportRoot, $this->reportPositions[$holderId], $this->byHolder[$holderId]);
+            }
+            return;
+        }
+        $this->byHolder[$holderId][$kind] = $collectionKeys;
+        $this->membershipByHolder[$holderId][$kind] = $membership;
+        $position = $this->reportPositions[$holderId] ??= ++$this->reportSequence;
+        $this->reportRoot = SourceReaderReportNode::put($this->reportRoot, $position, $this->byHolder[$holderId]);
     }
 }

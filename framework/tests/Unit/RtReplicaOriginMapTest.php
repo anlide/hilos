@@ -125,4 +125,71 @@ final class RtReplicaOriginMapTest extends TestCase
         $this->assertSame([], $map->rowsOfNode(self::NODE));
         $this->assertSame([], $map->rowsOfNode(self::OTHER_NODE));
     }
+
+    public function testChangingOriginsKeepsOriginalCollectionAndRowPositions(): void
+    {
+        $map = new RtReplicaOriginMap();
+        $map->note(self::OTHER_NODE, self::COLLECTION, ['first', 'second']);
+        $map->note(self::NODE, self::OTHER_COLLECTION, ['last']);
+        $map->note(self::NODE, self::COLLECTION, ['second']);
+        $map->note(self::NODE, self::COLLECTION, ['first', 'first']);
+        $this->assertSame([self::COLLECTION => ['first', 'second'], self::OTHER_COLLECTION => ['last']], $map->rowsOfNode(self::NODE));
+        $this->assertSame([], $map->rowsOfNode(self::OTHER_NODE));
+
+        $map->note(self::OTHER_NODE, self::COLLECTION, ['second']);
+        $map->note(self::NODE, self::COLLECTION, ['second']);
+        $this->assertSame([self::COLLECTION => ['first', 'second'], self::OTHER_COLLECTION => ['last']], $map->rowsOfNode(self::NODE));
+        $map->forget(self::COLLECTION, 'first');
+        $map->note(self::NODE, self::COLLECTION, ['first']);
+        $this->assertSame([self::COLLECTION => ['second', 'first'], self::OTHER_COLLECTION => ['last']], $map->rowsOfNode(self::NODE));
+        $map->forget(self::COLLECTION, 'first');
+        $map->forget(self::COLLECTION, 'second');
+        $map->note(self::NODE, self::COLLECTION, ['new']);
+        $this->assertSame([self::OTHER_COLLECTION => ['last'], self::COLLECTION => ['new']], $map->rowsOfNode(self::NODE));
+    }
+
+    public function testNumericIdentifiersEmptyReportsAndUnknownDeparturesKeepTheirExactMeaning(): void
+    {
+        $map = new RtReplicaOriginMap();
+        $map->note('3', '07', []);
+        $map->note('3', '0', ['07', '0']);
+        $map->note('3', '07', ['7']);
+        $map->forget('unknown', 'unknown');
+        $map->forget('0', '7');
+        $this->assertSame(['0' => ['07', '0'], '07' => ['7']], $map->rowsOfNode('3'));
+        $this->assertSame('3', $map->nodeOfRow('0', '07'));
+        $this->assertNull($map->nodeOfRow('0', '7'));
+        $map->forget('0', '07');
+        $map->forget('0', '0');
+        $map->forget('07', '7');
+        $this->assertSame([], $map->rowsOfNode('3'));
+        $this->assertNull($map->nodeOfRow('0', '0'));
+    }
+
+    public function testOriginAdmissionIsIndependentOfOlderRowPositionsAndNeverReturnsByAba(): void
+    {
+        $map = new RtReplicaOriginMap();
+        $map->note(self::OTHER_NODE, self::COLLECTION, ['older']);
+        $map->note(self::NODE, self::COLLECTION, ['original', 'returning', 'recreated']);
+        $cutoff = $map->admissionCutoff();
+        $map->note(self::NODE, self::COLLECTION, ['original']);
+        $this->assertSame($cutoff, $map->admissionCutoff(), 'An ordinary fact from the same source preserves its admission');
+        $map->note(self::NODE, self::COLLECTION, ['older']);
+        $map->note(self::OTHER_NODE, self::COLLECTION, ['returning']);
+        $map->note(self::NODE, self::COLLECTION, ['returning']);
+        $map->forget(self::COLLECTION, 'recreated');
+        $map->note(self::NODE, self::COLLECTION, ['recreated', 'new']);
+
+        $this->assertSame(self::NODE, $map->nodeOfRow(self::COLLECTION, 'original', $cutoff));
+        foreach (['older', 'returning', 'recreated', 'new', 'unknown'] as $id) {
+            $this->assertNull($map->nodeOfRow(self::COLLECTION, $id, $cutoff), $id);
+        }
+        $this->assertSame(
+            [self::COLLECTION => ['older', 'original', 'returning', 'recreated', 'new']],
+            $map->rowsOfNode(self::NODE),
+            'The live reverse index keeps original position order independently of finite admission',
+        );
+        $this->assertSame(self::NODE, $map->nodeOfRow(self::COLLECTION, 'older'));
+        $this->assertGreaterThan($cutoff, $map->admissionCutoff());
+    }
 }

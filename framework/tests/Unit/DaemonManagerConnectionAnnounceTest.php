@@ -317,7 +317,7 @@ final class DaemonManagerConnectionAnnounceTestWebSocketServer extends WebSocket
      */
     public function connect(string $acceptKey): void
     {
-        $this->clients[] = new DaemonManagerConnectionAnnounceTestClient($acceptKey);
+        $this->addClient(new DaemonManagerConnectionAnnounceTestClient($acceptKey));
     }
 
     /**
@@ -327,11 +327,11 @@ final class DaemonManagerConnectionAnnounceTestWebSocketServer extends WebSocket
      */
     public function drop(string $acceptKey): void
     {
-        $this->clients = array_values(array_filter(
-            $this->clients,
-            static fn($client) => !$client instanceof DaemonManagerConnectionAnnounceTestClient
-                || $client->acceptKey !== $acceptKey,
-        ));
+        foreach ($this->clients as $client) {
+            if ($client instanceof DaemonManagerConnectionAnnounceTestClient && $client->acceptKey === $acceptKey) {
+                $this->removeClient($client);
+            }
+        }
     }
 
     /**

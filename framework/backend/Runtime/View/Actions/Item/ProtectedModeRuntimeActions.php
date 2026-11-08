@@ -533,13 +533,14 @@ final class ProtectedModeRuntimeActions extends RtActions
     }
 
     /**
-     * Invalidates analytics before syncing, even when the sync refuses the changed row.
+     * Invalidates analytics and cues the native consumer before a potentially refused sync.
      *
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     protected function sync(): void
     {
         Hilos::$ac?->invalidateProtectedMode();
+        Hilos::$rt?->noteProtectedModeChanged();
         parent::sync();
     }
 }

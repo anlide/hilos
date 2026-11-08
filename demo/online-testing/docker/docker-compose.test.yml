@@ -78,7 +78,10 @@ services:
 
   online-testing-daemon-test:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../tests/.env
         required: false
@@ -219,7 +222,10 @@ services:
 
   online-testing-cli-test:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../tests/.env
         required: false

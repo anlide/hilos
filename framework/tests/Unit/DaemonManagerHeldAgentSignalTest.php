@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Generator;
 use Hilos\Cluster\AgentSignalMesh;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Placement\AgentLocation;
@@ -23,8 +24,12 @@ use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Daemon\AgentDeliveryOutcome;
+use Hilos\Core\Daemon\AgentSignalHold;
+use Hilos\Core\Daemon\AgentSignalHolds;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\ParkedAgentSignal;
+use Hilos\Core\Daemon\SignalDispatch;
+use Hilos\Core\Daemon\SignalDispatchPhase;
 use Hilos\Core\Exception\InvalidArgumentException as CoreInvalidArgumentException;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Router\Destination\AgentAddressedDestination;
@@ -47,6 +52,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Socket\Server\WorkerServer;
@@ -60,6 +66,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionProperty;
+use RuntimeException;
+use WeakReference;
 
 /**
  * A frame addressed to an agent that is not up yet waits for it in the master (HIL-629).
@@ -150,6 +158,94 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $manager->reportWorkerLost(HeldAgentSignalTestRouter::COLD_AGENT);
 
         $this->assertSame([], $this->goneFrames());
+    }
+
+    /**
+     * @param string $report Actual report entry on the fixture
+     * @param string $goneReason Expected existing loss reason
+     */
+    #[DataProvider('cohortNegativeReports')]
+    public function testALargeNegativeReportKeepsItsOriginalCohortAndCancellationAcrossPortions(string $report, string $goneReason): void
+    {
+        $this->declareGoneListener();
+        $manager = new HeldAgentSignalTestManager();
+        for ($index = 0; $index < 130; $index++) {
+            $manager->deliverSignalToAgent(HeldAgentSignalTestRouter::COLD_AGENT, null, new SignalDTO(
+                new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::COMMAND_REQUEST),
+                new SignalName(HeldAgentSignalTestRouter::COLD_COMMAND),
+                new CommandRequestDTO('cohort-' . $index, HeldAgentSignalTestRouter::COLD_COMMAND),
+            ));
+        }
+        self::assertCount(130, $manager->heldFrames());
+        $manager->$report(HeldAgentSignalTestRouter::COLD_AGENT);
+        self::assertGreaterThanOrEqual(66, count($manager->heldFrames()), 'A report cannot settle its whole growing cohort');
+        self::assertLessThanOrEqual(64, Hilos::$sr->getQueuedSignalCount());
+        self::assertSame([], $manager->lossHookQueuedCounts);
+        $manager->onCommandAbandoned('cohort-100');
+        $manager->deliverSignalToAgent(HeldAgentSignalTestRouter::COLD_AGENT, null, new SignalDTO(
+            new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::COMMAND_REQUEST),
+            new SignalName(HeldAgentSignalTestRouter::COLD_COMMAND),
+            new CommandRequestDTO('cohort-later', HeldAgentSignalTestRouter::COLD_COMMAND),
+        ));
+
+        $state = new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager);
+        $advance = new ReflectionClass(DaemonManager::class)->getMethod('advanceSignalEffect');
+        for ($step = 0; $step < 1000 && $state->effects !== []; $step++) {
+            $advance->invoke($manager, key($state->effects));
+        }
+        self::assertSame([], $state->effects);
+        self::assertCount(1, $manager->heldFrames(), 'Later admissions were outside the report cohort');
+        self::assertSame('cohort-later', $manager->heldFrames()[0]->signal->data->correlationId);
+        $replies = [];
+        $gone = null;
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_AGENTS_GONE) {
+                self::assertCount(129, $replies, 'All owed refusals precede the gone announcement');
+                $gone = $signal->data->data;
+            } else {
+                self::assertNull($gone, 'No refusal follows the gone announcement');
+                $replies[] = $signal->data->correlationId;
+            }
+        }
+        $expected = [];
+        for ($index = 0; $index < 130; $index++) {
+            if ($index !== 100) {
+                $expected[] = 'cohort-' . $index;
+            }
+        }
+        self::assertSame($expected, $replies);
+        self::assertSame($goneReason, $gone?->reason);
+        self::assertSame($report === 'reportWorkerLost' ? [130] : [], $manager->lossHookQueuedCounts);
+    }
+
+    /** @return iterable<string, array{string, string}> Every negative report ending an original cohort */
+    public static function cohortNegativeReports(): iterable
+    {
+        yield 'placement refusal' => ['reportNotPlaced', AgentsGoneSignalData::REASON_NOT_PLACED];
+        yield 'failed start' => ['reportStartFailed', AgentsGoneSignalData::REASON_START_FAILED];
+        yield 'worker loss' => ['reportWorkerLost', AgentsGoneSignalData::REASON_WORKER_DIED];
+    }
+
+    public function testAFailedRefusalDoesNotRetryAnAnswerThatWasAlreadyQueued(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queueSubscribe(HeldAgentSignalTestRouter::COLD_PAGE);
+        $manager->drainQueue();
+        $failure = new RuntimeException('refusal observer failed after enqueue');
+        $manager->refusalFailure = $failure;
+        try {
+            $manager->reportNotPlaced(HeldAgentSignalTestRouter::COLD_AGENT);
+            self::fail('The original refusal failure must propagate');
+        } catch (RuntimeException $caught) {
+            self::assertSame($failure, $caught);
+        }
+        self::assertCount(1, $manager->pageErrorFrames());
+        self::assertSame([], $manager->heldFrames(), 'An ambiguous refusal attempt cannot be retried by another report');
+        $manager->refusalFailure = null;
+        $manager->reportNotPlaced(HeldAgentSignalTestRouter::COLD_AGENT);
+        self::assertCount(1, $manager->pageErrorFrames());
+        $state = new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager);
+        self::assertSame([], $state->effects);
     }
 
     /**
@@ -401,7 +497,7 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $this->queueFrozenClose();
         $manager->drainQueue();
 
-        $manager->workerServer->awaitingResume = [];
+        $manager->workerServer->finishResume();
         $manager->workerServer->seatAgentUnderWay(HeldAgentSignalTestRouter::FROZEN_AGENT);
         $manager->drainQueue();
 
@@ -427,7 +523,7 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $this->queueFrozenClose();
         $manager->drainQueue();
 
-        $manager->workerServer->awaitingResume = [];
+        $manager->workerServer->finishResume();
         $manager->drainQueue();
 
         $this->assertSame([], $manager->heldFrames());
@@ -470,7 +566,7 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $this->assertTrue($manager->heldFrames()[0]->localOnly);
         $this->assertTrue($manager->heldFrames()[0]->awaitingResume);
 
-        $manager->workerServer->awaitingResume = [];
+        $manager->workerServer->finishResume();
         $manager->workerServer->seatAgentUnderWay(HeldAgentSignalTestRouter::FROZEN_AGENT);
         $manager->drainQueue();
         $this->assertCount(1, $manager->heldFrames());
@@ -532,6 +628,7 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $this->assertTrue($manager->heldFrames()[0]->awaitingPlacement);
 
         $this->placeOnAnotherNode(HeldAgentSignalTestRouter::COLD_AGENT);
+        new ReflectionClass(DaemonManager::class)->getMethod('queueAgentDiscovery')->invoke($manager, HeldAgentSignalTestRouter::COLD_AGENT, true);
         $manager->drainQueue();
 
         $this->assertSame([], $manager->heldFrames());
@@ -564,12 +661,8 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $this->assertSame([], $manager->heldFrames());
     }
 
-    /**
-     * While the frame waits on a verdict, every release pass asks for a placement again. The
-     * five-second cap already lives inside the ask, so the master repeating the call is what a
-     * missing leader is waited out by (HIL-1041).
-     */
-    public function testAWaitingFrameAsksForPlacementAgainEachReleasePass(): void
+    /** An unchanged hold is idle; an actual placement fact permits another ask and its final verdict. */
+    public function testAWaitingFrameAsksAgainOnlyOnPlacementProgress(): void
     {
         $manager = new HeldAgentSignalTestManager();
         $this->queueSubscribe(HeldAgentSignalTestRouter::UNPLACED_PAGE);
@@ -579,9 +672,16 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $manager->drainQueue();
         $manager->drainQueue();
 
-        $this->assertSame($asksAfterPark + 2, $manager->placementAsks);
+        $this->assertSame($asksAfterPark, $manager->placementAsks);
         $this->assertCount(1, $manager->heldFrames());
         $this->assertSame([], $manager->pageErrorFrames());
+        $manager->leaderVerdict = 'unplaced: no capable node';
+        $this->leaveUnplaced(HeldAgentSignalTestRouter::COLD_AGENT);
+        new ReflectionClass(DaemonManager::class)->getMethod('queueAgentDiscovery')->invoke($manager, HeldAgentSignalTestRouter::COLD_AGENT, true);
+        $manager->drainQueue();
+        $this->assertSame($asksAfterPark + 1, $manager->placementAsks);
+        $this->assertCount(1, $manager->pageErrorFrames());
+        $this->assertSame([], $manager->heldFrames());
     }
 
     /**
@@ -740,6 +840,8 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $this->assertCount(1, $manager->heldFrames());
 
         $manager->leaderVerdict = $reason;
+        $this->leaveUnplaced(HeldAgentSignalTestRouter::COLD_AGENT);
+        new ReflectionClass(DaemonManager::class)->getMethod('queueAgentDiscovery')->invoke($manager, HeldAgentSignalTestRouter::COLD_AGENT, true);
         $manager->drainQueue();
         $this->assertCount(1, $manager->pageErrorFrames());
         $this->assertSame([], $manager->heldFrames());
@@ -791,6 +893,255 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $manager->reportStarted(HeldAgentSignalTestRouter::COLD_AGENT);
         $manager->drainQueue();
         $this->assertSame([], $manager->workerServer->deliveries);
+    }
+
+    /** @param bool $http Whether the still-queued request came from HTTP */
+    #[DataProvider('releasedRequestKinds')]
+    public function testAbandonmentBeforeOrdinaryAdmissionCannotStartTheOperation(bool $http): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        if ($http) {
+            $this->queueHttpRequest(HeldAgentSignalTestRouter::COLD_HTTP_PATH);
+        } else {
+            $this->queueCommand(HeldAgentSignalTestRouter::COLD_COMMAND);
+        }
+        $manager->onCommandAbandoned(self::CORRELATION_ID);
+        $manager->drainQueue();
+        $manager->drainQueue();
+        self::assertSame([], $manager->workerServer->startedAgentTypes);
+        self::assertSame([], $manager->workerServer->deliveries);
+        self::assertSame([], $manager->heldFrames());
+        self::assertFalse(Hilos::$sr->hasQueuedSignals());
+        $state = new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager);
+        self::assertSame([], $state->commandCancellations);
+        self::assertSame([], $state->abandonedCommands);
+    }
+
+    public function testCancellationCoversTheRetiredTailWithoutCancelingANewRouterRequest(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queueCommand(HeldAgentSignalTestRouter::COLD_COMMAND);
+        $manager->onCommandAbandoned(self::CORRELATION_ID);
+        Hilos::$sr = new HeldAgentSignalTestRouter();
+        $this->queueCommand(HeldAgentSignalTestRouter::COLD_COMMAND);
+        for ($portion = 0; $portion < 10; $portion++) {
+            $manager->drainQueue();
+        }
+        self::assertCount(1, $manager->heldFrames(), 'Only the new-router request survives the finite cancellation');
+        $state = new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager);
+        self::assertSame(0, $state->retiredRemaining);
+        self::assertSame([], $state->commandCancellations);
+        self::assertSame([], $state->abandonedCommands);
+        $manager->reportStarted(HeldAgentSignalTestRouter::COLD_AGENT);
+        $manager->drainQueue();
+        self::assertSame([HeldAgentSignalTestRouter::COLD_COMMAND . '@' . HeldAgentSignalTestRouter::COLD_AGENT],
+            $manager->workerServer->deliveries);
+    }
+
+    /** @return iterable<string, array{?string}> Exact page and whole-connection cancellation */
+    public static function pageCancellationScopes(): iterable
+    {
+        yield 'page' => [HeldAgentSignalTestRouter::COLD_PAGE];
+        yield 'connection' => [null];
+    }
+
+    /** @param ?string $page Page being left, absent for the whole connection */
+    #[DataProvider('pageCancellationScopes')]
+    public function testPageCancellationInvalidatesItsCohortBehindAnOlderRefusalWithoutSynchronousRelease(?string $page): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        for ($index = 0; $index < 260; $index++) {
+            $manager->deliverSignalToAgent(HeldAgentSignalTestRouter::COLD_AGENT, null, new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET), new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+                new SignalName(HeldAgentSignalTestRouter::COLD_PAGE),
+                new WebSocketPageSubscribeSignalDTO($index < 130 ? 'live-' . $index : self::ACCEPT_KEY,
+                    HeldAgentSignalTestRouter::COLD_PAGE),
+            ));
+        }
+        $last = WeakReference::create($manager->heldFrames()[259]->signal->data);
+        $manager->reportNotPlaced(HeldAgentSignalTestRouter::COLD_AGENT);
+        new ReflectionClass(DaemonManager::class)->getMethod('cancelPendingPageDeliveries')->invoke($manager, self::ACCEPT_KEY, $page);
+        self::assertGreaterThan(130, count($manager->heldFrames()), 'Cancellation must not synchronously settle its whole indexed cohort');
+        self::assertNotNull($last->get());
+        $manager->deliverSignalToAgent(HeldAgentSignalTestRouter::COLD_AGENT, null, new SignalDTO(
+            new SignalSource(SignalSource::WEBSOCKET), new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+            new SignalName(HeldAgentSignalTestRouter::COLD_PAGE),
+            new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, HeldAgentSignalTestRouter::COLD_PAGE, ['new' => true]),
+        ));
+        $runnable = new ReflectionClass(DaemonManager::class)->getMethod('hasRunnableSignalDispatch');
+        for ($portion = 0; $portion < 1000 && $runnable->invoke($manager); $portion++) {
+            $manager->drainQueue();
+        }
+        self::assertFalse($runnable->invoke($manager));
+        self::assertNull($last->get());
+        self::assertCount(1, $manager->heldFrames());
+        self::assertSame(['new' => true], $manager->heldFrames()[0]->signal->data->params);
+        self::assertSame(array_map(static fn(int $index): string => 'live-' . $index, range(0, 129)),
+            array_map(static fn(WebSocketSignalData $frame): ?string => $frame->targetAcceptKey, $manager->pageErrorFrames()));
+        $manager->reportStarted(HeldAgentSignalTestRouter::COLD_AGENT);
+        $manager->drainQueue();
+        self::assertSame([], $manager->heldFrames());
+        self::assertSame([HeldAgentSignalTestRouter::COLD_PAGE . '@' . HeldAgentSignalTestRouter::COLD_AGENT],
+            $manager->workerServer->deliveries);
+    }
+
+    public function testCancellationInvalidatesAHeldCohortBeforeAnOlderRefusalCursorReachesIt(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        for ($index = 0; $index < 260; $index++) {
+            $manager->deliverSignalToAgent(HeldAgentSignalTestRouter::COLD_AGENT, null, new SignalDTO(
+                new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::COMMAND_REQUEST),
+                new SignalName(HeldAgentSignalTestRouter::COLD_COMMAND),
+                new CommandRequestDTO($index < 130 ? 'live-' . $index : self::CORRELATION_ID, HeldAgentSignalTestRouter::COLD_COMMAND),
+            ));
+        }
+        $manager->reportNotPlaced(HeldAgentSignalTestRouter::COLD_AGENT);
+        self::assertGreaterThan(130, count($manager->heldFrames()));
+        $manager->onCommandAbandoned(self::CORRELATION_ID);
+        $dispatch = new ReflectionClass(DaemonManager::class)->getMethod('dispatchSignals');
+        $runnable = new ReflectionClass(DaemonManager::class)->getMethod('hasRunnableSignalDispatch');
+        for ($portion = 0; $portion < 1000 && $runnable->invoke($manager); $portion++) {
+            $dispatch->invoke($manager);
+        }
+        self::assertFalse($runnable->invoke($manager));
+        self::assertSame([], $manager->heldFrames());
+        self::assertSame(array_map(static fn(int $index): string => 'live-' . $index, range(0, 129)),
+            Hilos::$sr->returnedCorrelations);
+        $state = new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager);
+        self::assertSame([], $state->commandCancellations);
+        self::assertSame([], $state->abandonedCommands);
+    }
+
+    public function testReentrantAbandonmentKeepsIndependentWorkRaisedByTheSameHook(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $dispatch = new SignalDispatch(new SignalDTO(new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::COMMAND_REQUEST), new SignalName(HeldAgentSignalTestRouter::COLD_COMMAND),
+            new CommandRequestDTO(self::CORRELATION_ID, HeldAgentSignalTestRouter::COLD_COMMAND)),
+            static function () use ($manager): Generator {
+                yield;
+                $manager->onCommandAbandoned(self::CORRELATION_ID);
+                $manager->sendToAgent(HeldAgentSignalTestRouter::COLD_AGENT, null, 'independent_after_abandon', new SignalData());
+                yield;
+            });
+        new ReflectionClass(DaemonManager::class)->getMethod('runSignalPortion')->invoke($manager, $dispatch, 1);
+        self::assertSame(SignalDispatchPhase::Canceled, $dispatch->phase);
+        self::assertCount(1, $manager->heldFrames());
+        self::assertSame('independent_after_abandon', $manager->heldFrames()[0]->signal->signalName->getName());
+        $manager->drainQueue();
+        $manager->reportStarted(HeldAgentSignalTestRouter::COLD_AGENT);
+        $manager->drainQueue();
+        self::assertSame(['independent_after_abandon@' . HeldAgentSignalTestRouter::COLD_AGENT], $manager->workerServer->deliveries);
+    }
+
+    /**
+     * A start report releases a request before the next drain. Its caller can leave in that
+     * interval, while the request still belongs to the master and can be canceled.
+     *
+     * @param bool $http Whether the held request came from an HTTP connection
+     */
+    #[DataProvider('releasedRequestKinds')]
+    public function testAReleasedRequestWhoseCallerLeftIsDroppedWithoutAnAnswer(bool $http): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        if ($http) {
+            $this->queueHttpRequest(HeldAgentSignalTestRouter::COLD_HTTP_PATH);
+        } else {
+            $this->queueCommand(HeldAgentSignalTestRouter::COLD_COMMAND);
+        }
+        $manager->drainQueue();
+        $this->assertCount(1, $manager->heldFrames());
+
+        $manager->reportStarted(HeldAgentSignalTestRouter::COLD_AGENT);
+        $this->assertSame([], $manager->heldFrames());
+        $this->assertSame([], $manager->workerServer->deliveries);
+        $manager->onCommandAbandoned(self::CORRELATION_ID);
+
+        $manager->drainQueue();
+        $manager->drainQueue();
+        $this->assertSame([], $manager->workerServer->deliveries);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'Cancellation owes no refusal to the departed caller.');
+    }
+
+    /**
+     * Cancellation remains correlation-specific after a start report has released the request.
+     *
+     * @param bool $http Whether the held request came from an HTTP connection
+     */
+    #[DataProvider('releasedRequestKinds')]
+    public function testAnotherCallerLeavingDoesNotCancelAReleasedRequest(bool $http): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        if ($http) {
+            $this->queueHttpRequest(HeldAgentSignalTestRouter::COLD_HTTP_PATH);
+        } else {
+            $this->queueCommand(HeldAgentSignalTestRouter::COLD_COMMAND);
+        }
+        $manager->drainQueue();
+        $manager->reportStarted(HeldAgentSignalTestRouter::COLD_AGENT);
+        $manager->onCommandAbandoned('corr-somebody-else');
+
+        $manager->drainQueue();
+        $manager->drainQueue();
+        $this->assertSame(
+            [($http ? HttpConstants::METHOD_GET . ' ' . HeldAgentSignalTestRouter::COLD_HTTP_PATH
+                : HeldAgentSignalTestRouter::COLD_COMMAND) . '@' . HeldAgentSignalTestRouter::COLD_AGENT],
+            $manager->workerServer->deliveries,
+        );
+    }
+
+    /** @param bool $http Whether the caller owns an HTTP request */
+    #[DataProvider('releasedRequestKinds')]
+    public function testAbandonmentCancelsTheActualReleasedCursorBetweenPortions(bool $http): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        if ($http) {
+            $this->queueHttpRequest(HeldAgentSignalTestRouter::COLD_HTTP_PATH);
+        } else {
+            $this->queueCommand(HeldAgentSignalTestRouter::COLD_COMMAND);
+        }
+        $manager->drainQueue();
+        $manager->reportStarted(HeldAgentSignalTestRouter::COLD_AGENT);
+        $cursor = $manager->beginReleasedCursor();
+        $manager->advanceReleasedCursor($cursor, 1);
+        $this->assertTrue($cursor->hasWork());
+        $this->assertSame([], $manager->workerServer->deliveries);
+        $manager->onCommandAbandoned(self::CORRELATION_ID);
+        $manager->advanceReleasedCursor($cursor, 64);
+        $manager->drainQueue();
+        $this->assertSame(SignalDispatchPhase::Canceled, $cursor->phase);
+        $this->assertSame([], $manager->workerServer->deliveries);
+        $this->assertSame([], $manager->heldFrames());
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    /** @param bool $http Whether the caller owns an HTTP request */
+    #[DataProvider('releasedRequestKinds')]
+    public function testAnotherCallerCannotCancelAnActiveReleasedCursor(bool $http): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        if ($http) {
+            $this->queueHttpRequest(HeldAgentSignalTestRouter::COLD_HTTP_PATH);
+        } else {
+            $this->queueCommand(HeldAgentSignalTestRouter::COLD_COMMAND);
+        }
+        $manager->drainQueue();
+        $manager->reportStarted(HeldAgentSignalTestRouter::COLD_AGENT);
+        $cursor = $manager->beginReleasedCursor();
+        $manager->advanceReleasedCursor($cursor, 1);
+        $manager->onCommandAbandoned('corr-somebody-else');
+        $manager->advanceReleasedCursor($cursor, 64);
+        $manager->drainQueue();
+        $this->assertSame(SignalDispatchPhase::Complete, $cursor->phase);
+        $this->assertSame([($http ? HttpConstants::METHOD_GET . ' ' . HeldAgentSignalTestRouter::COLD_HTTP_PATH
+            : HeldAgentSignalTestRouter::COLD_COMMAND) . '@' . HeldAgentSignalTestRouter::COLD_AGENT],
+            $manager->workerServer->deliveries);
+    }
+
+    /** @return array<string, array{bool}> The two request payloads sharing the abandonment door */
+    public static function releasedRequestKinds(): array
+    {
+        return ['command' => [false], 'HTTP' => [true]];
     }
 
     /**
@@ -969,6 +1320,7 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $this->assertCount(1, $manager->heldFrames());
 
         $this->placeOnAnotherNode(HeldAgentSignalTestRouter::COLD_AGENT);
+        new ReflectionClass(DaemonManager::class)->getMethod('queueAgentDiscovery')->invoke($manager, HeldAgentSignalTestRouter::COLD_AGENT, true);
         $manager->drainQueue();
 
         $this->assertSame([], $manager->heldFrames());
@@ -988,6 +1340,7 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $manager->placedReleases = [];
 
         $this->placeOnAnotherNode(HeldAgentSignalTestRouter::COLD_AGENT);
+        new ReflectionClass(DaemonManager::class)->getMethod('queueAgentDiscovery')->invoke($manager, HeldAgentSignalTestRouter::COLD_AGENT, true);
         $manager->drainQueue();
 
         $this->assertSame([HeldAgentSignalTestRouter::COLD_AGENT], $manager->placedReleases);
@@ -1199,6 +1552,11 @@ final class HeldAgentSignalTestManager extends DaemonManager
     /** @var ?string Not-placed reason an ask answers in place, as the leader's own does; null answers nothing */
     public ?string $leaderVerdict = null;
 
+    /** @var list<int> Exact queue size when the original worker-loss hook runs */
+    public array $lossHookQueuedCounts = [];
+
+    public ?RuntimeException $refusalFailure = null;
+
     public function __construct()
     {
         parent::__construct();
@@ -1330,26 +1688,57 @@ final class HeldAgentSignalTestManager extends DaemonManager
      */
     public function ageHeldFrames(float $seconds): void
     {
-        $held = new ReflectionClass(DaemonManager::class)->getProperty('parkedAgentSignals');
-        $held->setValue($this, array_map(
-            static fn(ParkedAgentSignal $parked): ParkedAgentSignal => new ParkedAgentSignal(
+        foreach ($this->holdEntries() as $hold) {
+            $parked = $hold->parked;
+            if ($parked === null) {
+                continue;
+            }
+            $hold->parked = new ParkedAgentSignal(
                 $parked->signal,
                 $parked->agentId,
                 $parked->parkedAt - $seconds,
                 $parked->awaitingPlacement,
                 $parked->localOnly,
                 $parked->awaitingResume,
-            ),
-            $held->getValue($this),
-        ));
+            );
+        }
+    }
+
+    /** @return list<ParkedAgentSignal> Frames still blocked for an agent */
+    public function heldFrames(): array
+    {
+        $parked = [];
+        foreach ($this->holdEntries() as $hold) {
+            if ($hold->isParked()) {
+                $parked[] = $hold->parked;
+            }
+        }
+        return $parked;
+    }
+
+    /** @return SignalDispatch Next actual production one-agent cursor, without sending its operation */
+    public function beginReleasedCursor(): SignalDispatch
+    {
+        $owner = new ReflectionClass(DaemonManager::class)->getMethod('agentSignalHolds')->invoke($this);
+        $holdId = $owner->firstReleasedId();
+        $cursor = new ReflectionClass(DaemonManager::class)->getMethod('createReleasedAgentDispatch')->invoke(
+            $this, $owner->get($holdId), $this->workerServer, null,
+        );
+        $owner->begin($holdId, $cursor);
+        return $cursor;
     }
 
     /**
-     * @return list<ParkedAgentSignal> Frames the master holds for an agent right now
+     * @param SignalDispatch $cursor Actual one-agent lifetime
+     * @param int $steps Allowed work steps
      */
-    public function heldFrames(): array
+    public function advanceReleasedCursor(SignalDispatch $cursor, int $steps): void
     {
-        return new ReflectionClass(DaemonManager::class)->getProperty('parkedAgentSignals')->getValue($this);
+        new ReflectionClass(DaemonManager::class)->getMethod('runSignalPortion')->invoke($this, $cursor, $steps);
+        $owner = new ReflectionClass(DaemonManager::class)->getMethod('agentSignalHolds')->invoke($this);
+        if (!$cursor->hasWork() && $cursor->heldId !== null && $owner->get($cursor->heldId)?->dispatch === $cursor) {
+            $owner->settle($cursor->heldId);
+        }
     }
 
     /**
@@ -1362,6 +1751,25 @@ final class HeldAgentSignalTestManager extends DaemonManager
         return $router instanceof HeldAgentSignalTestRouter ? $router->pageErrorFrames : [];
     }
 
+    /**
+     * @param int $workerIndex Lost worker
+     * @param bool $isMonopolistic Its worker kind
+     * @param list<string> $agentIds Original loss cohort
+     */
+    protected function onAgentsLostWithWorker(int $workerIndex, bool $isMonopolistic, array $agentIds): void
+    {
+        $this->lossHookQueuedCounts[] = Hilos::$sr->getQueuedSignalCount();
+    }
+
+    /** @param SignalDTO $signal Page whose actual refusal is observed */
+    protected function answerUnreachableSubscription(SignalDTO $signal): void
+    {
+        parent::answerUnreachableSubscription($signal);
+        if ($this->refusalFailure !== null) {
+            throw $this->refusalFailure;
+        }
+    }
+
     protected function createSignalRouter(): SignalRouter
     {
         return new HeldAgentSignalTestRouter();
@@ -1370,6 +1778,13 @@ final class HeldAgentSignalTestManager extends DaemonManager
     protected function createAgentManagerDaemon(): AgentManagerDaemon
     {
         return new HeldAgentSignalTestAgentManagerDaemon();
+    }
+
+    /** @return array<int, AgentSignalHold> Actual production owner's pending entries */
+    private function holdEntries(): array
+    {
+        $owner = new ReflectionClass(DaemonManager::class)->getMethod('agentSignalHolds')->invoke($this);
+        return new ReflectionProperty(AgentSignalHolds::class, 'entries')->getValue($owner);
     }
 }
 
@@ -1410,6 +1825,9 @@ final class HeldAgentSignalTestRouter extends SignalRouter
     /** @var list<WebSocketSignalData> Subscription errors queued for a browser, in order */
     public array $pageErrorFrames = [];
 
+    /** @var list<string> Actual queued command replies, without retaining their payloads */
+    public array $returnedCorrelations = [];
+
     /**
      * @param SignalSourceInterface $signalSource Source of the signal
      * @param SignalTypeInterface $signalType Type of the signal
@@ -1425,6 +1843,9 @@ final class HeldAgentSignalTestRouter extends SignalRouter
     ): void {
         if ($signalName->getName() === SignalConstants::SUBSCRIPTION_PAGE_ERROR && $signalData instanceof WebSocketSignalData) {
             $this->pageErrorFrames[] = $signalData;
+        }
+        if ($signalData instanceof CommandReplyDTO) {
+            $this->returnedCorrelations[] = $signalData->correlationId;
         }
 
         parent::queueSignal($signalSource, $signalType, $signalName, $signalData);
@@ -1521,6 +1942,14 @@ final class HeldAgentSignalTestWorkerServer extends WorkerServer
     public function seatAgentUnderWay(string $agentType): void
     {
         $this->roster->addAgent($agentType, new HeldAgentSignalTestAgentDaemon(), 1, false);
+        new ReflectionProperty(WorkerServer::class, 'agentHoldWake')->getValue($this)?->__invoke($agentType);
+    }
+
+    /** Completes the fixture's resume walk without waiting for an agent-start report. */
+    public function finishResume(): void
+    {
+        $this->awaitingResume = [];
+        new ReflectionProperty(WorkerServer::class, 'agentHoldWake')->getValue($this)?->__invoke(null);
     }
 
     /**

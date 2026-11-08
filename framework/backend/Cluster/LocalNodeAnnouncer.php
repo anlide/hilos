@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Cluster;
 
 use Hilos\Cluster\Peer\PeerServer;
+use Hilos\HilosException;
 
 /**
  * Seam that re-announces the local node's membership record to the peer mesh.
@@ -20,6 +21,8 @@ interface LocalNodeAnnouncer
 {
     /**
      * Announces the local node's current registry record to every connected peer.
+     *
+     * @throws HilosException When a changed local membership fails its quorum duties
      */
     public function announceLocalNode(): void;
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\AbandonedCommandSink;
 use Hilos\Core\Daemon\AgentRestartDoor;
@@ -159,6 +160,7 @@ class CommandServer extends AbstractServer
      * (HIL-1040); calling it on a delivery would drop a hold for a request that was answered.
      *
      * @param string $correlationId Correlation id nobody is waiting on any more
+     * @throws EventLoopException When the master cannot rearm remaining command deadlines
      */
     public function abandon(string $correlationId): void
     {
@@ -177,6 +179,7 @@ class CommandServer extends AbstractServer
      *
      * @param string $correlationId Correlation id of the originating request
      * @param CommandReplyDTO $reply Agent reply to write
+     * @throws EventLoopException When releasing a held client cannot cancel its native deadline
      */
     public function deliver(string $correlationId, CommandReplyDTO $reply): void
     {

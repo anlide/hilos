@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Probe;
 
+use Hilos\Constants\TimeConstants;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementRecord;
+use Hilos\Cluster\Placement\PlacementExecutor;
+use Hilos\Cluster\Placement\ResourceProfile;
+use Hilos\Core\Daemon\AgentDeclarationDuty;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use RuntimeException;
 use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Cluster\Probe\ProbeFleetSupervisor;
@@ -84,7 +91,7 @@ final class ProbeFleetSupervisorTest extends TestCase
         $executor = $this->installPlacement([self::SELF, self::PEER]);
         $placement = Hilos::$cluster?->placement();
         $this->assertNotNull($placement);
-        $placement->onBecameLeader(microtime(true));
+        $placement->onBecameLeader((hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND));
         $supervisor = new ProbeFleetSupervisor();
 
         $supervisor->tick();
@@ -93,7 +100,8 @@ final class ProbeFleetSupervisorTest extends TestCase
         $placement->onPlacementReport(self::PEER, new PeerPlacementReportDTO([]));
         $supervisor->tick();
         $this->assertSame([], $executor->executed, 'The final report still waits for snapshot inheritance on tick');
-        $placement->tick(microtime(true));
+        $placement->setHoldWake($supervisor->noteChanged(...));
+        $placement->tick((hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND));
         $supervisor->tick();
         $this->assertSame(self::fleet(), $executor->executed, 'Every member is placed once every node has reported');
     }
@@ -223,6 +231,68 @@ final class ProbeFleetSupervisorTest extends TestCase
         Hilos::$cluster = $context;
 
         return $executor;
+    }
+
+    /** A reentrant cancellation supersedes a failed attempt before it can leave a tracked failure. */
+    public function testUntrackedExceptionKeepsSuffixUntilItsOwnNativeRetry(): void
+    {
+        $executed = [];
+        $refuse = true;
+        $placement = null;
+        $executor = $this->createMock(PlacementExecutor::class);
+        $executor->method('requiredCapabilities')->willReturnCallback(
+            static function (string $type, ?string $index) use (&$placement, &$refuse): array {
+                if ($index === '3' && $refuse) {
+                    $refuse = false;
+                    $placement->stopAgentOnNode($type, $index, null);
+                    $placement->registry()->forget($type . ':' . $index);
+                    throw new RuntimeException('declaration superseded before tracking');
+                }
+                return [];
+            },
+        );
+        $executor->method('placementProfile')->willReturn(ResourceProfile::none());
+        $executor->method('executePlacement')->willReturnCallback(
+            static function (string $type, ?string $index) use (&$executed): int {
+                $executed[] = [$type, $index];
+                return 0;
+            },
+        );
+        $executor->method('placedWorkerId')->willReturn(0);
+        $placement = new ClusterPlacement(self::SELF, new FakePlacementMesh([self::SELF => ['slots=10']], online: [self::SELF]), $executor);
+        Hilos::$cluster = new ClusterContext();
+        Hilos::$cluster->registerPlacement($placement);
+        $supervisor = new ProbeFleetSupervisor();
+        $supervisor->tick();
+        $prefix = [[HilosAgentType::HILOS_PROBE_FLEET, '0'], [HilosAgentType::HILOS_PROBE_FLEET, '1'],
+            [HilosAgentType::HILOS_PROBE_FLEET, '2']];
+        self::assertSame($prefix, $executed);
+        self::assertNull($placement->registry()->get(HilosAgentType::HILOS_PROBE_FLEET . ':3'));
+        $supervisor->tick();
+        self::assertSame($prefix, $executed);
+        $duty = new ReflectionProperty(ProbeFleetSupervisor::class, 'declarations')->getValue($supervisor);
+        $retry = new ReflectionProperty(AgentDeclarationDuty::class, 'retryAt');
+        $original = $retry->getValue($duty);
+        self::assertIsFloat($original);
+        // Age the actual attempt's basis before binding its native deadline; no timer is shortened.
+        $retry->setValue($duty, $original - 6.0);
+        $loop = new EventLoop();
+        try {
+            $supervisor->attachEventLoop($loop);
+            $timer = new ReflectionProperty(AgentDeclarationDuty::class, 'retryTimer')->getValue($duty);
+            self::assertInstanceOf(EventLoopTimer::class, $timer);
+            self::assertSame($original - 6.0, $timer->getDeadline());
+            $loop->runOnce();
+            self::assertSame($prefix, $executed, 'native due only cues the guarded supervisor entry');
+            self::assertTrue($supervisor->hasReadyWork());
+            $supervisor->tick();
+            self::assertSame(self::fleet(), $executed);
+            self::assertFalse($supervisor->hasReadyWork());
+            self::assertNull(new ReflectionProperty(AgentDeclarationDuty::class, 'retryTimer')->getValue($duty));
+        } finally {
+            $supervisor->detachEventLoop();
+            $loop->cleanup();
+        }
     }
 
     private function failMember(): void

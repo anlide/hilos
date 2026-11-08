@@ -60,7 +60,7 @@ class DaemonStatus
     }
 
     /**
-     * @param float $now Sample clock in seconds
+     * @param float $now Monotonic seconds, on the same interval basis for every sample
      * @param list<int> $workerPids Live worker process ids
      * @return DaemonMeasurements Rounded sample stored for all consumers
      * @throws InvalidFormatException When a sampled measurement violates its value contract

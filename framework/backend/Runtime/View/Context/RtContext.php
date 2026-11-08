@@ -21,6 +21,7 @@ use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateItemNotFoundException;
+use Hilos\Runtime\RtMembershipVersion;
 use Hilos\Runtime\State\Collection\HilosClusterNodes as StateHilosClusterNodes;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Collection\HilosProbeFleetStatuses as StateHilosProbeFleetStatuses;
@@ -166,6 +167,12 @@ abstract class RtContext
 
     /** @var ?HilosFeature Feature whose mount() is running, null while the framework mounts its own */
     private ?HilosFeature $_mountingFeature = null;
+
+    /** Process-local registry incarnation; a same-object remount must still invalidate a retained read. */
+    private int $snapshotMountRevision = 0;
+
+    /** @var ?Closure(): void One process-local master cue; never applies a domain effect inline */
+    private ?Closure $protectedModeWake = null;
 
     /**
      * Creates runtime context.
@@ -383,6 +390,8 @@ abstract class RtContext
      */
     final public function mountFeatureCollection(string $name, RtStates $collection): void
     {
+        $this->snapshotMountRevision++;
+        RtMembershipVersion::advance($this);
         $this->_stateCollections[$name] = $collection;
         $this->_featureCollections[$name] = ['feature' => $this->_mountingFeature, 'state' => $collection];
         SourceInterestRegistry::register(
@@ -409,6 +418,8 @@ abstract class RtContext
      */
     private function mountClaimedCollection(string $name, RtStates $collection): void
     {
+        $this->snapshotMountRevision++;
+        RtMembershipVersion::advance($this);
         $this->_stateCollections[$name] = $collection;
         $this->_featureCollections[$name] = ['feature' => null, 'state' => $collection];
     }
@@ -477,8 +488,34 @@ abstract class RtContext
      */
     final public function mountFeatureItem(string $name, RtState $item): void
     {
+        $this->snapshotMountRevision++;
+        RtMembershipVersion::advance($this);
         $this->_stateItems[$name] = $item;
         $this->_featureItems[$name] = ['feature' => $this->_mountingFeature, 'state' => $item];
+        if ($name === StateProtectedModeRuntime::RT_ITEM) {
+            Hilos::$ac?->invalidateProtectedMode();
+            $this->noteProtectedModeChanged();
+        }
+    }
+
+    /** @param Closure(): void $wake Master's readiness cue, without inline publication */
+    final public function setProtectedModeWake(Closure $wake): void
+    {
+        $this->protectedModeWake = $wake;
+    }
+
+    /** @param Closure(): void $wake Exact departing binding; a replacement survives */
+    final public function removeProtectedModeWake(Closure $wake): void
+    {
+        if ($this->protectedModeWake === $wake) {
+            $this->protectedModeWake = null;
+        }
+    }
+
+    /** Cues the local master before a potentially partial or refused source write. */
+    final public function noteProtectedModeChanged(): void
+    {
+        $this->protectedModeWake?->__invoke();
     }
 
     /**
@@ -715,9 +752,17 @@ abstract class RtContext
      */
     final public function bindStateCollectionNames(): void
     {
+        $this->snapshotMountRevision++;
+        RtMembershipVersion::advance($this);
         foreach ($this->_stateCollections as $name => $stateCollection) {
             $stateCollection->setCollectionName($name);
         }
+    }
+
+    /** @return int Registry incarnation for finite reads, independent of ordinary row membership and values */
+    final public function snapshotMountRevision(): int
+    {
+        return $this->snapshotMountRevision;
     }
 
     /**

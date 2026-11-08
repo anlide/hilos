@@ -28,6 +28,81 @@ final class ClusterCoordinatorTest extends TestCase
     /** @var list<string> The three-master expected set: quorum is 2. */
     private const array MASTER_SET = ['a', 'b', 'c'];
 
+    public function testEpochFactsFollowEffectiveConsensusMutationsAndIgnoreOrdinaryActivity(): void
+    {
+        $mesh = $this->mesh(self::MASTER_SET);
+        $coordinator = new ClusterCoordinator($this->config(), $mesh, new RecordingLeadershipObserver());
+        $facts = [];
+        $coordinator->setEpochWake(static function () use ($coordinator, &$facts): void {
+            $facts[] = $coordinator->epochRevision();
+        });
+        $this->assertSame([0], $facts);
+        $coordinator->tick(0.0);
+        $coordinator->tick(1.0);
+        $this->assertSame([0, 1, 2], $facts, 'Quorum and the new election term are separate facts');
+        $coordinator->onVoteReply(new PeerVoteReplyDTO(1, true, 'b'));
+        $this->assertSame(3, $coordinator->epochRevision());
+        $coordinator->noteWebSocketOpen();
+        $coordinator->tick(1.1);
+        $coordinator->onVoteReply(new PeerVoteReplyDTO(1, true, 'b'));
+        $this->assertSame(3, $coordinator->epochRevision(), 'Heartbeat sends and duplicate votes change no epoch');
+        $coordinator->onRequestVote(new PeerRequestVoteDTO(2, 'b'));
+        $this->assertSame(4, $coordinator->epochRevision());
+        $coordinator->onRequestVote(new PeerRequestVoteDTO(2, 'b'));
+        $coordinator->onRequestVote(new PeerRequestVoteDTO(2, 'c'));
+        $this->assertSame(4, $coordinator->epochRevision(), 'Granting or refusing a vote in the same term is silent');
+        $coordinator->onVoteReply(new PeerVoteReplyDTO(3, false, 'c'));
+        $this->assertSame(5, $coordinator->epochRevision());
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(3, 'b', true));
+        $this->assertSame(6, $coordinator->epochRevision());
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(3, 'b', false));
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(2, 'c', true));
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(9, 'a', true));
+        $this->assertSame(6, $coordinator->epochRevision(), 'Open-state, stale and self heartbeats change no epoch');
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(3, 'c', true));
+        $this->assertSame(7, $coordinator->epochRevision(), 'A follower can change leader within one term');
+        $coordinator->noteNodeOffline('b');
+        $coordinator->noteNodeOffline('c');
+        $coordinator->noteNodeOffline('c');
+        $this->assertSame(8, $coordinator->epochRevision());
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(3, 'b', true));
+        $coordinator->triggerDesignatedElection();
+        $coordinator->triggerDesignatedElection();
+        $this->assertSame(10, $coordinator->epochRevision());
+        $coordinator->tick(1.2);
+        $this->assertSame(11, $coordinator->epochRevision());
+        $mesh->online = ['a'];
+        $coordinator->tick(1.3);
+        $coordinator->tick(1.4);
+        $this->assertSame(ConsensusRole::Follower, $coordinator->consensusRole());
+        $this->assertSame(12, $coordinator->epochRevision(), 'Canceled candidacy is already covered by quorum loss');
+        $this->assertSame(range(0, 12), $facts);
+    }
+
+    public function testEpochBindingRemovalCannotRemoveAReplacementOrTheReadinessBinding(): void
+    {
+        $coordinator = new ClusterCoordinator($this->config(), $this->mesh(self::MASTER_SET), new RecordingLeadershipObserver());
+        $oldFacts = 0;
+        $newFacts = 0;
+        $readiness = 0;
+        $old = static function () use (&$oldFacts): void { ++$oldFacts; };
+        $replacement = static function () use (&$newFacts): void { ++$newFacts; };
+        $coordinator->setReadinessWake(static function () use (&$readiness): void { ++$readiness; });
+        $coordinator->setEpochWake($old);
+        $coordinator->setEpochWake($replacement);
+        $coordinator->removeEpochWake($old);
+        $coordinator->tick(0.0);
+        $this->assertSame(1, $oldFacts);
+        $this->assertSame(2, $newFacts);
+        $this->assertSame(2, $readiness);
+        $coordinator->setReadinessWake(null);
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(0, 'b', true));
+        $this->assertSame(3, $newFacts);
+        $coordinator->removeEpochWake($replacement);
+        $coordinator->noteNodeOffline('b');
+        $this->assertSame(3, $newFacts);
+    }
+
     public function testQuorumViewFollowsTheLastTickAndKeepsTheStaticDenominator(): void
     {
         $mesh = $this->mesh(['a', 'b', 'unknown']);
@@ -253,6 +328,38 @@ final class ClusterCoordinatorTest extends TestCase
         $votes = $mesh->requestVotes();
         $this->assertCount(1, $votes, 'Election starts at once instead of waiting a full timeout');
         $this->assertSame(2, $votes[0]->term);
+    }
+
+    public function testLeaderLossOverridesAHeartbeatResetStillWaitingForItsOwnerPass(): void
+    {
+        $mesh = $this->mesh(self::MASTER_SET);
+        $coordinator = new ClusterCoordinator($this->config(), $mesh, new RecordingLeadershipObserver());
+        $coordinator->tick(0.0);
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'b', false));
+        $mesh->online = ['a', 'c'];
+        $coordinator->noteNodeOffline('b');
+
+        $coordinator->tick(0.001);
+
+        $this->assertCount(1, $mesh->requestVotes(), 'The later leader loss must expire the pending heartbeat reset');
+        $this->assertSame(2, $mesh->requestVotes()[0]->term);
+    }
+
+    public function testANewerHeartbeatOverridesLeaderLossBeforeTheOwnerPass(): void
+    {
+        $mesh = $this->mesh(self::MASTER_SET);
+        $coordinator = new ClusterCoordinator($this->config(), $mesh, new RecordingLeadershipObserver());
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'b', false));
+        $coordinator->noteNodeOffline('b');
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'c', false));
+
+        $coordinator->tick(0.001);
+
+        $this->assertSame('c', $coordinator->leaderId());
+        $this->assertCount(0, $mesh->requestVotes());
+        $coordinator->tick(1.001);
+        $this->assertCount(1, $mesh->requestVotes());
+        $this->assertSame(2, $mesh->requestVotes()[0]->term);
     }
 
     public function testTermAndRoleAreReadableThroughTheInspectionSeam(): void

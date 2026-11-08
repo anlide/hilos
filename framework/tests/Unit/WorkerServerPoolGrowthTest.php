@@ -296,9 +296,9 @@ final class WorkerServerPoolGrowthTest extends TestCase
         $server->setContainedFailureSink($failureSink);
         $server->launchRegularWorker(self::REGULAR_WORKER_INDEX);
 
-        $askedAt = microtime(true);
+        $askedAt = hrtime(true) / 1e9;
         $server->startAgentPublic(self::REGULAR_TYPE);
-        $answeredAt = microtime(true);
+        $answeredAt = hrtime(true) / 1e9;
 
         $this->assertSame([], $server->orderedWorkers);
         $this->assertTrue($server->isAgentAwaitingWorker(self::REGULAR_TYPE));
@@ -786,7 +786,7 @@ final class PoolGrowthTestWorkerServer extends WorkerServer
         $client->setWorkerIndex($workerIndex);
         $client->setIsMonopolistic($isMonopolistic);
         new ReflectionProperty(WorkerClient::class, 'isRegistered')->setValue($client, true);
-        $this->clients[] = $client;
+        $this->addClient($client);
 
         return $client;
     }

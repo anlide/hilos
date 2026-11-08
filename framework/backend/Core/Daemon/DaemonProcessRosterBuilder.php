@@ -209,6 +209,27 @@ final class DaemonProcessRosterBuilder
         return $this->result;
     }
 
+    /** Releases a canceled partial build and its input graph; disposal remains input-sized. */
+    public function cancel(): void
+    {
+        $this->stage = self::STAGE_DONE;
+        $this->agentManager = null;
+        $this->agents = null;
+        $this->placements = null;
+        $this->workers = [];
+        $this->workersByIndex = [];
+        $this->workerStartTicks = [];
+        $this->agentPictures = [];
+        $this->agentWorkerIndexes = [];
+        $this->sortedWorkerAgents = [];
+        $this->sortedUnplaced = [];
+        $this->builtWorkers = [];
+        $this->restartingAgents = [];
+        $this->agentIds = new SplMinHeap();
+        $this->unplacedIds = new SplMinHeap();
+        $this->result = null;
+    }
+
     /** @param string $id Agent id from the manager's active roster */
     private function addAgent(string $id): void
     {

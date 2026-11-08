@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Router;
 
+use Generator;
 use Hilos\API\Router\Exception\GroupSubscriptionNotFoundException;
 use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
 use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Daemon\SignalHoldIndex;
 use Hilos\Core\Group\Config\GroupAddressSource;
 use Hilos\Core\Page\PageResource;
+use Hilos\Socket\WebSocket\Delivery\DeliveryCleanup;
+use WeakReference;
 
 /**
  * SubscriptionRegistry - Worker-local store of client page and group subscriptions.
@@ -23,7 +27,21 @@ final class SubscriptionRegistry
     /** @var array<string, PageSubscription> Page subscriptions keyed by accept key */
     private array $pages = [];
 
-    /** @var array<string, array<string, array<string, mixed>>> Group params keyed by accept key, then group */
+    private int $nodePageSequence = 0;
+
+    /** @var array<string, int> Original node-addressed subscription slots by connection */
+    private array $nodePageSlots = [];
+
+    /** @var array<int, string> Scalar connection names in those original slots */
+    private array $nodePageConnections = [];
+
+    /** @var array<string, string> Requested node parameters, including an offline node served by fallback */
+    private array $pageNodes = [];
+
+    /** @var array<string, SignalHoldIndex> Original node-addressed slots by requested node */
+    private array $pagesByNode = [];
+
+    /** @var array<string, array<string, GroupSubscription>> Membership incarnations keyed by accept key, then group */
     private array $groups = [];
 
     /** @var array<string, array<string, TableViewportSubscription>> Table viewports keyed by accept key, then table key */
@@ -81,6 +99,64 @@ final class SubscriptionRegistry
      */
     private array $tableWindowDebts = [];
 
+    private DeliveryCleanup $cleanup;
+
+    private int $subscriptionSequence = 0;
+
+    private SignalHoldIndex $pageIndex;
+
+    /** @var array<string, int> Stable page insertion positions by connection */
+    private array $pageSlots = [];
+
+    /** @var array<int, string> Live page connections in insertion order */
+    private array $pageConnections = [];
+
+    /** @var array<string, int> Latest immutable page incarnation by connection */
+    private array $pageGenerations = [];
+
+    private SignalHoldIndex $groupConnectionIndex;
+
+    /** @var array<string, int> Stable outer group-roster positions, independent of individual joins */
+    private array $groupConnectionSlots = [];
+
+    /** @var array<int, string> Live group connections in their original outer-map order */
+    private array $groupConnections = [];
+
+    /** @var array<string, SignalHoldIndex> Original membership insertion positions for each connection */
+    private array $groupNameIndexes = [];
+
+    /** @var array<string, array<string, int>> Membership name to its stable insertion position */
+    private array $groupNameSlots = [];
+
+    /** @var array<string, array<int, string>> Scalar names in each connection's membership order */
+    private array $groupNames = [];
+
+    /** @var array<string, array<string, int>> Latest immutable membership incarnation */
+    private array $groupGenerations = [];
+
+    /** @var array<string, int> Latest change to each connection's membership set, including removals */
+    private array $groupRevisions = [];
+
+    /** @var array<string, array<string, WeakReference<GroupOperationBasis>>> Active exact-name observations only */
+    private array $groupOperationNames = [];
+
+    /** @var array<string, array<string, WeakReference<GroupOperationBasis>>> Active absent-prefix observations only */
+    private array $groupOperationPrefixes = [];
+
+    /** Standalone worker mirrors consume cleanup; a master replaces this owner at binding. */
+    public function __construct()
+    {
+        $this->cleanup = new DeliveryCleanup();
+        $this->pageIndex = new SignalHoldIndex();
+        $this->groupConnectionIndex = new SignalHoldIndex();
+    }
+
+    /** @param DeliveryCleanup $cleanup Existing guarded master owner of retired connection state */
+    public function setCleanup(DeliveryCleanup $cleanup): void
+    {
+        $this->cleanup = $cleanup;
+    }
+
     /**
      * @param string $acceptKey Client accept key
      * @param string $page Page identifier
@@ -92,6 +168,14 @@ final class SubscriptionRegistry
             return;
         }
 
+        $this->forgetNodePage($acceptKey);
+        $generation = ++$this->subscriptionSequence;
+        if (!isset($this->pages[$acceptKey])) {
+            $this->pageSlots[$acceptKey] = $generation;
+            $this->pageConnections[$generation] = $acceptKey;
+            $this->pageIndex->add($generation);
+        }
+        $this->pageGenerations[$acceptKey] = $generation;
         $this->pages[$acceptKey] = new PageSubscription($page, $params);
         // The viewports are NOT dropped here, and the moment matters: this runs after the
         // subscription has been answered, and the answer is now where a page's windows are
@@ -124,6 +208,45 @@ final class SubscriptionRegistry
     }
 
     /**
+     * @param string $acceptKey Existing page subscription
+     * @param ?string $nodeId Requested node parameter, absent for a page without a usable node address
+     */
+    public function indexNodePage(string $acceptKey, ?string $nodeId): void
+    {
+        if (!isset($this->pages[$acceptKey]) || ($this->pageNodes[$acceptKey] ?? null) === $nodeId) {
+            return;
+        }
+        $this->forgetNodePage($acceptKey);
+        if ($nodeId !== null) {
+            $slot = ++$this->nodePageSequence;
+            $this->nodePageSlots[$acceptKey] = $slot;
+            $this->nodePageConnections[$slot] = $acceptKey;
+            $this->pageNodes[$acceptKey] = $nodeId;
+            ($this->pagesByNode[$nodeId] ??= new SignalHoldIndex())->add($slot);
+        }
+    }
+
+    /**
+     * @param string $nodeId Node whose membership changed
+     * @return Generator<int, int> Finite original node slots, without a subscription roster snapshot
+     */
+    public function nodePageCandidates(string $nodeId): Generator
+    {
+        return ($this->pagesByNode[$nodeId] ?? new SignalHoldIndex())->candidates();
+    }
+
+    /**
+     * @param int $slot Original node-addressed subscription slot
+     * @param string $nodeId Original requested node
+     * @return ?string Original connection, absent after leave, replacement or address change
+     */
+    public function nodePageAcceptKey(int $slot, string $nodeId): ?string
+    {
+        $acceptKey = $this->nodePageConnections[$slot] ?? null;
+        return $acceptKey !== null && ($this->pageNodes[$acceptKey] ?? null) === $nodeId ? $acceptKey : null;
+    }
+
+    /**
      * Records which agent serves a connection's page subscription.
      *
      * Written by the master once the address is resolved, and read by routing for every
@@ -152,6 +275,7 @@ final class SubscriptionRegistry
         }
 
         $this->pages[$acceptKey] = $subscription->withPageAgent($agentType, $agentIndex, $agentNode);
+        $this->pageGenerations[$acceptKey] = ++$this->subscriptionSequence;
     }
 
     /**
@@ -178,6 +302,7 @@ final class SubscriptionRegistry
         }
 
         $this->pages[$acceptKey] = $subscription->withMergedParams($params);
+        $this->pageGenerations[$acceptKey] = ++$this->subscriptionSequence;
     }
 
     /**
@@ -198,13 +323,8 @@ final class SubscriptionRegistry
             return;
         }
 
-        unset($this->pages[$acceptKey]);
-        unset($this->tableViewports[$acceptKey]);
-        unset($this->tableFacetRequests[$acceptKey]);
-        unset($this->tableFocus[$acceptKey]);
-        unset($this->pageDeliveryFailures[$acceptKey]);
-        unset($this->pageResources[$acceptKey]);
-        unset($this->tableWindowDebts[$acceptKey]);
+        $this->forgetNodePage($acceptKey);
+        $this->forgetPageState($acceptKey);
     }
 
     /**
@@ -217,11 +337,23 @@ final class SubscriptionRegistry
         if ($acceptKey === '') {
             return;
         }
+        $this->invalidateGroupOperationBases($acceptKey, $group);
+        $generation = ++$this->subscriptionSequence;
         if (!isset($this->groups[$acceptKey])) {
             $this->groups[$acceptKey] = [];
+            $this->groupConnectionSlots[$acceptKey] = $generation;
+            $this->groupConnections[$generation] = $acceptKey;
+            $this->groupConnectionIndex->add($generation);
+            $this->groupNameIndexes[$acceptKey] = new SignalHoldIndex();
         }
-
-        $this->groups[$acceptKey][$group] = $params;
+        if (!isset($this->groups[$acceptKey][$group])) {
+            $this->groupNameSlots[$acceptKey][$group] = $generation;
+            $this->groupNames[$acceptKey][$generation] = $group;
+            $this->groupNameIndexes[$acceptKey]->add($generation);
+        }
+        $this->groupGenerations[$acceptKey][$group] = $generation;
+        $this->groups[$acceptKey][$group] = new GroupSubscription($params);
+        $this->groupRevisions[$acceptKey] = $generation;
     }
 
     /**
@@ -241,7 +373,67 @@ final class SubscriptionRegistry
             throw new GroupSubscriptionNotFoundException($acceptKey, $group);
         }
 
-        $this->groups[$acceptKey][$group] = array_merge($this->groups[$acceptKey][$group], $params);
+        $this->invalidateGroupOperationBases($acceptKey, $group);
+        $this->groups[$acceptKey][$group] = $this->groups[$acceptKey][$group]->withMergedParams($params);
+        $this->groupGenerations[$acceptKey][$group] = ++$this->subscriptionSequence;
+        $this->groupRevisions[$acceptKey] = $this->subscriptionSequence;
+    }
+
+    /**
+     * An absent name lookup may keep its ordinary refusal only while this set is unchanged.
+     * A later join never inherits the authority of a lookup that found no original membership.
+     *
+     * @param string $acceptKey Original connection
+     * @return ?int Membership-set revision, absent for an empty set
+     */
+    public function groupSubscriptionRevision(string $acceptKey): ?int
+    {
+        return $this->groupRevisions[$acceptKey] ?? null;
+    }
+
+    /**
+     * @param string $acceptKey Original connection
+     * @param string $group Exact name or absent lookup prefix
+     * @param bool $prefix Whether descendant names also invalidate the observation
+     * @return GroupOperationBasis Shared observation for the current name lifetime
+     */
+    public function groupOperationBasis(string $acceptKey, string $group, bool $prefix): GroupOperationBasis
+    {
+        $observations = &$this->groupOperationNames;
+        if ($prefix) {
+            $observations = &$this->groupOperationPrefixes;
+        }
+        $basis = ($observations[$acceptKey][$group] ?? null)?->get();
+        if ($basis === null) {
+            $basis = new GroupOperationBasis(WeakReference::create($this), $acceptKey, $group, $prefix);
+            $observations[$acceptKey][$group] = WeakReference::create($basis);
+        }
+        return $basis;
+    }
+
+    /**
+     * @param GroupOperationBasis $basis Captured local observation
+     * @return bool Whether this exact observation still occupies its name slot
+     */
+    public function isCurrentGroupOperationBasis(GroupOperationBasis $basis): bool
+    {
+        return ($basis->prefix ? ($this->groupOperationPrefixes[$basis->acceptKey][$basis->group] ?? null)
+            : ($this->groupOperationNames[$basis->acceptKey][$basis->group] ?? null))?->get() === $basis;
+    }
+
+    /** @param GroupOperationBasis $basis Last observer retiring; a newer observation keeps its own slot */
+    public function releaseGroupOperationBasis(GroupOperationBasis $basis): void
+    {
+        $observations = &$this->groupOperationNames;
+        if ($basis->prefix) {
+            $observations = &$this->groupOperationPrefixes;
+        }
+        if (($observations[$basis->acceptKey][$basis->group] ?? null)?->get() === $basis) {
+            unset($observations[$basis->acceptKey][$basis->group]);
+            if ($observations[$basis->acceptKey] === []) {
+                unset($observations[$basis->acceptKey]);
+            }
+        }
     }
 
     /**
@@ -260,19 +452,27 @@ final class SubscriptionRegistry
      */
     public function groupSubscriptionName(string $acceptKey, string $group): ?string
     {
-        $held = $this->groups[$acceptKey] ?? [];
-        if (array_key_exists($group, $held)) {
-            return $group;
+        $walk = $this->groupNameCandidates($acceptKey, $group);
+        foreach ($walk as $_) {
         }
 
-        $prefix = $group . ':';
-        foreach (array_keys($held) as $name) {
-            if (str_starts_with($name, $prefix)) {
-                return $name;
-            }
-        }
+        return $walk->getReturn();
+    }
 
-        return null;
+    /**
+     * @param string $acceptKey Connection whose own memberships are being searched
+     * @param string $group Name written by the browser
+     * @return Generator<int, void, void, ?string> Bounded original-membership visits returning the first live full name
+     */
+    public function groupNameCandidates(string $acceptKey, string $group): Generator
+    {
+        return $this->walkGroupNames(
+            ($this->groupNameIndexes[$acceptKey] ?? new SignalHoldIndex())->candidates(),
+            $acceptKey,
+            $group,
+            $this->subscriptionSequence,
+            $this->groupNameSlots[$acceptKey][$group] ?? null,
+        );
     }
 
     /**
@@ -286,13 +486,18 @@ final class SubscriptionRegistry
         if ($acceptKey === '') {
             return;
         }
-        if (!isset($this->groups[$acceptKey])) {
+        if (!isset($this->groups[$acceptKey][$group])) {
             return;
         }
 
-        unset($this->groups[$acceptKey][$group]);
+        $this->invalidateGroupOperationBases($acceptKey, $group);
+        $slot = $this->groupNameSlots[$acceptKey][$group];
+        $this->groupNameIndexes[$acceptKey]->remove($slot);
+        unset($this->groupNameSlots[$acceptKey][$group], $this->groupNames[$acceptKey][$slot],
+            $this->groupGenerations[$acceptKey][$group], $this->groups[$acceptKey][$group]);
+        $this->groupRevisions[$acceptKey] = ++$this->subscriptionSequence;
         if ($this->groups[$acceptKey] === []) {
-            unset($this->groups[$acceptKey]);
+            $this->retireGroupMemberships($acceptKey);
         }
     }
 
@@ -302,6 +507,7 @@ final class SubscriptionRegistry
      * The person behind a connection changing ends every group membership it held
      * (HIL-1284); the page subscription, table windows, facet requests, focus and
      * delivery marks belong to the page and stay, so this is not {@see unsubscribeFromAll()}.
+     * Explicit leave_all revokes all pending group operations even when no memberships remain.
      *
      * @param string $acceptKey Client accept key
      */
@@ -311,7 +517,14 @@ final class SubscriptionRegistry
             return;
         }
 
-        unset($this->groups[$acceptKey]);
+        if (isset($this->groupOperationNames[$acceptKey])) {
+            $this->cleanup->retire($this->groupOperationNames[$acceptKey]);
+        }
+        if (isset($this->groupOperationPrefixes[$acceptKey])) {
+            $this->cleanup->retire($this->groupOperationPrefixes[$acceptKey]);
+        }
+        unset($this->groupOperationNames[$acceptKey], $this->groupOperationPrefixes[$acceptKey]);
+        $this->retireGroupMemberships($acceptKey);
     }
 
     /**
@@ -321,14 +534,9 @@ final class SubscriptionRegistry
      */
     public function unsubscribeFromAll(string $acceptKey): void
     {
-        unset($this->pages[$acceptKey]);
-        unset($this->groups[$acceptKey]);
-        unset($this->tableViewports[$acceptKey]);
-        unset($this->tableFacetRequests[$acceptKey]);
-        unset($this->tableFocus[$acceptKey]);
-        unset($this->pageDeliveryFailures[$acceptKey]);
-        unset($this->pageResources[$acceptKey]);
-        unset($this->tableWindowDebts[$acceptKey]);
+        $this->forgetNodePage($acceptKey);
+        $this->forgetPageState($acceptKey);
+        $this->unsubscribeFromAllGroups($acceptKey);
     }
 
     /**
@@ -739,5 +947,193 @@ final class SubscriptionRegistry
         }
 
         return $keys;
+    }
+
+    /**
+     * Captures the scalar connection tail and incarnation cutoff before first advancement.
+     * New joins never extend the cohort, and equal params never revive an old membership.
+     *
+     * @param string $group Group to match
+     * @return Generator<string, ?GroupSubscription> Original key and still-current membership, or null
+     */
+    public function groupSubscriptionCandidates(string $group): Generator
+    {
+        return $this->walkGroupSubscriptions($this->groupConnectionIndex->candidates(), $group, $this->subscriptionSequence);
+    }
+
+    /**
+     * @param string $acceptKey Original subscribed connection
+     * @param string $group Original full group name
+     * @param GroupSubscription $subscription Captured immutable membership
+     * @return bool Whether this exact membership still authorizes delivery
+     */
+    public function isCurrentGroupSubscription(string $acceptKey, string $group, GroupSubscription $subscription): bool
+    {
+        return ($this->groups[$acceptKey][$group] ?? null) === $subscription;
+    }
+
+    /**
+     * Captures scalar page positions and their incarnation cutoff before first advancement.
+     * Changed subscriptions yield no recipient; departed slots can be skipped without payloads.
+     *
+     * @return Generator<string, ?PageSubscription> Original key and still-current page, or null
+     */
+    public function pageSubscriptionCandidates(): Generator
+    {
+        return $this->walkPageSubscriptions($this->pageIndex->candidates(), $this->subscriptionSequence);
+    }
+
+    /**
+     * Retires membership storage without revoking independent operations already prepared on this connection.
+     *
+     * @param string $acceptKey Connection whose membership indices are no longer needed
+     */
+    private function retireGroupMemberships(string $acceptKey): void
+    {
+        $slot = $this->groupConnectionSlots[$acceptKey] ?? null;
+        if ($slot === null) {
+            return;
+        }
+        $index = $this->groupNameIndexes[$acceptKey];
+        $memberships = [
+            $this->groups[$acceptKey],
+            $this->groupNameSlots[$acceptKey],
+            $this->groupNames[$acceptKey],
+            $this->groupGenerations[$acceptKey],
+        ];
+        $this->groupConnectionIndex->remove($slot);
+        unset($this->groups[$acceptKey], $this->groupConnectionSlots[$acceptKey], $this->groupConnections[$slot],
+            $this->groupNameIndexes[$acceptKey], $this->groupNameSlots[$acceptKey], $this->groupNames[$acceptKey],
+            $this->groupGenerations[$acceptKey], $this->groupRevisions[$acceptKey]);
+        $this->cleanup->retire($memberships);
+        $this->cleanup->schedule(self::releaseGroupNameIndex($index));
+    }
+
+    /**
+     * @param string $acceptKey Connection whose membership changed
+     * @param string $group Changed full name
+     */
+    private function invalidateGroupOperationBases(string $acceptKey, string $group): void
+    {
+        unset($this->groupOperationNames[$acceptKey][$group]);
+        if (($this->groupOperationNames[$acceptKey] ?? null) === []) {
+            unset($this->groupOperationNames[$acceptKey]);
+        }
+        $prefix = $group;
+        while (true) {
+            unset($this->groupOperationPrefixes[$acceptKey][$prefix]);
+            $separator = strrpos($prefix, ':');
+            if ($separator === false) {
+                break;
+            }
+            $prefix = substr($prefix, 0, $separator);
+        }
+        if (($this->groupOperationPrefixes[$acceptKey] ?? null) === []) {
+            unset($this->groupOperationPrefixes[$acceptKey]);
+        }
+    }
+
+    /** @param string $acceptKey Exact connection whose page state ends before any physical release */
+    private function forgetPageState(string $acceptKey): void
+    {
+        $slot = $this->pageSlots[$acceptKey] ?? null;
+        if ($slot !== null) {
+            $this->pageIndex->remove($slot);
+            unset($this->pageSlots[$acceptKey], $this->pageConnections[$slot], $this->pageGenerations[$acceptKey]);
+        }
+        $retired = [
+            $this->pages[$acceptKey] ?? null,
+            $this->tableViewports[$acceptKey] ?? [],
+            $this->tableFacetRequests[$acceptKey] ?? [],
+            $this->tableFocus[$acceptKey] ?? [],
+            $this->pageResources[$acceptKey] ?? null,
+            $this->tableWindowDebts[$acceptKey] ?? [],
+        ];
+        unset($this->pages[$acceptKey], $this->tableViewports[$acceptKey], $this->tableFacetRequests[$acceptKey],
+            $this->tableFocus[$acceptKey], $this->pageDeliveryFailures[$acceptKey], $this->pageResources[$acceptKey],
+            $this->tableWindowDebts[$acceptKey]);
+        $this->cleanup->retire($retired);
+    }
+
+    /** @param string $acceptKey Subscription whose node-addressed incarnation ended */
+    private function forgetNodePage(string $acceptKey): void
+    {
+        $nodeId = $this->pageNodes[$acceptKey] ?? null;
+        if ($nodeId === null) {
+            return;
+        }
+        $slot = $this->nodePageSlots[$acceptKey];
+        $this->pagesByNode[$nodeId]->remove($slot);
+        if ($this->pagesByNode[$nodeId]->isEmpty()) {
+            unset($this->pagesByNode[$nodeId]);
+        }
+        unset($this->nodePageConnections[$slot], $this->nodePageSlots[$acceptKey], $this->pageNodes[$acceptKey]);
+    }
+
+    /**
+     * @param Generator<int, int> $slots Original finite outer-roster positions
+     * @param string $group Group to match
+     * @param int $cutoff Last allowed immutable membership incarnation
+     * @return Generator<string, ?GroupSubscription> Still-present original connections in insertion order
+     */
+    private function walkGroupSubscriptions(Generator $slots, string $group, int $cutoff): Generator
+    {
+        foreach ($slots as $slot) {
+            $acceptKey = $this->groupConnections[$slot];
+            $generation = $this->groupGenerations[$acceptKey][$group] ?? null;
+            yield $acceptKey => $generation !== null && $generation <= $cutoff ? $this->groups[$acceptKey][$group] : null;
+        }
+    }
+
+    /**
+     * @param Generator<int, int> $slots Original scalar membership insertion positions
+     * @param string $acceptKey Original connection
+     * @param string $group Name written by the browser
+     * @param int $cutoff Last allowed membership incarnation
+     * @param ?int $exactSlot Original exact name position, absent when it was not joined
+     * @return Generator<int, void, void, ?string> First still-current matching full name, or null
+     */
+    private function walkGroupNames(Generator $slots, string $acceptKey, string $group, int $cutoff, ?int $exactSlot): Generator
+    {
+        yield;
+        if ($exactSlot !== null && ($this->groupNameSlots[$acceptKey][$group] ?? null) === $exactSlot
+            && $this->groupGenerations[$acceptKey][$group] <= $cutoff) {
+            return $group;
+        }
+        $prefix = $group . ':';
+        foreach ($slots as $slot) {
+            $name = $this->groupNames[$acceptKey][$slot] ?? null;
+            if ($name !== null && str_starts_with($name, $prefix) && $this->groupGenerations[$acceptKey][$name] <= $cutoff) {
+                return $name;
+            }
+            yield;
+        }
+        return null;
+    }
+
+    /**
+     * @param Generator<int, int> $slots Original scalar page insertion positions
+     * @param int $cutoff Last allowed immutable page incarnation
+     * @return Generator<string, ?PageSubscription> Still-present original connections in insertion order
+     */
+    private function walkPageSubscriptions(Generator $slots, int $cutoff): Generator
+    {
+        foreach ($slots as $slot) {
+            $acceptKey = $this->pageConnections[$slot];
+            yield $acceptKey => $this->pageGenerations[$acceptKey] <= $cutoff ? $this->pages[$acceptKey] : null;
+        }
+    }
+
+    /**
+     * @param SignalHoldIndex $index Detached scalar membership positions, no longer authorizing joins
+     * @return Generator<int, void> Effect-free admission followed by one logarithmic node removal per step
+     */
+    private static function releaseGroupNameIndex(SignalHoldIndex $index): Generator
+    {
+        yield;
+        foreach ($index->candidates() as $slot) {
+            $index->remove($slot);
+            yield;
+        }
     }
 }

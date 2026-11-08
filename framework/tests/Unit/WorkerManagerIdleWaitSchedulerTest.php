@@ -338,7 +338,7 @@ final class WorkerManagerIdleWaitSchedulerTest extends TestCase
         $outbox = new ReflectionProperty(AnalyticsCollector::class, 'outbox')->getValue(Hilos::$ac);
         self::assertInstanceOf(AnalyticsJournalOutbox::class, $outbox);
         new ReflectionProperty(AnalyticsJournalOutbox::class, 'lastFlushAtMs')->setValue($outbox, 0);
-        $outbox->add(AnalyticsJournalRecord::workerSystemSignal('worker', 'event', null, 0), [], 0);
+        $outbox->add(AnalyticsJournalRecord::workerSystemSignal('worker', 'event', null, 0), [], 0, 0);
         self::assertFalse(Hilos::$sr->hasQueuedSignals());
         Hilos::$ac->tick();
         self::assertFalse(Hilos::$ac->hasPendingData());

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Socket\Server\AbstractServer;
+use ReflectionMethod;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -266,21 +268,24 @@ final class StartAfterStopTestWorkerServer extends WorkerServer
     {
         $client = new ReflectionClass(StartAfterStopTestWorkerClient::class)->newInstanceWithoutConstructor();
         $client->setWorkerIndex($workerIndex);
+        new ReflectionProperty(WorkerClient::class, 'isRegistered')->setValue($client, true);
         new ReflectionProperty(WorkerClient::class, 'agentManager')->setValue(
             $client,
             new ReflectionProperty(WorkerServer::class, 'agentManager')->getValue($this),
         );
-        $this->clients[] = $client;
+        new ReflectionProperty(WorkerClient::class, 'workerServer')->setValue($client, $this);
+        $this->addClient($client);
 
         return $client;
     }
 
     public function disconnectWorker(int $workerIndex): void
     {
-        $this->clients = array_values(array_filter(
-            $this->clients,
-            static fn(WorkerClient $client): bool => $client->getWorkerIndex() !== $workerIndex,
-        ));
+        foreach ($this->clients as $client) {
+            if ($client->getWorkerIndex() === $workerIndex) {
+                new ReflectionMethod(AbstractServer::class, 'removeClient')->invoke($this, $client);
+            }
+        }
     }
 
     protected function onStart(): void

@@ -34,6 +34,11 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Tests\Unit\Fixtures\PageAgentRestartTestManager;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
+use ReflectionMethod;
+use EventBase;
+use Hilos\Constants\TimeConstants;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
 
 /** Web waiting is independent of the existing restart's lifetime and CLI callers. */
 final class PageAgentRestartsTest extends TestCase
@@ -375,6 +380,196 @@ final class PageAgentRestartsTest extends TestCase
         $restarts->onAgentStarted('room:12');
         $this->assertSame([], $restarts->restartingAgents());
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testNativeWebDeadlineCuesOnlyTheGuardAndMalformedReplyRetainsItsDuty(): void
+    {
+        $loop = new EventLoop();
+        $wakes = 0;
+        try {
+            $this->bridge->attachEventLoop($loop, static function () use (&$wakes): void { ++$wakes; });
+            $this->bridge->request($this->ask(), 0.0);
+            $id = $this->requests[0]->correlationId;
+            $this->bridge->acceptReply(CommandReplyDTO::ok($id, []));
+            self::assertSame(30.0, $this->timer()->getDeadline());
+            $this->poll($loop);
+            self::assertSame(1, $wakes);
+            self::assertTrue($this->bridge->hasWaiter($id));
+            self::assertSame([], $this->answers);
+            $this->bridge->tick();
+            self::assertSame([$id], $this->abandoned);
+            self::assertSame('submit-1', $this->answers[0]->requestId);
+            self::assertSame('accept-1', $this->answers[0]->acceptKey);
+            self::assertSame(
+                'The daemon did not answer agent:restart within 30s; check the agent state before trying again.',
+                $this->answers[0]->error,
+            );
+            self::assertFalse($this->bridge->hasWaiter($id));
+            self::assertNull($this->timer()->getDeadline());
+            $this->poll($loop);
+            self::assertSame(1, $wakes);
+            self::assertFalse($loop->hasReadyWork());
+        } finally {
+            $this->bridge->detachEventLoop();
+            $loop->close();
+        }
+    }
+
+    public function testWebReplyMovesToNextOriginalDeadlineAndRebindDoesNotRenewIt(): void
+    {
+        $loop = new EventLoop();
+        $other = new EventLoop();
+        $wakes = 0;
+        $wake = static function () use (&$wakes): void { ++$wakes; };
+        try {
+            $this->bridge->attachEventLoop($loop, $wake);
+            $now = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+            $this->bridge->request($this->ask(), $now);
+            $this->bridge->request($this->ask(), $now + 2);
+            self::assertFalse($loop->hasReadyWork(), 'Pending web callers are not runnable');
+            $old = $this->timer();
+            $generation = new ReflectionProperty(EventLoopTimer::class, 'generation')->getValue($old);
+            self::assertSame($now + 30.0, $old->getDeadline());
+            $this->bridge->acceptReply(CommandReplyDTO::error('cli-unknown', 'CLI result'));
+            $this->poll($loop);
+            self::assertSame($generation, new ReflectionProperty(EventLoopTimer::class, 'generation')->getValue($old));
+            $this->bridge->acceptReply(CommandReplyDTO::error($this->requests[0]->correlationId, 'first done'));
+            self::assertSame($now + 32.0, $old->getDeadline());
+            $this->bridge->attachEventLoop($other, $wake);
+            self::assertNull($old->getDeadline());
+            self::assertSame($now + 32.0, $this->timer()->getDeadline());
+            $this->poll($loop);
+            $this->poll($other);
+            self::assertSame(0, $wakes);
+            $this->bridge->tick($now + 31.0);
+            self::assertCount(1, $this->answers);
+            $this->bridge->acceptReply(CommandReplyDTO::error($this->requests[1]->correlationId, 'second done'));
+            self::assertNull($this->timer()->getDeadline());
+            self::assertSame([], $this->abandoned);
+        } finally {
+            $this->bridge->detachEventLoop();
+            $loop->close();
+            $other->close();
+        }
+    }
+
+    public function testConsumedWebCorrelationCancelsAnActivatedCallbackBeforeAnotherPress(): void
+    {
+        $loop = new EventLoop();
+        $wakes = 0;
+        try {
+            $this->bridge->attachEventLoop($loop, static function () use (&$wakes): void { ++$wakes; });
+            $this->bridge->request($this->ask(), 0.0);
+            $oldId = $this->requests[0]->correlationId;
+            $loop->getEventBase()->loop(EventBase::LOOP_NONBLOCK);
+            $this->bridge->acceptReply(CommandReplyDTO::error($oldId, 'first refusal'));
+            $before = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+            $this->bridge->request($this->ask());
+            $after = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+            $newId = $this->requests[1]->correlationId;
+            $deadline = $this->timer()->getDeadline();
+            self::assertGreaterThanOrEqual($before + 30.0, $deadline);
+            self::assertLessThanOrEqual($after + 30.0, $deadline);
+            $this->bridge->acceptReply(CommandReplyDTO::error($oldId, 'late'));
+            $this->poll($loop);
+            self::assertSame(0, $wakes);
+            self::assertSame($deadline, $this->timer()->getDeadline());
+            self::assertTrue($this->bridge->hasWaiter($newId));
+            self::assertCount(1, $this->answers);
+            self::assertSame([], $this->abandoned);
+        } finally {
+            $this->bridge->detachEventLoop();
+            $loop->close();
+        }
+    }
+
+    public function testImmediateWebRefusalCancelsNativeDutyAndReleasesTheBinding(): void
+    {
+        $loop = new EventLoop();
+        $wakes = 0;
+        $door = $this->createMock(AgentRestartDoor::class);
+        $sender = $this->createMock(MasterSignalSender::class);
+        $bridge = new PageAgentRestarts($door, $sender, static function (string $id): void {});
+        $door->method('requestAgentRestart')->willReturnCallback(static function (CommandRequestDTO $request) use ($bridge): void {
+            $bridge->acceptReply(CommandReplyDTO::error($request->correlationId, 'No such agent'));
+        });
+        $sender->expects(self::once())->method('sendToAgent');
+        $bridge->attachEventLoop($loop, static function () use (&$wakes): void { ++$wakes; });
+        try {
+            $bridge->request($this->ask(), 0.0);
+            $timer = new ReflectionProperty(PageAgentRestarts::class, 'deadlineTimer')->getValue($bridge);
+            self::assertNull($timer->getDeadline());
+            $this->poll($loop);
+            self::assertSame(0, $wakes);
+            $bridge->detachEventLoop();
+            self::assertFalse($loop->hasReadyWork());
+        } finally {
+            $bridge->detachEventLoop();
+            $loop->close();
+        }
+    }
+
+    public function testManagerRebindKeepsBothOverdueOwnersForTheGuardedPhase(): void
+    {
+        $manager = new PageAgentRestartTestManager();
+        $loop = new EventLoop();
+        $other = new EventLoop();
+        $source = $this->realRestart();
+        $source->request(new CommandRequestDTO('cli-expired', CliCommands::AGENT_RESTART, [
+            CommandConstants::FIELD_AGENT_TYPE => 'room', CommandConstants::FIELD_AGENT_INDEX => '12',
+        ]), 0.0);
+        $restarts = new ReflectionProperty(DaemonManager::class, 'agentRestarts')->getValue($manager);
+        $runs = new ReflectionProperty(AgentRestarts::class, 'runs');
+        $runs->setValue($restarts, $runs->getValue($source));
+        $bridge = new ReflectionProperty(DaemonManager::class, 'pageAgentRestarts')->getValue($manager);
+        $agentDue = new ReflectionProperty(DaemonManager::class, 'agentRestartDeadlineDue');
+        $pageDue = new ReflectionProperty(DaemonManager::class, 'pageAgentRestartDeadlineDue');
+        try {
+            new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($manager, $loop);
+            new ReflectionMethod(DaemonManager::class, 'attachCommandRequestEventLoop')->invoke($manager);
+            $bridge->request($this->ask(), 0.0);
+            $this->poll($loop);
+            self::assertTrue($agentDue->getValue($manager));
+            self::assertTrue($pageDue->getValue($manager));
+            self::assertSame([], $manager->answers);
+            self::assertNull(Hilos::$sr->getNextQueuedSignal());
+            new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($manager, $other);
+            new ReflectionMethod(DaemonManager::class, 'attachCommandRequestEventLoop')->invoke($manager);
+            $this->poll($loop);
+            self::assertFalse($agentDue->getValue($manager));
+            self::assertFalse($pageDue->getValue($manager));
+            $this->poll($other);
+            self::assertTrue($agentDue->getValue($manager));
+            self::assertTrue($pageDue->getValue($manager));
+            new ReflectionMethod(DaemonManager::class, 'dispatchCommandRequestDeadlines')->invoke($manager);
+            self::assertFalse($agentDue->getValue($manager));
+            self::assertFalse($pageDue->getValue($manager));
+            self::assertCount(1, $manager->answers);
+            self::assertSame('cli-expired', Hilos::$sr->getNextQueuedSignal()->data->correlationId);
+            self::assertCount(1, $restarts->restartingAgents());
+            self::assertFalse($other->hasReadyWork());
+            $restarts->onAgentStarted('room:12');
+            self::assertSame([], $restarts->restartingAgents());
+            self::assertNull(Hilos::$sr->getNextQueuedSignal());
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'detachCommandRequestEventLoop')->invoke($manager);
+            $loop->close();
+            $other->close();
+        }
+    }
+
+    /** @return EventLoopTimer This owner's current web deadline handle */
+    private function timer(): EventLoopTimer
+    {
+        return new ReflectionProperty(PageAgentRestarts::class, 'deadlineTimer')->getValue($this->bridge);
+    }
+
+    /** @param EventLoop $loop Nonblocking native and ready portions to drive */
+    private function poll(EventLoop $loop): void
+    {
+        for ($pass = 0; $pass < 4; ++$pass) {
+            $loop->tick();
+        }
     }
 
     private function realRestart(): AgentRestarts

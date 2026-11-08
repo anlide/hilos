@@ -131,7 +131,7 @@ final class ClientClosedByResetTestServer extends AbstractServer
      */
     public function seedClient(ClientClosedByResetTestClient $client): void
     {
-        $this->clients[] = $client;
+        $this->addClient($client);
     }
 
     /**

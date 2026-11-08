@@ -533,10 +533,13 @@ the operator to account for the unverified interval when checking the result;
 it does not claim corruption. A matching generation does not repeat the
 warning. Direct windows do not produce this warning.
 
-The leader tracks each pending slave request from its first request.
-`PeerServer::onTick()` advances the slave's local effects and checks the leader's
-requests even while its protected-mode row is `inactive`. This check runs
-alongside the watchdog rather than inside its phase verdicts. After the
+The leader tracks each pending slave request from its first request. The
+clustered coordinator owns a native ready duty and one nearest unalerted
+deadline on the peer server's existing master loop. Source, role, installed-link,
+target and actual local-completion facts cue it; callbacks apply no business
+effects. `PeerServer::onTick()` dispatches its guarded work when ready, including
+while the protected-mode row is `inactive`. This runs alongside the watchdog
+rather than inside its phase verdicts. After the
 existing `HILOS_PROTECTED_MODE_QUIESCE_TIMEOUT` (30 seconds by default), it
 logs and attempts a `sync-overdue` warning even if the initiator has made
 progress or the cluster row is `active`, `verifying` or `inactive` after a
@@ -545,6 +548,23 @@ first-request deadline and alert deduplication for the same generation; only
 the current acknowledgement for the requested phase clears it. A leader change
 starts new in-memory observations. Delivery and deduplication are not exactly
 once across a process failure.
+
+Each dirty pass captures a finite request cohort and visits at most 32 entries
+per portion, including requests settled during the pass. New facts do not rewind
+that prefix. A remaining portion stays ready without another input; waiting on
+a peer acknowledgement, roster callback or database result does not. The database
+result always cues the latest target after releasing its pending slot, including
+a failed result for an older target. A failed current target stays closed without
+a retry timer. Local effects serialize reentry and recheck the exact target and
+current leader connection before applying rights, resuming or acknowledging.
+
+The original integer epoch request time remains the protocol observation. Its
+absolute timeout maps once to monotonic process time; reconnect, phase changes,
+lift and loop rebinding retain that deadline and warning history while the same
+generation remains pending. A warning consumes that history before delivery and
+does not rearm a past deadline. Request-cohort capture and existing snapshot
+serialization still have costs that grow with the request and rights sets; the
+portion budget bounds entries visited, not those underlying copies.
 
 Both reasons use `protected-mode.slave-alert` with `nodeId`, `nodeName`,
 `operation`, `phase`, `reason` and `timeoutSeconds`, through the existing

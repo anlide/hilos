@@ -231,10 +231,11 @@ final class MeasurementsTestDaemonManager extends DaemonManager
         return $this->agentManagerDaemon;
     }
 
-    /** @param float $now Controlled loop time */
+    /** @param float $now Controlled interval time */
     public function tickMeasurementsAt(float $now): void
     {
-        new ReflectionMethod(DaemonManager::class, 'tickMeasurements')->invoke($this, $now);
+        new ReflectionMethod(DaemonManager::class, 'sampleMeasurements')->invoke($this, $now);
+        new ReflectionMethod(DaemonManager::class, 'reportMeasurements')->invoke($this, $now);
     }
 
     /** @return SignalRouter Empty route table for addressed frames */

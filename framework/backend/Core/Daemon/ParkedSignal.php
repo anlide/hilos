@@ -23,7 +23,7 @@ final readonly class ParkedSignal
 {
     /**
      * @param SignalDTO $signal Signal as it was queued
-     * @param float $deadline Unix seconds after which the signal is routed whether or not the identity arrived
+     * @param float $deadline Monotonic seconds after which routing proceeds whether or not the identity arrived
      */
     public function __construct(
         public SignalDTO $signal,

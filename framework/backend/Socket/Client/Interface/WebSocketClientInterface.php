@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client\Interface;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Core\Exception\InvalidStateException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Socket\Client\ClientInterface;
@@ -19,7 +20,11 @@ interface WebSocketClientInterface extends ClientInterface
     /** Stop reading input while allowing queued output to be written. */
     public function stopReading(): void;
 
-    /** Close after all queued output has been written. */
+    /**
+     * Close after all queued output has been written.
+     *
+     * @throws EventLoopException When a client protocol deadline cannot be armed
+     */
     public function closeOnceWritten(): void;
 
     /**
@@ -28,6 +33,7 @@ interface WebSocketClientInterface extends ClientInterface
      * @param string $data Text data to send (UTF-8)
      * @throws InvalidStateException When handshake not completed
      * @throws InvalidFormatException When the effective window or a merged envelope is invalid
+     * @throws EventLoopException When a client protocol deadline cannot be armed
      */
     public function sendFrame(string $data): void;
 
@@ -37,6 +43,7 @@ interface WebSocketClientInterface extends ClientInterface
      * @param DeliveryFrame $frame Shared prepared frame
      * @throws InvalidStateException When handshake not completed
      * @throws InvalidFormatException When the effective window or a merged envelope is invalid
+     * @throws EventLoopException When a client protocol deadline cannot be armed
      */
     public function sendDeliveryFrame(DeliveryFrame $frame): void;
 

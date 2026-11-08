@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Socket;
 
+use Hilos\Core\EventLoop\EventLoop;
+use Closure;
 use Hilos\Core\Daemon\ClientSocketDetacher;
 use Hilos\Core\Exception\InvalidJsonException;
 use Hilos\Socket\Client\ClientInterface;
@@ -14,6 +16,7 @@ use Hilos\Utils\ClientReadFailureLog;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 use Throwable;
+use WeakReference;
 
 /**
  * The one way out a client takes when it leaves a server (HIL-620).
@@ -163,6 +166,57 @@ final class AbstractServerClientExitTest extends TestCase
         $this->assertTrue($client->closed);
         $this->assertSame([], $server->getClients());
     }
+
+    public function testAnUnadvancedRosterDoesNotRetainDepartedClients(): void
+    {
+        $server = new AbstractServerClientExitTestServer();
+        $journal = new AbstractServerClientExitTestJournal();
+        $references = [];
+        for ($index = 0; $index < 260; $index++) {
+            $client = $server->seedClient(new AbstractServerClientExitTestClient($journal, null, false));
+            $references[] = WeakReference::create($client);
+        }
+        unset($client);
+        $candidates = $server->clientCandidates();
+        foreach ($references as $reference) {
+            $server->removeClient($reference->get());
+        }
+        foreach ($references as $reference) {
+            self::assertNull($reference->get(), 'An unadvanced cursor must not hold a departed transport');
+        }
+        $future = $server->seedClient(new AbstractServerClientExitTestClient($journal, null, false));
+        self::assertSame([], iterator_to_array($candidates));
+        self::assertSame([$future], array_values(iterator_to_array($server->clientCandidates())));
+    }
+
+    public function testAnAdvancedRosterReleasesUnvisitedClientsAndKeepsItsFiniteOrder(): void
+    {
+        $server = new AbstractServerClientExitTestServer();
+        $journal = new AbstractServerClientExitTestJournal();
+        $first = $server->seedClient(new AbstractServerClientExitTestClient($journal, null, false));
+        $references = [];
+        for ($index = 0; $index < 260; $index++) {
+            $client = $server->seedClient(new AbstractServerClientExitTestClient($journal, null, false));
+            $references[] = WeakReference::create($client);
+        }
+        unset($client);
+        $last = $server->seedClient(new AbstractServerClientExitTestClient($journal, null, false));
+        $candidates = $server->clientCandidates();
+        self::assertSame($first, $candidates->current());
+        foreach ($references as $reference) {
+            $server->removeClient($reference->get());
+        }
+        foreach ($references as $reference) {
+            self::assertNull($reference->get(), 'Unvisited transports must leave without collecting cycles');
+        }
+        $server->seedClient(new AbstractServerClientExitTestClient($journal, null, false));
+        $candidates->next();
+        self::assertSame(261, $candidates->key());
+        self::assertSame($last, $candidates->current());
+        $candidates->next();
+        self::assertFalse($candidates->valid());
+        self::assertSame([0, 261, 262], array_keys(iterator_to_array($server->clientCandidates())));
+    }
 }
 
 /**
@@ -200,7 +254,7 @@ final class AbstractServerClientExitTestServer extends AbstractServer
      */
     public function seedClient(AbstractServerClientExitTestClient $client): AbstractServerClientExitTestClient
     {
-        $this->clients[] = $client;
+        $this->addClient($client);
 
         return $client;
     }
@@ -249,6 +303,19 @@ final class AbstractServerClientExitTestClient implements ClientInterface
         private readonly bool $shouldClose,
         private readonly bool $refuseClose = false,
     ) {
+    }
+
+    /**
+     * @param EventLoop $loop Test owner's loop
+     * @param Closure(): void $wake Test owner's bounded portion
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+    }
+
+    /** Releases the test transport's loop binding, when it has one. */
+    public function detachEventLoop(): void
+    {
     }
 
     /**

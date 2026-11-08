@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Hilos\Constants\TimeConstants;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
@@ -13,6 +14,7 @@ use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
+use Hilos\Cluster\Placement\PlacementAsks;
 use Hilos\Cluster\Placement\PlacementRecord;
 use Hilos\Cluster\Placement\PlacementRefusal;
 use Hilos\Cluster\Placement\PlacementRefusalCode;
@@ -21,6 +23,7 @@ use Hilos\Cluster\PlacementVerdictSink;
 use Hilos\Cluster\PendingLeadership;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 
 /**
  * Placement driven by an agent being ADDRESSED, and the map kept honest when it stops (HIL-628).
@@ -104,6 +107,40 @@ final class ClusterPlacementRequestTest extends TestCase
         $placement->requirePlacement('render', '9');
 
         $this->assertCount(1, $mesh->sent);
+    }
+
+    public function testTheAskIntervalStaysFiveSecondsWithoutWaitingForIt(): void
+    {
+        $mesh = $this->mesh();
+        $placement = $this->follower($mesh, leaderId: 'node-b');
+        $before = hrtime(true) / 1e9;
+        $placement->requirePlacement('render', '9');
+        $after = hrtime(true) / 1e9;
+        $asks = new ReflectionProperty(ClusterPlacement::class, 'placementAsks')->getValue($placement);
+        $pending = new ReflectionProperty(PlacementAsks::class, 'pending')->getValue($asks)['render:9'];
+        self::assertGreaterThanOrEqual($before + 5.0, $pending->deadline);
+        self::assertLessThanOrEqual($after + 5.0, $pending->deadline);
+        self::assertTrue($asks->isPending('render:9', $pending->deadline - 0.001));
+        self::assertFalse($asks->isPending('render:9', $pending->deadline));
+        self::assertCount(1, $mesh->sent);
+    }
+
+    public function testAnExpiredTargetCanAskAgainWhileOlderExpiryDebtIsStillRetained(): void
+    {
+        $mesh = $this->mesh();
+        $placement = $this->follower($mesh, leaderId: 'node-b');
+        $placement->requirePlacement('render', '9');
+        $asks = new ReflectionProperty(ClusterPlacement::class, 'placementAsks')->getValue($placement);
+        for ($index = 0; $index < 200; $index++) {
+            $asks->remember('old:' . $index, 0.0);
+        }
+        $asks->remember('render:9', 1.0);
+        $placement->requirePlacement('render', '9');
+        self::assertCount(2, $mesh->sent);
+        self::assertCount(185, new ReflectionProperty(PlacementAsks::class, 'pending')->getValue($asks));
+        $placement->requirePlacement('render', '9');
+        self::assertCount(2, $mesh->sent);
+        self::assertCount(169, new ReflectionProperty(PlacementAsks::class, 'pending')->getValue($asks));
     }
 
     /**
@@ -198,7 +235,7 @@ final class ClusterPlacementRequestTest extends TestCase
                 $this->assertCount(1, $verdicts);
                 $this->assertSame($state, $verdicts[0][1]->state);
                 $this->assertNull($verdicts[0][1]->nodeId);
-                $placement->tick(microtime(true) + 5.0);
+                $placement->tick((hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND) + 5.0);
                 $mesh->sent = array_values(array_filter(
                     $mesh->sent,
                     static fn(array $sent): bool => $sent[1] instanceof PeerPlaceAgentDTO,

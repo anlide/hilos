@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Closure;
 use Hilos\Database\DTO\ReHydrateVerdict;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncDTO;
@@ -138,6 +139,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
      *                                    verification window opens and not before; null on a follower
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function enterActivating(
         ProtectedModeQuiesceData $freeze,

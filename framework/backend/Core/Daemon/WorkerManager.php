@@ -3906,6 +3906,10 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * Before the flush the worker hands its browser context the fact that the database came back
      * when a connection of this process returned after a loss since the last flush; the fact
      * reaches no other process (owner's decision, 2026-10-04, HIL-1352).
+     *
+     * @throws LogicException When a restart control payload or its server return address is invalid
+     * @throws InvalidArgumentException When a local notification carries an empty signal name
+     * @throws Throwable When a local notification's candidate source or admission callback fails
      */
     private function dispatchSignals(): void
     {
@@ -4016,6 +4020,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * queue ordinary worker signals into the same router queue.
      *
      * @throws LogicException When a restart control payload or its server return address is invalid
+     * @throws InvalidArgumentException When a local notification carries an empty signal name
+     * @throws Throwable When a local notification's candidate source or admission callback fails
      */
     private function dispatchQueuedSignalsToDaemon(): void
     {

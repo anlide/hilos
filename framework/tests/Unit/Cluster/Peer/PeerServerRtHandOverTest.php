@@ -614,7 +614,8 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $attach = Closure::bind(
             static function (PeerServer $server, PeerLink $link): void {
-                $server->clients[] = $link;
+                $server->addClient($link);
+                $server->attachClient($link);
             },
             null,
             PeerServer::class,

@@ -39,6 +39,8 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
+use Hilos\Runtime\RtMembershipVersion;
+use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
@@ -579,8 +581,10 @@ final class TransactionMemoryRollbackTest extends TestCase
         $collection->actions->drop('dropped');
         $this->assertSame('added', $collection['added']?->mark());
         $this->assertNull($collection['dropped']);
+        $beforeRollback = RtMembershipVersion::current();
         Database::transactionRollback();
 
+        $this->assertGreaterThan($beforeRollback, RtMembershipVersion::current(), 'Restored membership must invalidate the failed basis');
         $this->assertNull($collection['added']);
         $this->assertSame($dropped, $collection->getStateCollection()->get('dropped'));
         $this->assertSame('dropped', $collection['dropped']?->mark());
@@ -606,11 +610,45 @@ final class TransactionMemoryRollbackTest extends TestCase
         Database::transactionStart();
         $collection->actions->wipe();
         $this->assertNull($collection['a']);
+        $beforeRollback = RtMembershipVersion::current();
         Database::transactionRollback();
 
+        $this->assertGreaterThan($beforeRollback, RtMembershipVersion::current(), 'A restored whole map must invalidate the failed basis');
         $this->assertSame($first, $collection->getStateCollection()->get('a'));
         $this->assertSame('second', $collection['b']?->mark());
         $this->assertSame([], $this->drainRtFrames());
+    }
+
+    public function testRollbackDoesNotReadmitRestoredRowsIntoAnEarlierSnapshotCohort(): void
+    {
+        $collection = $this->mountedRt();
+        $collection->actions->put('kept', 'before');
+        $collection->actions->put('restored', 'before');
+        $original = RtSnapshot::rowCandidates(MemoryRollbackRtContext::COLLECTION);
+        Database::transactionStart();
+        $collection->actions->drop('restored');
+        $collection->actions->put('temporary', 'inside');
+        $failed = RtSnapshot::rowCandidates(MemoryRollbackRtContext::COLLECTION);
+        Database::transactionRollback();
+
+        $this->assertSame(['kept' => ['id' => 'kept', 'mark' => 'before']], iterator_to_array($original));
+        $this->assertSame(['kept' => ['id' => 'kept', 'mark' => 'before']], iterator_to_array($failed));
+        $this->assertSame(
+            ['kept' => ['id' => 'kept', 'mark' => 'before'], 'restored' => ['id' => 'restored', 'mark' => 'before']],
+            iterator_to_array(RtSnapshot::rowCandidates(MemoryRollbackRtContext::COLLECTION)),
+        );
+
+        $beforeClear = RtSnapshot::rowCandidates(MemoryRollbackRtContext::COLLECTION);
+        Database::transactionStart();
+        $collection->actions->wipe();
+        $duringClear = RtSnapshot::rowCandidates(MemoryRollbackRtContext::COLLECTION);
+        Database::transactionRollback();
+        $this->assertSame([], iterator_to_array($beforeClear));
+        $this->assertSame([], iterator_to_array($duringClear));
+        $this->assertSame(
+            ['kept' => ['id' => 'kept', 'mark' => 'before'], 'restored' => ['id' => 'restored', 'mark' => 'before']],
+            iterator_to_array(RtSnapshot::rowCandidates(MemoryRollbackRtContext::COLLECTION)),
+        );
     }
 
     /**

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\LogStreamConstants;
+use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Process;
 use Hilos\Log\LogLine;
 use Hilos\Log\LogLineReader;
 use Hilos\Log\LogReadQuery;
@@ -13,6 +15,7 @@ use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionMethod;
+use ReflectionProperty;
 
 /**
  * The master writes an agent line's level into `agent-<id>.log`, and only there (HIL-868).
@@ -114,6 +117,34 @@ final class WorkerServerAgentLogLevelTest extends TestCase
         $this->drain([self::pipeLine(Logger::LEVEL_WARNING, 'no stamp', false)], false);
 
         $this->assertSame(['no stamp'], $this->linesOf(self::MAIN_STREAM_SUFFIX));
+    }
+
+    public function testBoundedPipePortionsPreserveAgentLinesAndFinalUnterminatedTails(): void
+    {
+        $server = new ReflectionClass(AgentLogLevelTestWorkerServer::class)->newInstanceWithoutConstructor();
+        new ReflectionProperty(WorkerServer::class, 'cachedLogDirectory')->setValue($server, $this->dir);
+        $process = $this->createMock(Process::class);
+        $inFlight = true;
+        $process->method('isInFlight')->willReturnCallback(static function () use (&$inFlight): bool {
+            return $inFlight;
+        });
+        $line = self::pipeLine(Logger::LEVEL_WARNING, 'one complete warning');
+        $error = self::pipeLine(Logger::LEVEL_ERROR, 'final error');
+        $process->method('getStdOut')->willReturnOnConsecutiveCalls(substr($line, 0, 4), substr($line, 4) . "\nworker-", 'tail');
+        $process->method('getStdErr')->willReturnOnConsecutiveCalls('', substr($error, 0, 7), substr($error, 7));
+        $save = new ReflectionMethod(WorkerServer::class, 'saveWorkerOutput');
+
+        $save->invoke($server, $process, WorkerConstants::TYPE_REGULAR, 1);
+        self::assertSame([], glob($this->dir . DIRECTORY_SEPARATOR . '*'));
+        $save->invoke($server, $process, WorkerConstants::TYPE_REGULAR, 1);
+        self::assertSame([self::STAMP . '[' . Logger::LEVEL_WARNING . '] one complete warning'], $this->linesOf(self::MAIN_STREAM_SUFFIX));
+        self::assertFileDoesNotExist($this->dir . DIRECTORY_SEPARATOR . self::WORKER_BASENAME . self::MAIN_STREAM_SUFFIX);
+
+        $inFlight = false;
+        $save->invoke($server, $process, WorkerConstants::TYPE_REGULAR, 1);
+        self::assertSame([self::STAMP . 'final error'], $this->linesOf(LogStreamConstants::ERROR_STREAM_SUFFIX));
+        self::assertSame("worker-tail\n", file_get_contents($this->dir . DIRECTORY_SEPARATOR . self::WORKER_BASENAME . self::MAIN_STREAM_SUFFIX));
+        self::assertSame([], new ReflectionProperty(WorkerServer::class, 'workerOutputTails')->getValue($server));
     }
 
     /**

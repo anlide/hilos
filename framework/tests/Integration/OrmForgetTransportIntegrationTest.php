@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Socket\Server\AbstractServer;
+use ReflectionMethod;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandChannelWindows;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
@@ -15,6 +18,7 @@ use Hilos\Core\Daemon\TestOrmForgetRequest;
 use Hilos\Core\Daemon\TestOrmForgetRequests;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
@@ -379,7 +383,7 @@ final class OrmForgetTransportIntegrationTest extends FrameworkIntegrationTestCa
     public function testTimeoutPrecedesCallerWindowAndLateAckIsIgnored(): void
     {
         $this->connectWorker(3);
-        $before = microtime(true);
+        $before = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
         $this->request(['process' => 'worker', 'workerId' => 3]);
         $pending = $this->pending();
         self::assertGreaterThanOrEqual($before + CommandChannelWindows::AGENT_WAIT_SECONDS, $pending['forget-1']->deadline);
@@ -392,13 +396,77 @@ final class OrmForgetTransportIntegrationTest extends FrameworkIntegrationTestCa
         self::assertFalse($this->caller->hasPendingWrite());
     }
 
+    /** Native scheduling is local to the master; its cue does not perform worker or ORM work. */
+    public function testOwnerTimerTracksTheNextLiveWorkerWaitAcrossRemovalAndRebind(): void
+    {
+        $this->connectWorker(3);
+        [$otherWorker] = $this->connection(-3);
+        $loop = new EventLoop();
+        $other = new EventLoop();
+        $replies = [];
+        $wakes = 0;
+        $owner = new TestOrmForgetRequests(
+            fn (): WorkerServer => $this->master->workers,
+            static function (CommandReplyDTO $reply) use (&$replies): void {
+                $replies[] = $reply;
+            },
+        );
+        $wake = static function () use (&$wakes): void {
+            ++$wakes;
+        };
+        $now = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        try {
+            $owner->attachEventLoop($loop, $wake);
+            $owner->request(new CommandRequestDTO('first', CliCommands::ORM_TEST_FORGET, ['process' => 'worker', 'workerId' => 3]), $now);
+            $owner->request(new CommandRequestDTO('second', CliCommands::ORM_TEST_FORGET, ['process' => 'worker', 'workerId' => -3]), $now + 2);
+            $old = new ReflectionProperty(TestOrmForgetRequests::class, 'deadlineTimer')->getValue($owner);
+            self::assertSame($now + CommandChannelWindows::AGENT_WAIT_SECONDS, $old->getDeadline());
+            $owner->abandon('first');
+            $deadline = $now + 2 + CommandChannelWindows::AGENT_WAIT_SECONDS;
+            self::assertSame($deadline, $old->getDeadline());
+            $owner->attachEventLoop($other, $wake);
+            $timer = new ReflectionProperty(TestOrmForgetRequests::class, 'deadlineTimer')->getValue($owner);
+            self::assertNull($old->getDeadline());
+            self::assertSame($deadline, $timer->getDeadline());
+            $loop->tick();
+            $other->tick();
+            self::assertSame(0, $wakes);
+            $owner->workerGone($this->receiver);
+            self::assertSame($deadline, $timer->getDeadline(), 'Another connection cannot consume the surviving wait');
+            $owner->accept($otherWorker, new WorkerTestOrmForgottenDTO('second', true, null), $now + 3);
+            self::assertCount(1, $replies);
+            self::assertTrue($replies[0]->isOk());
+            self::assertNull($timer->getDeadline());
+
+            $owner->request(new CommandRequestDTO('due', CliCommands::ORM_TEST_FORGET, ['process' => 'worker', 'workerId' => 3]),
+                $now - CommandChannelWindows::AGENT_WAIT_SECONDS);
+            for ($pass = 0; $pass < 4; ++$pass) {
+                $other->tick();
+            }
+            self::assertSame(1, $wakes);
+            self::assertCount(1, $replies, 'The callback only wakes the guarded manager portion');
+            $owner->tick();
+            self::assertCount(2, $replies);
+            self::assertSame('due', $replies[1]->correlationId);
+            self::assertSame(['message' => 'Worker 3 did not confirm ORM forget in time'], $replies[1]->payload);
+            self::assertNull($timer->getDeadline());
+            self::assertFalse($other->hasReadyWork());
+        } finally {
+            $owner->detachEventLoop();
+            $loop->close();
+            $other->close();
+        }
+    }
+
     /** An expired wait cannot succeed between the deadline and the next timer pass. */
     public function testAckAfterDeadlineIsRefusedEvenBeforeTheNextTimerTick(): void
     {
         $this->connectWorker(3);
         $this->request(['process' => 'worker', 'workerId' => 3]);
         new ReflectionProperty(TestOrmForgetRequests::class, 'pending')->setValue($this->master->waits(), [
-            'forget-1' => new TestOrmForgetRequest('forget-1', $this->receiver, 3, microtime(true) - 1),
+            'forget-1' => new TestOrmForgetRequest(
+                'forget-1', $this->receiver, 3, hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND - 1,
+            ),
         ]);
         $this->runWorker();
         $this->deliverAck();
@@ -591,13 +659,13 @@ final class OrmTransportServer extends WorkerServer
     /** @param WorkerClient $worker Test socket accepted by this server */
     public function attach(WorkerClient $worker): void
     {
-        $this->clients[] = $worker;
+        $this->addClient($worker);
     }
 
     /** @param WorkerClient $worker Original channel replaced in the registry */
     public function detach(WorkerClient $worker): void
     {
-        $this->clients = array_values(array_filter($this->clients, static fn (WorkerClient $client): bool => $client !== $worker));
+        new ReflectionMethod(AbstractServer::class, 'removeClient')->invoke($this, $worker);
     }
 
     /** No listening socket or child process is needed by the test. */

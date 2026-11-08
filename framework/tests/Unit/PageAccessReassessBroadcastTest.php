@@ -432,7 +432,9 @@ final class PageAccessReassessBroadcastTestManager extends DaemonManager
     {
         $dispatch = Closure::bind(
             static function (DaemonManager $manager): void {
-                $manager->dispatchSignals();
+                do {
+                    $manager->dispatchSignals();
+                } while ($manager->hasRunnableSignalDispatch());
             },
             null,
             DaemonManager::class,
@@ -500,7 +502,7 @@ final class PageAccessReassessBroadcastTestWorkerServer extends WorkerServer
     {
         $client = new PageAccessReassessBroadcastTestWorkerClient();
         $client->setWorkerIndex(count($this->clients));
-        $this->clients[] = $client;
+        $this->addClient($client);
     }
 
     /**
@@ -574,7 +576,7 @@ final class PageAccessReassessBroadcastTestWebSocketServer extends WebSocketServ
             . "Sec-WebSocket-Version: 13\r\n"
             . "\r\n",
         );
-        $this->clients[] = $probe;
+        $this->addClient($probe);
 
         return $probe;
     }

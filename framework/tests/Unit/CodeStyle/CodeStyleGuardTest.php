@@ -137,6 +137,12 @@ final class CodeStyleGuardTest extends TestCase
         );
     }
 
+    /** Reclaims free allocator pages after the whole-tree scans have left scope. */
+    protected function tearDown(): void
+    {
+        gc_mem_caches();
+    }
+
     /**
      * @return array<string, array<int, string>> Violation lines keyed by "<rule id> <path from repository root>"
      */

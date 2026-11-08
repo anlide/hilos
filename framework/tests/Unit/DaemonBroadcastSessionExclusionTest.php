@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
@@ -112,6 +113,15 @@ final class DaemonBroadcastSessionExclusionTest extends TestCase
         $this->assertTrue($this->received($second));
     }
 
+    public function testCompletedFanoutDoesNotKeepUnconsumableHandshakeIntakeRunnable(): void
+    {
+        $client = $this->connect(self::INITIATOR_TOKEN);
+        $this->broadcast(null, null);
+        self::assertTrue($this->received($client));
+        self::assertTrue(Hilos::$sr->hasQueuedSignals());
+        self::assertFalse($this->daemon->hasRunnableDispatch());
+    }
+
     /**
      * Fans a node-wide broadcast out to the connections this node holds.
      *
@@ -134,6 +144,7 @@ final class DaemonBroadcastSessionExclusionTest extends TestCase
                 excludeSessionTokenHash: $excludeSessionTokenHash,
             ),
         ));
+        $this->daemon->dispatch();
     }
 
     /**
@@ -190,7 +201,7 @@ final class BroadcastExclusionTestWebSocketServer extends WebSocketServer
      */
     public function attach(WebSocketClient $client): void
     {
-        $this->clients[] = $client;
+        $this->addClient($client);
     }
 
     /**
@@ -221,6 +232,22 @@ final class BroadcastExclusionTestWebSocketServer extends WebSocketServer
  */
 final class BroadcastExclusionTestManager extends DaemonManager
 {
+    /** Advances the actual guarded portions until this fan-out finishes. */
+    public function dispatch(): void
+    {
+        Closure::bind(function (): void {
+            do {
+                $this->dispatchSignals();
+            } while ($this->hasRunnableSignalDispatch());
+        }, $this, DaemonManager::class)();
+    }
+
+    /** @return bool Actual production remainder predicate */
+    public function hasRunnableDispatch(): bool
+    {
+        return Closure::bind(fn(): bool => $this->hasRunnableSignalDispatch(), $this, DaemonManager::class)();
+    }
+
     protected function createSignalRouter(): SignalRouter
     {
         return new SignalRouter();

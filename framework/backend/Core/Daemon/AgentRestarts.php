@@ -16,12 +16,16 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
@@ -48,8 +52,10 @@ final class AgentRestarts
 
     private int $revision = 0;
 
-    /** Next waiter deadline; an idle main-loop pass reads one scalar. */
+    /** Nearest live caller deadline; an open restart without callers has no timer duty. */
     private float $nextWaitDeadline = INF;
+
+    private ?EventLoopTimer $deadlineTimer = null;
 
     /**
      * @param AgentManagerDaemon $agents This master's agent roster
@@ -65,6 +71,27 @@ final class AgentRestarts
         private readonly ?Closure $peerServer = null,
         private readonly ?Closure $sendRestartFrame = null,
     ) {
+    }
+
+    /**
+     * Native readiness only cues the manager's guarded deadline phase.
+     *
+     * @param EventLoop $loop This master's native event loop
+     * @param Closure(): void $wake Cue the guarded deadline phase
+     * @throws EventLoopException When an original live deadline cannot be armed
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+        $this->detachEventLoop();
+        $this->deadlineTimer = $loop->createTimer($wake);
+        $this->rearmDeadlineTimer();
+    }
+
+    /** Releases this binding's native and queued work, preserving live callers for rebind. */
+    public function detachEventLoop(): void
+    {
+        $this->deadlineTimer?->close();
+        $this->deadlineTimer = null;
     }
 
     /** @return int Open-restart revision */
@@ -92,12 +119,15 @@ final class AgentRestarts
      * Validates an operator request and addresses the replica, leader, or local worker.
      *
      * @param CommandRequestDTO $request Held operator request
-     * @param ?float $now Current time, injectable for the wait-window test
+     * @param ?float $now Monotonic seconds, injectable for the wait-window test
+     * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
      */
     public function request(CommandRequestDTO $request, ?float $now = null): void
     {
         try {
-            $this->requestChecked($request, $now ?? microtime(true));
+            $this->requestChecked($request, $now ?? hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND);
+        } catch (EventLoopException $failure) {
+            throw $failure;
         } catch (Throwable $failure) {
             Logger::error('Agent restart request failed before stop: ' . $failure->getMessage());
             $type = $request->payload[CommandConstants::FIELD_AGENT_TYPE] ?? null;
@@ -110,7 +140,7 @@ final class AgentRestarts
 
     /**
      * @param CommandRequestDTO $request Held operator request
-     * @param float $now Current time
+     * @param float $now Monotonic seconds
      * @throws ClusterConfigurationException When the cluster node configuration cannot be read
      * @throws ClusterDisabledException When a cluster-only lookup has no cluster
      * @throws EnvException When a cluster setting cannot be read
@@ -118,6 +148,7 @@ final class AgentRestarts
      * @throws HilosException When the project cannot describe a placement candidate
      * @throws LogicException When an agent declares a negative resource cost or the reserved slot
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
      */
     private function requestChecked(CommandRequestDTO $request, float $now): void
     {
@@ -210,6 +241,7 @@ final class AgentRestarts
      * An authenticated peer request is a final destination: never route it to another peer.
      *
      * @param PeerAgentRestartDTO $frame Peer request with the caller's return address
+     * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
      */
     public function fromPeer(PeerAgentRestartDTO $frame): void
     {
@@ -225,6 +257,8 @@ final class AgentRestarts
         );
         try {
             $this->fromPeerChecked($request, $frame);
+        } catch (EventLoopException $failure) {
+            throw $failure;
         } catch (Throwable $failure) {
             Logger::error('Peer agent restart request failed before stop: ' . $failure->getMessage());
             $this->reply($request, CommandReplyDTO::error($frame->correlationId, sprintf(
@@ -239,6 +273,7 @@ final class AgentRestarts
      * @throws AgentDaemonCreationFailedException When a placement profile cannot be built
      * @throws HilosException When the project cannot describe a placement candidate
      * @throws LogicException When an agent declares a negative resource cost or the reserved slot
+     * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
      */
     private function fromPeerChecked(CommandRequestDTO $request, PeerAgentRestartDTO $frame): void
     {
@@ -251,12 +286,13 @@ final class AgentRestarts
             $this->reply($request, CommandReplyDTO::error($frame->correlationId, sprintf('No agent %s in this installation', $id)));
             return;
         }
+        $now = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
         if ($frame->inPlace) {
             if (AgentRegistry::placement($registry) !== AgentPlacement::POLICY || $frame->nodeId !== $localNodeId) {
                 $this->reply($request, CommandReplyDTO::error($frame->correlationId, 'Invalid in-place restart request'));
                 return;
             }
-            $this->executeHere($request, $frame->agentType, $frame->agentIndex, $id, $localNodeId, false, microtime(true));
+            $this->executeHere($request, $frame->agentType, $frame->agentIndex, $id, $localNodeId, false, $now);
             return;
         }
         if (AgentRegistry::scope($registry) === AgentScope::NODE) {
@@ -264,10 +300,10 @@ final class AgentRestarts
                 $this->reply($request, CommandReplyDTO::error($frame->correlationId, 'Restart request reached the wrong node'));
                 return;
             }
-            $this->executeHere($request, $frame->agentType, $frame->agentIndex, $id, $localNodeId, false, microtime(true));
+            $this->executeHere($request, $frame->agentType, $frame->agentIndex, $id, $localNodeId, false, $now);
             return;
         }
-        $this->executeAsLeader($request, $frame->agentType, $frame->agentIndex, $id, $localNodeId, microtime(true));
+        $this->executeAsLeader($request, $frame->agentType, $frame->agentIndex, $id, $localNodeId, $now);
     }
 
     /**
@@ -340,7 +376,7 @@ final class AgentRestarts
      * @param ?string $index Agent index
      * @param string $id Agent id
      * @param string $nodeId Local node id
-     * @param float $now Current time
+     * @param float $now Monotonic seconds
      * @throws ClusterConfigurationException When cluster membership cannot be read
      * @throws ClusterDisabledException When a cluster-only lookup has no cluster
      * @throws EnvException When cluster settings cannot be read
@@ -348,6 +384,7 @@ final class AgentRestarts
      * @throws HilosException When the project cannot describe a placement candidate
      * @throws LogicException When an agent declares a negative resource cost or the reserved slot
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
      */
     public function executeAsLeader(
         CommandRequestDTO $request,
@@ -382,8 +419,7 @@ final class AgentRestarts
         }
         $placement = $cluster->placement();
         if (isset($this->runs[$id])) {
-            $this->runs[$id]->waiters[$request->correlationId] = new AgentRestartWaiter($request, $now);
-            $this->nextWaitDeadline = min($this->nextWaitDeadline, $now + CommandChannelWindows::AGENT_WAIT_SECONDS);
+            $this->addWaiter($this->runs[$id], $request, $now);
             return;
         }
         $record = $placement?->registry()->get($id);
@@ -429,16 +465,17 @@ final class AgentRestarts
             }
             return;
         }
-        $this->runs[$id] = new AgentRestartRun($id, $type, $index, $record->nodeId, true, true);
-        $this->runs[$id]->waiters[$request->correlationId] = new AgentRestartWaiter($request, $now);
-        $this->nextWaitDeadline = min($this->nextWaitDeadline, $now + CommandChannelWindows::AGENT_WAIT_SECONDS);
+        $run = $this->runs[$id] = new AgentRestartRun($id, $type, $index, $record->nodeId, true, true);
         $this->revision++;
+        $this->addWaiter($run, $request, $now);
         try {
             $placement->restartElsewhere($type, $index, $record->nodeId, $target);
+        } catch (EventLoopException $failure) {
+            throw $failure;
         } catch (Throwable $failure) {
             $this->finish($id, CommandReplyDTO::error('', sprintf(
                 'Agent %s could not be stopped: %s', $id, $failure->getMessage(),
-            )));
+            )), $run);
         }
     }
 
@@ -449,6 +486,7 @@ final class AgentRestarts
      * @param ?string $index Agent index
      * @param string $nodeId New host
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
      */
     public function onRestartPlaced(string $type, ?string $index, string $nodeId): void
     {
@@ -466,6 +504,7 @@ final class AgentRestarts
      * @param string $type Agent type
      * @param ?string $index Agent index
      * @param string $reason Refusal reason
+     * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
      */
     public function onRestartNotPlaced(string $type, ?string $index, string $reason): void
     {
@@ -482,7 +521,8 @@ final class AgentRestarts
      * @param string $id Agent id
      * @param string $nodeId Node hosting the old instance
      * @param bool $leaderDependent Whether loss of leadership cancels this restart
-     * @param float $now Current time
+     * @param float $now Monotonic seconds
+     * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
      */
     public function executeHere(
         CommandRequestDTO $request,
@@ -508,8 +548,7 @@ final class AgentRestarts
             return;
         }
         if (isset($this->runs[$id])) {
-            $this->runs[$id]->waiters[$request->correlationId] = new AgentRestartWaiter($request, $now);
-            $this->nextWaitDeadline = min($this->nextWaitDeadline, $now + CommandChannelWindows::AGENT_WAIT_SECONDS);
+            $this->addWaiter($this->runs[$id], $request, $now);
             return;
         }
         if (!$this->agents->hasAgent($id)) {
@@ -534,14 +573,13 @@ final class AgentRestarts
         $registry = Hilos::appClass()::AGENTS[$type];
         $placedByLeader = AgentRegistry::placement($registry) === AgentPlacement::POLICY;
         $inPlacePlacement = $placedByLeader && Hilos::$cluster?->placement() !== null;
-        $this->runs[$id] = new AgentRestartRun($id, $type, $index, $nodeId, $leaderDependent, false, $inPlacePlacement);
-        $this->runs[$id]->waiters[$request->correlationId] = new AgentRestartWaiter($request, $now);
-        $this->nextWaitDeadline = min($this->nextWaitDeadline, $now + CommandChannelWindows::AGENT_WAIT_SECONDS);
+        $run = $this->runs[$id] = new AgentRestartRun($id, $type, $index, $nodeId, $leaderDependent, false, $inPlacePlacement);
         $this->revision++;
-        if ($inPlacePlacement) {
-            Hilos::$cluster->placement()->beginInPlaceRestart($type, $index);
-        }
+        $this->addWaiter($run, $request, $now);
         try {
+            if ($inPlacePlacement) {
+                Hilos::$cluster->placement()->beginInPlaceRestart($type, $index);
+            }
             $worker->restartAgentHere($type, $index, $placedByLeader);
             if (
                 !$this->agents->hasAgent($id)
@@ -550,23 +588,26 @@ final class AgentRestarts
             ) {
                 $this->finish($id, CommandReplyDTO::error('', sprintf(
                     'Agent %s did not start again: the local start gate refused it', $id,
-                )));
+                )), $run);
             }
         } catch (LogicException) {
             $this->finish($id, CommandReplyDTO::error($request->correlationId, sprintf(
                 'Agent %s could not be stopped: its worker link is gone', $id,
-            )));
+            )), $run);
+        } catch (EventLoopException $failure) {
+            throw $failure;
         } catch (Throwable $failure) {
             $message = $this->agents->isAgentStarted($id)
                 ? sprintf('Agent %s could not be stopped: its worker link is gone', $id)
                 : sprintf('Agent %s did not start again: %s', $id, $failure->getMessage());
-            $this->finish($id, CommandReplyDTO::error($request->correlationId, $message));
+            $this->finish($id, CommandReplyDTO::error($request->correlationId, $message), $run);
         }
     }
 
     /**
      * @param string $agentId Agent reported started by its worker
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
      */
     public function onAgentStarted(string $agentId): void
     {
@@ -584,6 +625,7 @@ final class AgentRestarts
     /**
      * @param string $agentId Agent whose replacement failed
      * @param string $reason Worker-reported reason
+     * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
      */
     public function onAgentStartFailed(string $agentId, string $reason): void
     {
@@ -594,100 +636,176 @@ final class AgentRestarts
         }
     }
 
-    /** @param list<string> $agentIds Agents lost with a worker */
+    /**
+     * @param list<string> $agentIds Agents lost with a worker
+     * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
+     */
     public function onAgentsLost(array $agentIds): void
     {
         foreach ($agentIds as $agentId) {
-            $run = $this->runs[$agentId] ?? null;
+            ($this->captureAgentLoss($agentId))();
+        }
+    }
+
+    /**
+     * Binds a received worker loss to the restart it actually interrupted, including absence.
+     * The returned effect cannot answer a later restart of the same agent.
+     *
+     * @param string $agentId Agent lost with the worker
+     * @return Closure(): void Once-only refusal under the caller's existing lifecycle guard
+     */
+    public function captureAgentLoss(string $agentId): Closure
+    {
+        $run = $this->runs[$agentId] ?? null;
+        return function () use ($agentId, $run): void {
+            if ($run === null || ($this->runs[$agentId] ?? null) !== $run) {
+                return;
+            }
             if ($run?->placementMove) {
                 Hilos::$cluster?->placement()?->noteAgentStartFailed($run->type, $run->index, 'its worker was lost');
                 if (isset($this->runs[$agentId])) {
                     $this->finish($agentId, CommandReplyDTO::error('', sprintf(
                         'Agent %s did not start again: its worker was lost', $agentId,
-                    )));
+                    )), $run);
                 }
-                continue;
+                return;
             }
-            $this->onAgentStartFailed($agentId, 'its worker was lost');
-        }
+            $this->finish($agentId, CommandReplyDTO::error('', sprintf(
+                'Agent %s did not start again: its worker was lost', $agentId,
+            )), $run);
+        };
     }
 
-    /** @param string $correlationId Caller no longer waiting */
+    /**
+     * @param string $correlationId Caller no longer waiting
+     * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
+     */
     public function onCommandAbandoned(string $correlationId): void
     {
+        $removed = false;
         foreach ($this->runs as $run) {
-            unset($run->waiters[$correlationId]);
+            if (isset($run->waiters[$correlationId])) {
+                unset($run->waiters[$correlationId]);
+                $removed = true;
+            }
+        }
+        if ($removed) {
+            $this->rearmDeadlineTimer();
         }
     }
 
     /**
      * @param string $nodeId Node that left the mesh
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
      */
     public function onNodeLeft(string $nodeId): void
     {
         foreach ($this->runs as $id => $run) {
+            $removed = false;
             foreach ($run->waiters as $correlationId => $waiter) {
                 if ($waiter->request->originNodeId === $nodeId) {
                     unset($run->waiters[$correlationId]);
+                    $removed = true;
                 }
+            }
+            if ($removed) {
+                $this->rearmDeadlineTimer();
             }
             $placementNodeId = Hilos::$cluster?->placement()?->registry()->get($id)?->nodeId;
             if ($run->nodeId === $nodeId && (!$run->placementMove || $placementNodeId === $nodeId)) {
                 $this->finish($id, CommandReplyDTO::error('', sprintf(
                     'Node %s went silent during the restart of %s',
                     NodeName::label($nodeId, Hilos::$rt?->hilosClusterNodes[$nodeId]?->name), $id,
-                )));
+                )), $run);
             }
         }
     }
 
-    /** Closes leader-dependent restarts after this master loses its term. */
+    /**
+     * Closes leader-dependent restarts after this master loses its term.
+     *
+     * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
+     */
     public function onLostLeadership(): void
     {
         foreach ($this->runs as $id => $run) {
             if ($run->leaderDependent) {
                 $this->finish($id, CommandReplyDTO::error('', sprintf(
                     'Leadership changed during the restart of %s', $id,
-                )));
-            }
-        }
-    }
-
-    /** @param float $now Current time in seconds */
-    public function tick(float $now): void
-    {
-        if ($now < $this->nextWaitDeadline) {
-            return;
-        }
-        $this->nextWaitDeadline = INF;
-        foreach ($this->runs as $run) {
-            foreach ($run->waiters as $correlationId => $waiter) {
-                if ($now - $waiter->askedAt < CommandChannelWindows::AGENT_WAIT_SECONDS) {
-                    $this->nextWaitDeadline = min(
-                        $this->nextWaitDeadline,
-                        $waiter->askedAt + CommandChannelWindows::AGENT_WAIT_SECONDS,
-                    );
-                    continue;
-                }
-                unset($run->waiters[$correlationId]);
-                $this->reply($waiter->request, CommandReplyDTO::error($correlationId, sprintf(
-                    'Agent %s is not up yet after %ds; the restart goes on',
-                    $run->id,
-                    (int)CommandChannelWindows::AGENT_WAIT_SECONDS,
-                )));
+                )), $run);
             }
         }
     }
 
     /**
+     * @param ?float $now Monotonic seconds, injectable for deadline observations
+     * @throws EventLoopException When the next live caller deadline cannot be armed or canceled
+     */
+    public function tick(?float $now = null): void
+    {
+        $now ??= hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        if ($now < $this->nextWaitDeadline) {
+            $this->deadlineTimer?->armAt(is_finite($this->nextWaitDeadline) ? $this->nextWaitDeadline : null);
+            return;
+        }
+        $expired = [];
+        foreach ($this->runs as $run) {
+            foreach ($run->waiters as $correlationId => $waiter) {
+                if ($now < $waiter->askedAt + CommandChannelWindows::AGENT_WAIT_SECONDS) {
+                    continue;
+                }
+                unset($run->waiters[$correlationId]);
+                $expired[] = [$run->id, $waiter];
+            }
+        }
+        $this->rearmDeadlineTimer();
+        foreach ($expired as [$id, $waiter]) {
+            $this->reply($waiter->request, CommandReplyDTO::error($waiter->request->correlationId, sprintf(
+                'Agent %s is not up yet after %ds; the restart goes on',
+                $id,
+                (int)CommandChannelWindows::AGENT_WAIT_SECONDS,
+            )));
+        }
+    }
+
+    /**
+     * @param AgentRestartRun $run Existing restart receiving one caller
+     * @param CommandRequestDTO $request Caller and return address
+     * @param float $now Monotonic seconds when the caller joined
+     * @throws EventLoopException When the nearest live caller deadline cannot be armed
+     */
+    private function addWaiter(AgentRestartRun $run, CommandRequestDTO $request, float $now): void
+    {
+        if (isset($run->waiters[$request->correlationId])) {
+            return;
+        }
+        $run->waiters[$request->correlationId] = new AgentRestartWaiter($request, $now);
+        $this->rearmDeadlineTimer();
+    }
+
+    /** @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled */
+    private function rearmDeadlineTimer(): void
+    {
+        $this->nextWaitDeadline = INF;
+        foreach ($this->runs as $run) {
+            foreach ($run->waiters as $waiter) {
+                $this->nextWaitDeadline = min($this->nextWaitDeadline, $waiter->askedAt + CommandChannelWindows::AGENT_WAIT_SECONDS);
+            }
+        }
+        $this->deadlineTimer?->armAt(is_finite($this->nextWaitDeadline) ? $this->nextWaitDeadline : null);
+    }
+
+    /**
      * @param string $id Open restart id
      * @param CommandReplyDTO $outcome Result copied to all still waiting callers
+     * @param ?AgentRestartRun $expectedRun Original run for a completion or cohort that may have reentered
+     * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
      */
-    private function finish(string $id, CommandReplyDTO $outcome): void
+    private function finish(string $id, CommandReplyDTO $outcome, ?AgentRestartRun $expectedRun = null): void
     {
         $run = $this->runs[$id] ?? null;
-        if ($run === null) {
+        if ($run === null || ($expectedRun !== null && $run !== $expectedRun)) {
             return;
         }
         if ($run->inPlacePlacement) {
@@ -701,6 +819,7 @@ final class AgentRestarts
         }
         unset($this->runs[$id]);
         $this->revision++;
+        $this->rearmDeadlineTimer();
         foreach ($run->waiters as $waiter) {
             $reply = new CommandReplyDTO($waiter->request->correlationId, $outcome->status, $outcome->payload);
             $this->reply($waiter->request, $reply);
@@ -765,7 +884,7 @@ final readonly class AgentRestartWaiter
 {
     /**
      * @param CommandRequestDTO $request Command and return path
-     * @param float $askedAt Time the caller joined this restart
+     * @param float $askedAt Monotonic seconds when the caller joined this restart
      */
     public function __construct(public CommandRequestDTO $request, public float $askedAt)
     {

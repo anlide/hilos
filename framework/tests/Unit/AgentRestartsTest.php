@@ -38,10 +38,19 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Server\WorkerServer;
 use Closure;
+use EventBase;
+use Generator;
+use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Constants\CommandChannelWindows;
+use Hilos\Constants\TimeConstants;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
 use LogicException;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\TestWith;
 use Hilos\Tests\Unit\Fixtures\LogsRuntimeFixture;
 use ReflectionClass;
+use ReflectionMethod;
 use ReflectionProperty;
 use RuntimeException;
 use Throwable;
@@ -518,6 +527,353 @@ final class AgentRestartsTest extends TestCase
         self::assertSame([], $this->restarts->restartingAgents());
     }
 
+    public function testNativeDeadlineOnlyCuesTheGuardAndLeavesTheRestartOpen(): void
+    {
+        $loop = new EventLoop();
+        $wakes = 0;
+        try {
+            $this->restarts->attachEventLoop($loop, static function () use (&$wakes): void { ++$wakes; });
+            $this->agents->started['replica'] = true;
+            $this->worker->linked['replica'] = true;
+            $now = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+            $this->restarts->request($this->request('replica'), $now - CommandChannelWindows::AGENT_WAIT_SECONDS);
+            $this->poll($loop);
+            self::assertSame(1, $wakes);
+            self::assertNull(Hilos::$sr->getNextQueuedSignal(), 'Native readiness executes no restart business');
+            $this->restarts->tick();
+            self::assertSame('Agent replica is not up yet after 13s; the restart goes on', $this->nextReply()->payload['message']);
+            self::assertNull($this->timer()->getDeadline());
+            self::assertSame(1, $this->restarts->revision());
+            self::assertCount(1, $this->restarts->restartingAgents());
+            $this->poll($loop);
+            self::assertSame(1, $wakes);
+            self::assertFalse($loop->hasReadyWork());
+            $this->restarts->onAgentStarted('replica');
+            self::assertSame(2, $this->restarts->revision());
+            self::assertSame([], $this->restarts->restartingAgents());
+            self::assertNull(Hilos::$sr->getNextQueuedSignal());
+        } finally {
+            $this->restarts->detachEventLoop();
+            $loop->close();
+        }
+    }
+
+    public function testJoinedCallersKeepOriginalWindowsAcrossRemovalAndRebind(): void
+    {
+        $loop = new EventLoop();
+        $other = new EventLoop();
+        $wakes = 0;
+        $wake = static function () use (&$wakes): void { ++$wakes; };
+        try {
+            $this->restarts->attachEventLoop($loop, $wake);
+            $this->agents->started['replica'] = true;
+            $this->worker->linked['replica'] = true;
+            $now = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+            $this->restarts->request($this->request('replica', 'first'), $now);
+            $this->restarts->request($this->request('replica', 'second'), $now + 2);
+            self::assertFalse($loop->hasReadyWork(), 'Pending callers are not runnable');
+            $old = $this->timer();
+            $generation = new ReflectionProperty(EventLoopTimer::class, 'generation')->getValue($old);
+            self::assertSame($now + 13.0, $old->getDeadline());
+            $this->restarts->request($this->request('replica', 'first'), $now + 4);
+            $this->poll($loop);
+            self::assertSame($generation, new ReflectionProperty(EventLoopTimer::class, 'generation')->getValue($old));
+            $this->restarts->onCommandAbandoned('first');
+            self::assertSame($now + 15.0, $old->getDeadline());
+            $this->restarts->attachEventLoop($other, $wake);
+            self::assertNull($old->getDeadline());
+            self::assertSame($now + 15.0, $this->timer()->getDeadline());
+            $this->poll($loop);
+            $this->poll($other);
+            self::assertSame(0, $wakes);
+            $this->restarts->tick($now + 14.0);
+            self::assertNull(Hilos::$sr->getNextQueuedSignal());
+            $this->restarts->tick($now + 15.0);
+            self::assertSame('second', $this->nextReply()->correlationId);
+            self::assertNull($this->timer()->getDeadline());
+            self::assertSame(1, $this->restarts->revision());
+            self::assertCount(1, $this->worker->restarted);
+        } finally {
+            $this->restarts->detachEventLoop();
+            $loop->close();
+            $other->close();
+        }
+    }
+
+    public function testRetiredNativeCallbackCannotWakeANewRun(): void
+    {
+        $loop = new EventLoop();
+        $wakes = 0;
+        try {
+            $this->restarts->attachEventLoop($loop, static function () use (&$wakes): void { ++$wakes; });
+            $this->agents->started['replica'] = true;
+            $this->worker->linked['replica'] = true;
+            $this->restarts->request($this->request('replica', 'old'), 0.0);
+            $loop->getEventBase()->loop(EventBase::LOOP_NONBLOCK);
+            $this->restarts->onAgentStarted('replica');
+            self::assertSame('old', $this->nextReply()->correlationId);
+            $before = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+            $this->restarts->request($this->request('replica', 'new'));
+            $after = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+            $deadline = $this->timer()->getDeadline();
+            self::assertGreaterThanOrEqual($before + 13.0, $deadline);
+            self::assertLessThanOrEqual($after + 13.0, $deadline);
+            $this->poll($loop);
+            self::assertSame(0, $wakes);
+            self::assertSame($deadline, $this->timer()->getDeadline());
+            self::assertNull(Hilos::$sr->getNextQueuedSignal());
+            $this->restarts->onCommandAbandoned('new');
+            self::assertNull($this->timer()->getDeadline());
+            self::assertSame(3, $this->restarts->revision());
+            $this->restarts->onAgentStarted('replica');
+            self::assertSame(4, $this->restarts->revision());
+            self::assertNull(Hilos::$sr->getNextQueuedSignal());
+        } finally {
+            $this->restarts->detachEventLoop();
+            $loop->close();
+        }
+    }
+
+    public function testPeerCallerUsesMonotonicOwnerTimeAndRemovesOnlyDepartingOrigin(): void
+    {
+        $loop = new EventLoop();
+        try {
+            $this->restarts->attachEventLoop($loop, static function (): void {});
+            $this->agents->started['replica'] = true;
+            $this->worker->linked['replica'] = true;
+            $before = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+            $this->restarts->fromPeer(new PeerAgentRestartDTO('peer', 'asking-node', 'replica', null, 'standalone', false));
+            $after = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+            self::assertGreaterThanOrEqual($before + 13.0, $this->timer()->getDeadline());
+            self::assertLessThanOrEqual($after + 13.0, $this->timer()->getDeadline());
+            $this->restarts->request($this->request('replica', 'local'), $after + 2);
+            $this->restarts->onNodeLeft('asking-node');
+            self::assertSame($after + 15.0, $this->timer()->getDeadline());
+            $this->restarts->onLostLeadership();
+            self::assertSame($after + 15.0, $this->timer()->getDeadline());
+            $this->restarts->onAgentStarted('replica');
+            self::assertSame('local', $this->nextReply()->correlationId);
+            self::assertNull(Hilos::$sr->getNextQueuedSignal());
+            self::assertNull($this->timer()->getDeadline());
+        } finally {
+            $this->restarts->detachEventLoop();
+            $loop->close();
+        }
+    }
+
+    public function testSynchronousFailureCancelsTheDeadlineBeforeNativeDispatch(): void
+    {
+        $loop = new EventLoop();
+        $wakes = 0;
+        try {
+            $this->restarts->attachEventLoop($loop, static function () use (&$wakes): void { ++$wakes; });
+            $this->agents->started['replica'] = true;
+            $this->worker->linked['replica'] = true;
+            $this->worker->failure = new LogicException('lost link');
+            $this->restarts->request($this->request('replica'), 0.0);
+            self::assertSame('Agent replica could not be stopped: its worker link is gone', $this->nextReply()->payload['message']);
+            self::assertNull($this->timer()->getDeadline());
+            $this->poll($loop);
+            self::assertSame(0, $wakes);
+            self::assertSame([], $this->restarts->restartingAgents());
+            self::assertSame(2, $this->restarts->revision());
+        } finally {
+            $this->restarts->detachEventLoop();
+            $loop->close();
+        }
+    }
+
+    public function testAnOldSynchronousFailureCannotCloseAReenteredRestart(): void
+    {
+        $loop = new EventLoop();
+        try {
+            $this->restarts->attachEventLoop($loop, static function (): void {});
+            $this->agents->started['replica'] = true;
+            $this->worker->linked['replica'] = true;
+            $this->worker->afterRestart = function (): void {
+                $this->worker->afterRestart = null;
+                $this->restarts->onAgentStarted('replica');
+                $this->restarts->request($this->request('replica', 'new'));
+                throw new LogicException('The old worker call failed after completion');
+            };
+            $this->restarts->request($this->request('replica', 'old'), 0.0);
+            self::assertSame('old', $this->nextReply()->correlationId);
+            self::assertNull(Hilos::$sr->getNextQueuedSignal());
+            self::assertCount(1, $this->restarts->restartingAgents());
+            self::assertSame(3, $this->restarts->revision());
+            self::assertNotNull($this->timer()->getDeadline());
+            $this->restarts->onAgentStarted('replica');
+            self::assertSame('new', $this->nextReply()->correlationId);
+            self::assertNull($this->timer()->getDeadline());
+            self::assertSame(4, $this->restarts->revision());
+        } finally {
+            $this->restarts->detachEventLoop();
+            $loop->close();
+        }
+    }
+
+    public function testPolicyJoinExpiresOnlyItsFirstCallerAndLeadershipLossKeepsLocalWork(): void
+    {
+        [$placement] = $this->installCluster(true, ['self' => [], 'remote' => [], 'target' => ['slots=10']]);
+        $placement->registry()->put(new PlacementRecord('policy', null, 'remote', PlacementState::Started));
+        $loop = new EventLoop();
+        try {
+            $this->restarts->attachEventLoop($loop, static function (): void {});
+            $now = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+            $this->restarts->request($this->request('policy', 'first'), $now);
+            $this->restarts->request($this->request('policy', 'second'), $now + 2);
+            self::assertSame($now + 13.0, $this->timer()->getDeadline());
+            self::assertSame(1, $this->restarts->revision());
+            $this->restarts->tick($now + 13.0);
+            self::assertSame('first', $this->nextReply()->correlationId);
+            self::assertSame($now + 15.0, $this->timer()->getDeadline());
+            self::assertCount(1, $this->restarts->restartingAgents());
+            $this->agents->started['replica'] = true;
+            $this->worker->linked['replica'] = true;
+            $this->restarts->request($this->request('replica', 'local'), $now + 4);
+            $this->restarts->onLostLeadership();
+            self::assertSame('second', $this->nextReply()->correlationId);
+            self::assertSame($now + 17.0, $this->timer()->getDeadline());
+            self::assertSame(['replica'], array_column($this->restarts->restartingAgents(), 'id'));
+            $this->restarts->onAgentsLost(['replica']);
+            self::assertSame('local', $this->nextReply()->correlationId);
+            self::assertNull($this->timer()->getDeadline());
+        } finally {
+            $this->restarts->detachEventLoop();
+            $loop->close();
+        }
+    }
+
+    public function testDepartingHostCannotConsumeARunReplacedDuringAnEarlierReply(): void
+    {
+        $loop = new EventLoop();
+        $replies = [];
+        $router = $this->createMock(SignalRouter::class);
+        Hilos::$sr = $router;
+        $router->method('queueSignal')->willReturnCallback(function ($source, $type, $name, CommandReplyDTO $reply) use (&$replies): void {
+            $replies[] = $reply->correlationId;
+            if ($reply->correlationId === 'old-a') {
+                $this->restarts->onAgentStarted('singleton');
+                $this->restarts->executeHere(
+                    $this->request('singleton', 'new-b'), 'singleton', null, 'singleton', 'kept-host', false,
+                    hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND,
+                );
+            }
+        });
+        try {
+            $this->restarts->attachEventLoop($loop, static function (): void {});
+            foreach (['replica' => 'old-a', 'singleton' => 'old-b'] as $id => $correlation) {
+                $this->agents->started[$id] = true;
+                $this->worker->linked[$id] = true;
+                $this->restarts->executeHere(
+                    $this->request($id, $correlation), $id, null, $id, 'departed-host', false, 0.0,
+                );
+            }
+            $this->restarts->onNodeLeft('departed-host');
+            self::assertSame(['old-a', 'old-b'], $replies);
+            self::assertSame(['singleton'], array_column($this->restarts->restartingAgents(), 'id'));
+            self::assertSame('kept-host', $this->restarts->restartingAgents()[0]->nodeId);
+            self::assertSame(5, $this->restarts->revision());
+            self::assertNotNull($this->timer()->getDeadline());
+            $this->restarts->onAgentStarted('singleton');
+            self::assertSame(['old-a', 'old-b', 'new-b'], $replies);
+            self::assertSame(6, $this->restarts->revision());
+            self::assertNull($this->timer()->getDeadline());
+        } finally {
+            $this->restarts->detachEventLoop();
+            $loop->close();
+        }
+    }
+
+    /**
+     * @param bool $originalRun Whether a restart was open when the worker died
+     * @param bool $replacement Whether a live replacement starts and accepts another restart before the old effect
+     */
+    #[TestWith([false, true])]
+    #[TestWith([true, true])]
+    #[TestWith([true, false])]
+    public function testDeferredWorkerLossAnswersOnlyTheRestartPresentAtReceipt(bool $originalRun, bool $replacement): void
+    {
+        $replies = [];
+        $manager = new class extends DaemonManager {
+            /** @return SignalRouter Ordinary router for the retained effect driver */
+            protected function createSignalRouter(): SignalRouter
+            {
+                return new SignalRouter();
+            }
+
+            /** @return AgentManagerDaemon Roster replaced with the restart owner's roster below */
+            protected function createAgentManagerDaemon(): AgentManagerDaemon
+            {
+                return new AgentRestartsTestAgents();
+            }
+        };
+        $this->agents = $manager->getAgentManagerDaemon();
+        $this->restarts = new ReflectionProperty(DaemonManager::class, 'agentRestarts')->getValue($manager);
+        $manager->registerServer($this->worker);
+        Hilos::$sr = $this->createMock(SignalRouter::class);
+        Hilos::$sr->method('queueSignal')->willReturnCallback(
+            static function ($source, $type, $name, CommandReplyDTO $reply) use (&$replies): void {
+                $replies[] = $reply;
+            },
+        );
+        $this->agents->started['replica'] = true;
+        $this->worker->linked['replica'] = true;
+        if ($originalRun) {
+            $this->restarts->request($this->request('replica', 'old'));
+        }
+        $headSteps = 0;
+        new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($manager,
+            static function () use (&$headSteps): Generator {
+                yield;
+                for ($step = 0; $step < 512; $step++) {
+                    $headSteps++;
+                    yield;
+                }
+            });
+        unset($this->agents->started['replica'], $this->worker->linked['replica']);
+        $manager->reportAgentsLostWithWorker(1, false, ['replica']);
+        self::assertLessThan(512, $headSteps, 'The original finite head still holds the loss effect back');
+        if ($replacement) {
+            $this->agents->started['replica'] = true;
+            $this->worker->linked['replica'] = true;
+            $this->worker->workerIndex = 2;
+            $manager->onAgentStarted('replica');
+            self::assertSame(2, $this->worker->placedWorkerId('replica', null), 'The new restart addresses the live replacement worker');
+            $this->restarts->request($this->request('replica', 'new'));
+        }
+        for ($portion = 0; $portion < 32; $portion++) {
+            new ReflectionMethod(DaemonManager::class, 'dispatchSignals')->invoke($manager);
+        }
+        self::assertSame(512, $headSteps);
+        if ($replacement) {
+            self::assertSame($originalRun ? ['old'] : [], array_column($replies, 'correlationId'));
+            self::assertSame(['replica'], array_column($this->restarts->restartingAgents(), 'id'));
+            $manager->onAgentStarted('replica');
+            self::assertSame($originalRun ? ['old', 'new'] : ['new'], array_column($replies, 'correlationId'));
+            self::assertSame(CommandConstants::STATUS_OK, $replies[array_key_last($replies)]->status);
+        } else {
+            self::assertSame(['old'], array_column($replies, 'correlationId'));
+            self::assertSame(CommandConstants::STATUS_ERROR, $replies[0]->status);
+            self::assertSame('Agent replica did not start again: its worker was lost', $replies[0]->payload['message']);
+        }
+        self::assertSame([], $this->restarts->restartingAgents());
+    }
+
+    /** @return EventLoopTimer This owner's current caller deadline handle */
+    private function timer(): EventLoopTimer
+    {
+        return new ReflectionProperty(AgentRestarts::class, 'deadlineTimer')->getValue($this->restarts);
+    }
+
+    /** @param EventLoop $loop Nonblocking native and ready portions to drive */
+    private function poll(EventLoop $loop): void
+    {
+        for ($pass = 0; $pass < 4; ++$pass) {
+            $loop->tick();
+        }
+    }
+
     /**
      * @param bool $leader Whether this node holds leadership
      * @param array<string, list<string>> $capabilities Capabilities of online nodes
@@ -613,6 +969,8 @@ final class AgentRestartsTestAgents extends AgentManagerDaemon
 /** Captures the worker request without running a worker process. */
 final class AgentRestartsTestWorker extends WorkerServer
 {
+    public int $workerIndex = 1;
+
     /** @var array<string, true> */
     public array $linked = [];
 
@@ -635,7 +993,7 @@ final class AgentRestartsTestWorker extends WorkerServer
     public function placedWorkerId(string $agentType, ?string $agentIndex): ?int
     {
         $id = $agentIndex === null ? $agentType : $agentType . ':' . $agentIndex;
-        return isset($this->linked[$id]) ? 1 : null;
+        return isset($this->linked[$id]) ? $this->workerIndex : null;
     }
 
     /**

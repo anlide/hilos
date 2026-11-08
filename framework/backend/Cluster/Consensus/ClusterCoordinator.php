@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Consensus;
 
+use Closure;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+use Hilos\Core\EventLoop\ReadyWork;
+use WeakReference;
 use Hilos\Cluster\Leadership;
 use Hilos\Cluster\LeadershipObserver;
 use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
@@ -21,8 +27,8 @@ use Hilos\Utils\Logger;
  *
  * This is the real {@see Leadership} that replaces {@see PendingLeadership}
  * on a clustered master. It is a flat in-process state machine on the daemon master:
- * {@see tick()} drives it once per loop iteration (from the peer server), the on*
- * handlers fold in consensus frames delivered over the existing peer mesh, and it
+ * Native deadlines cue a guarded peer-server portion; the on* handlers fold in
+ * consensus frames delivered over the existing peer mesh, and it
  * fires four transitions ({@see LeadershipObserver}) into the project surface — it
  * never gates or stops work itself, the neighbouring slices do.
  *
@@ -63,10 +69,10 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
     /** @var bool Whether this node has opened its WebSocket; never reset after opening */
     private bool $webSocketOpen = false;
 
-    /** @var float Microtime after which a follower/candidate starts (or restarts) an election */
+    /** @var float Process-clock seconds after which a follower/candidate starts (or restarts) an election */
     private float $electionDeadline = 0.0;
 
-    /** @var float Microtime after which a leader sends its next heartbeat */
+    /** @var float Process-clock seconds after which a leader sends its next heartbeat */
     private float $heartbeatDueAt = 0.0;
 
     /** @var list<string> Distinct grants received in the current term, including the self-vote */
@@ -83,6 +89,26 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
 
     /** @var ?string Why the next election starts, set by whoever forced the timer; null means the timer simply ran out */
     private ?string $pendingElectionReason = null;
+
+    /** Local notification only; the daemon evaluates its gate in its own guarded portion. */
+    private ?Closure $readinessWake = null;
+
+    /** Independent process-local cue for effective leader, term and quorum changes. */
+    private ?Closure $epochWake = null;
+
+    private int $epochRevision = 0;
+
+    private ?EventLoop $eventLoop = null;
+
+    private ?EventLoopTimer $roleTimer = null;
+
+    private ?ReadyWork $roleWork = null;
+
+    private int $bindingGeneration = 0;
+
+    private bool $roleReady = true;
+
+    private bool $membershipDirty = true;
 
     /**
      * @param ClusterConsensusConfig $config Consensus configuration for the local node
@@ -120,6 +146,43 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
         return $this->role !== ConsensusRole::Leader
             && $this->currentLeaderId !== null
             && $this->webSocketOpenLeaderId === $this->currentLeaderId;
+    }
+
+    /**
+     * @param ?Closure(): void $wake Local readiness fact sink, null to release its binding
+     */
+    public function setReadinessWake(?Closure $wake): void
+    {
+        $this->readinessWake = $wake;
+        $this->readinessWake?->__invoke();
+    }
+
+    /**
+     * Supplies one initial fact; later callbacks only cue guarded work, never deliver it.
+     * This binding survives the separate startup readiness binding's departure.
+     *
+     * @param Closure(): void $wake Process-local epoch fact sink
+     */
+    public function setEpochWake(Closure $wake): void
+    {
+        $this->epochWake = $wake;
+        $wake();
+    }
+
+    /**
+     * @param Closure(): void $wake Exact binding to release, leaving a replacement intact
+     */
+    public function removeEpochWake(Closure $wake): void
+    {
+        if ($this->epochWake === $wake) {
+            $this->epochWake = null;
+        }
+    }
+
+    /** @return int Effective tuple changes, including availability lost and regained between guarded portions */
+    public function epochRevision(): int
+    {
+        return $this->epochRevision;
     }
 
     /** Records the local WebSocket opening for every later leader heartbeat. */
@@ -171,35 +234,98 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
     }
 
     /**
-     * Advances the consensus state machine by one master-loop iteration.
+     * Native callbacks only cue this owner; the peer server dispatches under its guard.
+     * Rebinding retains the original role deadline and any unfinished reset.
      *
-     * Refreshes a deferred election timer, recomputes the quorum (firing the quorum
-     * transition on an edge), then runs the role-specific work: a follower may start
-     * an election, a candidate may retry or step down, a leader heartbeats or steps
-     * down. Time is injected so the machine stays testable without touching the
-     * clock. Non-blocking: the only outbound work is queuing frames on the mesh.
+     * @param EventLoop $loop Master's existing native base
+     */
+    public function attachEventLoop(EventLoop $loop): void
+    {
+        if ($this->eventLoop === $loop) {
+            return;
+        }
+        $this->detachEventLoop();
+        $this->eventLoop = $loop;
+        $generation = $this->bindingGeneration;
+        $owner = WeakReference::create($this);
+        $cue = static function () use ($owner, $generation): void {
+            $coordinator = $owner->get();
+            if ($coordinator !== null && $coordinator->bindingGeneration === $generation) {
+                $coordinator->roleReady = true;
+            }
+        };
+        $this->roleTimer = $loop->createTimer($cue);
+        $this->roleWork = $loop->createReadyWork($cue);
+        $this->membershipDirty = true;
+        $this->markRoleReady();
+    }
+
+    /** Releases exact native and queued generations without renewing the domain deadline. */
+    public function detachEventLoop(): void
+    {
+        ++$this->bindingGeneration;
+        $this->roleTimer?->close();
+        $this->roleTimer = null;
+        $this->roleWork?->close();
+        $this->roleWork = null;
+        $this->eventLoop = null;
+    }
+
+    /** @return bool Initial/reset work or a due role, never a waiting follower or pending vote */
+    public function hasReadyWork(): bool
+    {
+        return $this->eventLoop !== null && $this->roleReady;
+    }
+
+    /**
+     * @throws HilosException When native arming or the project's leadership duties fail
+     */
+    public function dispatchReady(): void
+    {
+        if (!$this->hasReadyWork()) {
+            return;
+        }
+        $this->advanceRole(self::monotonicNow(), $this->membershipDirty);
+    }
+
+    /**
+     * Records each actual registry mutation inside the peer input guard, before its
+     * membership observer and before subsequent frames. Observing loss immediately
+     * preserves loss/return edges even when the next role dispatch sees the same tuple.
+     * No election or heartbeat is sent here; quorum loss can only retire a role.
      *
-     * @param float $now Current microtime, injected by the caller
-     * @throws HilosException Whatever the project's own leadership duties raise when this node wins a term
+     * @throws HilosException When a quorum or leadership-loss observer fails
+     */
+    public function noteMembershipChanged(): void
+    {
+        $previousCount = $this->lastOnlineMasterCount;
+        $observedTerm = $this->currentTerm;
+        $observedCount = $this->refreshQuorum(true);
+        if ($previousCount === $observedCount) {
+            return;
+        }
+        if ($observedCount < $this->config->quorumSize
+            && $this->currentTerm === $observedTerm && $this->role !== ConsensusRole::Follower) {
+            $now = self::monotonicNow();
+            if ($this->role === ConsensusRole::Leader) {
+                $this->tickLeader($now, false);
+            } else {
+                $this->tickCandidate($now, false);
+            }
+            $this->deferElectionReset = false;
+        }
+    }
+
+    /**
+     * Explicit state-machine observation for deterministic callers. Production uses
+     * dispatchReady() and monotonic seconds; persisted and wire moments stay epoch.
+     *
+     * @param float $now Caller-selected process-clock seconds
+     * @throws HilosException When native arming or the project's leadership duties fail
      */
     public function tick(float $now): void
     {
-        if ($this->deferElectionReset) {
-            $this->electionDeadline = $now + $this->randomElectionTimeout();
-            $this->deferElectionReset = false;
-            $this->pendingElectionReason = null;
-        }
-
-        $onlineCount = count(array_intersect($this->mesh->onlineMasterIds(), $this->config->masterSet));
-        $this->lastOnlineMasterCount = $onlineCount;
-        $hasQuorum = $onlineCount >= $this->config->quorumSize;
-        $this->applyQuorumTransition($hasQuorum, $onlineCount);
-
-        match ($this->role) {
-            ConsensusRole::Follower => $this->tickFollower($now, $hasQuorum),
-            ConsensusRole::Candidate => $this->tickCandidate($now, $hasQuorum),
-            ConsensusRole::Leader => $this->tickLeader($now, $hasQuorum),
-        };
+        $this->advanceRole($now, true);
     }
 
     /**
@@ -211,6 +337,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
      * start a competing election. Always replies so the candidate can count grants.
      *
      * @param PeerRequestVoteDTO $frame Incoming request-vote frame
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onRequestVote(PeerRequestVoteDTO $frame): void
     {
@@ -224,6 +351,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
             $this->votedFor = $frame->candidateId;
             $granted = true;
             $this->deferElectionReset = true;
+            $this->markRoleReady();
             Logger::info("Consensus: granted the vote to node '{$frame->candidateId}' in term {$this->currentTerm}");
         } elseif ($frame->term < $this->currentTerm) {
             Logger::info("Consensus: refused the vote to node '{$frame->candidateId}' in term {$frame->term}:"
@@ -246,7 +374,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
      * is counted, and reaching a majority of the master set makes this node leader.
      *
      * @param PeerVoteReplyDTO $frame Incoming vote-reply frame
-     * @throws HilosException Whatever the project's own leadership duties raise when this node wins a term
+     * @throws HilosException When this node's leadership duties fail while gaining or losing a term
      */
     public function onVoteReply(PeerVoteReplyDTO $frame): void
     {
@@ -281,6 +409,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
      * the sender as leader and refreshes its election timer.
      *
      * @param PeerHeartbeatDTO $frame Incoming heartbeat frame
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onHeartbeat(PeerHeartbeatDTO $frame): void
     {
@@ -288,6 +417,10 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
             return;
         }
 
+        $previousLeader = $this->currentLeaderId;
+        $previousTerm = $this->currentTerm;
+        $previousOpen = $this->leaderWebSocketOpen();
+        $wasLeader = $this->amLeader();
         if ($frame->term > $this->currentTerm) {
             $this->stepDownToFollower($frame->term, $frame->leaderId);
         } elseif ($this->role !== ConsensusRole::Follower) {
@@ -302,6 +435,13 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
         $this->currentLeaderId = $frame->leaderId;
         $this->webSocketOpenLeaderId = $frame->webSocketOpen ? $frame->leaderId : null;
         $this->deferElectionReset = true;
+        $this->markRoleReady();
+        if ($previousLeader !== $this->currentLeaderId || $previousOpen !== $this->leaderWebSocketOpen() || $wasLeader) {
+            $this->readinessWake?->__invoke();
+        }
+        if ($previousLeader !== $this->currentLeaderId || $previousTerm !== $this->currentTerm) {
+            $this->publishEpochChange();
+        }
     }
 
     /**
@@ -320,7 +460,11 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
             Logger::info("Consensus: leader '{$nodeId}' went offline; election timer expired at once");
             $this->currentLeaderId = null;
             $this->electionDeadline = 0.0;
+            $this->deferElectionReset = false;
             $this->pendingElectionReason = "leader '{$nodeId}' went offline";
+            $this->markRoleReady();
+            $this->readinessWake?->__invoke();
+            $this->publishEpochChange();
         }
     }
 
@@ -342,10 +486,70 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
         }
 
         Logger::info('Consensus: named successor by the leaving leader; campaigning at once');
+        $hadLeader = $this->currentLeaderId !== null;
         $this->currentLeaderId = null;
         $this->electionDeadline = 0.0;
         $this->deferElectionReset = false;
         $this->pendingElectionReason = 'named successor by the leaving leader';
+        $this->markRoleReady();
+        $this->readinessWake?->__invoke();
+        if ($hadLeader) {
+            $this->publishEpochChange();
+        }
+    }
+
+    /**
+     * @param float $now Process-clock seconds for this role portion
+     * @param bool $observeMembership Initial binding or explicit deterministic observation
+     * @throws HilosException When native arming or the project's leadership duties fail
+     */
+    private function advanceRole(float $now, bool $observeMembership): void
+    {
+        $this->roleReady = false;
+        $this->roleWork?->cancel();
+        if ($this->deferElectionReset) {
+            $this->electionDeadline = $now + $this->randomElectionTimeout();
+            $this->deferElectionReset = false;
+            $this->pendingElectionReason = null;
+        }
+        if ($observeMembership) {
+            $this->refreshQuorum();
+        }
+        match ($this->role) {
+            ConsensusRole::Follower => $this->tickFollower($now, $this->lastQuorum),
+            ConsensusRole::Candidate => $this->tickCandidate($now, $this->lastQuorum),
+            ConsensusRole::Leader => $this->tickLeader($now, $this->lastQuorum),
+        };
+        $this->roleTimer?->armAt($this->role === ConsensusRole::Leader ? $this->heartbeatDueAt : $this->electionDeadline);
+    }
+
+    /**
+     * @param bool $cueRole True for a source mutation, before invoking reentrant observers
+     * @return int Count observed before any observer changes membership again
+     * @throws HilosException When the quorum observer fails
+     */
+    private function refreshQuorum(bool $cueRole = false): int
+    {
+        $this->membershipDirty = false;
+        $onlineCount = count(array_intersect($this->mesh->onlineMasterIds(), $this->config->masterSet));
+        if ($cueRole && $onlineCount !== $this->lastOnlineMasterCount) {
+            $this->markRoleReady();
+        }
+        $this->lastOnlineMasterCount = $onlineCount;
+        $this->applyQuorumTransition($onlineCount >= $this->config->quorumSize, $onlineCount);
+        return $onlineCount;
+    }
+
+    private function markRoleReady(): void
+    {
+        $this->roleReady = true;
+        $this->roleWork?->markReady();
+    }
+
+    /** @return float Monotonic seconds for process-local consensus waits */
+    private static function monotonicNow(): float
+    {
+        return hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
     }
 
     /**
@@ -353,6 +557,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
      *
      * @param bool $hasQuorum Freshly computed quorum state
      * @param int $onlineCount Master-set members online this tick, the count the quorum state was computed from
+     * @throws HilosException When the quorum observer fails
      */
     private function applyQuorumTransition(bool $hasQuorum, int $onlineCount): void
     {
@@ -361,6 +566,8 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
         }
 
         $this->lastQuorum = $hasQuorum;
+        $this->readinessWake?->__invoke();
+        $this->publishEpochChange();
         $edge = $hasQuorum ? 'gained' : 'lost';
         Logger::info("Consensus: quorum {$edge}: {$onlineCount} of the " . count($this->config->masterSet)
             . "-node master set online (quorum {$this->config->quorumSize})");
@@ -374,10 +581,10 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
     /**
      * Follower tick: start an election once the timer expires, but only with quorum.
      *
-     * Without a quorum the node never campaigns (anti-split-brain): it just keeps
-     * pushing its election timer out so it waits a full timeout once quorum returns.
+     * Without a quorum an expired deadline rolls to another randomized timeout,
+     * without changing the term. Quorum return keeps that original deadline.
      *
-     * @param float $now Current microtime
+     * @param float $now Current process-clock seconds
      * @param bool $hasQuorum Whether the master set forms a quorum this tick
      */
     private function tickFollower(float $now, bool $hasQuorum): void
@@ -397,7 +604,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
     /**
      * Candidate tick: abandon the campaign on quorum loss, else retry on timeout.
      *
-     * @param float $now Current microtime
+     * @param float $now Current process-clock seconds
      * @param bool $hasQuorum Whether the master set forms a quorum this tick
      */
     private function tickCandidate(float $now, bool $hasQuorum): void
@@ -408,6 +615,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
             $this->votedFor = null;
             $this->votesReceived = [];
             $this->electionDeadline = $now + $this->randomElectionTimeout();
+            $this->readinessWake?->__invoke();
             return;
         }
 
@@ -419,8 +627,9 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
     /**
      * Leader tick: step down on quorum loss, else heartbeat on the interval.
      *
-     * @param float $now Current microtime
+     * @param float $now Current process-clock seconds
      * @param bool $hasQuorum Whether the master set forms a quorum this tick
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function tickLeader(float $now, bool $hasQuorum): void
     {
@@ -430,6 +639,8 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
             $this->role = ConsensusRole::Follower;
             $this->currentLeaderId = null;
             $this->electionDeadline = $now + $this->randomElectionTimeout();
+            $this->readinessWake?->__invoke();
+            $this->publishEpochChange();
             return;
         }
 
@@ -450,7 +661,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
      * vote; otherwise it awaits replies. A reason left by a path that forced the
      * timer wins over the caller's own, and is spent here.
      *
-     * @param float $now Current microtime
+     * @param float $now Current process-clock seconds
      * @param string $reason Why this election starts when no forcing path left a reason of its own
      */
     private function startElection(float $now, string $reason): void
@@ -465,6 +676,8 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
         $this->votesReceived = [$this->config->selfNodeId];
         $this->currentLeaderId = null;
         $this->electionDeadline = $now + $this->randomElectionTimeout();
+        $this->readinessWake?->__invoke();
+        $this->publishEpochChange();
 
         $this->mesh->broadcastToMasters(new PeerRequestVoteDTO($this->currentTerm, $this->config->selfNodeId));
 
@@ -481,6 +694,9 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
         $this->role = ConsensusRole::Leader;
         $this->currentLeaderId = $this->config->selfNodeId;
         $this->heartbeatDueAt = 0.0;
+        $this->markRoleReady();
+        $this->readinessWake?->__invoke();
+        $this->publishEpochChange();
         Logger::info("Consensus: won term {$this->currentTerm} with " . count($this->votesReceived) . ' votes of the '
             . count($this->config->masterSet) . "-node master set (quorum {$this->config->quorumSize}), now leader");
         $this->observer->onBecameLeader($this->currentTerm);
@@ -495,6 +711,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
      *
      * @param int $newTerm Newer term observed on the wire
      * @param string $fromNodeId Node id of the frame that carried the newer term
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function stepDownToFollower(int $newTerm, string $fromNodeId): void
     {
@@ -514,6 +731,16 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
         $this->votesReceived = [];
         $this->currentLeaderId = null;
         $this->deferElectionReset = true;
+        $this->markRoleReady();
+        $this->readinessWake?->__invoke();
+        $this->publishEpochChange();
+    }
+
+    /** Publishes only mutations of leader, term or quorum; ordinary heartbeat activity is silent. */
+    private function publishEpochChange(): void
+    {
+        ++$this->epochRevision;
+        $this->epochWake?->__invoke();
     }
 
     /**

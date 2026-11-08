@@ -1,11 +1,14 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hilos\Runtime\State\Collection;
 
 use ArrayAccess;
 use Countable;
 use Generator;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Daemon\SignalHoldIndex;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
@@ -13,10 +16,13 @@ use Hilos\Database\Database;
 use Hilos\Runtime\Exception\State\RtStatesCloneException;
 use Hilos\Runtime\Exception\State\RtStatesUnserializeException;
 use Hilos\Runtime\RtSyncApplicator;
+use Hilos\Runtime\RtMembershipVersion;
+use Hilos\Runtime\RtSnapshotAdmission;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Context\RtContext;
 use IteratorAggregate;
 use OutOfBoundsException;
+use WeakReference;
 
 /**
  * Base class for runtime state collections.
@@ -42,6 +48,23 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
 
     /** @var ?string Name this collection is mounted under, or null while it is not mounted */
     private ?string $collectionName = null;
+
+    /** Scalar insertion order; readers retain only weak references, never the backing row map. */
+    private ?SignalHoldIndex $snapshotIndex = null;
+
+    /** @var array<string, int> Live row's original insertion position */
+    private array $snapshotPositions = [];
+
+    /** @var array<int, string> Live insertion position to row id */
+    private array $snapshotIds = [];
+
+    /** @var array<string, int> Exact row incarnation, advanced on replacement and rollback */
+    private array $snapshotGenerations = [];
+
+    private int $snapshotSequence = 0;
+
+    /** Full replacement invalidates every older read, even when the same row objects return. */
+    private int $snapshotEpoch = 0;
 
     /**
      * Protected constructor - use static factory methods.
@@ -130,6 +153,10 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
     public function add(RtState $state): void
     {
         $this->rememberId($state->getId());
+        if (!isset($this->states[$state->getId()])) {
+            RtMembershipVersion::advance($this, $state->getId());
+        }
+        $this->indexSnapshotRow($state->getId(), $this->states[$state->getId()] ?? null, $state);
         $this->states[$state->getId()] = $state;
         if ($this->collectionName === null) {
             return;
@@ -158,6 +185,10 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
     {
         $previous = $this->states[$id] ?? null;
         $this->rememberId($id);
+        if ($previous !== null) {
+            RtMembershipVersion::advance($this, $id);
+        }
+        $this->indexSnapshotRow($id, $previous, null);
         unset($this->states[$id]);
         if ($this->collectionName === null) {
             return;
@@ -210,7 +241,15 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
     public function clear(): void
     {
         $this->rememberAll();
+        if ($this->states !== []) {
+            RtMembershipVersion::advance($this);
+        }
         $this->states = [];
+        $this->snapshotEpoch++;
+        $this->snapshotIndex = null;
+        $this->snapshotPositions = [];
+        $this->snapshotIds = [];
+        $this->snapshotGenerations = [];
     }
 
     /**
@@ -353,6 +392,49 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
     }
 
     /**
+     * Captures the finite row cohort now, without copying keys or serializing rows. Each step
+     * searches O(log live rows) scalar positions and serializes at most one original incarnation.
+     * A replacement keeps its insertion position but is excluded by its newer admission number.
+     * Serialization still costs that row's fields and bytes; this is no per-row byte ceiling.
+     *
+     * @param ?int $admittedThrough Earlier cross-source admission cutoff, absent to capture this call's cohort
+     * @return Generator<string, ?array<string, mixed>> Original live rows, null for a replaced or later incarnation
+     */
+    public function snapshotRows(?int $admittedThrough = null): Generator
+    {
+        $owner = WeakReference::create($this);
+        $index = $this->snapshotIndex === null ? null : WeakReference::create($this->snapshotIndex);
+        $tail = $this->snapshotSequence;
+        $admittedThrough ??= RtSnapshotAdmission::current();
+        return (static function () use ($owner, $index, $tail, $admittedThrough): Generator {
+            $after = null;
+            while (true) {
+                $collection = $owner->get();
+                if ($collection === null || $index === null || $index->get() === null
+                    || $collection->snapshotIndex !== $index->get()) {
+                    return;
+                }
+                $position = $collection->snapshotIndex->successor($after);
+                if ($position === null || $position > $tail) {
+                    return;
+                }
+                $after = $position;
+                $id = $collection->snapshotIds[$position];
+                $row = $collection->snapshotGenerations[$id] <= $admittedThrough ? $collection->states[$id]->toArray() : null;
+                unset($collection);
+                yield $id => $row;
+                unset($row);
+            }
+        })();
+    }
+
+    /** @return int Whole-source incarnation, independent of individual row admissions */
+    public function snapshotEpoch(): int
+    {
+        return $this->snapshotEpoch;
+    }
+
+    /**
      * Walk the states over a snapshot of the keys taken when the walk starts.
      *
      * Each walk gets its own generator, so a nested foreach over the same collection does not
@@ -387,6 +469,10 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
         $held = $this->states[$id] ?? null;
         Database::onRollback(function () use ($id, $held): void {
             $replaced = $this->states[$id] ?? null;
+            if (($held === null) !== ($replaced === null)) {
+                RtMembershipVersion::advance($this, $id);
+            }
+            $this->indexSnapshotRow($id, $replaced, $held);
             if ($held === null) {
                 unset($this->states[$id]);
             } else {
@@ -408,10 +494,48 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
         Database::onRollback(function () use ($map): void {
             $replaced = $this->states;
             $this->states = $map;
+            RtMembershipVersion::advance($this);
+            $this->snapshotEpoch++;
+            $this->snapshotIndex = null;
+            $this->snapshotPositions = [];
+            $this->snapshotIds = [];
+            $this->snapshotGenerations = [];
+            foreach ($map as $id => $state) {
+                $this->indexSnapshotRow((string)$id, null, $state);
+            }
             foreach (array_keys($map + $replaced) as $id) {
                 $this->announceRestored((string)$id, $map[$id] ?? null, $replaced[$id] ?? null);
             }
         });
+    }
+
+    /**
+     * Maintains the existing membership write's private cursor metadata, including undo. A
+     * cursor's cutoff never becomes current again when an old object is restored by rollback.
+     *
+     * @param string $id Canonical state id
+     * @param ?T $previous Previous row incarnation
+     * @param ?T $next Replacement incarnation, absent for deletion
+     */
+    private function indexSnapshotRow(string $id, ?RtState $previous, ?RtState $next): void
+    {
+        if ($previous === $next) {
+            return;
+        }
+        if ($next === null) {
+            $position = $this->snapshotPositions[$id];
+            $this->snapshotIndex?->remove($position);
+            unset($this->snapshotPositions[$id], $this->snapshotIds[$position], $this->snapshotGenerations[$id]);
+            return;
+        }
+        $this->snapshotGenerations[$id] = RtSnapshotAdmission::advance();
+        $this->snapshotSequence++;
+        if ($previous === null) {
+            $this->snapshotPositions[$id] = $this->snapshotSequence;
+            $this->snapshotIds[$this->snapshotSequence] = $id;
+            $this->snapshotIndex ??= new SignalHoldIndex();
+            $this->snapshotIndex->add($this->snapshotSequence);
+        }
     }
 
     /**

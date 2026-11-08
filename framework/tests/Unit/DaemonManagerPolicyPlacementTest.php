@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\TimeConstants;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementRecord;
@@ -15,6 +16,8 @@ use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\AgentDeclarationDuty;
+use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Hilos;
 use Hilos\Socket\Server\WorkerServer;
@@ -92,7 +95,8 @@ final class DaemonManagerPolicyPlacementTest extends TestCase
         $placement->stopAgentOnNode(self::POLICY_TYPE, null, null);
 
         $this->invokeEnsurePolicyAgentsPlaced($manager);
-        new ReflectionProperty(DaemonManager::class, 'policyPlacementRetryAt')->setValue($manager, 0.0);
+        $duty = new ReflectionProperty(DaemonManager::class, 'policyDeclarations')->getValue($manager);
+        new ReflectionProperty(AgentDeclarationDuty::class, 'retryAt')->setValue($duty, 0.0);
         $this->invokeEnsurePolicyAgentsPlaced($manager);
 
         $this->assertSame([], $executor->executed);
@@ -107,7 +111,7 @@ final class DaemonManagerPolicyPlacementTest extends TestCase
     {
         $manager = new PolicyPlacementTestManager();
         $executor = $this->installPlacement();
-        Hilos::$cluster->placement()->onBecameLeader(microtime(true));
+        Hilos::$cluster->placement()->onBecameLeader((hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND));
 
         $require = new ReflectionMethod(DaemonManager::class, 'requireOnDemandPlacement');
         $require->invoke($manager, 'mail', '1');
@@ -122,7 +126,7 @@ final class DaemonManagerPolicyPlacementTest extends TestCase
     {
         $manager = new PolicyPlacementTestManager();
         $executor = $this->installPlacement();
-        Hilos::$cluster->placement()->onBecameLeader(microtime(true));
+        Hilos::$cluster->placement()->onBecameLeader((hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND));
 
         $require = new ReflectionMethod(DaemonManager::class, 'requireOnDemandPlacement');
         $require->invoke($manager, 'library', null);
@@ -142,7 +146,8 @@ final class DaemonManagerPolicyPlacementTest extends TestCase
         );
 
         $this->invokeEnsurePolicyAgentsPlaced($manager);
-        new ReflectionProperty(DaemonManager::class, 'policyPlacementRetryAt')->setValue($manager, 0.0);
+        $duty = new ReflectionProperty(DaemonManager::class, 'policyDeclarations')->getValue($manager);
+        new ReflectionProperty(AgentDeclarationDuty::class, 'retryAt')->setValue($duty, 0.0);
         $this->invokeEnsurePolicyAgentsPlaced($manager);
         $this->assertSame([], $executor->executed, 'The caller never retries a tracked cluster record');
     }
@@ -153,11 +158,13 @@ final class DaemonManagerPolicyPlacementTest extends TestCase
         $server = $this->registerRecordingWorkerServer($manager);
         $this->setWorkersReady($manager, true);
         Hilos::$cluster = null;
+        $server->refuse = true;
 
         $this->invokeEnsurePolicyAgentsPlaced($manager);
         $this->invokeEnsurePolicyAgentsPlaced($manager);
         $this->assertSame([[self::POLICY_TYPE, null]], $server->placed);
-        new ReflectionProperty(DaemonManager::class, 'policyPlacementRetryAt')->setValue($manager, 0.0);
+        $duty = new ReflectionProperty(DaemonManager::class, 'policyDeclarations')->getValue($manager);
+        new ReflectionProperty(AgentDeclarationDuty::class, 'retryAt')->setValue($duty, 0.0);
         $this->invokeEnsurePolicyAgentsPlaced($manager);
         $this->assertSame([[self::POLICY_TYPE, null], [self::POLICY_TYPE, null]], $server->placed);
     }
@@ -302,6 +309,8 @@ final class PolicyPlacementRecordingWorkerServer extends WorkerServer
     /** @var list<array{0: string, 1: ?string}> Locally placed agents, as [type, index] */
     public array $placed = [];
 
+    public bool $refuse = false;
+
     /**
      * @param string $agentType Agent type placed on this node
      * @param ?string $agentIndex Agent index placed on this node
@@ -310,8 +319,17 @@ final class PolicyPlacementRecordingWorkerServer extends WorkerServer
     public function executePlacement(string $agentType, ?string $agentIndex): int
     {
         $this->placed[] = [$agentType, $agentIndex];
+        if ($this->refuse) {
+            throw new NoSuitableWorkerException('regular', false);
+        }
 
         return 1;
+    }
+
+    /** @return ?int No real link is installed by this recording adapter */
+    public function placedWorkerId(string $agentType, ?string $agentIndex): ?int
+    {
+        return null;
     }
 
     protected function onStart(): void

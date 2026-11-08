@@ -33,6 +33,17 @@ final class DeliveryCoalescer
     /** Prepared text bytes of the survivors, kept as they change rather than summed on demand. */
     private int $heldBytes = 0;
 
+    /** @param DeliveryCleanup $cleanup Process-local owner of retired packet arrays */
+    public function __construct(private DeliveryCleanup $cleanup = new DeliveryCleanup())
+    {
+    }
+
+    /** @param DeliveryCleanup $cleanup Master's guarded cleanup owner */
+    public function setCleanup(DeliveryCleanup $cleanup): void
+    {
+        $this->cleanup = $cleanup;
+    }
+
     /**
      * A boundary clears indices on both sides without releasing the physical delivery window.
      * The whole incoming frame stays intact when any section cannot be safely merged.
@@ -67,7 +78,9 @@ final class DeliveryCoalescer
         $this->frames[$position] = $frame;
         $this->heldBytes += strlen($frame->json);
         $this->indices[$key] = $position;
-        $this->writes = array_replace($this->writes, $writes);
+        foreach ($writes as $identity => $path) {
+            $this->writes[$identity] = $path;
+        }
     }
 
     /** @return bool Whether any text survives coalescing */
@@ -91,7 +104,19 @@ final class DeliveryCoalescer
     /** @return list<DeliveryFrame> Survivors in the order of their last occurrences */
     public function drain(): array
     {
-        $frames = array_values($this->frames);
+        return array_values($this->takeFrames());
+    }
+
+    /**
+     * Transfers the original sparse packet without reindexing every survivor. Later appends
+     * use a new array; the receiver owns packing and eventual retirement of this exact packet.
+     *
+     * @return array<int, DeliveryFrame> Original survivors in their last-occurrence order
+     */
+    public function takeFrames(): array
+    {
+        $frames = $this->frames;
+        $this->frames = [];
         $this->clear();
 
         return $frames;
@@ -100,9 +125,9 @@ final class DeliveryCoalescer
     /** Discard the packet and all segment-local indices. */
     public function clear(): void
     {
-        $this->frames = [];
-        $this->indices = [];
-        $this->writes = [];
+        $this->cleanup->retire($this->frames);
+        $this->cleanup->retire($this->indices);
+        $this->cleanup->retire($this->writes);
         $this->sequence = 0;
         $this->heldBytes = 0;
     }
@@ -110,8 +135,8 @@ final class DeliveryCoalescer
     /** @param DeliveryFrame $frame Independently observable event or structural transition */
     private function appendBoundary(DeliveryFrame $frame): void
     {
-        $this->indices = [];
-        $this->writes = [];
+        $this->cleanup->retire($this->indices);
+        $this->cleanup->retire($this->writes);
         $this->frames[$this->sequence++] = $frame;
         $this->heldBytes += strlen($frame->json);
     }

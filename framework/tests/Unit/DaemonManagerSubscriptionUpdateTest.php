@@ -9,6 +9,7 @@ use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
@@ -20,6 +21,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 
 /**
  * Unit tests for subscription-update signals the daemon cannot apply.
@@ -40,6 +42,30 @@ final class DaemonManagerSubscriptionUpdateTest extends TestCase
         Hilos::$sr = null;
 
         parent::tearDown();
+    }
+
+    public function testDeclaredSubscriptionCallbackRunsExactlyOnceInRetainedPreparation(): void
+    {
+        $manager = new class extends DaemonManagerSubscriptionUpdateTestManager {
+            protected const bool USE_SUBSCRIPTION_CALLBACK = true;
+
+            public int $calls = 0;
+
+            /** @param SignalDTO $signal Original envelope passed to the project's declared callback */
+            protected function updateSubscriptions(SignalDTO $signal): void
+            {
+                $this->calls++;
+                parent::updateSubscriptions($signal);
+            }
+        };
+        $signal = new SignalDTO(new SignalSource(SignalSource::WEBSOCKET), new SignalType(SignalTypeConstants::GROUP_SUBSCRIBE),
+            new SignalName(self::GROUP), new WebSocketGroupSubscribeSignalDTO(self::LIVE_ACCEPT_KEY, self::GROUP));
+        $work = new ReflectionMethod(DaemonManager::class, 'subscriptionPreparation')->invoke($manager, $signal);
+        self::assertSame(0, $manager->calls);
+        foreach ($work as $_) {
+        }
+        self::assertSame(1, $manager->calls);
+        self::assertFalse($work->valid());
     }
 
     public function testUnknownPageSubscriptionUpdateIsDroppedAndTheDrainContinues(): void
@@ -144,7 +170,7 @@ final class DaemonManagerSubscriptionUpdateTest extends TestCase
 /**
  * Daemon manager exposing the subscription-update step of the queue drain.
  */
-final class DaemonManagerSubscriptionUpdateTestManager extends DaemonManager
+class DaemonManagerSubscriptionUpdateTestManager extends DaemonManager
 {
     /**
      * Drains the queued signals through the subscription-update step alone, the way

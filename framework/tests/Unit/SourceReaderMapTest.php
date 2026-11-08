@@ -13,6 +13,7 @@ use Hilos\Socket\Worker\DTO\WorkerRtSnapshotMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use PHPUnit\Framework\TestCase;
+use WeakReference;
 
 /**
  * How the sender learns who holds a collection, and what it owes a new holder (HIL-717).
@@ -186,6 +187,314 @@ final class SourceReaderMapTest extends TestCase
     public function testTheUnionOfAMapNobodyReportedToIsEmpty(): void
     {
         $this->assertSame([], (new SourceReaderMap())->collections(SourceChange::KIND_RT));
+    }
+
+    public function testCompletedUnionValuesStayDetachedAcrossCallerWritesKindChangesAndWholeHolderRelease(): void
+    {
+        $map = new SourceReaderMap();
+        $map->note(self::HOLDER, SourceChange::KIND_RT, ['0', '07', '0']);
+        $map->note(self::HOLDER, SourceChange::KIND_DB, ['db']);
+        $map->note(self::OTHER_HOLDER, SourceChange::KIND_RT, ['last', '07']);
+        $original = $map->collections(SourceChange::KIND_RT);
+        $caller = $map->collections(SourceChange::KIND_RT);
+        $caller[] = 'caller-only';
+        self::assertSame(['0', '07', 'last'], $map->collections(SourceChange::KIND_RT));
+        $map->note(self::HOLDER, SourceChange::KIND_DB, ['new-db']);
+        self::assertSame(['0', '07', 'last'], $map->collections(SourceChange::KIND_RT));
+        self::assertSame(['new-db'], $map->collections(SourceChange::KIND_DB));
+        $map->note(self::HOLDER, SourceChange::KIND_RT, ['last']);
+        self::assertSame(['last', '07'], $map->collections(SourceChange::KIND_RT));
+        self::assertSame(['0', '07', 'last'], $original);
+        $map->release(self::OTHER_HOLDER);
+        self::assertSame(['last'], $map->collections(SourceChange::KIND_RT));
+        $map->release(self::HOLDER);
+        self::assertSame([], $map->collections(SourceChange::KIND_RT));
+        self::assertSame([], $map->collections(SourceChange::KIND_DB));
+        $map->note(self::OTHER_HOLDER, SourceChange::KIND_RT, ['07']);
+        self::assertSame(['07'], $map->collections(SourceChange::KIND_RT));
+    }
+
+    public function testIndexedMembershipKeepsOuterHolderOrderWhenAnotherKindPreservesItsPosition(): void
+    {
+        $map = new SourceReaderMap();
+        $map->note(self::HOLDER, SourceChange::KIND_DB, [self::OTHER_COLLECTION]);
+        $map->note(self::OTHER_HOLDER, SourceChange::KIND_RT, [self::COLLECTION]);
+        $map->note(self::HOLDER, SourceChange::KIND_RT, [self::COLLECTION]);
+        $this->assertSame([self::HOLDER, self::OTHER_HOLDER], $map->holders(SourceChange::KIND_RT, self::COLLECTION));
+        $map->note(self::HOLDER, SourceChange::KIND_RT, []);
+        $this->assertTrue($map->holds(self::HOLDER, SourceChange::KIND_DB, self::OTHER_COLLECTION));
+        $this->assertFalse($map->holds(self::HOLDER, SourceChange::KIND_RT, self::COLLECTION));
+        $map->note(self::HOLDER, SourceChange::KIND_RT, [self::COLLECTION]);
+        $this->assertSame([self::HOLDER, self::OTHER_HOLDER], $map->holders(SourceChange::KIND_RT, self::COLLECTION));
+        $map->release(self::HOLDER);
+        $map->note(self::HOLDER, SourceChange::KIND_RT, [self::COLLECTION]);
+        $this->assertSame([self::OTHER_HOLDER, self::HOLDER], $map->holders(SourceChange::KIND_RT, self::COLLECTION));
+    }
+
+    public function testUnionRetainsCurrentReportOrderAndNewDuplicateObligations(): void
+    {
+        $map = new SourceReaderMap();
+        $this->assertSame(['0', '07', '07'], $map->note(self::HOLDER, SourceChange::KIND_RT, ['0', '07', '07']));
+        $map->note(self::OTHER_HOLDER, SourceChange::KIND_RT, ['07', 'last']);
+        $this->assertSame(['0', '07', 'last'], $map->collections(SourceChange::KIND_RT));
+        $this->assertSame(['last'], $map->note(self::HOLDER, SourceChange::KIND_RT, ['last', '07']));
+        $this->assertSame(['last', '07'], $map->collections(SourceChange::KIND_RT));
+        $this->assertFalse($map->holds(self::HOLDER, SourceChange::KIND_RT, '0'));
+        $this->assertFalse($map->holds(self::HOLDER, SourceChange::KIND_RT, '7'));
+        $this->assertTrue($map->holds(self::HOLDER, SourceChange::KIND_RT, '07'));
+        $map->release(self::OTHER_HOLDER);
+        $map->note(self::HOLDER, SourceChange::KIND_RT, []);
+        $this->assertSame([], $map->collections(SourceChange::KIND_RT));
+        $this->assertFalse($map->holds(self::HOLDER, SourceChange::KIND_RT, '07'));
+    }
+
+    public function testAFiniteUnionCapturesBothReportsBeforeItsFirstAdvancement(): void
+    {
+        $map = new SourceReaderMap();
+        $map->note(self::HOLDER, SourceChange::KIND_DB, ['db']);
+        $map->note(self::OTHER_HOLDER, SourceChange::KIND_RT, ['07', '0', '07']);
+        $map->note(self::HOLDER, SourceChange::KIND_RT, ['0', '7', '0']);
+        $rt = $map->collectionCandidates(SourceChange::KIND_RT);
+        $db = $map->collectionCandidates(SourceChange::KIND_DB);
+
+        $map->note(self::HOLDER, SourceChange::KIND_RT, ['future']);
+        $map->release(self::OTHER_HOLDER);
+        $map->note(self::OTHER_HOLDER, SourceChange::KIND_RT, ['rejoined']);
+        $reference = WeakReference::create($map);
+        unset($map);
+        self::assertNull($reference->get(), 'A finite reader owns original scalar values, never its mutable map');
+        self::assertSame([null, '0', '7', null, null, '07', null, null], iterator_to_array($rt, false));
+        self::assertSame([null, 'db', null], iterator_to_array($db, false));
+    }
+
+    public function testAPairedUnionPlanKeepsOriginalValuesAndRestartsAnAbandonedPrivateBuild(): void
+    {
+        $map = new SourceReaderMap();
+        $map->note(self::HOLDER, SourceChange::KIND_RT, ['0', '7', '0']);
+        $map->note(self::OTHER_HOLDER, SourceChange::KIND_DB, ['db', 'db']);
+        $plan = $map->unionPlan();
+        self::assertSame($plan, $map->unionPlan());
+        $attempt = $plan->build();
+        $attempt->rewind();
+        $attempt->next();
+        $attempt->next();
+        self::assertFalse($plan->ready);
+        self::assertSame([SourceChange::KIND_RT => [], SourceChange::KIND_DB => []], $plan->collections,
+            'A partial RT half cannot become the published pair');
+        unset($attempt);
+        $map->note(self::HOLDER, SourceChange::KIND_RT, ['future']);
+        $map->release(self::OTHER_HOLDER);
+        self::assertNotSame($plan, $map->unionPlan());
+        $reference = WeakReference::create($map);
+        unset($map);
+        self::assertNull($reference->get(), 'An unfinished union owns original paths, never the mutable holder map');
+        foreach ($plan->build() as $_) {
+        }
+        self::assertTrue($plan->ready);
+        self::assertSame([SourceChange::KIND_RT => ['0', '7'], SourceChange::KIND_DB => ['db']], $plan->collections);
+        self::assertSame([], iterator_to_array($plan->build(), false), 'The next FIFO reader reuses the complete pair');
+    }
+
+    public function testEqualCompleteUnionsCompareByNamesAcrossPortionsAndKeepStrictOrder(): void
+    {
+        $map = new SourceReaderMap();
+        $names = [];
+        for ($index = 0; $index < 8192; $index++) {
+            $names[] = (string)$index;
+        }
+        $map->note(self::HOLDER, SourceChange::KIND_RT, $names);
+        $before = $map->unionPlan();
+        foreach ($before->build() as $_) {
+        }
+        $map->note(self::OTHER_HOLDER, SourceChange::KIND_RT, $names);
+        $after = $map->unionPlan();
+        foreach ($after->build() as $_) {
+        }
+        $comparison = $before->compare($after);
+        $steps = 0;
+        foreach ($comparison as $_) {
+            $steps++;
+        }
+        self::assertGreaterThanOrEqual(count($names), $steps, 'An equal large pair cannot hide its strict comparison in one next()');
+        self::assertTrue($comparison->getReturn());
+        self::assertSame($names, $after->collections[SourceChange::KIND_RT]);
+        $map->release(self::HOLDER);
+        $map->note(self::OTHER_HOLDER, SourceChange::KIND_RT, array_reverse($names));
+        $reordered = $map->unionPlan();
+        foreach ($reordered->build() as $_) {
+        }
+        $comparison = $after->compare($reordered);
+        foreach ($comparison as $_) {
+        }
+        self::assertFalse($comparison->getReturn(), 'The old strict ordered-list verdict is not a set comparison');
+    }
+
+    public function testDuplicateNamesAndHoldersOfTheOtherKindEachPayAUnionStep(): void
+    {
+        $map = new SourceReaderMap();
+        $map->note(self::HOLDER, SourceChange::KIND_DB, ['db']);
+        $map->note(self::OTHER_HOLDER, SourceChange::KIND_RT, array_fill(0, 8192, 'duplicate'));
+        $names = [];
+        $steps = 0;
+        foreach ($map->collectionCandidates(SourceChange::KIND_RT) as $candidate) {
+            if ($candidate !== null) {
+                $names[] = $candidate;
+            }
+            $steps++;
+        }
+        self::assertSame(['duplicate'], $names);
+        self::assertSame(8194, $steps, 'Duplicates must not be skipped by an unbounded loop inside next()');
+    }
+
+    public function testCapturedUnionsKeepTheirValuesThroughReportReplacementReleaseAndRejoinChurn(): void
+    {
+        $map = new SourceReaderMap();
+        $legacy = [];
+        $captured = [];
+        for ($turn = 0; $turn < 512; $turn++) {
+            $holder = (string)(($turn * 73) % 127);
+            $kind = $turn % 3 === 0 ? SourceChange::KIND_DB : SourceChange::KIND_RT;
+            if ($turn % 5 === 0) {
+                $map->release($holder);
+                unset($legacy[$holder]);
+            } else {
+                $names = $turn % 7 === 0 ? [] : [(string)($turn % 11), '07', 'name-' . $turn, '07'];
+                $map->note($holder, $kind, $names);
+                if ($names === []) {
+                    unset($legacy[$holder][$kind]);
+                    if (($legacy[$holder] ?? []) === []) {
+                        unset($legacy[$holder]);
+                    }
+                } else {
+                    $legacy[$holder][$kind] = $names;
+                }
+            }
+            foreach ([SourceChange::KIND_RT, SourceChange::KIND_DB] as $sourceKind) {
+                $expected = [];
+                $seen = [];
+                foreach ($legacy as $report) {
+                    foreach ($report[$sourceKind] ?? [] as $name) {
+                        if (!isset($seen[$name])) {
+                            $seen[$name] = true;
+                            $expected[] = $name;
+                        }
+                    }
+                }
+                self::assertSame($expected, $map->collections($sourceKind), 'Live union at turn ' . $turn);
+                if ($turn % 32 === 0) {
+                    $captured[] = [$expected, $map->collectionCandidates($sourceKind)];
+                }
+            }
+        }
+        $reference = WeakReference::create($map);
+        unset($map);
+        self::assertNull($reference->get());
+        foreach ($captured as [$expected, $cursor]) {
+            $actual = [];
+            foreach ($cursor as $candidate) {
+                if ($candidate !== null) {
+                    $actual[] = $candidate;
+                }
+            }
+            self::assertSame($expected, $actual, 'Later changes cannot rewrite an unstarted original union');
+        }
+    }
+
+    public function testAPortionedReportPublishesBothKindsTogetherAfterEveryOriginalName(): void
+    {
+        $map = new SourceReaderMap();
+        $map->note(self::HOLDER, SourceChange::KIND_DB, ['old-db']);
+        $map->note(self::HOLDER, SourceChange::KIND_RT, ['old-rt']);
+        $rt = [];
+        $db = [];
+        for ($index = 0; $index < 4096; $index++) {
+            $rt[] = 'rt-' . $index;
+            $db[] = 'db-' . $index;
+        }
+        $delivery = $map->noteReportDelivery(self::HOLDER, $rt, $db, static fn(): bool => true);
+        $steps = 0;
+        foreach ($delivery as $_) {
+            self::assertTrue($map->holds(self::HOLDER, SourceChange::KIND_DB, 'old-db'));
+            self::assertTrue($map->holds(self::HOLDER, SourceChange::KIND_RT, 'old-rt'));
+            self::assertFalse($map->holds(self::HOLDER, SourceChange::KIND_DB, 'db-0'));
+            self::assertFalse($map->holds(self::HOLDER, SourceChange::KIND_RT, 'rt-4095'));
+            $steps++;
+        }
+        self::assertGreaterThanOrEqual(8192, $steps, 'Every input name must pay a preparation step');
+        self::assertSame([SourceChange::KIND_DB => $db, SourceChange::KIND_RT => $rt], $delivery->getReturn());
+        self::assertSame($db, $map->collections(SourceChange::KIND_DB));
+        self::assertSame($rt, $map->collections(SourceChange::KIND_RT));
+    }
+
+    public function testAPortionedReportKeepsRawOrderNumericNamesDuplicatesAndNewObligations(): void
+    {
+        $map = new SourceReaderMap();
+        $map->note(self::HOLDER, SourceChange::KIND_DB, ['old']);
+        $map->note(self::HOLDER, SourceChange::KIND_RT, ['0']);
+        $map->note(self::OTHER_HOLDER, SourceChange::KIND_RT, ['other', '07']);
+        $delivery = $map->noteReportDelivery(self::HOLDER, ['0', '07', '07'], ['0', '0', '7'], static fn(): bool => true);
+        foreach ($delivery as $_) {
+        }
+        self::assertSame([SourceChange::KIND_DB => ['0', '0', '7'], SourceChange::KIND_RT => ['07', '07']], $delivery->getReturn());
+        self::assertSame(['0', '07', 'other'], $map->collections(SourceChange::KIND_RT));
+        self::assertSame([self::HOLDER, self::OTHER_HOLDER], $map->holders(SourceChange::KIND_RT, '07'));
+        self::assertFalse($map->holds(self::HOLDER, SourceChange::KIND_DB, 'old'));
+        $empty = $map->noteReportDelivery(self::HOLDER, [], [], static fn(): bool => true);
+        foreach ($empty as $_) {
+        }
+        self::assertSame([SourceChange::KIND_DB => [], SourceChange::KIND_RT => []], $empty->getReturn());
+        $map->note(self::HOLDER, SourceChange::KIND_RT, ['07']);
+        self::assertSame([self::OTHER_HOLDER, self::HOLDER], $map->holders(SourceChange::KIND_RT, '07'));
+    }
+
+    public function testAPortionedReportStopsWithoutPublishingWhenItsTransportLeaves(): void
+    {
+        $map = new SourceReaderMap();
+        $map->note(self::HOLDER, SourceChange::KIND_RT, ['old']);
+        $current = true;
+        $delivery = $map->noteReportDelivery(self::HOLDER, ['new-rt'], ['new-db'], static function () use (&$current): bool {
+            return $current;
+        });
+        $delivery->rewind();
+        $delivery->next();
+        $delivery->next();
+        $delivery->next();
+        $current = false;
+        while ($delivery->valid()) {
+            $delivery->next();
+        }
+        self::assertSame([SourceChange::KIND_DB => [], SourceChange::KIND_RT => []], $delivery->getReturn());
+        self::assertSame([], $map->collections(SourceChange::KIND_DB));
+        self::assertSame(['old'], $map->collections(SourceChange::KIND_RT));
+    }
+
+    public function testAFiniteReportDoesNotOwnItsMapWhilePreparationIsSuspended(): void
+    {
+        $map = new SourceReaderMap();
+        $map->note(self::HOLDER, SourceChange::KIND_RT, ['old']);
+        $weak = WeakReference::create($map);
+        $delivery = $map->noteReportDelivery(self::HOLDER, ['new'], [], static fn(): bool => true);
+        $delivery->rewind();
+        $delivery->next();
+        unset($map);
+        self::assertNull($weak->get(), 'The cursor must release its process-private owner without a GC pass');
+        while ($delivery->valid()) {
+            $delivery->next();
+        }
+        self::assertSame([SourceChange::KIND_DB => [], SourceChange::KIND_RT => []], $delivery->getReturn());
+    }
+
+    public function testQueuedReportsReadTheirPredecessorsCompleteMembershipWhenTheyStart(): void
+    {
+        $map = new SourceReaderMap();
+        $first = $map->noteReportDelivery(self::HOLDER, ['rt'], ['db'], static fn(): bool => true);
+        $second = $map->noteReportDelivery(self::HOLDER, ['rt', 'rt'], ['db', 'db'], static fn(): bool => true);
+        foreach ($first as $_) {
+        }
+        foreach ($second as $_) {
+        }
+        self::assertSame([SourceChange::KIND_DB => ['db'], SourceChange::KIND_RT => ['rt']], $first->getReturn());
+        self::assertSame([SourceChange::KIND_DB => [], SourceChange::KIND_RT => []], $second->getReturn());
     }
 
     /**

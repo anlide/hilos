@@ -12,8 +12,12 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandChannelWindows;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\AgentId;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\DaemonSection\DTO\DaemonAgentRestartRequestSignalData;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -32,8 +36,9 @@ final class PageAgentRestarts
     /** @var array<string, PageAgentRestartWaiter> Correlation id to original page request and deadline */
     private array $waiters = [];
 
-    /** An ordinary tick does no walk before the earliest possible expiry. */
     private float $nextDeadline = INF;
+
+    private ?EventLoopTimer $deadlineTimer = null;
 
     /**
      * @param AgentRestartDoor $restartDoor Existing placement and restart mechanism
@@ -48,14 +53,36 @@ final class PageAgentRestarts
     }
 
     /**
+     * Native readiness only cues the manager's guarded deadline phase.
+     *
+     * @param EventLoop $loop This master's native event loop
+     * @param Closure(): void $wake Cue the guarded deadline phase
+     * @throws EventLoopException When an original live deadline cannot be armed
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+        $this->detachEventLoop();
+        $this->deadlineTimer = $loop->createTimer($wake);
+        $this->rearmDeadlineTimer();
+    }
+
+    /** Releases this binding's native and queued work, preserving live callers for rebind. */
+    public function detachEventLoop(): void
+    {
+        $this->deadlineTimer?->close();
+        $this->deadlineTimer = null;
+    }
+
+    /**
      * Correlation ids need uniqueness only; they carry no permission or secret.
      * Registers before handing off so a synchronous refusal can find its waiter.
      *
      * @param DaemonAgentRestartRequestSignalData $request Page-admitted request
-     * @param ?float $now Current seconds, injectable for deadline tests
+     * @param ?float $now Monotonic seconds, injectable for deadline tests
      * @throws EnvException When the cluster mode or local node cannot be read
      * @throws ClusterConfigurationException When the cluster node identity is invalid
      * @throws ClusterDisabledException When an enabled cluster refuses its identity
+     * @throws EventLoopException When the nearest live web deadline cannot be armed or canceled
      */
     public function request(DaemonAgentRestartRequestSignalData $request, ?float $now = null): void
     {
@@ -66,9 +93,10 @@ final class PageAgentRestarts
             $correlationId = self::CORRELATION_PREFIX . RandomHelper::hex(self::CORRELATION_BYTES);
         } while (isset($this->waiters[$correlationId]));
 
-        $deadline = ($now ?? microtime(true)) + CommandChannelWindows::CHANNEL_HELD_SECONDS;
+        $deadline = ($now ?? hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND)
+            + CommandChannelWindows::CHANNEL_HELD_SECONDS;
         $this->waiters[$correlationId] = new PageAgentRestartWaiter($request, $deadline);
-        $this->nextDeadline = min($this->nextDeadline, $deadline);
+        $this->rearmDeadlineTimer();
         $this->restartDoor->requestAgentRestart(new CommandRequestDTO(
             correlationId: $correlationId,
             command: CliCommands::AGENT_RESTART,
@@ -95,6 +123,7 @@ final class PageAgentRestarts
      * Unknown replies are ignored; malformed outcomes leave the waiter until its deadline.
      *
      * @param CommandReplyDTO $reply Local or peer-forwarded command outcome
+     * @throws EventLoopException When the nearest live web deadline cannot be armed or canceled
      */
     public function acceptReply(CommandReplyDTO $reply): void
     {
@@ -123,32 +152,46 @@ final class PageAgentRestarts
             }
         }
         unset($this->waiters[$reply->correlationId]);
-        if ($this->waiters === []) {
-            $this->nextDeadline = INF;
-        }
+        $this->rearmDeadlineTimer();
         $this->answer($waiter->request, $message, $error);
     }
 
     /**
      * Releases expired waiting only; a slow restart remains owned by AgentRestarts.
      *
-     * @param float $now Current time in seconds
+     * @param ?float $now Monotonic seconds, injectable for deadline observations
+     * @throws EventLoopException When the nearest live deadline cannot be armed or canceled
      */
-    public function tick(float $now): void
+    public function tick(?float $now = null): void
     {
+        $now ??= hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
         if ($now < $this->nextDeadline) {
+            $this->deadlineTimer?->armAt(is_finite($this->nextDeadline) ? $this->nextDeadline : null);
             return;
         }
-        $this->nextDeadline = INF;
+        $expired = [];
         foreach ($this->waiters as $correlationId => $waiter) {
             if ($now < $waiter->deadline) {
-                $this->nextDeadline = min($this->nextDeadline, $waiter->deadline);
                 continue;
             }
             unset($this->waiters[$correlationId]);
+            $expired[$correlationId] = $waiter;
+        }
+        $this->rearmDeadlineTimer();
+        foreach ($expired as $correlationId => $waiter) {
             ($this->abandon)($correlationId);
             $this->answer($waiter->request, null, self::TIMEOUT_REASON);
         }
+    }
+
+    /** @throws EventLoopException When the nearest live web deadline cannot be armed or canceled */
+    private function rearmDeadlineTimer(): void
+    {
+        $this->nextDeadline = INF;
+        foreach ($this->waiters as $waiter) {
+            $this->nextDeadline = min($this->nextDeadline, $waiter->deadline);
+        }
+        $this->deadlineTimer?->armAt(is_finite($this->nextDeadline) ? $this->nextDeadline : null);
     }
 
     /**

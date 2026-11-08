@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Exception\InvalidFormatException;
+use Throwable;
 
 /**
  * Local port between the peer transport and this node's browser connections.
@@ -43,6 +45,7 @@ interface ClientSignalSink
      *
      * @param string $originNodeId Id of the node the fan-out started on (trace only)
      * @param SignalDTO $signal Signal to expand against this node's subscriptions
+     * @throws Throwable When the peer's existing delivery guard must contain a failed local portion
      */
     public function deliverFanoutToClients(string $originNodeId, SignalDTO $signal): void;
 
@@ -62,6 +65,7 @@ interface ClientSignalSink
      * Writes a forwarded command reply to the locally held console connection.
      *
      * @param SignalDTO $signal COMMAND_REPLY signal already addressed by correlation id
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function deliverCommandReply(SignalDTO $signal): void;
 

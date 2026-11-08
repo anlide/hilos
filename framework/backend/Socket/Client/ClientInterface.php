@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Closure;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\HilosException;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\Exception\SocketTlsHandshakeException;
 use Random\RandomException;
 
 /**
@@ -15,6 +19,19 @@ use Random\RandomException;
  */
 interface ClientInterface
 {
+    /**
+     * Replaces this client's local readiness owner, canceling the previous binding.
+     *
+     * @param EventLoop $loop Owning master's loop
+     * @param Closure(): void $wake One bounded client portion under the owner's failure guard
+     * @throws SocketTlsHandshakeException When a live TLS session is rebound to another native base
+     * @throws EventLoopException When a client protocol deadline cannot bind to the native loop
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void;
+
+    /** Cancels queued work and native watches before close or transfer to another owner. */
+    public function detachEventLoop(): void;
+
     /**
      * Returns client socket.
      *

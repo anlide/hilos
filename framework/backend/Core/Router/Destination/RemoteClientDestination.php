@@ -26,10 +26,12 @@ final class RemoteClientDestination implements Destination
     /**
      * @param string $nodeId Id of the node holding the target connection
      * @param string $acceptKey Target client accept key
+     * @param ?WebSocketDestination $original Original local subscription authority, absent for an explicit address
      */
     public function __construct(
         public readonly string $nodeId,
         public readonly string $acceptKey,
+        public readonly ?WebSocketDestination $original = null,
     ) {
     }
 }

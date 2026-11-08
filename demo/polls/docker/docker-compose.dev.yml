@@ -46,6 +46,8 @@ services:
   polls-stand-gateway-dev:
     build:
       context: ../../../framework/docker/stand-gateway
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     container_name: polls-stand-gateway-dev
     # The gateway runs on the framework's own TLS server (HIL-921) and loads the
     # classes it needs from the framework itself, so there is still no composer here.
@@ -69,7 +71,10 @@ services:
   # The Hilos daemon. It has no database of its own: ../.env names one, or the
   # container retries the connection, gives up and restarts (see the header).
   polls-daemon-dev:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../.env
         required: false
@@ -142,7 +147,10 @@ services:
         ipv4_address: ${DOCKER_DAEMON_IP:-10.198.0.11}
 
   polls-cli-dev:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../.env
         required: false
@@ -170,7 +178,10 @@ services:
       - hilos-polls-dev-network
 
   polls-monitor-dev:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../.env
         required: false

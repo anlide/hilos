@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Peer;
 
+use Closure;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\NodeIdentity;
@@ -86,10 +90,12 @@ use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\Client\AbstractClient;
+use Hilos\Socket\Exception\SocketTlsHandshakeException;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\Transport\SocketTransportInterface;
 use Hilos\Utils\Logger;
 use SplQueue;
+use WeakReference;
 
 /**
  * One framed connection to a remote cluster node, either dialed or accepted.
@@ -172,11 +178,19 @@ final class PeerLink extends AbstractClient
     /** @var float Seconds of silence after which the link is closed as dead */
     private float $linkTimeoutSec;
 
-    /** @var float Microtime the last inbound traffic arrived, refreshed on every read */
+    /** @var float Monotonic seconds when new inbound application bytes last arrived */
     private float $lastHeardAt;
 
-    /** @var float Microtime the last keepalive ping was sent, to space pings by the interval */
+    /** @var float Monotonic seconds when the last keepalive ping was queued */
     private float $lastPingAt = 0.0;
+
+    /** This connection's silence/quiet deadline on its actual transport loop. */
+    private ?EventLoopTimer $livenessTimer = null;
+
+    private int $livenessGeneration = 0;
+
+    /** Only a due notification releases native-bound liveness work. */
+    private bool $livenessReady = false;
 
     private int $uploadQueuedPosition = 0;
 
@@ -213,9 +227,49 @@ final class PeerLink extends AbstractClient
         $this->keepaliveIntervalSec = Hilos::$env[EnvConstants::CLUSTER_LINK_KEEPALIVE_INTERVAL_MS]->int() / TimeConstants::MS_PER_SECOND;
         $this->linkTimeoutSec = Hilos::$env[EnvConstants::CLUSTER_LINK_TIMEOUT_MS]->int() / TimeConstants::MS_PER_SECOND;
         $this->maxWriteBufferBytes = self::MAX_WRITE_BUFFER_BYTES;
-        $this->lastHeardAt = microtime(true);
+        $this->lastHeardAt = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
         $this->outboundSegments = new SplQueue();
         $this->stagedOutbound = new SplQueue();
+    }
+
+    /**
+     * Bind silence before either handshake, retaining the constructor's original age.
+     * The timer only cues the existing guarded read/tick/write portion.
+     *
+     * @param EventLoop $loop Actual transport loop
+     * @param Closure(): void $wake Guarded client portion
+     * @throws SocketTlsHandshakeException When a live TLS session changes native base
+     * @throws EventLoopException When the liveness deadline cannot be armed
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+        parent::attachEventLoop($loop, $wake);
+        if ($this->socket === null || $this->shouldClose) {
+            return;
+        }
+
+        $generation = $this->livenessGeneration;
+        $weak = WeakReference::create($this);
+        $this->livenessTimer = $loop->createTimer(static function () use ($weak, $generation): void {
+            $link = $weak->get();
+            if ($link === null || $link->livenessGeneration !== $generation
+                || $link->livenessTimer === null || $link->shouldClose || $link->socket === null) {
+                return;
+            }
+            $link->livenessReady = true;
+            $link->markReady();
+        });
+        $this->armLiveness();
+    }
+
+    /** Retire silence work before transport detach or close, including an activated old cue. */
+    public function detachEventLoop(): void
+    {
+        ++$this->livenessGeneration;
+        $this->livenessTimer?->close();
+        $this->livenessTimer = null;
+        $this->livenessReady = false;
+        parent::detachEventLoop();
     }
 
     /**
@@ -313,6 +367,9 @@ final class PeerLink extends AbstractClient
                 $this->closeWhenOutputDrained = false;
                 $this->markShouldClose();
             }
+            if (!$this->shouldClose && $this->writeBuffer === '' && !$this->stagedOutbound->isEmpty()) {
+                $this->markReady();
+            }
         }
     }
 
@@ -330,6 +387,7 @@ final class PeerLink extends AbstractClient
             return;
         }
         $this->closeWhenOutputDrained = true;
+        $this->markReady();
     }
 
     /**
@@ -360,11 +418,15 @@ final class PeerLink extends AbstractClient
         return $this->draining;
     }
 
-    /** @param NodeIdentity $remote Certified identity of the new active link */
+    /**
+     * @param NodeIdentity $remote Certified identity of the new active link
+     * @throws EventLoopException When the newly eligible ping deadline cannot be armed
+     */
     public function activate(NodeIdentity $remote): void
     {
         $this->remoteIdentity = $remote;
         $this->candidateIdentity = null;
+        $this->armLiveness();
     }
 
     /** Allows the old route to receive a drain before the dialer's ack arrives. */
@@ -382,7 +444,11 @@ final class PeerLink extends AbstractClient
         }
     }
 
-    /** Queues the old route's end marker after all application frames already queued there. */
+    /**
+     * Queues the old route's end marker after all application frames already queued there.
+     *
+     * @throws EventLoopException When the remaining silence deadline cannot be armed
+     */
     public function beginDrain(): void
     {
         $this->peerDrainAllowed = true;
@@ -391,6 +457,7 @@ final class PeerLink extends AbstractClient
         if ($this->peerDrained) {
             $this->closeOnceWritten();
         }
+        $this->armLiveness();
     }
 
     /**
@@ -428,6 +495,8 @@ final class PeerLink extends AbstractClient
      * like a departure: the remote identity is cleared first, which makes
      * {@see onClose()} unable to report a departure. Already queued handshake control
      * frames are written before the socket closes.
+     *
+     * @throws EventLoopException When the remaining silence deadline cannot be armed
      */
     public function discardAsDuplicate(): void
     {
@@ -436,10 +505,11 @@ final class PeerLink extends AbstractClient
         $this->droppedHere = true;
         $this->stopReading();
         $this->closeOnceWritten();
+        $this->armLiveness();
     }
 
     /**
-     * Parses complete peer frames and dispatches them, closing on a bad frame.
+     * Dispatches a bounded portion of whole peer frames, closing on a bad frame.
      *
      * @throws SocketException If buffer size or JSON depth exceeds limits
      * @throws PeerTransportException When a peer control frame arrives out of sequence
@@ -450,11 +520,7 @@ final class PeerLink extends AbstractClient
      */
     protected function processReadBuffer(): void
     {
-        // Any inbound traffic proves the peer is alive; refresh the keepalive clock before
-        // parsing so a partial frame split across reads still staves off the timeout.
-        $this->lastHeardAt = microtime(true);
-
-        while ($this->readBuffer !== '') {
+        for ($processed = 0; $this->readBuffer !== ''; ++$processed) {
             // Handling a frame can tear this link down mid-buffer. Once it is closing, stop
             // parsing the frames that followed in the same read, or a trailing gossip frame
             // would be mis-flagged as arriving before the (now-undone) handshake.
@@ -462,9 +528,9 @@ final class PeerLink extends AbstractClient
                 return;
             }
 
-            $message = $this->extractCompleteJsonMessage($this->readBuffer);
+            $message = $this->extractReadBufferJsonMessage($processed);
             if ($message === null) {
-                // Incomplete frame, wait for more data.
+                // Incomplete input waits for bytes; a complete remainder already owes a portion.
                 break;
             }
 
@@ -480,6 +546,17 @@ final class PeerLink extends AbstractClient
     }
 
     /**
+     * Actual inbound application bytes renew liveness, including an incomplete frame's new tail.
+     *
+     * @throws EventLoopException When the renewed liveness deadline cannot be armed
+     */
+    protected function onReadData(): void
+    {
+        $this->lastHeardAt = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        $this->armLiveness();
+    }
+
+    /**
      * Runs the per-link keepalive: closes a silent link, otherwise pings a quiet one.
      *
      * A link that has heard nothing for the timeout is closed as dead — a hung-but-connected
@@ -487,12 +564,19 @@ final class PeerLink extends AbstractClient
      * routes through the offline/failover path; the same timeout also bounds a stalled
      * half-open handshake. Before that, a link quiet for the keepalive interval sends a
      * {@see PeerPingDTO} (spaced by the interval) to draw a pong and prove the peer alive; a
-     * busy link resets its clock on every inbound frame and never pings. Pinging waits for the
+     * busy link resets its clock on new inbound application bytes and never pings. Pinging waits for the
      * handshake, so a half-open link only times out.
+     * Native-bound links ignore unrelated polling passes until their own timer is due.
+     *
+     * @throws EventLoopException When the next liveness deadline cannot be armed
      */
     public function onTick(): void
     {
-        $now = microtime(true);
+        if ($this->shouldClose || $this->socket === null || ($this->livenessTimer !== null && !$this->livenessReady)) {
+            return;
+        }
+        $this->livenessReady = false;
+        $now = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
         $silentFor = $now - $this->lastHeardAt;
 
         if ($silentFor >= $this->linkTimeoutSec) {
@@ -500,6 +584,7 @@ final class PeerLink extends AbstractClient
                 . ($this->remoteIdentity !== null ? " to {$this->remoteIdentity->nodeId}" : ' (handshake never completed)'));
             $this->droppedHere = true;
             $this->markShouldClose();
+            $this->armLiveness();
             return;
         }
 
@@ -509,6 +594,7 @@ final class PeerLink extends AbstractClient
             $this->sendFrame(new PeerPingDTO());
             $this->lastPingAt = $now;
         }
+        $this->armLiveness();
     }
 
     /**
@@ -531,6 +617,31 @@ final class PeerLink extends AbstractClient
     }
 
     /**
+     * Equal future deadlines retain their native generation; outbound traffic never renews silence.
+     *
+     * @throws EventLoopException When the nearest action cannot be armed
+     */
+    private function armLiveness(): void
+    {
+        if ($this->livenessTimer === null) {
+            return;
+        }
+        if ($this->shouldClose || $this->socket === null) {
+            $this->livenessTimer->armAt(null);
+            return;
+        }
+
+        $at = $this->lastHeardAt + $this->linkTimeoutSec;
+        if ($this->remoteIdentity !== null && !$this->draining) {
+            $at = min($at, max(
+                $this->lastHeardAt + $this->keepaliveIntervalSec,
+                $this->lastPingAt + $this->keepaliveIntervalSec,
+            ));
+        }
+        $this->livenessTimer->armAt($at);
+    }
+
+    /**
      * Preserve one FIFO for data, releases and drain markers. Its cursors include staging,
      * so a later portion never inherits the end of an earlier native append.
      *
@@ -547,11 +658,12 @@ final class PeerLink extends AbstractClient
             $this->ordinaryOutboundBytes += strlen($bytes);
         }
         if ($this->stagedOutbound->isEmpty() && strlen($this->writeBuffer) + strlen($bytes) <= self::MAX_WRITE_BUFFER_BYTES) {
-            $this->writeBuffer .= $bytes;
+            $this->queueWrite($bytes);
             $this->nativeAppendedBytes += strlen($bytes);
             $segment->bytes = '';
         } else {
             $this->stagedOutbound->enqueue($segment);
+            $this->markReady();
         }
     }
 
@@ -564,7 +676,7 @@ final class PeerLink extends AbstractClient
         while (!$this->stagedOutbound->isEmpty() && strlen($this->writeBuffer) < self::MAX_WRITE_BUFFER_BYTES) {
             $segment = $this->stagedOutbound->bottom();
             $bytes = substr($segment->bytes, 0, self::MAX_WRITE_BUFFER_BYTES - strlen($this->writeBuffer));
-            $this->writeBuffer .= $bytes;
+            $this->queueWrite($bytes);
             $this->nativeAppendedBytes += strlen($bytes);
             $segment->bytes = substr($segment->bytes, strlen($bytes));
             if ($segment->bytes === '') {
@@ -686,6 +798,7 @@ final class PeerLink extends AbstractClient
      * @throws PeerTransportException When a hello arrives on the dialing side, the version is incompatible,
      *                                the node id is not the name the peer's certificate carries, or the
      *                                peer's markers differ from this node's
+     * @throws EventLoopException When a superseded candidate's silence deadline cannot be armed
      */
     private function onHello(PeerHelloDTO $hello): void
     {
@@ -727,6 +840,7 @@ final class PeerLink extends AbstractClient
      * @throws PeerTransportException When a welcome arrives on the accepting side, the version is incompatible,
      *                                the node id is not the name the peer's certificate carries, or the
      *                                peer's markers differ from this node's
+     * @throws EventLoopException When a superseded candidate's silence deadline cannot be armed
      */
     private function onWelcome(PeerWelcomeDTO $welcome): void
     {
@@ -754,6 +868,7 @@ final class PeerLink extends AbstractClient
     /**
      * @param PeerReadyDTO $ready Dialer's old-route state
      * @throws PeerTransportException When ready arrives on the wrong link or out of sequence
+     * @throws HilosException When activation or liveness scheduling fails
      */
     private function onReady(PeerReadyDTO $ready): void
     {
@@ -776,6 +891,7 @@ final class PeerLink extends AbstractClient
     /**
      * @param PeerReadyAckDTO $ack Acceptor's route verdict
      * @throws PeerTransportException When the ack arrives on the wrong link or out of sequence
+     * @throws HilosException When activation or liveness scheduling fails
      */
     private function onReadyAck(PeerReadyAckDTO $ack): void
     {
@@ -796,6 +912,7 @@ final class PeerLink extends AbstractClient
      * Marks the peer's old stream complete without discarding frames preceding it.
      *
      * @throws PeerTransportException When drain arrives without a pending replacement
+     * @throws EventLoopException When the rejected candidate's silence deadline cannot be armed
      */
     private function onDrain(): void
     {
@@ -843,6 +960,7 @@ final class PeerLink extends AbstractClient
      *
      * @param PeerRequestVoteDTO $frame Incoming request-vote frame
      * @throws PeerTransportException When the frame arrives before the handshake
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function onRequestVote(PeerRequestVoteDTO $frame): void
     {
@@ -867,6 +985,7 @@ final class PeerLink extends AbstractClient
      *
      * @param PeerHeartbeatDTO $frame Incoming heartbeat frame
      * @throws PeerTransportException When the frame arrives before the handshake
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function onHeartbeat(PeerHeartbeatDTO $frame): void
     {
@@ -881,6 +1000,7 @@ final class PeerLink extends AbstractClient
      * @param PeerNodeLeavingDTO $frame Incoming graceful-leave frame
      * @throws PeerTransportException When the frame arrives before the handshake
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function onNodeLeaving(PeerNodeLeavingDTO $frame): void
     {
@@ -918,6 +1038,7 @@ final class PeerLink extends AbstractClient
      * @param PeerAgentStatusDTO $frame Incoming agent-status frame
      * @throws PeerTransportException When the frame arrives before the handshake
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function onAgentStatus(PeerAgentStatusDTO $frame): void
     {
@@ -965,6 +1086,7 @@ final class PeerLink extends AbstractClient
      * @param PeerAgentRestartDTO $frame Incoming restart request
      * @throws PeerTransportException When the frame arrives before the handshake
      * @throws EnvException When this node cannot read its leader id
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function onAgentRestart(PeerAgentRestartDTO $frame): void
     {
@@ -1253,6 +1375,7 @@ final class PeerLink extends AbstractClient
      *
      * @param PeerProtectedModeEnableDTO $frame Incoming protected-mode enable frame
      * @throws PeerTransportException When the frame arrives before the handshake
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function onProtectedModeEnable(PeerProtectedModeEnableDTO $frame): void
     {
@@ -1301,6 +1424,7 @@ final class PeerLink extends AbstractClient
      *
      * @param PeerProtectedModeQuiesceDTO $frame Incoming protected-mode quiesce frame
      * @throws PeerTransportException When the frame arrives before the handshake
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function onProtectedModeQuiesce(PeerProtectedModeQuiesceDTO $frame): void
     {
@@ -1329,6 +1453,7 @@ final class PeerLink extends AbstractClient
      * @throws EnvException When leadership or timeout configuration is invalid
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function onProtectedModeSync(PeerProtectedModeSyncDTO $frame): void
     {
@@ -1483,6 +1608,7 @@ final class PeerLink extends AbstractClient
      *
      * @param PeerProtectedModeRefreezeDTO $frame Incoming protected-mode refreeze frame
      * @throws PeerTransportException When the frame arrives before the handshake
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function onProtectedModeRefreeze(PeerProtectedModeRefreezeDTO $frame): void
     {
@@ -1526,10 +1652,10 @@ final class PeerLink extends AbstractClient
     }
 
     /**
-     * Accepts a keepalive pong; the proof of life is the inbound frame itself.
+     * Accepts a keepalive pong; its newly received application bytes already renewed liveness.
      *
-     * Reading the frame already refreshed the last-heard clock, so no further work is needed;
-     * like {@see onPing()} it is not gated on the handshake.
+     * A buffered parser continuation does not renew the clock again. Like {@see onPing()},
+     * this handler is not gated on the handshake.
      */
     private function onPong(): void
     {

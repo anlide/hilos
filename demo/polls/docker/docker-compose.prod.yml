@@ -44,7 +44,10 @@ services:
         ipv4_address: ${DOCKER_MYSQL_IP:-10.198.0.10}
 
   polls-prod:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../.env
         required: false
@@ -170,7 +173,10 @@ services:
         ipv4_address: ${DOCKER_NGINX_IP:-10.198.0.12}
 
   polls-cli-prod:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../.env
         required: false
@@ -200,7 +206,10 @@ services:
       - hilos-polls-prod-network
 
   polls-monitor-prod:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../.env
         required: false

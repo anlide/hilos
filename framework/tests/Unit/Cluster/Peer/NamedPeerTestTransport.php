@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Peer;
 
+use Hilos\Core\EventLoop\EventLoop;
+use Closure;
 use Hilos\Socket\Transport\PlainSocketTransport;
 use Hilos\Socket\Transport\SocketTransportInterface;
 
@@ -31,6 +33,21 @@ final class NamedPeerTestTransport implements SocketTransportInterface
     {
         $this->bare = new PlainSocketTransport($socket);
         $this->peerName = $peerName;
+    }
+
+    /**
+     * @param EventLoop $loop Test owner's loop
+     * @param Closure(): void $wake Test owner's bounded portion
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+        $this->bare->attachEventLoop($loop, $wake);
+    }
+
+    /** Releases the test transport's loop binding, when it has one. */
+    public function detachEventLoop(): void
+    {
+        $this->bare->detachEventLoop();
     }
 
     /**

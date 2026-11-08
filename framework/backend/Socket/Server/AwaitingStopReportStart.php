@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Socket\Client\WorkerClient;
+
 /**
  * One agent whose next start waits for its earlier worker stop report.
  *
@@ -19,6 +21,7 @@ final readonly class AwaitingStopReportStart
      * @param bool $placedByLeader Whether placement sanctioned this start
      * @param ?int $preferredWorkerId First worker requested for the new instance, if any
      * @param int $awaitedWorkerId Worker whose earlier stop report is awaited
+     * @param WorkerClient $awaitedWorker Exact connection that owes the report
      */
     public function __construct(
         public string $agentId,
@@ -27,6 +30,7 @@ final readonly class AwaitingStopReportStart
         public bool $placedByLeader,
         public ?int $preferredWorkerId,
         public int $awaitedWorkerId,
+        public WorkerClient $awaitedWorker,
     ) {
     }
 }

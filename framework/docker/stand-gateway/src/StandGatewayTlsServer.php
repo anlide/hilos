@@ -8,6 +8,7 @@ use Hilos\API\Router\HttpRouter;
 use Hilos\Constants\HttpConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Client\HttpClient;
+use Hilos\Socket\Exception\SocketTlsHandshakeException;
 use Hilos\Socket\Server\AbstractTlsServer;
 use Socket;
 
@@ -111,6 +112,7 @@ final class StandGatewayTlsServer extends AbstractTlsServer
      * @param Socket $socket Accepted client socket
      * @return StandGatewayHttpClient Client instance
      * @throws EnvException When the client cannot read its buffer or keep-alive env values, or the router its session cookie name
+     * @throws SocketTlsHandshakeException When called before TLS startup preparation
      */
     protected function onCreateClient($socket): StandGatewayHttpClient
     {

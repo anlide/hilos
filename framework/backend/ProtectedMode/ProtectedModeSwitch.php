@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
@@ -38,6 +40,7 @@ interface ProtectedModeSwitch
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      * @throws PeerTransportException When the cluster descriptor has no barrier generation
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function requestEnable(ProtectedModeEnableSignalData $data): void;
 
@@ -143,6 +146,7 @@ interface ProtectedModeSwitch
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      * @throws PeerTransportException When the cluster descriptor has no barrier generation
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function requestRefreeze(ProtectedModeRefreezeSignalData $data): void;
 
@@ -162,6 +166,7 @@ interface ProtectedModeSwitch
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      * @throws PeerTransportException When the slave acknowledgement is invalid
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onRosterStopped(): void;
 
@@ -179,6 +184,7 @@ interface ProtectedModeSwitch
      * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
      * @throws EnvException When leadership configuration is invalid
      * @throws PeerTransportException When the slave acknowledgement is invalid
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onRosterResumed(): void;
 }

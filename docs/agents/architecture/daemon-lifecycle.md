@@ -264,19 +264,76 @@ WebSocket stays open, including after the node loses leadership.
 
 ## Main loop (each iteration)
 
-```
-processEventLoop()     ← epoll: accept connections, read data
-servers->onTick()      ← process buffered client data
-dispatchRoleTick()     ← per-iteration hook for the current node lifecycle phase
-if amLeader():         ← leader (or standalone); a follower skips both singleton start and cron
-  ensureSingletonsStarted()  ← start cluster-singleton agents once per term, and again after a worker dies with agents
-  checkCronJobs()            ← once per minute, after workers ready
-tickReadiness()        ← every node; a slave never opens, a follower waits for its leader's word
-dispatchSignals()      ← drain SignalRouter queue → workers / WS clients
-Hilos::$ac->tick()     ← analytics flush
-pcntl_signal_dispatch()
-sleepWithPreciseTiming()
-```
+[`DaemonManager::run()`](../../../framework/backend/Core/Daemon/DaemonManager.php)
+drives guarded iterations without a fixed sleep. The order within
+`runGuardedIteration()` is:
+
+1. Prepare a requested shutdown once and arm its fixed monotonic ceiling.
+2. Reconcile the current wait sources. `processEventLoop()` starts eligible
+   servers, reconciles again because startup can create owners, and checks for
+   early exit before waiting. It makes **one** poll: `EventLoop::tick()` if work
+   is runnable, otherwise `EventLoop::runOnce()`.
+3. Run server duties, then one hook for the current node role. Bound clients
+   have already run through ready portions; `AbstractServer::onTick()` does
+   not walk them. Readiness is cued by its own ready handle and timer.
+4. On the leader (or standalone node), dispatch singleton start and policy/probe
+   declarations. Dispatch the due calendar cron check at its existing phase;
+   eligibility still requires leadership and ready workers.
+5. Dispatch protected-mode and leader-page recovery work, then process roster,
+   command deadlines, cron/standing/HTTP reports, measurements and the completed
+   whole node report.
+6. Publish connection changes, offer changed RT ownership, announce complete
+   reader interest, then ask for missing collections, in that order. Spend the
+   signal-delivery budget after these announcements. Release browsers only
+   after workers and this final dispatch barrier.
+7. Dispatch rehydrate verdicts, reconcile sources after effects, flush due
+   analytics and client-read summaries, apply coalesced process-control facts,
+   and reconcile again before the next iteration.
+
+Native callbacks record cues; business effects stay in these guarded phases.
+The connection and entropy guards still surround client work, and an iteration
+failure reaches the manager's contained-failure hook. There is no second poll,
+blanket client scan or `pcntl_signal_dispatch()` phase on the master.
+
+### Deciding whether to wait
+
+`hasRunnableMasterWork()` composes the existing owners' non-consuming predicates
+after reconciliation. It includes the native ready FIFO and possible native
+remainder, pending process controls, initial shutdown preparation, finite
+signal/effect/delivery portions, peer consensus/placement/protected-sync work,
+and durable due flags for commands, cron, analytics, readiness, rehydrate and
+recovery. `shouldExit` after preparation does not by itself keep drain spinning.
+
+Source identities, scalar revisions and durable completion flags keep late
+synchronous facts visible even after a native ticket was consumed. Examples
+are a completed reader union from the final source-FIFO step, workers becoming
+ready after singleton dispatch, and a closed connection key during shutdown.
+Reconciliation calls no role hook and does not build a report or snapshot.
+
+| Owner | What wakes or sustains its guarded work |
+|---|---|
+| Process roster | Worker/agent/restart/placement revisions and source identities; retained coalesce, repair and retry deadlines; whole-build completion barrier |
+| Report frames and measurements | Changed source basis, due coalesce/sample/repair timers and unfinished portions; measurement sampling remains independent of report delivery |
+| RT ownership | Current source-map revision, runtime mount or source replacement; offers precede interest announcements |
+| Reader interest | A complete changed pair or its retained missing-query cue; a partial union is not publishable |
+| Connection changes | Exact socket/key revisions and finite diff portions, including final closed keys while draining |
+| Singletons and declarations | Current role, term, workers-ready/capacity and placement settlement; finite owed addresses, not every tracked record |
+
+`AgentDeclarationDuty` owns policy/probe declaration portions; placement and
+worker links remain the truth about an address. A tracked record suppresses
+another declaration regardless of its state. The probe duty has its own
+five-second monotonic retry only after an exception before any record exists;
+applicable source facts may retry earlier. An accepted rebuild, worker or old
+stop-report wait is dormant, not a reason to arm that retry. This is declaration
+pacing, separate from placement's retry rules.
+
+Pending replies, partial input, held or blocked deliveries, future deadlines,
+ineligible roles and freeze/rebuild waits are not runnable just because they
+occupy a queue. Their owners retain the actual I/O watches and original
+deadlines. There is no global maximum idle wait or periodic polling backstop.
+The [event loop](event-loop.md#ready-work-timers-and-fairness) bounds native
+notifications and owner portions; it does not bound every input's packing,
+snapshot bytes or destruction cost.
 
 A refused agent start is not fatal to the loop (HIL-999). An agent of this node that does
 not come up in `dispatchSignals()` — no free worker, or any other failure the worker server
@@ -287,9 +344,9 @@ failing `onBecameSingletonHost()` the same way and still marks the start done.
 
 ## Node lifecycle & role-based onTick
 
-The daemon does not call a single `onTick()`. Each main-loop iteration it asks the
-cluster context for the local node's **lifecycle phase** and dispatches the hook
-for that phase (`dispatchRoleTick()` → `runPhaseTick()`):
+The daemon does not call a single `onTick()`. Each actual guarded pass resolves
+the local node's **lifecycle phase** and calls its hook once
+(`dispatchRoleTick()` → `runPhaseTick()`), regardless of what woke the pass:
 
 | Phase (`NodeLifecycleState`) | When | Hook |
 |---|---|---|
@@ -315,6 +372,84 @@ Rules:
 - All four `onTick*` hooks must obey the **< 0.1s** rule — they run on the master
   loop. A failure reading the phase is contained: it logs and falls back to
   `Standalone` rather than tearing down the loop.
+
+### Scheduling a role hook
+
+The project-facing scheduling API is:
+
+```php
+protected function armRoleTickAt(?float $monotonicAt): void
+```
+
+Pass an absolute `hrtime(true)` deadline in seconds, or `null` to cancel. A
+non-finite deadline, detached owner or native arm failure raises
+`EventLoopException`. Before startup the deadline is retained for binding.
+When it becomes due it is consumed **before** the hook, so the hook explicitly
+arms any next deadline. Unrelated I/O still calls the hook once but leaves an
+unchanged future deadline armed; do not replace it with `now + interval` on
+every incidental wake.
+
+A lifecycle phase, cluster context or leadership-source replacement cancels
+the old role's deadline and generation and immediately makes the new role
+runnable. A change inside a hook owes the next pass; it does not invoke a
+second hook in the same pass. This also applies between the two non-leader
+phases even though they share one method.
+
+An external project migrating an override must explicitly schedule its real
+next work. There is no 100 Hz compatibility wake or Reflection-based inference
+of overridden methods. For example, this fragment in a standalone project
+subclass schedules one project portion, using `Hilos\Constants\TimeConstants`
+and `Hilos\Core\EventLoop\Exception\EventLoopException` imports:
+
+```php
+private ?float $nextOwnWorkAt = null;
+
+/**
+ * @param float $monotonicAt Project work's absolute monotonic deadline in seconds
+ * @throws EventLoopException When the role deadline cannot be armed
+ */
+protected function scheduleOwnWorkAt(float $monotonicAt): void
+{
+    $this->armRoleTickAt($monotonicAt);
+    $this->nextOwnWorkAt = $monotonicAt;
+}
+
+/** Runs the scheduled project portion only when due. */
+protected function onTickStandalone(): void
+{
+    if ($this->nextOwnWorkAt === null) {
+        return;
+    }
+    $now = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+    if ($now < $this->nextOwnWorkAt) {
+        return;
+    }
+    $this->nextOwnWorkAt = null;
+    // Run one bounded project portion; scheduleOwnWorkAt() its real next deadline, if any.
+}
+```
+
+`scheduleOwnWorkAt()` and its field belong to this example's project, not the
+framework API. Call it when the project learns that work is due. Process-local
+handles, generations and monotonic deadlines have no reader in another worker
+or node; they stay local rather than creating `Hilos::$rt` rows. Persisted
+epoch moments, wire formats and calendar cron keep the
+[time-zone contracts](time-zones.md).
+
+### POSIX controls
+
+The master claims TERM, INT and HUP on its existing `EventBase` through
+`EventLoop::registerSignal()`. Setup temporarily blocks those three signals,
+installs the watches and restores the original mask in `finally`, before any
+worker spawn. Partial installation or mask-restoration failure removes the
+master's watches. Do not add a concurrent PCNTL or asynchronous receiver.
+
+The callbacks only coalesce pending controls. The end of the guarded iteration
+applies `handleShutdown()` for TERM/INT or `handleRestart()` for HUP. Lifecycle
+hooks never run inside native polling. `WorkerServer` remains the sole SIGCHLD
+owner and retains it through worker drain; terminal master-control detach
+removes only TERM/INT/HUP. WorkerManager and the container watchdog have their
+own signal and wait mechanisms; the master API does not change their cadence.
 
 ### Membership hooks
 
@@ -1291,9 +1426,9 @@ equal agents does not pile onto one node.
   other half — a status from a node the record no longer names never moves the record; a late
   `started` gets a `peer_stop_agent` back, a late `stopped` or `failed` is dropped in silence
   (`onStopAgent()` answers `stopped` unconditionally, so a stop sent back at one would loop the
-  pair of nodes). Deadlines are derived by sweeping the registry each `tick()` rather than armed
-  where the registry is written, because eight paths write it and one that forgot to arm would
-  leave its record waiting forever.
+  pair of nodes). Registry changes cue addressed reconciliation, which derives ACK waits from
+  the current record and arms their exact monotonic timers. An unchanged host/state keeps its
+  original deadline; the native path does not sweep the whole registry on every master pass.
 - **Self-fence (no double-run).** A node that does not lead — a slave, or a master carrying
   placed work — that loses the link to the leader it answers to — the one that placed its
   work, or the one that took it over with a `peer_placement_query` after a re-election
@@ -1334,14 +1469,21 @@ equal agents does not pile onto one node.
   picked refused (HIL-447, *Why placed work does not run* above).
 - **Wiring.** `PlacementState::Unplaced` and the `peer_ping` / `peer_pong` frames raise the
   peer protocol version to `4`. The framework `onNodeLeft` / `onNodeJoined` defaults now
-  drive failover, so a project override must call the parent. `ClusterPlacement::tick()`
-  runs the grace timers on the `PeerServer` loop beside the coordinator tick.
+  drive failover, so a project override must call the parent. `PeerServer::onTick()` calls
+  the coordinator's and placement's `dispatchReady()` phases; their native callbacks only cue
+  work on the same base. `ClusterPlacement::tick(float $now)` remains the explicit-time entry
+  for unbound callers.
 
 ## Graceful shutdown
 
-- SIGTERM/SIGINT → `shouldExit = true`
-- `initiateShutdown()` → fires `onClusterWorkStop()` (cluster mode only), then calls
-  `prepareShutdown()` on all servers (the `PeerServer` broadcasts the `NodeLeaving` frame)
+- Guarded TERM/INT processing requests `shouldExit = true`; HUP takes the
+  existing restart path. The next iteration records an epoch observation in
+  `shutdownStartTime` and one paired monotonic deadline, then calls
+  `initiateShutdown()` once. Preparation failures do not replay it: independent
+  steps and every server get their own attempt.
+- `initiateShutdown()` detaches readiness and cron, fires `onClusterWorkStop()`
+  in cluster mode, closes the browser entrance, then calls `prepareShutdown()`
+  on all servers (the `PeerServer` broadcasts the `NodeLeaving` frame).
 - The master closes the browser entrance before preparing the servers: it removes the
   listening socket from the event loop and closes it. Existing browsers remain
   connected but are no longer read.
@@ -1355,15 +1497,59 @@ equal agents does not pile onto one node.
   action pressed during this window is not read; the frontend fails its pending action
   when the connection drops, with no refusal frame
   (`framework/frontend/core/src/connection/actionLifecycle.ts`).
-- Loop continues until all servers report `isReadyToShutdown()` or `shutdownTimeout` (20s) expires.
-  The peer server becomes ready when its links have written everything; the timeout line names the
-  servers that were not ready.
+- With a healthy base, the loop continues until all servers report
+  `isReadyToShutdown()` or `shutdownTimeout` (20s) expires. One cancelable native
+  timer wakes that original monotonic ceiling. I/O and wall-clock jumps do not
+  move it. The peer server becomes ready when its links have written everything;
+  the timeout line names servers that were not ready. Early readiness, no-server
+  and self-exit outcomes are checked before another blocking poll.
 - `run()` returns a `DaemonDeparture` saying why the node left, and `DaemonApplication`
   turns it into the process code: `0` for an ordinary stop, `ExitCode::ERROR` when there
   was a failure on the node's way out — a failed loop iteration (HIL-569), the entropy
   stop (HIL-568), or one of the three PHP handler hooks. SIGTERM, SIGINT and SIGHUP write
   nothing and leave the ordinary default in place, and the expiry of `shutdownTimeout`
   does not change the reason either: missing the deadline is a slow close, not a failure.
+
+### Failed owners and a failed base
+
+A throwing ready callback retires its own `ReadyWork`, including a self-queued
+continuation, before the failure reaches the manager guard. Manager duty
+phases detach their exact failed owner; peer consensus and placement similarly
+retire their failing duty while leaving healthy links available. Other owners
+can still drain on a healthy base. Retaining another ticket does not license
+replaying the failed generation.
+
+`EventLoopPollException extends EventLoopException` distinguishes a native
+poll returning false or throwing from an owner callback failure. A failed
+native base, or failure to arm the finite shutdown wait, is terminal: the
+contained-failure hook runs before the exit request, preparation still runs
+once, and the node leaves as `Failed` without another poll or fallback wait.
+There is no promise of responsive drain through a broken base.
+
+### Terminal native retirement
+
+`run()` uses one idempotent terminal path after graceful completion, the
+ceiling or terminal failure, including startup failure after loop allocation.
+`shouldExit` alone does not retire live owners. Retirement cancels the exact
+control watches, timers, ready portions and source bindings before descriptor
+disposal. Worker and peer owners detach before their listeners close; the
+master unregisters each listener before closing it.
+
+`public function closeListener(): void` on `AbstractServer` releases only the
+entrance and resets its running state. `PeerServer` also cancels pending raw
+dial watches before closing their sockets. This API does not replace
+`WorkerServer::stop()`, which still starts graceful worker stop waves, and it
+does not dispose clients. It is not added to `ServerInterface`.
+
+Nonbrowser clients leave through `dropClient()` before the remaining browsers,
+also at the ceiling. Detach must succeed before the file descriptor may close;
+a refusal never authorizes force-closing underneath a live watch. A throwing
+close still removes the client and does not replay `onClose()`. Independent
+owners get safe cleanup attempts before the first disposal failure escapes.
+After **all** client closes, final close-created effects and delivery debt are
+discarded, then `EventLoop::cleanup()` releases remaining handles. Cleanup
+neither closes sockets nor force-frees the base and leaves the loop reusable;
+TLS aliases retain the [native lifetime contract](event-loop.md#native-tls-buffers-and-lifetime).
 
 ## Key properties
 

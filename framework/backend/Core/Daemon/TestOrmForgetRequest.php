@@ -13,7 +13,7 @@ final readonly class TestOrmForgetRequest
      * @param string $correlationId Held console correlation
      * @param WorkerClient $worker Original worker connection
      * @param int $workerId Signed target id for the reply
-     * @param float $deadline Last time an acknowledgement may complete this wait
+     * @param float $deadline Monotonic seconds after which an acknowledgement cannot complete this wait
      */
     public function __construct(
         public string $correlationId,

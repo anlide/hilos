@@ -4,6 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use ArrayIterator;
+use Closure;
+use Hilos\Constants\TimeConstants;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\EventLoop\ReadyWork;
+use WeakReference;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
@@ -86,7 +94,8 @@ final class ClusterProtectedMode implements
     ProtectedModeCoordinator,
     ProtectedModeSwitch,
     ProtectedModeLeadership,
-    ProtectedModeQuiesceRoster
+    ProtectedModeQuiesceRoster,
+    ProtectedModeSyncScheduler
 {
     /** Bytes of collision-resistant identity; a generation grants no access and carries no secret. */
     private const int FREEZE_ID_BYTES = 16;
@@ -101,6 +110,10 @@ final class ClusterProtectedMode implements
 
     private const string SYNC_OPERATION = 'operation';
 
+    private const string SYNC_DEADLINE = 'deadline';
+
+    private const int SYNC_REQUESTS_PER_STEP = 32;
+
     /** @var string Id of the node this coordinator runs on, for log context */
     private string $selfNodeId;
 
@@ -112,6 +125,8 @@ final class ClusterProtectedMode implements
 
     /** @var bool True while this node holds leadership and owns the freeze orchestration */
     private bool $isLeader = false;
+
+    private ?Closure $changeWake = null;
 
     /** @var ?ProtectedModeQuiesceData Freeze the leader is driving, or null when the leader is idle */
     private ?ProtectedModeQuiesceData $activeFreeze = null;
@@ -150,8 +165,38 @@ final class ClusterProtectedMode implements
     /** @var ?int Initiator agent index that requested enable from this node, cleared on verdict */
     private ?int $pendingInitiatorAgentIndex = null;
 
-    /** @var array<string, array{frame: PeerProtectedModeSyncDTO, freezeId: ?string, firstRequestedAt: int, alerted: bool, operation: ?string}> */
+    /**
+     * @var array<string, array{
+     *     frame: PeerProtectedModeSyncDTO, freezeId: ?string, firstRequestedAt: int,
+     *     alerted: bool, operation: ?string, deadline: float
+     * }>
+     */
     private array $slaveSyncRequests = [];
+
+    private ?EventLoop $slaveSyncLoop = null;
+
+    private ?EventLoopTimer $slaveSyncTimer = null;
+
+    private ?ReadyWork $slaveSyncWork = null;
+
+    private int $slaveSyncBindingGeneration = 0;
+
+    private bool $slaveSyncReady = false;
+
+    private bool $slaveSyncDirty = false;
+
+    /** @var array<string, true> Promotion's finite connected-slave demand */
+    private array $slaveSyncDemands = [];
+
+    /** @var ?ArrayIterator<string, mixed> Captured cohort; new facts never rewind its prefix */
+    private ?ArrayIterator $slaveSyncScan = null;
+
+    /** @var array<string, true> Linked slave membership captured with the finite cohort */
+    private array $slaveSyncScanSlaves = [];
+
+    private ?float $slaveSyncNextDeadline = null;
+
+    private bool $slaveSyncAdvancing = false;
 
     /** @var ?PeerProtectedModeSyncDTO Latest slave target; effects already in flight finish before it */
     private ?PeerProtectedModeSyncDTO $slaveSyncTarget = null;
@@ -231,11 +276,11 @@ final class ClusterProtectedMode implements
         $this->slaveSyncTarget = null;
         $this->slaveSyncLeaderId = null;
         $this->slaveSyncRequests = [];
+        $this->slaveSyncScan = null;
+        $this->slaveSyncDemands = array_fill_keys($this->mesh->slaveNodeIds(), true);
         $this->resetLeaderState();
         $this->adoptStandingFreeze();
-        foreach ($this->mesh->slaveNodeIds() as $nodeId) {
-            $this->onSlaveConnected($nodeId);
-        }
+        $this->noteSlaveSyncChanged();
     }
 
     /**
@@ -248,6 +293,7 @@ final class ClusterProtectedMode implements
         if (!$this->isLeader || !in_array($nodeId, $this->mesh->slaveNodeIds(), true)) {
             return;
         }
+        unset($this->slaveSyncDemands[$nodeId]);
         $this->requestSlaveSync($nodeId, time());
     }
 
@@ -261,6 +307,7 @@ final class ClusterProtectedMode implements
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
      * @throws PeerTransportException When the acknowledgement is invalid
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onSync(string $fromNodeId, PeerProtectedModeSyncDTO $frame): void
     {
@@ -269,6 +316,7 @@ final class ClusterProtectedMode implements
         }
         $this->slaveSyncTarget = $frame;
         $this->slaveSyncLeaderId = $fromNodeId;
+        $this->noteSlaveSyncChanged();
         $this->advanceSlaveSync();
     }
 
@@ -290,18 +338,24 @@ final class ClusterProtectedMode implements
         $expected = $request[self::SYNC_FRAME];
         $current = $this->slaveSnapshot($expected->syncId);
         if ($frame->syncId !== $expected->syncId || $frame->phase !== $expected->phase
-            || $current?->toArray() !== $expected->toArray()) {
+            || $current?->toArray() !== $expected->toArray()
+            || ($this->slaveSyncRequests[$fromNodeId] ?? null) !== $request) {
             return;
         }
         unset($this->slaveSyncRequests[$fromNodeId]);
+        $this->noteSlaveSyncChanged();
         // A synced slave never substitutes for a master's lost quiesced report.
         if ($expected->payload?->freezeId === $this->activeFreeze?->freezeId) {
-            unset($this->pendingNodes[$fromNodeId]);
+            if (isset($this->pendingNodes[$fromNodeId])) {
+                unset($this->pendingNodes[$fromNodeId]);
+                $this->noteOrchestrationChanged();
+            }
             $this->activateWhenAllQuiesced();
         }
     }
 
     /**
+     * Explicit epoch observation for state-machine tests; production dispatches native ready work.
      * Runs even on inactive: a lost lift remains a separate outstanding request.
      *
      * @param int $now Local observation time in seconds
@@ -309,6 +363,7 @@ final class ClusterProtectedMode implements
      * @throws PeerTransportException When a snapshot or acknowledgement is invalid
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function tickSlaveSync(int $now): void
     {
@@ -316,18 +371,114 @@ final class ClusterProtectedMode implements
             $this->advanceSlaveSync();
             return;
         }
+        foreach ($this->slaveSyncDemands as $nodeId => $_) {
+            unset($this->slaveSyncDemands[$nodeId]);
+            $this->requestSlaveSync($nodeId, $now);
+        }
         foreach ($this->slaveSyncRequests as $nodeId => $request) {
             $expected = $request[self::SYNC_FRAME];
             $current = $this->slaveSnapshot($expected->syncId);
             if ($current !== null && $current->toArray() !== $expected->toArray()) {
                 $this->requestSlaveSync($nodeId, $now);
-                $request = $this->slaveSyncRequests[$nodeId];
+                $request = $this->slaveSyncRequests[$nodeId] ?? null;
             }
-            if (!$request[self::SYNC_ALERTED] && $now - $request[self::SYNC_FIRST_REQUESTED_AT] >= $this->slaveSyncTimeoutSeconds()) {
+            if ($request !== null && $this->isLeader && ($this->slaveSyncRequests[$nodeId] ?? null) === $request
+                && !$request[self::SYNC_ALERTED] && $now - $request[self::SYNC_FIRST_REQUESTED_AT] >= $this->slaveSyncTimeoutSeconds()) {
                 $this->slaveSyncRequests[$nodeId][self::SYNC_ALERTED] = true;
                 $this->notifySlaveWarning($nodeId, $request[self::SYNC_FRAME],
                     ProtectedModeSlaveAlertMailTemplate::REASON_SYNC_OVERDUE, $request[self::SYNC_OPERATION]);
             }
+        }
+    }
+
+    /** @param EventLoop $loop Existing master loop; rebinding retains protocol and original due */
+    public function attachSlaveSyncEventLoop(EventLoop $loop): void
+    {
+        if ($this->slaveSyncLoop === $loop) {
+            return;
+        }
+        $this->detachSlaveSyncEventLoop();
+        $this->slaveSyncLoop = $loop;
+        $owner = WeakReference::create($this);
+        $generation = $this->slaveSyncBindingGeneration;
+        $this->slaveSyncWork = $loop->createReadyWork(static function () use ($owner, $generation): void {
+            $sync = $owner->get();
+            if ($sync !== null && $sync->slaveSyncBindingGeneration === $generation) {
+                $sync->slaveSyncReady = true;
+            }
+        });
+        $this->noteSlaveSyncChanged();
+    }
+
+    /** Releases old activations without losing requests, latest target or original deadlines. */
+    public function detachSlaveSyncEventLoop(): void
+    {
+        ++$this->slaveSyncBindingGeneration;
+        $this->slaveSyncWork?->close();
+        $this->slaveSyncWork = null;
+        $this->slaveSyncTimer?->close();
+        $this->slaveSyncTimer = null;
+        $this->slaveSyncLoop = null;
+    }
+
+    /** Coalesces actual source, installed-link and internal protocol facts. */
+    public function noteSlaveSyncChanged(): void
+    {
+        $this->slaveSyncDirty = true;
+        $this->slaveSyncReady = true;
+        $this->slaveSyncWork?->markReady();
+    }
+
+    /** @return bool Finite unfinished work, never request/target occupancy by itself */
+    public function hasSlaveSyncReadyWork(): bool
+    {
+        return $this->slaveSyncReady;
+    }
+
+    /**
+     * Native callbacks only cue this existing guarded peer phase.
+     *
+     * @param ?float $wallNow Paired epoch observation, current clock by default
+     * @param ?float $monotonicNow Paired process observation, current clock by default
+     * @throws EventLoopException When the nearest original deadline cannot be armed
+     * @throws EnvException When leadership or timeout configuration is invalid
+     * @throws PeerTransportException When a snapshot or acknowledgement is invalid
+     * @throws RtActionsCollectionNameNullException When the collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this master cannot write the freeze row
+     */
+    public function dispatchSlaveSyncReady(?float $wallNow = null, ?float $monotonicNow = null): void
+    {
+        if (!$this->slaveSyncReady || $this->slaveSyncLoop === null || $this->slaveSyncAdvancing) {
+            return;
+        }
+        $this->slaveSyncReady = false;
+        $this->slaveSyncWork?->cancel();
+        if (!$this->isLeader) {
+            $this->slaveSyncDirty = false;
+            $this->advanceSlaveSync();
+            return;
+        }
+        $wallNow ??= microtime(true);
+        $monotonicNow ??= hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        $this->slaveSyncAdvancing = true;
+        try {
+            $this->advanceSlaveSyncRequests((int)$wallNow, $monotonicNow);
+        } finally {
+            $this->slaveSyncAdvancing = false;
+        }
+    }
+
+    /** @param Closure(): void $wake Concrete protected source fan-out */
+    public function setChangeWake(Closure $wake): void
+    {
+        $this->changeWake = $wake;
+    }
+
+    /** @param Closure(): void $wake Exact departing source binding */
+    public function removeChangeWake(Closure $wake): void
+    {
+        if ($this->changeWake === $wake) {
+            $this->changeWake = null;
         }
     }
 
@@ -367,7 +518,12 @@ final class ClusterProtectedMode implements
     {
         $this->isLeader = false;
         $this->slaveSyncRequests = [];
+        $this->slaveSyncDemands = [];
+        $this->slaveSyncScan = null;
+        $this->slaveSyncTimer?->close();
+        $this->slaveSyncTimer = null;
         $this->resetLeaderState();
+        $this->noteSlaveSyncChanged();
     }
 
     /**
@@ -384,6 +540,7 @@ final class ClusterProtectedMode implements
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      * @throws PeerTransportException When the cluster descriptor has no barrier generation
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function requestEnable(ProtectedModeEnableSignalData $data): void
     {
@@ -609,6 +766,7 @@ final class ClusterProtectedMode implements
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      * @throws PeerTransportException When the cluster descriptor has no barrier generation
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function requestRefreeze(ProtectedModeRefreezeSignalData $data): void
     {
@@ -633,6 +791,7 @@ final class ClusterProtectedMode implements
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      * @throws PeerTransportException When the cluster descriptor has no barrier generation
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onEnable(string $fromNodeId, ProtectedModeEnableSignalData $data): void
     {
@@ -670,6 +829,7 @@ final class ClusterProtectedMode implements
             $data->initiatorNodeId,
             $data->initiatorSessionTokenHash,
         );
+        $this->noteOrchestrationChanged();
         $this->readyOwed = true;
         if ($data->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
             $this->enterWindowRound($this->activeFreeze, $data->initiatorAcceptKey);
@@ -695,7 +855,10 @@ final class ClusterProtectedMode implements
         if (isset($this->slaveSyncRequests[$fromNodeId])) {
             return;
         }
-        unset($this->pendingNodes[$fromNodeId]);
+        if (isset($this->pendingNodes[$fromNodeId])) {
+            unset($this->pendingNodes[$fromNodeId]);
+            $this->noteOrchestrationChanged();
+        }
         $this->activateWhenAllQuiesced();
     }
 
@@ -718,8 +881,11 @@ final class ClusterProtectedMode implements
         }
         $this->mesh->broadcastLift();
         $this->rosterStopping = false;
+        $this->noteOrchestrationChanged();
         $this->rosterResuming = !$directWindow;
+        $this->noteOrchestrationChanged();
         $this->finishLiftOwed = !$directWindow;
+        $this->noteOrchestrationChanged();
         $this->executor->enterInactive();
         if ($directWindow) {
             $this->executor->finishLift();
@@ -750,6 +916,7 @@ final class ClusterProtectedMode implements
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onQuiesce(string $fromNodeId, ProtectedModeQuiesceData $data): void
     {
@@ -793,10 +960,14 @@ final class ClusterProtectedMode implements
         // may connect (HIL-1305). The accept key remains on the node of its socket. The quiesced
         // report waits for this roster to stop and leaves from onRosterStopped().
         $this->rosterStopping = true;
+        $this->noteOrchestrationChanged();
         $this->rosterResuming = false;
+        $this->noteOrchestrationChanged();
         $this->rosterStopped = false;
         $this->finishLiftOwed = false;
+        $this->noteOrchestrationChanged();
         $this->finishVerifyingOwed = false;
+        $this->noteOrchestrationChanged();
         $this->executor->enterActivating($data, null);
     }
 
@@ -868,10 +1039,15 @@ final class ClusterProtectedMode implements
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      * @throws PeerTransportException When the slave acknowledgement is invalid
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onRosterStopped(): void
     {
+        if ($this->slaveSyncAdvancing && !$this->rosterStopping) {
+            return;
+        }
         $this->rosterStopping = false;
+        $this->noteOrchestrationChanged();
         $this->rosterStopped = true;
         if ($this->slaveSyncTarget !== null) {
             $this->advanceSlaveSync();
@@ -882,7 +1058,10 @@ final class ClusterProtectedMode implements
         }
 
         if ($this->isLeader && $this->activeFreeze !== null) {
-            unset($this->pendingNodes[$this->selfNodeId]);
+            if (isset($this->pendingNodes[$this->selfNodeId])) {
+                unset($this->pendingNodes[$this->selfNodeId]);
+                $this->noteOrchestrationChanged();
+            }
             $this->activateWhenAllQuiesced();
             return;
         }
@@ -901,10 +1080,15 @@ final class ClusterProtectedMode implements
      * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
      * @throws EnvException When leadership configuration is invalid
      * @throws PeerTransportException When the slave acknowledgement is invalid
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onRosterResumed(): void
     {
+        if ($this->slaveSyncAdvancing && !$this->rosterResuming) {
+            return;
+        }
         $this->rosterResuming = false;
+        $this->noteOrchestrationChanged();
         $this->rosterStopped = false;
         if ($this->slaveSyncTarget !== null) {
             $this->advanceSlaveSync();
@@ -913,9 +1097,11 @@ final class ClusterProtectedMode implements
         $phase = $this->runtimeView()?->phase;
         if ($phase === StateProtectedModeRuntime::PHASE_VERIFYING) {
             $this->finishVerifyingOwed = false;
+            $this->noteOrchestrationChanged();
             $this->executor->finishVerifying();
         } elseif ($phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
             $this->finishLiftOwed = false;
+            $this->noteOrchestrationChanged();
             $this->executor->finishLift();
         }
     }
@@ -1009,8 +1195,11 @@ final class ClusterProtectedMode implements
 
         $directWindow = $this->runtimeView()?->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
         $this->rosterStopping = false;
+        $this->noteOrchestrationChanged();
         $this->rosterResuming = !$directWindow;
+        $this->noteOrchestrationChanged();
         $this->finishLiftOwed = !$directWindow;
+        $this->noteOrchestrationChanged();
         $this->executor->enterInactive();
         if ($directWindow) {
             $this->executor->finishLift();
@@ -1072,8 +1261,11 @@ final class ClusterProtectedMode implements
             }
 
             $this->rosterStopping = false;
+            $this->noteOrchestrationChanged();
             $this->rosterResuming = true;
+            $this->noteOrchestrationChanged();
             $this->finishVerifyingOwed = true;
+            $this->noteOrchestrationChanged();
             $this->executor->enterVerifying();
             return;
         }
@@ -1087,8 +1279,11 @@ final class ClusterProtectedMode implements
         }
 
         $this->rosterStopping = false;
+        $this->noteOrchestrationChanged();
         $this->rosterResuming = true;
+        $this->noteOrchestrationChanged();
         $this->finishVerifyingOwed = true;
+        $this->noteOrchestrationChanged();
         $this->executor->enterVerifying();
         $this->mesh->broadcastVerify($this->activeFreeze->initiatorAgentType, $this->activeFreeze->initiatorAgentIndex);
     }
@@ -1288,6 +1483,7 @@ final class ClusterProtectedMode implements
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      * @throws PeerTransportException When the cluster descriptor has no barrier generation
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onRefreeze(string $fromNodeId, string $agentType, ?int $agentIndex): void
     {
@@ -1311,6 +1507,7 @@ final class ClusterProtectedMode implements
 
         $this->readyOwed = false;
         $this->activeFreeze = $this->activeFreeze->withInitiatorSessionTokenHash($view->initiatorSessionTokenHash);
+        $this->noteOrchestrationChanged();
         $this->enterRound($this->activeFreeze, $view->initiatorAcceptKey);
     }
 
@@ -1327,12 +1524,14 @@ final class ClusterProtectedMode implements
     private function enterWindowRound(ProtectedModeQuiesceData $freeze, ?string $initiatorAcceptKey): void
     {
         $this->pendingNodes = array_fill_keys($this->mesh->followerNodeIds(), true);
+        $this->noteOrchestrationChanged();
         $this->quiesceNodes = array_keys($this->pendingNodes);
         $this->active = false;
         $this->directCircleReceived = false;
 
         $freeze = $freeze->withFreezeId(RandomHelper::hex(self::FREEZE_ID_BYTES));
         $this->activeFreeze = $freeze;
+        $this->noteOrchestrationChanged();
         $this->executor->enterVerificationWindow($freeze, $initiatorAcceptKey);
         $this->mesh->broadcastWindow($freeze);
         $this->activateWhenAllQuiesced();
@@ -1359,17 +1558,23 @@ final class ClusterProtectedMode implements
         ?string $initiatorAcceptKey,
     ): void {
         $this->pendingNodes = array_fill_keys([...$this->mesh->followerNodeIds(), $this->selfNodeId], true);
+        $this->noteOrchestrationChanged();
         $this->quiesceNodes = array_keys($this->pendingNodes);
         $this->active = false;
 
         // Every new destructive round has its own identity, even when the window stayed closed.
         $freeze = $freeze->withFreezeId(RandomHelper::hex(self::FREEZE_ID_BYTES));
         $this->activeFreeze = $freeze;
+        $this->noteOrchestrationChanged();
         $this->rosterStopping = true;
+        $this->noteOrchestrationChanged();
         $this->rosterResuming = false;
+        $this->noteOrchestrationChanged();
         $this->rosterStopped = false;
         $this->finishLiftOwed = false;
+        $this->noteOrchestrationChanged();
         $this->finishVerifyingOwed = false;
+        $this->noteOrchestrationChanged();
         $this->executor->enterActivating($freeze, $initiatorAcceptKey);
         $this->mesh->broadcastQuiesce($freeze);
     }
@@ -1447,6 +1652,7 @@ final class ClusterProtectedMode implements
         if ($this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
             $this->readyOwed = true;
             $this->activeFreeze = $freeze->withInitiatorSessionTokenHash($data->initiatorSessionTokenHash);
+            $this->noteOrchestrationChanged();
             $this->enterRound($this->activeFreeze, $data->initiatorAcceptKey);
             return;
         }
@@ -1473,6 +1679,93 @@ final class ClusterProtectedMode implements
         $this->mesh->sendRefused($fromNodeId, $reason);
     }
 
+    private function noteOrchestrationChanged(): void
+    {
+        $this->noteSlaveSyncChanged();
+        $this->changeWake?->__invoke();
+    }
+
+    /**
+     * @param int $now Epoch observation for new requests and existing warning text
+     * @param float $monotonicNow Process observation for original private deadlines
+     * @throws EventLoopException When the nearest original deadline cannot be armed
+     * @throws EnvException When leadership or timeout configuration is invalid
+     * @throws PeerTransportException When the current snapshot is invalid
+     */
+    private function advanceSlaveSyncRequests(int $now, float $monotonicNow): void
+    {
+        if ($this->mesh->leaderNodeId() !== $this->selfNodeId) {
+            $this->slaveSyncScan = null;
+            $this->slaveSyncTimer?->close();
+            $this->slaveSyncTimer = null;
+            return;
+        }
+        if ($this->slaveSyncScan === null) {
+            $this->slaveSyncDirty = false;
+            $this->slaveSyncNextDeadline = null;
+            $this->slaveSyncTimer?->armAt(null);
+            $this->slaveSyncScan = new ArrayIterator($this->slaveSyncRequests + $this->slaveSyncDemands);
+            $this->slaveSyncScanSlaves = $this->slaveSyncDemands === []
+                ? [] : array_fill_keys($this->mesh->slaveNodeIds(), true);
+        }
+        for ($visited = 0; $visited < self::SYNC_REQUESTS_PER_STEP && $this->slaveSyncScan?->valid(); ++$visited) {
+            $scan = $this->slaveSyncScan;
+            $nodeId = $scan->key();
+            $scan->next();
+            $request = $this->slaveSyncRequests[$nodeId] ?? null;
+            $demand = isset($this->slaveSyncDemands[$nodeId]);
+            unset($this->slaveSyncDemands[$nodeId]);
+            if ($demand || $request !== null) {
+                $expected = $request[self::SYNC_FRAME] ?? null;
+                $current = $expected === null ? null : $this->slaveSnapshot($expected->syncId);
+                $demand = $demand && isset($this->slaveSyncScanSlaves[$nodeId]);
+                if ($demand || ($current !== null && $current->toArray() !== $expected?->toArray())) {
+                    $this->requestSlaveSync($nodeId, $now);
+                }
+                if (!$this->isLeader || $this->slaveSyncScan !== $scan || $this->mesh->leaderNodeId() !== $this->selfNodeId) {
+                    return;
+                }
+                $request = $this->slaveSyncRequests[$nodeId] ?? null;
+                if ($request !== null && !$request[self::SYNC_ALERTED]) {
+                    if ($monotonicNow >= $request[self::SYNC_DEADLINE]) {
+                        $this->slaveSyncRequests[$nodeId][self::SYNC_ALERTED] = true;
+                        $this->notifySlaveWarning($nodeId, $request[self::SYNC_FRAME],
+                            ProtectedModeSlaveAlertMailTemplate::REASON_SYNC_OVERDUE, $request[self::SYNC_OPERATION]);
+                        if (!$this->isLeader || $this->slaveSyncScan !== $scan) {
+                            return;
+                        }
+                    } else {
+                        $this->slaveSyncNextDeadline = $this->slaveSyncNextDeadline === null ? $request[self::SYNC_DEADLINE]
+                            : min($this->slaveSyncNextDeadline, $request[self::SYNC_DEADLINE]);
+                    }
+                }
+            }
+        }
+        if ($this->slaveSyncScan?->valid()) {
+            $this->slaveSyncReady = true;
+            $this->slaveSyncWork?->markReady();
+            return;
+        }
+        $this->slaveSyncScan = null;
+        $this->slaveSyncScanSlaves = [];
+        if ($this->slaveSyncDirty) {
+            $this->slaveSyncReady = true;
+            $this->slaveSyncWork?->markReady();
+            return;
+        }
+        if ($this->slaveSyncTimer === null && $this->slaveSyncLoop !== null) {
+            $owner = WeakReference::create($this);
+            $generation = $this->slaveSyncBindingGeneration;
+            $this->slaveSyncTimer = $this->slaveSyncLoop->createTimer(static function () use ($owner, $generation): void {
+                $sync = $owner->get();
+                if ($sync !== null && $sync->slaveSyncBindingGeneration === $generation) {
+                    $sync->noteSlaveSyncChanged();
+                }
+            });
+        }
+        $this->slaveSyncTimer?->armAt($this->slaveSyncNextDeadline);
+    }
+
     /**
      * @param string $nodeId Slave whose target changed or connection returned
      * @param int $now First observation time for a new generation
@@ -1495,10 +1788,17 @@ final class ClusterProtectedMode implements
             self::SYNC_FIRST_REQUESTED_AT => $sameGeneration ? $previous[self::SYNC_FIRST_REQUESTED_AT] : $now,
             self::SYNC_ALERTED => $sameGeneration && $previous[self::SYNC_ALERTED],
             self::SYNC_OPERATION => $frame->payload?->operation ?? ($previous[self::SYNC_OPERATION] ?? null),
+            self::SYNC_DEADLINE => $sameGeneration ? $previous[self::SYNC_DEADLINE]
+                : hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND
+                    + ($now + $this->slaveSyncTimeoutSeconds() - microtime(true)),
         ];
+        $this->noteSlaveSyncChanged();
         if ($this->activeFreeze !== null && !$this->active
             && $frame->entryMode === StateProtectedModeRuntime::ENTRY_MODE_FREEZE) {
-            $this->pendingNodes[$nodeId] = true;
+            if (!isset($this->pendingNodes[$nodeId])) {
+                $this->pendingNodes[$nodeId] = true;
+                $this->noteOrchestrationChanged();
+            }
             if ($this->quiesceNodes !== null && !in_array($nodeId, $this->quiesceNodes, true)) {
                 $this->quiesceNodes[] = $nodeId;
             }
@@ -1544,8 +1844,32 @@ final class ClusterProtectedMode implements
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this master is not the truth source
      * @throws PeerTransportException When the acknowledgement is invalid
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function advanceSlaveSync(): void
+    {
+        if ($this->slaveSyncAdvancing) {
+            $this->noteSlaveSyncChanged();
+            return;
+        }
+        $this->slaveSyncAdvancing = true;
+        try {
+            $this->applySlaveSyncTarget();
+        } finally {
+            $this->slaveSyncAdvancing = false;
+        }
+    }
+
+    /**
+     * Applies one reachable local effect while holding the owner's reentry guard.
+     *
+     * @throws EnvException When leadership or timeout configuration is invalid
+     * @throws RtActionsCollectionNameNullException When the collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this master cannot write the freeze row
+     * @throws PeerTransportException When the acknowledgement is invalid
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
+     */
+    private function applySlaveSyncTarget(): void
     {
         $frame = $this->slaveSyncTarget;
         $leader = $this->slaveSyncLeaderId;
@@ -1567,28 +1891,38 @@ final class ClusterProtectedMode implements
         if ($frame->entryMode === StateProtectedModeRuntime::ENTRY_MODE_FREEZE && $frame->barrierClosed
             && $view->freezeId !== $generation && !$this->slaveMissedBarrierAlerted) {
             // Before any action persists the new id: agreeing now says nothing about the past gap.
-            $this->notifySlaveWarning($this->selfNodeId, $frame, ProtectedModeSlaveAlertMailTemplate::REASON_MISSED_BARRIER);
             $this->slaveMissedBarrierAlerted = true;
+            $this->notifySlaveWarning($this->selfNodeId, $frame, ProtectedModeSlaveAlertMailTemplate::REASON_MISSED_BARRIER);
+            if (!$this->isSlaveSyncTargetCurrent($leader, $frame)) {
+                return;
+            }
         }
         if ($frame->phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
             if ($view->phase !== StateProtectedModeRuntime::PHASE_INACTIVE) {
                 if ($this->slaveDatabaseTarget !== $frame) {
                     $this->startSlaveDatabaseCatchUp($leader, $frame);
                 }
-                if (!$this->slaveDatabaseComplete) {
+                if (!$this->slaveDatabaseComplete || !$this->isSlaveSyncTargetCurrent($leader, $frame)) {
                     return;
                 }
                 $direct = $view->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
                 $this->rosterResuming = !$direct;
+                $this->noteOrchestrationChanged();
                 $this->finishLiftOwed = true;
+                $this->noteOrchestrationChanged();
                 $this->finishVerifyingOwed = false;
+                $this->noteOrchestrationChanged();
                 $this->executor->enterInactive();
+                if (!$this->isSlaveSyncTargetCurrent($leader, $frame)) {
+                    return;
+                }
                 if (!$direct) {
                     return;
                 }
             }
             if ($this->finishLiftOwed) {
                 $this->finishLiftOwed = false;
+                $this->noteOrchestrationChanged();
                 $this->executor->finishLift();
             }
             $this->acknowledgeSlaveSync($leader, $frame);
@@ -1602,10 +1936,14 @@ final class ClusterProtectedMode implements
             && $view->freezeId === $frame->payload?->freezeId;
         if ($fullFreeze && !$stopped && !($frame->phase === StateProtectedModeRuntime::PHASE_VERIFYING && $sameWindow)) {
             $this->rosterStopping = true;
+            $this->noteOrchestrationChanged();
             $this->rosterResuming = false;
+            $this->noteOrchestrationChanged();
             $this->rosterStopped = false;
             $this->finishLiftOwed = false;
+            $this->noteOrchestrationChanged();
             $this->finishVerifyingOwed = false;
+            $this->noteOrchestrationChanged();
             $this->executor->enterActivating($frame->payload, null);
             return;
         }
@@ -1613,14 +1951,19 @@ final class ClusterProtectedMode implements
             if ($this->slaveDatabaseTarget !== $frame) {
                 $this->startSlaveDatabaseCatchUp($leader, $frame);
             }
-            if (!$this->slaveDatabaseComplete) {
+            if (!$this->slaveDatabaseComplete || !$this->isSlaveSyncTargetCurrent($leader, $frame)) {
                 return;
             }
             if ($stopped) {
                 // Import the actual rights before any returning agent can answer a verifier.
                 $this->executor->importSlaveSync($frame, StateProtectedModeRuntime::PHASE_ACTIVE);
+                if (!$this->isSlaveSyncTargetCurrent($leader, $frame)) {
+                    return;
+                }
                 $this->rosterResuming = true;
+                $this->noteOrchestrationChanged();
                 $this->finishVerifyingOwed = true;
+                $this->noteOrchestrationChanged();
                 $this->executor->enterVerifying();
                 return;
             }
@@ -1631,8 +1974,12 @@ final class ClusterProtectedMode implements
                 || $view->circleNamedCount !== $frame->circleNamedCount
                 || $view->circleSessionTokenHashes !== $frame->circleSessionTokenHashes;
             $this->executor->importSlaveSync($frame, $frame->phase);
+            if (!$this->isSlaveSyncTargetCurrent($leader, $frame)) {
+                return;
+            }
             if ($windowChanged || $this->finishVerifyingOwed) {
                 $this->finishVerifyingOwed = false;
+                $this->noteOrchestrationChanged();
                 $this->executor->finishVerifying();
             }
         } else {
@@ -1643,7 +1990,7 @@ final class ClusterProtectedMode implements
     }
 
     /**
-     * Keeps the numbered round's result private to the snapshot that requested it. The next tick
+     * Keeps the numbered round's result private to the snapshot that requested it. Guarded work
      * rechecks the leader and exact connection before it applies any phase, rights or resume.
      *
      * @param string $leader Leader whose snapshot requested catch-up
@@ -1659,12 +2006,17 @@ final class ClusterProtectedMode implements
                 return;
             }
             $this->slaveDatabasePending = false;
+            $this->noteSlaveSyncChanged();
             if (!$verdict->complete || $this->isLeader || $this->slaveSyncTarget !== $frame || $this->slaveSyncLeaderId !== $leader) {
                 return;
             }
             try {
-                $this->slaveDatabaseComplete = $leader === $this->mesh->leaderNodeId()
+                $current = $leader === $this->mesh->leaderNodeId()
                     && $this->mesh->isProtectedModeSyncCurrent($leader, $frame->syncId);
+                if ($this->slaveDatabaseTarget === $frame && !$this->slaveDatabasePending
+                    && !$this->isLeader && $this->slaveSyncTarget === $frame && $this->slaveSyncLeaderId === $leader) {
+                    $this->slaveDatabaseComplete = $current;
+                }
             } catch (EnvException $exception) {
                 Logger::error('Protected mode: database catch-up cannot confirm its current leader: ' . $exception->getMessage());
             }
@@ -1679,7 +2031,10 @@ final class ClusterProtectedMode implements
      */
     private function acknowledgeSlaveSync(string $leader, PeerProtectedModeSyncDTO $frame): void
     {
-        $this->mesh->sendProtectedModeSynced($leader, $frame->syncId, $frame->phase);
+        if (!$this->isSlaveSyncTargetCurrent($leader, $frame)) {
+            return;
+        }
+        // Consume before the mesh can synchronously deliver the next target.
         $this->slaveSyncTarget = null;
         $this->slaveSyncLeaderId = null;
         $this->freezingLeaderId = $frame->phase === StateProtectedModeRuntime::PHASE_INACTIVE ? null : $leader;
@@ -1687,6 +2042,19 @@ final class ClusterProtectedMode implements
             $this->slaveWarningGeneration = null;
             $this->slaveMissedBarrierAlerted = false;
         }
+        $this->mesh->sendProtectedModeSynced($leader, $frame->syncId, $frame->phase);
+    }
+
+    /**
+     * @param string $leader Expected current elected leader
+     * @param PeerProtectedModeSyncDTO $frame Exact installed target object
+     * @return bool Whether another effect may still be applied to this target
+     * @throws EnvException When leadership configuration is invalid
+     */
+    private function isSlaveSyncTargetCurrent(string $leader, PeerProtectedModeSyncDTO $frame): bool
+    {
+        return $leader === $this->mesh->leaderNodeId() && $this->mesh->isProtectedModeSyncCurrent($leader, $frame->syncId)
+            && !$this->isLeader && $this->slaveSyncTarget === $frame && $this->slaveSyncLeaderId === $leader;
     }
 
     /**
@@ -1947,6 +2315,7 @@ final class ClusterProtectedMode implements
             $view->initiatorSessionTokenHash,
             $view->freezeId,
         );
+        $this->noteOrchestrationChanged();
         // A row past activating means the round closed under the previous leader: the freeze is
         // established and the initiator has been told so. Re-collecting there would hand out a
         // second ready in the middle of the operation the first one started.
@@ -1957,6 +2326,7 @@ final class ClusterProtectedMode implements
         $this->pendingNodes = $this->active
             ? []
             : array_fill_keys([...$this->mesh->followerNodeIds(), $this->selfNodeId], true);
+        $this->noteOrchestrationChanged();
         // No local completion is inferred or stop restarted for an unfinished adopted round.
         // Adoption preserves its existing selection: an established freeze starts no new round.
         $this->quiesceNodes = array_keys($this->pendingNodes);
@@ -1975,7 +2345,9 @@ final class ClusterProtectedMode implements
     private function resetLeaderState(): void
     {
         $this->activeFreeze = null;
+        $this->noteOrchestrationChanged();
         $this->pendingNodes = [];
+        $this->noteOrchestrationChanged();
         $this->quiesceNodes = null;
         $this->active = false;
         $this->readyOwed = false;

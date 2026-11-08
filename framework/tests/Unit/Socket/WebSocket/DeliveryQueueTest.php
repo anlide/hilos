@@ -4,15 +4,156 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Socket\WebSocket;
 
+use Generator;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\WebSocket\Delivery\DeliveryFrame;
+use Hilos\Socket\WebSocket\Delivery\DeliveryCleanup;
 use Hilos\Socket\WebSocket\Delivery\DeliveryQueue;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use SplQueue;
+use WeakReference;
 
 final class DeliveryQueueTest extends TestCase
 {
+    public function testPortionedPackingPublishesOneWholeOriginalBatchAndKeepsLaterHoldAndCadence(): void
+    {
+        $queue = new DeliveryQueue();
+        $json = [];
+        for ($index = 0; $index < 8192; $index++) {
+            $json[] = '{"type":"event","data":{"n":' . $index . '}}';
+            $queue->enqueue(DeliveryFrame::fromJson($json[$index]), 100);
+        }
+        $bytes = $queue->getPendingBytes();
+        self::assertSame([], $queue->drainPortion(100, 0));
+        self::assertNull($queue->getNextDueAt());
+        self::assertSame([], $queue->drainPortion(100, 64));
+        self::assertTrue($queue->hasPendingPacking());
+        self::assertSame($bytes, $queue->getPendingBytes(), 'A partially built batch still owns all of its transport bytes');
+        self::assertSame(1100, $queue->getNextDueAt());
+        $queue->setWindowMs(250);
+        $queue->beginSubscription('later', 200);
+        $later = self::event(-1);
+        $queue->enqueue($later, 200);
+        $laterBytes = WebSocketClient::frameHeaderBytes(strlen($later->json)) + strlen($later->json);
+        self::assertSame($bytes + $laterBytes, $queue->getPendingBytes());
+        $packages = [];
+        for ($portion = 0; $portion < 140; $portion++) {
+            foreach ($queue->drainPortion(10_000, 64) as $package) {
+                $packages[] = $package;
+            }
+        }
+        self::assertSame(['{"type":"signal_batch","data":{"frames":[' . implode(',', $json) . ']}}'], $packages);
+        self::assertFalse($queue->hasPendingPacking());
+        self::assertSame(1100, $queue->getNextDueAt(), 'Later packing portions do not move the admitted deadline');
+        self::assertSame($laterBytes, $queue->getPendingBytes());
+        self::assertSame([], $queue->drain(10_000), 'The later incomplete subscription still holds its own packet');
+        $queue->completeDelivery('later', 10_001);
+        self::assertSame([$later->json], $queue->drain(10_001));
+        self::assertSame(10_251, $queue->getNextDueAt());
+        self::assertSame(0, $queue->getPendingBytes());
+    }
+
+    public function testSingleStepPackingKeepsOpaqueAndPrebuiltBatchBoundariesAndExactByteOwnership(): void
+    {
+        $queue = new DeliveryQueue();
+        $first = DeliveryFrame::fromJson('{ "type":"first", "data":{"map":{},"list":[],"0":"value"} }');
+        $second = self::event(2);
+        $batch = '{"type":"signal_batch","data":{"frames":[{"type":"inside","data":null}]}}';
+        foreach ([$first, $second, DeliveryFrame::fromJson('opaque'), DeliveryFrame::fromJson($batch), self::event(3)] as $frame) {
+            $queue->enqueue($frame, 0);
+        }
+        $remaining = $queue->getPendingBytes();
+        $packages = [];
+        for ($step = 0; $step < 16; $step++) {
+            $portion = $queue->drainPortion(0, 1);
+            self::assertLessThanOrEqual(1, count($portion));
+            foreach ($portion as $package) {
+                $remaining -= WebSocketClient::frameHeaderBytes(strlen($package)) + strlen($package);
+                $packages[] = $package;
+            }
+            self::assertSame($remaining, $queue->getPendingBytes(), 'Transport ownership transfers only with a whole package');
+        }
+        self::assertSame([
+            '{"type":"signal_batch","data":{"frames":[' . $first->json . ',' . $second->json . ']}}',
+            'opaque', $batch, self::event(3)->json,
+        ], $packages);
+        self::assertSame(0, $remaining);
+        self::assertFalse($queue->hasFrames());
+    }
+
+    public function testClosingAnUnfinishedPacketRetiresOriginalFramesWithoutRetainingTheQueue(): void
+    {
+        $pending = new SplQueue();
+        $cleanup = new DeliveryCleanup(static function (Generator $retirement) use ($pending): void { $pending->enqueue($retirement); });
+        $queue = new DeliveryQueue(cleanup: $cleanup);
+        $references = [];
+        for ($index = 0; $index < 8192; $index++) {
+            $frame = self::event($index);
+            $references[] = WeakReference::create($frame);
+            $queue->enqueue($frame, 0);
+        }
+        unset($frame);
+        self::assertSame([], $queue->drainPortion(0, 1));
+        $queue->close();
+        self::assertFalse($queue->hasFrames());
+        self::assertFalse($queue->hasPendingPacking());
+        self::assertSame(0, $queue->getPendingBytes());
+        self::assertCount(1, $pending);
+        $weakQueue = WeakReference::create($queue);
+        unset($queue);
+        self::assertNull($weakQueue->get(), 'A retired packet never keeps its socket queue owner alive');
+        $retirement = $pending->dequeue();
+        $retirement->rewind();
+        self::assertNotNull($references[8191]->get());
+        $retirement->next();
+        self::assertNull($references[8191]->get());
+        self::assertNotNull($references[8190]->get());
+        while ($retirement->valid()) {
+            $retirement->next();
+        }
+        foreach ($references as $reference) {
+            self::assertNull($reference->get());
+        }
+    }
+
+    public function testWorkDeadlineDistinguishesHeldEmptyUrgentGraceAndCapturedPacking(): void
+    {
+        $queue = new DeliveryQueue();
+        self::assertNull($queue->nextWorkAt(0));
+        $queue->enqueue(self::event(1), 5);
+        self::assertSame(5, $queue->nextWorkAt(5));
+        self::assertNull($queue->getNextDueAt(), 'Reading never captures the packet');
+        $queue->drain(5);
+        self::assertNull($queue->nextWorkAt(1005), 'An empty queue owes no work at its raw deadline');
+        self::assertSame(1005, $queue->getNextDueAt());
+        $queue->enqueue(self::event(2), 6);
+        $queue->setWindowMs(2000);
+        self::assertSame(1005, $queue->nextWorkAt(6));
+        self::assertSame(1005, $queue->nextWorkAt(1005));
+        self::assertSame(6, $queue->nextWorkAt(6, force: true));
+        $queue->beginSubscription('held', 6);
+        self::assertNull($queue->nextWorkAt(1005, force: true));
+        $queue->completeDelivery('held', 1005);
+        self::assertSame(1005, $queue->nextWorkAt(1005));
+        $queue->drain(1005);
+        $queue->enqueue(self::event(3), 1006);
+        self::assertSame(1006, $queue->nextWorkAt(1006), 'Completion opens immediate reply grace');
+        $queue->drain(2999);
+        $queue->enqueue(self::event(4), 3005);
+        self::assertSame(4999, $queue->nextWorkAt(3005), 'Grace is over at equality');
+        $queue->acceptRequest(3006);
+        self::assertSame(3006, $queue->nextWorkAt(3006));
+        $queue->drainPortion(3006, 1);
+        $queue->beginSubscription('later', 3007);
+        self::assertSame(3007, $queue->nextWorkAt(3007), 'The admitted packet survives a later hold');
+        $queue->drain(3007);
+        self::assertNull($queue->nextWorkAt(3007));
+        $queue->close();
+        self::assertNull($queue->nextWorkAt(9000, force: true));
+    }
+
     public function testQuietDeliveryWaitsOnlyForDrainAndNeverCreatesAnEmptyPackage(): void
     {
         $queue = new DeliveryQueue();

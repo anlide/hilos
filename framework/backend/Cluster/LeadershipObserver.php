@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\HilosException;
 
@@ -28,6 +29,7 @@ interface LeadershipObserver
 
     /**
      * @param int $term Election term in which leadership was held and then lost
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onLostLeadership(int $term): void;
 

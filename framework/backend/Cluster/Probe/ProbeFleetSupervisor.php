@@ -6,6 +6,12 @@ namespace Hilos\Cluster\Probe;
 
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Agent\AgentId;
+use Hilos\Core\Daemon\AgentDeclarationDuty;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+use Hilos\Environment\Exception\EnvException;
+use Generator;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Hilos;
 use Hilos\Utils\Logger;
@@ -39,60 +45,93 @@ use Throwable;
  */
 final class ProbeFleetSupervisor
 {
-    /**
-     * Leader per-tick pass: ensures the fleet is placed.
-     *
-     * Cheap and idempotent - one registry walk and one lookup per fleet member on most ticks - and
-     * empty unless the fleet is listed and a probe may start on this node.
-     */
-    public function tick(): void
-    {
-        if (!isset(Hilos::appClass()::AGENTS[HilosAgentType::HILOS_PROBE_FLEET]) || !ClusterProbe::mayRunHere()) {
-            return;
-        }
+    /** New declaration pacing after an exception before any record exists; placement retries stay separate. */
+    private const float DECLARATION_RETRY_SECONDS = 5.0;
 
-        $this->ensureFleetPlaced();
+    private AgentDeclarationDuty $declarations;
+    private ?string $appClass = null;
+    private bool $leader = true;
+
+    /** The fleet's debt has no reader outside this master and owns no shared runtime rows. */
+    public function __construct()
+    {
+        $this->declarations = new AgentDeclarationDuty(self::DECLARATION_RETRY_SECONDS);
     }
 
     /**
-     * Places every fleet member the leader is not already tracking on the best-fit node.
-     *
-     * Delegates node choice to the framework's best-fit policy (HIL-182) via
-     * {@see ClusterPlacement::placeAgentOnBestNode()}: it ranks the online capable nodes and
-     * places on the winner, or records Unplaced when none is a fit yet. Every tracked record,
-     * including Failed and Unplaced, suppresses this declaration. ClusterPlacement owns retries;
-     * this supervisor declares only the missing indexes of its own 0..9 fleet, never extras.
+     * @param EventLoop $loop Existing master's native base
+     * @throws EventLoopException When an original declaration retry cannot bind
      */
-    private function ensureFleetPlaced(): void
+    public function attachEventLoop(EventLoop $loop): void
     {
-        // Runs on the master loop, so the whole placement read/write is guarded: a
-        // registry hiccup or a rejected placement is logged, never propagated. A member
-        // that throws leaves the rest for the next tick, which retries from where it stopped.
+        $this->declarations->attachEventLoop($loop);
+    }
+
+    /** Cancels activated and future retries on terminal disposal. */
+    public function detachEventLoop(): void
+    {
+        $this->declarations->detachEventLoop();
+    }
+
+    /** Leadership loss is observed before the coordinator replaces its old role. */
+    public function suspend(): void
+    {
+        $this->declarations->suspend();
+    }
+
+    /**
+     * @param bool $leader Current guarded role and exit verdict
+     * @throws EnvException When probe eligibility or cluster mode cannot be read
+     */
+    public function reconcile(bool $leader): void
+    {
+        $this->leader = $leader;
+        if ($this->appClass !== Hilos::appClass()) {
+            $this->appClass = Hilos::appClass();
+            $this->declarations->replaceTargets($this->targets());
+        }
+        $this->declarations->reconcile(null, $leader
+            && isset(Hilos::appClass()::AGENTS[HilosAgentType::HILOS_PROBE_FLEET]) && ClusterProbe::mayRunHere());
+    }
+
+    /** @param ?string $agentId Actual changed address, null for capacity or completed rebuild */
+    public function noteChanged(?string $agentId): void
+    {
+        $this->declarations->noteChanged($agentId);
+    }
+
+    /** @return bool Finite declaration demand or own due retry, never an accepted rebuild wait */
+    public function hasReadyWork(): bool
+    {
+        return $this->declarations->hasReadyWork();
+    }
+
+    /**
+     * Compatible leader-guarded business entry. Stable calls never walk the registry or fleet.
+     *
+     * @throws EventLoopException When native scheduling fails, outside business refusal containment
+     */
+    public function tick(): void
+    {
         try {
-            $placement = Hilos::$cluster?->placement();
-            if ($placement === null) {
-                return;
-            }
-
-            $tracked = [];
-            foreach ($placement->registry()->all() as $record) {
-                if ($record->agentType !== HilosAgentType::HILOS_PROBE_FLEET || $record->agentIndex === null) {
-                    continue;
-                }
-
-                $tracked[$record->agentIndex] = true;
-            }
-
-            for ($index = 0; $index < ClusterProbe::FLEET_SIZE; $index++) {
-                $agentIndex = (string)$index;
-                if (isset($tracked[$agentIndex])) {
-                    continue;
-                }
-
-                $placement->placeAgentOnBestNode(HilosAgentType::HILOS_PROBE_FLEET, $agentIndex);
-            }
+            $this->reconcile($this->leader);
+            $this->declarations->dispatch();
+        } catch (EventLoopException $e) {
+            throw $e;
         } catch (Throwable $e) {
             Logger::warning("Could not place the cluster probe fleet: {$e->getMessage()}");
+        }
+    }
+
+    /** @return Generator<string, AgentId> Exactly the framework-owned fleet, with no extra indexes */
+    private function targets(): Generator
+    {
+        if (!isset(Hilos::appClass()::AGENTS[HilosAgentType::HILOS_PROBE_FLEET])) {
+            return;
+        }
+        for ($index = 0; $index < ClusterProbe::FLEET_SIZE; $index++) {
+            $agentIndex = (string)$index;
+            yield HilosAgentType::HILOS_PROBE_FLEET . ':' . $agentIndex => new AgentId(HilosAgentType::HILOS_PROBE_FLEET, $agentIndex);
         }
     }
 }

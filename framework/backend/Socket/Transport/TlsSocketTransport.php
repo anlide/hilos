@@ -4,263 +4,308 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Transport;
 
+use Closure;
+use Event;
+use EventBufferEvent;
+use EventUtil;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\ReadyWork;
+use Hilos\Socket\Exception\SocketReadException;
+use Hilos\Socket\Exception\Base\ConnectionResetException;
 use Hilos\Socket\Exception\SocketTlsHandshakeException;
+use Hilos\Socket\Exception\SocketWriteException;
 use Socket;
+use WeakReference;
 
-/**
- * TLS over a connection the sockets extension carries - either side of it: the one that
- * accepted the connection, or the one that dialed it.
- *
- * The socket is exported into a stream once, and the stream is where OpenSSL lives: the
- * handshake, then every read and write. The descriptor stays the same, so the event loop keeps
- * watching the socket it was given and needs to know nothing of this.
- *
- * A transport given a trust file verifies its peer: the peer must present a certificate signed
- * by an authority in that file, and the name in that certificate is what
- * {@see verifiedPeerName()} vouches for. Whether a refused handshake is named follows from the
- * same choice. On a mutually verified channel everyone refused was meant to be one of us - a
- * misconfigured node or a stranger - so the refusal is thrown with its address and reason. On a
- * public port, which verifies nobody, a refused handshake is ordinary noise and closes without
- * a word.
- *
- * Three answers differ from a bare socket, and the client relies on each of them:
- * - an empty read means only "nothing decrypted yet" - the socket turns readable for protocol
- *   bytes that carry no application data - and the end of the connection is told by the
- *   stream's own end-of-stream flag;
- * - a write may take zero bytes, which asks for the same bytes again on a later turn;
- * - bytes OpenSSL already decrypted wait inside the stream where the event loop cannot see
- *   them, and are collected by the read every server tick makes of every client.
- */
+/** Native TLS on the owner's base; application bytes and debts stay with the client until drain. */
 final class TlsSocketTransport implements SocketTransportInterface
 {
-    /** Prefix PHP puts in front of every warning the handshake call raises */
-    private const string HANDSHAKE_WARNING_PREFIX = 'stream_socket_enable_crypto(): ';
+    /** Bounds the additional native copy independently of the client's outbound cap. */
+    private const int MAX_IN_FLIGHT_BYTES = 16384;
 
-    /** @var Socket Connected socket the stream was exported from */
-    private Socket $socket;
+    private ?Socket $socket;
 
-    /** @var resource Stream over the same descriptor, carrying the TLS session */
-    private $stream;
+    private ?EventBufferEvent $event = null;
 
-    /** @var int Which side of the handshake this end takes, a STREAM_CRYPTO_METHOD_TLS_* constant */
-    private int $cryptoMethod;
+    private ?EventLoop $loop = null;
 
-    /** @var bool Whether the peer is verified against a trust file, which also names a refusal */
-    private bool $verifiesPeer;
+    private ?ReadyWork $notification = null;
 
-    /** @var ?string Peer address as "ip:port", null when the socket would not tell it */
-    private ?string $peerAddress;
+    private int $generation = 0;
 
-    /** @var bool Whether the handshake has completed */
+    private int $events = 0;
+
+    /** Native errno captured before another notification changes the process's errno. */
+    private int $socketError = 0;
+
     private bool $handshakeFinished = false;
 
-    /** @var ?string Name in the verified peer certificate, read once the handshake has completed */
     private ?string $verifiedPeerName = null;
 
+    private ?string $peerAddress;
+
+    /** Original unacknowledged prefix, still charged to the client's buffer. */
+    private ?string $inFlight = null;
+
+    private bool $drained = false;
+
     /**
-     * Exports the socket into a non-blocking stream presenting the given certificate.
-     *
-     * @param Socket $socket Connected, non-blocking socket
-     * @param string $certificateFile PEM file holding the certificate chain and its private key
-     * @param ?string $trustFile PEM file of the authorities a peer certificate must be signed by, null to verify nobody
-     * @param int $cryptoMethod Side of the handshake this end takes, a STREAM_CRYPTO_METHOD_TLS_* constant
+     * @param Socket $socket Connected nonblocking socket, owned by this transport
+     * @param TlsContext $context Startup-prepared certificate material
      */
-    private function __construct(Socket $socket, string $certificateFile, ?string $trustFile, int $cryptoMethod)
+    private function __construct(Socket $socket, private readonly TlsContext $context)
     {
         $this->socket = $socket;
-        $this->cryptoMethod = $cryptoMethod;
-        $this->verifiesPeer = $trustFile !== null;
-        // A peer that reset before this line leaves the socket without a name; the refusal is
-        // still told, only without the address.
-        // warning-suppressed: a false return leaves the address null, and the refusal text omits it
+        // warning-suppressed: a reset socket has no address; its refusal still carries the TLS reason
         $this->peerAddress = @socket_getpeername($socket, $ip, $port) ? "{$ip}:{$port}" : null;
+    }
 
-        $this->stream = socket_export_stream($socket);
-        stream_set_blocking($this->stream, false);
-        stream_context_set_option($this->stream, 'ssl', 'local_cert', $certificateFile);
+    /**
+     * @param Socket $socket Accepted nonblocking socket
+     * @param TlsContext $context Prepared accepting context, including public or mutual trust policy
+     * @return self Transport awaiting its client's loop binding
+     */
+    public static function accepting(Socket $socket, TlsContext $context): self
+    {
+        return new self($socket, $context);
+    }
 
-        if ($trustFile === null) {
-            // PHP asks a client for its certificate unless told otherwise, and then checks it
-            // against the system store - a client presenting one would be refused for it.
-            stream_context_set_option($this->stream, 'ssl', 'verify_peer', false);
+    /**
+     * @param Socket $socket Connected nonblocking socket
+     * @param TlsContext $context Prepared dialing context with CA verification
+     * @return self Transport awaiting its client's loop binding
+     */
+    public static function dialing(Socket $socket, TlsContext $context): self
+    {
+        return new self($socket, $context);
+    }
+
+    /**
+     * Binds before the first handshake. A live SSL connection retains its original native base.
+     *
+     * @param EventLoop $loop Owning process's loop
+     * @param Closure(): void $wake Enqueue the client's guarded portion
+     * @throws SocketTlsHandshakeException When a live connection is moved to another native base
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+        if ($this->event !== null && $this->loop !== $loop) {
+            throw new SocketTlsHandshakeException('a live TLS connection cannot change its native base');
+        }
+        $this->detachEventLoop();
+        if ($this->socket === null) {
             return;
         }
-
-        stream_context_set_option($this->stream, 'ssl', 'verify_peer', true);
-        // The name is checked by whoever knows which name to expect, through verifiedPeerName():
-        // a seed is dialed by address, before anyone knows the name of the node behind it.
-        stream_context_set_option($this->stream, 'ssl', 'verify_peer_name', false);
-        stream_context_set_option($this->stream, 'ssl', 'cafile', $trustFile);
-        stream_context_set_option($this->stream, 'ssl', 'capture_peer_cert', true);
+        $this->loop = $loop;
+        $this->notification = $loop->createReadyWork($wake);
+        $generation = $this->generation;
+        if ($this->event === null) {
+            $base = $loop->getEventBase();
+            // No CLOSE_ON_FREE: Socket owns the fd. The ext-event 3.1.6 object destructor
+            // releases SSL and the buffer event; explicit free() would skip SSL_free().
+            $this->event = EventBufferEvent::sslSocket($base, $this->socket, $this->context->native, $this->context->state);
+            $this->event->setWatermark(Event::READ, 1, $this->context->readBufferSize);
+        }
+        // Native callbacks borrow their owner. At Zend shutdown, releasing a strong capture
+        // could destroy the transport and reenter the same buffer event's native destructor.
+        $owner = WeakReference::create($this);
+        $this->event->setCallbacks(
+            static function (EventBufferEvent $event) use ($owner, $generation): void {
+                $transport = $owner->get();
+                if ($transport === null || $generation !== $transport->generation) {
+                    return;
+                }
+                $event->disable(Event::READ);
+                $transport->notifyNative();
+            },
+            static function (EventBufferEvent $event) use ($owner, $generation): void {
+                $transport = $owner->get();
+                if ($transport === null || $generation !== $transport->generation) {
+                    return;
+                }
+                if ($transport->inFlight !== null && $event->getOutput()->length === 0) {
+                    $transport->drained = true;
+                    $event->disable(Event::WRITE);
+                }
+                $transport->notifyNative();
+            },
+            static function (EventBufferEvent $event, int $events) use ($owner, $generation): void {
+                $transport = $owner->get();
+                if ($transport === null || $generation !== $transport->generation) {
+                    return;
+                }
+                $transport->events |= $events;
+                if (($events & EventBufferEvent::ERROR) !== 0) {
+                    $transport->socketError = (int)EventUtil::getLastSocketErrno();
+                }
+                $transport->notifyNative();
+            },
+        );
+        $this->event->enable(Event::READ | Event::WRITE);
     }
 
-    /**
-     * The side that accepted the connection: the TLS server.
-     *
-     * @param Socket $socket Accepted, non-blocking client socket
-     * @param string $certificateFile PEM file holding the certificate chain and its private key
-     * @param ?string $trustFile PEM file of the authorities a client certificate must be signed by;
-     *                           null on a public port, where no client certificate is asked for
-     * @return self Transport of the accepted connection
-     */
-    public static function accepting(Socket $socket, string $certificateFile, ?string $trustFile = null): self
+    /** Cancels callbacks and queued notifications before rebind or close, retaining the TLS session. */
+    public function detachEventLoop(): void
     {
-        return new self($socket, $certificateFile, $trustFile, STREAM_CRYPTO_METHOD_TLS_SERVER);
+        ++$this->generation;
+        $this->event?->disable(Event::READ | Event::WRITE);
+        // ext-event 3.1.6 does not clear a callback zval when setCallbacks(null)
+        // releases it. Replace captures with inert callables before object destruction.
+        $ignore = static function (): void {};
+        $this->event?->setCallbacks($ignore, $ignore, $ignore);
+        $this->notification?->close();
+        $this->notification = null;
     }
 
     /**
-     * The side that dialed the connection: the TLS client, which always verifies whom it reached.
-     *
-     * @param Socket $socket Connected, non-blocking socket this end dialed
-     * @param string $certificateFile PEM file holding the certificate chain and its private key
-     * @param string $trustFile PEM file of the authorities the accepting side's certificate must be signed by
-     * @return self Transport of the dialed connection
-     */
-    public static function dialing(Socket $socket, string $certificateFile, string $trustFile): self
-    {
-        return new self($socket, $certificateFile, $trustFile, STREAM_CRYPTO_METHOD_TLS_CLIENT);
-    }
-
-    /**
-     * Reads decrypted bytes; an empty answer is not the end of the connection on its own.
-     *
-     * @param int $length Most bytes to read in one call
-     * @return string|false Decrypted bytes, '' when none are ready or the stream ended, false on a failed read
+     * @param int $length Maximum decrypted bytes to take
+     * @return string|false Bytes, or empty while waiting or at EOF
+     * @throws SocketReadException When TLS failed after its accepted input was consumed
+     * @throws ConnectionResetException When the native socket was reset
      */
     public function read(int $length): string|false
     {
-        // A reset peer warns here and the read comes back empty; the client asks isEndOfStream()
-        // about every empty read, and the stream's end flag is what closes the connection.
-        // warning-suppressed: an empty result is followed by the end-of-stream check in the client
-        return @fread($this->stream, $length);
+        if ($this->event === null) {
+            throw new SocketReadException(0, 'TLS requires its owning event loop before reading');
+        }
+        // external-boundary: EventBufferEvent::read returns null when its native input buffer is empty
+        $data = $this->event->read($length) ?? '';
+        if ($data !== '') {
+            if ($this->event->getInput()->length > 0 || $this->hasTerminalEvent()) {
+                $this->notification?->markReady();
+            }
+        } elseif (($this->events & EventBufferEvent::ERROR) !== 0) {
+            if ($this->socketError === SOCKET_ECONNRESET) {
+                throw new ConnectionResetException();
+            }
+            throw new SocketReadException($this->socketError, $this->describeError());
+        }
+        if (!$this->hasTerminalEvent()) {
+            $this->event?->enable(Event::READ);
+        }
+        return $data;
     }
 
     /**
-     * Writes through the TLS session; zero bytes taken is a request to retry, not a failure.
+     * Enqueue one bounded prefix, then acknowledge it exactly once after native drain.
      *
-     * @param string $data Bytes to send
-     * @return int|false Bytes written, 0 when the same bytes must be offered again later, false on a failed write
+     * @param string $data Unchanged prefix with any newly appended tail
+     * @return int|false Drained prefix length, or zero while native output is pending
+     * @throws SocketWriteException When a queued prefix changed or native enqueue failed
      */
     public function write(string $data): int|false
     {
-        // A reset peer warns here and the write takes 0 bytes; the next read finds the stream's
-        // end and closes the connection.
-        // warning-suppressed: the byte count is examined by the client, the next read tells a reset peer
-        return @fwrite($this->stream, $data);
+        if ($this->inFlight !== null) {
+            if (!str_starts_with($data, $this->inFlight)) {
+                throw new SocketWriteException(0, 'the unacknowledged TLS output prefix changed');
+            }
+            if (!$this->drained || $this->hasTerminalEvent()) {
+                return 0;
+            }
+            $length = strlen($this->inFlight);
+            $this->inFlight = null;
+            $this->drained = false;
+            if (strlen($data) > $length) {
+                $this->notification?->markReady();
+            }
+            return $length;
+        }
+        if ($data === '' || $this->event === null || !$this->handshakeFinished || $this->hasTerminalEvent()) {
+            return 0;
+        }
+        $this->inFlight = substr($data, 0, self::MAX_IN_FLIGHT_BYTES);
+        if (!$this->event->write($this->inFlight)) {
+            throw new SocketWriteException(0, 'native TLS output could not be queued');
+        }
+        $this->event->enable(Event::WRITE);
+        return 0;
     }
 
-    /**
-     * Closes the socket, which also frees the stream exported from it.
-     */
+    /** Releases native SSL before closing its PHP-owned socket; repeatable. */
     public function close(): void
     {
-        socket_close($this->socket);
+        $this->detachEventLoop();
+        $this->event = null;
+        $this->loop = null;
+        $this->inFlight = null;
+        $this->drained = false;
+        if ($this->socket !== null) {
+            socket_close($this->socket);
+            $this->socket = null;
+        }
     }
 
-    /**
-     * Reads the stream's end-of-stream flag, set by the read that met the peer's close.
-     *
-     * @return bool True when the peer has closed its side and nothing is left to read
-     */
+    /** @return bool Whether a clean terminal event has no decrypted remainder */
     public function isEndOfStream(): bool
     {
-        return feof($this->stream);
+        return ($this->events & EventBufferEvent::EOF) !== 0 && ($this->event?->getInput()->length ?? 0) === 0;
     }
 
-    /**
-     * @return bool True until the TLS handshake has completed
-     */
+    /** @return bool Whether the verified native handshake still needs completion */
     public function needsHandshake(): bool
     {
         return !$this->handshakeFinished;
     }
 
     /**
-     * Takes one step of the handshake, on the side this transport was created for.
+     * Reads native status under the client's guard; never pumps TLS or polls a socket.
      *
-     * @return int|bool True once finished, 0 while it needs another turn, false when a peer nobody verifies was refused
-     * @throws SocketTlsHandshakeException When the handshake with a verified peer is refused, by either end
+     * @return int|bool True after verification, zero while pending, false for a public refusal
+     * @throws SocketTlsHandshakeException When unbound or when a verified handshake was refused
      */
     public function advanceHandshake(): int|bool
     {
-        // OpenSSL warns on every refused handshake - a peer speaking plain HTTP, a peer that does
-        // not trust the certificate - and the warning is the only place its reason is written.
-        // It is caught rather than muted: a verified channel names the refusal with it.
-        $warning = null;
-        set_error_handler(static function (int $severity, string $message) use (&$warning): bool {
-            $warning ??= $message;
-            return true;
-        });
-
-        try {
-            $step = stream_socket_enable_crypto($this->stream, true, $this->cryptoMethod);
-        } finally {
-            restore_error_handler();
+        if ($this->event === null) {
+            throw new SocketTlsHandshakeException('TLS requires the owning event loop before its handshake');
         }
-
-        if ($step === true) {
+        if ($this->hasTerminalEvent()) {
+            if ($this->context->verifiesPeer) {
+                $reason = $this->describeError();
+                throw new SocketTlsHandshakeException($this->peerAddress === null ? $reason : "{$this->peerAddress}: {$reason}");
+            }
+            return false;
+        }
+        if (($this->events & EventBufferEvent::CONNECTED) === 0) {
+            return 0;
+        }
+        if (!$this->handshakeFinished) {
             $this->handshakeFinished = true;
-            $this->verifiedPeerName = $this->verifiesPeer ? $this->readPeerCertificateName() : null;
+            if ($this->context->verifiesPeer) {
+                $pem = $this->event->sslGetPeerCertificate();
+                $parsed = $pem === null ? false : openssl_x509_parse($pem);
+                $name = $parsed === false ? null : ($parsed['subject']['CN'] ?? null);
+                $this->verifiedPeerName = is_string($name) ? $name : null;
+            }
+            $this->notification?->markReady();
         }
-
-        if ($step === false && $this->verifiesPeer) {
-            $reason = $this->describeRefusal($warning);
-            throw new SocketTlsHandshakeException($this->peerAddress === null ? $reason : "{$this->peerAddress}: {$reason}");
-        }
-
-        return $step;
+        return true;
     }
 
-    /**
-     * Name in the certificate the peer presented, once the handshake has checked its chain.
-     *
-     * @return ?string Common name of the verified peer certificate; null until the handshake has
-     *                 completed, and always null on a transport that verifies nobody
-     */
+    /** @return ?string Verified leaf CN, absent until successful authentication and on public ports */
     public function verifiedPeerName(): ?string
     {
         return $this->verifiedPeerName;
     }
 
-    /**
-     * Reads the common name out of the certificate the handshake captured.
-     *
-     * @return ?string Common name, null when the certificate carries no single one
-     */
-    private function readPeerCertificateName(): ?string
+    /** Every native notification counts, even when the owner's ticket is already queued. */
+    private function notifyNative(): void
     {
-        $certificate = stream_context_get_options($this->stream)['ssl']['peer_certificate'] ?? null;
-        if ($certificate === null) {
-            return null;
-        }
-
-        $parsed = openssl_x509_parse($certificate);
-        if ($parsed === false) {
-            return null;
-        }
-
-        $name = $parsed['subject']['CN'] ?? null;
-
-        return is_string($name) ? $name : null;
+        $this->loop->markNativeReady($this->notification);
     }
 
-    /**
-     * Turns the warning of a refused handshake into the reason a log line carries.
-     *
-     * @param ?string $warning First warning the handshake call raised, null when it raised none
-     * @return string OpenSSL's reason, without the name of the PHP function in front of it
-     */
-    private function describeRefusal(?string $warning): string
+    /** @return bool Whether native I/O has ended */
+    private function hasTerminalEvent(): bool
     {
-        if ($warning === null) {
-            return 'the handshake was refused without a reason';
+        return ($this->events & (EventBufferEvent::EOF | EventBufferEvent::ERROR)) !== 0;
+    }
+
+    /** @return string Native OpenSSL refusal for the client's contained failure path */
+    private function describeError(): string
+    {
+        $errors = [];
+        while ($error = $this->event->sslError()) {
+            $errors[] = $error;
         }
-
-        $reason = str_starts_with($warning, self::HANDSHAKE_WARNING_PREFIX)
-            ? substr($warning, strlen(self::HANDSHAKE_WARNING_PREFIX))
-            : $warning;
-
-        // OpenSSL lists its errors one per line; a log line keeps them on one.
-        return str_replace("\n", ' ', $reason);
+        return $errors === [] ? 'the TLS connection ended without a reason' : implode('; ', $errors);
     }
 }

@@ -16,6 +16,7 @@ use Hilos\Cluster\Peer\DTO\PeerUploadReleaseDTO;
 use Hilos\Cluster\Peer\DTO\PeerUploadReserveDTO;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerServer;
+use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalSource;
@@ -32,7 +33,10 @@ use Hilos\Files\Upload\UploadMemoryPool;
 use Hilos\Files\Upload\UploadMemoryRemoteUpload;
 use Hilos\Files\Upload\UploadMemoryTestDelivery;
 use Hilos\Hilos;
+use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\Client\AbstractClient;
+use Hilos\Tests\Unit\Socket\MutualTlsFixture;
+use Hilos\Tests\Unit\Socket\TlsTestExchange;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\AbstractServer;
 use Hilos\Socket\Transport\PlainSocketTransport;
@@ -89,7 +93,8 @@ final class PeerUploadMemoryTransportTest extends TestCase
             new ReflectionProperty(PeerServer::class, 'localIdentity')->setValue($server, $identity);
             $link = $this->links[$node] = new PeerLink($pair[$index], $server, $identity, false, new PlainSocketTransport($pair[$index]));
             $link->activate(NodeIdentity::of($remote, 'Node ' . $remote, NodeRole::Master, []));
-            new ReflectionProperty(AbstractServer::class, 'clients')->setValue($server, [$link]);
+            new ReflectionMethod(AbstractServer::class, 'addClient')->invoke($server, $link);
+            new ReflectionMethod(PeerServer::class, 'attachClient')->invoke($server, $link);
             new ReflectionProperty(PeerServer::class, 'activeLinks')->setValue($server, [$remote => $link]);
             $server->setUploadMemoryMaster($master);
             $context = $this->contexts[$node] = new ReflectionClass(ClusterContext::class)->newInstanceWithoutConstructor();
@@ -107,6 +112,52 @@ final class PeerUploadMemoryTransportTest extends TestCase
         Hilos::$cluster = $this->previousCluster;
         Hilos::$rt = $this->previousRt;
         Hilos::$sr = $this->previousRouter;
+    }
+
+    /** An already-buffered peer burst yields and resumes on the same loop with exact signal order. */
+    public function testPeerBurstContinuesWithoutAnotherSenderWrite(): void
+    {
+        $loop = new EventLoop();
+        $receiver = $this->links['B'];
+        $receiver->attachEventLoop($loop, function () use ($receiver): void {
+            Hilos::$cluster = $this->contexts['B'];
+            $receiver->read();
+            $receiver->write();
+        });
+        try {
+            $expected = [];
+            foreach (range(1, 150) as $index) {
+                $expected[] = 'control-' . $index;
+                self::assertTrue($this->servers['A']->sendSignalToNode('B', 'control', null, new SignalDTO(
+                    new SignalSource(SignalSource::DAEMON), new SignalType('agent'), new SignalName('control-' . $index),
+                    new SignalData(['sequence' => $index]),
+                )));
+            }
+            self::assertLessThan(65_536, strlen($this->outbound('A')), 'the entire burst fits in one byte portion');
+            $this->links['A']->write();
+            self::assertFalse($this->links['A']->hasPendingWrite());
+            $loop->tick();
+            self::assertNotEmpty($this->sinks['B']->signals);
+            self::assertLessThan(150, count($this->sinks['B']->signals));
+            for ($pass = 0; $pass < 12; ++$pass) {
+                $loop->tick();
+            }
+            self::assertSame($expected, array_map(
+                static fn(SignalDTO $signal): string => $signal->signalName->getName(),
+                $this->sinks['B']->signals,
+            ));
+            self::assertSame(range(1, 150), array_map(
+                static fn(SignalDTO $signal): int => $signal->data->toArray()['sequence'],
+                $this->sinks['B']->signals,
+            ));
+            self::assertFalse($loop->hasReadyWork());
+            self::assertFalse($receiver->shouldClose());
+            self::assertSame(0, $this->used('A'));
+            self::assertSame(0, $this->used('B'));
+        } finally {
+            $receiver->detachEventLoop();
+            $loop->close();
+        }
     }
 
     /** @return iterable<string, array{int}> Increasing completed history on one unchanged link */
@@ -624,6 +675,70 @@ final class PeerUploadMemoryTransportTest extends TestCase
         self::assertSame(0, $this->used('B'));
     }
 
+    public function testNativeTlsEnqueueDoesNotRetireTheUploadPrefixOrReleaseItsDebt(): void
+    {
+        $this->masters['A']->setTestLimit(8);
+        $this->masters['B']->setTestLimit(8);
+        $this->enqueue('A', 5);
+        $this->move('A');
+        $this->move('B');
+        $this->masters['A']->afterDispatch();
+        [$fixture, $exchange] = $this->nativeTls();
+        try {
+            $end = $this->links['A']->uploadOutboundPosition();
+            $this->links['A']->write();
+            self::assertTrue($this->links['A']->hasPendingWrite());
+            self::assertFalse($this->links['A']->hasRemovedUploadThrough($end));
+            $this->masters['A']->afterDispatch();
+            self::assertSame(5, $this->used('A'), 'Native enqueue keeps the source obligation');
+            $exchange->runUntil(fn(): bool => count($this->sinks['B']->signals) === 1
+                && $this->links['A']->hasRemovedUploadThrough($end));
+            self::assertSame([], $exchange->failures);
+            $exchange->runUntil(fn(): bool => !$this->links['B']->hasPendingWrite());
+            $exchange->runUntil(function (): bool {
+                $this->masters['A']->afterDispatch();
+                return $this->used('A') === 0;
+            });
+            self::assertSame(0, $this->used('A'));
+            self::assertSame(5, $this->used('B'), 'The worker receipt remains charged on the receiver');
+            $this->masters['A']->afterDispatch();
+            self::assertSame(0, $this->used('A'), 'A second collection cannot release the same prefix twice');
+            self::assertCount(1, $this->sinks['B']->signals);
+        } finally {
+            $exchange->close();
+            $fixture->close();
+        }
+    }
+
+    public function testNativeTlsCloseDiscardsTheInFlightUploadDebtExactlyOnce(): void
+    {
+        $this->masters['A']->setTestLimit(8);
+        $this->masters['B']->setTestLimit(8);
+        $this->enqueue('A', 5);
+        $this->move('A');
+        $this->move('B');
+        $this->masters['A']->afterDispatch();
+        [$fixture, $exchange] = $this->nativeTls();
+        try {
+            $this->links['A']->write();
+            self::assertTrue($this->links['A']->hasPendingWrite());
+            self::assertSame(5, $this->used('A'));
+            Hilos::$cluster = $this->contexts['A'];
+            $this->links['A']->close();
+            self::assertFalse($this->links['A']->hasPendingWrite());
+            $this->masters['A']->afterDispatch();
+            self::assertSame(0, $this->used('A'));
+            $this->links['A']->close();
+            $this->masters['A']->afterDispatch();
+            self::assertSame(0, $this->used('A'));
+            self::assertSame([], new ReflectionProperty(UploadMemoryMaster::class, 'peers')->getValue($this->masters['A']));
+            self::assertSame([], $this->sinks['B']->signals, 'Close before the native loop sends no upload');
+        } finally {
+            $exchange->close();
+            $fixture->close();
+        }
+    }
+
     public function testActualLinkCloseDeletesBuffersBeforeSourceDebtAndMetadataAreDiscarded(): void
     {
         $this->masters['A']->setTestLimit(8);
@@ -824,6 +939,27 @@ final class PeerUploadMemoryTransportTest extends TestCase
             $upload->cancel();
             self::assertSame(0, $pool->getUsedBytes());
         }
+    }
+
+    /** @return array{MutualTlsFixture, TlsTestExchange} Native TLS under the existing active links and pools */
+    private function nativeTls(): array
+    {
+        $fixture = new MutualTlsFixture();
+        $authority = $fixture->issueAuthority('Peer debt CA');
+        $trust = $fixture->trustFile($authority);
+        $exchange = new TlsTestExchange($fixture,
+            $fixture->issueNode('A', $authority), $fixture->issueNode('B', $authority), $trust, $trust);
+        $exchange->handshake();
+        self::assertSame([], $exchange->failures);
+        foreach (['A' => 'accepting', 'B' => 'dialing'] as $node => $end) {
+            $link = $this->links[$node];
+            new ReflectionProperty(AbstractSocket::class, 'socket')->setValue($link, $exchange->sockets[$end]);
+            new ReflectionProperty(AbstractClient::class, 'transport')->setValue($link, $exchange->transports[$end]);
+            $exchange->bindClient($end, $link, function () use ($node): void {
+                Hilos::$cluster = $this->contexts[$node];
+            });
+        }
+        return [$fixture, $exchange];
     }
 
     private function enqueue(string $node, int $bytes): void

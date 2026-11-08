@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\EventLoop\EventLoop;
+use Closure;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
@@ -129,7 +131,10 @@ final class DaemonManagerEntropyFailureTest extends TestCase
     {
         $manager = new DaemonManagerEntropyFailureTestManager();
         $client = new DaemonManagerEntropyFailureTestClient(new RandomException(self::REFUSAL_MESSAGE));
-        $manager->registerServer(new DaemonManagerEntropyFailureTestTickingServer($client));
+        $server = new DaemonManagerEntropyFailureTestTickingServer($client);
+        $manager->registerServer($server);
+        // This case exercises the unbound server's compatibility guard; bound clients use the read guard above.
+        new ReflectionClass(AbstractServer::class)->getProperty('clientSocketAttacher')->setValue($server, null);
 
         $this->tickServers($manager);
 
@@ -227,6 +232,11 @@ final class DaemonManagerEntropyFailureTestServer implements ServerInterface
      * @param ClientSocketDetacher $detacher Master seam this server would announce a departure to
      */
     public function setClientSocketDetacher(ClientSocketDetacher $detacher): void
+    {
+    }
+
+    /** @param Closure(ClientInterface): void $attacher Unused; this fixture accepts no sockets */
+    public function setClientSocketAttacher(Closure $attacher): void
     {
     }
 
@@ -337,7 +347,7 @@ final class DaemonManagerEntropyFailureTestTickingServer extends AbstractServer
     {
         parent::__construct('127.0.0.1', 0);
 
-        $this->clients[] = $client;
+        $this->addClient($client);
     }
 
     /**
@@ -381,6 +391,19 @@ final class DaemonManagerEntropyFailureTestClient implements ClientInterface
     }
 
     /**
+     * @param EventLoop $loop Test owner's loop
+     * @param Closure(): void $wake Test owner's bounded portion
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+    }
+
+    /** Releases the test transport's loop binding, when it has one. */
+    public function detachEventLoop(): void
+    {
+    }
+
+    /**
      * @throws Throwable Always: the failure this client was built with
      */
     public function read(): void
@@ -417,8 +440,10 @@ final class DaemonManagerEntropyFailureTestClient implements ClientInterface
         $this->closed = true;
     }
 
+    /** @throws Throwable The fixture's refusal also exercises the periodic client guard */
     public function onTick(): void
     {
+        throw $this->failure;
     }
 }
 

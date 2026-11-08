@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Transport;
 
+use Closure;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Socket\Client\AbstractClient;
+use Hilos\Socket\SocketException;
 use Hilos\Socket\Exception\SocketTlsHandshakeException;
 
 /**
@@ -21,10 +25,25 @@ use Hilos\Socket\Exception\SocketTlsHandshakeException;
 interface SocketTransportInterface
 {
     /**
+     * Replaces the connection's local I/O binding; callbacks only notify its owner.
+     *
+     * @param EventLoop $loop Owning process's loop
+     * @param Closure(): void $wake Enqueue the owner's coalesced, guarded portion
+     * @throws SocketTlsHandshakeException When a live TLS session is rebound to another native base
+     * @throws EventLoopException When a native transport watch cannot be installed
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void;
+
+    /** Removes native watches and pending notifications before socket close or rebind. */
+    public function detachEventLoop(): void;
+
+    /**
      * Reads what arrived, without waiting for more.
      *
      * @param int $length Most bytes to read in one call
      * @return string|false Bytes read, '' when none are available now or the stream ended, false on a failed read
+     * @throws SocketException When native TLS reports a read failure
+     * @throws EventLoopException When a native transport watch cannot be installed
      */
     public function read(int $length): string|false;
 
@@ -33,6 +52,8 @@ interface SocketTransportInterface
      *
      * @param string $data Bytes to send
      * @return int|false Bytes written, 0 when the same bytes must be offered again later, false on a failed write
+     * @throws SocketException When native TLS refuses an output prefix or enqueue
+     * @throws EventLoopException When a native transport watch cannot be installed
      */
     public function write(string $data): int|false;
 

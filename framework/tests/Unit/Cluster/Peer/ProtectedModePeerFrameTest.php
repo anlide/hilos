@@ -5,6 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Cluster\Peer;
 
 use Closure;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\ReadyWork;
+use Hilos\ProtectedMode\ClusterProtectedMode;
+use Hilos\ProtectedMode\ProtectedModeExecutor;
+use ReflectionProperty;
 use Hilos\Cluster\Leadership;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncedDTO;
@@ -65,6 +70,48 @@ final class ProtectedModePeerFrameTest extends TestCase
     {
         $this->restoreProtectedModePeers();
         parent::tearDown();
+    }
+
+    /** @param NodeRole $role Both peer roles share the same master loop binding */
+    #[DataProvider('nativeSyncRoles')]
+    public function testLateNativeRegistrationReplacementAndSameLoopAttachKeepExactOwner(NodeRole $role): void
+    {
+        $loop = new EventLoop();
+        $server = $this->protectedModePeerServer($role);
+        $server->attachEventLoop($loop);
+        $first = new ClusterProtectedMode('node-a', $server, $this->createStub(ProtectedModeExecutor::class));
+        $second = new ClusterProtectedMode('node-a', $server, $this->createStub(ProtectedModeExecutor::class));
+        try {
+            $server->registerProtectedMode($first);
+            self::assertTrue($server->hasProtectedModeSyncReadyWork());
+            $work = new ReflectionProperty(ClusterProtectedMode::class, 'slaveSyncWork')->getValue($first);
+            $escaped = new ReflectionProperty(ReadyWork::class, 'callback')->getValue($work);
+            $first->dispatchSlaveSyncReady();
+            self::assertFalse($server->hasProtectedModeSyncReadyWork());
+            $server->attachEventLoop($loop);
+            self::assertSame($work, new ReflectionProperty(ClusterProtectedMode::class, 'slaveSyncWork')->getValue($first));
+            $server->registerProtectedMode($second);
+            self::assertTrue($work->isClosed());
+            $second->dispatchSlaveSyncReady();
+            $escaped();
+            $first->detachSlaveSyncEventLoop();
+            self::assertFalse($first->hasSlaveSyncReadyWork());
+            self::assertFalse($server->hasProtectedModeSyncReadyWork());
+            $second->noteSlaveSyncChanged();
+            self::assertTrue($server->hasProtectedModeSyncReadyWork());
+            $server->detachEventLoop();
+            self::assertNull(new ReflectionProperty(ClusterProtectedMode::class, 'slaveSyncLoop')->getValue($second));
+        } finally {
+            $server->detachEventLoop();
+            $loop->close();
+        }
+    }
+
+    /** @return iterable<string, array{NodeRole}> Every clustered process owns the native sync seam */
+    public static function nativeSyncRoles(): iterable
+    {
+        yield 'master' => [NodeRole::Master];
+        yield 'slave' => [NodeRole::Slave];
     }
 
     #[DataProvider('syncFrames')]

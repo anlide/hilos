@@ -3,9 +3,8 @@
 
 FROM php:8.4.27-cli@sha256:a4ae1f57e22b89a0a69c5e085b3010ee727d094e1542d249e48a01bec3c44810
 
-# libevent-dev is what ext-event compiles against; libssl-dev answers the pecl
-# prompt's default (event-openssl=yes), which otherwise stops the build looking
-# for OpenSSL.
+# libevent-dev and libssl-dev build ext-event with explicit OpenSSL support;
+# patch applies the checked, local change to the pinned upstream source.
 #
 # default-mysql-client provides the `mysql` binary the restore engine integration
 # tests replay dumps through (BackupRestorer); the dumps themselves are hand-written
@@ -56,15 +55,15 @@ RUN rm -f /usr/local/etc/php/conf.d/docker-php-ext-sockets.ini \
 
 # ext-event carries the epoll-based event loop the daemon runs on, and the root
 # composer.json requires it: without it `composer install` refuses in this image.
-RUN pecl channel-update pecl.php.net \
- && yes "" | pecl install -o -f event-3.1.6 \
- && rm -f /usr/local/etc/php/conf.d/docker-php-ext-event.ini \
- && echo "extension=event" > /usr/local/etc/php/conf.d/30-event.ini
+COPY --from=hilos-event . /tmp/hilos-event/
+RUN sh /tmp/hilos-event/install.sh \
+ && rm -rf /tmp/hilos-event
 
 # ext-inotify is optional for the framework (composer suggest): the filesystem watch
 # falls back to polling without it. The test image installs it so the suite exercises
 # BOTH engines for real instead of only the fallback.
-RUN yes "" | pecl install -o -f inotify-3.0.1 \
+RUN pecl channel-update pecl.php.net \
+ && yes "" | pecl install -o -f inotify-3.0.1 \
  && rm -f /usr/local/etc/php/conf.d/docker-php-ext-inotify.ini \
  && echo "extension=inotify" > /usr/local/etc/php/conf.d/30-inotify.ini
 

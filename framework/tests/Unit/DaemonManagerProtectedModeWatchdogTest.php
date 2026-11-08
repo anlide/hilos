@@ -12,6 +12,16 @@ use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\ProtectedMode\ProtectedModeSourceBinding;
+use Hilos\ProtectedMode\ProtectedModeWatchdog;
+use Hilos\Runtime\RtSyncApplicator;
+use Hilos\Runtime\RtSnapshot;
+use Hilos\Socket\Server\WorkerServer;
+use ReflectionClass;
+use ReflectionProperty;
+use WeakReference;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
@@ -29,7 +39,6 @@ use Hilos\Utils\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
-use ReflectionProperty;
 
 /** The master's bounded watchdog publication and its existing singleton-duties gate. */
 final class DaemonManagerProtectedModeWatchdogTest extends TestCase
@@ -51,6 +60,9 @@ final class DaemonManagerProtectedModeWatchdogTest extends TestCase
     private array $previousEnvironment = [];
 
     private string $logDirectory;
+
+    /** @var list<EventLoop> Native loops released after each fixture */
+    private array $loops = [];
 
     protected function setUp(): void
     {
@@ -85,6 +97,9 @@ final class DaemonManagerProtectedModeWatchdogTest extends TestCase
 
     protected function tearDown(): void
     {
+        foreach ($this->loops as $loop) {
+            $loop->close();
+        }
         RtTruthSourceRegistry::unregisterDaemon(ProtectedModeRuntime::RT_ITEM);
         Hilos::$rt = $this->previousRuntime;
         Hilos::$sr = $this->previousRouter;
@@ -105,7 +120,7 @@ final class DaemonManagerProtectedModeWatchdogTest extends TestCase
 
     public function testStandalonePublishesOneChangedSnapshotAndAnIdenticalPassQueuesNothing(): void
     {
-        $manager = new WatchdogPublicationManager();
+        $manager = $this->manager();
         $router = $this->router();
 
         $this->tick($manager);
@@ -131,7 +146,7 @@ final class DaemonManagerProtectedModeWatchdogTest extends TestCase
     #[DataProvider('changedFields')]
     public function testEveryOneOfTheSevenValuesParticipatesInTheComparison(string $key, mixed $value): void
     {
-        $manager = new WatchdogPublicationManager();
+        $manager = $this->manager();
         $router = $this->router();
         $expected = new ProtectedModeWatchdogSnapshot(null, [], 31, 601, 901, ['ops@example.test'], null);
         Hilos::$rt->hilosProtectedModeRuntime->actions->updateWatchdog(new ProtectedModeWatchdogSnapshot(...[
@@ -162,7 +177,7 @@ final class DaemonManagerProtectedModeWatchdogTest extends TestCase
 
     public function testPublicationUsesTheItemActionOwnershipCheck(): void
     {
-        $manager = new WatchdogPublicationManager();
+        $manager = $this->manager();
         $router = $this->router();
         RtTruthSourceRegistry::unregisterDaemon(ProtectedModeRuntime::RT_ITEM);
         $before = Hilos::$rt->hilosProtectedModeRuntime->toArray();
@@ -178,7 +193,7 @@ final class DaemonManagerProtectedModeWatchdogTest extends TestCase
 
     public function testFollowerDoesNotJudgeOrMailAndTheLeaderPublishesTheSameStandingFreeze(): void
     {
-        $manager = new WatchdogPublicationManager();
+        $manager = $this->manager();
         $router = $this->router();
         $mailer = new WatchdogPublicationMailer();
         Hilos::$mail = $mailer;
@@ -213,13 +228,192 @@ final class DaemonManagerProtectedModeWatchdogTest extends TestCase
 
     public function testNoRuntimeStateProducesNoPublication(): void
     {
-        $manager = new WatchdogPublicationManager();
+        $manager = $this->manager();
         $router = $this->router();
         Hilos::$rt = null;
 
         $this->tick($manager);
 
         $this->assertSame([], $router->updates);
+    }
+
+    public function testChangedWorkerSettingsCueAnIdlePublisherButDuplicateReportsDoNot(): void
+    {
+        $manager = $this->manager();
+        $router = $this->router();
+        $this->tick($manager);
+        $this->tick($manager);
+        $watchdog = $this->watchdog($manager);
+        self::assertFalse($watchdog->hasReadyWork());
+        $watchdog->onProtectedModeSettings(true);
+        self::assertTrue($watchdog->hasReadyWork());
+        $this->tick($manager);
+        self::assertTrue(Hilos::$rt->hilosProtectedModeRuntime->watchdogManualRestartIsNormal);
+        self::assertCount(2, $router->updates);
+        $this->tick($manager);
+        $watchdog->onProtectedModeSettings(true);
+        self::assertFalse($watchdog->hasReadyWork());
+        $watchdog->onProtectedModeSettings(false);
+        $this->tick($manager);
+        self::assertFalse(Hilos::$rt->hilosProtectedModeRuntime->watchdogManualRestartIsNormal);
+        self::assertCount(3, $router->updates);
+    }
+
+    public function testSharedFanoutKeepsDiagnosticsAndWatchdogIndependentAcrossDependentDetach(): void
+    {
+        $manager = $this->manager();
+        $server = new ReflectionClass(WatchdogDiagnosticServer::class)->newInstanceWithoutConstructor();
+        $binding = new ReflectionProperty(DaemonManager::class, 'protectedModeSourceBinding')->getValue($manager);
+        $server->registerProtectedModeSourceBinding($binding);
+        $loop = new ReflectionProperty(DaemonManager::class, 'eventLoop')->getValue($manager);
+        new ReflectionMethod(WorkerServer::class, 'attachProtectedModeEventLoop')->invoke($server, $loop);
+        $this->tick($manager);
+        $this->tick($manager);
+        $checks = $server->checks;
+        Hilos::$rt->hilosProtectedModeRuntime->actions->enterActive();
+        self::assertTrue($this->watchdog($manager)->hasReadyWork());
+        self::assertSame($checks, $server->checks, 'The row callback cannot publish reentrantly');
+        $this->tick($manager);
+        self::assertGreaterThan($checks, $server->checks);
+        $this->tick($manager);
+        self::assertFalse($loop->hasReadyWork());
+        new ReflectionMethod(WorkerServer::class, 'detachProtectedModeEventLoop')->invoke($server);
+        Hilos::$rt->hilosProtectedModeRuntime->actions->markProgress();
+        self::assertTrue($this->watchdog($manager)->hasReadyWork(), 'Diagnostics departure must leave the watchdog source attached');
+        $this->tick($manager);
+        $this->tick($manager);
+        new ReflectionMethod(WorkerServer::class, 'attachProtectedModeEventLoop')->invoke($server, $loop);
+        $this->tick($manager);
+        $binding->removeWatchdog($this->watchdog($manager));
+        $this->watchdog($manager)->detachEventLoop();
+        $checks = $server->checks;
+        Hilos::$rt->hilosProtectedModeRuntime->actions->enterVerifying();
+        $loop->tick();
+        self::assertGreaterThan($checks, $server->checks, 'Watchdog departure must leave diagnostics attached');
+        new ReflectionMethod(WorkerServer::class, 'detachProtectedModeEventLoop')->invoke($server);
+    }
+
+    public function testSourceReplacementRemountNullAndEscapedCallbackUseCurrentWeakBinding(): void
+    {
+        $manager = $this->manager();
+        $this->router();
+        $this->tick($manager);
+        $this->tick($manager);
+        $old = Hilos::$rt;
+        $binding = new ReflectionProperty(DaemonManager::class, 'protectedModeSourceBinding')->getValue($manager);
+        $stale = new ReflectionProperty(ProtectedModeSourceBinding::class, 'wake')->getValue($binding);
+        Hilos::$rt = new WatchdogPublicationRtContext();
+        $this->tick($manager);
+        self::assertNull(Hilos::$rt->hilosProtectedModeRuntime);
+        $stale();
+        self::assertFalse($this->watchdog($manager)->hasReadyWork());
+        $old->noteProtectedModeChanged();
+        self::assertFalse($this->watchdog($manager)->hasReadyWork());
+        Hilos::$rt->mountFeatureItem(ProtectedModeRuntime::RT_ITEM, ProtectedModeRuntime::create());
+        $this->tick($manager);
+        self::assertSame(31, Hilos::$rt->hilosProtectedModeRuntime->watchdogQuiesceTimeoutSeconds);
+        Hilos::$rt->mountFeatureItem(ProtectedModeRuntime::RT_ITEM, ProtectedModeRuntime::create());
+        self::assertNull(Hilos::$rt->hilosProtectedModeRuntime->watchdogQuiesceTimeoutSeconds);
+        $this->tick($manager);
+        self::assertSame(31, Hilos::$rt->hilosProtectedModeRuntime->watchdogQuiesceTimeoutSeconds);
+        $weak = WeakReference::create($old);
+        unset($old);
+        self::assertNull($weak->get());
+        $this->tick($manager);
+        $departingWake = new ReflectionProperty(ProtectedModeSourceBinding::class, 'wake')->getValue($binding);
+        $departing = WeakReference::create(Hilos::$rt);
+        Hilos::$rt = null;
+        self::assertNull($departing->get());
+        $departingWake();
+        self::assertFalse($this->watchdog($manager)->hasReadyWork(), 'An expired old source is not a binding to null');
+        $this->tick($manager);
+        $this->tick($manager);
+        self::assertFalse($this->watchdog($manager)->hasReadyWork());
+    }
+
+    public function testCollectedClusterContextIsReconciledAsANewStandaloneBasis(): void
+    {
+        Hilos::$cluster = new ClusterContext();
+        Hilos::$cluster->registerLeadership(new PendingLeadership());
+        $manager = $this->manager();
+        $this->tick($manager);
+        $this->tick($manager);
+        self::assertFalse($this->watchdog($manager)->hasReadyWork());
+        $departed = WeakReference::create(Hilos::$cluster);
+        Hilos::$cluster = null;
+        self::assertNull($departed->get());
+        $manager->reconcileProtectedModeSource();
+        self::assertTrue($this->watchdog($manager)->hasReadyWork(), 'An expired weak context is not the previously bound null basis');
+        $this->tick($manager);
+        $this->tick($manager);
+        self::assertFalse($this->watchdog($manager)->hasReadyWork());
+    }
+
+    public function testPartialDiffAndFullSnapshotWakeTheSameWatchdogAfterMutation(): void
+    {
+        $manager = $this->manager();
+        $this->router();
+        $this->tick($manager);
+        $this->tick($manager);
+        RtSyncApplicator::applyCreated(new RtSyncCreatedSignalData(ProtectedModeRuntime::RT_ITEM, ProtectedModeRuntime::ID, [
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
+            ProtectedModeRuntime::startedAt => 'invalid',
+        ]), false);
+        self::assertTrue($this->watchdog($manager)->hasReadyWork());
+        self::assertSame(ProtectedModeRuntime::PHASE_ACTIVE, Hilos::$rt->hilosProtectedModeRuntime->phase);
+        $this->tick($manager);
+        $this->tick($manager);
+        self::assertFalse($this->watchdog($manager)->hasReadyWork());
+        RtSnapshot::replace(ProtectedModeRuntime::RT_ITEM, [ProtectedModeRuntime::ID => [
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
+        ]]);
+        self::assertTrue($this->watchdog($manager)->hasReadyWork());
+        $this->tick($manager);
+        $this->tick($manager);
+        self::assertFalse($this->watchdog($manager)->hasReadyWork());
+        RtSnapshot::replace(ProtectedModeRuntime::RT_ITEM, ['unrelated' => []]);
+        self::assertFalse($this->watchdog($manager)->hasReadyWork());
+    }
+
+    public function testExactSourceRemovalPreservesReplacementAndTheBindingDoesNotRetainItsManager(): void
+    {
+        $manager = $this->manager();
+        $this->tick($manager);
+        $this->tick($manager);
+        $binding = new ReflectionProperty(DaemonManager::class, 'protectedModeSourceBinding')->getValue($manager);
+        $stale = new ReflectionProperty(ProtectedModeSourceBinding::class, 'wake')->getValue($binding);
+        $calls = 0;
+        Hilos::$rt->setProtectedModeWake(static function () use (&$calls): void { ++$calls; });
+        $binding->removeWatchdog($this->watchdog($manager));
+        Hilos::$rt->noteProtectedModeChanged();
+        self::assertSame(1, $calls);
+        $stale();
+        self::assertFalse($this->watchdog($manager)->hasReadyWork());
+        $weak = WeakReference::create($manager);
+        unset($manager);
+        gc_collect_cycles();
+        self::assertNull($weak->get());
+    }
+
+    /**
+     * @param DaemonManager $manager Master whose native watchdog is observed
+     * @return ProtectedModeWatchdog Current instance, retaining its live fingerprint across bindings
+     */
+    private function watchdog(DaemonManager $manager): ProtectedModeWatchdog
+    {
+        return new ReflectionProperty(DaemonManager::class, 'protectedModeWatchdog')->getValue($manager);
+    }
+
+    /** @return WatchdogPublicationManager Master bound to the real native lifetime */
+    private function manager(): WatchdogPublicationManager
+    {
+        $manager = new WatchdogPublicationManager();
+        $loop = new EventLoop();
+        $this->loops[] = $loop;
+        new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($manager, $loop);
+        new ReflectionMethod(DaemonManager::class, 'attachProtectedModeWatchdog')->invoke($manager);
+
+        return $manager;
     }
 
     /** @return WatchdogPublicationRouter Router recording the real update sync seam */
@@ -233,7 +427,9 @@ final class DaemonManagerProtectedModeWatchdogTest extends TestCase
     /** @param DaemonManager $manager Master whose bounded publication pass is driven */
     private function tick(DaemonManager $manager): void
     {
-        new ReflectionMethod(DaemonManager::class, 'tickProtectedModeWatchdog')->invoke($manager, 1_700_000_000);
+        $manager->reconcileProtectedModeSource();
+        new ReflectionProperty(DaemonManager::class, 'eventLoop')->getValue($manager)->tick();
+        new ReflectionProperty(DaemonManager::class, 'protectedModeWatchdog')->getValue($manager)->dispatchReady();
     }
 }
 
@@ -249,9 +445,10 @@ final class WatchdogPublicationRtContext extends RtContext
 /** Master with no sockets or agent processes. */
 final class WatchdogPublicationManager extends DaemonManager
 {
-    /** Drives a master iteration without opening a platform event base. */
+    /** Drives the fixture native base inside the ordinary master guard. */
     protected function processEventLoop(): void
     {
+        parent::processEventLoop();
     }
 
     /** @return SignalRouter Empty project routing */
@@ -310,5 +507,22 @@ final class WatchdogPublicationMailer extends HilosMailer
     public function send(EmailMessage|MailSendSignalData $message): void
     {
         $this->sent[] = $message;
+    }
+}
+
+/** Records the independent diagnostic duty without a worker process or unrelated roster. */
+final class WatchdogDiagnosticServer extends WorkerServer
+{
+    public int $checks = 0;
+
+    /** No socket or worker starts in this isolated source fixture. */
+    public function onStart(): void
+    {
+    }
+
+    /** Counts only actual guarded diagnostic portions. */
+    protected function publishProtectedModeAgentDiagnostics(): void
+    {
+        ++$this->checks;
     }
 }

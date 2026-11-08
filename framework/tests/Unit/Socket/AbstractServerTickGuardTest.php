@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Socket;
 
+use Hilos\Core\EventLoop\EventLoop;
+use Closure;
 use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\ContainedFailureSink;
 use Hilos\Core\Daemon\Master\MasterFailureUnit;
@@ -259,7 +261,7 @@ final class AbstractServerTickGuardTestServer extends AbstractServer
     public function seedClient(?Throwable $failure): AbstractServerTickGuardTestClient
     {
         $client = new AbstractServerTickGuardTestClient($failure);
-        $this->clients[] = $client;
+        $this->addClient($client);
 
         return $client;
     }
@@ -303,6 +305,19 @@ final class AbstractServerTickGuardTestClient implements ClientInterface
      * @param ?Throwable $failure Failure the read hands back, or null to read quietly
      */
     public function __construct(private readonly ?Throwable $failure)
+    {
+    }
+
+    /**
+     * @param EventLoop $loop Test owner's loop
+     * @param Closure(): void $wake Test owner's bounded portion
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+    }
+
+    /** Releases the test transport's loop binding, when it has one. */
+    public function detachEventLoop(): void
     {
     }
 

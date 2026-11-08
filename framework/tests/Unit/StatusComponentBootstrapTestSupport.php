@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Socket\Server\AbstractServer;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -68,11 +69,13 @@ final class StatusBootstrapTestWorkerServer extends WorkerServer
     {
         $client = new ReflectionClass(StatusBootstrapTestWorkerClient::class)->newInstanceWithoutConstructor();
         $client->setWorkerIndex($index);
+        new ReflectionProperty(WorkerClient::class, 'isRegistered')->setValue($client, true);
         new ReflectionProperty(WorkerClient::class, 'agentManager')->setValue(
             $client,
             new ReflectionProperty(WorkerServer::class, 'agentManager')->getValue($this),
         );
-        $this->clients[] = $client;
+        new ReflectionProperty(WorkerClient::class, 'workerServer')->setValue($client, $this);
+        $this->addClient($client);
 
         return $client;
     }
@@ -90,7 +93,9 @@ final class StatusBootstrapTestWorkerServer extends WorkerServer
     /** Drops the worker link before the manager consumes its lost roster. */
     public function disconnectWorker(): void
     {
-        $this->clients = [];
+        foreach ($this->clients as $client) {
+            new ReflectionMethod(AbstractServer::class, 'removeClient')->invoke($this, $client);
+        }
     }
 
     /** @param string $agentId Agent removed through the production stop path */

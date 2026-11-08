@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Closure;
+use Generator;
 use Hilos\Auth\Session\SessionCookieName;
 use Hilos\Auth\Session\SessionRotationTicket;
 use Hilos\Auth\Session\SessionToken;
@@ -13,7 +15,12 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Constants\WebSocketConstants;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+use Hilos\Socket\Exception\SocketTlsHandshakeException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Daemon\DaemonManager;
@@ -40,8 +47,10 @@ use Hilos\Runtime\View\Item\HilosSessionRotation;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\WebSocket\Delivery\DeliveryCleanup;
 use Hilos\Socket\WebSocket\Delivery\DeliveryFrame;
 use Hilos\Socket\WebSocket\Delivery\DeliveryQueue;
+use Hilos\Socket\WebSocket\Delivery\DeliveryRequestLifetime;
 use Hilos\Socket\WebSocket\Delivery\DeliverySettingsMirror;
 use Hilos\Socket\WebSocket\DTO\HandshakeWelcomeSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -79,6 +88,8 @@ use Hilos\Core\Exception\InvalidStateException;
 use Hilos\Core\Exception\UnsupportedOperationException;
 use Hilos\Environment\Exception\EnvException;
 use Random\RandomException;
+use SplQueue;
+use WeakReference;
 use Hilos\Runtime\View\Collection\HilosSessionRotations;
 
 /**
@@ -96,12 +107,20 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             return $this->acceptKeyValue;
         }
         set {
+            if ($this->acceptKeyValue === $value) {
+                return;
+            }
+            $previous = $this->acceptKeyValue;
             $this->acceptKeyValue = $value;
+            ($this->acceptKeyChanged)?->__invoke($this, $previous);
         }
     }
 
     /** @var string Backing storage for accept key */
     private string $acceptKeyValue = '';
+
+    /** @var ?Closure(WebSocketClient, string): void Process-local transport index, absent after removal */
+    private ?Closure $acceptKeyChanged = null;
 
     /**
      * @var ?string Hash of this connection's session token, computed on the 101; null before the
@@ -178,6 +197,12 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     private const int MAX_WRITE_BUFFER_BYTES = 8 * 1024 * 1024;
 
+    /** Survivor visits and complete-package emissions per guarded socket write. */
+    private const int DELIVERY_PACKING_STEPS_PER_PORTION = 64;
+
+    /** Already serialized binary/control frames transferred after the older admitted application packet. */
+    private const int TRANSPORT_FRAMES_PER_PORTION = 64;
+
     /** @var bool Whether WebSocket handshake is completed */
     protected bool $handshakeCompleted = false;
 
@@ -209,6 +234,20 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /** Private to this TCP connection; no worker or peer reads its buffered application text. */
     private ?DeliveryQueue $deliveryQueue = null;
 
+    /** Exact application queue at graceful-close admission; later producers use a separate queue. */
+    private ?DeliveryQueue $closingDeliveryQueue = null;
+
+    /** Graceful close keeps advancing an already admitted packet before closing its transport. */
+    private bool $forceDeliveryDrain = false;
+
+    /** @var ?SplQueue<string> Binary/control frames written after the current packet was admitted */
+    private ?SplQueue $afterPacking = null;
+
+    private int $afterPackingBytes = 0;
+
+    /** Process-local cleanup; it cannot carry application facts to another worker or node. */
+    private ?DeliveryCleanup $deliveryCleanup = null;
+
     /** The accepting master's live setting, read without DB or I/O on the socket path. */
     private ?DeliverySettingsMirror $deliverySettingsMirror = null;
 
@@ -218,11 +257,30 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /** @var array<string, WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO> Accepted pending requests */
     private array $deliveryRequests = [];
 
+    /** @var array<string, array<string, true>> Page to original request tokens, without payload copies */
+    private array $deliveryRequestPages = [];
+
+    /** @var array<string, DeliveryRequestLifetime> Exact page lifetime of each request token */
+    private array $deliveryRequestLifetimes = [];
+
+    /** @var array<string, DeliveryRequestLifetime> Current page lifetimes */
+    private array $deliveryPageLifetimes = [];
+
+    private int $deliveryGeneration = 0;
+
+    private ?WebSocketPageSubscribeSignalDTO $pendingSubscribe = null;
+
     /**
      * Deadlines private to this TCP connection; no worker or peer reads them, and they end with it.
      * Null until the handshake completes, and the check does not run before that.
      */
     private ?WebSocketLiveness $liveness = null;
+
+    /** One native wait for this connection's delivery and liveness, private to its process. */
+    private ?EventLoopTimer $socketWorkTimer = null;
+
+    /** Invalidates escaped callbacks when this exact object leaves or changes its loop binding. */
+    private int $socketWorkGeneration = 0;
 
     /**
      * @var ?string Peer address this connection was accepted from, read once on the 101
@@ -262,6 +320,59 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     private ?UploadMemoryInput $uploadMemoryInput = null;
 
     /**
+     * Binds the ordinary guarded client portion and one combined protocol deadline.
+     * Rebinding keeps the original handshake, frame and delivery moments.
+     *
+     * @param EventLoop $loop Owning master's loop
+     * @param Closure(): void $wake One bounded, guarded client portion
+     * @throws SocketTlsHandshakeException When a live TLS session is rebound to another native base
+     * @throws EventLoopException When the protocol deadline cannot bind to the native loop
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+        parent::attachEventLoop($loop, $wake);
+        if ($this->socket === null || $this->shouldClose) {
+            return;
+        }
+
+        $generation = $this->socketWorkGeneration;
+        $weakClient = WeakReference::create($this);
+        $this->socketWorkTimer = $loop->createTimer(static function () use ($weakClient, $generation): void {
+            $client = $weakClient->get();
+            if ($client === null || $client->socketWorkGeneration !== $generation
+                || $client->socketWorkTimer === null || $client->socket === null || $client->shouldClose) {
+                return;
+            }
+            $client->markReady();
+        });
+        $this->rearmSocketWork();
+    }
+
+    /** Invalidates protocol callbacks before releasing the parent transport and ready binding. */
+    public function detachEventLoop(): void
+    {
+        ++$this->socketWorkGeneration;
+        $this->socketWorkTimer?->close();
+        $this->socketWorkTimer = null;
+        parent::detachEventLoop();
+    }
+
+    /** Cancels protocol waiting before cueing the ordinary terminal client portion. */
+    public function markShouldClose(): void
+    {
+        ++$this->socketWorkGeneration;
+        $this->socketWorkTimer?->close();
+        $this->socketWorkTimer = null;
+        parent::markShouldClose();
+    }
+
+    /** @param ?Closure(WebSocketClient, string): void $changed Owning server's index hook, removed on departure */
+    public function setAcceptKeyChanged(?Closure $changed): void
+    {
+        $this->acceptKeyChanged = $changed;
+    }
+
+    /**
      * The server injects this before the handshake, without changing project constructors.
      *
      * @param UploadMemoryPoolSink $sink Master owner of the single raw-byte ledger
@@ -292,17 +403,20 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws InvalidFormatException When the upgrade request's query string carries a non-string value
      * @throws InvalidArgumentException When a signal the frame turns into cannot be named
      * @throws LogicException When upload admission metadata or ledger ownership is inconsistent
+     * @throws EventLoopException When the next protocol deadline cannot be armed
      */
     protected function processReadBuffer(): void
     {
         if (!$this->handshakeCompleted) {
             $this->handleHandshake();
-            return;
+            if (!$this->handshakeCompleted || $this->shouldClose) {
+                return;
+            }
         }
 
         try {
-            while (strlen($this->readBuffer) >= self::HEADER_LEN_BASE) {
-                $frame = $this->parseFrame();
+            for ($processed = 0; !$this->shouldClose && strlen($this->readBuffer) >= self::HEADER_LEN_BASE; ++$processed) {
+                $frame = $this->parseFrame($processed >= self::MAX_MESSAGES_PER_READ);
                 if ($frame === null) {
                     break;
                 }
@@ -311,6 +425,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                 // Taken whole by the parser and its handler, so the browser is there. A malformed
                 // frame threw above and a partial one is still waiting in the buffer: neither counts.
                 $this->liveness?->recordReceived($this->deliveryNowMs());
+                $this->rearmSocketWork();
             }
         } catch (InvalidFrameException $failure) {
             // Delete raw input before releasing its pending receipts; cancel may have removed
@@ -397,7 +512,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
             case self::OPCODE_CLOSE:
                 // Close frame
-                $this->shouldClose = true;
+                $this->markShouldClose();
                 break;
 
             case self::OPCODE_PING:
@@ -441,6 +556,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws EnvException When the build timestamp, cookie, environment or liveness env values cannot be read,
      *                      or the liveness spans are out of order
      * @throws RandomException When the secure random source refuses this connection's secrets
+     * @throws EventLoopException When the next protocol deadline cannot be armed
      */
     private function handleHandshake(): void
     {
@@ -516,7 +632,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             $acceptKey = self::mintAcceptKey();
             $sessionToken = $rotation?->sessionToken ?? self::resolveSessionToken($cookies, $sessionCookieName);
         } catch (RandomException $exception) {
-            $this->shouldClose = true;
+            $this->markShouldClose();
             throw $exception;
         }
 
@@ -552,9 +668,10 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         }
         $response .= HttpConstants::HTTP_LINE_SEPARATOR;
 
-        $this->writeBuffer .= $response;
+        $this->queueWrite($response);
         $this->handshakeCompleted = true;
         $this->liveness = new WebSocketLiveness($livenessConfig, $this->deliveryNowMs());
+        $this->rearmSocketWork();
         // Before the welcome, never after: the welcome tells this connection whether the mode
         // locks it out, and a verifier that presented a valid pass no longer is locked out.
         $this->admitProtectedModePass($queryParams);
@@ -674,33 +791,46 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      *
      * @throws SocketException If socket write fails
      * @throws HilosException When buffered wire input refuses to become a DTO
+     * @throws EventLoopException When the next protocol deadline cannot be armed
      */
     public function write(): void
     {
-        if ($this->shouldClose()) {
-            return;
-        }
-        if ($this->deliveryQueue !== null) {
-            $this->effectiveDeliveryQueue();
-        }
-        // Before the drain: with the queue held or not yet due, the transport buffer may be empty
-        // and parent::write() would return before its own check.
-        $this->enforceOutboundCap();
-        if ($this->shouldClose) {
-            return;
-        }
-        $this->drainDelivery();
-        parent::write();
+        try {
+            if ($this->shouldClose()) {
+                return;
+            }
+            if ($this->deliveryQueue !== null) {
+                $this->effectiveDeliveryQueue();
+            }
+            // Before the drain: with the queue held or not yet due, the transport buffer may be empty
+            // and parent::write() would return before its own check.
+            $this->enforceOutboundCap();
+            if ($this->shouldClose) {
+                return;
+            }
+            $this->drainDelivery($this->forceDeliveryDrain);
+            $closingQueue = $this->closingDeliveryQueue;
+            if ($this->forceDeliveryDrain && $this->afterPacking === null
+                && !($closingQueue?->hasPendingPacking() ?? false)
+                && ($closingQueue === null || $closingQueue->isHeld() || !$closingQueue->hasFrames())) {
+                $this->forceDeliveryDrain = false;
+                parent::closeOnceWritten();
+            }
+            parent::write();
 
-        if ($this->pendingRotationDrops !== [] && !$this->hasPendingWrite()) {
-            $this->onOutboundDrained();
+            if ($this->pendingRotationDrops !== [] && !$this->hasPendingWrite()) {
+                $this->onOutboundDrained();
+            }
+        } finally {
+            $this->rearmSocketWork();
         }
     }
 
     /** @return bool Whether application deliveries or transport bytes remain pending */
     public function hasPendingWrite(): bool
     {
-        return parent::hasPendingWrite() || ($this->deliveryQueue?->hasFrames() ?? false);
+        return parent::hasPendingWrite() || $this->afterPacking !== null
+            || ($this->deliveryQueue?->hasFrames() ?? false) || ($this->closingDeliveryQueue?->hasFrames() ?? false);
     }
 
     /**
@@ -710,17 +840,30 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     protected function outboundBackpressureBytes(): int
     {
-        return parent::outboundBackpressureBytes() + ($this->deliveryQueue?->getPendingBytes() ?? 0);
+        return parent::outboundBackpressureBytes() + $this->afterPackingBytes
+            + ($this->deliveryQueue?->getPendingBytes() ?? 0) + ($this->closingDeliveryQueue?->getPendingBytes() ?? 0);
     }
 
     /**
      * Release completed application work before the transport decides whether it is empty.
      * An incomplete subscription remains held even during this forced release.
+     *
+     * @throws EventLoopException When the next protocol deadline cannot be armed
      */
     public function closeOnceWritten(): void
     {
+        if (!$this->forceDeliveryDrain && $this->closingDeliveryQueue === null) {
+            $this->closingDeliveryQueue = $this->deliveryQueue;
+            $this->deliveryQueue = null;
+        }
+        $this->forceDeliveryDrain = true;
         $this->drainDelivery(force: true);
-        parent::closeOnceWritten();
+        $closingQueue = $this->closingDeliveryQueue;
+        if ($this->afterPacking === null && !($closingQueue?->hasPendingPacking() ?? false)
+            && ($closingQueue === null || $closingQueue->isHeld() || !$closingQueue->hasFrames())) {
+            $this->forceDeliveryDrain = false;
+            parent::closeOnceWritten();
+        }
     }
 
     /**
@@ -730,16 +873,45 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     public function close(): void
     {
+        $this->detachEventLoop();
+        $this->forceDeliveryDrain = false;
+        $this->cancelDeliveries();
         $this->deliveryQueue?->close();
-        $this->deliveryRequests = [];
-        $this->pendingRotationDrops = [];
+        $this->closingDeliveryQueue?->close();
+        $this->closingDeliveryQueue = null;
+        $this->deliveryCleanup ??= new DeliveryCleanup();
+        if ($this->afterPacking !== null) {
+            $frames = $this->afterPacking;
+            $this->afterPacking = null;
+            $this->afterPackingBytes = 0;
+            $this->deliveryCleanup->schedule((static function () use ($frames): Generator {
+                yield;
+                while (!$frames->isEmpty()) {
+                    $frames->dequeue();
+                    yield;
+                }
+            })());
+        }
+        $this->deliveryCleanup->retire($this->pendingRotationDrops);
         parent::close();
     }
 
-    /** @param DeliverySettingsMirror $mirror Live setting owned by the accepting master */
+    /** @param DeliveryCleanup $cleanup Master's existing guarded effect owner */
+    public function setDeliveryCleanup(DeliveryCleanup $cleanup): void
+    {
+        $this->deliveryCleanup = $cleanup;
+        $this->deliveryQueue?->setCleanup($cleanup);
+        $this->closingDeliveryQueue?->setCleanup($cleanup);
+    }
+
+    /**
+     * @param DeliverySettingsMirror $mirror Live setting owned by the accepting master
+     * @throws EventLoopException When the next protocol deadline cannot be armed
+     */
     public function setDeliverySettingsMirror(DeliverySettingsMirror $mirror): void
     {
         $this->deliverySettingsMirror = $mirror;
+        $this->rearmSocketWork();
     }
 
     /** @return int Monotonic milliseconds of the delivery and liveness clocks; overridable for deterministic transport tests */
@@ -754,7 +926,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     private function effectiveDeliveryQueue(): DeliveryQueue
     {
-        $this->deliveryQueue ??= new DeliveryQueue();
+        $this->deliveryQueue ??= new DeliveryQueue(cleanup: $this->deliveryCleanup ??= new DeliveryCleanup());
         if ($this->deliverySettingsMirror !== null) {
             $this->deliveryQueue->setWindowMs($this->deliverySettingsMirror->getWindowMs());
         }
@@ -763,24 +935,70 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
+     * Ready packing runs through the client portion; only future work needs a native timer.
+     * Empty/held queues and blocked transport output do not supply runnable protocol work.
+     *
+     * @throws EventLoopException When the protocol deadline cannot be armed
+     */
+    private function rearmSocketWork(): void
+    {
+        if ($this->socketWorkTimer === null || $this->socket === null || $this->shouldClose) {
+            return;
+        }
+
+        $nowMs = $this->deliveryNowMs();
+        $queue = $this->closingDeliveryQueue ?? $this->deliveryQueue;
+        $deliveryAt = $this->afterPacking !== null
+            ? $nowMs
+            : $queue?->nextWorkAt($nowMs, $this->forceDeliveryDrain);
+        if ($deliveryAt !== null && $deliveryAt <= $nowMs) {
+            $this->markReady();
+            $deliveryAt = null;
+        }
+        $livenessAt = $this->liveness?->nextDueAt($nowMs);
+        $deadline = $deliveryAt === null ? $livenessAt
+            : ($livenessAt === null ? $deliveryAt : min($deliveryAt, $livenessAt));
+        $this->socketWorkTimer->armAt($deadline === null ? null : $deadline / TimeConstants::MS_PER_SECOND);
+    }
+
+    /**
      * @param bool $force Whether shutdown is releasing all completed application work
+     * @throws EventLoopException When the next protocol deadline cannot be armed
      */
     private function drainDelivery(bool $force = false): void
     {
-        if ($this->deliveryQueue === null) {
-            return;
-        }
-        foreach ($this->deliveryQueue->drain($this->deliveryNowMs(), $force) as $text) {
-            $this->writeBuffer .= $this->buildFrameHeader(strlen($text), self::OPCODE_TEXT) . $text;
+        try {
+            $queue = $this->closingDeliveryQueue ?? $this->deliveryQueue;
+            if ($this->afterPacking !== null && !($queue?->hasPendingPacking() ?? false)) {
+                for ($step = 0; $step < self::TRANSPORT_FRAMES_PER_PORTION && !$this->afterPacking->isEmpty(); $step++) {
+                    $frame = $this->afterPacking->dequeue();
+                    $this->afterPackingBytes -= strlen($frame);
+                    $this->queueWrite($frame);
+                }
+                if ($this->afterPacking->isEmpty()) {
+                    $this->afterPacking = null;
+                }
+                return;
+            }
+            if ($queue === null) {
+                return;
+            }
+            foreach ($queue->drainPortion($this->deliveryNowMs(), self::DELIVERY_PACKING_STEPS_PER_PORTION, $force) as $text) {
+                $this->queueWrite($this->buildFrameHeader(strlen($text), self::OPCODE_TEXT) . $text);
+            }
+        } finally {
+            $this->rearmSocketWork();
         }
     }
 
     /**
      * @throws InvalidFormatException When the effective delivery window is not positive
+     * @throws EventLoopException When the next protocol deadline cannot be armed
      */
     private function acceptDeliveryRequest(): void
     {
         $this->effectiveDeliveryQueue()->acceptRequest($this->deliveryNowMs());
+        $this->rearmSocketWork();
     }
 
     /**
@@ -992,7 +1210,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             return;
         }
 
-        $this->writeBuffer .= $this->buildFrameHeader(strlen($messageJson), self::OPCODE_TEXT) . $messageJson;
+        $this->queueWrite($this->buildFrameHeader(strlen($messageJson), self::OPCODE_TEXT) . $messageJson);
     }
 
     /**
@@ -1122,13 +1340,14 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
-     * Parse WebSocket frame
+     * Parse one whole frame, retaining the original bytes when this portion is exhausted.
      *
-     * @return ?WebSocketFrameDTO Frame data or null if frame is incomplete (waiting for more data)
+     * @param bool $defer Whether a complete frame belongs to the next owner portion
+     * @return ?WebSocketFrameDTO Frame data or null when incomplete or deferred
      * @throws InvalidFrameException When a signed physical frame exceeds its raw-byte permission
      * @throws LogicException When the pool identity sequence is exhausted
      */
-    private function parseFrame(): ?WebSocketFrameDTO
+    private function parseFrame(bool $defer = false): ?WebSocketFrameDTO
     {
         if (strlen($this->readBuffer) < self::HEADER_LEN_BASE) {
             return null;
@@ -1172,6 +1391,11 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $this->admitUploadInput($opcode, $payloadStart, $payloadLen, $maskKey);
         if (strlen($this->readBuffer) < $payloadStart + $payloadLen) {
             return null; // Incomplete frame
+        }
+
+        if ($defer) {
+            $this->continueReadBuffer();
+            return null;
         }
 
         $payload = substr($this->readBuffer, $payloadStart, $payloadLen);
@@ -1246,6 +1470,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @param string $data Text data to send (UTF-8)
      * @throws InvalidStateException When handshake not completed
      * @throws InvalidFormatException When the effective window or a merged envelope is invalid
+     * @throws EventLoopException When a client protocol deadline cannot be armed
      */
     public function sendFrame(string $data): void
     {
@@ -1261,6 +1486,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @param DeliveryFrame $frame Shared prepared application text
      * @throws InvalidStateException When handshake not completed
      * @throws InvalidFormatException When the effective window or a merged envelope is invalid
+     * @throws EventLoopException When the next protocol deadline cannot be armed
      */
     public function sendDeliveryFrame(DeliveryFrame $frame): void
     {
@@ -1274,6 +1500,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
         $this->effectiveDeliveryQueue()->enqueue($frame, $this->deliveryNowMs());
         $this->enforceOutboundCap();
+        $this->rearmSocketWork();
     }
 
     /**
@@ -1282,14 +1509,16 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @param string $page Page address from the internal completion
      * @param string $deliveryId Internal delivery token from the addressed completion
      * @throws InvalidFormatException When the effective delivery window is not positive
+     * @throws EventLoopException When the next protocol deadline cannot be armed
      */
     public function completeDelivery(string $page, string $deliveryId): void
     {
         if (!$this->isDeliveryPending($page, $deliveryId)) {
             return;
         }
-        unset($this->deliveryRequests[$deliveryId]);
+        $this->forgetDeliveryRequest($page, $deliveryId);
         $this->effectiveDeliveryQueue()->completeDelivery($deliveryId, $this->deliveryNowMs());
+        $this->rearmSocketWork();
     }
 
     /**
@@ -1299,37 +1528,90 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     public function isDeliveryPending(string $page, string $deliveryId): bool
     {
-        return ($this->deliveryRequests[$deliveryId] ?? null)?->page === $page;
+        $lifetime = $this->deliveryRequestLifetimes[$deliveryId] ?? null;
+        return $lifetime !== null && $lifetime->active && $lifetime->generation === $this->deliveryGeneration
+            && ($this->deliveryRequests[$deliveryId] ?? null)?->page === $page;
     }
 
     /**
      * The accepted subscribe can precede its dispatch and the router's subscription record.
+     * It cancels earlier requests on admission, so a still-pending subscribe is always first.
      *
      * @return ?WebSocketPageSubscribeSignalDTO Request holding this connection, absent after completion or cancellation
      */
     public function pendingPageSubscribe(): ?WebSocketPageSubscribeSignalDTO
     {
-        foreach ($this->deliveryRequests as $request) {
-            if ($request instanceof WebSocketPageSubscribeSignalDTO) {
-                return $request;
-            }
-        }
-
-        return null;
+        return $this->pendingSubscribe;
     }
 
     /**
      * Abandon incomplete work before an unsubscribe or recovery control frame is queued.
      *
      * @param ?string $page Page being left, or null when the connection navigates away
+     * @throws EventLoopException When the next protocol deadline cannot be armed
      */
     public function cancelDeliveries(?string $page = null): void
     {
-        foreach ($this->deliveryRequests as $deliveryId => $request) {
-            if ($page === null || $page === $request->page) {
+        $this->deliveryCleanup ??= new DeliveryCleanup();
+        if ($page === null) {
+            $this->deliveryGeneration++;
+            $this->pendingSubscribe = null;
+            $this->deliveryQueue?->cancelPending();
+            $this->deliveryCleanup->retire($this->deliveryRequests);
+            $this->deliveryCleanup->retire($this->deliveryRequestPages);
+            $this->deliveryCleanup->retire($this->deliveryRequestLifetimes);
+            $this->deliveryCleanup->retire($this->deliveryPageLifetimes);
+            $this->rearmSocketWork();
+            return;
+        }
+        $lifetime = $this->deliveryPageLifetimes[$page] ?? null;
+        if ($lifetime === null) {
+            return;
+        }
+        $lifetime->active = false;
+        unset($this->deliveryPageLifetimes[$page]);
+        if ($this->pendingSubscribe?->page === $page) {
+            $this->deliveryQueue?->cancelDelivery($this->pendingSubscribe->deliveryId);
+            $this->pendingSubscribe = null;
+        }
+        $tokens = $this->deliveryRequestPages[$page];
+        unset($this->deliveryRequestPages[$page]);
+        $this->deliveryCleanup->schedule($this->cancelPageDeliveryRequests($tokens, $lifetime));
+        $this->rearmSocketWork();
+    }
+
+    /**
+     * @param string $page Original request page
+     * @param string $deliveryId Exact socket-minted request token
+     */
+    private function forgetDeliveryRequest(string $page, string $deliveryId): void
+    {
+        unset($this->deliveryRequests[$deliveryId], $this->deliveryRequestLifetimes[$deliveryId], $this->deliveryRequestPages[$page][$deliveryId]);
+        if ($this->deliveryRequestPages[$page] === []) {
+            unset($this->deliveryRequestPages[$page], $this->deliveryPageLifetimes[$page]);
+        }
+        if ($this->pendingSubscribe?->deliveryId === $deliveryId) {
+            $this->pendingSubscribe = null;
+        }
+    }
+
+    /**
+     * @param array<string, true> $tokens Detached original page index, excluding later requests
+     * @param DeliveryRequestLifetime $lifetime Invalidated original page lifetime
+     * @return Generator<int, void> One original request per step, without visiting other pages
+     * @throws EventLoopException When the next protocol deadline cannot be armed
+     */
+    private function cancelPageDeliveryRequests(array $tokens, DeliveryRequestLifetime $lifetime): Generator
+    {
+        yield;
+        while (($deliveryId = array_key_last($tokens)) !== null) {
+            if (($this->deliveryRequestLifetimes[$deliveryId] ?? null) === $lifetime) {
                 $this->deliveryQueue?->cancelDelivery($deliveryId);
-                unset($this->deliveryRequests[$deliveryId]);
+                unset($this->deliveryRequests[$deliveryId], $this->deliveryRequestLifetimes[$deliveryId]);
+                $this->rearmSocketWork();
             }
+            unset($tokens[$deliveryId]);
+            yield;
         }
     }
 
@@ -1374,7 +1656,15 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         if ($this->shouldClose) {
             return;
         }
-        $this->writeBuffer .= $this->buildFrameHeader(strlen($payload), $opcode) . $payload;
+        $frame = $this->buildFrameHeader(strlen($payload), $opcode) . $payload;
+        if ($this->afterPacking !== null || (($this->closingDeliveryQueue ?? $this->deliveryQueue)?->hasPendingPacking() ?? false)) {
+            $this->afterPacking ??= new SplQueue();
+            $this->afterPacking->enqueue($frame);
+            $this->afterPackingBytes += strlen($frame);
+            $this->markReady();
+        } else {
+            $this->queueWrite($frame);
+        }
         $this->enforceOutboundCap();
     }
 
@@ -1438,6 +1728,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws UnsupportedOperationException When an internal signal branch is unreachable
      * @throws InvalidArgumentException When the signal the frame turns into cannot be named
      * @throws InvalidFormatException When the effective delivery window is not positive
+     * @throws EventLoopException When the next protocol deadline cannot be armed
      */
     protected function onFrame(string $payload): void
     {
@@ -1566,7 +1857,14 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                 } else {
                     $this->effectiveDeliveryQueue()->beginUpdate($deliveryId, $this->deliveryNowMs());
                 }
+                $this->rearmSocketWork();
                 $this->deliveryRequests[$deliveryId] = $dto;
+                $this->deliveryRequestLifetimes[$deliveryId] = $this->deliveryPageLifetimes[$page]
+                    ??= new DeliveryRequestLifetime($this->deliveryGeneration);
+                $this->deliveryRequestPages[$page][$deliveryId] = true;
+                if ($dto instanceof WebSocketPageSubscribeSignalDTO) {
+                    $this->pendingSubscribe = $dto;
+                }
                 Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::WEBSOCKET),
                     new SignalType($type),
@@ -2029,34 +2327,39 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws InvalidArgumentException When the liveness signal cannot be named
      * @throws InvalidFormatException When the socket has no accept key to name in the signal
      * @throws RtActionsStateCollectionNullException When the connections registry has no state collection behind it
+     * @throws EventLoopException When the next protocol deadline cannot be armed
      */
     public function onTick(): void
     {
-        if ($this->liveness === null || $this->shouldClose) {
-            return;
-        }
-
-        $nowMs = $this->deliveryNowMs();
-        if ($this->liveness->isCloseDue($nowMs)) {
-            $this->markShouldClose();
-            return;
-        }
-        $transitionDue = $this->liveness->isProbablyOfflineTransitionDue($nowMs);
-        if ($transitionDue) {
-            // Both transitions are found here, the one place the connection's owner hears of them.
-            $this->liveness->settleProbablyOffline($nowMs);
-            $this->queueLiveness($this->liveness->probablyOffline);
-        }
-        if ($this->liveness->isReconcileDue($nowMs)) {
-            // A transition on this tick has just told the owner the very value a disagreeing row would repeat.
-            if (!$transitionDue) {
-                $this->reconcileLiveness($this->liveness->probablyOffline);
+        try {
+            if ($this->liveness === null || $this->shouldClose) {
+                return;
             }
-            $this->liveness->recordReconciled($nowMs);
-        }
-        if ($this->liveness->isPingDue($nowMs)) {
-            $this->sendPing();
-            $this->liveness->recordPingSent($nowMs);
+
+            $nowMs = $this->deliveryNowMs();
+            if ($this->liveness->isCloseDue($nowMs)) {
+                $this->markShouldClose();
+                return;
+            }
+            $transitionDue = $this->liveness->isProbablyOfflineTransitionDue($nowMs);
+            if ($transitionDue) {
+                // Both transitions are found here, the one place the connection's owner hears of them.
+                $this->liveness->settleProbablyOffline($nowMs);
+                $this->queueLiveness($this->liveness->probablyOffline);
+            }
+            if ($this->liveness->isReconcileDue($nowMs)) {
+                // A transition on this tick has just told the owner the very value a disagreeing row would repeat.
+                if (!$transitionDue) {
+                    $this->reconcileLiveness($this->liveness->probablyOffline);
+                }
+                $this->liveness->recordReconciled($nowMs);
+            }
+            if ($this->liveness->isPingDue($nowMs)) {
+                $this->sendPing();
+                $this->liveness->recordPingSent($nowMs);
+            }
+        } finally {
+            $this->rearmSocketWork();
         }
     }
 
@@ -2073,6 +2376,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws InvalidArgumentException When the liveness signal cannot be named
      * @throws InvalidFormatException When the socket has no accept key to name in the signal
      * @throws RtActionsStateCollectionNullException When the connections registry has no state collection behind it
+     * @throws EventLoopException When a client protocol deadline cannot be armed
      */
     public function bringLivenessMomentToNow(WebSocketLivenessMoment $moment): bool
     {

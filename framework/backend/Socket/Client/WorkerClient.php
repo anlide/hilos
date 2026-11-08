@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Closure;
+use Hilos\Constants\TimeConstants;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+use Hilos\Socket\Exception\SocketTlsHandshakeException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Hilos;
@@ -101,11 +107,15 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     /** @var AgentManagerDaemon Agent manager daemon instance */
     private AgentManagerDaemon $agentManager;
 
-    /** @var float Connection time (microtime) */
+    /** @var float Connection acceptance in monotonic seconds */
     private float $connectTime;
 
     /** @var float Registration timeout in seconds */
     private float $registrationTimeout = 10.0;
+
+    private ?EventLoopTimer $registrationTimer = null;
+
+    private bool $registrationDue = false;
 
     /** @var array<string, true> Agents this link was sent agent_stop for, not yet reported stopped by the worker */
     private array $stopsAwaitingReport = [];
@@ -131,7 +141,38 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     ) {
         parent::__construct($socket);
         $this->agentManager = $agentManager;
-        $this->connectTime = microtime(true);
+        $this->connectTime = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+    }
+
+    /**
+     * Binds the original acceptance deadline; rebinding never grants a new registration window.
+     *
+     * @param EventLoop $loop Owning master's loop
+     * @param Closure(): void $wake Existing guarded read/tick/write/drop portion
+     * @throws SocketTlsHandshakeException When the transport refuses a native base change
+     * @throws EventLoopException When the registration deadline cannot be armed
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+        parent::attachEventLoop($loop, $wake);
+        if ($this->socket === null || $this->isRegistered || $this->shouldClose) {
+            return;
+        }
+
+        $this->registrationTimer = $loop->createTimer(function (): void {
+            $this->registrationDue = true;
+            $this->markReady();
+        });
+        $this->registrationTimer->armAt($this->connectTime + $this->registrationTimeout);
+    }
+
+    /** Cancels native and already queued expiry before releasing the client binding. */
+    public function detachEventLoop(): void
+    {
+        $this->registrationTimer?->close();
+        $this->registrationTimer = null;
+        $this->registrationDue = false;
+        parent::detachEventLoop();
     }
 
     /**
@@ -220,7 +261,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
-     * Extract complete JSON messages from the read buffer and dispatch worker protocol handlers.
+     * Dispatch a bounded portion of complete worker messages, retaining the FIFO remainder.
      *
      * @throws SocketException When read buffer or JSON depth exceeds limits
      * @throws InvalidFormatException When a frame does not decode, names no known type,
@@ -231,10 +272,10 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      */
     protected function processReadBuffer(): void
     {
-        while ($this->readBuffer !== '') {
-            $message = $this->extractCompleteJsonMessage($this->readBuffer);
+        for ($processed = 0; $this->readBuffer !== ''; ++$processed) {
+            $message = $this->extractReadBufferJsonMessage($processed);
             if ($message === null) {
-                // Incomplete message, wait for more data
+                // Incomplete input waits for bytes; a complete remainder already owes a portion.
                 break;
             }
 
@@ -310,16 +351,6 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerProtectedModeRefreezeDTO => $this->handleProtectedModeRefreezeMessage($workerDTO),
             default => Logger::error("Unknown message type received from worker: " . get_class($workerDTO)),
         };
-
-        // Ask the freeze door whether what just happened lets a held request in (HIL-1000). The
-        // daemon loop asks it too, and that would be the natural single place - but one pass of
-        // that loop spans a whole burst of these frames, and during a freeze a burst takes
-        // SECONDS. A hold released at loop cadence is therefore released at a moment nobody
-        // measured, and the caller waiting on the freeze has a budget that is very much measured:
-        // a hold meant to last five seconds was seen to last sixteen and cost the freeze its
-        // window. Asked here, it is asked at the only cadence that matches what it waits for -
-        // this is where a start report lands.
-        Hilos::$cluster?->protectedModeEntryGate()?->tick();
     }
 
     /**
@@ -333,6 +364,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         $this->setWorkerIndex($dto->workerIndex);
         $this->setIsMonopolistic($dto->monopolistic);
         $this->isRegistered = true;
+        $this->registrationTimer?->close();
+        $this->registrationTimer = null;
+        $this->registrationDue = false;
         if ($this->uploadMemoryPoolSink instanceof UploadMemoryDeliverySink) {
             $this->workerServer->registerUploadWorker($this);
         }
@@ -347,6 +381,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             monopolistic: $dto->monopolistic,
         );
         $this->send($responseDto->toJson());
+        $this->workerServer->noteWorkerRegistered($this);
     }
 
     /**
@@ -442,6 +477,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * @param WorkerAgentStartedDTO $dto DTO with agent started data
      * @throws AgentDaemonCreationFailedException If agent creation fails
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function handleAgentStartedMessage(WorkerAgentStartedDTO $dto): void
     {
@@ -458,6 +494,10 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $orphan = AgentId::fromId($dto->agentId);
             $this->sendAgentStop($orphan->type, $orphan->index);
         }
+
+        // Consume this actual roster fact inside the client guard, before the next frame of
+        // a burst. Waiting for an outer pass once stretched a five-second hold to sixteen.
+        Hilos::$cluster?->protectedModeEntryGate()?->dispatchReady();
     }
 
     /**
@@ -465,10 +505,12 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * @param WorkerAgentStartFailedDTO $dto DTO naming the agent whose start did not finish, and why
      * @throws InvalidArgumentException When the master cannot name an answer it owes a held frame
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function handleAgentStartFailedMessage(WorkerAgentStartFailedDTO $dto): void
     {
         $this->agentManager->handleAgentStartFailed($dto);
+        Hilos::$cluster?->protectedModeEntryGate()?->dispatchReady();
     }
 
     /**
@@ -476,15 +518,21 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * Reports still on the roster are logged by the manager; a consumed wait cannot log twice.
      *
      * @param WorkerAgentStoppedDTO $dto Stop reported by this worker connection
+     * @throws InvalidFormatException When the start sink cannot resolve a pending page recovery
+     * @throws EventLoopException When the held freeze's settle deadline cannot be canceled
      */
     private function handleAgentStoppedMessage(WorkerAgentStoppedDTO $dto): void
     {
         $awaited = $this->awaitsStopReport($dto->agentId);
         unset($this->stopsAwaitingReport[$dto->agentId]);
+        if ($awaited) {
+            $this->workerServer->noteWorkerStopReport($this, $dto->agentId);
+        }
         if ($awaited && !$this->agentManager->hasAgent($dto->agentId)) {
             Logger::info("Agent '{$dto->agentId}' stopped on worker #{$this->workerIndex}");
         }
         $this->agentManager->handleAgentStopped($dto);
+        Hilos::$cluster?->protectedModeEntryGate()?->dispatchReady();
     }
 
     /**
@@ -767,6 +815,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * roster to protect either.
      *
      * @param WorkerProtectedModeEnableDTO $dto DTO with the initiator identity and operation
+     * @throws EventLoopException When the held freeze's settle deadline cannot be armed or canceled
      */
     private function handleProtectedModeEnableMessage(WorkerProtectedModeEnableDTO $dto): void
     {
@@ -870,7 +919,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      */
     public function send(string $message): void
     {
-        $this->writeBuffer .= $message . "\n";
+        $this->queueWrite($message . "\n");
     }
 
     /**
@@ -970,9 +1019,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
-     * Tick method - check registration timeout
-     *
-     * Checks if registration timeout has been exceeded and closes connection if so.
+     * Consumes a due registration fact under the client's existing owner guard.
+     * Unbound fixtures retain the direct check; bound traffic never checks the clock.
      */
     public function onTick(): void
     {
@@ -981,11 +1029,15 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             return;
         }
 
-        // Check if registration timeout exceeded
-        $currentTime = microtime(true);
+        if ($this->registrationTimer !== null && !$this->registrationDue) {
+            return;
+        }
+
+        $this->registrationDue = false;
+        $currentTime = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
         if (($currentTime - $this->connectTime) >= $this->registrationTimeout) {
             Logger::error("Worker client registration timeout exceeded, disconnecting");
-            $this->shouldClose = true;
+            $this->markShouldClose();
         }
     }
 
@@ -1015,6 +1067,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * @throws InvalidArgumentException When a refusal owed to a frame held for a lost agent cannot be named
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws LogicException When an internal reader-union comparison precedes complete preparation
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     protected function onClose(): void
     {

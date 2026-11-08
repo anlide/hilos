@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Core\Daemon\AbandonedCommandSink;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Environment\Exception\EnvException;
@@ -75,6 +76,7 @@ class HttpServer extends AbstractServer
      * agent answers is ended by the client's own timeout, which is this same close.
      *
      * @param string $correlationId Correlation id nobody is waiting on any more
+     * @throws EventLoopException When the master cannot rearm remaining command deadlines
      */
     public function abandon(string $correlationId): void
     {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Hilos\Constants\TimeConstants;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
@@ -32,7 +33,10 @@ final class ClusterPlacementRetryTest extends TestCase
 
     public function testNewNoFitWorkIsOneWaitingRecordWithNoHostAndStructuralDiagnosis(): void
     {
-        [$placement, $mesh, , $policy] = $this->waiting(['1'], now: microtime(true));
+        [$placement, $mesh, , $policy] = $this->waiting(
+            ['1'],
+            now: hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND,
+        );
         $record = $placement->registry()->get('render:1');
         $this->assertNotNull($record);
         $this->assertSame(PlacementState::Unplaced, $record->state);
@@ -59,7 +63,11 @@ final class ClusterPlacementRetryTest extends TestCase
 
     public function testFailedRequestsFromDifferentNodesReceiveTheLastVerdictDuringTheSamePause(): void
     {
-        [$placement, $mesh, , $policy] = $this->waiting(['1'], fail: true, now: microtime(true));
+        [$placement, $mesh, , $policy] = $this->waiting(
+            ['1'],
+            fail: true,
+            now: hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND,
+        );
         $mesh->sent = [];
         foreach (['first', 'second'] as $asker) {
             $placement->onPlacementRequest($asker, new PeerPlacementRequestDTO('render', '1'));
@@ -103,6 +111,22 @@ final class ClusterPlacementRetryTest extends TestCase
         $this->assertSame(2, $policy->attempts, 'The retry failure does not free live capacity');
         $placement->tick(1010.0);
         $this->assertSame(3, $policy->attempts);
+    }
+
+    public function testExternalFailureUsesTheSameMonotonicRetryClockAsTheOwnerPass(): void
+    {
+        $mesh = new FakePlacementMesh(['leader' => []], online: ['leader']);
+        $policy = new RetryTestPolicy();
+        $placement = new ClusterPlacement('leader', $mesh, new FakePlacementExecutor(), policy: $policy);
+        $before = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        $placement->onBecameLeader($before);
+        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', 'clock'));
+        $after = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+
+        $placement->tick($before + 4.999);
+        $this->assertSame(1, $policy->attempts, 'An external failure keeps its original five seconds');
+        $placement->tick($after + 5.0);
+        $this->assertSame(2, $policy->attempts, 'The local monotonic pass can reach the external event deadline');
     }
 
     /** @return iterable<string, array{bool, ?string}> Waiting outcomes with optional host history */
@@ -230,7 +254,7 @@ final class ClusterPlacementRetryTest extends TestCase
         [$placement, $mesh, , $policy] = $this->waiting(['1']);
         $mesh->capabilities['leader'] = ['slots=10'];
         $placement->onPlacementRequest('another', new PeerPlacementRequestDTO('render', '1'));
-        $this->assertSame(2, $policy->attempts, 'The wall time of this external request is past the supplied deadline');
+        $this->assertSame(2, $policy->attempts, 'The local time of this external request is past the supplied deadline');
         $this->assertSame(PlacementState::Started, $placement->registry()->get('render:1')?->state);
         $placement->tick(1100.0);
         $this->assertSame(2, $policy->attempts);

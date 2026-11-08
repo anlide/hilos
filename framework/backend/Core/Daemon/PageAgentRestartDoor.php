@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\DaemonSection\DTO\DaemonAgentRestartRequestSignalData;
@@ -17,6 +18,7 @@ interface PageAgentRestartDoor
      * @throws EnvException When the local cluster configuration cannot be read
      * @throws ClusterConfigurationException When this master's node identity is invalid
      * @throws ClusterDisabledException When an enabled cluster refuses its identity
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function requestPageAgentRestart(DaemonAgentRestartRequestSignalData $request): void;
 }

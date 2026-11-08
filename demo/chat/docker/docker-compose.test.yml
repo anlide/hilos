@@ -89,6 +89,8 @@ services:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     build:
       context: ../../../framework/docker/stand-gateway
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     container_name: chat-stand-gateway-test${HILOS_STAND_SUFFIX:-}
     # The gateway runs on the framework's own TLS server (HIL-921) and loads the
     # classes it needs from the framework itself, so there is still no composer here.
@@ -119,7 +121,10 @@ services:
 
   chat-test:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../tests/.env
         required: false
@@ -306,7 +311,10 @@ services:
 
   chat-cli-test:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../tests/.env
         required: false

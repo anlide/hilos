@@ -68,7 +68,7 @@ final class ModelObservationTest extends TestCase
         $this->assertSame([], $this->request('GET', '/model/test/requests?key=another'));
 
         // Finishing an older delayed response cannot overwrite a later arrival's record.
-        new ReflectionProperty(StandGatewayHttpClient::class, 'releaseAt')->setValue($delayed, microtime(true) - 1);
+        new ReflectionProperty(StandGatewayHttpClient::class, 'releaseAt')->setValue($delayed, 0.0);
         $delayed->write();
         $this->assertStringContainsString('first', $this->receive($peer));
         $this->assertCount(2, $this->request('GET', '/model/test/requests?key=owned'));
@@ -98,7 +98,7 @@ final class ModelObservationTest extends TestCase
         $this->assertSame('still kept', Store::takeAnswer('foreign'));
         $this->assertSame(501, Store::takeBehavior('/model/api/generate', 'foreign')?->status);
         $this->assertSame(503, Store::takeBehavior('/sms/send', 'owned')?->status);
-        new ReflectionProperty(StandGatewayHttpClient::class, 'releaseAt')->setValue($delayed, microtime(true) - 1);
+        new ReflectionProperty(StandGatewayHttpClient::class, 'releaseAt')->setValue($delayed, 0.0);
         $delayed->write();
         $this->assertStringContainsString('pending', $this->receive($peer));
         $this->assertSame([], $this->request('GET', '/model/test/requests?key=owned'));

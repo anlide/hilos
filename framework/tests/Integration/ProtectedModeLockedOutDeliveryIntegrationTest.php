@@ -12,6 +12,7 @@ use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\Destination\WebSocketDestination;
@@ -32,7 +33,9 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use LogicException;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
+use ReflectionProperty;
 use Socket;
+use WeakReference;
 
 /**
  * Whom the first-pass announcement reaches: every connection on this node the freeze still locks
@@ -231,6 +234,159 @@ final class ProtectedModeLockedOutDeliveryIntegrationTest extends TestCase
         $this->assertSame('', $cookieless->outboundBytes());
     }
 
+    public function testSessionReassessmentIncludesAnOriginalHandshakeCompletedBeforeItsVisit(): void
+    {
+        $manager = new LockedOutDeliveryTestManager();
+        $server = $manager->addWebSocketServer();
+        $first = $server->connect(self::MEMBER_SESSION_TOKEN);
+        $handshaking = $server->open();
+        $last = $server->connect(self::MEMBER_SESSION_TOKEN);
+        $keys = new ReflectionMethod(DaemonManager::class, 'sessionAcceptKeyCandidates')->invoke(
+            $manager, $server, self::sessionHash(self::MEMBER_SESSION_TOKEN),
+        );
+        $future = $server->connect(self::MEMBER_SESSION_TOKEN);
+        $keys->rewind();
+        $keys->next();
+        $server->finishHandshake($handshaking, self::MEMBER_SESSION_TOKEN);
+        while ($keys->valid()) {
+            $keys->next();
+        }
+        $this->assertSame([$first->acceptKey, $handshaking->acceptKey, $last->acceptKey], $keys->getReturn());
+        $this->assertNotContains($future->acceptKey, $keys->getReturn());
+    }
+
+    public function testProtectedSelectionPrecedesLaterFreezeChangesAndHandshakes(): void
+    {
+        $manager = new LockedOutDeliveryTestManager();
+        $server = $manager->addWebSocketServer();
+        $operator = $server->connect(self::OPERATOR_SESSION_TOKEN);
+        $member = $server->connect(self::MEMBER_SESSION_TOKEN);
+        $stranger = $server->connect(self::STRANGER_SESSION_TOKEN);
+        $handshaking = $server->open();
+        $this->mountFreeze($operator->acceptKey);
+
+        $manager->notifyProtectedModeLockedOutState($this->announcement());
+        Hilos::$rt->hilosProtectedModeRuntime->actions->enterInactive();
+        $server->finishHandshake($handshaking, self::STRANGER_SESSION_TOKEN);
+        $future = $server->connect(self::STRANGER_SESSION_TOKEN);
+        $server->forgetHandshakeBytes();
+        $manager->dispatch();
+        $server->drainDeliveries();
+
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE, $this->deliveredFrame($stranger)['type'] ?? null);
+        foreach ([$operator, $member, $handshaking, $future] as $silent) {
+            $this->assertSame('', $silent->outboundBytes());
+        }
+    }
+
+    public function testProtectedSelectionKeepsItsOriginalPassMembershipDuringTheSameWindow(): void
+    {
+        $manager = new LockedOutDeliveryTestManager();
+        $server = $manager->addWebSocketServer();
+        $operator = $server->connect(self::OPERATOR_SESSION_TOKEN);
+        $member = $server->connect(self::MEMBER_SESSION_TOKEN);
+        $stranger = $server->connect(self::STRANGER_SESSION_TOKEN);
+        $this->mountFreeze($operator->acceptKey);
+
+        $manager->notifyProtectedModeLockedOutState($this->announcement());
+        Hilos::$rt->hilosProtectedModeRuntime->actions->admitSession(self::sessionHash(self::STRANGER_SESSION_TOKEN));
+        $this->assertFalse(Hilos::$rt->hilosProtectedModeRuntime->locksOut($stranger->acceptKey, $stranger->sessionTokenHash));
+        $server->forgetHandshakeBytes();
+        $manager->dispatch();
+        $server->drainDeliveries();
+
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE, $this->deliveredFrame($stranger)['type'] ?? null);
+        foreach ([$operator, $member] as $silent) {
+            $this->assertSame('', $silent->outboundBytes());
+        }
+    }
+
+    public function testProtectedSessionSelectionDoesNotAdmitAnOriginalUnfinishedHandshake(): void
+    {
+        $manager = new LockedOutDeliveryTestManager();
+        $server = $manager->addWebSocketServer();
+        $member = $server->connect(self::MEMBER_SESSION_TOKEN);
+        $handshaking = $server->open();
+        $manager->notifyProtectedModeSessionState($this->announcement(), self::sessionHash(self::MEMBER_SESSION_TOKEN));
+        $server->finishHandshake($handshaking, self::MEMBER_SESSION_TOKEN);
+        $server->forgetHandshakeBytes();
+        $manager->dispatch();
+        $server->drainDeliveries();
+
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE, $this->deliveredFrame($member)['type'] ?? null);
+        $this->assertSame('', $handshaking->outboundBytes());
+    }
+
+    /** Private preparation must finish inside the original browser prefix while real native ready work keeps progressing. */
+    public function testLargeAdmissionPreparationKeepsTheOriginalBrowserPrefixAndQueueTimePolicy(): void
+    {
+        $manager = new LockedOutDeliveryTestManager();
+        $server = $manager->addWebSocketServer();
+        $operator = $server->connect(self::OPERATOR_SESSION_TOKEN);
+        $member = $server->connect(self::MEMBER_SESSION_TOKEN);
+        $passHolder = $server->connect(self::PASS_HOLDER_SESSION_TOKEN);
+        $stranger = $server->connect(self::STRANGER_SESSION_TOKEN);
+        $state = StateProtectedModeRuntime::create();
+        $state->phase = StateProtectedModeRuntime::PHASE_VERIFYING;
+        $state->initiatorAcceptKey = $operator->acceptKey;
+        $state->initiatorSessionTokenHash = self::sessionHash(self::OPERATOR_SESSION_TOKEN);
+        for ($index = 0; $index < 1024; $index++) {
+            $state->admittedSessionTokenHashes[] = StateProtectedModeRuntime::hashSessionToken('pass-' . $index);
+            $state->circleSessionTokenHashes[] = StateProtectedModeRuntime::hashSessionToken('circle-' . $index);
+        }
+        $state->admittedSessionTokenHashes[] = self::sessionHash(self::PASS_HOLDER_SESSION_TOKEN);
+        $state->circleSessionTokenHashes[] = self::sessionHash(self::MEMBER_SESSION_TOKEN);
+        Hilos::$rt = new LockedOutDeliveryTestRtContext();
+        Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, $state);
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $loop = new EventLoop();
+        new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($manager, $loop);
+        new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($manager);
+        $ready = 0;
+        $due = $loop->createReadyWork(static function () use (&$ready): void { $ready++; });
+        try {
+            $announcement = $this->announcement();
+            $reference = WeakReference::create($announcement);
+            $manager->notifyProtectedModeLockedOutState($announcement);
+            unset($announcement);
+            new ReflectionProperty(DaemonManager::class, 'shutdownStartTime')->setValue($manager, microtime(true));
+            $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignals');
+            $dispatch->invoke($manager);
+            $prefix = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($manager)->browsers;
+            self::assertNotNull($prefix);
+            self::assertFalse($prefix->complete);
+            self::assertNotNull($reference->get());
+            $server->forgetHandshakeBytes();
+            $server->drainDeliveries();
+            self::assertSame('', $stranger->outboundBytes(), 'Preparation cannot publish an early target');
+            Hilos::$rt->hilosProtectedModeRuntime->actions->enterInactive();
+            $future = $server->connect(self::STRANGER_SESSION_TOKEN);
+            $server->forgetHandshakeBytes();
+            $portions = 0;
+            while (!$prefix->complete && $portions < 128) {
+                $due->markReady();
+                $loop->tick();
+                $dispatch->invoke($manager);
+                $portions++;
+            }
+            self::assertGreaterThan(1, $portions);
+            self::assertLessThan(128, $portions);
+            self::assertSame($portions, $ready);
+            self::assertTrue($prefix->complete);
+            self::assertFalse($prefix->failed);
+            self::assertNull($reference->get(), 'The complete prefix releases its actual original payload without GC');
+            $server->drainDeliveries();
+            self::assertSame(SignalTypeConstants::PROTECTED_MODE, $this->deliveredFrame($stranger)['type']);
+            foreach ([$operator, $member, $passHolder, $future] as $silent) {
+                self::assertSame('', $silent->outboundBytes());
+            }
+        } finally {
+            $due->close();
+            new ReflectionMethod(DaemonManager::class, 'discardSignalDispatch')->invoke($manager);
+            $loop->close();
+        }
+    }
+
     /**
      * Mounts the freeze row of a node inside its verification window - the operator named by both
      * halves of their identity, one circle member photographed, one verifier admitted by a code and
@@ -311,7 +467,7 @@ final class ProtectedModeLockedOutDeliveryIntegrationTest extends TestCase
 }
 
 /**
- * Daemon manager standing on a websocket server and nothing else, able to run one dispatch pass.
+ * Daemon manager standing on a websocket server and advancing its finite ready dispatch work.
  */
 final class LockedOutDeliveryTestManager extends DaemonManager
 {
@@ -332,13 +488,15 @@ final class LockedOutDeliveryTestManager extends DaemonManager
     }
 
     /**
-     * Runs the master's real dispatch pass, which queues deliveries for the websocket server.
+     * Finishes the master's ready portions before the fixture reads the exact socket delivery.
      */
     public function dispatch(): void
     {
         $dispatch = Closure::bind(
             static function (DaemonManager $manager): void {
-                $manager->dispatchSignals();
+                do {
+                    $manager->dispatchSignals();
+                } while ($manager->hasRunnableSignalDispatch());
             },
             null,
             DaemonManager::class,
@@ -413,7 +571,18 @@ final class LockedOutDeliveryTestServer extends WebSocketServer
      */
     public function connect(?string $sessionToken): WebSocketClientTestProbe
     {
-        $probe = WebSocketClientTestProbe::createSocketless();
+        $probe = $this->open();
+        $this->finishHandshake($probe, $sessionToken);
+
+        return $probe;
+    }
+
+    /**
+     * @param WebSocketClientTestProbe $probe Already accepted original transport
+     * @param ?string $sessionToken Cookie supplied by its actual handshake
+     */
+    public function finishHandshake(WebSocketClientTestProbe $probe, ?string $sessionToken): void
+    {
         $probe->feed(
             "GET /ws HTTP/1.1\r\n"
             . "Host: localhost:8092\r\n"
@@ -424,9 +593,6 @@ final class LockedOutDeliveryTestServer extends WebSocketServer
             . "Sec-WebSocket-Version: 13\r\n"
             . "\r\n",
         );
-        $this->clients[] = $probe;
-
-        return $probe;
     }
 
     /**
@@ -438,7 +604,7 @@ final class LockedOutDeliveryTestServer extends WebSocketServer
     public function open(): WebSocketClientTestProbe
     {
         $probe = WebSocketClientTestProbe::createSocketless();
-        $this->clients[] = $probe;
+        $this->addClient($probe);
 
         return $probe;
     }

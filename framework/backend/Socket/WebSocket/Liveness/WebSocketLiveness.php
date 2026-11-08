@@ -137,6 +137,30 @@ final class WebSocketLiveness
     }
 
     /**
+     * A settled doubt no longer owes its expired transition; a new frame owes the return now.
+     *
+     * @param int $nowMs Monotonic moment of the scheduling decision
+     * @return int Nearest actionable liveness moment, now when work is already due
+     */
+    public function nextDueAt(int $nowMs): int
+    {
+        if ($this->isCloseDue($nowMs) || $this->isProbablyOfflineTransitionDue($nowMs)) {
+            return $nowMs;
+        }
+
+        $deadline = min(
+            $this->lastReceivedAtMs + $this->config->closeTimeoutMs,
+            $this->nextPingAtMs,
+            $this->nextReconcileAtMs,
+        );
+        if (!$this->probablyOffline) {
+            $deadline = min($deadline, $this->lastReceivedAtMs + $this->config->probablyOfflineMs);
+        }
+
+        return max($nowMs, $deadline);
+    }
+
+    /**
      * @param int $nowMs Monotonic moment of the tick
      * @return bool Whether the silence has reached the close timeout
      */

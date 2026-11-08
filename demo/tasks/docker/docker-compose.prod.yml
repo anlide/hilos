@@ -44,7 +44,10 @@ services:
         ipv4_address: ${DOCKER_MYSQL_IP:-10.197.0.10}
 
   tasks-prod:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../.env
         required: false
@@ -163,7 +166,10 @@ services:
         ipv4_address: ${DOCKER_NGINX_IP:-10.197.0.12}
 
   tasks-cli-prod:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../.env
         required: false
@@ -193,7 +199,10 @@ services:
       - hilos-tasks-prod-network
 
   tasks-monitor-prod:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../.env
         required: false

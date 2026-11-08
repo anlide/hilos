@@ -4,394 +4,294 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Socket;
 
-use Hilos\Socket\Client\AbstractClient;
+use Event;
+use EventBufferEvent;
+use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Socket\Exception\SocketTlsHandshakeException;
+use Hilos\Socket\Exception\SocketReadException;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\Transport\TlsContext;
 use Hilos\Socket\Transport\TlsSocketTransport;
 use PHPUnit\Framework\TestCase;
-use Socket;
+use ReflectionProperty;
+use WeakReference;
 
-/**
- * A client reading and writing through the server side of TLS (HIL-921).
- *
- * The transport seam exists because three answers of an encrypted stream mean something else
- * than the same answers of a bare socket, and a client that read them the bare way would cut
- * connections short, lose writes or answer a peer that cannot read it. Each test puts a real
- * TLS peer on the other end and reads one of those answers through the client that relies on it.
- *
- * Both ends live in this one process: the peer steps its own handshake without blocking, turn
- * about with the client, so no child process is needed to answer while the client waits.
- */
+/** Application bytes, bounded native queues and exact drain acknowledgement on real TLS sockets. */
 final class TlsSocketTransportTest extends TestCase
 {
-    /** Time any one exchange below is given before the test gives up on it */
-    private const float EXCHANGE_SECONDS = 5.0;
+    private MutualTlsFixture $fixture;
 
-    /** Bytes queued for a peer that is not reading, enough to fill every buffer between the two ends */
-    private const int LARGE_PAYLOAD_BYTES = 8 * 1024 * 1024;
+    private ?TlsTestExchange $exchange = null;
 
-    /** Most bytes the peer takes off its socket in one read */
-    private const int PEER_READ_BYTES = 65536;
+    private ?TlsTestClient $client = null;
 
-    /** @var list<string> Temporary files removed after each test */
-    private array $temporaryFiles = [];
-
-    /** @var list<Socket> Listening sockets closed after each test */
-    private array $listeners = [];
-
-    /** @var list<resource> Peer streams closed after each test */
-    private array $peers = [];
-
-    protected function tearDown(): void
+    public function testNativeCallbacksBorrowTheTransportAfterItsLoopOwnersAreReleased(): void
     {
-        foreach ($this->peers as $peer) {
-            if (is_resource($peer)) {
-                fclose($peer);
+        $exchange = $this->connect();
+        $exchange->handshake();
+        $native = $this->native('dialing');
+        $owner = WeakReference::create($exchange->transports['dialing']);
+        $exchange->loop->cleanup();
+        try {
+            unset($exchange->transports['dialing']);
+            $this->assertNull($owner->get(), 'A native callback must not keep its own transport alive until Zend shutdown');
+            $this->assertSame(0, $exchange->loop->registeredCount());
+            $this->assertFalse($exchange->loop->hasReadyWork());
+            // Native TLS can still notify after the owner was released; the old binding is inert.
+            $native->enable(Event::READ | Event::WRITE);
+            for ($pass = 0; $pass < 8; ++$pass) {
+                $exchange->loop->tick();
             }
+            $this->assertFalse($exchange->loop->hasReadyWork());
+            $this->assertSame([], $exchange->failures);
+        } finally {
+            $native->disable(Event::READ | Event::WRITE);
+            $ignore = static function (): void {};
+            $native->setCallbacks($ignore, $ignore, $ignore);
         }
-
-        foreach ($this->listeners as $listener) {
-            socket_close($listener);
-        }
-
-        foreach ($this->temporaryFiles as $file) {
-            if (is_file($file)) {
-                unlink($file);
-            }
-        }
-
-        parent::tearDown();
     }
 
-    /**
-     * A handshake that answers 0 is still under way, and the client must neither close nor read
-     * application bytes before it is done.
-     *
-     * @throws SocketException When the client's socket refuses a read
-     */
     public function testAHandshakeThatTakesSeveralTurnsFinishesWithoutClosingTheConnection(): void
     {
-        [$client, $transport, $peer] = $this->connectTlsPeer();
-
-        $turns = $this->completeHandshake($client, $transport, $peer);
-
-        $this->assertGreaterThan(1, $turns, 'the handshake is expected to need more than one turn of the client');
-        $this->assertFalse($transport->needsHandshake());
-        $this->assertFalse($client->shouldClose());
-
-        fwrite($peer, 'ping');
-        $this->pumpUntil(fn(): bool => $client->received === 'ping', $client);
-
-        $this->assertSame('ping', $client->received);
+        $exchange = $this->connect();
+        $this->assertTrue($exchange->transports['accepting']->needsHandshake());
+        $this->assertFalse($this->client->shouldClose());
+        $exchange->handshake();
+        $this->assertSame([], $exchange->failures);
+        $this->assertGreaterThan(1, $this->client->ticks);
+        $this->assertFalse($exchange->transports['accepting']->needsHandshake());
+        $this->assertFalse($this->client->shouldClose());
+        $this->assertSame(0, $exchange->transports['dialing']->write('ping'));
+        $exchange->runUntil(fn(): bool => $this->client->received === 'ping');
+        $this->assertSame('ping', $this->client->received);
     }
 
-    /**
-     * On an encrypted stream an empty read is "nothing decrypted yet": the connection stays open
-     * through it and closes only at the end of the stream.
-     *
-     * @throws SocketException When the client's socket refuses a read
-     */
     public function testAnEmptyReadClosesTheClientOnlyAtTheEndOfTheStream(): void
     {
-        [$client, $transport, $peer] = $this->connectTlsPeer();
-        $this->completeHandshake($client, $transport, $peer);
-
-        for ($read = 0; $read < 10; $read++) {
-            $client->read();
+        $exchange = $this->connect();
+        $exchange->handshake();
+        for ($read = 0; $read < 10; ++$read) {
+            $this->client->read();
         }
-        $this->assertFalse($client->shouldClose(), 'an empty read on a live TLS connection must not close it');
-
-        fwrite($peer, 'still here');
-        $this->pumpUntil(fn(): bool => $client->received === 'still here', $client);
-        $this->assertSame('still here', $client->received);
-        $this->assertFalse($client->shouldClose());
-
-        fclose($peer);
-        $this->pumpUntil(fn(): bool => $client->shouldClose(), $client);
-
-        $this->assertTrue($client->shouldClose(), 'the end of the stream must close the client');
+        $this->assertFalse($this->client->shouldClose());
+        $exchange->transports['dialing']->write('still here');
+        $exchange->runUntil(fn(): bool => $this->client->received === 'still here');
+        $this->assertFalse($this->client->shouldClose());
+        $exchange->transports['dialing']->close();
+        $exchange->runUntil(fn(): bool => $this->client->shouldClose() || $exchange->failures !== []);
+        $this->assertSame([], $exchange->failures);
+        $this->assertTrue($this->client->shouldClose());
     }
 
-    /**
-     * A write the stream takes only in part, or not at all, keeps the rest for a later turn, and
-     * every byte reaches the peer once it reads again.
-     *
-     * @throws SocketException When the client's socket refuses a read or a write
-     */
     public function testAPartialWriteIsFinishedOnALaterTurnAndZeroBytesTakenIsNoError(): void
     {
-        [$client, $transport, $peer] = $this->connectTlsPeer();
-        $this->completeHandshake($client, $transport, $peer);
-
-        $payload = str_repeat('0123456789abcdef', intdiv(self::LARGE_PAYLOAD_BYTES, 16));
-        $client->queue($payload);
-
-        $nothingTaken = false;
-        $deadline = microtime(true) + self::EXCHANGE_SECONDS;
-        while (!$nothingTaken && microtime(true) < $deadline) {
-            $pendingBefore = strlen($client->pendingOutbound());
-            $client->write();
-            $nothingTaken = strlen($client->pendingOutbound()) === $pendingBefore;
-        }
-
-        $this->assertTrue($nothingTaken, 'a peer that does not read must make the stream take zero bytes');
-        $this->assertFalse($client->shouldClose(), 'zero bytes taken is not a failure');
-        $this->assertNotSame('', $client->pendingOutbound());
-
-        $delivered = '';
-        $deadline = microtime(true) + self::EXCHANGE_SECONDS;
-        while (strlen($delivered) < strlen($payload) && microtime(true) < $deadline) {
-            $client->write();
-            $delivered .= (string)fread($peer, self::PEER_READ_BYTES);
-        }
-
-        $this->assertSame('', $client->pendingOutbound());
-        $this->assertSame(strlen($payload), strlen($delivered));
-        $this->assertSame(md5($payload), md5($delivered));
-        $this->assertFalse($client->shouldClose());
+        $exchange = $this->connect();
+        $exchange->handshake();
+        $payload = str_repeat('0123456789abcdef', 524288);
+        $this->client->queue($payload);
+        $this->client->write();
+        $this->assertSame($payload, $this->client->pendingOutbound(), 'native enqueue acknowledges no application byte');
+        $this->assertFalse($this->client->shouldClose());
+        $exchange->runUntil(fn(): bool => strlen($exchange->received['dialing']) === strlen($payload) && !$this->client->hasPendingWrite());
+        $this->assertSame($payload, $exchange->received['dialing']);
+        $this->assertSame('', $this->client->pendingOutbound());
+        $this->assertSame(1, $this->client->drains);
+        $this->assertFalse($this->client->shouldClose());
     }
 
-    /**
-     * A peer that does not speak TLS is refused, and gets nothing - not even the answer the
-     * client had already queued.
-     *
-     * @throws SocketException When the client's socket refuses a read or a write
-     */
     public function testARefusedHandshakeClosesTheConnectionWithoutWritingAByte(): void
     {
-        [$client, , $peer] = $this->connectPeer(null);
-        $client->queue("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
-
-        fwrite($peer, "GET /test/health HTTP/1.1\r\nHost: stand-gateway\r\n\r\n");
-        $this->pumpUntil(fn(): bool => $client->shouldClose(), $client);
-        $client->write();
-
-        $this->assertTrue($client->shouldClose(), 'a refused handshake must close the connection');
-
-        $client->close();
-        $arrived = '';
-        $deadline = microtime(true) + self::EXCHANGE_SECONDS;
-        while (!feof($peer) && microtime(true) < $deadline) {
-            $arrived .= (string)fread($peer, self::PEER_READ_BYTES);
+        $authority = $this->fixture->issueAuthority('Gateway CA');
+        [$accepted, $peer] = $this->fixture->connectSockets();
+        $transport = TlsSocketTransport::accepting($accepted, TlsContext::accepting($this->fixture->issueNode('gateway', $authority)));
+        $client = new TlsTestClient($accepted, $transport);
+        $loop = new EventLoop();
+        $client->attachEventLoop($loop, static function () use ($client): void {
+            $client->read();
+            $client->write();
+        });
+        try {
+            $client->queue("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+            socket_write($peer, "GET /test/health HTTP/1.1\r\nHost: stand-gateway\r\n\r\n");
+            for ($pass = 0; $pass < 20 && !$client->shouldClose(); ++$pass) {
+                $loop->tick();
+            }
+            $this->assertTrue($client->shouldClose());
+            $client->write();
+            $client->close();
+            $stream = socket_export_stream($peer);
+            $this->assertIsResource($stream);
+            $this->assertSame('', (string)@fread($stream, 65536));
+        } finally {
+            $client->close();
+            $loop->close();
         }
-
-        $this->assertSame('', $arrived, 'the refused peer must receive no byte at all');
     }
 
     public function testAHandshakeRefusalNamedToACallerCarriesItsReason(): void
     {
         $exception = new SocketTlsHandshakeException('certificate verify failed');
-
         $this->assertInstanceOf(SocketException::class, $exception);
         $this->assertSame('Socket TLS handshake failed: certificate verify failed', $exception->getMessage());
     }
 
-    /**
-     * Connects a verifying TLS peer to a client created with the server side of TLS.
-     *
-     * @return array{0: TlsSocketTransportTestClient, 1: TlsSocketTransport, 2: resource} Client, its transport, peer
-     */
-    private function connectTlsPeer(): array
+    public function testOneNativeSendLargerThanTheReadPortionContinuesWithoutAnotherTcpWrite(): void
     {
-        [$caFile, $bundleFile] = $this->issueSelfSignedCertificate();
-
-        return $this->connectPeer([$caFile, $bundleFile]);
-    }
-
-    /**
-     * Accepts one connection the way AbstractServer does and wraps it in the TLS transport.
-     *
-     * @param ?array{0: string, 1: string} $certificate CA file the peer trusts and bundle the server presents,
-     *                                                  or null for a plain TCP peer facing a throwaway certificate
-     * @return array{0: TlsSocketTransportTestClient, 1: TlsSocketTransport, 2: resource} Client, its transport, peer
-     */
-    private function connectPeer(?array $certificate): array
-    {
-        [$caFile, $bundleFile] = $certificate ?? $this->issueSelfSignedCertificate();
-
-        $listener = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
-        $this->assertInstanceOf(Socket::class, $listener);
-        $this->listeners[] = $listener;
-        $this->assertTrue(socket_bind($listener, '127.0.0.1', 0));
-        $this->assertTrue(socket_listen($listener));
-        $this->assertTrue(socket_set_nonblock($listener));
-        $this->assertTrue(socket_getsockname($listener, $address, $port));
-
-        $context = stream_context_create([
-            'ssl' => [
-                'cafile' => $caFile,
-                'peer_name' => '127.0.0.1',
-                'verify_peer' => true,
-                'verify_peer_name' => true,
-            ],
-        ]);
-        $peer = stream_socket_client(
-            "tcp://127.0.0.1:{$port}",
-            $errno,
-            $errstr,
-            self::EXCHANGE_SECONDS,
-            STREAM_CLIENT_CONNECT,
-            $context,
-        );
-        $this->assertIsResource($peer, $errstr);
-        $this->peers[] = $peer;
-        stream_set_blocking($peer, false);
-
-        $accepted = false;
-        $deadline = microtime(true) + self::EXCHANGE_SECONDS;
-        while ($accepted === false && microtime(true) < $deadline) {
-            $accepted = @socket_accept($listener);
+        $exchange = $this->connect();
+        $exchange->handshake();
+        $payload = str_repeat('input', 40000);
+        $this->assertTrue($this->native('dialing')->write($payload));
+        $this->native('dialing')->enable(Event::WRITE);
+        $exchange->runUntil(fn(): bool => strlen($this->client->received) === strlen($payload));
+        $this->assertSame($payload, $this->client->received);
+        $this->assertGreaterThan(1, count($this->client->portions));
+        foreach ($this->client->portions as $bytes) {
+            $this->assertLessThanOrEqual(65536, $bytes);
         }
-        $this->assertInstanceOf(Socket::class, $accepted, 'the listener did not accept the peer');
-        $this->assertTrue(socket_set_nonblock($accepted));
-
-        $transport = TlsSocketTransport::accepting($accepted, $bundleFile);
-
-        return [new TlsSocketTransportTestClient($accepted, $transport), $transport, $peer];
+        $this->assertLessThanOrEqual(65536, $this->native('accepting')->input->length);
     }
 
-    /**
-     * Steps both handshakes turn about until both ends are done.
-     *
-     * @param TlsSocketTransportTestClient $client Server end
-     * @param TlsSocketTransport $transport Transport of the server end
-     * @param resource $peer Client end
-     * @return int Turns the server end took, counting the one that finished
-     * @throws SocketException When the client's socket refuses a read
-     */
-    private function completeHandshake(TlsSocketTransportTestClient $client, TlsSocketTransport $transport, $peer): int
+    public function testBlockedNativeOutputWaitsForPeerReadinessAndThenResumes(): void
     {
-        $peerDone = false;
-        $turns = 0;
-        $deadline = microtime(true) + self::EXCHANGE_SECONDS;
-
-        while ((!$peerDone || $transport->needsHandshake()) && microtime(true) < $deadline) {
-            if (!$peerDone) {
-                $step = stream_socket_enable_crypto($peer, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
-                $this->assertNotFalse($step, 'the peer refused the handshake');
-                $peerDone = $step === true;
-            }
-
-            if ($transport->needsHandshake()) {
-                $client->read();
-                $turns++;
-                $this->assertFalse($client->shouldClose(), 'a handshake still under way must not close the client');
-            }
+        $exchange = $this->connect();
+        $exchange->handshake();
+        socket_set_option($exchange->sockets['accepting'], SOL_SOCKET, SO_SNDBUF, 4096);
+        $exchange->transports['dialing']->detachEventLoop();
+        $payload = str_repeat('blocked', 300000);
+        $this->client->queue($payload);
+        // Drive only already-runnable native work until the kernel and bounded prefix block.
+        for ($pass = 0; $pass < 100; ++$pass) {
+            $exchange->loop->tick();
         }
-
-        $this->assertTrue($peerDone, 'the peer handshake did not finish in time');
-        $this->assertFalse($transport->needsHandshake(), 'the server handshake did not finish in time');
-
-        return $turns;
-    }
-
-    /**
-     * Reads the client until the condition holds or the exchange runs out of time.
-     *
-     * @param callable(): bool $condition Condition to wait for
-     * @param TlsSocketTransportTestClient $client Client to read
-     * @throws SocketException When the client's socket refuses a read
-     */
-    private function pumpUntil(callable $condition, TlsSocketTransportTestClient $client): void
-    {
-        $deadline = microtime(true) + self::EXCHANGE_SECONDS;
-        while (!$condition() && microtime(true) < $deadline) {
-            $client->read();
-            usleep(1000);
+        $this->assertTrue($this->client->hasPendingWrite());
+        $this->assertLessThanOrEqual(16384, $this->native('accepting')->output->length);
+        $exchange->loop->tick();
+        $before = $this->client->ticks;
+        for ($pass = 0; $pass < 10; ++$pass) {
+            $exchange->loop->tick();
         }
+        $this->assertSame($before, $this->client->ticks, 'blocked output does not enqueue runnable work');
+        $work = $exchange->loop->createReadyWork(function () use ($exchange): void {
+            $exchange->received['dialing'] .= (string)$exchange->transports['dialing']->read(65536);
+        });
+        $exchange->transports['dialing']->attachEventLoop($exchange->loop, $work->markReady(...));
+        $exchange->runUntil(fn(): bool => strlen($exchange->received['dialing']) === strlen($payload) && !$this->client->hasPendingWrite());
+        $this->assertSame($payload, $exchange->received['dialing']);
+    }
+
+    public function testInFlightPrefixAcknowledgesExactlyOnceAndAppendedTailIsNotDuplicated(): void
+    {
+        $exchange = $this->connect();
+        $exchange->handshake();
+        $transport = $exchange->transports['dialing'];
+        $this->assertSame(0, $transport->write('prefix'));
+        $this->assertSame(0, $transport->write('prefix-tail'));
+        $exchange->runUntil(fn(): bool => $this->client->received === 'prefix');
+        $this->assertSame(6, $transport->write('prefix-tail'));
+        $this->assertSame(0, $transport->write('-tail'));
+        $exchange->runUntil(fn(): bool => $this->client->received === 'prefix-tail');
+        $this->assertSame(5, $transport->write('-tail'));
+        $this->assertSame(0, $transport->write(''));
+        $this->assertSame('prefix-tail', $this->client->received);
+        $this->assertSame(0, $this->native('dialing')->output->length);
+    }
+
+    public function testEofFollowsAlreadyAcceptedDecryptedBytes(): void
+    {
+        $exchange = $this->connect();
+        $exchange->handshake();
+        $exchange->transports['dialing']->write('last bytes');
+        $exchange->runUntil(fn(): bool => $this->native('accepting')->input->length > 0 || $this->client->received !== '');
+        $exchange->transports['dialing']->close();
+        $exchange->runUntil(fn(): bool => $this->client->shouldClose() || $exchange->failures !== []);
+        $this->assertSame('last bytes', $this->client->received);
+        $this->assertSame([], $exchange->failures);
+        $this->assertTrue($this->client->shouldClose());
+    }
+
+    /** A TLS protocol failure is raised under the owner guard only after its already decrypted input. */
+    public function testNativeErrorPreservesDecryptedBytesAndWinsOverPendingOutput(): void
+    {
+        $exchange = $this->connect();
+        $exchange->handshake();
+        $this->client->detachEventLoop();
+        $work = $exchange->loop->createReadyWork(static function (): void {});
+        $exchange->transports['accepting']->attachEventLoop($exchange->loop, $work->markReady(...));
+        $exchange->transports['dialing']->write('accepted before failure');
+        $exchange->runUntil(fn(): bool => $this->native('accepting')->input->length > 0);
+        // The sender deliberately violates TLS after a valid record; no new process or fake native class.
+        socket_write($exchange->sockets['dialing'], 'invalid TLS record after the accepted prefix');
+        $this->native('accepting')->enable(Event::READ);
+        $events = new ReflectionProperty(TlsSocketTransport::class, 'events');
+        $exchange->runUntil(fn(): bool => ($events->getValue($exchange->transports['accepting']) & EventBufferEvent::ERROR) !== 0);
+        $this->client->queue('must wait for the terminal read');
+        $exchange->bindClient('accepting', $this->client);
+        $exchange->runUntil(fn(): bool => isset($exchange->failures['accepting']));
+        $this->assertSame('accepted before failure', $this->client->received);
+        $this->assertInstanceOf(SocketReadException::class, $exchange->failures['accepting']);
+        $this->assertSame('', $exchange->received['dialing']);
+        $this->assertTrue($this->client->hasPendingWrite());
+        $work->close();
+    }
+
+    /** Paused native input retains a bounded portion and rebind releases the old owner without losing bytes. */
+    public function testPausedNativeInputIsBoundedAndResumesOnTheSameBase(): void
+    {
+        $exchange = $this->connect();
+        $exchange->handshake();
+        $this->client->detachEventLoop();
+        $work = $exchange->loop->createReadyWork(static function (): void {});
+        $exchange->transports['accepting']->attachEventLoop($exchange->loop, $work->markReady(...));
+        $payload = str_repeat('retained', 30000);
+        $this->assertTrue($this->native('dialing')->write($payload));
+        $this->native('dialing')->enable(Event::WRITE);
+        $exchange->runUntil(fn(): bool => $this->native('accepting')->input->length > 0);
+        $ticks = $this->client->ticks;
+        for ($pass = 0; $pass < 10; ++$pass) {
+            $exchange->loop->tick();
+        }
+        $this->assertLessThanOrEqual(65536, $this->native('accepting')->input->length);
+        $this->assertSame($ticks, $this->client->ticks, 'the detached owner is never invoked');
+        $this->assertSame('', $this->client->received);
+        $exchange->bindClient('accepting', $this->client);
+        $exchange->runUntil(fn(): bool => strlen($this->client->received) === strlen($payload));
+        $this->assertSame($payload, $this->client->received);
+        $this->assertSame(0, $exchange->loop->registeredCount(), 'TLS installs no parallel raw socket watchers');
+        $this->client->close();
+        $this->client->close();
+        $this->assertNull(new ReflectionProperty(TlsSocketTransport::class, 'event')->getValue($exchange->transports['accepting']));
+        $work->close();
+    }
+
+    protected function setUp(): void
+    {
+        $this->fixture = new MutualTlsFixture();
+    }
+
+    protected function tearDown(): void
+    {
+        $this->exchange?->close();
+        $this->fixture->close();
+    }
+
+    /** @return TlsTestExchange One native exchange whose accepting end has an application owner */
+    private function connect(): TlsTestExchange
+    {
+        $authority = $this->fixture->issueAuthority('Gateway CA');
+        $trust = $this->fixture->trustFile($authority);
+        $exchange = $this->exchange = new TlsTestExchange($this->fixture,
+            $this->fixture->issueNode('gateway', $authority), $this->fixture->issueNode('caller', $authority), null, $trust);
+        $this->client = new TlsTestClient($exchange->sockets['accepting'], $exchange->transports['accepting']);
+        $exchange->bindClient('accepting', $this->client);
+        return $exchange;
     }
 
     /**
-     * Issues a self-signed certificate for 127.0.0.1, so the tests need no fixture on disk.
-     *
-     * @return array{0: string, 1: string} Certificate-only PEM file, and certificate plus key file
+     * @param string $end Native end to inspect, without replacing its production implementation
+     * @return EventBufferEvent Real libevent TLS buffer event
      */
-    private function issueSelfSignedCertificate(): array
+    private function native(string $end): EventBufferEvent
     {
-        $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 2048]);
-        $this->assertNotFalse($key, 'test certificate key could not be generated');
-
-        $request = openssl_csr_new(['commonName' => '127.0.0.1'], $key);
-        $this->assertNotFalse($request, 'test certificate request could not be generated');
-
-        $certificate = openssl_csr_sign($request, null, $key, 1);
-        $this->assertNotFalse($certificate, 'test certificate could not be signed');
-
-        $certificatePem = '';
-        $keyPem = '';
-        $this->assertTrue(openssl_x509_export($certificate, $certificatePem));
-        $this->assertTrue(openssl_pkey_export($key, $keyPem));
-
-        return [
-            $this->writeTemporaryPem('hilos-tls-transport-ca', $certificatePem),
-            $this->writeTemporaryPem('hilos-tls-transport-server', $certificatePem . $keyPem),
-        ];
-    }
-
-    /**
-     * Writes one PEM file for the duration of the test.
-     *
-     * @param string $prefix Temporary file name prefix
-     * @param string $contents PEM contents
-     * @return string Path of the written file
-     */
-    private function writeTemporaryPem(string $prefix, string $contents): string
-    {
-        $file = tempnam(sys_get_temp_dir(), $prefix);
-        $this->assertIsString($file, 'temporary PEM file could not be created');
-        $this->temporaryFiles[] = $file;
-        $this->assertNotFalse(file_put_contents($file, $contents));
-
-        return $file;
-    }
-}
-
-/**
- * The smallest client there is: it keeps what it read and sends what it is given.
- */
-final class TlsSocketTransportTestClient extends AbstractClient
-{
-    /** @var string Every application byte read so far */
-    public string $received = '';
-
-    /**
-     * Queues bytes for the next write.
-     *
-     * @param string $bytes Bytes to send
-     */
-    public function queue(string $bytes): void
-    {
-        $this->writeBuffer .= $bytes;
-    }
-
-    /**
-     * @return string Bytes queued and not yet taken by the transport
-     */
-    public function pendingOutbound(): string
-    {
-        return $this->writeBuffer;
-    }
-
-    /**
-     * Nothing to do on a tick.
-     */
-    public function onTick(): void
-    {
-    }
-
-    /**
-     * Moves everything read into {@see self::$received}.
-     */
-    protected function processReadBuffer(): void
-    {
-        $this->received .= $this->readBuffer;
-        $this->readBuffer = '';
-    }
-
-    /**
-     * Nothing to announce on close.
-     */
-    protected function onClose(): void
-    {
+        return new ReflectionProperty(TlsSocketTransport::class, 'event')->getValue($this->exchange->transports[$end]);
     }
 }

@@ -20,6 +20,7 @@ use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
 use Hilos\Runtime\RtSyncApplicator;
+use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\State\Item\TableLagRuntime;
 use Hilos\Runtime\View\Context\RtContext;
@@ -78,8 +79,8 @@ final class AnalyticsJournalOutboxTest extends TestCase
         $this->assertNull(AnalyticsJournalRecord::encode($tooLong));
 
         $outbox = new AnalyticsJournalOutbox(self::T0);
-        $outbox->add($record, [], self::T0);
-        $outbox->add($tooLong, [], self::T0 + 1);
+        $outbox->add($record, [], self::T0, self::T0);
+        $outbox->add($tooLong, [], self::T0 + 1, self::T0 + 1);
         $outbox->flush(self::T0 + 2);
         $frame = $this->frames()[0];
         $this->assertSame(1, $frame->events);
@@ -93,7 +94,7 @@ final class AnalyticsJournalOutboxTest extends TestCase
     public function testLossCountsSurviveClearingLinesAndLeaveInAnEmptyBatch(): void
     {
         $outbox = new AnalyticsJournalOutbox(self::T0);
-        $outbox->add(AnalyticsJournalRecord::browserSessionRename('a', 'b', self::T0), [], self::T0);
+        $outbox->add(AnalyticsJournalRecord::browserSessionRename('a', 'b', self::T0), [], self::T0, self::T0);
         $outbox->countLoss(AnalyticsLossReason::RESTORE, 2, self::T0, self::T0 + 1);
         $this->assertSame(1, $outbox->clear());
         $outbox->countLoss(AnalyticsLossReason::RESTORE, 1, self::T0 + 2, self::T0 + 2);
@@ -238,7 +239,7 @@ final class AnalyticsJournalOutboxTest extends TestCase
     public function testABatchLeavesOnceASecond(): void
     {
         $outbox = new AnalyticsJournalOutbox(self::T0);
-        $outbox->add(AnalyticsJournalRecord::browserSessionRename('a', 'b', self::T0), [], self::T0);
+        $outbox->add(AnalyticsJournalRecord::browserSessionRename('a', 'b', self::T0), [], self::T0, self::T0);
 
         $this->assertFalse($outbox->isFlushDue(self::T0 + AnalyticsJournalOutbox::FLUSH_INTERVAL_MS - 1));
         $this->assertTrue($outbox->isFlushDue(self::T0 + AnalyticsJournalOutbox::FLUSH_INTERVAL_MS));
@@ -266,7 +267,7 @@ final class AnalyticsJournalOutboxTest extends TestCase
         $added = 0;
         $signal = null;
         while ($signal === null) {
-            $outbox->add(AnalyticsJournalRecord::browserSessionRename($token, $token, self::T0), [], self::T0);
+            $outbox->add(AnalyticsJournalRecord::browserSessionRename($token, $token, self::T0), [], self::T0, self::T0);
             $added++;
             $signal = Hilos::$sr?->getNextQueuedSignal();
         }
@@ -461,6 +462,76 @@ final class AnalyticsJournalOutboxTest extends TestCase
         yield 'updated' => [false, false];
         yield 'partially refused created' => [true, true];
         yield 'partially refused updated' => [false, true];
+    }
+
+    /**
+     * @param bool $scoped Whether the full singleton arrives through scope replacement
+     * @param bool $refused Whether a later field refuses after the phase has changed
+     */
+    #[DataProvider('snapshotFreezeWrites')]
+    public function testSnapshotInvalidatesBeforeApplyingEvenAPartiallyRefusedRow(bool $scoped, bool $refused): void
+    {
+        $this->freeze(ProtectedModeRuntime::PHASE_INACTIVE);
+        Hilos::$ac = $collector = new AnalyticsCollector();
+        $collector->openWorkerSession(self::WORKER_INDEX, false);
+        $collector->logWorkerSystemSignal('pending', null);
+        $this->setLastFlush($collector, PHP_INT_MAX);
+        $reads = Hilos::$rt->protectedModeReads;
+        RtSnapshot::replace(ProtectedModeRuntime::RT_ITEM, []);
+        RtSnapshot::replace(ProtectedModeRuntime::RT_ITEM, ['other-id' => []]);
+        $collector->tick();
+        self::assertSame($reads, Hilos::$rt->protectedModeReads);
+        $row = [ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE];
+        if ($refused) {
+            $row[ProtectedModeRuntime::startedAt] = 'invalid';
+        }
+        $rows = [ProtectedModeRuntime::ID => $row];
+        if ($scoped) {
+            RtSnapshot::replaceScope(ProtectedModeRuntime::RT_ITEM, [ProtectedModeRuntime::ID], $rows);
+        } else {
+            RtSnapshot::replace(ProtectedModeRuntime::RT_ITEM, $rows);
+        }
+        $collector->tick();
+        self::assertSame($reads + 1, Hilos::$rt->protectedModeReads);
+        $collector->tick();
+        self::assertSame($reads + 1, Hilos::$rt->protectedModeReads);
+        RtSnapshot::replace(ProtectedModeRuntime::RT_ITEM, [ProtectedModeRuntime::ID => [
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
+        ]]);
+        $collector->tick();
+        $this->setLastFlush($collector, 0);
+        $collector->tick();
+        $frames = $this->frames();
+        self::assertCount(1, $frames);
+        self::assertSame([], $frames[0]->lines);
+        self::assertSame(AnalyticsLossReason::RESTORE, $frames[0]->losses[0]->reason);
+        self::assertSame(1, $frames[0]->losses[0]->events);
+    }
+
+    /** @return iterable<string, array{bool, bool}> Full and scoped singleton replacement with refusal */
+    public static function snapshotFreezeWrites(): iterable
+    {
+        yield 'full' => [false, false];
+        yield 'scoped' => [true, false];
+        yield 'partially refused full' => [false, true];
+        yield 'partially refused scoped' => [true, true];
+    }
+
+    public function testSameContextProtectedSingletonRemountInvalidatesTheCollector(): void
+    {
+        $this->freeze(ProtectedModeRuntime::PHASE_INACTIVE);
+        Hilos::$ac = $collector = new AnalyticsCollector();
+        $this->setLastFlush($collector, PHP_INT_MAX);
+        $collector->tick();
+        $reads = Hilos::$rt->protectedModeReads;
+        $rows = RtSnapshot::rows(ProtectedModeRuntime::RT_ITEM);
+        $row = $rows[ProtectedModeRuntime::ID];
+        $row[ProtectedModeRuntime::phase] = ProtectedModeRuntime::PHASE_ACTIVE;
+        Hilos::$rt->mountFeatureItem(ProtectedModeRuntime::RT_ITEM, ProtectedModeRuntime::fromRow($row));
+        $collector->tick();
+        self::assertSame($reads + 1, Hilos::$rt->protectedModeReads);
+        $collector->tick();
+        self::assertSame($reads + 1, Hilos::$rt->protectedModeReads);
     }
 
     public function testFailedLocalSyncStillInvalidatesAfterThePhaseChanged(): void

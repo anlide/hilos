@@ -24,6 +24,7 @@ use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\Settings\Exception\SettingValueRefusedException;
 use Hilos\Socket\Client\WorkerClient;
+use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\WebSocket\Delivery\DeliverySettingsMirror;
 use Hilos\Socket\Worker\DTO\WorkerDbInterestReadyMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
@@ -366,8 +367,10 @@ final class DeliverySettingsIntegrationWorker extends WorkerManager
 /** The real registered-worker gate and typed IPC parser, without a live socket. */
 final class DeliverySettingsIntegrationMasterClient extends WorkerClient
 {
+    /** Supplies the registration owner used by the production worker handler. */
     public function __construct()
     {
+        new ReflectionProperty(WorkerClient::class, 'workerServer')->setValue($this, new DeliverySettingsIntegrationWorkerServer());
     }
 
     /** @param WorkerDTO $frame Frame received on this channel */
@@ -375,5 +378,17 @@ final class DeliverySettingsIntegrationMasterClient extends WorkerClient
     {
         $this->readBuffer = $frame->toJson() . "\n";
         $this->processReadBuffer();
+    }
+}
+
+/** Owns registration metadata without starting worker processes. */
+final class DeliverySettingsIntegrationWorkerServer extends WorkerServer
+{
+    public function __construct()
+    {
+    }
+
+    protected function onStart(): void
+    {
     }
 }

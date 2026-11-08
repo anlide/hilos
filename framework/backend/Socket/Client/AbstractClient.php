@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Closure;
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+use Hilos\Core\EventLoop\ReadyWork;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -26,6 +30,9 @@ use TypeError;
  */
 abstract class AbstractClient extends AbstractSocket implements ClientInterface
 {
+    /** Complete messages per parser portion; bounds handler work independently of input bytes. */
+    protected const int MAX_MESSAGES_PER_READ = 64;
+
     /** @var int Maximum bytes one read() takes from this socket */
     protected int $readBufferSize;
 
@@ -59,6 +66,21 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     /** @var SocketTransportInterface What carries the bytes: the bare socket, or a TLS session over it */
     private SocketTransportInterface $transport;
 
+    /** Process-local work, owned by this connection and released before its socket. */
+    private ?ReadyWork $readyWork = null;
+
+    /** A complete buffered message owes the next owner portion, even without new socket bytes. */
+    private bool $readBufferReady = false;
+
+    /** A terminal read waits only for already actionable parser portions, never for more input. */
+    private bool $readEnded = false;
+
+    /** Original read failure retained until the accepted prefix has been dispatched. */
+    private ?SocketException $pendingReadFailure = null;
+
+    /** HTTP may write its response while parsing; other output follows the accepted input prefix. */
+    private bool $processingReadBuffer = false;
+
     /**
      * Create client with socket and read buffer size from env.
      *
@@ -78,8 +100,36 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     }
 
     /**
-     * Collect up to readBufferSize bytes, parsing active input once or discarding stopped input.
-     * Stopped reads preserve readBuffer; EOF and real read errors still mark the connection for close.
+     * The owner retains its read/tick/write guard and dropClient() exit inside the callback.
+     *
+     * @param EventLoop $loop Owning master's loop
+     * @param Closure(): void $wake One bounded, guarded client portion
+     * @throws SocketTlsHandshakeException When a live TLS session is rebound to another native base
+     * @throws EventLoopException When a client protocol deadline cannot bind to the native loop
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+        $this->detachEventLoop();
+        if ($this->socket === null) {
+            return;
+        }
+
+        $this->readyWork = $loop->createReadyWork($wake);
+        $this->transport->attachEventLoop($loop, $this->readyWork->markReady(...));
+        $this->markReady();
+    }
+
+    /** Releases this binding's queued portion and transport watches; safe to repeat. */
+    public function detachEventLoop(): void
+    {
+        $this->transport->detachEventLoop();
+        $this->readyWork?->close();
+        $this->readyWork = null;
+    }
+
+    /**
+     * Resume one buffered parser portion, or collect up to readBufferSize new bytes.
+     * EOF/errors follow actionable accepted input; stopped or blocked parsing never delays close.
      *
      * While a handshake still stands before the first application byte, a read only moves it on.
      *
@@ -101,9 +151,29 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
             return;
         }
 
+        if ($this->readBufferReady || $this->readEnded) {
+            $this->readBufferReady = false;
+            if (!$this->readingStopped) {
+                $this->processReadPortion();
+            }
+            $this->finishReadEnd();
+            if (!$this->readBufferReady && !$this->shouldClose) {
+                // A native READ notification may have coalesced with this parser continuation.
+                // One later transport probe consumes that readiness and rearms its one-shot watch.
+                $this->markReady();
+            }
+            return;
+        }
+
         $data = '';
+        $readFailure = null;
         do {
-            $chunk = $this->transport->read($this->readBufferSize - strlen($data));
+            try {
+                $chunk = $this->transport->read($this->readBufferSize - strlen($data));
+            } catch (SocketException $failure) {
+                $readFailure = $failure;
+                $chunk = false;
+            }
             if ($chunk === '' || $chunk === false) {
                 break;
             }
@@ -112,15 +182,35 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
 
         if ($data !== '' && !$this->readingStopped) {
             $this->readBuffer .= $data;
-            $this->processReadBuffer();
+            $this->onReadData();
+            $this->processReadPortion();
         }
 
         if ($chunk === false) {
-            $this->handleSocketError(SocketOperation::READ);
+            if (!$this->readBufferReady || $this->shouldClose || $this->readingStopped) {
+                if ($readFailure !== null) {
+                    throw $readFailure;
+                }
+                $this->handleSocketError(SocketOperation::READ);
+            } else {
+                try {
+                    if ($readFailure !== null) {
+                        throw $readFailure;
+                    }
+                    $this->handleSocketError(SocketOperation::READ);
+                } catch (SocketException $failure) {
+                    // Keep the original errno-to-exception mapping before another operation can
+                    // clear errno. Only the budget yielded: the accepted prefix still comes first.
+                    $this->shouldClose = false;
+                    $this->pendingReadFailure = $failure;
+                    $this->readEnded = true;
+                }
+            }
         } elseif ($chunk === '' && $this->transport->isEndOfStream()) {
             // TLS protocol bytes may produce an empty read without ending the stream.
-            $this->shouldClose = true;
+            $this->readEnded = true;
         }
+        $this->finishReadEnd();
     }
 
     /**
@@ -135,6 +225,10 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      */
     public function write(): void
     {
+        if (($this->readEnded || $this->readBufferReady) && !$this->processingReadBuffer) {
+            return;
+        }
+
         if ($this->writeBuffer === '') {
             return;
         }
@@ -179,7 +273,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
         if ($this->writeBuffer === '') {
             if ($this->closeWhenOutputDrained) {
                 $this->closeWhenOutputDrained = false;
-                $this->shouldClose = true;
+                $this->markShouldClose();
             } else {
                 $this->onAfterOutboundDrained();
             }
@@ -231,7 +325,12 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      */
     public function markShouldClose(): void
     {
+        if ($this->shouldClose) {
+            return;
+        }
+
         $this->shouldClose = true;
+        $this->markReady();
     }
 
     /**
@@ -243,21 +342,25 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     public function stopReading(): void
     {
         $this->readingStopped = true;
+        $this->readBufferReady = false;
     }
 
     /**
      * Close once everything queued for this connection has been handed to the socket.
      *
      * An empty buffer closes at once because write() returns before its drained branch.
+     *
+     * @throws EventLoopException When a client protocol deadline cannot be armed
      */
     public function closeOnceWritten(): void
     {
         if ($this->writeBuffer === '') {
-            $this->shouldClose = true;
+            $this->markShouldClose();
             return;
         }
 
         $this->closeWhenOutputDrained = true;
+        $this->markReady();
     }
 
     /**
@@ -294,6 +397,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      */
     public function close(): void
     {
+        $this->detachEventLoop();
         if ($this->socket === null) {
             return; // Already closed
         }
@@ -316,6 +420,73 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
 
         // Call onClose callback
         $this->onClose();
+    }
+
+    /**
+     * Keeps byte ordering and cap/debt accounting at their existing protocol-owned sites.
+     *
+     * @param string $bytes Newly serialized output
+     * @param bool $replace Whether an HTTP response replaces the current response buffer
+     */
+    protected function queueWrite(string $bytes, bool $replace = false): void
+    {
+        if ($replace) {
+            $this->writeBuffer = $bytes;
+        } else {
+            $this->writeBuffer .= $bytes;
+        }
+        if ($bytes !== '') {
+            $this->markReady();
+        }
+    }
+
+    /** Marks newly actionable work once; no effect before attachment or after detach. */
+    protected function markReady(): void
+    {
+        $this->readyWork?->markReady();
+    }
+
+    /**
+     * Defer complete input, or one probe after a real unblock, to read().
+     * An incomplete/held parser does not call this again until new input or another release.
+     */
+    protected function continueReadBuffer(): void
+    {
+        if ($this->readingStopped || $this->shouldClose || $this->readBuffer === '') {
+            return;
+        }
+        $this->readBufferReady = true;
+        $this->markReady();
+    }
+
+    /**
+     * Take the next JSON message, or yield before consuming it when this portion is full.
+     * Look ahead on a copy only at the boundary, keeping raw bytes and their debts in readBuffer.
+     *
+     * @param int $processed Complete messages already handled in this portion
+     * @return ?string Next message, or null when incomplete or deferred to the next portion
+     * @throws SocketException When input exceeds the existing framing limits
+     */
+    protected function extractReadBufferJsonMessage(int $processed): ?string
+    {
+        if ($processed < self::MAX_MESSAGES_PER_READ) {
+            return $this->extractCompleteJsonMessage($this->readBuffer);
+        }
+
+        $remaining = $this->readBuffer;
+        if ($this->extractCompleteJsonMessage($remaining) !== null) {
+            $this->continueReadBuffer();
+        }
+        return null;
+    }
+
+    /**
+     * Records actual inbound bytes; buffered continuations do not renew transport liveness.
+     *
+     * @throws HilosException When a protocol's renewed liveness deadline cannot be armed
+     */
+    protected function onReadData(): void
+    {
     }
 
     /**
@@ -406,6 +577,40 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      * @throws HilosException When the subclass fails to announce the close
      */
     abstract protected function onClose(): void;
+
+    /**
+     * Keep immediate protocol responses inside the accepted-input portion.
+     *
+     * @throws HilosException When the protocol refuses the buffered input
+     * @throws RandomException When a handshake cannot obtain a secret
+     */
+    private function processReadPortion(): void
+    {
+        $this->processingReadBuffer = true;
+        try {
+            $this->processReadBuffer();
+        } finally {
+            $this->processingReadBuffer = false;
+        }
+    }
+
+    /**
+     * Deliver the terminal outcome once complete runnable input is exhausted.
+     *
+     * @throws SocketException The original terminal read failure, after its accepted input
+     */
+    private function finishReadEnd(): void
+    {
+        if (!$this->readEnded || $this->readBufferReady) {
+            return;
+        }
+        $this->markShouldClose();
+        if ($this->pendingReadFailure !== null) {
+            $failure = $this->pendingReadFailure;
+            $this->pendingReadFailure = null;
+            throw $failure;
+        }
+    }
 
     /**
      * Moves the transport's handshake one step, and closes the connection when the peer is refused.

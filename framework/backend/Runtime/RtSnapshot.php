@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime;
 
+use Generator;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
 use Hilos\Utils\Logger;
+use WeakReference;
 
 /**
  * Reads and replaces a whole RT collection, for the node-to-node hand-over of one.
@@ -50,6 +53,16 @@ final class RtSnapshot
     }
 
     /**
+     * @param string $collectionKey RT collection or standalone row to ask about
+     * @return bool Whether this process holds any row, without serializing its payload
+     */
+    public static function hasRows(string $collectionKey): bool
+    {
+        $stateCollection = Hilos::$rt?->getStateCollection($collectionKey);
+        return $stateCollection === null ? Hilos::$rt?->getStateItem($collectionKey) !== null : count($stateCollection) > 0;
+    }
+
+    /**
      * Reads a whole RT collection as rows, keyed by state id.
      *
      * @param string $collectionKey RT collection to read
@@ -65,12 +78,53 @@ final class RtSnapshot
             return $state === null ? [] : [$state->getId() => $state->toArray()];
         }
 
-        $rows = [];
-        foreach ($stateCollection->toArray() as $stateId => $row) {
-            $rows[(string)$stateId] = $row;
-        }
+        return $stateCollection->toArray();
+    }
 
-        return $rows;
+    /**
+     * Captures the current runtime and exact mounted source before the first advancement.
+     * The cursor owns no context, state collection or state object across a suspension.
+     *
+     * @param string $collectionKey Collection or standalone item to read in original insertion order
+     * @param ?int $admittedThrough Earlier cross-source row cutoff, absent to capture this call's cohort
+     * @return Generator<string, ?array<string, mixed>> One original row per step, null for a replaced row
+     */
+    public static function rowCandidates(string $collectionKey, ?int $admittedThrough = null): Generator
+    {
+        $runtime = Hilos::$rt === null ? null : WeakReference::create(Hilos::$rt);
+        $mountRevision = Hilos::$rt?->snapshotMountRevision();
+        $collection = Hilos::$rt?->getStateCollection($collectionKey);
+        $source = $collection ?? Hilos::$rt?->getStateItem($collectionKey);
+        $source = $source === null ? null : WeakReference::create($source);
+        $rows = $collection?->snapshotRows($admittedThrough);
+        return (static function () use ($runtime, $source, $rows, $collectionKey, $mountRevision): Generator {
+            if ($rows === null) {
+                $state = $source?->get();
+                if ($state !== null && $runtime?->get() !== null && $runtime->get() === Hilos::$rt
+                    && Hilos::$rt->snapshotMountRevision() === $mountRevision
+                    && Hilos::$rt->getStateItem($collectionKey) === $state) {
+                    $id = $state->getId();
+                    $row = $state->toArray();
+                    unset($state);
+                    yield $id => $row;
+                }
+                return;
+            }
+            while ($runtime?->get() !== null && $runtime->get() === Hilos::$rt
+                && Hilos::$rt->snapshotMountRevision() === $mountRevision
+                && $source?->get() !== null && Hilos::$rt->getStateCollection($collectionKey) === $source->get()) {
+                if (!$rows->valid()) {
+                    return;
+                }
+                yield $rows->key() => $rows->current();
+                // Revalidate the mounted source before advancing and serializing its next row.
+                if ($runtime->get() !== Hilos::$rt || Hilos::$rt?->snapshotMountRevision() !== $mountRevision
+                    || $source->get() !== Hilos::$rt?->getStateCollection($collectionKey)) {
+                    return;
+                }
+                $rows->next();
+            }
+        })();
     }
 
     /**
@@ -265,6 +319,11 @@ final class RtSnapshot
         $row = $rows[$state->getId()] ?? null;
         if ($row === null) {
             return;
+        }
+
+        if ($collectionKey === StateProtectedModeRuntime::RT_ITEM) {
+            Hilos::$ac?->invalidateProtectedMode();
+            Hilos::$rt?->noteProtectedModeChanged();
         }
 
         try {

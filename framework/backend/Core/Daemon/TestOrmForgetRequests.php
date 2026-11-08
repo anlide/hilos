@@ -7,7 +7,11 @@ namespace Hilos\Core\Daemon;
 use Closure;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandChannelWindows;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Database\Database;
 use Hilos\Database\OrmTestConstants;
 use Hilos\Environment\NonProductionGate;
@@ -27,6 +31,8 @@ final class TestOrmForgetRequests
     private array $pending = [];
     private float $nextDeadline = INF;
 
+    private ?EventLoopTimer $deadlineTimer = null;
+
     /**
      * @param Closure(): ?WorkerServer $workers This master's worker transport
      * @param Closure(CommandReplyDTO): void $reply Delivery to the held local console
@@ -36,8 +42,30 @@ final class TestOrmForgetRequests
     }
 
     /**
+     * The timer cues the manager; only its guarded phase executes overdue requests.
+     *
+     * @param EventLoop $loop This master's single native loop
+     * @param Closure(): void $wake Cue the existing guarded deadline phase
+     * @throws EventLoopException When a live original deadline cannot be armed
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $wake): void
+    {
+        $this->detachEventLoop();
+        $this->deadlineTimer = $loop->createTimer($wake);
+        $this->rearmDeadlineTimer();
+    }
+
+    /** Cancels this binding's native and queued work, preserving every live wait for rebind. */
+    public function detachEventLoop(): void
+    {
+        $this->deadlineTimer?->close();
+        $this->deadlineTimer = null;
+    }
+
+    /**
      * @param CommandRequestDTO $request Held request, independently checked at this boundary
-     * @param ?float $now Current seconds, injectable for deadline tests
+     * @param ?float $now Monotonic seconds, injectable for deadline tests
+     * @throws EventLoopException When the nearest live deadline cannot be armed or canceled
      */
     public function request(CommandRequestDTO $request, ?float $now = null): void
     {
@@ -80,14 +108,15 @@ final class TestOrmForgetRequests
                 ($this->reply)(CommandReplyDTO::error($request->correlationId, "Worker {$workerId} is not connected"));
                 return;
             }
-            $deadline = ($now ?? microtime(true)) + CommandChannelWindows::AGENT_WAIT_SECONDS;
+            $deadline = ($now ?? hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND)
+                + CommandChannelWindows::AGENT_WAIT_SECONDS;
             $this->pending[$request->correlationId] = new TestOrmForgetRequest(
                 $request->correlationId, $connection, $workerId, $deadline,
             );
-            $this->nextDeadline = min($this->nextDeadline, $deadline);
         } catch (Throwable $failure) {
             ($this->reply)(CommandReplyDTO::error($request->correlationId, $failure->getMessage()));
         }
+        $this->rearmDeadlineTimer();
     }
 
     /**
@@ -95,7 +124,8 @@ final class TestOrmForgetRequests
      *
      * @param WorkerClient $worker Actual sender connection
      * @param WorkerTestOrmForgottenDTO $ack Parsed outcome
-     * @param ?float $now Current seconds, injectable for deadline tests
+     * @param ?float $now Monotonic seconds, injectable for deadline tests
+     * @throws EventLoopException When the nearest live deadline cannot be armed or canceled
      */
     public function accept(WorkerClient $worker, WorkerTestOrmForgottenDTO $ack, ?float $now = null): void
     {
@@ -103,7 +133,7 @@ final class TestOrmForgetRequests
         if ($request === null || $request->worker !== $worker) {
             return;
         }
-        if (($now ?? microtime(true)) >= $request->deadline) {
+        if (($now ?? hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND) >= $request->deadline) {
             $this->finish($request, "Worker {$request->workerId} did not confirm ORM forget in time");
             return;
         }
@@ -114,7 +144,10 @@ final class TestOrmForgetRequests
         $this->finish($request, $ack->error);
     }
 
-    /** @param WorkerClient $worker Original connection that closed */
+    /**
+     * @param WorkerClient $worker Original connection that closed
+     * @throws EventLoopException When the nearest live deadline cannot be armed or canceled
+     */
     public function workerGone(WorkerClient $worker): void
     {
         foreach ($this->pending as $request) {
@@ -124,27 +157,33 @@ final class TestOrmForgetRequests
         }
     }
 
-    /** @param string $correlationId Request whose caller stopped waiting */
+    /**
+     * @param string $correlationId Request whose caller stopped waiting
+     * @throws EventLoopException When the nearest live deadline cannot be armed or canceled
+     */
     public function abandon(string $correlationId): void
     {
-        unset($this->pending[$correlationId]);
-        if ($this->pending === []) {
-            $this->nextDeadline = INF;
-        }
-    }
-
-    /** @param float $now Current seconds on the master's loop */
-    public function tick(float $now): void
-    {
-        if ($now < $this->nextDeadline) {
+        if (!isset($this->pending[$correlationId])) {
             return;
         }
-        $this->nextDeadline = INF;
+        unset($this->pending[$correlationId]);
+        $this->rearmDeadlineTimer();
+    }
+
+    /**
+     * @param ?float $now Monotonic seconds, injectable for deadline tests
+     * @throws EventLoopException When the next live deadline cannot be armed
+     */
+    public function tick(?float $now = null): void
+    {
+        $now ??= hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        if ($now < $this->nextDeadline) {
+            $this->rearmDeadlineTimer();
+            return;
+        }
         foreach ($this->pending as $request) {
             if ($now >= $request->deadline) {
                 $this->finish($request, "Worker {$request->workerId} did not confirm ORM forget in time");
-            } else {
-                $this->nextDeadline = min($this->nextDeadline, $request->deadline);
             }
         }
     }
@@ -152,6 +191,7 @@ final class TestOrmForgetRequests
     /**
      * @param TestOrmForgetRequest $request Wait to consume before replying
      * @param ?string $error Refusal, or null after successful local work
+     * @throws EventLoopException When the nearest live deadline cannot be armed or canceled
      */
     private function finish(TestOrmForgetRequest $request, ?string $error): void
     {
@@ -162,5 +202,15 @@ final class TestOrmForgetRequests
                 OrmTestConstants::FIELD_WORKER_ID => $request->workerId,
             ])
             : CommandReplyDTO::error($request->correlationId, $error));
+    }
+
+    /** @throws EventLoopException When the nearest live wait cannot be armed or canceled */
+    private function rearmDeadlineTimer(): void
+    {
+        $this->nextDeadline = INF;
+        foreach ($this->pending as $request) {
+            $this->nextDeadline = min($this->nextDeadline, $request->deadline);
+        }
+        $this->deadlineTimer?->armAt(is_finite($this->nextDeadline) ? $this->nextDeadline : null);
     }
 }

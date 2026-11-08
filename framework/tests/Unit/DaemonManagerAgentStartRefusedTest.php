@@ -158,7 +158,8 @@ final class DaemonManagerAgentStartRefusedTest extends TestCase
         );
         $manager->drainQueue();
         $reflection = new ReflectionClass(DaemonManager::class);
-        $this->assertCount(1, $reflection->getProperty('parkedAgentSignals')->getValue($manager));
+        $holds = $reflection->getMethod('agentSignalHolds')->invoke($manager);
+        $this->assertSame(1, $holds->getParkedCount());
         $manager->getAgentManagerDaemon()->reportAgentStartFailed(AgentStartRefusedTestRouter::AWAITING_AGENT, 'failed start');
         $error = Hilos::$sr->getNextQueuedSignal();
         $this->assertSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, $error->signalName->getName());
@@ -170,8 +171,9 @@ final class DaemonManagerAgentStartRefusedTest extends TestCase
         $this->assertSame(AgentStartRefusedTestRouter::AWAITING_PAGE, $completion->data->data->page);
         $this->assertSame(self::ACCEPT_KEY, $completion->data->targetAcceptKey);
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
-        $this->assertSame([], $reflection->getProperty('parkedAgentSignals')->getValue($manager));
-        $this->assertSame([], $reflection->getProperty('releasedAgentSignals')->getValue($manager));
+        $this->assertSame(0, $holds->getParkedCount());
+        $this->assertFalse($holds->hasReleased());
+        $this->assertSame([], $holds->pendingAgentIds());
         $manager->getAgentManagerDaemon()->reportAgentStartFailed(AgentStartRefusedTestRouter::AWAITING_AGENT, 'duplicate');
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }

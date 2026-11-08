@@ -79,6 +79,27 @@ final class WebSocketLivenessTest extends TestCase
         );
     }
 
+    public function testNextActionDropsSettledDoubtAndPreservesReconcileUnderFrames(): void
+    {
+        $liveness = new WebSocketLiveness(WebSocketLivenessConfig::fromEnv(), 0);
+        self::assertSame(40000, $liveness->nextDueAt(0));
+        $liveness->recordReceived(20000);
+        self::assertSame(50000, $liveness->nextDueAt(20000));
+        $liveness->recordReconciled(50000);
+        self::assertSame(60000, $liveness->nextDueAt(50000));
+        $liveness->recordPingSent(120000);
+        $liveness->recordReconciled(120000);
+        self::assertSame(140000, $liveness->nextDueAt(120000));
+        self::assertSame(140000, $liveness->nextDueAt(140000));
+        $liveness->settleProbablyOffline(140000);
+        self::assertSame(170000, $liveness->nextDueAt(140000), 'Settled doubt cannot spin its expired deadline');
+        $liveness->recordReceived(150000);
+        self::assertSame(150000, $liveness->nextDueAt(150000), 'A whole frame owes a return transition now');
+        $liveness->settleProbablyOffline(150000);
+        self::assertSame(170000, $liveness->nextDueAt(150000));
+        self::assertSame(750000, $liveness->nextDueAt(750000), 'Close wins over every overdue action');
+    }
+
     public function testEachDeadlineOfAnUnansweredSocketFallsExactlyOnItsMillisecond(): void
     {
         $liveness = new WebSocketLiveness(WebSocketLivenessConfig::fromEnv(), 0);
@@ -656,7 +677,7 @@ final class LivenessTestServer extends WebSocketServer
     /** @param LivenessTestClient $client Browser this server now holds */
     public function seedClient(LivenessTestClient $client): void
     {
-        $this->clients[] = $client;
+        $this->addClient($client);
     }
 
     /** @return list<WebSocketClientInterface> Browsers the server still holds */

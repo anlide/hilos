@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Daemon;
 
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -31,6 +32,7 @@ interface AgentStartSink
      *
      * @param string $agentId Id of the agent that started, in the `type` or `type:index` form
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onAgentStarted(string $agentId): void;
 
@@ -45,11 +47,12 @@ interface AgentStartSink
      * @param string $reason Why the start did not finish, as the failure said it
      * @throws InvalidArgumentException When an answer the listener owes a waiting frame cannot be named
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onAgentStartFailed(string $agentId, string $reason): void;
 
     /**
-     * Reports that an agent stopped on this node while a start wait for it was still open.
+     * Reports that an agent stopped on this node, ending any startup wait it satisfied.
      *
      * A separate method rather than a flag on the two above: the listener does not answer the
      * held frames, it lets them go so they ask the address again. Runs on the master's message

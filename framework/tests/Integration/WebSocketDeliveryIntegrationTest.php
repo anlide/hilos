@@ -31,6 +31,8 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\AgentSignalHolds;
+use Hilos\Core\Daemon\ParkedAgentSignal;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Http\RequestQueryParams;
@@ -232,6 +234,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
             $client->write();
             self::assertSame([], $this->read($socket));
             $browser->identity = ConnectionIdentity::resolved(null);
+            new ReflectionMethod(DaemonManager::class, 'queueIdentityDiscovery')->invoke($this->master, $client->acceptKey);
             $this->master->drain();
         }
         self::assertCount(1, $this->worker->requests);
@@ -454,6 +457,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         $client->write();
         self::assertSame([], $this->read($socket));
         $this->browser->identity = ConnectionIdentity::resolved(null);
+        new ReflectionMethod(DaemonManager::class, 'queueIdentityDiscovery')->invoke($this->master, $client->acceptKey);
         $this->master->drain();
         self::assertCount(1, $this->worker->requests);
         $request = array_pop($this->worker->requests)->signal;
@@ -587,8 +591,8 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         $fire();
         $fire();
         self::assertFalse($client->isDeliveryPending('delivery', $request->data->deliveryId));
-        self::assertSame([], $this->pending());
         $this->master->drain();
+        self::assertSame([], $this->pending());
         $client->now = $other->now = 10_000;
         $client->write();
         $other->write();
@@ -628,7 +632,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         }
         self::assertFalse($agents->isAgentStarted('owner'));
         self::assertSame([], $worker->requests);
-        $parked = new ReflectionProperty(DaemonManager::class, 'parkedAgentSignals')->getValue($serving);
+        $parked = $this->heldAgentFrames($serving);
         self::assertCount(1, $parked);
         self::assertSame($request->data->deliveryId, $parked[0]->signal->data->deliveryId);
         self::assertCount(1, new ReflectionProperty(DaemonManager::class, 'pendingPageDeliveries')->getValue($serving));
@@ -663,9 +667,9 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         self::assertSame('agent_unavailable', $frames[0]['data']['errorCode']);
         self::assertFalse($client->isDeliveryPending('delivery', $request->data->deliveryId));
         self::assertSame([], $this->pending());
-        foreach (['parkedAgentSignals', 'releasedAgentSignals', 'parkedSignals'] as $property) {
-            self::assertSame([], new ReflectionProperty(DaemonManager::class, $property)->getValue($serving));
-        }
+        self::assertSame([], $this->heldAgentFrames($serving));
+        self::assertSame([], $this->heldAgentFrames($serving, released: true));
+        self::assertSame([], new ReflectionProperty(DaemonManager::class, 'parkedSignals')->getValue($serving));
         $this->deliver($signals[1], $client, $peer);
         $serving->onAgentStartFailed('owner', 'late duplicate');
         $serving->drain();
@@ -695,7 +699,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         $update = Hilos::$sr->getNextQueuedSignal();
         Hilos::$sr->queueSignal($update->signalSource, $update->signalType, $update->signalName, $update->data);
         $this->master->drain();
-        self::assertCount(1, new ReflectionProperty(DaemonManager::class, 'parkedAgentSignals')->getValue($this->master));
+        self::assertCount(1, $this->heldAgentFrames());
         $this->master->onAgentStartFailed('owner', 'update owner refused');
         $signals = $this->takeSignals();
         self::assertSame(['hilos_delivery_complete'],
@@ -815,12 +819,11 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         if ($released) {
             $this->master->onAgentStarted('owner');
         }
-        $property = new ReflectionProperty(DaemonManager::class, $released ? 'releasedAgentSignals' : 'parkedAgentSignals');
-        $queue = $property->getValue($this->master);
+        $queue = $this->heldAgentFrames(released: $released);
         self::assertCount(1, $queue);
         $ledger = $this->pending();
         $this->deliver($this->recovery($client, ['id' => 1]), $client, peer: true);
-        self::assertSame($queue, $property->getValue($this->master));
+        self::assertSame($queue, $this->heldAgentFrames(released: $released));
         self::assertSame($ledger, $this->pending());
         if (!$released) {
             $this->master->onAgentStarted('owner');
@@ -911,7 +914,8 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
             new ReflectionProperty(PeerServer::class, 'localIdentity')->setValue($peer, $identity);
             $link = new PeerLink($pair[0], $peer, $identity, false, new PlainSocketTransport($pair[0]));
             $link->activate(NodeIdentity::of('socket', 'Node socket', NodeRole::Master, []));
-            new ReflectionProperty(AbstractServer::class, 'clients')->setValue($peer, [$link]);
+            new ReflectionMethod(AbstractServer::class, 'addClient')->invoke($peer, $link);
+            new ReflectionMethod(PeerServer::class, 'attachClient')->invoke($peer, $link);
             new ReflectionProperty(PeerServer::class, 'activeLinks')->setValue($peer, ['socket' => $link]);
             $serving->registerServer($peer);
             Hilos::$cluster = new ClusterContext();
@@ -960,6 +964,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         $signals = $this->takeSignals();
         self::assertCount(1, $signals);
         self::assertSame('page_resubscribe', $signals[0]->signalName->getName());
+        $serving->drain();
         self::assertSame([], new ReflectionProperty(DaemonManager::class, 'pendingPageDeliveries')->getValue($serving));
         Hilos::$sr = $router;
         $this->deliver($signals[0], $client, peer: true);
@@ -980,7 +985,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         self::assertSame([], $this->worker->requests);
         self::assertCount(1, $this->pending()[$client->acceptKey]);
         $this->master->onAgentStarted('owner');
-        self::assertCount(1, new ReflectionProperty(DaemonManager::class, 'releasedAgentSignals')->getValue($this->master));
+        self::assertCount(1, $this->heldAgentFrames(released: true));
         $client->acceptJson('{"type":"page_unsubscribe","page":"delivery"}');
         $agents->started = true;
         $this->master->drain();
@@ -1061,8 +1066,8 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
             $this->master->onNodeJoined(ClusterNode::fromIdentity($identity, true, microtime(true)));
             self::assertSame('remote', Hilos::$sr->pageSubscription($client->acceptKey)->agentNode);
             self::assertFalse($client->isDeliveryPending('node', $request->data->deliveryId));
-            self::assertSame([], $this->pending());
             $this->master->drain();
+            self::assertSame([], $this->pending());
             $client->write();
             self::assertSame([
                 ['type' => 'page_resubscribe', 'data' => ['page' => 'node', 'params' => ['nodeId' => 'remote']]],
@@ -1177,6 +1182,24 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         return new ReflectionProperty(DaemonManager::class, 'pendingPageDeliveries')->getValue($this->master);
     }
 
+    /**
+     * @param ?DaemonManager $manager Exact serving master, or this socket master
+     * @param bool $released Whether to inspect released rather than blocked entries
+     * @return list<ParkedAgentSignal> Actual owner's original envelopes in their existing order
+     */
+    private function heldAgentFrames(?DaemonManager $manager = null, bool $released = false): array
+    {
+        $owner = new ReflectionMethod(DaemonManager::class, 'agentSignalHolds')->invoke($manager ?? $this->master);
+        $entries = new ReflectionProperty(AgentSignalHolds::class, 'entries')->getValue($owner);
+        $frames = [];
+        foreach ($entries as $hold) {
+            if (($released ? $hold->released : $hold->isParked()) && $hold->parked !== null) {
+                $frames[] = $hold->parked;
+            }
+        }
+        return $frames;
+    }
+
     private function remoteNode(): ClusterNode
     {
         return ClusterNode::fromIdentity(NodeIdentity::of('remote', 'Node remote', NodeRole::Master, []), false, microtime(true));
@@ -1250,7 +1273,7 @@ final class DeliveryFlowServer extends WebSocketServer
 
     public function attach(WebSocketClient $client): void
     {
-        $this->clients[] = $client;
+        $this->addClient($client);
     }
 
     protected function onStart(): void
@@ -1313,7 +1336,11 @@ final class DeliveryFlowMaster extends DaemonManager
 
     public function drain(): void
     {
-        new ReflectionMethod(DaemonManager::class, 'dispatchSignals')->invoke($this);
+        $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignals');
+        $runnable = new ReflectionMethod(DaemonManager::class, 'hasRunnableSignalDispatch');
+        do {
+            $dispatch->invoke($this);
+        } while ($runnable->invoke($this));
     }
 
     public function route(SignalDTO $signal, AgentAddressedDestination $destination, WorkerServer $worker): void
@@ -1334,6 +1361,8 @@ final class DeliveryFlowMaster extends DaemonManager
 
 final class DeliveryFlowRouter extends SignalRouter
 {
+    protected const bool USE_DESTINATION_CALLBACK = true;
+
     public function getPageSubscriptionAgentType(string $page): ?string
     {
         return $page === 'unserved' ? null : 'owner';

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Socket\Server\AbstractServer;
+use ReflectionMethod;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\WorkerConstants;
@@ -42,6 +44,35 @@ final class WorkerServerStopWavesTest extends TestCase
     protected function setUp(): void
     {
         StopWavesTestLog::$events = [];
+    }
+
+    public function testAStaleMasterCannotDetachTheReplacementStopBarrierCue(): void
+    {
+        $server = $this->buildServer(withJournal: true);
+        $oldWakes = 0;
+        $newWakes = 0;
+        $old = static function () use (&$oldWakes): void {
+            $oldWakes++;
+        };
+        $new = static function () use (&$newWakes): void {
+            $newWakes++;
+        };
+        $server->setStopDispatchWake($old);
+        $server->setStopDispatchWake($new);
+        $server->removeStopDispatchWake($old);
+        $server->stop();
+        $this->workerLeaves($server, $this->regularKey());
+        $server->advance();
+        self::assertNotNull($server->pendingStopDispatch());
+        self::assertSame(0, $oldWakes);
+        self::assertSame(1, $newWakes);
+        $server->removeStopDispatchWake($new);
+        $server->setStopDispatchWake($old);
+        self::assertSame(1, $oldWakes, 'An open barrier is announced to the newly bound master');
+        $server->removeStopDispatchWake($old);
+        $server->advance();
+        self::assertSame(1, $oldWakes);
+        self::assertSame(1, $newWakes);
     }
 
     public function testTheHeldWorkerWaitsForTheOthersAndItsAgentStopsBeforeItsSigterm(): void
@@ -119,8 +150,7 @@ final class WorkerServerStopWavesTest extends TestCase
         $server = $this->buildServer(withJournal: true);
         $connection = new ReflectionClass(StopWavesTestWorkerClient::class)->newInstanceWithoutConstructor();
         $connection->setWorkerIndex(self::PLAIN_WORKER);
-        $clients = new ReflectionProperty(WorkerServer::class, 'clients');
-        $clients->setValue($server, [$connection]);
+        new ReflectionMethod(WorkerServer::class, 'addClient')->invoke($server, $connection);
 
         $server->stop();
         $this->workerLeaves($server, $this->regularKey());
@@ -129,7 +159,7 @@ final class WorkerServerStopWavesTest extends TestCase
         $server->advance();
         $this->assertSame(['sigterm:' . self::PLAIN_WORKER], StopWavesTestLog::$events);
 
-        $clients->setValue($server, []);
+        new ReflectionMethod(AbstractServer::class, 'removeClient')->invoke($server, $connection);
         $server->advance();
         $server->advance();
         $server->advance();
@@ -191,7 +221,7 @@ final class WorkerServerStopWavesTest extends TestCase
             'agent_stop:' . HilosAgentType::HILOS_ANALYTICS_JOURNAL,
         ], StopWavesTestLog::$events);
 
-        new ReflectionProperty(WorkerServer::class, 'clients')->setValue($server, []);
+        new ReflectionMethod(AbstractServer::class, 'removeClient')->invoke($server, $connection);
         $server->advance();
         $this->assertSame([
             'sigterm:' . self::PLAIN_WORKER,
@@ -205,13 +235,12 @@ final class WorkerServerStopWavesTest extends TestCase
         $server = $this->buildServer(withJournal: false);
         $connection = new ReflectionClass(StopWavesTestWorkerClient::class)->newInstanceWithoutConstructor();
         $connection->setWorkerIndex(self::PLAIN_WORKER);
-        $clients = new ReflectionProperty(WorkerServer::class, 'clients');
-        $clients->setValue($server, [$connection]);
+        new ReflectionMethod(WorkerServer::class, 'addClient')->invoke($server, $connection);
         new ReflectionProperty(WorkerServer::class, 'workers')->setValue($server, []);
 
         $this->assertFalse($server->isReadyToShutdown());
 
-        $clients->setValue($server, []);
+        new ReflectionMethod(AbstractServer::class, 'removeClient')->invoke($server, $connection);
         $this->assertTrue($server->isReadyToShutdown());
     }
 
@@ -262,7 +291,8 @@ final class WorkerServerStopWavesTest extends TestCase
             $connection,
             new ReflectionProperty(WorkerServer::class, 'agentManager')->getValue($server),
         );
-        new ReflectionProperty(WorkerServer::class, 'clients')->setValue($server, [$connection]);
+        new ReflectionProperty(WorkerClient::class, 'workerServer')->setValue($connection, $server);
+        new ReflectionMethod(WorkerServer::class, 'addClient')->invoke($server, $connection);
 
         return $connection;
     }
@@ -302,6 +332,8 @@ final class WorkerServerStopWavesTest extends TestCase
         $remaining = $workers->getValue($server);
         unset($remaining[$key]);
         $workers->setValue($server, $remaining);
+        $first = new ReflectionProperty(WorkerServer::class, 'firstStopProcesses');
+        $first->setValue($server, []);
     }
 }
 
@@ -319,8 +351,13 @@ final class StopWavesTestLog
  */
 final class StopWavesTestWorkerServer extends WorkerServer
 {
+    /** One explicit fixture dispatch completion precedes the next isolated wave step. */
     public function advance(): void
     {
+        $barrier = $this->pendingStopDispatch();
+        if ($barrier !== null) {
+            $this->completeStopDispatch($barrier);
+        }
         $this->advanceSecondStopWave();
     }
 

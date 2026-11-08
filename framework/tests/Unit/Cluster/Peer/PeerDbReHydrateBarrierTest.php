@@ -259,7 +259,8 @@ final class PeerDbReHydrateBarrierTest extends TestCase
             transport: new NamedPeerTestTransport($pair[0], $nodeId),
         );
         Closure::bind(static function () use ($server, $link): void {
-            $server->clients[] = $link;
+            $server->addClient($link);
+            $server->attachClient($link);
         }, null, PeerServer::class)();
         socket_write($pair[1], new PeerWelcomeDTO(
             PeerProtocol::VERSION,

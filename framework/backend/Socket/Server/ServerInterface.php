@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Closure;
 use Hilos\Core\Daemon\ClientSocketDetacher;
 use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\ContainedFailureSink;
@@ -114,6 +115,11 @@ interface ServerInterface
      * @param ClientSocketDetacher $detacher Master seam a departing client is announced to
      */
     public function setClientSocketDetacher(ClientSocketDetacher $detacher): void;
+
+    /**
+     * @param Closure(ClientInterface): void $attacher Bind each accepted or dialed client to its guarded owner
+     */
+    public function setClientSocketAttacher(Closure $attacher): void;
 
     /**
      * Tick method - called regularly to process clients.

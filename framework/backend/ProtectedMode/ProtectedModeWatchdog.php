@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Closure;
 use DateTimeImmutable;
 use Hilos\Cluster\NodeName;
 use Hilos\Constants\AgentConstants;
@@ -12,6 +13,11 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Constants\TimeConstants;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+use Hilos\Core\EventLoop\ReadyWork;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -24,6 +30,7 @@ use Hilos\Socket\Server\WorkerServer;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use Throwable;
+use WeakReference;
 
 /**
  * ProtectedModeWatchdog - notices that a node has been frozen with nothing happening behind it.
@@ -80,6 +87,9 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
 
     /** @var int Seconds between reminders when the configured interval cannot be read */
     private const int ALERT_INTERVAL_FALLBACK_SECONDS = 900;
+
+    /** First integer epoch second satisfying a strict timeout comparison. */
+    private const int STRICT_TIMEOUT_STEP_SECONDS = 1;
 
     /** @var int Seconds in a minute, for rendering a duration a person reads */
     private const int SECONDS_PER_MINUTE = 60;
@@ -146,12 +156,115 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
     /** @var ?int Epoch seconds the initiator agent was found gone, or null while it is not */
     private ?int $initiatorLostAt = null;
 
+    private ?float $quiesceDeadline = null;
+
+    private ?int $silenceBasis = null;
+
+    private ?float $silenceDeadline = null;
+
+    private ?float $reminderDeadline = null;
+
+    private ?EventLoopTimer $timer = null;
+
+    private ?ReadyWork $work = null;
+
+    private ?Closure $eligible = null;
+
+    private ?Closure $publish = null;
+
+    private int $bindingGeneration = 0;
+
+    private bool $checkReady = true;
+
     /**
      * @param ProtectedModeAlertNotifier $notifier Channel the alarm goes out on, beside the log line
      */
     public function __construct(
         private readonly ProtectedModeAlertNotifier $notifier = new ProtectedModeAlertNotifier(),
     ) {
+    }
+
+    /**
+     * Rebinds native handles without renewing any observed freeze or alarm deadline.
+     * Both callbacks must weakly address their owner; the timer only cues guarded work.
+     *
+     * @param EventLoop $loop Existing master loop
+     * @param Closure(): bool $eligible Current leader or standalone verdict
+     * @param Closure(ProtectedModeWatchdogSnapshot): void $publish Existing item-action publisher
+     */
+    public function attachEventLoop(EventLoop $loop, Closure $eligible, Closure $publish): void
+    {
+        $this->detachEventLoop();
+        $this->eligible = $eligible;
+        $this->publish = $publish;
+        $owner = WeakReference::create($this);
+        $generation = $this->bindingGeneration;
+        $this->work = $loop->createReadyWork(static function () use ($owner, $generation): void {
+            $watchdog = $owner->get();
+            if ($watchdog !== null && $watchdog->bindingGeneration === $generation) {
+                $watchdog->checkReady = true;
+            }
+        });
+        $this->timer = $loop->createTimer(static function () use ($owner, $generation): void {
+            $watchdog = $owner->get();
+            if ($watchdog !== null && $watchdog->bindingGeneration === $generation) {
+                $watchdog->noteChanged();
+            }
+        });
+        $this->noteChanged();
+    }
+
+    /** Cancels old activations, retaining first observation, sticky facts and mail history. */
+    public function detachEventLoop(): void
+    {
+        ++$this->bindingGeneration;
+        $this->timer?->close();
+        $this->timer = null;
+        $this->work?->close();
+        $this->work = null;
+        $this->eligible = null;
+        $this->publish = null;
+    }
+
+    /** @return bool Whether a fact or native deadline still owes its guarded phase */
+    public function hasReadyWork(): bool
+    {
+        return $this->checkReady;
+    }
+
+    /** Facts coalesce; an occupied row or an already reported alarm is not runnable work. */
+    public function noteChanged(): void
+    {
+        $this->checkReady = true;
+        $this->work?->markReady();
+    }
+
+    /**
+     * Consumes one fact under the master's existing guard and current role check.
+     *
+     * @param ?float $wallNow Paired epoch observation, current clock by default
+     * @param ?float $monotonicNow Paired process observation, current clock by default
+     * @throws EventLoopException When the next original deadline cannot be armed or canceled
+     * @throws HilosException When the text policy or item-action publisher refuses
+     */
+    public function dispatchReady(?float $wallNow = null, ?float $monotonicNow = null): void
+    {
+        if (!$this->checkReady || $this->eligible === null) {
+            return;
+        }
+        $this->checkReady = false;
+        $this->work?->cancel();
+        if (!(($this->eligible)())) {
+            $this->timer?->armAt(null);
+            return;
+        }
+
+        $wallNow ??= microtime(true);
+        $monotonicNow ??= hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        $snapshot = $this->tick((int)$wallNow, $monotonicNow, $wallNow);
+        if ($snapshot !== null && $this->publish !== null && ($this->eligible)()) {
+            ($this->publish)($snapshot);
+        }
     }
 
     /**
@@ -166,10 +279,30 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
      * initiator is then found gone says so, because it is a stronger statement about the same node.
      *
      * @param int $now Epoch seconds to judge against
+     * @param ?float $monotonicNow Paired process observation; synthetic epoch axis by default
+     * @param ?float $wallNow Paired fractional epoch observation; integer observation by default
      * @return ?ProtectedModeWatchdogSnapshot Current judgment and configuration, or null without runtime state
      * @throws HilosException When the server text policy cannot be resolved
+     * @throws EventLoopException When the nearest native deadline cannot be armed or canceled
      */
-    public function tick(int $now): ?ProtectedModeWatchdogSnapshot
+    public function tick(int $now, ?float $monotonicNow = null, ?float $wallNow = null): ?ProtectedModeWatchdogSnapshot
+    {
+        $monotonicNow ??= (float)$now;
+        $wallNow ??= (float)$now;
+        try {
+            return $this->observe($now, $monotonicNow, $wallNow);
+        } finally {
+            $this->armNextDeadline($monotonicNow);
+        }
+    }
+
+    /**
+     * @param int $now Epoch seconds for existing mail and log text
+     * @param float $monotonicNow Process observation for private waits
+     * @param float $wallNow Fractional epoch paired with the process observation
+     * @return ?ProtectedModeWatchdogSnapshot Current judgment, absent with no row
+     */
+    private function observe(int $now, float $monotonicNow, float $wallNow): ?ProtectedModeWatchdogSnapshot
     {
         $view = $this->freezeRow();
         if ($view === null || $view->phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
@@ -180,9 +313,17 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
         }
 
         $this->adoptFreeze(self::fingerprintOf($view), $now);
+        $this->quiesceDeadline ??= $monotonicNow
+            + ($this->freezeSeenAt + $this->quiesceTimeoutSeconds() + self::STRICT_TIMEOUT_STEP_SECONDS - $wallNow);
+        $silenceBasis = $this->lastSignOfLife($view);
+        if ($silenceBasis !== $this->silenceBasis) {
+            $this->silenceBasis = $silenceBasis;
+            $this->silenceDeadline = $monotonicNow
+                + ($silenceBasis + $this->silenceTimeoutSeconds() + self::STRICT_TIMEOUT_STEP_SECONDS - $wallNow);
+        }
         $this->noteQuietRestart($view);
 
-        $verdict = $this->judge($view, $now);
+        $verdict = $this->judge($view, $monotonicNow);
         $snapshot = $this->snapshot($verdict);
         if ($verdict === null) {
             if (
@@ -205,7 +346,7 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
             $this->initiatorLostAt = $now;
         }
         $isNews = $verdict !== $this->reported;
-        if (!$isNews && !$this->reminderIsDue($now)) {
+        if (!$isNews && !$this->reminderIsDue($monotonicNow)) {
             return $snapshot;
         }
 
@@ -214,6 +355,7 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
         $this->alarmOperation = $view->operation;
         $this->alarmFrozenSince = $view->startedAt ?? $this->freezeSeenAt;
         $this->alertedAt = $now;
+        $this->reminderDeadline = $monotonicNow + ($now + $this->alertIntervalSeconds() - $wallNow);
 
         $problem = $this->problem($verdict, $view, $now);
         if ($isNews) {
@@ -249,6 +391,7 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
         }
 
         $this->restoredFromDiskFor = self::fingerprintOf($view);
+        $this->noteChanged();
     }
 
     /**
@@ -256,7 +399,11 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
      */
     public function onProtectedModeSettings(bool $manualRestartIsNormal): void
     {
+        if ($this->manualRestartIsNormal === $manualRestartIsNormal) {
+            return;
+        }
         $this->manualRestartIsNormal = $manualRestartIsNormal;
+        $this->noteChanged();
     }
 
     /**
@@ -280,6 +427,7 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
         }
 
         $this->initiatorLostFor = self::fingerprintOf($view);
+        $this->noteChanged();
     }
 
     /**
@@ -313,10 +461,10 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
      * Its restart is also exempt while the setting says it is routine or no worker has reported it.
      *
      * @param ProtectedModeRuntime $view Freeze row this node carries
-     * @param int $now Epoch seconds to judge against
+     * @param float $now Monotonic seconds to judge against
      * @return ?ProtectedModeStuckVerdict Why the freeze is stuck, or null while it is fine
      */
-    private function judge(ProtectedModeRuntime $view, int $now): ?ProtectedModeStuckVerdict
+    private function judge(ProtectedModeRuntime $view, float $now): ?ProtectedModeStuckVerdict
     {
         if ($this->initiatorLostFor === $this->freeze) {
             return ProtectedModeStuckVerdict::INITIATOR_LOST;
@@ -326,21 +474,21 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
         }
         if (
             $view->phase === StateProtectedModeRuntime::PHASE_ACTIVATING
-            && $now - $this->freezeSeenAt > $this->quiesceTimeoutSeconds()
+            && $now >= $this->quiesceDeadline
         ) {
             return ProtectedModeStuckVerdict::QUIESCE_OVERDUE;
         }
         if (
             $view->phase === StateProtectedModeRuntime::PHASE_VERIFYING
             && $view->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW
-            && $now - $this->freezeSeenAt > $this->quiesceTimeoutSeconds()
+            && $now >= $this->quiesceDeadline
         ) {
             $switch = Hilos::$cluster?->protectedMode();
             if ($switch instanceof ProtectedModeQuiesceRoster && $switch->pendingNodeIds() !== []) {
                 return ProtectedModeStuckVerdict::QUIESCE_OVERDUE;
             }
         }
-        if (!$view->isManualMaintenanceWindow() && $now - $this->lastSignOfLife($view) > $this->silenceTimeoutSeconds()) {
+        if (!$view->isManualMaintenanceWindow() && $now >= $this->silenceDeadline) {
             return ProtectedModeStuckVerdict::SILENT;
         }
 
@@ -429,6 +577,9 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
         $this->freeze = $fingerprint;
         $this->freezeSeenAt = $now;
         $this->reported = null;
+        $this->quiesceDeadline = null;
+        $this->silenceBasis = null;
+        $this->silenceDeadline = null;
     }
 
     /**
@@ -451,6 +602,10 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
         $this->alertedAt = null;
         $this->alarmOperation = null;
         $this->alarmFrozenSince = null;
+        $this->quiesceDeadline = null;
+        $this->silenceBasis = null;
+        $this->silenceDeadline = null;
+        $this->reminderDeadline = null;
     }
 
     /**
@@ -497,12 +652,47 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
      * phase and the clock rather than by whether the previous message landed - a channel that
      * failed is the case that most needs the next attempt.
      *
-     * @param int $now Epoch seconds to judge against
+     * @param float $now Monotonic seconds to judge against
      * @return bool Whether a reminder is owed now
      */
-    private function reminderIsDue(int $now): bool
+    private function reminderIsDue(float $now): bool
     {
-        return $this->alertedAt !== null && $now - $this->alertedAt >= $this->alertIntervalSeconds();
+        return $this->reminderDeadline !== null && $now >= $this->reminderDeadline;
+    }
+
+    /**
+     * Only future stronger causes can precede a current verdict's reminder.
+     * A clear screen keeps mail history but does not rearm a spent reminder.
+     *
+     * @param float $now Current monotonic observation
+     * @throws EventLoopException When the original deadline cannot be armed or canceled
+     */
+    private function armNextDeadline(float $now): void
+    {
+        if ($this->timer === null) {
+            return;
+        }
+        $view = $this->freezeRow();
+        $deadline = null;
+        if ($view !== null && $view->phase !== StateProtectedModeRuntime::PHASE_INACTIVE) {
+            $verdict = $this->judge($view, $now);
+            if ($verdict !== null) {
+                $deadline = $this->reminderDeadline;
+            }
+            if ($verdict === null || $verdict === ProtectedModeStuckVerdict::SILENT) {
+                $switch = Hilos::$cluster?->protectedMode();
+                if ($view->phase === StateProtectedModeRuntime::PHASE_ACTIVATING
+                    || ($view->phase === StateProtectedModeRuntime::PHASE_VERIFYING
+                        && $view->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW
+                        && $switch instanceof ProtectedModeQuiesceRoster && $switch->pendingNodeIds() !== [])) {
+                    $deadline = $deadline === null ? $this->quiesceDeadline : min($deadline, $this->quiesceDeadline);
+                }
+                if ($verdict === null && !$view->isManualMaintenanceWindow()) {
+                    $deadline = $deadline === null ? $this->silenceDeadline : min($deadline, $this->silenceDeadline);
+                }
+            }
+        }
+        $this->timer->armAt($deadline);
     }
 
     /**

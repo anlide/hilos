@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Generator;
+use WeakReference;
+use Closure;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Cluster\Placement\PlacementExecutor;
@@ -54,6 +57,11 @@ use Hilos\Core\Exception\Process\FailedToTerminateProcessException;
 use Hilos\Core\Exception\Process\FailedToWriteStdInException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Process;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\EventLoop\ReadyWork;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+use Hilos\Constants\TimeConstants;
 use Hilos\Files\Upload\UploadMemoryDeliverySink;
 use Hilos\Socket\WebSocket\Delivery\DeliverySettingsSink;
 use Hilos\Files\Upload\UploadMemoryWorkerLifetime;
@@ -80,6 +88,7 @@ use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 use Hilos\Status\Exception\StatusComponentDeclarationException;
 use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Logger;
+use Hilos\ProtectedMode\ProtectedModeSourceBinding;
 use Random\RandomException;
 use Throwable;
 use LogicException;
@@ -110,11 +119,23 @@ abstract class WorkerServer extends AbstractServer implements
     /** Second wave of a stop: the first wave still has workers running. */
     private const int SECOND_WAVE_WAITING = 0;
 
-    /** Second wave: the first wave is gone, and this pass's dispatch carries its last frames. */
+    /** Second wave: first-wave exits and links are settled; final dispatch is awaited. */
     private const int SECOND_WAVE_FIRST_GONE = 1;
 
+    /** Second wave: the complete final-frame prefix has passed dispatch. */
+    private const int SECOND_WAVE_DISPATCHED = 2;
+
     /** Second wave: agent_stop went to the held agents; their workers go once each has reported them stopped. */
-    private const int SECOND_WAVE_AGENTS_STOPPED = 2;
+    private const int SECOND_WAVE_AGENTS_STOPPED = 3;
+
+    /** Maximum worker wait probes visited in one portion. */
+    private const int WORKER_WAITS_PER_PORTION = 64;
+
+    /** Maximum released stop-report starts visited in one portion. */
+    private const int STOP_REPORT_WAITS_PER_PORTION = 64;
+
+    /** Maximum held agent or process stops visited in one second-wave portion. */
+    private const int SECOND_WAVE_STOPS_PER_PORTION = 64;
 
     /**
      * How long an agent waits in {@see self::$agentsAwaitingWorker} for a worker that is on its way to
@@ -124,6 +145,9 @@ abstract class WorkerServer extends AbstractServer implements
      * their own {@see AgentConstants::START_DEADLINE_SECONDS}.
      */
     private const float WORKER_CONNECT_WAIT_SECONDS = 10.0;
+
+    /** Retry a refused initial announcement at its former process-check cadence. */
+    private const float INITIAL_REGISTRATION_RETRY_SECONDS = 1.0;
 
     /**
      * Agent types the full-stop policy leaves running, besides the initiator the row names.
@@ -136,6 +160,9 @@ abstract class WorkerServer extends AbstractServer implements
         HilosAgentType::HILOS_MAIL,
         HilosAgentType::HILOS_STATUS,
     ];
+
+    /** Bounds preparation independently of the single stop or replay effect. */
+    private const int PROTECTED_MODE_PREPARATION_PER_PORTION = 64;
 
     /**
      * @var array<string, array<string, Process|string|int>> Workers indexed by key (format:
@@ -150,6 +177,9 @@ abstract class WorkerServer extends AbstractServer implements
 
     /** @var array<int, UploadMemoryWorkerLifetime> Registered process/connection pairs retained through both exit facts */
     private array $uploadWorkerLifetimes = [];
+
+    /** @var array<int, int> Original registered worker index by exact connection identity */
+    private array $registeredClients = [];
 
     /** Live worker membership revision for the master's process roster. */
     private int $rosterRevision = 0;
@@ -201,6 +231,10 @@ abstract class WorkerServer extends AbstractServer implements
     /** @var bool Whether onInitialWorkersReady() has been called */
     private bool $initialWorkersReadyCalled = false;
 
+    private ?ReadyWork $registrationWork = null;
+
+    private ?EventLoopTimer $registrationRetry = null;
+
     /** @var ?LiveConnectionRoster Master seam naming the node's live sockets, wired at registration */
     private ?LiveConnectionRoster $liveConnectionRoster = null;
 
@@ -228,6 +262,51 @@ abstract class WorkerServer extends AbstractServer implements
     /** @var array<string, AwaitingStopReportStart> Starts held until the old worker reports the agent stopped */
     private array $agentsAwaitingStopReport = [];
 
+    private ?ReadyWork $workerWaitWork = null;
+
+    private ?EventLoopTimer $workerWaitTimer = null;
+
+    /** @var array<string, AwaitingWorkerAgent> Remaining probes released by a capacity or deadline fact */
+    private array $workerWaitPending = [];
+
+    /** @var array<string, int> Waiting agents by WorkerConstants::TYPE_*, updated with queue membership */
+    private array $workerWaitCounts = [WorkerConstants::TYPE_REGULAR => 0, WorkerConstants::TYPE_MONOPOLISTIC => 0];
+
+    /** @var array<string, int> Unvisited probes by worker kind, so blocked remainder never self-queues */
+    private array $workerWaitPendingCounts = [WorkerConstants::TYPE_REGULAR => 0, WorkerConstants::TYPE_MONOPOLISTIC => 0];
+
+    private ?ReadyWork $stopReportWork = null;
+
+    /** @var array<string, AwaitingStopReportStart> Starts released by their exact old connection */
+    private array $stopReportPending = [];
+
+    /** @var array<int, array<string, AwaitingStopReportStart>> Blocked starts indexed by exact connection */
+    private array $stopReportWaiters = [];
+
+    private bool $queuesStopping = false;
+
+    private ?ReadyWork $secondStopWork = null;
+
+    private int $stopDispatchGeneration = 0;
+
+    /** @var ?Closure(): void Master's local dispatch cue; opening an empty barrier still owes completion */
+    private ?Closure $stopDispatchWake = null;
+
+    /** @var ?Closure(?string): void Actual start/resume progress; null names resume completion */
+    private ?Closure $agentHoldWake = null;
+
+    /** @var array<int, Process> First-wave incarnations whose complete exit has not been observed */
+    private array $firstStopProcesses = [];
+
+    /** @var array<string, Process> Held incarnations; reusable slots cannot authorize a replacement stop */
+    private array $heldStopProcesses = [];
+
+    /** @var array<string, WorkerClient> Exact connections receiving held agent stops */
+    private array $heldStopClients = [];
+
+    /** @var array<string, true> Held agent stops still to append after dispatch */
+    private array $secondStopAgents = [];
+
     /** @var float Interval between worker processes tick checks in seconds */
     private const float WORKER_PROCESSES_TICK_INTERVAL = 1.0;
 
@@ -252,8 +331,18 @@ abstract class WorkerServer extends AbstractServer implements
     /** Master owning the test-only cron firing waits on this server. */
     private ?CronFireTestDoor $cronFireTestDoor = null;
 
-    /** @var ?float Last time worker processes were ticked (null = never) */
-    private ?float $lastWorkerProcessesTick = null;
+    /** Process scheduling shares the master's base but outlives initial registration. */
+    private ?EventLoop $processLoop = null;
+
+    private ?ReadyWork $processSweepWork = null;
+
+    private ?EventLoopTimer $processSweepTimer = null;
+
+    /** @var array<int, array<string, Process|string|int>> Failed incarnations retained until nonblocking reap */
+    private array $retiredWorkerProcesses = [];
+
+    /** @var array<int, array<int, string>> Partial log lines by exact process id and output descriptor */
+    private array $workerOutputTails = [];
 
     /** @var ?string Cached log directory path */
     private ?string $cachedLogDirectory = null;
@@ -264,14 +353,17 @@ abstract class WorkerServer extends AbstractServer implements
      */
     private array $protectedModeStoppedAgents = [];
 
-    /** @var list<string> Agent ids left to stop for the freeze being entered, front first */
+    /** @var array<string, AgentDaemonInterface> Original agent incarnations left to stop, front first */
     private array $protectedModeStopQueue = [];
+
+    /** @var ?Generator<string, AwaitingWorkerAgent|AgentDaemonInterface> Original request's finite preparation cohort */
+    private ?Generator $protectedModeStopPreparation = null;
 
     /** @var ?string Initiator agent id the stop in flight leaves running, null when no stop is in flight */
     private ?string $protectedModeStopInitiator = null;
 
     /**
-     * @var ?list<FrozenAgentPlacement> Agents left to bring back for the lift in flight, front first;
+     * @var ?array<int, FrozenAgentPlacement> Agents left to bring back for the lift in flight, front first;
      *     null when no lift is in flight, which an empty list is not - a lift with nothing to replay
      *     still has to be finished
      */
@@ -282,6 +374,18 @@ abstract class WorkerServer extends AbstractServer implements
 
     /** @var int Agents the walk in flight has stopped or asked back so far, for the same line */
     private int $protectedModeWalkAgents = 0;
+
+    private int $protectedModeRosterEpoch = 0;
+
+    private ?ReadyWork $protectedModeRosterWork = null;
+
+    private ?ReadyWork $protectedModeDiagnosticsWork = null;
+
+    private bool $protectedModeDiagnosticsDirty = true;
+
+    private int $protectedModeBindingGeneration = 0;
+
+    private ?ProtectedModeSourceBinding $protectedModeSourceBinding = null;
 
     /**
      * Create worker server with host, port, script paths and agent manager.
@@ -591,6 +695,7 @@ abstract class WorkerServer extends AbstractServer implements
      * cluster-singletons in {@see onBecameSingletonHost()} may override to release matching
      * resources, calling parent::onLostSingletonHost() first.
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function onLostSingletonHost(): void
     {
@@ -696,10 +801,12 @@ abstract class WorkerServer extends AbstractServer implements
         if (!$this->preparingShutdown) {
             $this->lostWorkersAwaitingReplacement[$index] = true;
         }
+        $this->workers[$key][WorkerConstants::FIELD_WORKER_PROCESS]->detachEventLoop();
         unset($this->workers[$key]);
         $this->availableIndices[] = $index;
         sort($this->availableIndices); // Keep sorted
         $this->rosterRevision++;
+        $this->noteWorkerCapacityChanged();
     }
 
     /** @return int Revision of live worker membership */
@@ -762,69 +869,283 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
-     * Tick method - process clients and manage worker processes
+     * Binds registration, process and queue lifetimes independently to the master's existing loop.
+     * This server alone owns SIGCHLD; TERM/INT/HUP remain with the manager until its migration.
      *
-     * Overrides parent tick() to also manage worker processes lifecycle.
-     * Checks running processes and starts missing ones. A failure that belongs to one
-     * worker is contained by the loops below, the same way the parent contains a
-     * failure that belongs to one client.
+     * @param EventLoop $loop Owning master's loop
+     * @throws EventLoopException When a process deadline cannot be armed
+     * @throws EnvException When the local diagnostic identity cannot be read
+     * @throws ClusterConfigurationException When the node configuration is invalid
+     * @throws ClusterDisabledException When the enabled cluster loses its identity
+     */
+    public function attachEventLoop(EventLoop $loop): void
+    {
+        $this->detachEventLoop();
+        $this->processLoop = $loop;
+        $this->workerWaitWork = $loop->createReadyWork($this->advanceAgentsAwaitingWorker(...));
+        $this->workerWaitTimer = $loop->createTimer($this->releaseWorkerWaits(...));
+        $this->stopReportWork = $loop->createReadyWork($this->advanceAgentsAwaitingStopReport(...));
+        $this->secondStopWork = $loop->createReadyWork($this->advanceSecondStopWave(...));
+        $this->agentManager->setWorkerCapacityWake($this->noteWorkerCapacityChanged(...));
+        if ($this->queuesStopping) {
+            $this->releaseWorkerWaitProbes();
+        } else {
+            $this->noteWorkerCapacityChanged();
+        }
+        $this->armWorkerWait();
+        $this->stopReportPending = $this->agentsAwaitingStopReport;
+        if ($this->stopReportPending !== []) {
+            $this->stopReportWork->markReady();
+        }
+        if ($this->secondStopWave !== []) {
+            $this->secondStopWork->markReady();
+        }
+        if ($this->pendingStopDispatch() !== null) {
+            $this->stopDispatchWake?->__invoke();
+        }
+        $this->processSweepWork = $loop->createReadyWork($this->runProcessSweep(...));
+        $this->processSweepTimer = $loop->createTimer(function (): void {
+            $this->processSweepWork?->markReady();
+            $this->armProcessSweep();
+        });
+        $loop->registerSignal(SIGCHLD, function (): void {
+            $this->processSweepWork?->markReady();
+        });
+        foreach ($this->workers as $key => $worker) {
+            $this->bindWorkerProcess($key, $worker);
+        }
+        foreach ($this->retiredWorkerProcesses as $id => $worker) {
+            $this->bindRetiredWorkerProcess($id, $worker);
+        }
+        $this->processSweepWork->markReady();
+        $this->armProcessSweep();
+        $this->attachProtectedModeEventLoop($loop);
+        if ($this->initialWorkersReadyCalled || $this->preparingShutdown) {
+            return;
+        }
+
+        $this->registrationWork = $loop->createReadyWork($this->checkWorkerRegistration(...));
+        $this->registrationRetry = $loop->createTimer(function (): void {
+            $this->registrationWork?->markReady();
+        });
+        $this->registrationWork->markReady();
+    }
+
+    /** Releases all owned generations and SIGCHLD before final cleanup or rebind. */
+    public function detachEventLoop(): void
+    {
+        $this->detachProtectedModeEventLoop();
+        $this->detachRegistrationEventLoop();
+        $this->agentManager->setWorkerCapacityWake(null);
+        $this->workerWaitTimer?->close();
+        $this->workerWaitTimer = null;
+        $this->workerWaitWork?->close();
+        $this->workerWaitWork = null;
+        $this->workerWaitPending = [];
+        $this->workerWaitPendingCounts = [WorkerConstants::TYPE_REGULAR => 0, WorkerConstants::TYPE_MONOPOLISTIC => 0];
+        $this->stopReportWork?->close();
+        $this->stopReportWork = null;
+        $this->stopReportPending = [];
+        $this->secondStopWork?->close();
+        $this->secondStopWork = null;
+        $this->stopDispatchGeneration++;
+        $this->processSweepTimer?->close();
+        $this->processSweepTimer = null;
+        $this->processSweepWork?->close();
+        $this->processSweepWork = null;
+        $this->processLoop?->unregisterSignal(SIGCHLD);
+        foreach ([$this->workers, $this->retiredWorkerProcesses] as $workers) {
+            foreach ($workers as $worker) {
+                $worker[WorkerConstants::FIELD_WORKER_PROCESS]->detachEventLoop();
+            }
+        }
+        $this->processLoop = null;
+    }
+
+    /**
+     * Each loop duty holds only a weak owner; old queued closures cannot survive a rebind.
+     *
+     * @param EventLoop $loop Current master loop
+     * @throws EnvException When the local diagnostic identity cannot be read
+     * @throws ClusterConfigurationException When the node configuration is invalid
+     * @throws ClusterDisabledException When the enabled cluster loses its identity
+     */
+    private function attachProtectedModeEventLoop(EventLoop $loop): void
+    {
+        $owner = WeakReference::create($this);
+        $generation = $this->protectedModeBindingGeneration;
+        $this->protectedModeRosterWork = $loop->createReadyWork(static function () use ($owner, $generation): void {
+            $server = $owner->get();
+            if ($server !== null && $server->protectedModeBindingGeneration === $generation) {
+                $server->advanceProtectedModeRoster();
+            }
+        });
+        $this->protectedModeDiagnosticsWork = $loop->createReadyWork(static function () use ($owner, $generation): void {
+            $server = $owner->get();
+            if ($server !== null && $server->protectedModeBindingGeneration === $generation) {
+                $server->reconcileProtectedModeSource();
+                if ($server->protectedModeDiagnosticsDirty) {
+                    $server->protectedModeDiagnosticsDirty = false;
+                    $server->publishProtectedModeAgentDiagnostics();
+                }
+            }
+        });
+        if ($this->protectedModeStopInitiator !== null || $this->protectedModeResumeQueue !== null) {
+            $this->protectedModeRosterWork->markReady();
+        }
+        $this->protectedModeSourceBinding ??= new ProtectedModeSourceBinding();
+        $this->protectedModeSourceBinding->registerWorkerServer($this);
+        $this->reconcileProtectedModeSource();
+        $this->noteProtectedModeDiagnosticsChanged();
+    }
+
+    /** Detach cancels tickets, preserving the finite walk and any unpublished dirty fact. */
+    private function detachProtectedModeEventLoop(): void
+    {
+        ++$this->protectedModeBindingGeneration;
+        $this->protectedModeSourceBinding?->removeWorkerServer($this);
+        $this->protectedModeRosterWork?->close();
+        $this->protectedModeRosterWork = null;
+        $this->protectedModeDiagnosticsWork?->close();
+        $this->protectedModeDiagnosticsWork = null;
+    }
+
+    /**
+     * Reconciles public facade assignment at a guarded boundary, without scanning source rows.
+     * The blocking master must call this before waiting: assigning Hilos::$rt cannot wake a sleeper.
+     * A missing context or unmounted row remains missing, never a published zero.
+     *
+     * @throws EnvException When the local diagnostic identity cannot be read
+     * @throws ClusterConfigurationException When the node configuration is invalid
+     * @throws ClusterDisabledException When the enabled cluster loses its identity
+     */
+    public function reconcileProtectedModeSource(): void
+    {
+        $this->protectedModeSourceBinding?->reconcile();
+    }
+
+    /**
+     * The manager and this server share one source owner; standalone server fixtures own it locally.
+     *
+     * @param ProtectedModeSourceBinding $binding Concrete shared source fan-out
+     * @throws EnvException When the local diagnostic identity cannot be read
+     * @throws ClusterConfigurationException When the node configuration is invalid
+     * @throws ClusterDisabledException When the enabled cluster loses its identity
+     */
+    public function registerProtectedModeSourceBinding(ProtectedModeSourceBinding $binding): void
+    {
+        if ($this->protectedModeSourceBinding === $binding) {
+            return;
+        }
+        $this->protectedModeSourceBinding?->removeWorkerServer($this);
+        $this->protectedModeSourceBinding = $binding;
+        if ($this->protectedModeDiagnosticsWork !== null) {
+            $binding->registerWorkerServer($this);
+            $binding->reconcile();
+        }
+    }
+
+    /** Source callbacks only coalesce readiness; publication stays in the guarded owner portion. */
+    public function noteProtectedModeDiagnosticsChanged(): void
+    {
+        $this->protectedModeDiagnosticsDirty = true;
+        $this->protectedModeDiagnosticsWork?->markReady();
+    }
+
+    /** Initial readiness and shutdown cancel only the registration duty. */
+    private function detachRegistrationEventLoop(): void
+    {
+        $this->registrationRetry?->close();
+        $this->registrationRetry = null;
+        $this->registrationWork?->close();
+        $this->registrationWork = null;
+    }
+
+    /**
+     * A completed registration releases worker waits as well as the initial minimums.
+     *
+     * @param WorkerClient $client Exact connection that completed registration
+     */
+    public function noteWorkerRegistered(WorkerClient $client): void
+    {
+        $this->registeredClients[spl_object_id($client)] = $client->getWorkerIndex();
+        $this->registrationWork?->markReady();
+        $this->noteWorkerCapacityChanged();
+        if ($this->secondStopWave !== []) {
+            $this->secondStopWork?->markReady();
+        }
+    }
+
+    /** @return array<int, int> Original registered worker indexes, without retaining another payload roster */
+    public function registrationSnapshot(): array
+    {
+        return $this->registeredClients;
+    }
+
+    /** A real change in available seats releases one bounded FIFO probe of the waits. */
+    public function noteWorkerCapacityChanged(): void
+    {
+        $this->agentHoldWake?->__invoke(null);
+        $this->releaseWorkerWaits();
+    }
+
+    /** An existing wait deadline releases the same FIFO probes without inventing new capacity. */
+    private function releaseWorkerWaits(): void
+    {
+        if ($this->queuesStopping || $this->agentsAwaitingWorker === []) {
+            return;
+        }
+        $this->releaseWorkerWaitProbes();
+    }
+
+    /** Snapshot a real fact's FIFO probes and their kinds without walking the blocked queue. */
+    private function releaseWorkerWaitProbes(): void
+    {
+        $this->workerWaitPending = $this->agentsAwaitingWorker;
+        $this->workerWaitPendingCounts = $this->workerWaitCounts;
+        if ($this->workerWaitPending !== []) {
+            $this->workerWaitWork?->markReady();
+        }
+    }
+
+    /**
+     * A consumed report releases only the start waiting on this exact connection.
+     *
+     * @param WorkerClient $client Reporting connection
+     * @param string $agentId Agent actually reported stopped
+     */
+    public function noteWorkerStopReport(WorkerClient $client, string $agentId): void
+    {
+        $awaiting = $this->stopReportWaiters[spl_object_id($client)][$agentId] ?? null;
+        if ($awaiting !== null) {
+            $this->stopReportPending[$agentId] = $awaiting;
+            $this->stopReportWork?->markReady();
+        }
+        if (in_array($client, $this->heldStopClients, true)) {
+            $this->secondStopWork?->markReady();
+        }
+    }
+
+    /**
+     * Process clients and reconcile the process-local protected source binding.
+     *
+     * Process status, output and stop deadlines have their own loop duties. A worker
+     * process failure is contained by its owner portion, as the parent contains a
+     * client failure here.
      *
      * @throws RandomException When the secure random source refuses a handshake secret
      * @throws HilosException Whatever the project's agent-daemon factory raises
-     * @throws RtActionsCollectionNameNullException When the switch a finished roster walk tells cannot name its row
-     * @throws RtTruthSourceWriteNotAllowedException When that switch writes a row this master is not the truth source of
-     * @throws StatusComponentDeclarationException When the lift reads an invalid enabled Status catalog
+     * @throws EnvException When the local diagnostic identity cannot be read
+     * @throws ClusterConfigurationException When the node configuration is invalid
+     * @throws ClusterDisabledException When the enabled cluster loses its identity
      */
     public function onTick(): void
     {
         // Process clients (read/write)
-        // Registration timeout is handled in WorkerClient::onTick()
+        // Registration timeout is owned by WorkerClient's independent native timer.
         parent::onTick();
 
-        // One step of the protected-mode roster walk, every pass. Above the throttle below, which
-        // is for worker processes: a walk that took it would move one agent a second (HIL-1012).
-        $this->advanceProtectedModeRoster();
-
-        // This node's hold, after the walk has moved it. An unchanged tuple does not write, and a
-        // missing freeze row stays null rather than becoming a false zero.
-        $this->publishProtectedModeAgentDiagnostics();
-
-        // Seat or give up the agents waiting for a worker to connect, every pass and for the same
-        // reason: under the throttle a worker that registered would wait up to a second for its agent.
-        $this->advanceAgentsAwaitingWorker();
-
-        // A stop report or closed worker link releases a deferred start on this pass.
-        $this->advanceAgentsAwaitingStopReport();
-
-        // Tick worker processes and related checks (check status, read output, handle graceful shutdown)
-        // In normal operation, check once per second to reduce system call overhead.
-        // During shutdown, check every tick for faster cleanup.
-        $now = microtime(true);
-        $shouldTick = $this->preparingShutdown
-            || $this->lastWorkerProcessesTick === null
-            || ($now - $this->lastWorkerProcessesTick) >= self::WORKER_PROCESSES_TICK_INTERVAL;
-
-        if ($shouldTick) {
-            // Handle newly registered workers and process agent messages
-            $this->checkWorkerRegistration();
-
-            // Tick all worker processes
-            $this->tickWorkerProcesses();
-
-            // The workers a stop held back go once the others are gone (HIL-1154).
-            $this->advanceSecondStopWave();
-
-            // Ensure minimum number of workers are running
-            try {
-                $this->ensureMinWorkers();
-            } catch (CouldNotStartException $e) {
-                Logger::error("Failed to start worker process: " . $e->getMessage());
-            } catch (FailedToSetNonBlockingException $e) {
-                Logger::error("Failed to set non-blocking mode for worker process: " . $e->getMessage());
-            }
-
-            $this->lastWorkerProcessesTick = $now;
-        }
+        $this->reconcileProtectedModeSource();
     }
 
     /**
@@ -836,16 +1157,18 @@ abstract class WorkerServer extends AbstractServer implements
      * A readiness announcement that cannot be named is logged rather than thrown -
      * leaving the tick loop would cost this node every connection it is serving. It is
      * announced BEFORE the once-only latch and the hook, so a refusal leaves the node
-     * exactly as it was and the next tick tries the whole step again: workersReady gates
+     * exactly as it was and the existing one-second retry tries the whole step again: workersReady gates
      * the WebSocket open, the cluster singletons and cron, and a node that latched
      * without announcing would sit half-started with nothing left to retry. Queueing
      * ahead of the hook is not observable - the daemon dispatches the queue after the
-     * tick, not at the call.
+     * owner portion, not at the call.
+     *
+     * @throws EventLoopException When a refused announcement's retry cannot be armed
      */
     private function checkWorkerRegistration(): void
     {
         // Check if initial workers are ready (only once)
-        if (!$this->initialWorkersReadyCalled) {
+        if (!$this->initialWorkersReadyCalled && !$this->preparingShutdown) {
             // Count registered workers
             $registeredRegular = 0;
             $registeredMonopolistic = 0;
@@ -880,10 +1203,17 @@ abstract class WorkerServer extends AbstractServer implements
                         'Workers ready signal could not be named, node stays unannounced until the next tick: '
                         . $exception->getMessage()
                     );
+                    if ($this->registrationRetry?->getDeadline() === null) {
+                        $this->registrationRetry?->armAt(
+                            hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND
+                            + self::INITIAL_REGISTRATION_RETRY_SECONDS,
+                        );
+                    }
                     return;
                 }
 
                 $this->initialWorkersReadyCalled = true;
+                $this->detachRegistrationEventLoop();
                 $this->onInitialWorkersReady();
             }
         }
@@ -914,7 +1244,18 @@ abstract class WorkerServer extends AbstractServer implements
      */
     public function removeClient(ClientInterface $client): void
     {
+        unset($this->registeredClients[spl_object_id($client)]);
         parent::removeClient($client);
+        foreach ($this->stopReportWaiters[spl_object_id($client)] ?? [] as $agentId => $awaiting) {
+            $this->stopReportPending[$agentId] = $awaiting;
+        }
+        if ($this->stopReportPending !== []) {
+            $this->stopReportWork?->markReady();
+        }
+        $this->noteWorkerCapacityChanged();
+        if ($this->secondStopWave !== []) {
+            $this->secondStopWork?->markReady();
+        }
 
         if ($client instanceof WorkerClient) {
             $client->discardUploadBuffers();
@@ -942,29 +1283,126 @@ abstract class WorkerServer extends AbstractServer implements
     private function tickWorkerProcesses(): void
     {
         foreach ($this->workers as $key => $worker) {
-            $process = $worker[WorkerConstants::FIELD_WORKER_PROCESS];
-            $type = $worker[WorkerConstants::FIELD_WORKER_TYPE];
-            $index = $worker[WorkerConstants::FIELD_WORKER_INDEX];
+            $this->runWorkerProcess($key, $worker);
+        }
+        foreach ($this->retiredWorkerProcesses as $id => $worker) {
+            $this->reapRetiredWorkerProcess($id, $worker);
+        }
+    }
 
-            try {
-                $this->tickWorkerProcess($process, $type, $index, $key);
-            } catch (FailedToClosePipeException | FailedToTerminateProcessException $e) {
-                // Worker error, remove from tracking
-                $this->removeWorker($key, $type, $index);
-            } catch (
-                FailedToGetStatusException
-                | FailedToReadStdOutException
-                | FailedToSetStdErrException
-                | FailedToWriteStdInException $e
-            ) {
-                try {
-                    $process->stop();
-                } catch (FailedToGetStatusException | FailedToTerminateProcessException $e) {
-                    // Ignore errors during halt
+    /** One normal sweep or coalesced SIGCHLD; unrelated I/O never resets the sweep deadline. */
+    private function runProcessSweep(): void
+    {
+        $this->tickWorkerProcesses();
+        try {
+            $this->ensureMinWorkers();
+        } catch (CouldNotStartException $e) {
+            Logger::error('Failed to start worker process: ' . $e->getMessage());
+        } catch (FailedToSetNonBlockingException $e) {
+            Logger::error('Failed to set non-blocking mode for worker process: ' . $e->getMessage());
+        }
+        $this->armProcessSweep();
+    }
+
+    /** Keeps the existing one-second pool duty only while the running server owes one. */
+    private function armProcessSweep(): void
+    {
+        if ($this->preparingShutdown || ($this->workers === [] && $this->minRegular === 0 && $this->minMonopolistic === 0)) {
+            $this->processSweepTimer?->armAt(null);
+            return;
+        }
+        if ($this->processSweepTimer?->getDeadline() === null) {
+            $this->processSweepTimer?->armAt(
+                hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND
+                + self::WORKER_PROCESSES_TICK_INTERVAL,
+            );
+        }
+    }
+
+    /**
+     * @param string $key Current worker slot
+     * @param array<string, Process|string|int> $worker Exact process incarnation and its log identity
+     */
+    private function bindWorkerProcess(string $key, array $worker): void
+    {
+        if ($this->processLoop !== null) {
+            $worker[WorkerConstants::FIELD_WORKER_PROCESS]->attachEventLoop($this->processLoop, function () use ($key, $worker): void {
+                $this->runWorkerProcess($key, $worker);
+            });
+        }
+    }
+
+    /**
+     * Contains the same per-worker failures for sweep, pipe readiness and stop deadlines.
+     *
+     * @param string $key Worker slot, which a replacement may reuse
+     * @param array<string, Process|string|int> $worker Captured incarnation
+     */
+    private function runWorkerProcess(string $key, array $worker): void
+    {
+        $process = $worker[WorkerConstants::FIELD_WORKER_PROCESS];
+        if (($this->workers[$key][WorkerConstants::FIELD_WORKER_PROCESS] ?? null) !== $process) {
+            return;
+        }
+        $type = $worker[WorkerConstants::FIELD_WORKER_TYPE];
+        $index = $worker[WorkerConstants::FIELD_WORKER_INDEX];
+        try {
+            $this->tickWorkerProcess($process, $type, $index, $key);
+        } catch (
+            FailedToClosePipeException | FailedToTerminateProcessException | FailedToGetStatusException
+            | FailedToReadStdOutException | FailedToSetStdErrException | FailedToWriteStdInException
+        ) {
+            $this->removeWorker($key, $type, $index);
+            // Keep a failed child alive in bookkeeping until its exit is observed. Losing its
+            // last reference here would run a synchronous destructor or abandon a future zombie.
+            $id = spl_object_id($process);
+            $this->retiredWorkerProcesses[$id] = $worker;
+            $this->bindRetiredWorkerProcess($id, $worker);
+        }
+        if (!isset($this->workers[$key])) {
+            $this->processSweepWork?->markReady();
+        }
+    }
+
+    /**
+     * @param int $id Exact retired process identity, unrelated to a reusable worker slot
+     * @param array<string, Process|string|int> $worker Failed incarnation
+     */
+    private function bindRetiredWorkerProcess(int $id, array $worker): void
+    {
+        if ($this->processLoop !== null) {
+            $worker[WorkerConstants::FIELD_WORKER_PROCESS]->attachEventLoop($this->processLoop, function () use ($id, $worker): void {
+                $this->reapRetiredWorkerProcess($id, $worker);
+            });
+        }
+    }
+
+    /**
+     * @param int $id Retired process identity
+     * @param array<string, Process|string|int> $worker Original output identity
+     */
+    private function reapRetiredWorkerProcess(int $id, array $worker): void
+    {
+        $process = $worker[WorkerConstants::FIELD_WORKER_PROCESS];
+        try {
+            $process->halt();
+            $this->saveWorkerOutput($process, $worker[WorkerConstants::FIELD_WORKER_TYPE], $worker[WorkerConstants::FIELD_WORKER_INDEX]);
+            if (!$process->isInFlight()) {
+                foreach ($this->uploadWorkerLifetimes as $lifetime) {
+                    if ($lifetime->process === $process) {
+                        $lifetime->processExited = true;
+                    }
                 }
-                // Process error, remove from tracking
-                $this->removeWorker($key, $type, $index);
+                $this->settleExitedUploadWorkers();
+                unset($this->retiredWorkerProcesses[$id], $this->firstStopProcesses[$id]);
+                $this->secondStopWork?->markReady();
             }
+        } catch (
+            FailedToClosePipeException | FailedToTerminateProcessException | FailedToGetStatusException
+            | FailedToReadStdOutException | FailedToSetStdErrException
+        ) {
+            // Retain it for the next real exit notification, without spinning on a failed pipe.
+            $process->detachEventLoop();
         }
     }
 
@@ -1006,10 +1444,12 @@ abstract class WorkerServer extends AbstractServer implements
         // Read and save stdout/stderr to files (after status check to ensure we capture final output)
         $this->saveWorkerOutput($process, $type, $index);
 
-        if (!$status[Process::STATUS_RUNNING]) {
+        if (!$status[Process::STATUS_RUNNING] && !$process->isInFlight()) {
             // Worker died, remove from tracking
             Logger::info("Worker #{$index} stopped [type={$type}]");
+            unset($this->firstStopProcesses[spl_object_id($process)]);
             $this->removeWorker($key, $type, $index);
+            $this->secondStopWork?->markReady();
         }
     }
 
@@ -1062,7 +1502,7 @@ abstract class WorkerServer extends AbstractServer implements
         $logDirectory = $this->getLogDirectory();
 
         // Read stdout and write to file
-        $stdout = $process->getStdOut();
+        $stdout = $this->consumeWorkerOutputLines($process, 1, $process->getStdOut());
         if (!empty($stdout)) {
             $stdoutFile = $logDirectory . '/' . LogStreamConstants::WORKER_STREAM_PREFIX
                 . $workerType . LogStreamConstants::WORKER_TYPE_SEPARATOR . $workerIndex . LogStreamConstants::STREAM_SUFFIX;
@@ -1070,12 +1510,46 @@ abstract class WorkerServer extends AbstractServer implements
         }
 
         // Read stderr and write to file
-        $stderr = $process->getStdErr();
+        $stderr = $this->consumeWorkerOutputLines($process, 2, $process->getStdErr());
         if (!empty($stderr)) {
             $stderrFile = $logDirectory . '/' . LogStreamConstants::WORKER_STREAM_PREFIX
                 . $workerType . LogStreamConstants::WORKER_TYPE_SEPARATOR . $workerIndex . LogStreamConstants::ERROR_STREAM_SUFFIX;
             $this->processWorkerOutput($stderr, $stderrFile, $logDirectory, true);
         }
+    }
+
+    /**
+     * Preserve log records across bounded reads; an exited child's final tail is a record too.
+     *
+     * @param Process $process Exact child, independent of a reusable worker index
+     * @param int $descriptor Stdout or stderr descriptor
+     * @param string $output Newly drained bytes
+     * @return string Complete lines, or the final tail once the child is reaped
+     */
+    private function consumeWorkerOutputLines(Process $process, int $descriptor, string $output): string
+    {
+        $id = spl_object_id($process);
+        if (isset($this->workerOutputTails[$id][$descriptor])) {
+            $output = $this->workerOutputTails[$id][$descriptor] . $output;
+            unset($this->workerOutputTails[$id][$descriptor]);
+            if ($this->workerOutputTails[$id] === []) {
+                unset($this->workerOutputTails[$id]);
+            }
+        }
+        if (!$process->isInFlight()) {
+            return $output;
+        }
+        $lastNewline = strrpos($output, "\n");
+        if ($lastNewline === false) {
+            if ($output !== '') {
+                $this->workerOutputTails[$id][$descriptor] = $output;
+            }
+            return '';
+        }
+        if ($lastNewline + 1 < strlen($output)) {
+            $this->workerOutputTails[$id][$descriptor] = substr($output, $lastNewline + 1);
+        }
+        return substr($output, 0, $lastNewline + 1);
     }
 
     /**
@@ -1237,6 +1711,7 @@ abstract class WorkerServer extends AbstractServer implements
      * @param bool $isMonopolistic True if monopolistic worker
      * @throws CouldNotStartException If worker cannot be started
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
+     * @throws EventLoopException When the new child's process deadline cannot be armed
      */
     protected function startWorker(bool $isMonopolistic): void
     {
@@ -1263,6 +1738,8 @@ abstract class WorkerServer extends AbstractServer implements
             WorkerConstants::FIELD_WORKER_INDEX => $workerIndex,
         ];
         $this->recordWorkerStarted($workerIndex);
+        $this->bindWorkerProcess($key, $this->workers[$key]);
+        $this->armProcessSweep();
 
         // Log worker start
         Logger::info("Worker #{$workerIndex} started [type={$type}]");
@@ -1291,8 +1768,43 @@ abstract class WorkerServer extends AbstractServer implements
      */
     public function stop(): void
     {
+        if ($this->queuesStopping) {
+            return;
+        }
+        $this->queuesStopping = true;
+        $this->workerWaitTimer?->close();
+        $this->workerWaitTimer = null;
+        $this->releaseWorkerWaitProbes();
+        $this->stopReportPending = $this->agentsAwaitingStopReport;
+        if ($this->stopReportPending !== []) {
+            $this->stopReportWork?->markReady();
+        }
+        $this->detachRegistrationEventLoop();
+        $this->processSweepTimer?->close();
+        $this->processSweepTimer = null;
         $this->secondStopWave = $this->workersStoppingLast();
         $this->secondStopWaveStep = self::SECOND_WAVE_WAITING;
+        $this->stopDispatchGeneration++;
+        foreach ($this->secondStopWave as $key => $agentIds) {
+            $this->heldStopProcesses[$key] = $this->workers[$key][WorkerConstants::FIELD_WORKER_PROCESS];
+            $worker = $this->parseWorkerKey($key);
+            $client = $this->findWorkerClientById($this->agentManager->calculateWorkerId(
+                $worker[WorkerConstants::FIELD_WORKER_INDEX],
+                $worker[WorkerConstants::FIELD_WORKER_TYPE] === WorkerConstants::TYPE_MONOPOLISTIC,
+            ));
+            if ($client !== null) {
+                $this->heldStopClients[$key] = $client;
+            }
+            foreach ($agentIds as $agentId) {
+                $this->secondStopAgents[$agentId] = true;
+            }
+        }
+        foreach ($this->retiredWorkerProcesses as $id => $worker) {
+            $this->firstStopProcesses[$id] = $worker[WorkerConstants::FIELD_WORKER_PROCESS];
+        }
+        if ($this->secondStopWave !== []) {
+            $this->secondStopWork?->markReady();
+        }
 
         foreach ($this->workers as $key => $worker) {
             $process = $worker[WorkerConstants::FIELD_WORKER_PROCESS];
@@ -1304,13 +1816,17 @@ abstract class WorkerServer extends AbstractServer implements
                 continue;
             }
 
+            $this->firstStopProcesses[spl_object_id($process)] = $process;
             try {
                 $process->stop($this->shutdownTimeout); // Send SIGTERM with timeout
                 Logger::debug("Sent stop signal to {$type} worker #{$index}");
             } catch (Throwable $e) {
                 Logger::error("Failed to stop {$type} worker #{$index}: " . $e->getMessage());
                 // Force remove if stop failed
-                unset($this->workers[$key]);
+                $this->removeWorker($key, $type, $index);
+                $id = spl_object_id($process);
+                $this->retiredWorkerProcesses[$id] = $worker;
+                $this->bindRetiredWorkerProcess($id, $worker);
             }
         }
 
@@ -1320,22 +1836,95 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
-     * Moves the second wave of a stop one step on, once per pass; nothing while no stop holds a worker.
+     * Cues completion without dispatching recursively. Binding observes an already open barrier too.
+     * This master binding outlives a server-loop rebind; the master releases it on its own detach.
      *
-     * At least three passes, because each step needs the one before it to have reached the wire. The
-     * first wave is gone when its processes are gone AND their connections are closed: the master reads
-     * a connection a buffer at a time, so the last batch of a worker that has exited may still be in
-     * its socket for a few passes. The pass that sees the first wave gone only notes it: what the last
-     * of it sent is read on this pass and dispatched at its end, into the connection of the held
-     * worker. On this pass the master also records closures of its remaining connections;
-     * dispatchSignals() sends that batch. The next pass stops every held agent with an ordinary
-     * agent_stop over that connection, which carries frames in order - so the stop lands behind
-     * everything sent to the agent before it. SIGTERM goes to the held workers once each has reported
-     * its held agents stopped: a worker reads its link a buffer at a time and handles frames in order,
-     * so the report means everything sent to the agent before the stop was handled - a SIGTERM sent on
-     * a count of passes cut off the last batches still unread behind it (HIL-1314). A held worker whose
-     * link is gone is not waited for, and the master's shutdown ceiling covers the wait.
+     * @param ?Closure(): void $wake Local dispatch owner, null to detach
+     */
+    public function setStopDispatchWake(?Closure $wake): void
+    {
+        $this->stopDispatchWake = $wake;
+        if ($this->pendingStopDispatch() !== null) {
+            $this->stopDispatchWake?->__invoke();
+        }
+    }
+
+    /** @param Closure(): void $wake Exact master binding being detached, leaving a replacement intact */
+    public function removeStopDispatchWake(Closure $wake): void
+    {
+        if ($this->stopDispatchWake === $wake) {
+            $this->stopDispatchWake = null;
+        }
+    }
+
+    /** @param ?Closure(?string): void $wake Master's independent bounded hold-discovery binding */
+    public function setAgentHoldWake(?Closure $wake): void
+    {
+        $this->agentHoldWake = $wake;
+    }
+
+    /** @param Closure(?string): void $wake Exact departing master binding */
+    public function removeAgentHoldWake(Closure $wake): void
+    {
+        if ($this->agentHoldWake === $wake) {
+            $this->agentHoldWake = null;
+        }
+    }
+
+    /**
+     * @return ?int Current shutdown barrier, captured before a complete signal dispatch
+     */
+    public function pendingStopDispatch(): ?int
+    {
+        return $this->secondStopWave !== [] && $this->secondStopWaveStep === self::SECOND_WAVE_FIRST_GONE
+            ? $this->stopDispatchGeneration
+            : null;
+    }
+
+    /**
+     * Retained master prefix validation uses this O(1) blocker read.
+     *
+     * @param int $generation Exact captured dispatch barrier
+     * @param string $agentId Agent with a pending final delivery
+     * @return bool Whether this same barrier must wait for that agent's final obligation
+     */
+    public function isStopDispatchAgent(int $generation, string $agentId): bool
+    {
+        return $generation === $this->pendingStopDispatch() && isset($this->secondStopAgents[$agentId]);
+    }
+
+    /**
+     * Confirms every signal and destination in the captured prefix has passed dispatch.
+     * A partial signal/destination drain must retain the barrier until its whole prefix ends.
+     *
+     * @param int $generation Barrier captured before dispatch; stale lifetimes cannot release it
+     * @param list<string> $pendingAgentIds Dispatch deliveries still held for a start report
+     */
+    public function completeStopDispatch(int $generation, array $pendingAgentIds = []): void
+    {
+        if ($generation !== $this->pendingStopDispatch()) {
+            return;
+        }
+        foreach ($pendingAgentIds as $agentId) {
+            if (isset($this->secondStopAgents[$agentId])) {
+                return;
+            }
+        }
+        $this->secondStopWaveStep = self::SECOND_WAVE_DISPATCHED;
+        $this->secondStopWork?->markReady();
+    }
+
+    /**
+     * Advances only from process exit, link departure, consumed stop report or completed dispatch.
+     *
+     * First-wave processes and their links must both leave. Closing the master's remembered
+     * analytics connections then opens a dispatch barrier. Only its explicit completion permits
+     * agent_stop to join each held connection's FIFO, behind the final frames. SIGTERM waits for
+     * every held report or the loss of its exact connection, under the existing master ceiling.
+     *
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws AgentNotLinkedToWorkerException When a held daemon cannot resolve its linked worker
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     protected function advanceSecondStopWave(): void
     {
@@ -1343,28 +1932,36 @@ abstract class WorkerServer extends AbstractServer implements
             return;
         }
 
-        if (array_diff_key($this->workers, $this->secondStopWave) !== [] || $this->firstStopWaveConnected()) {
-            $this->secondStopWaveStep = self::SECOND_WAVE_WAITING;
-
-            return;
-        }
-
         if ($this->secondStopWaveStep === self::SECOND_WAVE_WAITING) {
+            if ($this->firstStopProcesses !== [] || $this->firstStopWaveConnected()) {
+                return;
+            }
             $this->secondStopWaveStep = self::SECOND_WAVE_FIRST_GONE;
             Hilos::$ac?->closeOpenConnections();
-
+            $this->stopDispatchWake?->__invoke();
+            return;
+        }
+        if ($this->secondStopWaveStep === self::SECOND_WAVE_FIRST_GONE) {
             return;
         }
 
-        if ($this->secondStopWaveStep === self::SECOND_WAVE_FIRST_GONE) {
-            foreach ($this->secondStopWave as $agentIds) {
-                foreach ($agentIds as $agentId) {
-                    $agent = $this->parseAgentId($agentId);
-                    $this->stopAgent($agent->type, $agent->index);
+        if ($this->secondStopWaveStep === self::SECOND_WAVE_DISPATCHED) {
+            $this->secondStopWork?->markReady();
+            $remaining = self::SECOND_WAVE_STOPS_PER_PORTION;
+            while ($remaining-- > 0 && $this->secondStopAgents !== []) {
+                $agentId = array_key_first($this->secondStopAgents);
+                unset($this->secondStopAgents[$agentId]);
+                $daemon = $this->agentManager->getAgent($agentId);
+                if ($daemon?->hasWorkerClient() === true && !in_array($daemon->getWorkerClient(), $this->heldStopClients, true)) {
+                    continue;
                 }
+                $agent = $this->parseAgentId($agentId);
+                $this->stopAgent($agent->type, $agent->index);
             }
-            $this->secondStopWaveStep = self::SECOND_WAVE_AGENTS_STOPPED;
-
+            if ($this->secondStopAgents === []) {
+                $this->secondStopWaveStep = self::SECOND_WAVE_AGENTS_STOPPED;
+            }
+            // The queued portion appends remaining stops or checks already satisfied reports.
             return;
         }
 
@@ -1372,11 +1969,12 @@ abstract class WorkerServer extends AbstractServer implements
             return;
         }
 
-        $held = $this->secondStopWave;
-        $this->secondStopWave = [];
-        foreach (array_keys($held) as $key) {
+        $remaining = self::SECOND_WAVE_STOPS_PER_PORTION;
+        while ($remaining-- > 0 && $this->secondStopWave !== []) {
+            $key = array_key_first($this->secondStopWave);
+            unset($this->secondStopWave[$key]);
             $worker = $this->workers[$key] ?? null;
-            if ($worker === null) {
+            if ($worker === null || $worker[WorkerConstants::FIELD_WORKER_PROCESS] !== $this->heldStopProcesses[$key]) {
                 continue;
             }
 
@@ -1387,8 +1985,17 @@ abstract class WorkerServer extends AbstractServer implements
             } catch (Throwable $e) {
                 Logger::error("Failed to stop {$worker[WorkerConstants::FIELD_WORKER_TYPE]} worker "
                     . "#{$worker[WorkerConstants::FIELD_WORKER_INDEX]}: " . $e->getMessage());
-                unset($this->workers[$key]);
+                $this->removeWorker($key, $worker[WorkerConstants::FIELD_WORKER_TYPE], $worker[WorkerConstants::FIELD_WORKER_INDEX]);
+                $id = spl_object_id($worker[WorkerConstants::FIELD_WORKER_PROCESS]);
+                $this->retiredWorkerProcesses[$id] = $worker;
+                $this->bindRetiredWorkerProcess($id, $worker);
             }
+        }
+        if ($this->secondStopWave !== []) {
+            $this->secondStopWork?->markReady();
+        } else {
+            $this->heldStopProcesses = [];
+            $this->heldStopClients = [];
         }
     }
 
@@ -1400,11 +2007,11 @@ abstract class WorkerServer extends AbstractServer implements
     private function firstStopWaveConnected(): bool
     {
         foreach ($this->clients as $client) {
-            if (!$client instanceof WorkerClient || $client->getWorkerIndex() === 0) {
+            if (!$client instanceof WorkerClient) {
                 continue;
             }
 
-            if (!isset($this->secondStopWave[$this->buildWorkerKey($client->isMonopolistic(), $client->getWorkerIndex())])) {
+            if (!in_array($client, $this->heldStopClients, true)) {
                 return true;
             }
         }
@@ -1421,12 +2028,8 @@ abstract class WorkerServer extends AbstractServer implements
     private function heldAgentsAwaitStopReport(): bool
     {
         foreach ($this->secondStopWave as $key => $agentIds) {
-            $worker = $this->parseWorkerKey($key);
-            $client = $this->findWorkerClientById($this->agentManager->calculateWorkerId(
-                $worker[WorkerConstants::FIELD_WORKER_INDEX],
-                $worker[WorkerConstants::FIELD_WORKER_TYPE] === WorkerConstants::TYPE_MONOPOLISTIC,
-            ));
-            if ($client === null) {
+            $client = $this->heldStopClients[$key] ?? null;
+            if ($client === null || !in_array($client, $this->clients, true)) {
                 continue;
             }
 
@@ -1554,25 +2157,32 @@ abstract class WorkerServer extends AbstractServer implements
         // Keep the start out of the roster until that report (or the link's departure). Once
         // recorded, only the advance pass ends this wait: it reports a gate's quiet refusal.
         $awaiting = $this->agentsAwaitingStopReport[$agentId] ?? null;
-        $awaitedWorkerId = $awaiting?->awaitedWorkerId;
-        if ($awaitedWorkerId === null) {
+        $awaitedWorker = $awaiting?->awaitedWorker;
+        if ($awaitedWorker === null) {
             foreach ($this->clients as $client) {
                 if ($client instanceof WorkerClient && $client->awaitsStopReport($agentId)) {
-                    $awaitedWorkerId = $client->getWorkerId();
+                    $awaitedWorker = $client;
                     break;
                 }
             }
         }
 
-        if ($awaitedWorkerId !== null) {
-            $this->agentsAwaitingStopReport[$agentId] = new AwaitingStopReportStart(
+        if ($awaitedWorker !== null) {
+            $next = new AwaitingStopReportStart(
                 $agentId,
                 $agentType,
                 $agentIndex,
                 $placedByLeader || ($awaiting?->placedByLeader ?? false),
                 $awaiting?->preferredWorkerId ?? $preferredWorkerId,
-                $awaitedWorkerId,
+                $awaitedWorker->getWorkerId(),
+                $awaitedWorker,
             );
+            $this->agentsAwaitingStopReport[$agentId] = $next;
+            $this->stopReportWaiters[spl_object_id($awaitedWorker)][$agentId] = $next;
+            if (isset($this->stopReportPending[$agentId])) {
+                $this->stopReportPending[$agentId] = $next;
+            }
+            $this->agentHoldWake?->__invoke($agentId);
 
             return;
         }
@@ -1688,11 +2298,13 @@ abstract class WorkerServer extends AbstractServer implements
 
         // Link agent daemon to selected worker
         $agentDaemon->setWorkerClient($workerClient);
+        Hilos::$cluster?->protectedModeEntryGate()?->noteRosterChanged();
 
         // Send agent_start with live keys from this node's sockets and the cluster index:
         // the agent coming up may strike rows left by tabs that closed while it was down,
         // but must keep rows for browsers attached to another master (HIL-664, HIL-1304).
         $workerClient->sendAgentStart($agentType, $agentIndex, $this->liveConnectionRoster?->liveAcceptKeys() ?? []);
+        $this->agentHoldWake?->__invoke($agentId);
     }
 
     /**
@@ -1821,14 +2433,65 @@ abstract class WorkerServer extends AbstractServer implements
         bool $placedByLeader,
         bool $requiresMonopolistic,
     ): void {
+        $type = $this->workerTypeName($requiresMonopolistic);
+        $this->workerWaitCounts[$type]++;
+        $this->workerWaitPendingCounts[$type]++;
         $this->agentsAwaitingWorker[$agentId] = new AwaitingWorkerAgent(
             $agentId,
             $agentType,
             $agentIndex,
             $placedByLeader,
-            microtime(true) + self::WORKER_CONNECT_WAIT_SECONDS,
+            hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND + self::WORKER_CONNECT_WAIT_SECONDS,
             $requiresMonopolistic,
         );
+        $this->workerWaitPending[$agentId] = $this->agentsAwaitingWorker[$agentId];
+        $this->workerWaitWork?->markReady();
+        $this->agentHoldWake?->__invoke($agentId);
+        Hilos::$cluster?->protectedModeEntryGate()?->noteRosterChanged();
+    }
+
+    /** The insertion order is also deadline order: a repeated ask never replaces its wait. */
+    private function armWorkerWait(): void
+    {
+        $head = reset($this->agentsAwaitingWorker);
+        $this->workerWaitTimer?->armAt($this->queuesStopping || $head === false ? null : $head->deadline);
+        if ($this->workerWaitPending === []) {
+            $this->workerWaitWork?->cancel();
+        }
+    }
+
+    /**
+     * @param string $agentId Wait whose exact queued probe must also be canceled
+     */
+    private function removeWorkerWait(string $agentId): void
+    {
+        $type = $this->workerTypeName($this->agentsAwaitingWorker[$agentId]->requiresMonopolistic);
+        $this->workerWaitCounts[$type]--;
+        if (isset($this->workerWaitPending[$agentId])) {
+            $this->workerWaitPendingCounts[$type]--;
+        }
+        unset($this->agentsAwaitingWorker[$agentId], $this->workerWaitPending[$agentId]);
+        $this->workerWaitWork?->markReady();
+        Hilos::$cluster?->protectedModeEntryGate()?->noteRosterChanged();
+    }
+
+    /**
+     * @param string $agentId Start whose blocked index and released probe must also be canceled
+     */
+    private function removeStopReportWait(string $agentId): void
+    {
+        $awaiting = $this->agentsAwaitingStopReport[$agentId] ?? null;
+        if ($awaiting !== null) {
+            $id = spl_object_id($awaiting->awaitedWorker);
+            unset($this->stopReportWaiters[$id][$agentId]);
+            if ($this->stopReportWaiters[$id] === []) {
+                unset($this->stopReportWaiters[$id]);
+            }
+        }
+        unset($this->agentsAwaitingStopReport[$agentId], $this->stopReportPending[$agentId]);
+        if ($this->stopReportPending === []) {
+            $this->stopReportWork?->cancel();
+        }
     }
 
     /**
@@ -1841,54 +2504,56 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
-     * Seats the agents waiting for a worker of their type, and gives up the ones whose wait is over
-     * (HIL-998, HIL-1671).
+     * Takes at most one portion of FIFO probes released by a capacity or deadline fact.
+     * The ordinary start repeats all gates and selection; blocked waits do not self-queue.
      *
-     * Asks the worker pick for the type each agent waits for, rather than listening for a
-     * registration: one question covers a worker that just registered and one an agent just left.
-     * The pick admits a monopolistic worker only with no agent on it, so one worker takes one
-     * monopolistic agent and the next one in line finds none, while a regular worker takes every
-     * regular agent waiting, spread by the pick's ordinary balance. Waiting agents are taken in the
-     * order they asked.
-     *
-     * The wait ends on {@see self::WORKER_CONNECT_WAIT_SECONDS} whatever became of the worker: one
-     * that died before it registered is not ordered again from here, and the regular pool replaces
-     * its dead on its own pace in {@see ensureMinWorkers()}.
-     *
-     * Every failure is one agent's and is contained here, the way the roster walk beside it
-     * contains its own: this runs on the master's every pass.
-     *
-     * Protected rather than private so a pass can be taken without the rest of {@see onTick()},
-     * whose worker-process half needs a server built from a worker environment.
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When the next worker wait deadline cannot be armed
      */
     protected function advanceAgentsAwaitingWorker(): void
     {
-        if ($this->agentsAwaitingWorker === []) {
-            return;
+        // Isolated legacy fixtures may explicitly request a pass; production is bound to the loop.
+        if ($this->workerWaitWork === null) {
+            $this->releaseWorkerWaitProbes();
         }
-
-        $now = microtime(true);
-        foreach ($this->agentsAwaitingWorker as $agentId => $awaiting) {
-            // The walk is over the queue as the pass found it: a seat earlier in the pass runs the
-            // ordinary start, and a wait it ended is not to be seated or refused a second time
-            if (!isset($this->agentsAwaitingWorker[$agentId])) {
-                continue;
+        $now = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        $remaining = self::WORKER_WAITS_PER_PORTION;
+        try {
+            while ($remaining-- > 0 && $this->workerWaitPending !== []) {
+                $agentId = array_key_first($this->workerWaitPending);
+                $awaiting = $this->workerWaitPending[$agentId];
+                unset($this->workerWaitPending[$agentId]);
+                $this->workerWaitPendingCounts[$this->workerTypeName($awaiting->requiresMonopolistic)]--;
+                if (($this->agentsAwaitingWorker[$agentId] ?? null) !== $awaiting) {
+                    continue;
+                }
+                if ($this->queuesStopping) {
+                    $this->stopAgent($awaiting->agentType, $awaiting->agentIndex);
+                } elseif ($this->selectWorkerForAgent($awaiting->requiresMonopolistic) !== null) {
+                    $this->removeWorkerWait($agentId);
+                    $this->seatAwaitingAgent($awaiting);
+                } elseif ($awaiting->deadline <= $now) {
+                    $this->removeWorkerWait($agentId);
+                    $workerType = $this->workerTypeName($awaiting->requiresMonopolistic);
+                    Logger::error("Agent {$agentId} waited " . self::WORKER_CONNECT_WAIT_SECONDS
+                        . "s for a {$workerType} worker and did not get one");
+                    $this->refuseAwaitingAgent($agentId, new NoSuitableWorkerException($workerType, $awaiting->requiresMonopolistic));
+                }
             }
-
-            if ($this->selectWorkerForAgent($awaiting->requiresMonopolistic) !== null) {
-                unset($this->agentsAwaitingWorker[$agentId]);
-                $this->seatAwaitingAgent($awaiting);
-                continue;
+        } finally {
+            $head = reset($this->agentsAwaitingWorker);
+            if ($this->workerWaitPending !== [] && (
+                $this->queuesStopping
+                || ($head !== false && $head->deadline <= $now)
+                || ($this->workerWaitPendingCounts[WorkerConstants::TYPE_REGULAR] > 0 && $this->selectWorkerForAgent(false) !== null)
+                || ($this->workerWaitPendingCounts[WorkerConstants::TYPE_MONOPOLISTIC] > 0 && $this->selectWorkerForAgent(true) !== null)
+            )) {
+                $this->workerWaitWork?->markReady();
+            } else {
+                $this->workerWaitPending = [];
+                $this->workerWaitPendingCounts = [WorkerConstants::TYPE_REGULAR => 0, WorkerConstants::TYPE_MONOPOLISTIC => 0];
             }
-
-            if ($awaiting->deadline <= $now) {
-                unset($this->agentsAwaitingWorker[$agentId]);
-                $workerType = $this->workerTypeName($awaiting->requiresMonopolistic);
-                Logger::error("Agent {$agentId} waited " . self::WORKER_CONNECT_WAIT_SECONDS
-                    . "s for a {$workerType} worker and did not get one");
-                $this->refuseAwaitingAgent($agentId, new NoSuitableWorkerException($workerType, $awaiting->requiresMonopolistic));
-            }
+            $this->armWorkerWait();
         }
     }
 
@@ -1942,35 +2607,54 @@ abstract class WorkerServer extends AbstractServer implements
      */
     private function advanceAgentsAwaitingStopReport(): void
     {
-        foreach ($this->agentsAwaitingStopReport as $agentId => $awaiting) {
-            $client = $this->findWorkerClientById($awaiting->awaitedWorkerId);
-            if ($client !== null && $client->awaitsStopReport($agentId)) {
-                continue;
-            }
+        if ($this->stopReportWork === null) {
+            $this->stopReportPending = $this->agentsAwaitingStopReport;
+        }
+        $remaining = self::STOP_REPORT_WAITS_PER_PORTION;
+        try {
+            while ($remaining-- > 0 && $this->stopReportPending !== []) {
+                $agentId = array_key_first($this->stopReportPending);
+                $awaiting = $this->stopReportPending[$agentId];
+                unset($this->stopReportPending[$agentId]);
+                if (($this->agentsAwaitingStopReport[$agentId] ?? null) !== $awaiting) {
+                    continue;
+                }
+                if ($this->queuesStopping) {
+                    $this->stopAgent($awaiting->agentType, $awaiting->agentIndex);
+                    continue;
+                }
+                if (in_array($awaiting->awaitedWorker, $this->clients, true) && $awaiting->awaitedWorker->awaitsStopReport($agentId)) {
+                    continue;
+                }
 
-            unset($this->agentsAwaitingStopReport[$agentId]);
-            try {
-                $this->startAgentInternal(
-                    $awaiting->agentType,
-                    $awaiting->agentIndex,
-                    $awaiting->placedByLeader,
-                    $awaiting->preferredWorkerId,
-                );
-            } catch (Throwable $failure) {
-                Logger::error("Agent {$agentId} could not start after its earlier stop: {$failure->getMessage()}");
-                $this->refuseAwaitingAgent($agentId, $failure);
+                $this->removeStopReportWait($agentId);
+                try {
+                    $this->startAgentInternal(
+                        $awaiting->agentType,
+                        $awaiting->agentIndex,
+                        $awaiting->placedByLeader,
+                        $awaiting->preferredWorkerId,
+                    );
+                } catch (Throwable $failure) {
+                    Logger::error("Agent {$agentId} could not start after its earlier stop: {$failure->getMessage()}");
+                    $this->refuseAwaitingAgent($agentId, $failure);
 
-                continue;
-            }
+                    continue;
+                }
 
-            if ($this->isAgentAwaitingStopReport($agentId) || $this->isAgentAwaitingWorker($agentId)) {
-                continue;
+                if ($this->isAgentAwaitingStopReport($agentId) || $this->isAgentAwaitingWorker($agentId)) {
+                    continue;
+                }
+                if ($this->agentManager->getAgent($agentId)?->hasWorkerClient() !== true) {
+                    $this->reportWaitEndedWithoutStart(
+                        $agentId,
+                        'a gate refused the start once its earlier stop was reported',
+                    );
+                }
             }
-            if ($this->agentManager->getAgent($agentId)?->hasWorkerClient() !== true) {
-                $this->reportWaitEndedWithoutStart(
-                    $agentId,
-                    'a gate refused the start once its earlier stop was reported',
-                );
+        } finally {
+            if ($this->stopReportPending !== []) {
+                $this->stopReportWork?->markReady();
             }
         }
     }
@@ -2012,6 +2696,7 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * @param string $agentId Agent whose wait ended without a start
      * @param string $reason Why it will not start, as the master reports it on
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function reportWaitEndedWithoutStart(string $agentId, string $reason): void
     {
@@ -2174,7 +2859,7 @@ abstract class WorkerServer extends AbstractServer implements
 
         // Collect suitable worker candidates
         foreach ($this->clients as $client) {
-            if (!$client instanceof WorkerClient) {
+            if (!$client instanceof WorkerClient || !$client->isRegistered() || $client->shouldClose()) {
                 continue;
             }
 
@@ -2347,6 +3032,7 @@ abstract class WorkerServer extends AbstractServer implements
                 ?? throw new WorkerClientNotFoundException($agentId, $workerInfo->workerIndex, $workerInfo->isMonopolistic);
 
             $agentDaemon->setWorkerClient($workerClient);
+            Hilos::$cluster?->protectedModeEntryGate()?->noteRosterChanged();
         }
 
         if ($this->uploadMemoryPoolSink !== null && $messageDto->signal->data instanceof WebSocketFrameBinarySignalDTO) {
@@ -2402,20 +3088,21 @@ abstract class WorkerServer extends AbstractServer implements
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     protected function stopAgent(string $agentType, ?string $agentIndex = null): void
     {
         $agentId = $this->buildAgentId($agentType, $agentIndex);
 
         if (isset($this->agentsAwaitingStopReport[$agentId])) {
-            unset($this->agentsAwaitingStopReport[$agentId]);
+            $this->removeStopReportWait($agentId);
             $this->reportWaitEndedWithoutStart($agentId, 'it was stopped while waiting for its earlier stop report');
 
             return;
         }
 
         if (isset($this->agentsAwaitingWorker[$agentId])) {
-            unset($this->agentsAwaitingWorker[$agentId]);
+            $this->removeWorkerWait($agentId);
             $this->reportWaitEndedWithoutStart($agentId, 'it was stopped while waiting for its worker to connect');
 
             return;
@@ -2569,7 +3256,7 @@ abstract class WorkerServer extends AbstractServer implements
      * protected-mode freeze ({@see ProtectedModeAgentFreezer}).
      *
      * Snapshots this node's agent roster exactly like {@see onLostSingletonHost()} and queues it;
-     * the stops themselves are taken one per master pass by {@see advanceProtectedModeRoster()},
+     * bounded preparation and then one stop per native portion run through {@see advanceProtectedModeRoster()},
      * and the switch hears {@see ProtectedModeSwitch::onRosterStopped()} when the last one is.
      * Walking the whole roster inside this call used to hold the master's loop for as long as the
      * roster was long, and every client of the node waited on it (HIL-1012). The initiator agent is
@@ -2579,50 +3266,73 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * @param string $initiatorAgentType Initiator agent type left running
      * @param ?string $initiatorAgentIndex Initiator agent index, or null for a singleton initiator
-     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
     public function stopAgentsForProtectedMode(string $initiatorAgentType, ?string $initiatorAgentIndex): void
     {
-        $initiatorAgentId = $this->buildAgentId($initiatorAgentType, $initiatorAgentIndex);
-
-        // A stop over an unfinished lift inherits what that lift had not asked for yet. Those agents
-        // are on no roster - their start was never sent - so the snapshot below cannot see them, and
-        // without this line nothing would ever ask for them again. A changed initiator can also
-        // require another stop before any lift; retain that earlier walk's remembered agents too.
+        ++$this->protectedModeRosterEpoch;
+        $this->protectedModeRosterWork?->cancel();
         $this->protectedModeStoppedAgents = [...$this->protectedModeStoppedAgents, ...($this->protectedModeResumeQueue ?? [])];
         $this->protectedModeResumeQueue = null;
+        $this->protectedModeStopQueue = [];
+        $this->protectedModeStopInitiator = $this->buildAgentId($initiatorAgentType, $initiatorAgentIndex);
+        // Capture once, before any external wait-removal hook can change the roster.
+        $this->protectedModeStopPreparation = self::protectedModeStopCandidates(
+            $this->agentsAwaitingWorker,
+            $this->agentManager->getAgents(),
+        );
+        $this->protectedModeWalkPasses = 0;
+        $this->protectedModeWalkAgents = 0;
+        $this->protectedModeRosterWork?->markReady();
+        $this->noteProtectedModeDiagnosticsChanged();
+    }
 
-        // An agent waiting for a worker to connect has no worker to be stopped on: it leaves the
-        // wait, and its record goes with it. It is not remembered for the lift - it never ran here -
-        // and comes up the ordinary way the next time it is addressed (HIL-998, HIL-1671).
-        foreach (array_keys($this->agentsAwaitingWorker) as $agentId) {
+    /**
+     * @param array<string, AwaitingWorkerAgent> $waits Original waits, retaining exact incarnations
+     * @param array<string, AgentDaemonInterface> $agents Original roster, excluding later arrivals
+     * @return Generator<string, AwaitingWorkerAgent|AgentDaemonInterface> Finite request preparation
+     */
+    private static function protectedModeStopCandidates(array $waits, array $agents): Generator
+    {
+        yield from $waits;
+        yield from $agents;
+    }
+
+    /**
+     * Examines a bounded prefix before the first stop. Captured arrays retain their ordinary
+     * PHP copy-on-write cost; this bounds filtering and external wait outcomes, not array copying.
+     *
+     * @param string $initiatorAgentId Agent spared by this request
+     * @param int $epoch Exact request generation, checked after each external wait outcome
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
+     */
+    private function prepareProtectedModeStop(string $initiatorAgentId, int $epoch): void
+    {
+        $candidates = $this->protectedModeStopPreparation;
+        for ($examined = 0; $examined < self::PROTECTED_MODE_PREPARATION_PER_PORTION && $candidates?->valid(); $examined++) {
+            $agentId = $candidates->key();
+            $candidate = $candidates->current();
+            $candidates->next();
             if ($agentId === $initiatorAgentId
                 || in_array($this->parseAgentId($agentId)->type, self::PROTECTED_MODE_PRESERVED_AGENT_TYPES, true)) {
                 continue;
             }
-
-            unset($this->agentsAwaitingWorker[$agentId]);
-            $this->reportWaitEndedWithoutStart($agentId, 'protected mode holds the node');
-            Logger::info("Worker wait: agent {$agentId} left its wait for a worker, protected mode holds the node");
-        }
-
-        $this->protectedModeStopQueue = [];
-        foreach (array_keys($this->agentManager->getAgents()) as $agentId) {
-            if ($agentId === $initiatorAgentId) {
-                continue;
+            if ($candidate instanceof AwaitingWorkerAgent) {
+                if (($this->agentsAwaitingWorker[$agentId] ?? null) === $candidate) {
+                    $this->removeWorkerWait($agentId);
+                    $this->reportWaitEndedWithoutStart($agentId, 'protected mode holds the node');
+                    Logger::info("Worker wait: agent {$agentId} left its wait for a worker, protected mode holds the node");
+                }
+            } elseif ($this->agentManager->hasAgent($agentId) && $this->agentManager->getAgent($agentId) === $candidate) {
+                $this->protectedModeStopQueue[$agentId] = $candidate;
             }
-
-            if (in_array($this->parseAgentId($agentId)->type, self::PROTECTED_MODE_PRESERVED_AGENT_TYPES, true)) {
-                // The same narrow raw-mail and public-file exception as the start gate.
-                continue;
+            if ($this->protectedModeRosterEpoch !== $epoch) {
+                return;
             }
-
-            $this->protectedModeStopQueue[] = $agentId;
         }
-
-        $this->protectedModeStopInitiator = $initiatorAgentId;
-        $this->protectedModeWalkPasses = 0;
-        $this->protectedModeWalkAgents = 0;
+        if ($candidates !== null && !$candidates->valid()) {
+            $this->protectedModeStopPreparation = null;
+        }
     }
 
     /**
@@ -2771,9 +3481,11 @@ abstract class WorkerServer extends AbstractServer implements
      */
     public function resumeAgentsForProtectedMode(): void
     {
-        // A lift over an unfinished stop drops what that stop had not reached: those agents are
-        // still running and were never remembered, so there is nothing of theirs to bring back.
+        ++$this->protectedModeRosterEpoch;
+        $this->protectedModeRosterWork?->cancel();
+        // Entries not reached by a superseded stop are still running.
         $this->protectedModeStopQueue = [];
+        $this->protectedModeStopPreparation = null;
         $this->protectedModeStopInitiator = null;
 
         // A lift over an unfinished lift - the window opened and the mode lifted before the window's
@@ -2782,12 +3494,14 @@ abstract class WorkerServer extends AbstractServer implements
         $this->protectedModeStoppedAgents = [];
         $this->protectedModeWalkPasses = 0;
         $this->protectedModeWalkAgents = 0;
+        $this->protectedModeRosterWork?->markReady();
+        $this->noteProtectedModeDiagnosticsChanged();
     }
 
     /**
      * Writes this node's hold onto the freeze row when the tuple has changed.
      *
-     * Called from the master pass immediately after the roster walk. The row has to be mounted;
+     * Called by the dirty native duty after a source or roster fact. The row has to be mounted;
      * without it the four diagnostic fields stay null. The comparison is the row itself, so an
      * unchanged tuple never calls the action. The node id is this master's local id, and the
      * standalone id when the cluster facade is absent — the same rule as the cluster-node roster.
@@ -2832,26 +3546,40 @@ abstract class WorkerServer extends AbstractServer implements
     /**
      * Takes one step of the protected-mode roster walk in flight, if there is one.
      *
-     * One agent per master pass, and never the whole roster in one: at the master's loop period a
-     * roster of twenty costs a fifth of a second spread over passes, where one walk cost that and
-     * more inside a single pass that every client of the node stood behind (HIL-1012). A stop and a
-     * lift are never both in flight - each request drops the other's queue - so the order of the
-     * two branches decides nothing.
-     *
-     * Protected rather than private so a pass can be taken without the rest of {@see onTick()},
-     * whose worker-process half needs a server built from a worker environment.
+     * Preparation examines a finite bounded prefix, then each portion stops or replays one agent.
+     * A runnable tail joins the native FIFO again without waiting for another input or timer.
+     * A stop and a lift are never both in flight. External hooks may replace the epoch; the old
+     * portion must not finish or cancel its replacement.
      *
      * @throws RtActionsCollectionNameNullException When the switch a finished walk tells cannot name its row
      * @throws RtTruthSourceWriteNotAllowedException When that switch writes a row this master is not the truth source of
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws StatusComponentDeclarationException When the lift reads an invalid enabled Status catalog
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     protected function advanceProtectedModeRoster(): void
     {
-        if ($this->protectedModeStopInitiator !== null) {
-            $this->advanceProtectedModeStop($this->protectedModeStopInitiator);
-        } elseif ($this->protectedModeResumeQueue !== null) {
-            $this->advanceProtectedModeResume();
+        $this->protectedModeRosterWork?->cancel();
+        if ($this->protectedModeStopInitiator === null && $this->protectedModeResumeQueue === null) {
+            return;
+        }
+        $epoch = $this->protectedModeRosterEpoch;
+        try {
+            if ($this->protectedModeStopInitiator !== null) {
+                $this->prepareProtectedModeStop($this->protectedModeStopInitiator, $epoch);
+                if ($this->protectedModeRosterEpoch === $epoch && $this->protectedModeStopPreparation === null) {
+                    $this->advanceProtectedModeStop($this->protectedModeStopInitiator);
+                }
+            } elseif ($this->protectedModeResumeQueue !== null) {
+                $this->advanceProtectedModeResume();
+            }
+        } finally {
+            if ($this->protectedModeRosterEpoch === $epoch) {
+                $this->noteProtectedModeDiagnosticsChanged();
+                if ($this->protectedModeStopInitiator !== null || $this->protectedModeResumeQueue !== null) {
+                    $this->protectedModeRosterWork?->markReady();
+                }
+            }
         }
     }
 
@@ -2864,13 +3592,18 @@ abstract class WorkerServer extends AbstractServer implements
      * @param string $initiatorAgentId Initiator agent id the stop leaves running, for the log line
      * @throws RtActionsCollectionNameNullException When the switch told about the stopped roster cannot name its row
      * @throws RtTruthSourceWriteNotAllowedException When that switch writes a row this master is not the truth source of
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function advanceProtectedModeStop(string $initiatorAgentId): void
     {
+        $epoch = $this->protectedModeRosterEpoch;
         $this->protectedModeWalkPasses++;
 
-        $agentId = array_shift($this->protectedModeStopQueue);
-        if ($agentId !== null && $this->agentManager->hasAgent($agentId)) {
+        $agentId = array_key_first($this->protectedModeStopQueue);
+        $candidate = $agentId === null ? null : $this->protectedModeStopQueue[$agentId];
+        unset($this->protectedModeStopQueue[$agentId]);
+        if ($agentId !== null && $this->agentManager->hasAgent($agentId) && $this->agentManager->getAgent($agentId) === $candidate) {
             $parsed = $this->parseAgentId($agentId);
 
             // Read before the stop, not after: stopAgent() takes the agent off the roster, and with
@@ -2882,15 +3615,17 @@ abstract class WorkerServer extends AbstractServer implements
                     ? null
                     : $this->agentManager->calculateWorkerId($workerInfo->workerIndex, $workerInfo->isMonopolistic),
             );
-            $this->stopAgent($parsed->type, $parsed->index);
             $this->protectedModeWalkAgents++;
+            $this->stopAgent($parsed->type, $parsed->index);
         }
 
-        if ($this->protectedModeStopQueue !== []) {
+        if ($this->protectedModeRosterEpoch !== $epoch || $this->protectedModeStopQueue !== []) {
             return;
         }
 
         $this->protectedModeStopInitiator = null;
+        $this->protectedModeRosterWork?->cancel();
+        $this->noteProtectedModeDiagnosticsChanged();
 
         // Say the freeze took hold: a restore log otherwise shows the decision to freeze but
         // nothing about the roster it actually stopped on this node, nor how long that took.
@@ -2909,32 +3644,48 @@ abstract class WorkerServer extends AbstractServer implements
      */
     private function advanceProtectedModeResume(): void
     {
+        $epoch = $this->protectedModeRosterEpoch;
         $this->protectedModeWalkPasses++;
 
-        $frozen = array_shift($this->protectedModeResumeQueue);
+        $key = array_key_first($this->protectedModeResumeQueue);
+        $frozen = $key === null ? null : $this->protectedModeResumeQueue[$key];
+        unset($this->protectedModeResumeQueue[$key]);
         if ($frozen !== null) {
+            $this->protectedModeWalkAgents++;
             try {
                 $this->startAgentInternal($frozen->agent->type, $frozen->agent->index, true, $frozen->workerId);
             } catch (Throwable $e) {
                 $agentId = $this->buildAgentId($frozen->agent->type, $frozen->agent->index);
                 Logger::error("Protected mode: failed to resume agent {$agentId}: {$e->getMessage()}");
+            } finally {
+                Hilos::$cluster?->protectedModeEntryGate()?->noteRosterChanged();
+                $this->agentHoldWake?->__invoke($this->buildAgentId($frozen->agent->type, $frozen->agent->index));
             }
-            $this->protectedModeWalkAgents++;
         }
 
-        if ($this->protectedModeResumeQueue !== []) {
+        if ($this->protectedModeRosterEpoch !== $epoch || $this->protectedModeResumeQueue !== []) {
             return;
         }
 
         $this->protectedModeResumeQueue = null;
+        $this->protectedModeRosterWork?->cancel();
+        $this->noteProtectedModeDiagnosticsChanged();
+        Hilos::$cluster?->protectedModeEntryGate()?->noteRosterChanged();
+        $passes = $this->protectedModeWalkPasses;
+        $agents = $this->protectedModeWalkAgents;
+        $this->agentHoldWake?->__invoke(null);
+        if ($this->protectedModeRosterEpoch !== $epoch) {
+            return;
+        }
 
         Logger::info(
-            'Protected mode: brought back ' . $this->protectedModeWalkAgents . ' agent(s) over '
-            . $this->protectedModeWalkPasses . ' pass(es)',
+            'Protected mode: brought back ' . $agents . ' agent(s) over ' . $passes . ' pass(es)',
         );
 
         $this->onProtectedModeLifted();
-        Hilos::$cluster?->protectedMode()?->onRosterResumed();
+        if ($this->protectedModeRosterEpoch === $epoch) {
+            Hilos::$cluster?->protectedMode()?->onRosterResumed();
+        }
     }
 
     /**
@@ -3099,6 +3850,7 @@ abstract class WorkerServer extends AbstractServer implements
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     public function revokePlacement(string $agentType, ?string $agentIndex): void
     {
@@ -3129,7 +3881,7 @@ abstract class WorkerServer extends AbstractServer implements
      */
     public function isReadyToShutdown(): bool
     {
-        return $this->workers === [] && !$this->linkedWorkerConnectionOpen();
+        return $this->workers === [] && $this->retiredWorkerProcesses === [] && !$this->linkedWorkerConnectionOpen();
     }
 
     /**

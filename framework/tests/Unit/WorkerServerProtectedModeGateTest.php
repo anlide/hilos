@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\WorkerConstants;
+
 use Closure;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncDTO;
@@ -513,9 +515,13 @@ final class WorkerServerProtectedModeGateTest extends TestCase
             $waiting = [];
             foreach ([self::INITIATOR_TYPE, HilosAgentType::HILOS_MAIL, HilosAgentType::HILOS_STATUS, self::OTHER_TYPE] as $type) {
                 $manager->registerUnlinked($type, null);
-                $waiting[$type] = new AwaitingWorkerAgent($type, $type, null, false, microtime(true) + 10, false);
+                $waiting[$type] = new AwaitingWorkerAgent($type, $type, null, false, hrtime(true) / 1e9 + 10, false);
             }
             new ReflectionProperty(WorkerServer::class, 'agentsAwaitingWorker')->setValue($server, $waiting);
+            new ReflectionProperty(WorkerServer::class, 'workerWaitCounts')->setValue($server, [
+                WorkerConstants::TYPE_REGULAR => 4,
+                WorkerConstants::TYPE_MONOPOLISTIC => 0,
+            ]);
             $server->stopAgentsForProtectedMode(self::INITIATOR_TYPE, null);
             $this->passes($server, 4);
             self::assertSame([
@@ -768,7 +774,7 @@ final class FreezeGateTestRosterWorkerServer extends FreezeGateTestWorkerServer
     /** @param WorkerClient $worker Local worker receiving the real roster's requests */
     public function addWorker(WorkerClient $worker): void
     {
-        $this->clients[] = $worker;
+        $this->addClient($worker);
     }
 
     /** The test exercises only the replayed roster, without application bootstrap. */
@@ -789,6 +795,7 @@ final class FreezeGateTestRosterWorkerClient extends WorkerClient
     public function __construct()
     {
         $this->setWorkerIndex(1);
+        new ReflectionProperty(WorkerClient::class, 'isRegistered')->setValue($this, true);
     }
 
     /**

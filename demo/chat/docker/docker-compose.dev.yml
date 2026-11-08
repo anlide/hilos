@@ -15,7 +15,10 @@ name: hilos-chat-dev
 
 services:
   chat-dev:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../.env
         required: false
@@ -110,6 +113,8 @@ services:
   stand-gateway-dev:
     build:
       context: ../../../framework/docker/stand-gateway
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     container_name: chat-stand-gateway-dev
     # The gateway runs on the framework's own TLS server (HIL-921) and loads the
     # classes it needs from the framework itself, so there is still no composer here.
@@ -131,7 +136,10 @@ services:
           - stand-gateway
 
   chat-cli-dev:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../.env
         required: false
@@ -160,7 +168,10 @@ services:
       - hilos-demo-chat-dev-network
 
   chat-monitor-dev:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
     env_file:
       - path: ../.env
         required: false

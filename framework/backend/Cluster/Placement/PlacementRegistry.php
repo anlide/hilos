@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Placement;
 
+use Closure;
+
 /**
  * Leader-side soft-state map of hosted, waiting and explicitly canceled agents, keyed by id.
  *
@@ -27,6 +29,11 @@ final class PlacementRegistry
     /** Releases of live reservations, independent of revisions to failure diagnoses. */
     private int $capacityReleaseRevision = 0;
 
+    /** @param ?Closure(?string): void $changed Actual address change, null for a reset or released capacity */
+    public function __construct(private readonly ?Closure $changed = null)
+    {
+    }
+
     /**
      * Upserts a placement record, replacing any earlier record for the same agent.
      *
@@ -43,12 +50,17 @@ final class PlacementRegistry
         if ($old !== null && $old->sameAs($record)) {
             return;
         }
-        if ($old !== null && $old->nodeId !== null && $old->state->hostsAgent()
-            && (!$record->state->hostsAgent() || $record->nodeId !== $old->nodeId)) {
+        $capacityReleased = $old !== null && $old->nodeId !== null && $old->state->hostsAgent()
+            && (!$record->state->hostsAgent() || $record->nodeId !== $old->nodeId);
+        if ($capacityReleased) {
             $this->capacityReleaseRevision++;
         }
         $this->records[$id] = $record;
         $this->revision++;
+        ($this->changed)?->__invoke($id);
+        if ($capacityReleased) {
+            ($this->changed)?->__invoke(null);
+        }
     }
 
     /**
@@ -62,11 +74,16 @@ final class PlacementRegistry
             return;
         }
         $old = $this->records[$agentId];
-        if ($old->nodeId !== null && $old->state->hostsAgent()) {
+        $capacityReleased = $old->nodeId !== null && $old->state->hostsAgent();
+        if ($capacityReleased) {
             $this->capacityReleaseRevision++;
         }
         unset($this->records[$agentId]);
         $this->revision++;
+        ($this->changed)?->__invoke($agentId);
+        if ($capacityReleased) {
+            ($this->changed)?->__invoke(null);
+        }
     }
 
     /**
@@ -106,6 +123,7 @@ final class PlacementRegistry
         }
         $this->records = [];
         $this->revision++;
+        ($this->changed)?->__invoke(null);
     }
 
     /** @return int Revision of this leader-side view */

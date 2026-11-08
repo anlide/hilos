@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\StandGateway;
 
+use Closure;
+
 /**
  * Store - the stand gateway's state, which has to survive between requests.
  *
@@ -44,6 +46,11 @@ final class Store
         'answers' => [],
         'modelRequests' => [],
     ];
+
+    /** @var array<string, array<string, array<int, Closure(): void>>> Process-local wait handles, never stored rows */
+    private static array $releaseSubscribers = [];
+
+    private static int $nextReleaseSubscriber = 0;
 
     /**
      * Declares whether a number can be reached on Telegram.
@@ -148,14 +155,43 @@ final class Store
             $state['releases'][$path][$key] = ($state['releases'][$path][$key] ?? 0) + 1;
 
             return $state;
+        }, static function () use ($path, $key): void {
+            foreach (self::$releaseSubscribers[$path][$key] ?? [] as $wake) {
+                $wake();
+            }
         });
+    }
+
+    /**
+     * Subscribes to successful mutations of one pair, without consuming its persisted tokens.
+     * The callback only records readiness; clients unsubscribe before detach or after release.
+     *
+     * @param string $path Provider route of the waiting answer
+     * @param string $key Key of the waiting answer
+     * @param Closure(): void $wake Enqueue the existing client portion, without Store access
+     * @return Closure(): void Idempotent cancellation of this subscription
+     */
+    public static function subscribeRelease(string $path, string $key, Closure $wake): Closure
+    {
+        $id = ++self::$nextReleaseSubscriber;
+        self::$releaseSubscribers[$path][$key][$id] = $wake;
+
+        return static function () use ($path, $key, $id): void {
+            unset(self::$releaseSubscribers[$path][$key][$id]);
+            if ((self::$releaseSubscribers[$path][$key] ?? null) === []) {
+                unset(self::$releaseSubscribers[$path][$key]);
+            }
+            if ((self::$releaseSubscribers[$path] ?? null) === []) {
+                unset(self::$releaseSubscribers[$path]);
+            }
+        };
     }
 
     /**
      * Spends one release of a provider route and key, if there is one.
      *
      * A pair nothing was released for is answered off the shared lock and does not rewrite the
-     * file - that is every tick of a held answer until its release comes. A spent last release is
+     * file. A bound answer checks at arrival and after its pair's release mutation. A spent last release is
      * gone, and an emptied route is removed with it.
      *
      * @param string $path Provider route of the held answer
@@ -563,8 +599,9 @@ final class Store
      * Applies one change to the state under an exclusive lock.
      *
      * @param callable(array): array $change Change to apply to the decoded state
+     * @param ?Closure(): void $afterMutation Readiness notification after the file is unlocked and closed
      */
-    private static function mutate(callable $change): void
+    private static function mutate(callable $change, ?Closure $afterMutation = null): void
     {
         $handle = fopen(self::PATH, 'c+');
         if ($handle === false) {
@@ -584,5 +621,6 @@ final class Store
         fflush($handle);
         flock($handle, LOCK_UN);
         fclose($handle);
+        $afterMutation?->__invoke();
     }
 }

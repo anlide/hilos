@@ -46,15 +46,11 @@ RUN rm -f /usr/local/etc/php/conf.d/docker-php-ext-sockets.ini \
  && echo "extension=sockets" > /usr/local/etc/php/conf.d/20-sockets.ini
 
 # -----------------------------------------------------------
-# Install PECL "event" extension AFTER sockets
-# - Update PECL channel to avoid cached builds
-# - Force installation
-# - Ensure proper loading order (after sockets)
+# Install pinned, patched ext-event AFTER sockets from the shared build context.
 # -----------------------------------------------------------
-RUN pecl channel-update pecl.php.net \
- && yes "" | pecl install -o -f event-3.1.6 \
- && rm -f /usr/local/etc/php/conf.d/docker-php-ext-event.ini \
- && echo "extension=event" > /usr/local/etc/php/conf.d/30-event.ini
+COPY --from=hilos-event . /tmp/hilos-event/
+RUN sh /tmp/hilos-event/install.sh \
+ && rm -rf /tmp/hilos-event
 
 # -----------------------------------------------------------
 # Install Composer (copied from the official Composer image)

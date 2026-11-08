@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Core;
 
+use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Process;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -42,17 +43,27 @@ final class ProcessTest extends TestCase
     #[DataProvider('observationPaths')]
     public function testCapturesExitCodeWithoutTerminatingSignal(bool $observe): void
     {
-        $process = new Process('sh', ['-c', 'exit 3']);
+        $process = new Process('sh', ['-c', 'printf final-out; printf final-err >&2; exit 3']);
+        $loop = new EventLoop();
+        try {
+            $process->attachEventLoop($loop, $process->tick(...));
+            $status = $this->waitUntilStopped($process, $observe);
 
-        $status = $this->waitUntilStopped($process, $observe);
-
-        self::assertSame(3, $process->getExitCode());
-        self::assertNull($process->getTermSignal());
-        self::assertSame(3, $status[Process::STATUS_EXIT_CODE]);
-        self::assertFalse($process->isInFlight());
-        self::assertSame($status, $process->observe());
-        self::assertSame(3, $process->getExitCode());
-        self::assertNull($process->getTermSignal());
+            self::assertSame(3, $process->getExitCode());
+            self::assertNull($process->getTermSignal());
+            self::assertSame(3, $status[Process::STATUS_EXIT_CODE]);
+            self::assertSame('final-out', $process->getStdOut());
+            self::assertSame('final-err', $process->getStdErr());
+            self::assertFalse($process->isInFlight());
+            self::assertSame($status, $process->observe());
+            self::assertSame(3, $process->getExitCode());
+            self::assertNull($process->getTermSignal());
+            self::assertSame(0, $loop->registeredCount());
+            self::assertFalse($loop->hasReadyWork());
+        } finally {
+            $process->detachEventLoop();
+            $loop->close();
+        }
     }
 
     /** @return iterable<string, array{bool}> General tick and watchdog observation paths */
