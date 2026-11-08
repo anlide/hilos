@@ -7,7 +7,7 @@ namespace Hilos\Core\TruthSource;
 use Hilos\Hilos;
 
 /**
- * Config keys for one row of {@see Hilos::SHARED_DB_OWNERS} and {@see Hilos::SHARED_RT_OWNERS}.
+ * Config keys for one RT receipt in {@see Hilos::SHARED_RT_OWNERS}.
  *
  * A row is a receipt, not a permission: it says that two owners of one collection are known to
  * the project and names the leaf that will part them. The topology validator refuses a start over
@@ -15,8 +15,8 @@ use Hilos\Hilos;
  * cannot be written ahead of the collision, and cannot outlive it either.
  *
  * ```php
- * public const array SHARED_DB_OWNERS = [
- *     ProjectDbContext::orders => [
+ * public const array SHARED_RT_OWNERS = [
+ *     ProjectRtContext::orders => [
  *         SharedOwnersKey::OWNERS => [OrdersAgent::class, BillingAgent::class],
  *         SharedOwnersKey::DEBT => 'HIL-nnn',
  *     ],

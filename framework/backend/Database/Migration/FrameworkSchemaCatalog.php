@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Migration;
 
 use Hilos\AdminViewMode\AdminViewModeLatchTable;
+use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Feature\FeatureRegistry;
 use Hilos\Core\Feature\HilosFeature;
@@ -45,6 +46,7 @@ class FrameworkSchemaCatalog
     private const string LOCALE = 'locale';
     private const string FILE = 'file';
     private const string VERIFIER_CIRCLE = 'verifier_circle';
+    private const string PROBE_VALUE = 'probe_value';
 
     /** @var array<string, FrameworkSchemaUnit> Immutable definitions indexed for this catalog instance */
     private array $units = [];
@@ -93,6 +95,9 @@ class FrameworkSchemaCatalog
         $keys[self::SESSION] = true;
         if (Hilos::usesRuntimeOf($hilosClass)) {
             $keys[self::VERIFIER_CIRCLE] = true;
+        }
+        if (ClusterProbe::registersDbProbe($hilosClass)) {
+            $keys[self::PROBE_VALUE] = true;
         }
 
         $visited = [];
@@ -191,6 +196,7 @@ class FrameworkSchemaCatalog
             $this->tableUnit('language_name', 'hilos_language_name', [self::LANGUAGE, self::LOCALE]),
             $this->tableUnit('country_name', 'hilos_country_name', [self::COUNTRY, self::LANGUAGE, self::LOCALE]),
             $this->tableUnit('i18n_reflow', 'hilos_i18n_reflow'),
+            $this->tableUnit(self::PROBE_VALUE, 'hilos_probe_value'),
             $this->tableUnit(self::FILE, 'hilos_file', [self::USER]),
             $this->tableUnit('file_variant', 'hilos_file_variant', [self::FILE]),
             $this->tableUnit('user_photo', 'hilos_user_photo', [self::USER, self::FILE]),

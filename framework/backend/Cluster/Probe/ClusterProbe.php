@@ -146,6 +146,23 @@ final class ClusterProbe
     }
 
     /**
+     * Whether the facade registers a DB probe, independently of its registry key or environment.
+     *
+     * @param class-string<Hilos> $hilosClass Facade whose static agent declarations are inspected
+     * @return bool True when a registry row names the DB probe worker
+     */
+    public static function registersDbProbe(string $hilosClass): bool
+    {
+        foreach ($hilosClass::AGENTS as $registryEntry) {
+            if (AgentRegistry::workerClass($registryEntry) === DbProbeAgent::class) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Whether the agent class is the worker class of one of the probes.
      *
      * Asked by class and not by the registry key, because the key is the project's to write and

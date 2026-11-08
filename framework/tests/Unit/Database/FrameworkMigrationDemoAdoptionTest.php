@@ -227,6 +227,29 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($unit)->downPath)), $source->afterStubDownSha256);
                 $origins[] = $change;
             }
+            if ($index === 5) {
+                $unit = $schema->unit('probe_value');
+                $base = $project->root . '/059_framework_install_probe_value';
+                $up = FsPath::read($base . '.sql');
+                $down = FsPath::read($base . '_down.sql');
+                $install = $catalog->verifyPair($up, $down);
+                self::assertSame(FrameworkMigrationOrigin::INSTALL, $install->kind);
+                self::assertSame(['probe_value'], $install->units);
+                self::assertCount(1, $install->parts);
+                $source = $catalog->part($install->parts[0]->changeId, 'probe_value');
+                self::assertTrue($source->introducesUnit);
+                self::assertSame([], $source->requires);
+                self::assertSame([$source->toArray()], array_map(
+                    static fn (FrameworkMigrationPart $part): array => $part->toArray(),
+                    $install->parts,
+                ));
+                self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
+                self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
+                $origins[] = $install;
+            } else {
+                self::assertSame([], glob($project->root . '/*_framework_install_probe_value*.sql'));
+                self::assertNotContains('probe_value', array_column($schema->selectedUnits($project->facade), 'key'));
+            }
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);

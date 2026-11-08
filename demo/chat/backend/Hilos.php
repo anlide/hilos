@@ -221,6 +221,7 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\ChatTableContext;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
+use Demo\Chat\TruthSource\DbWriterTransitionCatalog;
 use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\AuthCodeAgentDaemon;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
@@ -357,6 +358,8 @@ final class Hilos extends HilosFacade
     protected const string ENV_CATALOG = ChatEnvCatalog::class;
 
     protected const string SETTINGS_CATALOG = SettingsCatalog::class;
+
+    protected const string DB_WRITER_TRANSITION_CATALOG = DbWriterTransitionCatalog::class;
 
     protected const string PAGE_CATALOG = PageCatalog::class;
 
@@ -728,6 +731,34 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::DAEMON => AuthCodeAgentDaemon::class,
             AgentRegistryKey::SCOPE => AgentScope::NODE,
         ],
+    ];
+
+    /** @var array<string, list<string>> Outstanding closed DB writer transitions. */
+    public const array SHARED_DB_OWNERS = [
+        HilosDbContext::accountDeletions => ['HIL-1952'],
+        HilosDbContext::dataExports => ['HIL-1952'],
+        ChatDbContext::eventAttachments => ['HIL-1952'],
+        ChatDbContext::eventMessages => ['HIL-1952', 'HIL-1999'],
+        ChatDbContext::eventUserRegistrations => ['HIL-1952'],
+        ChatDbContext::events => ['HIL-1952'],
+        HilosDbContext::identities => ['HIL-1952', 'HIL-1999'],
+        HilosDbContext::legalAcceptanceExports => ['HIL-1952'],
+        HilosDbContext::legalAcceptances => ['HIL-1899', 'HIL-1952'],
+        HilosDbContext::notificationDeliveries => ['HIL-1893', 'HIL-1902', 'HIL-1910', 'HIL-1952'],
+        HilosDbContext::notificationPreferences => ['HIL-1952'],
+        HilosDbContext::notifications => ['HIL-1952'],
+        HilosDbContext::passkeyCredentials => ['HIL-1952', 'HIL-1999'],
+        HilosDbContext::pushSubscriptions => ['HIL-1895', 'HIL-1905', 'HIL-1906', 'HIL-1952'],
+        HilosDbContext::secondFactorBackupCodes => ['HIL-1904', 'HIL-1952', 'HIL-1999'],
+        HilosDbContext::secondFactorResets => ['HIL-1952', 'HIL-1999'],
+        HilosDbContext::secondFactorSettings => ['HIL-1952', 'HIL-1999'],
+        HilosDbContext::secondFactorTrusts => ['HIL-1907', 'HIL-1908', 'HIL-1909', 'HIL-1952', 'HIL-1999'],
+        HilosDbContext::secondFactors => ['HIL-1903', 'HIL-1952', 'HIL-1999'],
+        HilosDbContext::stepUps => ['HIL-1952'],
+        HilosDbContext::userPhotos => ['HIL-1952'],
+        HilosDbContext::userRenames => ['HIL-1896', 'HIL-1897', 'HIL-1952'],
+        HilosDbContext::users => ['HIL-1898', 'HIL-1952', 'HIL-1999'],
+        HilosDbContext::verifications => ['HIL-1952'],
     ];
 
     public const array TABLES = [

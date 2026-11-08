@@ -2171,11 +2171,38 @@ final class PollsTopologyRegistryTest extends TestCase
     }
 
     /**
-     * No database ownership receipts remain since HIL-1411; any new receipt fails this test.
+     * The independent ceiling permits only prescribed DB transitions to retire; startup checks the exact vector.
      */
     public function testSharedOwnershipDebtDoesNotGrow(): void
     {
-        $this->assertSame([], Hilos::SHARED_DB_OWNERS);
+        $ceiling = [
+            'accountDeletions' => ['HIL-1952'],
+            'dataExports' => ['HIL-1952'],
+            'identities' => ['HIL-1952', 'HIL-1999'],
+            'legalAcceptanceExports' => ['HIL-1952'],
+            'legalAcceptances' => ['HIL-1899', 'HIL-1952'],
+            'notificationDeliveries' => ['HIL-1893', 'HIL-1902', 'HIL-1910', 'HIL-1952'],
+            'notificationPreferences' => ['HIL-1952'],
+            'notifications' => ['HIL-1952'],
+            'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],
+            'pushSubscriptions' => ['HIL-1895', 'HIL-1905', 'HIL-1906', 'HIL-1952'],
+            'secondFactorBackupCodes' => ['HIL-1904', 'HIL-1952', 'HIL-1999'],
+            'secondFactorResets' => ['HIL-1952', 'HIL-1999'],
+            'secondFactorSettings' => ['HIL-1952', 'HIL-1999'],
+            'secondFactorTrusts' => ['HIL-1907', 'HIL-1908', 'HIL-1909', 'HIL-1952', 'HIL-1999'],
+            'secondFactors' => ['HIL-1903', 'HIL-1952', 'HIL-1999'],
+            'stepUps' => ['HIL-1952'],
+            'userPhotos' => ['HIL-1952'],
+            'userRenames' => ['HIL-1896', 'HIL-1952'],
+            'users' => ['HIL-1898', 'HIL-1952', 'HIL-1999'],
+            'verifications' => ['HIL-1952'],
+        ];
+        foreach (Hilos::SHARED_DB_OWNERS as $collection => $pending) {
+            $this->assertArrayHasKey($collection, $ceiling);
+            $this->assertNotEmpty($pending);
+            $this->assertSame(array_values(array_intersect($ceiling[$collection], $pending)), $pending);
+        }
+        Hilos::validateTopology();
         $this->assertSame([], Hilos::SHARED_RT_OWNERS);
     }
 

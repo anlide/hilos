@@ -52,6 +52,7 @@ use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\TruthSource\Exception\ClaimedRowKeysMissingException;
 use Hilos\Core\TruthSource\Exception\ClaimedSetKeyMissingException;
+use Hilos\Core\TruthSource\DbWriterPartition;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
@@ -193,6 +194,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      *     reader interest already.
      */
     public const array OWNS_DB_SET = [];
+
+    /** SCAFFOLD: HIL-1893 may enable its channel/shard proof only after installing the common write guard. */
+    public const ?DbWriterPartition DB_WRITER_PARTITION = null;
 
     /**
      * @var array<string, list<TruthSourceOperation>> Runtime collections this agent owns NOT WHOLE

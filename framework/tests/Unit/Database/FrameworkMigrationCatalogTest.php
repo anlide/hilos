@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Database;
 
+use Hilos\Cluster\Probe\ClusterProbe;
+use Hilos\Cluster\Probe\DbProbeAgent;
+use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Feature\Definition\AnalyticsFeature;
 use Hilos\Core\Feature\Definition\ChangeLogFeature;
 use Hilos\Core\Feature\FeatureDefinition;
@@ -69,6 +73,38 @@ final class FrameworkMigrationCatalogTest extends TestCase
         $this->assertSame($envBefore, Hilos::$env);
         $this->assertSame($appBefore, Hilos::appClass());
         $this->assertSame([], Hilos::featuresOf(SchemaRuntimeHilos::class));
+    }
+
+    public function testProbeStorageDependsOnTheWorkerRegistrationWithoutInitializingTheFacade(): void
+    {
+        $runtimeBefore = Hilos::$rt;
+        $databaseBefore = Hilos::$db;
+        $envBefore = Hilos::$env;
+        $appBefore = Hilos::appClass();
+        $catalog = new FrameworkSchemaCatalog();
+
+        $this->assertTrue(ClusterProbe::registersDbProbe(SchemaDbProbeHilos::class));
+        $this->assertFalse(ClusterProbe::registersDbProbe(SchemaProbeKeyOnlyHilos::class));
+        $this->assertFalse(ClusterProbe::registersDbProbe(SchemaCoreHilos::class));
+        $this->assertSame(
+            ['migration', 'migration_claim', 'admin_view_mode_latch', 'database_marker', 'user', 'session', 'probe_value'],
+            array_column($catalog->selectedUnits(SchemaDbProbeHilos::class), 'key'),
+        );
+        $this->assertSame(
+            $catalog->selectedUnits(SchemaCoreHilos::class),
+            $catalog->selectedUnits(SchemaProbeKeyOnlyHilos::class),
+        );
+        $unit = $catalog->unit('probe_value');
+        $this->assertSame(['hilos_probe_value'], $unit->tables);
+        $this->assertSame([], $unit->dependencies);
+        $this->assertSame('create_hilos_probe_value.sql', basename($unit->upPath));
+        $this->assertSame('create_hilos_probe_value_down.sql', basename($unit->downPath));
+        $this->assertSame(DatabaseConnectionDefaults::PRIMARY_INDEX, $unit->connection);
+        $this->assertFalse($unit->bootstrapOwned);
+        $this->assertSame($runtimeBefore, Hilos::$rt);
+        $this->assertSame($databaseBefore, Hilos::$db);
+        $this->assertSame($envBefore, Hilos::$env);
+        $this->assertSame($appBefore, Hilos::appClass());
     }
 
     public function testSharedVerificationRequirementSelectsOneUnit(): void
@@ -427,6 +463,22 @@ final class SchemaRuntimeHilos extends SchemaCoreHilos
     }
 }
 
+/** DB probe under a project key, proving selection follows the worker class. */
+class SchemaDbProbeHilos extends SchemaCoreHilos
+{
+    public const array AGENTS = [
+        'project_db_probe' => [AgentRegistryKey::WORKER => DbProbeAgent::class],
+    ];
+}
+
+/** The canonical probe key alone does not select storage for another worker. */
+final class SchemaProbeKeyOnlyHilos extends SchemaCoreHilos
+{
+    public const array AGENTS = [
+        HilosAgentType::HILOS_PROBE_DB => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_FLEET],
+    ];
+}
+
 final class SchemaSettingsHilos extends SchemaCoreHilos
 {
     protected const array FEATURES = [HilosFeature::SETTINGS];
@@ -491,7 +543,7 @@ final class SchemaNoModerationHilos extends SchemaCoreHilos
     ];
 }
 
-final class SchemaAllFeaturesHilos extends SchemaCoreHilos
+final class SchemaAllFeaturesHilos extends SchemaDbProbeHilos
 {
     protected const array FEATURES = [
         HilosFeature::SETTINGS,

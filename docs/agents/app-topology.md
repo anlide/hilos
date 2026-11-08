@@ -32,14 +32,15 @@ table contexts when they can read the project registry.
   `protected-mode:open`, `test:protected-mode:open`, or `maintenance:disable`
   initiates protected mode and must be one cluster-wide instance: neither
   `NODE` scope nor `INDEXED` is allowed.
-- `Hilos::SHARED_DB_OWNERS` and `Hilos::SHARED_RT_OWNERS` record the collections
-  more than one registered owner still holds, keyed by collection: the owners
-  under `SharedOwnersKey::OWNERS` and the leaf that will part them under
-  `SharedOwnersKey::DEBT`. A receipt rather than a permission — startup refuses a
-  colliding pair no row covers, and refuses a row whose owners no longer collide,
-  so parting them for real takes the row away in the same commit. See
-  [architecture/truth-source.md](architecture/truth-source.md), *What The Start
-  Refuses*.
+- `Hilos::SHARED_DB_OWNERS` selects an exact closed DB writer state: each value
+  is a dense, unique, sorted, nonempty list of outstanding implementing HIL
+  keys for that collection. The catalog fixes its full creator/changing-class
+  vector, widths, operations and required partition proofs; remove the entry
+  when no leaf remains. This is not an owner/debt receipt. RT keeps a separate
+  shape: `Hilos::SHARED_RT_OWNERS` records classes under
+  `SharedOwnersKey::OWNERS` and the RT debt under `SharedOwnersKey::DEBT`.
+  See [architecture/truth-source.md](architecture/truth-source.md), *What The
+  Start Refuses*.
 - Each page class declares its page subscription owner in
   `PageClass::SUBSCRIPTION_AGENT_TYPE`. `Hilos::getPageRoutes()` computes the
   page-to-agent routing map from `Hilos::PAGES` and those page-level constants.

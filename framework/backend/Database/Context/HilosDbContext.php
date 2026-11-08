@@ -41,6 +41,7 @@ use Hilos\Database\View\Collection\Languages as DbCollectionLanguages;
 use Hilos\Database\View\Collection\LanguageNames as DbCollectionLanguageNames;
 use Hilos\Database\View\Collection\Locales as DbCollectionLocales;
 use Hilos\Database\View\Collection\I18nReflows as DbCollectionI18nReflows;
+use Hilos\Database\View\Collection\ProbeValues as DbCollectionProbeValues;
 use Hilos\Database\View\Collection\ModerationRules as DbCollectionModerationRules;
 use Hilos\Database\View\Collection\NotificationDeliveries as DbCollectionNotificationDeliveries;
 use Hilos\Database\View\Collection\NotificationPreferences as DbCollectionNotificationPreferences;
@@ -91,6 +92,7 @@ use Hilos\Database\Actions\Collection\LanguagesActions;
 use Hilos\Database\Actions\Collection\LanguageNamesActions;
 use Hilos\Database\Actions\Collection\LocalesActions;
 use Hilos\Database\Actions\Collection\I18nReflowsActions;
+use Hilos\Database\Actions\Collection\ProbeValuesActions;
 use Hilos\Database\Actions\Collection\ModerationRulesActions;
 use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
 use Hilos\Database\Actions\Collection\NotificationsActions;
@@ -117,6 +119,7 @@ use Hilos\Database\Actions\Item\ChangeLogReceiptActions;
 use Hilos\Database\Actions\Item\CountryActions;
 use Hilos\Database\Actions\Item\CountryNameActions;
 use Hilos\Database\Actions\Item\I18nReflowActions;
+use Hilos\Database\Actions\Item\ProbeValueActions;
 use Hilos\Database\Actions\Item\ModerationRuleActions;
 use Hilos\Database\Actions\Item\DataExportActions;
 use Hilos\Database\Actions\Item\LegalAcceptanceExportActions;
@@ -188,6 +191,7 @@ use Hilos\Database\Exception\InvalidMountedCollectionException;
  * @property-read DbCollectionCountryNames $countryNames
  * @property-read DbCollectionLocales $locales
  * @property-read DbCollectionI18nReflows $i18nReflows Fingerprint of the catalog last taken into the reference tables
+ * @property-read DbCollectionProbeValues $probeValues Synthetic cluster database probe values
  * @property-read DbCollectionModerationRules $moderationRules Administrators' own rules per moderation kind
  * @property-read DbCollectionChangeLogTables $changeLogTables
  * @property-read DbCollectionChangeLogFields $changeLogFields
@@ -288,6 +292,7 @@ abstract class HilosDbContext extends DbContext
     public const string locale = 'locale';
     public const string i18nReflows = 'i18nReflows';
     public const string i18nReflow = 'i18nReflow';
+    public const string probeValues = 'probeValues';
     public const string moderationRules = 'moderationRules';
 
     /**
@@ -589,6 +594,13 @@ abstract class HilosDbContext extends DbContext
             DbCollectionI18nReflows::class,
             I18nReflowsActions::class,
             I18nReflowActions::class,
+        );
+        $this->mountFramework(
+            self::probeValues,
+            Objects::LAZY_STRATEGY_NONE,
+            DbCollectionProbeValues::class,
+            ProbeValuesActions::class,
+            ProbeValueActions::class,
         );
         $this->mountFramework(
             self::moderationRules,

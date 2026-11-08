@@ -89,9 +89,12 @@ Every implementing leaf removes its obsolete foreign grant, comment, debt
 entry and markers in the commit that actually enables its move. Search by key,
 including wrapped markers. A new handler that no live caller uses is not that
 move. A shared right stays as long as the other terminal path needs it.
-The text census below is not the executable debt registry: its exact closed
-format and shrink check are HIL-1892's contract
-(not in the code yet — HIL-1892).
+The Writer Map below remains a text census, not an executable registry. The
+strict DB judge matches declarations to the closed states supplied by the
+transition catalog, while `SHARED_DB_OWNERS` selects each collection's exact
+state with its outstanding implementing leaves. The framework has an
+independent ceiling over allowed states, and project topology guards check
+specific permitted shrinks; see [truth-source.md](truth-source.md#what-the-start-refuses).
 
 ## Ordinary Transitions
 
@@ -103,7 +106,7 @@ and an executor's own working rows retain their legitimate writes.
 
 | Leaf | Current writer and operation | Agreed move |
 |---|---|---|
-| HIL-1892 | Topology compares complete operation sets only; partial changing-writer pairs pass. Some creator declarations also retain unused `Remove`, such as the chat users library's `BY_KIND` on events and registration details. | Refuse new second DB changing writers even when `Update` and `Remove` are split. Keep creator `Add` alone compatible, audit expanded declarations, and admit only a closed, shrinking list of named current debt (not in the code yet — HIL-1892). |
+| HIL-1892 | The DB topology judge compares every `Update`/`Remove` pair between distinct registered worker classes, even when operation sets are incomplete or widths differ; creator `Add` alone is compatible. Chat's users library now declares `Add` only for events and registration details. | The closed catalog admits exact states for current DB claims and their required partition proofs. `SHARED_DB_OWNERS` selects the outstanding implementing leaves; the independent framework ceiling and demo guards reject unapproved states and shrink only along named transitions. |
 | HIL-1893 | Each delivery channel claims collection-wide `Update`; dispatch computes a channel/shard address, but the claim does not prove row separation. | One channel/shard changes a delivery. Check foreign rows when the pool changes or the notification disappears, without a new DB width or `_setVia` change (not in the code yet — HIL-1893). |
 | HIL-1894 | Pending adoption and service duties depend on a registered channel agent; dispatch reads the enabled setting. | Keep the disabled channel's owner available for its journal, pending obligations, retention and deletion; close new sends. Disabling does not discard rows or introduce a shared cleaner (not in the code yet — HIL-1894). |
 | HIL-1895 | Notifications library `Update`: `markGone()` on the transport's report. | The transport reports a dead endpoint; its personal owner writes it (not in the code yet — HIL-1895). |
@@ -1018,8 +1021,8 @@ coordinator and the participants keep are outside these 24, below.
 | `verifications` | users library `Add`/`Update`/`Remove` (issue, spend, sweep; `deleteForUserOfType()` on a password change); holder `Remove` in the erasure (`deleteForIdentifiers()` on the current addresses, `deleteForUser()`) | users library | the users library stays the only owner — codes are outside the person's set (P-163) — and receives an obligation to erase by user id and by the saved current addresses. Runtime send attempts are not in this census | the erasure's `deleteForIdentifiers()` and `deleteForUser()` | the addresses are captured before the identities go, as `erasePerson()` does today, and travel in the obligation. Price: one obligation and one result at the library per erased account | No ordinary move remains. Library erasure by user id and saved addresses with result (not in the code yet — HIL-1944). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
 | `ChatDbContext::eventMessages` | `ChatAgent` `Add`/`Update`/`Remove` (`addMessage()` from the room page in its process, `deleteAll()`); chat holder `Update`/`Remove`, borrowed (`rePointAuthor()` in the merge, `deleteByAuthor()` in the erasure) | `ChatAgent` | `ChatAgent` itself moves the author or deletes the erased person's messages of every room in one transaction of its own, on the signal | `rePointAuthor()`, `deleteByAuthor()` | the attachments' file ids go to the files path after the commit. Price: one obligation and one result at `ChatAgent` per operation | No ordinary move remains. ChatAgent erasure in its one transaction with result (not in the code yet — HIL-1949). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). Project merge participant declaration (not in the code yet — HIL-1996). ChatAgent transfers authorship across all rooms in one transaction with result (not in the code yet — HIL-1997). Old merge writer retires at its live switch (not in the code yet — HIL-1999). |
 | `ChatDbContext::eventAttachments` | `ChatAgent` `Add`/`Update`/`Remove` (created with the message); chat holder `Remove`, borrowed (`deleteForMessages()`) | `ChatAgent` | `ChatAgent` deletes the DB links with the messages and hands the file ids to the current files path after the commit | `deleteForMessages()` | none beyond the messages' portion. Price: the file removal stays post-commit, with no new guarantee | No ordinary move remains. ChatAgent erasure in its one transaction with result (not in the code yet — HIL-1949). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
-| `ChatDbContext::events` | `ChatAgent` `Add`/`Update`/`Remove` (started, stopped, cleared, messages; `deleteAll()`, `deleteByIds()`); chat users library `Add`/`Remove` (inherited default; only creation is called) (`addUserRegistered()`, `addUserRenamed()` — a second creator the first census did not list, present at the base too); chat holder `Remove`, borrowed (`deleteByIds()` of message, registration and feed events) | `ChatAgent`; the chat users library for the registered line and the feed line | `ChatAgent` deletes the events of its messages, registrations and rename feed with their links; the chat users library's creation of feed lines stays creation alone and grows no edit; the personal rename journal is not written here | `deleteByIds()` in the erasure | the event ids are read off the journal before the deletion and the unlink is obtained from the person's agent. Price: the ordering with the rename journal, above | Creator declaration audit, including unused library Remove (not in the code yet — HIL-1892); journal link and unlink are the separate userRenames row above. ChatAgent erasure in its one transaction with result (not in the code yet — HIL-1949). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
-| `ChatDbContext::eventUserRegistrations` | `ChatAgent` `Add`/`Update`/`Remove` (history cleanup calls `Remove`); chat users library `Add`/`Remove` (inherited default; only creation is called) (created at registration); chat holder `Remove`, borrowed (`deleteByTarget()`) | the chat users library | `ChatAgent` deletes its registration events of the erased person | `deleteByTarget()` | none. Price: inside `ChatAgent`'s portion | Creator declaration audit, including unused library Remove (not in the code yet — HIL-1892). ChatAgent erasure in its one transaction with result (not in the code yet — HIL-1949). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
+| `ChatDbContext::events` | `ChatAgent` `Add`/`Update`/`Remove` (started, stopped, cleared, messages; `deleteAll()`, `deleteByIds()`); chat users library `Add` only (explicit declaration) (`addUserRegistered()`, `addUserRenamed()` — a second creator the first census did not list, present at the base too); chat holder `Remove`, borrowed (`deleteByIds()` of message, registration and feed events) | `ChatAgent`; the chat users library for the registered line and the feed line | `ChatAgent` deletes the events of its messages, registrations and rename feed with their links; the chat users library's creation of feed lines stays creation alone and grows no edit; the personal rename journal is not written here | `deleteByIds()` in the erasure | the event ids are read off the journal before the deletion and the unlink is obtained from the person's agent. Price: the ordering with the rename journal, above | The users library remains Add-only; journal link and unlink are the separate userRenames row above. ChatAgent erasure in its one transaction with result (not in the code yet — HIL-1949). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
+| `ChatDbContext::eventUserRegistrations` | `ChatAgent` `Add`/`Update`/`Remove` (history cleanup calls `Remove`); chat users library `Add` only (explicit declaration) (created at registration); chat holder `Remove`, borrowed (`deleteByTarget()`) | the chat users library | `ChatAgent` deletes its registration events of the erased person | `deleteByTarget()` | none. Price: inside `ChatAgent`'s portion | The users library remains Add-only. ChatAgent erasure in its one transaction with result (not in the code yet — HIL-1949). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
 
 **Outside the 24.** These are not among the "20 tables others own", and the
 protocol must not lose them at its boundary or when control of the person row
@@ -1042,11 +1045,12 @@ journal and the test-only writers (`UserTestSeedCommand`,
 `Hilos::OWNS_DB` under `TestOnlyCommand`) were not in it either; they write
 with the daemon down or in a test process and stand outside the protocol, and
 they are named so that the map is not read as complete without them. The
-fresh check also expands the declarations rather than inferring rights from
-calls: the notifications library's delivery `BY_KIND` is all three operations,
-while the chat users library's event claims include an unused `Remove` beside
-creation. Neither is silently described as mint-only. The ordinary transition
-table addresses those grants without changing executable declarations here.
+fresh check expands the declarations rather than inferring rights from
+calls: the notifications library's delivery `BY_KIND` is all three operations.
+The chat users library explicitly declares only `Add` for `events` and
+`eventUserRegistrations`; its unused `Remove` was removed. ChatAgent's history-
+cleanup claims and the holder's terminal grants remain as listed. The closed
+catalog records the exact remaining claims.
 Trigger-written journals and the scoped receipt lifecycle are outside this
 ordinary-owner protocol and remain governed by [truth-source.md](truth-source.md).
 
@@ -1314,7 +1318,8 @@ the piece whose failure it checks, not proven by this document.
 The research originally placed pieces 1 and 2 first, 3 and 4 beside them,
 and 5–7 after 1. The approved cut separates ordinary writes first, then erasure,
 then merge; use *Three Phases*, not that historical proposal, for execution.
-HIL-1892 owns the stricter DB judge and the closed executable debt list
-(not in the code yet — HIL-1892). Each actual move owns the removal of its
-grant, comment, debt and markers; HIL-1911/HIL-1912 verify behavior after the
-code leaves and do not inherit their marker cleanup.
+HIL-1892's strict DB judge and closed executable debt catalog are implemented.
+Its transition vertices cover changes to DB claims or partition proofs; each
+real consumer move removes its active key and passed states in the same commit.
+HIL-1911/HIL-1912 verify behavior after the code leaves and do not inherit
+another leaf's marker cleanup.

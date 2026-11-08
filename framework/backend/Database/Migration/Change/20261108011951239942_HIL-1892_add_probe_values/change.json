@@ -1,0 +1,15 @@
+{
+    "format": 1,
+    "id": "20261108011951239942_HIL-1892_add_probe_values",
+    "parts": [
+        {
+            "unit": "probe_value",
+            "introducesUnit": true,
+            "up": "create_hilos_probe_value.sql",
+            "down": "create_hilos_probe_value_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "16d00e42a5c5385233cd8a85b66dc6f6cb7647dc6bbb280a23e5693aac7f43f3",
+            "afterStubDownSha256": "0af9954d66ed106021dd4154016991313bffefdb0be972d12afc986198bee3d9"
+        }
+    ]
+}

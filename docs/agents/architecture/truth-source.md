@@ -54,11 +54,12 @@ Ownership Are One Fact*; what it replaces is in *The Form That Is Gone*.
 Today's ordinary overlaps and the sessions holder's account erasure and merge
 are a closed transition list, not permission to add another writer. The
 [Writer Map](account-operations.md#writer-map) names each current operation,
-creator, target writer and implementing leaf. The stricter DB judge will refuse
-new changing-writer pairs even with incomplete operation sets; its closed
-executable debt list and shrink checks belong to its own contract
-(not in the code yet — HIL-1892). The present complete-only comparison is
-spelled out under *What The Start Refuses* below.
+creator, target writer and implementing leaf. Before processes start,
+`TopologyValidator` compares the expanded declarations of registered worker
+classes and refuses every pair of distinct classes whose claims can change a DB
+row. The closed DB transition catalog admits only exact remaining states; its
+rules and limits are spelled out under *What The Start Refuses* below. RT's
+complete-owner comparison remains separate.
 
 Ordinary moves land first. The old erasure remains until its live cutover
 (not in the code yet — HIL-1952), and the old merge until its live cutover
@@ -194,15 +195,14 @@ For a database collection written externally, `READS_DB` expresses the same
 reader interest without an application owner; the change-log agent uses that
 declaration for the five trigger-written journal collections.
 
-The rule is sufficient and not complete, and says so rather than promise
-otherwise. A co-owner that may add rows as well holds no copy of the rows the
-other owner wrote either, and the absence of `Add` does not catch it. The
-`ClaimerProbeAgent` of the cluster stands holds `hilosProbeFleetStatuses` whole
-while every `FleetProbeAgent` holds its own row; neither reads another owner's
-rows in its start hook. Since HIL-1411 no demo carries a database shared-owner
-receipt: every `Hilos::SHARED_DB_OWNERS` is empty. No second form of borrowing
-exists until such a holder does; a third constant beside `OWNS_RT` was weighed
-and turned down, because the operations already say what borrowing is.
+The DB comparison is class-level and conservative: it sees registered worker
+classes and their declarations, not live instances or their keys. Two live
+instances of one class with the same key, and split brain between processes, are
+not detected by this startup check; the DB registry remains process-local and
+there are no cluster DB claim frames. The cluster stand's
+`ClaimerProbeAgent`/`FleetProbeAgent` split is an RT example: the former claims
+the runtime collection whole and the latter claims its own row. It is recorded
+with the RT owners/debt shape below and does not grant a DB exception.
 
 The declaration of ownership is a map, `OWNS_DB`, from a database collection key
 to the operations the owner may perform on its rows, written on the class beside
@@ -774,53 +774,83 @@ the master on every lazy load (owner's decision, 2026-08-27, on HIL-750).
 
 ## What The Start Refuses
 
-The topology validator reads the declarations off the classes before a single
-process is built, and refuses four contradictions there (HIL-899, HIL-1114).
+Before a single process is built, the topology validator reads registered
+worker declarations and checks their ownership (HIL-899, HIL-1114).
 
-**Current mechanism, for DB and RT:** the comparison considers only complete
-operation sets (`TruthSourceOperations::isComplete()`), not every changing
-writer pair. It refuses two owners holding one collection in full, where
-full means every operation over rows that overlap. A claim over the
-whole collection covers any rows, so a full owner beside a by-row or set owner
-of the same collection is that same refusal rather than a second rule, when both
-claims carry every operation. A set owner without `Add` beside the library that
-creates the rows is a declared shape and not a collision. Two by-row claims and
-a set-plus-row pair are not judged at all — which rows an instance holds, and
-whether a named row lies in the set, only the instance and database know.
+**DB comparison.** The validator deduplicates registered worker classes, even
+when one class has alias or shard registrations, and expands inherited whole,
+row and set declarations with their operations. A DB claim is changing when it
+allows `Update` or `Remove`; `Add`-only claims do not form a changing pair. For
+each collection it compares every pair of distinct changing classes, without
+requiring complete operation sets, intersecting operations or matching widths.
+Different classes' dynamic row and set keys are not proof of separation before
+their instances exist. The existing DB row/set write guards and the refusal of
+a separate read declaration for an already claimed collection remain in force:
+a claim already supplies its reader interest.
 
-Passing this comparison does not make a second DB changing writer lawful.
-In particular, `Update` at one writer and `Remove` at another overlap under
-the DB Core Rule even though neither claim is complete. Refusing such a new
-pair, while retaining only the named current debts, is the stricter DB judge
-(not in the code yet — HIL-1892). That leaf defines the executable closed list
-and its shrinking checks; this document defines no new declaration shape.
-RT's full-owner comparison and shared-owner receipts stay as they are.
+**Closed DB state selection.** `Hilos::DB_WRITER_TRANSITION_CATALOG` names the
+provider, exposed by `Hilos::getDbWriterTransitions()`. The framework defines
+its fixed transitions; chat extends them for its four history collections and
+`userRenames`. Definitions use actual registered workers: an absent optional
+role contributes no claim or debt, while a disabled feature or channel does
+not hide a still-registered claim. The provider reads metadata only; it needs no
+database initialization, SQL, I/O or cache, and it does not learn declarations
+from the claims it validates. It catalogs registered worker roles only;
+`JournalReceiptScope` and `Hilos::OWNS_DB`/test-command declarations are not
+registered worker claims in this catalog.
 
-The sessions holder's borrowed erasure and merge claims pass the current
-comparison. Their comments remain attached to the live paths described in
-[instance-owners.md](instance-owners.md#operations-over-many-instances).
-Removing the old erasure grants waits for HIL-1952's cutover
-(not in the code yet — HIL-1952); removing the old merge grants waits for
-HIL-1999's cutover (not in the code yet — HIL-1999). Each implementing leaf
-removes its obsolete grant, comment, debt entry and markers in that same
-commit; a still-used right is not removed on the arrival of preparation code.
+For DB only, `Hilos::SHARED_DB_OWNERS` maps a collection to a dense, unique,
+sorted, nonempty list of outstanding implementing HIL keys. This list selects
+one exact state in the closed catalog; it is not a free-form explanation, an
+owner/debt pair or the RT receipt shape. An empty list means the collection
+entry is removed. A state fixes the full vector of creator and changing
+classes, widths, operations and required partition proofs, together with its
+outstanding leaves. The validator rejects malformed, duplicate, noncanonical,
+unknown or stale entries and any pair not covered by the exact state, adding
+errors to the common accumulator that becomes `InvalidTopologyException`.
+Conflict diagnostics identify the collection, declarations with widths and
+operations, active leaves and the addressed remedy: hand the write to its owner
+or retire the prescribed transition. There is no allowance by record count,
+arbitrary operation subset or an extra neighbor beside a known pair.
 
-The width over a set brings a case that can be judged: two different classes
-holding sets of one table in full are refused as potential owners of the same
-set, or covered by the same `SHARED_DB_OWNERS` receipt of classes and debt as
-other shared owners. No moment compares their set keys. The topology check runs
-before the instances that carry those keys exist, and judges the pair of classes
-because one column cuts the table and both keys come from its one space. Moving
-the decision to runtime would require new database claim frames: the database
-ownership registry is local to each process, while only runtime ownership has a
-leader-side cluster claim registry that sees every agent's grants (HIL-696). The
-price is explicit: classes whose keys are known by the project never to coincide
-still need a receipt explaining why, while two instances of one class with the
-same key are not caught, just as two by-row claims are not caught.
+The catalog includes only leaves whose completion changes a collection's
+claims or partition proof. HIL-1894, HIL-1900 and HIL-1901 do not change those
+rights, so they are not vertices or active debts; their ordering remains with
+their own dependencies and tests. Independent transitions commute, and
+prerequisites connect only rights-changing leaves. When a real consumer
+switches, that commit removes its active key and the passed states and edges,
+and lowers the independent test ceiling. A shared right remains while any live
+path uses it; if the consumer moves without changing that grant, its own
+consumer test proves the move. A paid leaf cannot return through the catalog,
+and a future catalog state is not an active debt. The framework test suite has
+an independent ceiling over permitted states, and each demo's topology guard
+checks its specific allowed shrink rather than only a count. Single-writer
+collections such as `settings` and `probeValues` do not enter the catalog.
 
-The width brings refusals of the topology as well, judged a moment later than
-the four here, in `TopologyValidator::validateReferences()`, once the collections
-are mounted: a set claimed in a collection whose Entity declares
+**The notification partition seam.** `NotificationChannelShard` is the only
+DB partition proof. It is accepted only for a registered delivery-agent
+subclass with one unique channel descriptor and its
+`deliverSignalName`/`AGENT_SIGNALS` route. It proves separation between channel
+workers for `notificationDeliveries`, not between a channel and the library or
+sessions holder. Production `DB_WRITER_PARTITION` remains `null`; the shared
+channel/shard guard and its HIL-1893 enablement are still future work. No
+arbitrary callback or boolean can stand in for this proof.
+
+The sessions holder's borrowed erasure and merge claims remain in the catalog
+until their live cutovers. Their comments stay attached to the live paths
+described in [instance-owners.md](instance-owners.md#operations-over-many-instances).
+HIL-1952 removes erasure rights only at its switch and keeps a right still used
+by merge; HIL-1999 removes the remaining merge rights at its switch.
+Preparation alone does not retire a grant.
+
+**RT comparison.** RT keeps its existing complete-only comparison. Its
+`Hilos::SHARED_RT_OWNERS` entries still use `SharedOwnersKey::OWNERS` and
+`SharedOwnersKey::DEBT`, and RT readiness and claim synchronization are
+unchanged. They do not grant DB permission.
+
+The set width brings additional topology refusals in
+`TopologyValidator::validateReferences()`, once the collections are mounted: a
+set claimed in a collection whose Entity declares
 `Entity::SET_STANDALONE`, and one whose set tree climbs through a table that is
 not mounted or that the agent neither reads nor claims.
 See *A Claim Over A Set*.
@@ -829,16 +859,13 @@ A class that names one collection both in its reads (`readDbCollections()`,
 `READS_RT`) and in its claims: a claim is the reader interest already, so the
 second list says the same thing in a form that can drift away from it.
 
-A pair the project already lives with is written down instead of argued at every
-start. `Hilos::SHARED_DB_OWNERS` and `Hilos::SHARED_RT_OWNERS` name the owners
-of such a collection and, through `SharedOwnersKey::DEBT`, the leaf that will
-part them. The list is a debt under lock, and it is read in both directions: a
-colliding pair no row covers refuses the start, and a row whose owners no longer
-collide refuses it too, so parting them for real takes the receipt away in the
-same commit. What holds the length is the topology snapshot of each project — red
-on any addition, silent on a removal, because nothing should stand in the way of
-a debt getting smaller.
-
+A DB pair the project still carries must match one exact closed catalog state;
+its `SHARED_DB_OWNERS` value names the outstanding implementing leaves for
+that state. An entry with no remaining changing pair is stale, and a pair
+without a matching state refuses startup. `SHARED_RT_OWNERS` remains a separate
+receipt: its collection row names the colliding classes and RT debt through
+`SharedOwnersKey::OWNERS` and `SharedOwnersKey::DEBT`. The RT receipt is checked
+against its RT conflict and is removed when that conflict is gone.
 What it will not refuse is a collection without an owner. That check is
 statically unreachable while claims come from things that are not agents — a
 command, a bootstrap — and promising it would make a rule that lies about its

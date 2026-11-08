@@ -46,6 +46,8 @@ use Hilos\Core\Topology\AgentSignalRouteRegistry;
 use Hilos\Core\Topology\PageAgentIndexRouteRegistry;
 use Hilos\Core\Topology\PageSignalRouteRegistry;
 use Hilos\Core\Topology\TopologyValidator;
+use Hilos\Core\TruthSource\DbWriterTransitionCatalog;
+use Hilos\Core\TruthSource\DbWriterTransitionState;
 use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceOwner;
@@ -124,6 +126,9 @@ abstract class Hilos implements TruthSourceOwner
 
     /** @var class-string<CatalogProviderInterface> Settings catalog provider class. */
     protected const string SETTINGS_CATALOG = SettingsCatalogStub::class;
+
+    /** @var class-string<DbWriterTransitionCatalog> Closed DB transitions consumed by startup validation. */
+    protected const string DB_WRITER_TRANSITION_CATALOG = DbWriterTransitionCatalog::class;
 
     /**
      * Page catalog provider class: the project's own admin page identity.
@@ -362,27 +367,21 @@ abstract class Hilos implements TruthSourceOwner
     public const array AGENTS = [];
 
     /**
-     * Database collections more than one registered owner still holds, keyed by collection.
+     * Outstanding implementing leaves selecting an exact closed DB writer state per collection.
      *
-     * A receipt under lock rather than a permission: every row names the owners that collide and,
-     * through {@see SharedOwnersKey::DEBT}, the leaf that will part them. Startup refuses a pair
-     * no row covers - that refusal is what the list is for - and refuses a row whose owners no
-     * longer collide, so parting them for real takes the row away in the same commit.
+     * Lists are dense, unique, sorted and nonempty. Startup compares every changing and creator
+     * claim, including widths and operations, with the selected state from the transition provider.
+     * A completed separation removes its row; arbitrary owner pairs and the RT owners/debt form are refused.
      *
-     * The list lives in the project topology and not on an agent class: a framework agent may not
-     * name a project class, and what a project's topology holds is the project's own answer. The
-     * empty default is the answer of a project whose collections have one owner each.
-     *
-     * @var array<string, array{owners: list<class-string>, debt: string}>
+     * @var array<string, list<string>>
      */
     public const array SHARED_DB_OWNERS = [];
 
     /**
-     * Runtime collections more than one registered owner still holds, keyed by collection.
+     * Runtime collections whose complete owners still overlap, keyed by collection.
      *
-     * The runtime twin of {@see self::SHARED_DB_OWNERS}, read and judged the same way. Two
-     * constants rather than one because the two halves key their collections in separate spaces:
-     * one name may stand in both, meaning two different sets of rows.
+     * Each receipt names the colliding classes and their separation debt through SharedOwnersKey.
+     * RT retains the complete-operation comparison, independently of the stricter DB writer states.
      *
      * @var array<string, array{owners: list<class-string>, debt: string}>
      */
@@ -1141,6 +1140,16 @@ abstract class Hilos implements TruthSourceOwner
     public static function getAgentSignalRoutes(): array
     {
         return AgentSignalRouteRegistry::routes(static::AGENTS);
+    }
+
+    /**
+     * Exact DB writer states for startup validation, independent of the active application.
+     *
+     * @return array<string, list<DbWriterTransitionState>> Closed transitions for this facade's registered workers
+     */
+    public static function getDbWriterTransitions(): array
+    {
+        return static::createDbWriterTransitionCatalog()->all(static::class);
     }
 
     /**
@@ -1918,6 +1927,14 @@ abstract class Hilos implements TruthSourceOwner
     protected static function createEnv(): EnvAccessor
     {
         return new EnvAccessor(static::ENV_CATALOG);
+    }
+
+    /**
+     * @return DbWriterTransitionCatalog Provider of this project's closed DB writer transitions
+     */
+    protected static function createDbWriterTransitionCatalog(): DbWriterTransitionCatalog
+    {
+        return new (static::DB_WRITER_TRANSITION_CATALOG)();
     }
 
     /**

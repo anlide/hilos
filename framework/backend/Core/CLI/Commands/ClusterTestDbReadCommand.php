@@ -11,7 +11,7 @@ use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Environment\Exception\EnvException;
 
 /**
- * ClusterTestDbReadCommand - Read a settings row as one node holds it (HIL-712)
+ * ClusterTestDbReadCommand - Read a probe row as one node holds it (HIL-712)
  *
  * The reading half of the pair {@see ClusterTestDbWriteCommand} opens. A test-only driver
  * (extends {@see TestOnlyCommand} via {@see AbstractCommandChannelTestCommand}, so it refuses
@@ -47,7 +47,7 @@ class ClusterTestDbReadCommand extends AbstractCommandChannelTestCommand impleme
      */
     public function getDescription(): string
     {
-        return 'Read a settings row as this node holds it (test-only)';
+        return 'Read a probe row as this node holds it (test-only)';
     }
 
     /**
@@ -61,7 +61,7 @@ class ClusterTestDbReadCommand extends AbstractCommandChannelTestCommand impleme
 Command: test:cluster:db:read
 
 Description:
-  Ask this node's database probe for the settings row it holds under the given key.
+  Ask this node's database probe for the probe row it holds under the given key.
   The answer comes out of the node's own copy of the collection rather than out of a
   fresh query, so a value written on another node appears here only once the mesh has
   carried the fact and this node has re-read the row. Prints (none) as the value when
@@ -80,7 +80,7 @@ HELP;
      * Sends the read request and prints the value the node answered with.
      *
      * @param array<string, mixed> $options Parsed options (unused)
-     * @param list<string> $args Positional args; the settings key
+     * @param list<string> $args Positional args; the probe key
      * @return int Exit code (0 on success)
      * @throws CommandException When the command name is not registered as test-only
      */

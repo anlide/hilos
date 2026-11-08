@@ -4,6 +4,19 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Auth\Library\AbstractUsersLibraryAgent;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Topology\TopologyValidator;
+use Hilos\Core\TruthSource\DbWriterPartition;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
+use Hilos\Sms\Delivery\SmsDeliveryChannel;
+use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
+use Hilos\Notification\Delivery\AbstractDeliveryChannel;
+use Hilos\Notification\Delivery\DeliveryChannelRegistry;
+use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosPageConstants;
@@ -55,6 +68,7 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
@@ -2084,13 +2098,12 @@ final class TopologyValidatorTest extends TestCase
     public function testTwoFullOwnersOfOneDbCollectionAreRefused(): void
     {
         $this->assertTopologyErrors(
-            static function (): void {
-                TopologyUnrecordedSharedDbOwnersHilos::validateTopology();
-            },
+            static fn (): mixed => TopologyUnrecordedSharedDbOwnersHilos::validateTopology(),
             [
-                TopologyFullDbOwnerAgent::class . ' and ' . TopologySecondFullDbOwnerAgent::class
-                    . " both own db collection 'shared_users' in full",
-                'narrow the operations of one claim, or list the pair in SHARED_DB_OWNERS with the leaf that parts them',
+                'DB collection \'shared_users\'',
+                'TopologyFullDbOwnerAgent whole [add, update, remove]',
+                'TopologySecondFullDbOwnerAgent whole [add, update, remove]',
+                'hand the write to its owner / retire the prescribed transition',
             ],
         );
     }
@@ -2116,29 +2129,33 @@ final class TopologyValidatorTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    public function testACoOwnerShortOfAnOperationPasses(): void
+    public function testACoOwnerShortOfAnOperationIsRefused(): void
     {
-        TopologyNarrowDbCoOwnerHilos::validateTopology();
-
-        $this->addToAssertionCount(1);
+        $this->assertTopologyErrors(
+            static fn (): mixed => TopologyNarrowDbCoOwnerHilos::validateTopology(),
+            [
+                'DB collection \'shared_users\'',
+                'TopologyNarrowDbCoOwnerAgent whole [add, update]',
+            ],
+        );
     }
 
-    public function testARecordedPairOfFullOwnersPasses(): void
+    public function testARecordedPairOfFullOwnersIsRefused(): void
     {
-        TopologyRecordedSharedDbOwnersHilos::validateTopology();
-
-        $this->addToAssertionCount(1);
+        $this->assertTopologyErrors(
+            static fn (): mixed => TopologyRecordedSharedDbOwnersHilos::validateTopology(),
+            [
+                'owners/debt is RT-only',
+            ],
+        );
     }
 
     public function testARecordWhosePairNoLongerCollidesIsRefused(): void
     {
         $this->assertTopologyErrors(
-            static function (): void {
-                TopologyStaleSharedOwnersHilos::validateTopology();
-            },
+            static fn (): mixed => TopologyStaleSharedOwnersHilos::validateTopology(),
             [
-                "SHARED_DB_OWNERS['shared_users'] lists no pair that still conflicts;"
-                    . ' the claims were parted, so the record goes with them',
+                'owners/debt is RT-only',
             ],
         );
     }
@@ -2146,12 +2163,9 @@ final class TopologyValidatorTest extends TestCase
     public function testARecordNamingAnOwnerThatCollidesWithNobodyIsRefused(): void
     {
         $this->assertTopologyErrors(
-            static function (): void {
-                TopologyUninvolvedOwnerRecordHilos::validateTopology();
-            },
+            static fn (): mixed => TopologyUninvolvedOwnerRecordHilos::validateTopology(),
             [
-                "SHARED_DB_OWNERS['shared_users'] names " . TopologyOwningNothingAgent::class
-                    . ', which conflicts with nobody over that collection',
+                'owners/debt is RT-only',
             ],
         );
     }
@@ -2159,11 +2173,9 @@ final class TopologyValidatorTest extends TestCase
     public function testARecordNamingOneOwnerIsRefused(): void
     {
         $this->assertTopologyErrors(
-            static function (): void {
-                TopologyLoneOwnerRecordHilos::validateTopology();
-            },
+            static fn (): mixed => TopologyLoneOwnerRecordHilos::validateTopology(),
             [
-                "SHARED_DB_OWNERS['shared_users'] must name at least two distinct owner classes",
+                'owners/debt is RT-only',
             ],
         );
     }
@@ -2171,12 +2183,9 @@ final class TopologyValidatorTest extends TestCase
     public function testARecordNamingAnUnregisteredClassIsRefused(): void
     {
         $this->assertTopologyErrors(
-            static function (): void {
-                TopologyUnregisteredOwnerRecordHilos::validateTopology();
-            },
+            static fn (): mixed => TopologyUnregisteredOwnerRecordHilos::validateTopology(),
             [
-                "SHARED_DB_OWNERS['shared_users'] names " . TopologyOwningNothingAgent::class
-                    . ', which is not registered in AGENTS',
+                'owners/debt is RT-only',
             ],
         );
     }
@@ -2184,11 +2193,9 @@ final class TopologyValidatorTest extends TestCase
     public function testARecordWithoutADebtIsRefused(): void
     {
         $this->assertTopologyErrors(
-            static function (): void {
-                TopologyDebtlessRecordHilos::validateTopology();
-            },
+            static fn (): mixed => TopologyDebtlessRecordHilos::validateTopology(),
             [
-                "SHARED_DB_OWNERS['shared_users'] has no debt: name the leaf that will part these owners",
+                'owners/debt is RT-only',
             ],
         );
     }
@@ -2196,14 +2203,11 @@ final class TopologyValidatorTest extends TestCase
     public function testTwoClassesHoldingSetsOfOneDbCollectionInFullAreRefused(): void
     {
         $this->assertTopologyErrors(
-            static function (): void {
-                TopologyUnrecordedSharedSetOwnersHilos::validateTopology();
-            },
+            static fn (): mixed => TopologyUnrecordedSharedSetOwnersHilos::validateTopology(),
             [
-                TopologyFullSetOwnerAgent::class . ' and ' . TopologySecondFullSetOwnerAgent::class
-                    . " both own sets of db collection 'shared_users' in full: one column cuts the table,"
-                    . ' so they meet on every instance both answer for',
-                'narrow the operations of one claim, or list the pair in SHARED_DB_OWNERS with the leaf that parts them',
+                'DB collection \'shared_users\'',
+                'TopologyFullSetOwnerAgent set [add, update, remove]',
+                'TopologySecondFullSetOwnerAgent set [add, update, remove]',
             ],
         );
     }
@@ -2211,47 +2215,51 @@ final class TopologyValidatorTest extends TestCase
     public function testAFullOwnerAndAFullSetOwnerOfOneDbCollectionAreRefused(): void
     {
         $this->assertTopologyErrors(
-            static function (): void {
-                TopologyWholeAndSetOwnersHilos::validateTopology();
-            },
+            static fn (): mixed => TopologyWholeAndSetOwnersHilos::validateTopology(),
             [
-                TopologyFullDbOwnerAgent::class . " owns db collection 'shared_users' in full while "
-                    . TopologyFullSetOwnerAgent::class . ' owns a set of it',
-                'narrow the operations of one claim, or list the pair in SHARED_DB_OWNERS with the leaf that parts them',
+                'TopologyFullDbOwnerAgent whole [add, update, remove]',
+                'TopologyFullSetOwnerAgent set [add, update, remove]',
             ],
         );
     }
 
-    public function testASetOwnerShortOfAnOperationBesideAFullOwnerPasses(): void
+    public function testASetOwnerShortOfAnOperationBesideAFullOwnerIsRefused(): void
     {
-        TopologyBorrowedSetBesideFullOwnerHilos::validateTopology();
-
-        $this->addToAssertionCount(1);
+        $this->assertTopologyErrors(
+            static fn (): mixed => TopologyBorrowedSetBesideFullOwnerHilos::validateTopology(),
+            [
+                'TopologyBorrowedSetOwnerAgent set [update, remove]',
+            ],
+        );
     }
 
-    public function testASetOwnerAndARowOwnerOfOneDbCollectionPass(): void
+    public function testASetOwnerAndARowOwnerOfOneDbCollectionAreRefused(): void
     {
-        TopologySetAndRowOwnersHilos::validateTopology();
-
-        $this->addToAssertionCount(1);
+        $this->assertTopologyErrors(
+            static fn (): mixed => TopologySetAndRowOwnersHilos::validateTopology(),
+            [
+                'TopologyFullSetOwnerAgent set [add, update, remove]',
+                'TopologyDbRowOwnerAgent rows [add, update, remove]',
+            ],
+        );
     }
 
-    public function testARecordedPairOfFullSetOwnersPasses(): void
+    public function testARecordedPairOfFullSetOwnersIsRefused(): void
     {
-        TopologyRecordedSharedSetOwnersHilos::validateTopology();
-
-        $this->addToAssertionCount(1);
+        $this->assertTopologyErrors(
+            static fn (): mixed => TopologyRecordedSharedSetOwnersHilos::validateTopology(),
+            [
+                'owners/debt is RT-only',
+            ],
+        );
     }
 
     public function testARecordWhoseSetOwnersNoLongerCollideIsRefused(): void
     {
         $this->assertTopologyErrors(
-            static function (): void {
-                TopologyStaleSharedSetOwnersHilos::validateTopology();
-            },
+            static fn (): mixed => TopologyStaleSharedSetOwnersHilos::validateTopology(),
             [
-                "SHARED_DB_OWNERS['shared_users'] lists no pair that still conflicts;"
-                    . ' the claims were parted, so the record goes with them',
+                'owners/debt is RT-only',
             ],
         );
     }
@@ -2470,6 +2478,246 @@ final class TopologyValidatorTest extends TestCase
         $runtime = new TopologyMountedRtContext();
         $runtime->configure();
         HilosFacade::$rt = $runtime;
+    }
+
+    /**
+     * @return iterable<string, array{string, string}> Independent expanded signatures of every changing pair
+     */
+    public static function changingDbPairs(): iterable
+    {
+        $declarations = [
+            TopologyDbUpdateAgent::class => 'whole [update]',
+            TopologyDbRemoveAgent::class => 'whole [remove]',
+            TopologyDbAddRemoveAgent::class => 'whole [add, remove]',
+            TopologyDbRowsUpdateAgent::class => 'rows [update]',
+            TopologyDbRowsRemoveAgent::class => 'rows [remove]',
+            TopologyDbRowsAddRemoveAgent::class => 'rows [add, remove]',
+            TopologyDbSetUpdateAgent::class => 'set [update]',
+            TopologyDbSetRemoveAgent::class => 'set [remove]',
+            TopologyDbSetAddRemoveAgent::class => 'set [add, remove]',
+            TopologyDbInheritedAgent::class => 'whole [add, update, remove]',
+            TopologyDbInheritedPartialAgent::class => 'whole [add, remove]',
+        ];
+        $classes = array_keys($declarations);
+        foreach ($classes as $index => $left) {
+            foreach (array_slice($classes, $index + 1) as $right) {
+                yield $left . '/' . $right => [
+                    $left . ' ' . $declarations[$left], $right . ' ' . $declarations[$right],
+                ];
+            }
+        }
+    }
+
+    /**
+     * @param string $left Independent class, width and operations of the first writer
+     * @param string $right Independent class, width and operations of the second writer
+     */
+    #[DataProvider('changingDbPairs')]
+    public function testEveryChangingDbPairIsRefused(string $left, string $right): void
+    {
+        try {
+            TopologyPublicDbWritersHilos::validateTopology();
+        } catch (InvalidTopologyException $exception) {
+            $message = $exception->getMessage();
+            self::assertStringContainsString("DB collection 'writer_test': " . $left . ' conflicts with ' . $right, $message);
+            self::assertStringContainsString('exact closed DB writer state', $message);
+            self::assertStringContainsString('hand the write to its owner / retire the prescribed transition', $message);
+            self::assertStringNotContainsString('narrow the operations', $message);
+            self::assertStringNotContainsString('with the leaf that parts them', $message);
+            return;
+        }
+        self::fail('Every changing pair must be refused without a catalog state');
+    }
+
+    public function testAddOnlyAndEmptyDbClaimsDoNotCreateChangingPairs(): void
+    {
+        self::assertSame([], $this->declaredOwnershipErrors([
+            TopologyDbUpdateAgent::class, TopologyDbAddAgent::class, TopologyDbEmptyAgent::class,
+        ]));
+        TopologyPublicCreatorAndWriterHilos::validateTopology();
+        $this->addToAssertionCount(1);
+    }
+
+    public function testDuplicateRegistrationsOfOneDbWorkerDoNotCreateAPair(): void
+    {
+        self::assertSame([], $this->declaredOwnershipErrors([TopologyDbUpdateAgent::class, TopologyDbUpdateAgent::class]));
+    }
+
+    public function testExactRegisteredLegacyDbDebtPasses(): void
+    {
+        self::assertSame([], $this->declaredOwnershipErrors([], TopologyLegacyDbHilos::class));
+    }
+
+    /** @return iterable<string, array{class-string<HilosFacade>, string}> Malformed, unknown and stale active receipts */
+    public static function invalidDbDebts(): iterable
+    {
+        yield 'unknown collection' => [TopologyUnknownDbDebtHilos::class, 'unknown DB writer collection'];
+        yield 'unknown leaf' => [TopologyUnknownDbLeafHilos::class, 'exact closed DB writer state'];
+        yield 'empty' => [TopologyEmptyDbDebtHilos::class, 'nonempty dense list'];
+        yield 'sparse' => [TopologySparseDbDebtHilos::class, 'nonempty dense list'];
+        yield 'malformed' => [TopologyMalformedDbDebtHilos::class, 'nonempty dense list'];
+        yield 'duplicate' => [TopologyDuplicateDbDebtHilos::class, 'unique sorted implementing keys'];
+        yield 'noncanonical' => [TopologyUnsortedDbDebtHilos::class, 'unique sorted implementing keys'];
+        yield 'stale' => [TopologyStaleActiveDbHilos::class, 'is stale'];
+        yield 'extra class' => [TopologyExtraDbWriterHilos::class, 'exact closed DB writer state'];
+        yield 'wrong operations' => [TopologyWrongDbOperationsHilos::class, 'expected declarations'];
+        yield 'wrong width' => [TopologyWrongDbWidthHilos::class, 'expected declarations'];
+        yield 'missing operation' => [TopologyMissingDbOperationHilos::class, 'expected declarations'];
+        yield 'string receipt' => [TopologyStringDbDebtHilos::class, 'nonempty dense list'];
+        yield 'null receipt' => [TopologyNullDbDebtHilos::class, 'nonempty dense list'];
+        yield 'non-string leaf' => [TopologyNumericDbLeafHilos::class, 'nonempty dense list'];
+        yield 'nested leaf' => [TopologyNestedDbLeafHilos::class, 'nonempty dense list'];
+        yield 'invalid collection key' => [TopologyInvalidDbCollectionHilos::class, 'invalid collection key'];
+        yield 'extra known leaf' => [TopologyExtraKnownDbLeafHilos::class, 'exact closed DB writer state'];
+        yield 'availability is not a vertex' => [TopologyAvailabilityDbLeafHilos::class, 'exact closed DB writer state'];
+        yield 'policy is not a vertex' => [TopologyPolicyDbLeafHilos::class, 'exact closed DB writer state'];
+        yield 'recovery is not a vertex' => [TopologyRecoveryDbLeafHilos::class, 'exact closed DB writer state'];
+    }
+
+    /**
+     * @param class-string<HilosFacade> $facade Fixed fixture registry
+     * @param string $fragment Required refusal
+     */
+    #[DataProvider('invalidDbDebts')]
+    public function testActiveDbDebtMustMatchBothDirections(string $facade, string $fragment): void
+    {
+        $this->assertTopologyErrors(static fn (): mixed => $facade::validateTopology(), [$fragment]);
+    }
+
+    public function testChannelPartitionSeparatesOnlyRegisteredDeliveryAddresses(): void
+    {
+        TopologyPartitionedChannelsHilos::validateTopology();
+        $this->addToAssertionCount(1);
+        foreach ([TopologyMissingChannelDescriptorHilos::class, TopologyDuplicateChannelDescriptorHilos::class] as $facade) {
+            $this->assertTopologyErrors(static fn (): mixed => $facade::validateTopology(), ['requires one unique descriptor']);
+        }
+        foreach ([TopologyWrongChannelIndexHilos::class, TopologyMiskeyedChannelDescriptorHilos::class,
+            TopologyDuplicateChannelRouteHilos::class] as $facade) {
+            $this->assertTopologyErrors(static fn (): mixed => $facade::validateTopology(), ['no unique registered channel/shard address']);
+        }
+        $this->assertTopologyErrors(static fn (): mixed => TopologyInvalidChannelRegistryHilos::validateTopology(), [
+            'DB partition proof requires a delivery channel registry',
+        ]);
+        self::assertStringContainsString('requires a registered delivery subclass', implode("\n",
+            $this->declaredOwnershipErrors([TopologyForgedPartitionAgent::class])));
+        $this->assertTopologyErrors(static fn (): mixed => TopologyPartitionedOtherCollectionHilos::validateTopology(), [
+            "DB collection 'writer_test'", 'exact closed DB writer state',
+        ]);
+    }
+
+    public function testChannelPartitionDoesNotCoverALibraryOrSessionHolder(): void
+    {
+        foreach ([AbstractNotificationsLibraryAgent::class, AbstractSessionsLibraryAgent::class] as $other) {
+            self::assertStringContainsString($other, implode("\n", $this->declaredOwnershipErrors(
+                [$other], TopologyPartitionedChannelsHilos::class,
+            )));
+        }
+        self::assertStringContainsString('conflicts with', implode("\n", $this->declaredOwnershipErrors(
+            [], TopologyPartlyPartitionedChannelsHilos::class,
+        )));
+    }
+
+    /**
+     * Aliases and indexed pools share a class declaration. This cannot prove a live shard guard,
+     * two equal live indices, or split-brain exclusion; those require their own runtime evidence.
+     */
+    public function testAliasDeduplicationDoesNotMaskPublicRegistryErrors(): void
+    {
+        try {
+            TopologyPublicDbAliasesHilos::validateTopology();
+        } catch (InvalidTopologyException $exception) {
+            self::assertStringContainsString('AGENTS[alias] key must match', $exception->getMessage());
+            self::assertStringNotContainsString("DB collection 'writer_test'", $exception->getMessage());
+            return;
+        }
+        self::fail('The alias still owes the registry its matching agent type');
+    }
+
+    public function testDbOwnershipRefusalKeepsInvalidWorkerErrors(): void
+    {
+        $this->assertTopologyErrors(static fn (): mixed => TopologyPublicInvalidDbWorkerHilos::validateTopology(), [
+            'AGENTS[invalid][worker] class ' . TopologyNotAgent::class . ' must extend',
+            "DB collection 'writer_test'",
+        ]);
+    }
+
+    public function testDbRowClaimAlreadyCarriesItsReadInterest(): void
+    {
+        $this->assertTopologyErrors(static fn (): mixed => TopologyPublicDbRowReadHilos::validateTopology(), [
+            "names db collection 'writer_test' in both READS_DB and OWNS_DB_ROWS",
+            'a claim is the reader interest already',
+        ]);
+    }
+
+    public function testPublicStartupAcceptsExactRenamePairsBeforeAndAfterTheMove(): void
+    {
+        TopologyRenameInitialHilos::validateTopology();
+        TopologyRenameMovedHilos::validateTopology();
+        TopologyRenameFinalHilos::validateTopology();
+        $this->addToAssertionCount(3);
+    }
+
+    public function testPublicStartupAcceptsAnEmptyClaimBesideTheExactRenamePair(): void
+    {
+        TopologyRenameWithEmptyClaimHilos::validateTopology();
+        $this->addToAssertionCount(1);
+    }
+
+    /** @return iterable<string, array{class-string<HilosFacade>, string}> Rights and pending leaf must move together */
+    public static function invalidRenameMoves(): iterable
+    {
+        yield 'changed pair with old receipt' => [TopologyRenamePairWithoutPaymentHilos::class, 'expected declarations'];
+        yield 'paid leaf with old pair' => [TopologyRenamePaymentWithoutPairHilos::class, 'expected declarations'];
+        yield 'paid leaf without personal Update' => [TopologyRenameMissingPersonalGrantHilos::class, 'is stale'];
+        yield 'terminal state with stale receipt' => [TopologyRenameStaleFinalHilos::class, 'is stale'];
+        yield 'missing receipt' => [TopologyRenameMissingDebtHilos::class, 'pending [missing]'];
+        yield 'extra creator' => [TopologyRenameWithExtraCreatorHilos::class, 'expected declarations'];
+        yield 'extra Update' => [TopologyRenameWithExtraUpdateHilos::class, 'expected declarations'];
+        yield 'extra Remove' => [TopologyRenameWithExtraRemoveHilos::class, 'expected declarations'];
+        yield 'empty claim repeats read' => [
+            TopologyRenameWithEmptyClaimReadHilos::class,
+            "names db collection 'userRenames' in both READS_DB and OWNS_DB",
+        ];
+    }
+
+    /**
+     * @param class-string<HilosFacade> $facade Public topology with a deliberately mismatched handover
+     * @param string $fragment Required refusal
+     */
+    #[DataProvider('invalidRenameMoves')]
+    public function testOnlyTheExactRenameStateAllowsItsNewPair(string $facade, string $fragment): void
+    {
+        $this->assertTopologyErrors(static fn (): mixed => $facade::validateTopology(), [$fragment]);
+    }
+
+    public function testPartialRtClaimsAndLegacyRtReceiptRetainTheirOriginalMeaning(): void
+    {
+        TopologyPartialRtWritersHilos::validateTopology();
+        TopologyRecordedSharedRtHilos::validateTopology();
+        $this->addToAssertionCount(2);
+    }
+
+    /**
+     * Exercises the declaration judge without constructing agents or mounting DB/RT singletons.
+     * The public startup path is also covered by the six real project topology tests.
+     *
+     * @param list<class-string<AbstractAgent>> $classes Additional registered worker classes, including alias duplicates
+     * @param class-string<HilosFacade> $facade Fixed debt, catalog and channel registry declarations
+     * @return list<string> Accumulated startup ownership refusals
+     */
+    private function declaredOwnershipErrors(array $classes, string $facade = HilosFacade::class): array
+    {
+        $agents = $facade::AGENTS;
+        foreach ($classes as $class) {
+            $agents[] = [AgentRegistryKey::WORKER => $class];
+        }
+
+        return (function () use ($agents, $facade): array {
+            $errors = [];
+            $this->validateDeclaredOwnership($agents, $facade, $errors);
+
+            return $errors;
+        })->call(new TopologyValidator());
     }
 
     /**
@@ -8844,5 +9092,793 @@ abstract class TopologyPublicHistoryHilos extends HilosFacade
     public const array PAGE_TABLES = [
         TopologyPublicTermsHistoryPage::PAGE => [HilosTermsHistoryTable::TABLE => []],
         TopologyPublicPrivacyHistoryPage::PAGE => [HilosPrivacyHistoryTable::TABLE => []],
+    ];
+}
+
+abstract class TopologyLegacyDbHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        HilosAgentType::HILOS_USERS_LIBRARY => [AgentRegistryKey::WORKER => AbstractUsersLibraryAgent::class],
+        HilosAgentType::HILOS_SESSIONS_LIBRARY => [AgentRegistryKey::WORKER => AbstractSessionsLibraryAgent::class],
+    ];
+
+    public const array SHARED_DB_OWNERS = [
+        'legalAcceptances' => ['HIL-1899', 'HIL-1952'],
+        'secondFactorBackupCodes' => ['HIL-1904', 'HIL-1952', 'HIL-1999'],
+        'secondFactors' => ['HIL-1903', 'HIL-1952', 'HIL-1999'],
+        'userRenames' => ['HIL-1896', 'HIL-1952'],
+        'verifications' => ['HIL-1952'],
+    ];
+}
+
+class TopologyPartitionedMailAgent extends MailDeliveryChannelAgent
+{
+    public const ?DbWriterPartition DB_WRITER_PARTITION = DbWriterPartition::NotificationChannelShard;
+}
+
+class TopologyPartitionedSmsAgent extends SmsDeliveryChannelAgent
+{
+    public const ?DbWriterPartition DB_WRITER_PARTITION = DbWriterPartition::NotificationChannelShard;
+}
+
+abstract class TopologyChannelRegistryHilos extends HilosFacade
+{
+    protected const string NOTIFICATION_CHANNEL_REGISTRY = TopologyWriterChannelRegistry::class;
+}
+
+abstract class TopologyPartitionedChannelsHilos extends TopologyChannelRegistryHilos
+{
+    public const array AGENTS = [
+        HilosAgentType::HILOS_MAIL => [
+            AgentRegistryKey::WORKER => TopologyPartitionedMailAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        HilosAgentType::HILOS_SMS => [
+            AgentRegistryKey::WORKER => TopologyPartitionedSmsAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
+}
+
+abstract class TopologyMissingChannelDescriptorHilos extends TopologyPartitionedChannelsHilos
+{
+    protected const string NOTIFICATION_CHANNEL_REGISTRY = TopologyEmptyChannelRegistry::class;
+}
+
+abstract class TopologyDuplicateChannelDescriptorHilos extends TopologyPartitionedChannelsHilos
+{
+    protected const string NOTIFICATION_CHANNEL_REGISTRY = TopologyDuplicateWriterChannelRegistry::class;
+}
+
+abstract class TopologyWrongChannelIndexHilos extends TopologyPartitionedChannelsHilos
+{
+    public const array AGENTS = [
+        HilosAgentType::HILOS_MAIL => [AgentRegistryKey::WORKER => TopologyPartitionedMailAgent::class],
+        HilosAgentType::HILOS_SMS => [AgentRegistryKey::WORKER => TopologyPartitionedSmsAgent::class],
+    ];
+}
+
+final class TopologyWriterChannelRegistry extends DeliveryChannelRegistry
+{
+    /** @return array<string, AbstractDeliveryChannel> Fixed registered delivery descriptors */
+    protected static function channels(): array
+    {
+        return [MailDeliveryChannel::NAME => new MailDeliveryChannel(), SmsDeliveryChannel::NAME => new SmsDeliveryChannel()];
+    }
+}
+
+final class TopologyEmptyChannelRegistry extends DeliveryChannelRegistry
+{
+}
+
+final class TopologyDuplicateWriterChannelRegistry extends DeliveryChannelRegistry
+{
+    /** @return array<string, AbstractDeliveryChannel> Deliberately duplicated channel address */
+    protected static function channels(): array
+    {
+        return [MailDeliveryChannel::NAME => new MailDeliveryChannel(), 'duplicate' => new MailDeliveryChannel()];
+    }
+}
+
+
+class TopologyDbUpdateAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'writer_update';
+    public const array OWNS_DB = ['writer_test' => [TruthSourceOperation::Update]];
+}
+
+class TopologyDbRemoveAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'writer_remove';
+    public const array OWNS_DB = ['writer_test' => [TruthSourceOperation::Remove]];
+}
+
+class TopologyDbAddRemoveAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'writer_add_remove';
+    public const array OWNS_DB = ['writer_test' => [TruthSourceOperation::Add, TruthSourceOperation::Remove]];
+}
+
+class TopologyDbRowsUpdateAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'writer_rows_update';
+    public const array OWNS_DB_ROWS = ['writer_test' => [TruthSourceOperation::Update]];
+}
+
+class TopologyDbRowsRemoveAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'writer_rows_remove';
+    public const array OWNS_DB_ROWS = ['writer_test' => [TruthSourceOperation::Remove]];
+}
+
+class TopologyDbSetUpdateAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'writer_set_update';
+    public const array OWNS_DB_SET = ['writer_test' => [TruthSourceOperation::Update]];
+}
+
+class TopologyDbSetRemoveAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'writer_set_remove';
+    public const array OWNS_DB_SET = ['writer_test' => [TruthSourceOperation::Remove]];
+}
+
+class TopologyDbByKindAgent extends TopologyTestAgent
+{
+    public const array OWNS_DB = ['writer_test' => TruthSourceOperation::BY_KIND];
+}
+
+class TopologyDbAddAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'writer_add';
+    public const array OWNS_DB = ['writer_test' => [TruthSourceOperation::Add]];
+}
+
+class TopologyDbEmptyAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'writer_empty';
+    public const array OWNS_DB = ['writer_test' => TruthSourceOperation::BY_KIND];
+
+    /** @return TruthSourceOperations Empty by-kind grant, rather than the ordinary full default */
+    public static function defaultTruthSourceOperations(): TruthSourceOperations
+    {
+        return TruthSourceOperations::of();
+    }
+}
+
+final class TopologyDbInheritedAgent extends TopologyDbByKindAgent
+{
+    public const string AGENT_TYPE = 'writer_inherited_full';
+}
+
+final class TopologyForgedPartitionAgent extends TopologyDbUpdateAgent
+{
+    public const ?DbWriterPartition DB_WRITER_PARTITION = DbWriterPartition::NotificationChannelShard;
+}
+
+abstract class TopologyUnknownDbDebtHilos extends TopologyLegacyDbHilos
+{
+    public const array SHARED_DB_OWNERS = ['unknown' => ['HIL-1952']];
+}
+
+abstract class TopologyUnknownDbLeafHilos extends TopologyLegacyDbHilos
+{
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => ['HIL-999999']];
+}
+
+abstract class TopologyEmptyDbDebtHilos extends TopologyLegacyDbHilos
+{
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => []];
+}
+
+abstract class TopologySparseDbDebtHilos extends TopologyLegacyDbHilos
+{
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => [1 => 'HIL-1952']];
+}
+
+abstract class TopologyMalformedDbDebtHilos extends TopologyLegacyDbHilos
+{
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => ['invalid']];
+}
+
+abstract class TopologyDuplicateDbDebtHilos extends TopologyLegacyDbHilos
+{
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => ['HIL-1952', 'HIL-1952']];
+}
+
+abstract class TopologyUnsortedDbDebtHilos extends TopologyLegacyDbHilos
+{
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'userRenames' => ['HIL-1952', 'HIL-1896']];
+}
+
+abstract class TopologyStaleActiveDbHilos extends TopologyLegacyDbHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        HilosAgentType::HILOS_USERS_LIBRARY => [AgentRegistryKey::WORKER => TopologyCreatorOnlyLibrary::class],
+    ];
+}
+
+final class TopologyCreatorOnlyLibrary extends TopologyTestAgent
+{
+    public const array OWNS_DB = ['verifications' => [TruthSourceOperation::Add]];
+}
+
+final class TopologyUnexpectedVerificationWriter extends TopologyTestAgent
+{
+    public const array OWNS_DB = ['verifications' => [TruthSourceOperation::Remove]];
+}
+
+abstract class TopologyExtraDbWriterHilos extends TopologyLegacyDbHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        'unexpected' => [AgentRegistryKey::WORKER => TopologyUnexpectedVerificationWriter::class],
+    ];
+}
+
+abstract class TopologyWrongOperationsLibrary extends AbstractUsersLibraryAgent
+{
+    public const array OWNS_DB = ['userRenames' => [TruthSourceOperation::Add]];
+}
+
+abstract class TopologyWrongWidthLibrary extends AbstractUsersLibraryAgent
+{
+    public const array OWNS_DB_ROWS = ['userRenames' => [TruthSourceOperation::Update]];
+}
+
+abstract class TopologyWrongDbOperationsHilos extends TopologyLegacyDbHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        HilosAgentType::HILOS_USERS_LIBRARY => [AgentRegistryKey::WORKER => TopologyWrongOperationsLibrary::class],
+    ];
+}
+
+abstract class TopologyWrongDbWidthHilos extends TopologyLegacyDbHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        HilosAgentType::HILOS_USERS_LIBRARY => [AgentRegistryKey::WORKER => TopologyWrongWidthLibrary::class],
+    ];
+}
+
+abstract class TopologyPartlyPartitionedChannelsHilos extends TopologyPartitionedChannelsHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        HilosAgentType::HILOS_MAIL => [
+            AgentRegistryKey::WORKER => MailDeliveryChannelAgent::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
+}
+
+final class TopologyDbRowsAddRemoveAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'writer_rows_add_remove';
+    public const array OWNS_DB_ROWS = ['writer_test' => [TruthSourceOperation::Add, TruthSourceOperation::Remove]];
+}
+
+final class TopologyDbSetAddRemoveAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'writer_set_add_remove';
+    public const array OWNS_DB_SET = ['writer_test' => [TruthSourceOperation::Add, TruthSourceOperation::Remove]];
+}
+
+final class TopologyDbInheritedPartialAgent extends TopologyDbByKindAgent
+{
+    public const string AGENT_TYPE = 'writer_inherited_partial';
+
+    /** @return TruthSourceOperations The inherited BY_KIND resolves on the concrete partial owner */
+    public static function defaultTruthSourceOperations(): TruthSourceOperations
+    {
+        return TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Remove);
+    }
+}
+
+final class TopologyMissingOperationLibrary extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
+    public const array OWNS_DB = [
+        ...AbstractUsersLibraryAgent::OWNS_DB,
+        HilosDbContext::verifications => [TruthSourceOperation::Add, TruthSourceOperation::Update],
+    ];
+}
+
+abstract class TopologyMissingDbOperationHilos extends TopologyLegacyDbHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        HilosAgentType::HILOS_USERS_LIBRARY => [AgentRegistryKey::WORKER => TopologyMissingOperationLibrary::class],
+    ];
+}
+
+abstract class TopologyStringDbDebtHilos extends TopologyLegacyDbHilos
+{
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => 'HIL-1952'];
+}
+
+abstract class TopologyNullDbDebtHilos extends TopologyLegacyDbHilos
+{
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => null];
+}
+
+abstract class TopologyNumericDbLeafHilos extends TopologyLegacyDbHilos
+{
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => [1952]];
+}
+
+abstract class TopologyNestedDbLeafHilos extends TopologyLegacyDbHilos
+{
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => [['HIL-1952']]];
+}
+
+abstract class TopologyInvalidDbCollectionHilos extends TopologyLegacyDbHilos
+{
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, '' => ['HIL-1952']];
+}
+
+abstract class TopologyExtraKnownDbLeafHilos extends TopologyLegacyDbHilos
+{
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => ['HIL-1952', 'HIL-1999']];
+}
+
+abstract class TopologyAvailabilityDbLeafHilos extends TopologyLegacyDbHilos
+{
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => ['HIL-1894', 'HIL-1952']];
+}
+
+abstract class TopologyPolicyDbLeafHilos extends TopologyLegacyDbHilos
+{
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => ['HIL-1900', 'HIL-1952']];
+}
+
+abstract class TopologyRecoveryDbLeafHilos extends TopologyLegacyDbHilos
+{
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => ['HIL-1901', 'HIL-1952']];
+}
+
+final class TopologyDbDeclarationDaemon extends TopologyTestAgentDaemon
+{
+}
+
+abstract class TopologyPublicCreatorAndWriterHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyDbUpdateAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyDbUpdateAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        TopologyDbAddAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyDbAddAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+        TopologyDbEmptyAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyDbEmptyAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+    ];
+}
+
+abstract class TopologyPublicDbWritersHilos extends TopologyPublicCreatorAndWriterHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        TopologyDbRemoveAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyDbRemoveAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+        TopologyDbAddRemoveAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyDbAddRemoveAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+        TopologyDbRowsUpdateAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyDbRowsUpdateAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        TopologyDbRowsRemoveAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyDbRowsRemoveAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        TopologyDbRowsAddRemoveAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyDbRowsAddRemoveAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        TopologyDbSetUpdateAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyDbSetUpdateAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        TopologyDbSetRemoveAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyDbSetRemoveAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        TopologyDbSetAddRemoveAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyDbSetAddRemoveAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        TopologyDbInheritedAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyDbInheritedAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+        TopologyDbInheritedPartialAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyDbInheritedPartialAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+    ];
+}
+
+abstract class TopologyPublicDbAliasesHilos extends TopologyPublicCreatorAndWriterHilos
+{
+    public const array AGENTS = [...parent::AGENTS, 'alias' => parent::AGENTS[TopologyDbUpdateAgent::AGENT_TYPE]];
+}
+
+abstract class TopologyPublicInvalidDbWorkerHilos extends TopologyPublicDbWritersHilos
+{
+    public const array AGENTS = [...parent::AGENTS, 'invalid' => [
+        AgentRegistryKey::WORKER => TopologyNotAgent::class,
+        AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+    ]];
+}
+
+final class TopologyDbReadOwnRowsAgent extends TopologyDbRowsUpdateAgent
+{
+    public const array READS_DB = ['writer_test'];
+}
+
+abstract class TopologyPublicDbRowReadHilos extends HilosFacade
+{
+    public const array AGENTS = [TopologyDbReadOwnRowsAgent::AGENT_TYPE => [
+        AgentRegistryKey::WORKER => TopologyDbReadOwnRowsAgent::class,
+        AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        AgentRegistryKey::INDEXED => true,
+    ]];
+}
+
+final class TopologyRenameLibrary extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
+    public const array OWNS_DB = [HilosDbContext::userRenames => [TruthSourceOperation::Update]];
+}
+
+final class TopologyRenameCreatorLibrary extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
+}
+
+class TopologyRenamePerson extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = HilosAgentType::HILOS_USER;
+    public const array OWNS_DB_SET = [HilosDbContext::userRenames => [TruthSourceOperation::Add]];
+}
+
+class TopologyRenameChangingPerson extends TopologyRenamePerson
+{
+    public const array OWNS_DB_SET = [HilosDbContext::userRenames => [TruthSourceOperation::Update]];
+}
+
+final class TopologyRenameFinalPerson extends TopologyRenameChangingPerson
+{
+    public const array OWNS_DB_SET = [HilosDbContext::userRenames => [TruthSourceOperation::Remove]];
+}
+
+final class TopologyRenameHolder extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = HilosAgentType::HILOS_SESSIONS_LIBRARY;
+    public const array OWNS_DB = [HilosDbContext::userRenames => [TruthSourceOperation::Remove]];
+}
+
+final class TopologyRenameEmptyHolder extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = HilosAgentType::HILOS_SESSIONS_LIBRARY;
+}
+
+abstract class TopologyRenameInitialHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyRenameLibrary::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyRenameLibrary::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+        TopologyRenamePerson::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyRenamePerson::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        TopologyRenameHolder::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyRenameHolder::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+    ];
+    public const array SHARED_DB_OWNERS = ['userRenames' => ['HIL-1896', 'HIL-1952']];
+}
+
+class TopologyRenameEmptyAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'rename_extra';
+    public const array OWNS_DB = [HilosDbContext::userRenames => TruthSourceOperation::BY_KIND];
+
+    /** @return TruthSourceOperations Empty claim beside the existing creator and changing writers */
+    public static function defaultTruthSourceOperations(): TruthSourceOperations
+    {
+        return TruthSourceOperations::of();
+    }
+}
+
+final class TopologyRenameExtraCreator extends TopologyRenameEmptyAgent
+{
+    public const array OWNS_DB = [HilosDbContext::userRenames => [TruthSourceOperation::Add]];
+}
+
+final class TopologyRenameExtraUpdate extends TopologyRenameEmptyAgent
+{
+    public const array OWNS_DB = [HilosDbContext::userRenames => [TruthSourceOperation::Update]];
+}
+
+final class TopologyRenameExtraRemove extends TopologyRenameEmptyAgent
+{
+    public const array OWNS_DB = [HilosDbContext::userRenames => [TruthSourceOperation::Remove]];
+}
+
+final class TopologyRenameEmptyClaimRead extends TopologyRenameEmptyAgent
+{
+    public const array READS_DB = [HilosDbContext::userRenames];
+}
+
+abstract class TopologyRenameWithEmptyClaimHilos extends TopologyRenameInitialHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        TopologyRenameEmptyAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyRenameEmptyAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+    ];
+}
+
+abstract class TopologyRenameWithExtraCreatorHilos extends TopologyRenameWithEmptyClaimHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        TopologyRenameEmptyAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyRenameExtraCreator::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+    ];
+}
+
+abstract class TopologyRenameWithExtraUpdateHilos extends TopologyRenameWithEmptyClaimHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        TopologyRenameEmptyAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyRenameExtraUpdate::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+    ];
+}
+
+abstract class TopologyRenameWithExtraRemoveHilos extends TopologyRenameWithEmptyClaimHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        TopologyRenameEmptyAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyRenameExtraRemove::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+    ];
+}
+
+abstract class TopologyRenameWithEmptyClaimReadHilos extends TopologyRenameWithEmptyClaimHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        TopologyRenameEmptyAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyRenameEmptyClaimRead::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+    ];
+}
+
+abstract class TopologyRenameMovedHilos extends TopologyRenameInitialHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        TopologyRenameLibrary::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyRenameCreatorLibrary::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+        TopologyRenamePerson::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyRenameChangingPerson::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
+    public const array SHARED_DB_OWNERS = ['userRenames' => ['HIL-1952']];
+}
+
+abstract class TopologyRenameFinalHilos extends TopologyRenameMovedHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        TopologyRenamePerson::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyRenameFinalPerson::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        TopologyRenameHolder::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyRenameEmptyHolder::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+    ];
+    public const array SHARED_DB_OWNERS = [];
+}
+
+abstract class TopologyRenamePairWithoutPaymentHilos extends TopologyRenameMovedHilos
+{
+    public const array SHARED_DB_OWNERS = TopologyRenameInitialHilos::SHARED_DB_OWNERS;
+}
+
+abstract class TopologyRenamePaymentWithoutPairHilos extends TopologyRenameInitialHilos
+{
+    public const array SHARED_DB_OWNERS = TopologyRenameMovedHilos::SHARED_DB_OWNERS;
+}
+
+abstract class TopologyRenameMissingPersonalGrantHilos extends TopologyRenameMovedHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        TopologyRenamePerson::AGENT_TYPE => TopologyRenameInitialHilos::AGENTS[TopologyRenamePerson::AGENT_TYPE],
+    ];
+}
+
+abstract class TopologyRenameStaleFinalHilos extends TopologyRenameFinalHilos
+{
+    public const array SHARED_DB_OWNERS = TopologyRenameMovedHilos::SHARED_DB_OWNERS;
+}
+
+abstract class TopologyRenameMissingDebtHilos extends TopologyRenameInitialHilos
+{
+    public const array SHARED_DB_OWNERS = [];
+}
+
+final class TopologyPartialRtWholeUpdate extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'rt_whole_update';
+    public const array OWNS_RT = ['writer_rt_test' => [TruthSourceOperation::Update]];
+}
+
+final class TopologyPartialRtWholeRemove extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'rt_whole_remove';
+    public const array OWNS_RT = ['writer_rt_test' => [TruthSourceOperation::Add, TruthSourceOperation::Remove]];
+}
+
+final class TopologyPartialRtRows extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'rt_rows';
+    public const array OWNS_RT_ROWS = ['writer_rt_test' => [TruthSourceOperation::Remove]];
+}
+
+final class TopologyPartialRtSetUpdate extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'rt_set_update';
+    public const array OWNS_RT_SET = ['writer_rt_test' => [TruthSourceOperation::Update]];
+}
+
+final class TopologyPartialRtSetRemove extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'rt_set_remove';
+    public const array OWNS_RT_SET = ['writer_rt_test' => [TruthSourceOperation::Add, TruthSourceOperation::Remove]];
+}
+
+final class TopologyCompleteRtWriter extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'rt_complete';
+    public const array OWNS_RT = ['writer_rt_test' => TruthSourceOperation::ALL];
+}
+
+abstract class TopologyPartialRtWritersHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyCompleteRtWriter::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyCompleteRtWriter::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+        TopologyPartialRtWholeUpdate::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyPartialRtWholeUpdate::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+        TopologyPartialRtWholeRemove::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyPartialRtWholeRemove::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+        TopologyPartialRtRows::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyPartialRtRows::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        TopologyPartialRtSetUpdate::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyPartialRtSetUpdate::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        TopologyPartialRtSetRemove::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyPartialRtSetRemove::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
+}
+
+abstract class TopologyRecordedSharedRtHilos extends HilosFacade
+{
+    public const array AGENTS = TopologyUnrecordedSharedRtOwnersHilos::AGENTS;
+    public const array SHARED_RT_OWNERS = ['worker_statuses' => [
+        SharedOwnersKey::OWNERS => [TopologyFullRtOwnerAgent::class, TopologyRtRowOwnerAgent::class],
+        SharedOwnersKey::DEBT => 'HIL-999999',
+    ]];
+}
+
+final class TopologyMiskeyedWriterChannelRegistry extends DeliveryChannelRegistry
+{
+    /** @return array<string, AbstractDeliveryChannel> Unique descriptors with an incorrect channel key */
+    protected static function channels(): array
+    {
+        return ['wrong' => new MailDeliveryChannel(), SmsDeliveryChannel::NAME => new SmsDeliveryChannel()];
+    }
+}
+
+abstract class TopologyMiskeyedChannelDescriptorHilos extends TopologyPartitionedChannelsHilos
+{
+    protected const string NOTIFICATION_CHANNEL_REGISTRY = TopologyMiskeyedWriterChannelRegistry::class;
+}
+
+abstract class TopologyInvalidChannelRegistryHilos extends TopologyPartitionedChannelsHilos
+{
+    protected const string NOTIFICATION_CHANNEL_REGISTRY = TopologyNotAgent::class;
+}
+
+final class TopologySecondPartitionedMailAgent extends TopologyPartitionedMailAgent
+{
+    public const string AGENT_TYPE = 'second_partitioned_mail';
+}
+
+abstract class TopologyDuplicateChannelRouteHilos extends TopologyPartitionedChannelsHilos
+{
+    public const array AGENTS = [...parent::AGENTS, TopologySecondPartitionedMailAgent::AGENT_TYPE => [
+        AgentRegistryKey::WORKER => TopologySecondPartitionedMailAgent::class,
+        AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        AgentRegistryKey::INDEXED => true,
+    ]];
+}
+
+final class TopologyPartitionedMailOtherCollection extends TopologyPartitionedMailAgent
+{
+    public const array OWNS_DB = ['writer_test' => [TruthSourceOperation::Update]];
+}
+
+abstract class TopologyPartitionedOtherCollectionHilos extends TopologyPartitionedChannelsHilos
+{
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        HilosAgentType::HILOS_MAIL => [
+            AgentRegistryKey::WORKER => TopologyPartitionedMailOtherCollection::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        TopologyDbRemoveAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyDbRemoveAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
     ];
 }

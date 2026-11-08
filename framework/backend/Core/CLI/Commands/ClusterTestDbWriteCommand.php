@@ -11,7 +11,7 @@ use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Environment\Exception\EnvException;
 
 /**
- * ClusterTestDbWriteCommand - Write a settings row on one node of the cluster stand (HIL-712)
+ * ClusterTestDbWriteCommand - Write a probe row on one node of the cluster stand (HIL-712)
  *
  * A test-only driver (extends {@see TestOnlyCommand} via
  * {@see AbstractCommandChannelTestCommand}, so it refuses on a production-like env). Together
@@ -20,7 +20,7 @@ use Hilos\Environment\Exception\EnvException;
  * the other node's copy is about.
  *
  * The write itself is an ordinary one, done by the node's own probe agent through the ordinary
- * settings actions - so the DB sync fact that follows is raised by the framework rather than by
+ * probe value actions - so the DB sync fact that follows is raised by the framework rather than by
  * this drill, which is the difference between checking the mechanism and checking an imitation
  * of it. Unlike {@see ClusterTestDbAnnounceCommand}, which names a row that exists nowhere and
  * only proves the frame crosses, this one leaves a value behind for somebody to read back.
@@ -47,7 +47,7 @@ class ClusterTestDbWriteCommand extends AbstractCommandChannelTestCommand implem
      */
     public function getDescription(): string
     {
-        return 'Write a settings row on this node of the cluster stand (test-only)';
+        return 'Write a probe row on this node of the cluster stand (test-only)';
     }
 
     /**
@@ -61,8 +61,8 @@ class ClusterTestDbWriteCommand extends AbstractCommandChannelTestCommand implem
 Command: test:cluster:db:write
 
 Description:
-  Ask this node's database probe to write a settings row of the schema the whole
-  stand shares. The row is written through the ordinary settings actions, so the
+  Ask this node's database probe to write a probe row of the schema the whole
+  stand shares. The row is written through the ordinary probe value actions, so the
   framework raises the DB sync fact off the write itself and the other nodes learn
   their copy has gone stale. Read the value back from another node with
   test:cluster:db:read.
@@ -80,7 +80,7 @@ HELP;
      * Sends the write request and reports what was written.
      *
      * @param array<string, mixed> $options Parsed options (unused)
-     * @param list<string> $args Positional args; the settings key, then the value
+     * @param list<string> $args Positional args; the probe key, then the value
      * @return int Exit code (0 on success)
      * @throws CommandException When the command name is not registered as test-only
      */

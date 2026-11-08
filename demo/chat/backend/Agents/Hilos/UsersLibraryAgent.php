@@ -35,27 +35,13 @@ use Hilos\HilosException;
 final class UsersLibraryAgent extends AbstractUsersLibraryAgent
 {
     /**
-     * The chat tables this library writes from its OWN process.
-     *
-     * The account row itself is not among them: the framework's library claims it (HIL-1194).
-     *
-     * The registry is per process, and the account event is written HERE rather than in the agent
-     * that owns the room: a claim registered by the chat agent covers the chat agent's worker and
-     * nothing else, so without this the "registered in chat" line would be refused as a write with
-     * no truth source behind it. The same second claim the admin index agent makes on these
-     * tables, and for the same reason. The rename's feed line lands in the same table, written
-     * here by {@see afterUserRenamed()}; the journal row it links is the framework library's
-     * claim (HIL-1196).
-     *
-     * The two claims never reach the cluster's arbiter as a clash, because both agents are placed
-     * the same way - neither names a placement, so both are the leader's, and a second claim from
-     * the node that already holds one is not a second node.
+     * Creates the registration and rename feed rows. Later room changes belong to ChatAgent.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
-        ChatDbContext::events => TruthSourceOperation::BY_KIND,
-        ChatDbContext::eventUserRegistrations => TruthSourceOperation::BY_KIND,
+        ChatDbContext::events => [TruthSourceOperation::Add],
+        ChatDbContext::eventUserRegistrations => [TruthSourceOperation::Add],
     ];
 
     /**

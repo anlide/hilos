@@ -11,12 +11,11 @@ use Hilos\Constants\CommandConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\TruthSource\Exception\ClaimedSetKeyMissingException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Object\Item\Object_;
-use Hilos\Database\Settings\Library\SettingsLibraryAgent;
-use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -35,7 +34,7 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
  * blocking work in the master process is forbidden outright. Reading a row is blocking work.
  *
  * What this proves is not that MySQL stores what it is given. The read answers out of THIS
- * process's copy of the settings collection and never with a fresh query, so a value written
+ * process's copy of the probe values collection and never with a fresh query, so a value written
  * on another node can only come back if the announcement crossed the mesh and the copy here
  * went stale on purpose (HIL-670). A query would pass the scenario while proving nothing
  * beyond both nodes being able to reach the same server.
@@ -43,26 +42,16 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
 final class DbProbeAgent extends AbstractAgent
 {
     /**
-     * The settings collection, because a write needs a truth source to be allowed one.
+     * The probe values belonging to this node, with adding and updating alone.
      *
-     * Claimed rather than listed as a read: {@see AbstractAgent::READS_DB} is for a collection
-     * somebody else owns, and a claim is its own reader interest anyway (HIL-750), so declaring
-     * both would be one fact kept in two places.
-     *
-     * Every node claims it and nothing objects. The cluster-wide two-owner guard is over runtime
-     * collections, whose rows live in one process's memory; these rows are on a disk every node
-     * of the stand shares, and any of them may legitimately write there.
-     *
-     * Adding and updating, and nothing more, because a project that lists the probe may also
-     * carry the settings library ({@see SettingsLibraryAgent}), which owns the collection
-     * whole. Beside a full owner an incomplete claim is a lawful co-owner and not a collision -
-     * startup validation compares complete claims only - and the probe deletes nothing, so the
-     * narrower claim costs the drill nothing.
+     * The set claim supplies reader interest in the whole collection, so this replica observes
+     * other nodes' writes too. {@see AbstractAgent::READS_DB} would repeat that interest and is
+     * refused beside a claim. The write door still permits changes only within this node's set.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
-    public const array OWNS_DB = [
-        HilosDbContext::settings => [TruthSourceOperation::Add, TruthSourceOperation::Update],
+    public const array OWNS_DB_SET = [
+        HilosDbContext::probeValues => [TruthSourceOperation::Add, TruthSourceOperation::Update],
     ];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_PROBE_DB;
@@ -84,9 +73,26 @@ final class DbProbeAgent extends AbstractAgent
     ];
 
     /**
+     * Names this replica's set by its node id; off a cluster the empty key would refuse the
+     * claim ({@see ClaimedSetKeyMissingException}), but the probe's start gate excludes that case.
+     *
+     * @param string $collection Collection the resolver is asking about, as named in the map
+     * @return string Id of this node, empty off a cluster
+     */
+    public function ownedDbSetKey(string $collection): string
+    {
+        $cluster = Hilos::$cluster;
+        if ($cluster === null || !$cluster->isEnabled()) {
+            return '';
+        }
+
+        return $cluster->identity()->nodeId;
+    }
+
+    /**
      * Lets the replica go without clearing anything: the row it wrote is in the database.
      *
-     * The claim over the settings collection goes with the process, which is the correct
+     * The claim over this node's probe values goes with the process, which is the correct
      * lifetime for it - the next node replica to come up makes its own.
      */
     public function onStop(): void
@@ -116,17 +122,17 @@ final class DbProbeAgent extends AbstractAgent
     }
 
     /**
-     * Writes the named setting through the ordinary actions and lets them raise the fact.
+     * Writes the named probe value through the ordinary actions and lets them raise the fact.
      *
      * Nothing here announces anything: {@see Object_::sync()} emits DB_SYNC_CREATED or
      * DB_SYNC_UPDATED off the write itself. That is the point of driving the drill down the
      * production path rather than an imitation of it - what the scenario then watches is the
      * mechanism an application gets for free, not one this agent built for the occasion.
      *
-     * The scenario names a key no settings catalog declares, so the first write adds the row as
-     * an orphan and every later one updates it in place.
+     * The first write adds the row to this node's set and every later one updates it in place.
+     * An existing row belonging to another node is refused by the ordinary set ownership door.
      *
-     * @param CommandRequestDTO $request Request naming the setting key and its new value
+     * @param CommandRequestDTO $request Request naming the probe key and its new value
      * @return CommandReplyDTO Reply naming what was written and which member took it, or why nothing was
      */
     private function write(CommandRequestDTO $request): CommandReplyDTO
@@ -141,16 +147,11 @@ final class DbProbeAgent extends AbstractAgent
         }
 
         try {
-            $settings = Hilos::$db->settings;
-            if (!isset($settings[$key])) {
-                $settings->actions->addOrphan(
-                    $key,
-                    SettingsCatalogConstants::TYPE_STRING,
-                    $value,
-                    Hilos::$setting?->catalog() ?? [],
-                );
+            $probeValues = Hilos::$db->probeValues;
+            if (!isset($probeValues[$key])) {
+                $probeValues->actions->add($this->ownedDbSetKey(HilosDbContext::probeValues), $key, $value);
             } else {
-                $settings[$key]->actions->updateValue($value);
+                $probeValues[$key]->actions->updateValue($value);
             }
             Database::sql('SELECT @@hostname AS member');
             $member = Database::field('member');
@@ -167,12 +168,12 @@ final class DbProbeAgent extends AbstractAgent
     }
 
     /**
-     * Answers with the value this process holds for the named setting.
+     * Answers with the value this process holds for the named probe row.
      *
      * Out of the cached copy on purpose, and null when no row is held for the key - see the
      * class docblock for why a fresh query would leave the scenario proving nothing.
      *
-     * @param CommandRequestDTO $request Request naming the setting key
+     * @param CommandRequestDTO $request Request naming the probe key
      * @return CommandReplyDTO Reply carrying the key and its value, null when there is no row
      */
     private function read(CommandRequestDTO $request): CommandReplyDTO
@@ -186,7 +187,7 @@ final class DbProbeAgent extends AbstractAgent
         }
 
         try {
-            $value = isset(Hilos::$db->settings[$key]) ? Hilos::$db->settings[$key]->value : null;
+            $value = isset(Hilos::$db->probeValues[$key]) ? Hilos::$db->probeValues[$key]->value : null;
         // read-refusal-swallowed: this probe answers its caller with whatever failed, the refusal included
         } catch (HilosException $e) {
             return CommandReplyDTO::error($request->correlationId, $e->getMessage());

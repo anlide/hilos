@@ -173,9 +173,8 @@ WORKER_DIED_HOSTING = re.compile(r"Worker #(\d+) died hosting \d+ agent\(s\): (.
 # How many lines of a victim's log a missing worker-death report prints (HIL-1162).
 EVIDENCE_LINES = 40
 
-# The settings row the per-node probe writes and reads. Non-catalog by construction - no
-# settings catalog declares it - so it is a true orphan row and nothing else in the stand is
-# about it.
+# Base key of the probe row the per-node database probe writes and reads. The sender's node id
+# is appended so a later run with another leader never tries to rewrite another node's set.
 DB_PROBE_KEY = "cluster_probe_value"
 # What the read command prints in place of a value when the node holds no row for the key;
 # mirrors ClusterTestDbReadCommand::NO_ROW (framework/backend/Core/CLI/Commands/
@@ -418,7 +417,7 @@ def client_refusal(node, *args):
 
 
 def db_read(node, key):
-    """What one node answers it holds for a settings key: the value, or None for no row.
+    """What one node answers it holds for a probe key: the value, or None for no row.
 
     The answer comes out of that node's own copy of the collection rather than out of a fresh
     query, which is the whole reason this is worth asking - see ClusterTestDbReadCommand. The
@@ -856,7 +855,7 @@ def wait_until(predicate, timeout, desc, nodes=None, local=False):
 
 
 def wait_db_value(node, key, expected, timeout, desc):
-    """Poll one node's copy of a settings row until it answers `expected`.
+    """Poll one node's copy of a probe row until it answers `expected`.
 
     The value twin of wait_until, and it raises the same ScenarioTimeout so that a pure
     convergence timeout stays retryable while a wrong value fails hard.
@@ -2504,41 +2503,42 @@ def scenario_11_cross_node_db_fact():
 
     The sender is the leader, where the automatically started journal reads receipts. Each read
     command on the watcher creates and deletes an empty CLI receipt: lawful remote facts that
-    increase the sender's total. Count settings separately, with exact receiver deltas too, so
-    receipt traffic cannot impersonate a loop or hide an extra settings fact (HIL-1621).
+    increase the sender's total. Count probeValues separately, with exact receiver deltas too, so
+    receipt traffic cannot impersonate a loop or hide an extra probe fact (HIL-1621).
     """
     views = wait_converge(ALL_NODES)
     sender = leaders(views)[0]
     watcher = next(node for node in MASTERS if node != sender)
+    key = f"{DB_PROBE_KEY}_{sender}"
     views = wait_until(lambda current: "changeLogReceipts" in db_collections_read(current, sender),
                        CONVERGE_TIMEOUT, f"{sender}'s journal reads receipts before the DB probe")
 
-    sender_replicas_before = db_replicas(views, sender, "settings")
-    watcher_replicas_before = db_replicas(views, watcher, "settings")
+    sender_replicas_before = db_replicas(views, sender, "probeValues")
+    watcher_replicas_before = db_replicas(views, watcher, "probeValues")
     sender_total_before = db_replicas(views, sender)
 
     # Tact one. The watcher answers because it went and read the row, and by answering it now
     # holds a copy of it - which is the only thing this tact establishes.
-    assert client(sender, "test:cluster:db:write", DB_PROBE_KEY, "v1"), \
+    assert client(sender, "test:cluster:db:write", key, "v1"), \
         f"could not write the probe row on {sender}"
-    wait_db_value(watcher, DB_PROBE_KEY, "v1", CONVERGE_TIMEOUT,
+    wait_db_value(watcher, key, "v1", CONVERGE_TIMEOUT,
                   f"{watcher} answers with the value {sender} wrote")
 
     # Tact two, and the whole scenario: a copy that says v1 has to come back saying v2.
-    assert client(sender, "test:cluster:db:write", DB_PROBE_KEY, "v2"), \
+    assert client(sender, "test:cluster:db:write", key, "v2"), \
         f"could not rewrite the probe row on {sender}"
-    wait_db_value(watcher, DB_PROBE_KEY, "v2", CONVERGE_TIMEOUT,
+    wait_db_value(watcher, key, "v2", CONVERGE_TIMEOUT,
                   f"the copy {watcher} already held goes stale and comes back as v2")
 
     # Both writes have reached the watcher by now, so whatever the sender was going to count for
     # them it has counted. Receipt facts from the watcher's reads belong to another collection.
     views = inspect_all()
-    assert db_replicas(views, watcher, "settings") == watcher_replicas_before + 2, \
-        f"{watcher} did not accept exactly the two settings facts {sender} wrote"
-    assert db_replicas(views, sender, "settings") == sender_replicas_before, \
+    assert db_replicas(views, watcher, "probeValues") == watcher_replicas_before + 2, \
+        f"{watcher} did not accept exactly the two probe facts {sender} wrote"
+    assert db_replicas(views, sender, "probeValues") == sender_replicas_before, \
         f"{sender} counted its own writes as replicas; a fact must not come back to its raiser"
     print(f"    {sender} accepted {db_replicas(views, sender) - sender_total_before} other DB facts; "
-          "settings replicas stayed unchanged", flush=True)
+          "probeValues replicas stayed unchanged", flush=True)
 
     # Tact three: a link that went away and came back.
     print(f"    recreating {watcher} to break and re-establish its links")
@@ -2547,18 +2547,18 @@ def scenario_11_cross_node_db_fact():
 
     # The container is new, so its copy is taken here rather than inherited - and only once it
     # holds one is the write below asking anything of the mesh.
-    wait_db_value(watcher, DB_PROBE_KEY, "v2", CONVERGE_TIMEOUT,
+    wait_db_value(watcher, key, "v2", CONVERGE_TIMEOUT,
                   f"the recreated {watcher} takes a copy of the row")
-    watcher_replicas_before = db_replicas(inspect_all([watcher]), watcher, "settings")
-    assert client(sender, "test:cluster:db:write", DB_PROBE_KEY, "v3"), \
+    watcher_replicas_before = db_replicas(inspect_all([watcher]), watcher, "probeValues")
+    assert client(sender, "test:cluster:db:write", key, "v3"), \
         f"could not write the probe row on {sender} after the reconnect"
-    wait_db_value(watcher, DB_PROBE_KEY, "v3", CONVERGE_TIMEOUT,
+    wait_db_value(watcher, key, "v3", CONVERGE_TIMEOUT,
                   f"{watcher} follows a write made after it re-linked")
 
     views = inspect_all()
-    assert db_replicas(views, watcher, "settings") == watcher_replicas_before + 1, \
-        f"{watcher} did not accept exactly one settings fact after re-linking"
-    assert db_replicas(views, sender, "settings") == sender_replicas_before, \
+    assert db_replicas(views, watcher, "probeValues") == watcher_replicas_before + 1, \
+        f"{watcher} did not accept exactly one probe fact after re-linking"
+    assert db_replicas(views, sender, "probeValues") == sender_replicas_before, \
         f"{sender} counted its own write after the reconnect as a replica"
 
     return (f"{sender} wrote the row and {watcher} answered with it, answered the rewrite out of "

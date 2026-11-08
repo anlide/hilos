@@ -22,7 +22,7 @@ class ScenarioDbFactTest(unittest.TestCase):
             node: {"lifecycleState": "MasterLeader" if node == self.sender else "MasterFollower",
                    "consensusRole": "leader" if node == self.sender else "follower",
                    "dbReplicas": 0, "dbReplicasByCollection": {},
-                   "dbCollectionsRead": ["settings", "changeLogReceipts"] if node == self.sender else ["settings"]}
+                   "dbCollectionsRead": ["probeValues", "changeLogReceipts"] if node == self.sender else ["probeValues"]}
             for node in scenarios.ALL_NODES
         }
         self.value = None
@@ -46,22 +46,23 @@ class ScenarioDbFactTest(unittest.TestCase):
         counts[collection] = counts.get(collection, 0) + 1
 
     def write(self, node, command, key, value):
-        self.assertEqual((self.sender, "test:cluster:db:write", scenarios.DB_PROBE_KEY), (node, command, key))
+        self.assertEqual((self.sender, "test:cluster:db:write", f"{scenarios.DB_PROBE_KEY}_{self.sender}"),
+                         (node, command, key))
         self.events.append(("write", value))
         self.value = value
         if value != self.drop_on:
-            self.accept(self.watcher, "settings")
+            self.accept(self.watcher, "probeValues")
         if value == self.duplicate_on:
-            self.accept(self.watcher, "settings")
+            self.accept(self.watcher, "probeValues")
         if value == self.echo_on:
-            self.accept(self.sender, "settings")
+            self.accept(self.sender, "probeValues")
         return True
 
     def read(self, node, key):
-        self.assertEqual((self.watcher, scenarios.DB_PROBE_KEY), (node, key))
+        self.assertEqual((self.watcher, f"{scenarios.DB_PROBE_KEY}_{self.sender}"), (node, key))
         self.events.append(("read", self.value))
         # An empty CLI receipt is created and deleted on the remote watcher. The journal's
-        # reader interest brings both facts to the sender without echoing its settings write.
+        # reader interest brings both facts to the sender without echoing its probe write.
         self.accept(self.sender, "changeLogReceipts")
         self.accept(self.sender, "changeLogReceipts")
         return self.value
@@ -79,21 +80,21 @@ class ScenarioDbFactTest(unittest.TestCase):
                           ("recreate", self.watcher), ("read", "v2"), ("write", "v3"), ("read", "v3")],
                          self.events)
         self.assertEqual(8, scenarios.db_replicas(self.views, self.sender))
-        self.assertEqual(0, scenarios.db_replicas(self.views, self.sender, "settings"))
+        self.assertEqual(0, scenarios.db_replicas(self.views, self.sender, "probeValues"))
         self.assertIn("accepted 4 other DB facts", self.output.getvalue())
 
-    def test_a_returned_settings_fact_still_fails_beside_receipts(self):
+    def test_a_returned_probe_fact_still_fails_beside_receipts(self):
         self.echo_on = "v2"
         with self.assertRaisesRegex(AssertionError, "fact must not come back"):
             scenarios.scenario_11_cross_node_db_fact()
 
-    def test_a_returned_settings_fact_after_reconnect_also_fails(self):
+    def test_a_returned_probe_fact_after_reconnect_also_fails(self):
         self.echo_on = "v3"
         with self.assertRaisesRegex(AssertionError, "own write after the reconnect"):
             scenarios.scenario_11_cross_node_db_fact()
 
-    def test_an_extra_settings_fact_is_not_allowed_in_either_phase(self):
-        for value, message in [("v2", "exactly the two settings facts"), ("v3", "exactly one settings fact")]:
+    def test_an_extra_probe_fact_is_not_allowed_in_either_phase(self):
+        for value, message in [("v2", "exactly the two probe facts"), ("v3", "exactly one probe fact")]:
             with self.subTest(value=value):
                 self.duplicate_on = value
                 with self.assertRaisesRegex(AssertionError, message):
@@ -101,7 +102,7 @@ class ScenarioDbFactTest(unittest.TestCase):
 
     def test_a_value_read_without_a_counted_fact_cannot_satisfy_the_scenario(self):
         self.drop_on = "v2"
-        with self.assertRaisesRegex(AssertionError, "exactly the two settings facts"):
+        with self.assertRaisesRegex(AssertionError, "exactly the two probe facts"):
             scenarios.scenario_11_cross_node_db_fact()
 
 

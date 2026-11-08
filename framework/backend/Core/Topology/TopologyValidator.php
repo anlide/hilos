@@ -50,11 +50,15 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
+use Hilos\Core\TruthSource\DbWriterClaim;
+use Hilos\Core\TruthSource\DbWriterPartition;
+use Hilos\Core\TruthSource\DbWriterTransitionState;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceOwner;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Exception\NamedDatabaseException;
@@ -65,6 +69,8 @@ use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Database\Schema\SetOwnershipGuard;
 use Hilos\Database\Schema\SetTree;
 use Hilos\Hilos;
+use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
+use Hilos\Notification\Delivery\DeliveryChannelRegistry;
 use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -1026,30 +1032,8 @@ final class TopologyValidator
     }
 
     /**
-     * Refuses a topology whose declared ownership contradicts itself, before anything starts.
-     *
-     * Four contradictions, all of them readable off the classes: two owners holding one
-     * collection in full; one owner holding a collection whole while another holds rows or a set
-     * of it; two different classes holding sets of one table in full; and a class naming one
-     * collection in both its reads and its claims. A pair of by-row claims and a pair of set and
-     * by-row claims are left alone, because only the instance and database know which rows an
-     * instance holds and whether one of those rows belongs to the set. What those pairs do at
-     * runtime stays with the runtime guard, which judges by the claim actually laid down. Set
-     * owners are compared by class rather than by key: one column cuts the table and the two
-     * classes meet on every instance for which both are started, while instances of one class
-     * hold different sets.
-     *
-     * Full is the word the runtime already uses ({@see TruthSourceOperations::isComplete()}): a
-     * collection has one full owner, and a co-owner short of an operation beside it is a declared
-     * shape and not a collision - a notification library against its delivery channels, a set
-     * holder against the library that parks what it just created. A start-time refusal judging
-     * that any other way would refuse what the running system calls normal.
-     *
-     * What it deliberately does NOT answer is whether a collection has an owner at all. Seven
-     * live claims in this codebase come from classes that are not agents - six test-only commands
-     * and the application class - and a topology cannot see them: their claim is laid down and
-     * taken back by the runner of the command that made it. A rule promising that check would be
-     * a rule lying about its own reach.
+     * DB compares every changing writer against exact closed transition states. RT retains its
+     * complete-operation comparison and receipts. Neither branch proves that every collection has an owner.
      *
      * @param array $agents Agent registry
      * @param class-string<Hilos> $hilosClass Project facade class
@@ -1060,22 +1044,7 @@ final class TopologyValidator
         $rejected = [];
         $owners = $this->declaredOwnerClasses($agents, $rejected);
 
-        $this->validateSharedOwners(
-            $this->ownershipConflicts($this->completeClaims(
-                $owners,
-                [
-                    self::CLAIM_WHOLE => OwnershipDeclaration::dbCollectionsOf(...),
-                    self::CLAIM_SET => OwnershipDeclaration::dbSetCollectionsOf(...),
-                    self::CLAIM_ROWS => OwnershipDeclaration::dbRowCollectionsOf(...),
-                ],
-            )),
-            $this->constantArray($hilosClass, self::SECTION_SHARED_DB_OWNERS, $errors),
-            self::SECTION_SHARED_DB_OWNERS,
-            self::HALF_DB,
-            $owners,
-            $rejected,
-            $errors,
-        );
+        $this->validateDbWriters($owners, $agents, $hilosClass, $errors);
         $this->validateSharedOwners(
             $this->ownershipConflicts($this->completeClaims(
                 $owners,
@@ -1127,6 +1096,221 @@ final class TopologyValidator
         }
 
         return $owners;
+    }
+
+    /**
+     * @param list<class-string<AbstractAgent>> $owners Deduplicated registered workers
+     * @param array $agents Agent registry
+     * @param class-string<Hilos> $hilosClass Inspected facade, without initializing it
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateDbWriters(array $owners, array $agents, string $hilosClass, array &$errors): void
+    {
+        $claims = [];
+        foreach ($owners as $owner) {
+            foreach (DbWriterClaim::declarationsOf($owner) as $collection => $declarations) {
+                $claims[$collection] = [...($claims[$collection] ?? []), ...$declarations];
+            }
+        }
+        $partitioned = $this->dbPartitionOwners($owners, $agents, $hilosClass, $errors);
+        $records = $this->constantArray($hilosClass, self::SECTION_SHARED_DB_OWNERS, $errors);
+        $catalog = $hilosClass::getDbWriterTransitions();
+        $conflicts = [];
+        foreach ($claims as $collection => $declarations) {
+            foreach ($declarations as $index => $left) {
+                if (!$this->isChangingDbClaim($left)) {
+                    continue;
+                }
+                foreach (array_slice($declarations, $index + 1) as $right) {
+                    if ($left->ownerClass === $right->ownerClass || !$this->isChangingDbClaim($right)) {
+                        continue;
+                    }
+                    if ($collection === HilosDbContext::notificationDeliveries
+                        && in_array($left->ownerClass, $partitioned, true)
+                        && in_array($right->ownerClass, $partitioned, true)) {
+                        continue;
+                    }
+                    $conflicts[$collection][] = [$left, $right];
+                }
+            }
+        }
+
+        foreach ($records as $collection => $pending) {
+            $path = self::SECTION_SHARED_DB_OWNERS . "['{$collection}']";
+            if (!is_string($collection) || $collection === '') {
+                $errors[] = self::SECTION_SHARED_DB_OWNERS . ' contains an invalid collection key';
+                continue;
+            }
+            if (!is_array($pending) || !array_is_list($pending) || $pending === []
+                || array_filter($pending, static fn (mixed $leaf): bool => !is_string($leaf)
+                    || preg_match('/^HIL-[1-9][0-9]*$/D', $leaf) !== 1) !== []) {
+                $errors[] = "{$path} must be a nonempty dense list of implementing HIL keys; owners/debt is RT-only";
+                continue;
+            }
+            $canonical = array_values(array_unique($pending));
+            sort($canonical, SORT_STRING);
+            if ($pending !== $canonical) {
+                $errors[] = "{$path} must contain unique sorted implementing keys";
+                continue;
+            }
+            if (!isset($catalog[$collection])) {
+                $errors[] = "{$path} names an unknown DB writer collection";
+                continue;
+            }
+            if (!isset($conflicts[$collection])) {
+                $errors[] = "{$path} is stale: no changing writer pair remains; remove the active record";
+                continue;
+            }
+        }
+
+        foreach ($conflicts as $collection => $pairs) {
+            $pending = $records[$collection] ?? null;
+            $state = null;
+            foreach ($catalog[$collection] ?? [] as $candidate) {
+                if ($candidate->pendingLeaves === $pending) {
+                    $state = $candidate;
+                    break;
+                }
+            }
+            if ($state !== null
+                && $this->dbClaimVector($state->claims) === $this->dbClaimVector($claims[$collection])
+                && $this->dbStatePartitionsMatch($state, $collection, $partitioned)) {
+                continue;
+            }
+            $debt = is_array($pending) ? implode(', ', array_filter($pending, is_string(...))) : 'missing';
+            foreach ($pairs as [$left, $right]) {
+                $errors[] = "DB collection '{$collection}': " . $this->dbClaimDescription($left)
+                    . ' conflicts with ' . $this->dbClaimDescription($right)
+                    . "; pending [{$debt}] does not match an exact closed DB writer state;"
+                    . ' hand the write to its owner / retire the prescribed transition';
+            }
+            if ($state !== null) {
+                $errors[] = "DB collection '{$collection}' expected declarations: "
+                    . implode('; ', $this->dbClaimVector($state->claims)) . '; actual declarations: '
+                    . implode('; ', $this->dbClaimVector($claims[$collection]));
+            }
+        }
+    }
+
+    /**
+     * @param DbWriterClaim $claim Expanded declaration
+     * @return bool Whether the claim changes an existing row
+     */
+    private function isChangingDbClaim(DbWriterClaim $claim): bool
+    {
+        return $claim->operations->allows(TruthSourceOperation::Update)
+            || $claim->operations->allows(TruthSourceOperation::Remove);
+    }
+
+    /**
+     * @param DbWriterClaim $claim Expanded declaration
+     * @return string Class, width and canonical operations, suitable for exact comparison and diagnostics
+     */
+    private function dbClaimDescription(DbWriterClaim $claim): string
+    {
+        $operations = array_filter(TruthSourceOperation::ALL, $claim->operations->allows(...));
+
+        return $claim->ownerClass . ' ' . $claim->width->value . ' ['
+            . implode(', ', array_map(static fn (TruthSourceOperation $operation): string => $operation->value, $operations)) . ']';
+    }
+
+    /**
+     * @param list<DbWriterClaim> $claims Expanded declarations of a collection, including empty claims
+     * @return list<string> Canonical creator/changing vector; declaration order grants no permission
+     */
+    private function dbClaimVector(array $claims): array
+    {
+        $vector = array_map(
+            $this->dbClaimDescription(...),
+            array_filter($claims, static fn (DbWriterClaim $claim): bool => !$claim->operations->isEmpty()),
+        );
+        sort($vector, SORT_STRING);
+
+        return $vector;
+    }
+
+    /**
+     * @param DbWriterTransitionState $state Selected closed state
+     * @param string $collection Collection being compared
+     * @param list<class-string<AbstractAgent>> $partitioned Workers with verified channel addresses
+     * @return bool Whether every channel claim has exactly the state's partition declaration
+     */
+    private function dbStatePartitionsMatch(DbWriterTransitionState $state, string $collection, array $partitioned): bool
+    {
+        foreach ($state->claims as $claim) {
+            $expected = $collection === HilosDbContext::notificationDeliveries
+                && is_subclass_of($claim->ownerClass, AbstractDeliveryChannelAgent::class)
+                ? $state->partitions : [];
+            $actual = in_array($claim->ownerClass, $partitioned, true) ? [DbWriterPartition::NotificationChannelShard] : [];
+            if ($expected !== $actual) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * A descriptor proves only the address of its registered delivery worker, never a library or holder.
+     * Metadata is read in the inspected facade's scope, without installing it as the active application.
+     *
+     * @param list<class-string<AbstractAgent>> $owners Deduplicated registered workers
+     * @param array $agents Agent registry
+     * @param class-string<Hilos> $hilosClass Inspected facade
+     * @param list<string> $errors Validation error accumulator
+     * @return list<class-string<AbstractAgent>> Workers with unique, routed channel/shard descriptors
+     */
+    private function dbPartitionOwners(array $owners, array $agents, string $hilosClass, array &$errors): array
+    {
+        $opted = array_values(array_filter($owners, static fn (string $owner): bool => $owner::DB_WRITER_PARTITION !== null));
+        if ($opted === []) {
+            return [];
+        }
+        $registryClass = Hilos::catalogConstantOf($hilosClass, 'NOTIFICATION_CHANNEL_REGISTRY');
+        if (!is_string($registryClass) || !is_a($registryClass, DeliveryChannelRegistry::class, true)) {
+            $errors[] = 'DB partition proof requires a delivery channel registry';
+            return [];
+        }
+        $descriptors = $registryClass::all();
+        $partitioned = [];
+        foreach ($opted as $owner) {
+            if (!is_subclass_of($owner, AbstractDeliveryChannelAgent::class)) {
+                $errors[] = "{$owner} DB_WRITER_PARTITION requires a registered delivery subclass";
+                continue;
+            }
+            $matching = [];
+            foreach ($descriptors as $key => $descriptor) {
+                $signal = $descriptor->deliverSignalName();
+                if (array_key_exists($signal, $owner::AGENT_SIGNALS) || in_array($signal, $owner::AGENT_SIGNALS, true)) {
+                    $matching[$key] = $descriptor;
+                }
+            }
+            if (count($matching) !== 1) {
+                $errors[] = "{$owner} DB_WRITER_PARTITION requires one unique descriptor with a deliverSignalName/AGENT_SIGNALS route";
+                continue;
+            }
+            $key = array_key_first($matching);
+            $descriptor = $matching[$key];
+            $signal = $descriptor->deliverSignalName();
+            $sameAddress = array_filter($descriptors, static fn ($other): bool => $other->name() === $descriptor->name()
+                || $other->deliverSignalName() === $signal);
+            $routedOwners = array_filter($owners, static fn (string $worker): bool =>
+                array_key_exists($signal, $worker::AGENT_SIGNALS) || in_array($signal, $worker::AGENT_SIGNALS, true));
+            $route = $owner::AGENT_SIGNALS[$signal] ?? null;
+            $entry = $agents[$owner::AGENT_TYPE] ?? null;
+            $indexed = is_array($entry) && ($entry[AgentRegistryKey::INDEXED] ?? false) === true;
+            $indexField = is_array($route) ? ($route[AgentSignalConfigKey::INDEX_FIELD] ?? null) : null;
+            if ($key !== $descriptor->name() || $key === '' || $signal === ''
+                || count($sameAddress) !== 1 || count($routedOwners) !== 1
+                || AgentRegistry::workerClass($entry) !== $owner
+                || $descriptor->isPooled() !== $indexed || $descriptor->indexField() !== $indexField) {
+                $errors[] = "{$owner} DB_WRITER_PARTITION has no unique registered channel/shard address";
+                continue;
+            }
+            $partitioned[] = $owner;
+        }
+
+        return $partitioned;
     }
 
     /**

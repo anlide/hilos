@@ -170,19 +170,25 @@ final class ClusterProbeRegistryTest extends TestCase
         );
     }
 
-    public function testTheDbProbeClaimOnTheSettingsIsIncomplete(): void
+    public function testTheDbProbeClaimsOnlyItsNodesProbeValuesSet(): void
     {
-        // Adding and updating, never the whole: beside the settings library, which owns the
-        // collection whole, an incomplete claim is a lawful co-owner and a complete one would be
-        // a second full owner the startup refuses.
-        $claims = OwnershipDeclaration::dbCollectionsOf(DbProbeAgent::class);
+        // The claim reads the whole collection but writes only this node's set. Settings has
+        // no claim at any width, and the probe never removes its rows.
+        $claims = OwnershipDeclaration::dbSetCollectionsOf(DbProbeAgent::class);
 
-        $this->assertArrayHasKey(HilosDbContext::settings, $claims);
-        $this->assertFalse($claims[HilosDbContext::settings]->isComplete());
+        $this->assertSame([HilosDbContext::probeValues], array_keys($claims));
         $this->assertSame(
-            [HilosDbContext::settings => [TruthSourceOperation::Add, TruthSourceOperation::Update]],
-            DbProbeAgent::OWNS_DB,
+            [TruthSourceOperation::Add, TruthSourceOperation::Update],
+            $claims[HilosDbContext::probeValues]->asList(),
         );
+        $this->assertSame(
+            [HilosDbContext::probeValues => [TruthSourceOperation::Add, TruthSourceOperation::Update]],
+            DbProbeAgent::OWNS_DB_SET,
+        );
+        $this->assertSame([], OwnershipDeclaration::dbCollectionsOf(DbProbeAgent::class));
+        $this->assertSame([], OwnershipDeclaration::dbRowCollectionsOf(DbProbeAgent::class));
+        $this->assertNotContains(HilosDbContext::probeValues, DbProbeAgent::readDbCollections());
+        $this->assertSame('', (new DbProbeAgent())->ownedDbSetKey(HilosDbContext::probeValues));
     }
 
     public function testTheSetProbeIsANodeReplicaThatClaimsItsNodesSet(): void
