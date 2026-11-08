@@ -179,7 +179,9 @@ export function HilosTableEmptyState<R>({
           aria-hidden="true"
         >
           <i className="bi bi-gear fs-1 text-warning" />
-          <i className="bi bi-exclamation-circle-fill text-danger position-absolute hilos-table-unavailable-mark" />
+          <span className="badge p-0 position-absolute bottom-0 start-100 translate-middle">
+            <i className="bi bi-exclamation-circle-fill text-danger" />
+          </span>
         </span>
         <div
           className="fw-semibold small mb-1"

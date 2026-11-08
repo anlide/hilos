@@ -144,9 +144,11 @@ function filterTerm(view: HilosTableFilterView): string {
       >
         <span class="position-relative d-inline-block mb-2" aria-hidden="true">
           <i class="bi bi-gear fs-1 text-warning"></i>
-          <i
-            class="bi bi-exclamation-circle-fill text-danger position-absolute hilos-table-unavailable-mark"
-          ></i>
+          <span
+            class="badge p-0 position-absolute bottom-0 start-100 translate-middle"
+          >
+            <i class="bi bi-exclamation-circle-fill text-danger"></i>
+          </span>
         </span>
         <div
           class="fw-semibold small mb-1"
