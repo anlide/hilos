@@ -203,7 +203,11 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Auth\AccountDeletion\AccountDeletionMessages;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
 use Hilos\Core\Action\ActionFailureReason;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Action\ActionRefusal;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Users\DTO\UserAdminCreateSignalData;
+use Hilos\Users\DTO\UserAdminCreateDoneSignalData;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -414,6 +418,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => AccountDeletionSetSignalData::class,
         HilosSignalConstants::HILOS_USER_ADMIN_RENAME => AdminRenameSignalData::class,
+        HilosSignalConstants::HILOS_USER_ADMIN_CREATE => UserAdminCreateSignalData::class,
         HilosSignalConstants::HILOS_USER_RENAME_DONE => UserRenameDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_PASSWORD_REHASH_DONE => UserPasswordRehashDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY_DONE => UserAddressVerifyDoneSignalData::class,
@@ -1176,6 +1181,15 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 }
 
                 $this->handleDeletionSetRequest($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_ADMIN_CREATE:
+                if (!$data->data instanceof UserAdminCreateSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserAdminCreateSignalData::class, $data->data);
+                }
+
+                $this->handleAdminCreate($data->data);
 
                 return;
 
@@ -3152,6 +3166,19 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Uses the same Add right as registration, with no registration hooks afterward.
+     * Not final for the test-stand substitution described by createUser().
+     *
+     * @return int Id of the created administrator
+     * @throws HilosException When the insert fails
+     * @throws SourceChangeSubscriberException When a store announcement subscriber fails
+     */
+    protected function createAdministrator(): int
+    {
+        return (int)Hilos::$db->users->actions->registerAdmin()->id;
+    }
+
+    /**
      * @return SecondFactorCommands The second factor's commands, built once per process
      */
     protected function secondFactorCommands(): SecondFactorCommands
@@ -3165,6 +3192,30 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     protected function stepUpCommands(): StepUpCommands
     {
         return $this->stepUpCommands ??= new StepUpCommands($this, $this->passkeyCommands());
+    }
+
+    /**
+     * @param UserAdminCreateSignalData $ask Command's creation request
+     * @throws InvalidFormatException When the created id cannot form a valid answer
+     */
+    private function handleAdminCreate(UserAdminCreateSignalData $ask): void
+    {
+        try {
+            $userId = $this->createAdministrator();
+        } catch (Throwable $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError('Administrator creation failed: ' . $e->getMessage());
+            }
+            $this->sendToAgent(
+                HilosSignalConstants::HILOS_USER_ADMIN_CREATE_DONE,
+                UserAdminCreateDoneSignalData::refused($ask, $refusal),
+            );
+
+            return;
+        }
+
+        $this->sendToAgent(HilosSignalConstants::HILOS_USER_ADMIN_CREATE_DONE, UserAdminCreateDoneSignalData::created($ask, $userId));
     }
 
     /**

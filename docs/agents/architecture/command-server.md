@@ -254,10 +254,14 @@ row when the session carries none. The cookie's name is the installation's own
 (`SessionCookieName::resolve()`: `hilos_session_token_` and a hash of the database
 name, unless `HILOS_SESSION_COOKIE_NAME` sets it), and the command's help prints it. Its two halves are
 `AdminCreateCommand` on the CLI and
-`AbstractSessionsLibraryAgent::handleAdminCreateCommand()` on the agent, with
-`mintAdminUser()` writing a new `hilos_user` row — the framework's in every
-project since HIL-1197. A session that already carries a person has that person
-flagged by their own agent, and the session is bound on its answer (HIL-1404).
+`AbstractSessionsLibraryAgent::handleAdminCreateCommand()` on the sessions holder.
+For an anonymous session, the holder sends `hilos_user_admin_create` to the users
+library, which creates the `hilos_user` row and answers with
+`hilos_user_admin_create_done`; the holder then binds the session. If no reply
+arrives within `AGENT_WAIT_SECONDS`, the holder refuses the waiting command,
+though a later successful reply can still bind the still-anonymous session. A
+session that already carries a person has that person flagged by their own agent,
+and the session is bound on its answer (HIL-1404).
 
 A session whose expiry has passed is dropped by the same door a handshake goes
 through (`resolveHandshakeSession()`, the HIL-398 rule), so the user it carried is

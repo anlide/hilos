@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Library\AbstractUsersLibraryAgent;
+use Hilos\Constants\CommandChannelWindows;
+use Hilos\Users\DTO\UserAdminCreateSignalData;
+use Hilos\Users\DTO\UserAdminCreateDoneSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
@@ -45,7 +49,7 @@ use Hilos\Users\Agent\AbstractUserAgent;
  * has an administrator minted, that `created` tells a mint from a grant and `expired` tells why
  * the user changed (HIL-700). The mint and the agent's write are the framework's over
  * `hilos_user` and are replaced here, so the route is pinned apart from the table;
- * {@see SessionsLibraryPersonIntegrationTest} pins the row they write.
+ * {@see UsersLibraryAdminCreateIntegrationTest} pins the created row.
  */
 final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationTestCase
 {
@@ -102,6 +106,8 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
     /** Failure the person's agent raises instead of writing the flag, or null to let it write. */
     private ?ItemNotFoundForUpdateException $personRefusal = null;
 
+    private AdminCreateRouteTestUsersLibrary $usersLibrary;
+
     /**
      * @throws DatabaseException When a stub statement fails
      * @throws HilosException When the runtime cannot be mounted
@@ -109,12 +115,13 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
     protected function setUp(): void
     {
         parent::setUp();
+        $this->usersLibrary = new AdminCreateRouteTestUsersLibrary();
 
         self::runStubs(down: true);
         self::runStubs(down: false);
         Database::sqlRun(
             "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Existing'), (?, 'Minted by fixture')",
-            [self::EXISTING_USER_ID, AdminCreateRouteTestAgent::MINTED_USER_ID],
+            [self::EXISTING_USER_ID, AdminCreateRouteTestUsersLibrary::MINTED_USER_ID],
         );
 
         $this->previousDb = Hilos::$db;
@@ -163,7 +170,7 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
         $reply = $this->consumeReply($agent);
         self::assertFalse($reply->isOk());
         self::assertStringContainsString('No session', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
-        self::assertFalse($agent->called, 'A token nobody holds never reaches the mint');
+        self::assertSame(0, $this->usersLibrary->calls, 'A token nobody holds never reaches the mint');
         self::assertSame([], $this->personAgents, 'A token nobody holds never reaches a person');
     }
 
@@ -179,7 +186,7 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
 
         $reply = $this->consumeReply($agent);
         self::assertFalse($reply->isOk());
-        self::assertFalse($agent->called);
+        self::assertSame(0, $this->usersLibrary->calls);
         self::assertSame([], $this->personAgents);
     }
 
@@ -195,7 +202,7 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
 
         $reply = $this->consumeReply($agent);
         self::assertTrue($reply->isOk());
-        self::assertFalse($agent->called, 'A person who exists is not minted');
+        self::assertSame(0, $this->usersLibrary->calls, 'A person who exists is not minted');
         self::assertSame([self::EXISTING_USER_ID], array_keys($this->personAgents));
         $person = $this->personAgents[self::EXISTING_USER_ID];
         self::assertInstanceOf(AdminCreateRouteTestUserAgent::class, $person);
@@ -219,14 +226,14 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
 
         $reply = $this->consumeReply($agent);
         self::assertTrue($reply->isOk());
-        self::assertTrue($agent->called, 'A session with no user has an administrator minted');
+        self::assertSame(1, $this->usersLibrary->calls, 'A session with no user has an administrator minted');
         self::assertSame([], $this->personAgents);
-        self::assertSame(AdminCreateRouteTestAgent::MINTED_USER_ID, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
+        self::assertSame(AdminCreateRouteTestUsersLibrary::MINTED_USER_ID, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_CREATED]);
         self::assertFalse($reply->payload[AdminCommandConstants::FIELD_EXPIRED], 'It carried nobody to lose');
         // The bind is the half that makes the mint usable: without it the operator owns an
         // administrator he has no session to reach it with.
-        self::assertSame(AdminCreateRouteTestAgent::MINTED_USER_ID, self::boundUserId(self::TOKEN));
+        self::assertSame(AdminCreateRouteTestUsersLibrary::MINTED_USER_ID, self::boundUserId(self::TOKEN));
     }
 
     /**
@@ -251,13 +258,13 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
 
         $reply = $this->consumeReply($agent);
         self::assertTrue($reply->isOk());
-        self::assertTrue($agent->called);
+        self::assertSame(1, $this->usersLibrary->calls);
         self::assertSame([], $this->personAgents, 'The expired user is gone before anybody is flagged');
-        self::assertSame(AdminCreateRouteTestAgent::MINTED_USER_ID, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
+        self::assertSame(AdminCreateRouteTestUsersLibrary::MINTED_USER_ID, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_CREATED]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_EXPIRED]);
         self::assertNull(Hilos::$db->sessions->findByToken(self::TOKEN));
-        self::assertSame(AdminCreateRouteTestAgent::MINTED_USER_ID, self::boundUserId(Hilos::$db->sessions[$sessionId]->token));
+        self::assertSame(AdminCreateRouteTestUsersLibrary::MINTED_USER_ID, self::boundUserId(Hilos::$db->sessions[$sessionId]->token));
         self::assertCount(0, Hilos::$rt->hilosSessionRotations, 'No live tab means no ticket to hand out');
     }
 
@@ -290,7 +297,7 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
         self::assertSame(['first-tab'], $tickets[0]->acceptKeys);
         self::assertSame($sessionId, $tickets[0]->sessionId);
         self::assertNotSame(self::TOKEN, $tickets[0]->sessionToken);
-        self::assertSame(AdminCreateRouteTestAgent::MINTED_USER_ID, self::boundUserId($tickets[0]->sessionToken));
+        self::assertSame(AdminCreateRouteTestUsersLibrary::MINTED_USER_ID, self::boundUserId($tickets[0]->sessionToken));
         $rotation = Hilos::$rt->hilosSessionRotations[$tickets[0]->rotationTicket];
         self::assertNotNull($rotation);
         self::assertSame(['second-tab'], $rotation->acceptKeysToDrop);
@@ -317,17 +324,137 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
         self::assertSame(self::EXISTING_USER_ID, self::boundUserId(self::TOKEN), 'The session keeps its person');
     }
 
+    public function testCreationFailureAnswersOnceAndLeavesTheSessionAnonymous(): void
+    {
+        self::seedSession(self::TOKEN, null);
+        $agent = new AdminCreateRouteTestAgent();
+        $this->usersLibrary->refuseWith = new ItemNotFoundForUpdateException('Creation refused');
+
+        $this->sendCommand($agent, self::TOKEN);
+
+        $reply = $this->consumeReply($agent);
+        self::assertFalse($reply->isOk());
+        self::assertSame('Creation refused', $reply->payload[CommandConstants::FIELD_MESSAGE]);
+        self::assertSame(1, $this->usersLibrary->calls);
+        self::assertNull(self::boundUserId(self::TOKEN));
+    }
+
+    public function testASecondCommandDuringTheWaitIsRefusedWithoutAnotherCreation(): void
+    {
+        self::seedSession(self::TOKEN, null);
+        $agent = new AdminCreateRouteTestAgent();
+        $this->sendCommand($agent, self::TOKEN);
+        $ask = $this->takeCreateRequest();
+
+        $this->sendCommand($agent, self::TOKEN, 'corr-2');
+        $reply = $this->consumeReply($agent);
+        self::assertFalse($reply->isOk());
+        self::assertSame('corr-2', $reply->correlationId);
+        self::assertStringContainsString('already being created', $reply->payload[CommandConstants::FIELD_MESSAGE]);
+        self::assertNull(self::boundUserId(self::TOKEN));
+
+        $this->usersLibrary->onSignalAgent(new AgentSignalData($ask), '', HilosSignalConstants::HILOS_USER_ADMIN_CREATE);
+        self::assertTrue($this->consumeReply($agent)->isOk());
+        self::assertSame(1, $this->usersLibrary->calls);
+    }
+
+    public function testTimeoutAnswersOnceAndALateSuccessBindsWithoutASecondReply(): void
+    {
+        self::seedSession(self::TOKEN, null);
+        $agent = new AdminCreateRouteTestAgent();
+        $this->sendCommand($agent, self::TOKEN);
+        $ask = $this->takeCreateRequest();
+
+        $agent->sweepCreates(microtime(true) + CommandChannelWindows::AGENT_WAIT_SECONDS);
+        $reply = $this->consumeReply($agent);
+        self::assertFalse($reply->isOk());
+        self::assertSame('corr-1', $reply->correlationId);
+        self::assertStringContainsString('users library did not answer', $reply->payload[CommandConstants::FIELD_MESSAGE]);
+        self::assertNull(self::boundUserId(self::TOKEN));
+
+        $this->deliverCreation($agent, $ask);
+        self::assertSame(AdminCreateRouteTestUsersLibrary::MINTED_USER_ID, self::boundUserId(self::TOKEN));
+        $agent->sweepCreates(microtime(true) + CommandChannelWindows::AGENT_WAIT_SECONDS);
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            self::assertNotInstanceOf(CommandReplyDTO::class, $signal->data, 'A timeout already answered the command');
+        }
+    }
+
+    public function testASessionSignedInDuringCreationKeepsItsPersonAndTheRefusalNamesTheCreatedId(): void
+    {
+        self::seedSession(self::TOKEN, null);
+        $agent = new AdminCreateRouteTestAgent();
+        $this->sendCommand($agent, self::TOKEN);
+        $ask = $this->takeCreateRequest();
+        Hilos::$db->sessions->findByToken(self::TOKEN)->actions->bindUser(self::EXISTING_USER_ID);
+
+        $this->deliverCreation($agent, $ask);
+
+        $reply = $this->consumeReply($agent);
+        self::assertFalse($reply->isOk());
+        self::assertStringContainsString('User #42', $reply->payload[CommandConstants::FIELD_MESSAGE]);
+        self::assertStringContainsString('signed in meanwhile', $reply->payload[CommandConstants::FIELD_MESSAGE]);
+        self::assertSame(self::EXISTING_USER_ID, self::boundUserId(self::TOKEN));
+    }
+
+    public function testASessionDeletedDuringCreationIsNotRecreatedAndTheRefusalNamesTheCreatedId(): void
+    {
+        self::seedSession(self::TOKEN, null);
+        $agent = new AdminCreateRouteTestAgent();
+        $this->sendCommand($agent, self::TOKEN);
+        $ask = $this->takeCreateRequest();
+        Hilos::$db->sessions->findByToken(self::TOKEN)->actions->delete();
+
+        $this->deliverCreation($agent, $ask);
+
+        $reply = $this->consumeReply($agent);
+        self::assertFalse($reply->isOk());
+        self::assertStringContainsString('User #42', $reply->payload[CommandConstants::FIELD_MESSAGE]);
+        self::assertStringContainsString('no longer exists', $reply->payload[CommandConstants::FIELD_MESSAGE]);
+        self::assertNull(Hilos::$db->sessions->findByToken(self::TOKEN));
+    }
+
+    /** @return UserAdminCreateSignalData Request removed from the queue before either hop runs */
+    private function takeCreateRequest(): UserAdminCreateSignalData
+    {
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            self::assertNotInstanceOf(CommandReplyDTO::class, $signal->data, 'The command must wait for the library');
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_USER_ADMIN_CREATE) {
+                self::assertInstanceOf(AgentSignalData::class, $signal->data);
+                self::assertInstanceOf(UserAdminCreateSignalData::class, $signal->data->data);
+
+                return $signal->data->data;
+            }
+        }
+
+        self::fail('The holder owes the users library a creation request');
+    }
+
+    /**
+     * @param AdminCreateRouteTestAgent $agent Holder awaiting the answer
+     * @param UserAdminCreateSignalData $ask Request whose creation completed
+     */
+    private function deliverCreation(AdminCreateRouteTestAgent $agent, UserAdminCreateSignalData $ask): void
+    {
+        $agent->onSignalAgent(
+            new AgentSignalData(UserAdminCreateDoneSignalData::created($ask, AdminCreateRouteTestUsersLibrary::MINTED_USER_ID)),
+            '',
+            HilosSignalConstants::HILOS_USER_ADMIN_CREATE_DONE,
+        );
+    }
+
     /**
      * Drives one admin:create command through the agent under test.
      *
      * @param AbstractAgent $agent Agent under test
      * @param string $sessionToken Session cookie token to send
+     * @param string $correlationId Command identity
      */
-    private function sendCommand(AbstractAgent $agent, string $sessionToken): void
+    private function sendCommand(AbstractAgent $agent, string $sessionToken, string $correlationId = 'corr-1'): void
     {
         $agent->onSignalCommand(
             new CommandRequestDTO(
-                correlationId: 'corr-1',
+                correlationId: $correlationId,
                 command: CliCommands::ADMIN_CREATE,
                 payload: [AdminCommandConstants::FIELD_SESSION_TOKEN => $sessionToken],
             ),
@@ -354,7 +481,11 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
             $name = $signal->signalName->getName();
             if ($name === HilosSignalConstants::HILOS_USER_ADMIN_COMMAND) {
                 $this->deliverToPerson($signal);
-            } elseif ($name === HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE) {
+            } elseif ($name === HilosSignalConstants::HILOS_USER_ADMIN_CREATE) {
+                self::assertInstanceOf(AgentSignalData::class, $signal->data);
+                $this->usersLibrary->onSignalAgent($signal->data, '', $name);
+            } elseif ($name === HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE
+                || $name === HilosSignalConstants::HILOS_USER_ADMIN_CREATE_DONE) {
                 self::assertInstanceOf(AgentSignalData::class, $signal->data);
                 $agent->onSignalAgent($signal->data, '', $name);
             } elseif ($signal->data instanceof CommandReplyDTO) {
@@ -442,28 +573,32 @@ final class AdminCreateRouteTestDbContext extends HilosDbContext
 {
 }
 
-/**
- * The sessions library with the framework's administrator mint replaced, so the route is pinned
- * apart from the person table: it inherits the command route whole, holds no connections of its
- * own, and records that the mint was asked and names a user instead of writing a row. The mint
- * itself is pinned by {@see SessionsLibraryPersonIntegrationTest}.
- */
+/** Sessions holder with its deadline sweep exposed to deterministic tests. */
 final class AdminCreateRouteTestAgent extends AbstractSessionsLibraryAgent
 {
-    /** @var int User id this mint reports for a session that carried none */
+    /** @param float $now Time to bring to the sweep, in seconds */
+    public function sweepCreates(float $now): void
+    {
+        $this->sweepAdminCreates($now);
+    }
+}
+
+/** Account creator with its write replaced by a seeded row or a requested refusal. */
+final class AdminCreateRouteTestUsersLibrary extends AbstractUsersLibraryAgent
+{
     public const int MINTED_USER_ID = 42;
 
-    /** @var bool Whether the mint was reached at all */
-    public bool $called = false;
+    public int $calls = 0;
 
-    /**
-     * Records the call and names the user the fixture seeded for it.
-     *
-     * @return int Id of the administrator just minted
-     */
-    protected function mintAdminUser(): int
+    public ?ItemNotFoundForUpdateException $refuseWith = null;
+
+    /** @return int Seeded administrator id */
+    protected function createAdministrator(): int
     {
-        $this->called = true;
+        $this->calls++;
+        if ($this->refuseWith !== null) {
+            throw $this->refuseWith;
+        }
 
         return self::MINTED_USER_ID;
     }

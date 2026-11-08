@@ -65,6 +65,8 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\DTO\UserAddressVerifyDoneSignalData;
 use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
+use Hilos\Users\DTO\UserAdminCreateSignalData;
+use Hilos\Users\DTO\UserAdminCreateDoneSignalData;
 use Hilos\Users\DTO\UserAdminCommandSignalData;
 use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
@@ -616,7 +618,8 @@ abstract class IntegrationTestCase extends TestCase
                 $agent = $this->personAgent($frame->userId);
                 $this->underAgent($agent, static fn () => $agent->onSignalAgent($data, '', $name));
             } elseif (
-                $frame instanceof UserRenameDoneSignalData
+                $frame instanceof UserAdminCreateSignalData
+                || $frame instanceof UserRenameDoneSignalData
                 || $frame instanceof UserPasswordRehashDoneSignalData
                 || $frame instanceof UserAddressVerifyDoneSignalData
                 || $frame instanceof UserPasskeyUseDoneSignalData
@@ -637,7 +640,8 @@ abstract class IntegrationTestCase extends TestCase
                 $library = $this->usersLibrary();
                 $this->underAgent($library, static fn () => $library->onSignalAgent($data, '', $name));
             } elseif (
-                $frame instanceof UserAdminWriteDoneSignalData
+                $frame instanceof UserAdminCreateDoneSignalData
+                || $frame instanceof UserAdminWriteDoneSignalData
                 || $frame instanceof UserAdminCommandDoneSignalData
                 || $frame instanceof UserBlockWriteDoneSignalData
                 || $frame instanceof UserStepUpCreditDoneSignalData

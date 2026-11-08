@@ -197,19 +197,19 @@ final class AgentTruthSourceOperationsTest extends TestCase
     }
 
     /**
-     * The sessions library holds a share of the person row and not the row: it adds, edits and removes.
+     * The sessions library holds a share of the person row and not the row: it edits and removes.
      *
-     * It mints the first administrator (HIL-1197), blocks the loser inside the merge transaction
+     * It blocks the loser inside the merge transaction
      * and removes an erased person's row (HIL-1200); the admin and block flags an administrator
      * asks for are written by the person's agent (HIL-1404). Read off an empty subclass, so what answers is the base's
      * own declaration and no project's addition to it.
      */
-    public function testSessionsLibraryMayAddEditAndEraseThePersonRow(): void
+    public function testSessionsLibraryMayEditAndEraseThePersonRow(): void
     {
         $claims = OwnershipDeclaration::dbCollectionsOf(AgentTruthSourceOperationsTestSessionsLibrary::class);
 
         $this->assertArrayHasKey(HilosDbContext::users, $claims);
-        $this->assertTrue($claims[HilosDbContext::users]->allows(TruthSourceOperation::Add));
+        $this->assertFalse($claims[HilosDbContext::users]->allows(TruthSourceOperation::Add));
         $this->assertTrue($claims[HilosDbContext::users]->allows(TruthSourceOperation::Update));
         $this->assertTrue($claims[HilosDbContext::users]->allows(TruthSourceOperation::Remove));
         $this->assertTrue($claims[HilosDbContext::userRenames]->allows(TruthSourceOperation::Remove));

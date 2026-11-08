@@ -53,6 +53,7 @@ abstract class IntegrationTestCase extends TestCase
     private const array SESSIONS_LIBRARY_ANSWERS = [
         HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE,
         HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE,
+        HilosSignalConstants::HILOS_USER_ADMIN_CREATE_DONE,
         HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE,
     ];
 
@@ -291,7 +292,9 @@ abstract class IntegrationTestCase extends TestCase
             }
 
             $person = $data->data;
-            if ($name === HilosSignalConstants::HILOS_USER_ADMIN_RENAME || $name === HilosSignalConstants::HILOS_USER_RENAME_DONE) {
+            if ($name === HilosSignalConstants::HILOS_USER_ADMIN_RENAME
+                || $name === HilosSignalConstants::HILOS_USER_RENAME_DONE
+                || $name === HilosSignalConstants::HILOS_USER_ADMIN_CREATE) {
                 $library = $this->usersLibrary();
                 $this->underAgent($library, static fn () => $library->onSignalAgent($data, '', $name));
             } elseif (in_array($name, self::SESSIONS_LIBRARY_ANSWERS, true)) {

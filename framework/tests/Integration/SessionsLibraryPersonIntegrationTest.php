@@ -34,7 +34,7 @@ use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
 
 /**
- * The person as the framework's sessions library mints and judges it (HIL-1197) and as the
+ * The person as the framework's sessions library judges it (HIL-1197) and as the
  * person's own agent flags and blocks it (HIL-1404), and an account folded into another one, or
  * gone, as the agent refuses it at the entry of the frame (HIL-1199, HIL-1703).
  *
@@ -93,20 +93,6 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
         Hilos::$sr = $this->previousRouter;
 
         parent::tearDown();
-    }
-
-    /**
-     * @throws HilosException When the administrator cannot be minted or read
-     */
-    public function testMintsAnAdministratorForASessionCarryingNobody(): void
-    {
-        $userId = $this->inLibrary(fn (): int => $this->library->mintAdmin());
-
-        self::assertGreaterThan(0, $userId);
-        $row = self::personRow($userId);
-        self::assertSame(1, (int)$row['admin']);
-        self::assertMatchesRegularExpression('/^Admin\d{4}$/', (string)$row['name']);
-        self::assertSame(1, self::personCount());
     }
 
     /**
@@ -563,23 +549,12 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
 /**
  * The framework's sessions library under a test name, with no method of the person overridden.
  *
- * The two methods it opens are protected on the base; the wrappers below only make them
+ * The takeover check is protected on the base; the wrapper below only makes it
  * reachable from the case, and add nothing to what they do.
  */
 final class SessionsLibraryPersonTestLibrary extends AbstractSessionsLibraryAgent
 {
     public const string AGENT_TYPE = 'integration_sessions_library_person';
-
-    /**
-     * Opens the protected administrator mint to the test.
-     *
-     * @return int Id of the administrator just minted
-     * @throws HilosException Whatever the framework's write raises
-     */
-    public function mintAdmin(): int
-    {
-        return $this->mintAdminUser();
-    }
 
     /**
      * Opens the protected takeover check to the test.

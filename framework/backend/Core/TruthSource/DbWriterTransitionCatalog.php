@@ -22,7 +22,6 @@ class DbWriterTransitionCatalog
     protected const string PUSH_GONE = 'HIL-1895';
     protected const string RENAME_LINK = 'HIL-1896';
     protected const string RENAME_UNLINK = 'HIL-1897';
-    protected const string ADMIN_CREATION = 'HIL-1898';
     protected const string LEGAL_HOLD = 'HIL-1899';
     protected const string DELIVERY_PRUNE = 'HIL-1902';
     protected const string FACTOR_REPLACE = 'HIL-1903';
@@ -79,8 +78,7 @@ class DbWriterTransitionCatalog
         $definitions[HilosDbContext::users] = $this->states(
             [...$this->claim($users, DbWriterClaimWidth::Whole, TruthSourceOperation::Add),
                 ...$this->claim($person, DbWriterClaimWidth::Rows, TruthSourceOperation::Update)],
-            [self::ADMIN_CREATION => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Add),
-                self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove),
+            [self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove),
                 self::MERGE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Update)],
             [self::ERASURE => $this->claim($person, DbWriterClaimWidth::Rows, TruthSourceOperation::Remove)],
         );

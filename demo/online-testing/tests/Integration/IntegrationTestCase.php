@@ -6,6 +6,7 @@ namespace Demo\OnlineTesting\Tests\Integration;
 
 use Demo\OnlineTesting\Agents\Hilos\SessionsLibraryAgent;
 use Demo\OnlineTesting\Agents\Hilos\UserAgent;
+use Demo\OnlineTesting\Agents\Hilos\UsersLibraryAgent;
 use Demo\OnlineTesting\Agents\OnlineTestingAgent;
 use Demo\OnlineTesting\Database\Database;
 use Demo\OnlineTesting\Hilos;
@@ -29,6 +30,8 @@ use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
+use Hilos\Users\DTO\UserAdminCreateSignalData;
+use Hilos\Users\DTO\UserAdminCreateDoneSignalData;
 use Hilos\Users\DTO\UserAdminCommandSignalData;
 use PHPUnit\Framework\TestCase;
 use Throwable;
@@ -48,6 +51,9 @@ abstract class IntegrationTestCase extends TestCase
 
     /** @var ?SessionsLibraryAgent Library the sessions themselves live in, built on first use */
     private ?SessionsLibraryAgent $sessionsLibrary = null;
+
+    /** @var ?UsersLibraryAgent Users library, started on first use */
+    private ?UsersLibraryAgent $usersLibrary = null;
 
     /** @var array<int, UserAgent> Agents of the people a case's frames reached, by person */
     private array $personAgents = [];
@@ -214,7 +220,10 @@ abstract class IntegrationTestCase extends TestCase
             if ($person instanceof UserAdminCommandSignalData) {
                 $agent = $this->personAgent($person->userId);
                 $this->underAgent($agent, static fn () => $agent->onSignalAgent($data, '', $name));
-            } elseif ($person instanceof UserAdminCommandDoneSignalData) {
+            } elseif ($person instanceof UserAdminCreateSignalData) {
+                $library = $this->usersLibrary();
+                $this->underAgent($library, static fn () => $library->onSignalAgent($data, '', $name));
+            } elseif ($person instanceof UserAdminCommandDoneSignalData || $person instanceof UserAdminCreateDoneSignalData) {
                 $library = $this->sessionsLibrary();
                 $this->underAgent($library, static fn () => $library->onSignalAgent($data, '', $name));
             } else {
@@ -225,6 +234,17 @@ abstract class IntegrationTestCase extends TestCase
         foreach ($rest as $signal) {
             Hilos::$sr?->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
         }
+    }
+
+    /** @return UsersLibraryAgent Account creator, started once per case */
+    protected function usersLibrary(): UsersLibraryAgent
+    {
+        if ($this->usersLibrary === null) {
+            $this->usersLibrary = new UsersLibraryAgent();
+            $this->startAgent($this->usersLibrary);
+        }
+
+        return $this->usersLibrary;
     }
 
     /**

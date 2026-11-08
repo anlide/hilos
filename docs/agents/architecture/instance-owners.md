@@ -303,9 +303,9 @@ Ordinary cross-owner writes are separate, finite transitions. The chat agent's
 borrowed journal `Update` for `unlinkEvents()` goes to the journal's personal
 owner, whose answer precedes event deletion (not in the code yet — HIL-1897).
 The users library's journal link goes to that same owner
-(not in the code yet — HIL-1896). Creating the first administrator moves from
-`mintAdminUser()` at the sessions holder to the users library; the holder
-still authorizes and binds the session (not in the code yet — HIL-1898).
+(not in the code yet — HIL-1896). Creating the first administrator moved from
+`mintAdminUser()` at the sessions holder to the users library in HIL-1898; the
+holder still authorizes and binds the session.
 Trust renewal, the administrator's term and switch-off have the ordinary
 addresses above. The complete [Writer Map](account-operations.md#writer-map)
 and [ordinary transitions](account-operations.md#ordinary-transitions) cover

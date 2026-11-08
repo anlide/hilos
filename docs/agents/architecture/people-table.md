@@ -86,20 +86,19 @@ including a repeat, the agent requests
 `hilos_user_sessions_restate`, which refreshes that person's sessions and tabs.
 
 The libraries judge those edits and do what follows them;
-creation, including the guest's submitted theme choice, stays with the
-users library, and the sessions library keeps three set operations on the row:
-minting the first administrator, the loser's block inside a merge, and the
-erased person's row. After a successful write of the password (changed or
+creation, including the guest's submitted theme choice and the first
+administrator, stays with the users library. The sessions library keeps two set
+operations on the row: the loser's block inside a merge and the erased person's
+row. After a successful write of the password (changed or
 recovered) or of a block flag that really changed, the person's agent sends the
 mandatory security notice (`SecurityNotifier`, HIL-294); a notice that cannot be
 queued goes to the agent's log and does not undo the write.
 
-Those three operations are the code today. Creation of the first
-administrator moves to the users library; the sessions holder still authorizes
-and binds the session (not in the code yet — HIL-1898). The old erasure's
-foreign `Remove` retires at its live switch
-(not in the code yet — HIL-1952), and the old merge's foreign `Update` at its
-own (not in the code yet — HIL-1999). The
+Those two sessions-holder operations are the code today. HIL-1898 moved
+creation of the first administrator to the users library; the sessions holder
+authorizes and binds the session. The old erasure's foreign `Remove` retires at
+its live switch (not in the code yet — HIL-1952), and the old merge's foreign
+`Update` at its own (not in the code yet — HIL-1999). The
 [Writer Map](account-operations.md#writer-map) keeps those terminal debts
 separate from ordinary creation. Under the detailed
 [erasure canon](account-operations.md#erasure), the personal owner removes
@@ -121,7 +120,7 @@ where it is today — a hook the project implements.
 |---|---|
 | Creating a person, the name shown for one, "an administrator is not deleted" (`assertAdministratorMayDelete()`) | HIL-1194 |
 | Renaming a person — the write, the journal row, the notification (`AbstractUserAgent::renamePerson()`, `askRename()`, `afterUserRenamed()`) | HIL-1195, HIL-1404 |
-| Creating the first administrator (`mintAdminUser()`), granting and removing rights (`AbstractUserAgent::writeAdminFlag()`), blocking (`AbstractUserAgent::writeBlockFlag()`, with its notice), whether one person may take another over (`assertImpersonationAllowed()`) | HIL-1197, HIL-1404, HIL-294 |
+| Creating the first administrator through the users library (HIL-1898), granting and removing rights (`AbstractUserAgent::writeAdminFlag()`), blocking (`AbstractUserAgent::writeBlockFlag()`, with its notice), whether one person may take another over (`assertImpersonationAllowed()`) | HIL-1197, HIL-1404, HIL-294 |
 | The `ADMIN` gate (`BrowserContext::isAdmin()`), reading `block` (the column itself, wherever a guard stands), the circle of administrators (`AdminAudience`, behind `ADMIN_AUDIENCE`), the "me" the handshake answers with (`AbstractAgent::handshakeIdentity()`) | HIL-1198 |
 | The tombstone of a merged account and "is this account already folded" (`assertMergeable()`, the merge table `hilos_user_merge`), the refusals to a folded account | HIL-1199 |
 | Erasing a person — the framework deletes the person's rename journal and row after the project's rows, along with accounts folded into that person ([account-deletion.md](account-deletion.md)) | HIL-1200 |

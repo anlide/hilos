@@ -443,6 +443,8 @@ use Hilos\Users\DTO\UserAccountDeletionCancelSignalData;
 use Hilos\Users\DTO\UserAddressVerifyDoneSignalData;
 use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
+use Hilos\Users\DTO\UserAdminCreateSignalData;
+use Hilos\Users\DTO\UserAdminCreateDoneSignalData;
 use Hilos\Users\DTO\UserAdminCommandSignalData;
 use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
@@ -2151,6 +2153,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_ADMIN_RENAME => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_USER_ADMIN_CREATE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_RENAME_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_PASSWORD_REHASH_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -2209,6 +2212,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_USER_ADMIN_CREATE_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -2517,6 +2521,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => AccountDeletionSetSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_RENAME => AdminRenameSignalData::class,
+            HilosSignalConstants::HILOS_USER_ADMIN_CREATE => UserAdminCreateSignalData::class,
             HilosSignalConstants::HILOS_USER_RENAME_DONE => UserRenameDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_PASSWORD_REHASH_DONE => UserPasswordRehashDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY_DONE => UserAddressVerifyDoneSignalData::class,
@@ -2575,6 +2580,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE => UserSessionsRestateSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE => UserAdminWriteDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE => UserAdminCommandDoneSignalData::class,
+            HilosSignalConstants::HILOS_USER_ADMIN_CREATE_DONE => UserAdminCreateDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE => UserBlockWriteDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT_DONE => UserStepUpCreditDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE_DONE => UserBrowserTrustRevokeDoneSignalData::class,
@@ -3138,7 +3144,7 @@ final class ChatTopologyRegistryTest extends TestCase
             'stepUps' => ['HIL-1952'],
             'userPhotos' => ['HIL-1952'],
             'userRenames' => ['HIL-1896', 'HIL-1897', 'HIL-1952'],
-            'users' => ['HIL-1898', 'HIL-1952', 'HIL-1999'],
+            'users' => ['HIL-1952', 'HIL-1999'],
             'verifications' => ['HIL-1952'],
         ];
         foreach (Hilos::SHARED_DB_OWNERS as $collection => $pending) {

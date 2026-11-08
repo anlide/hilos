@@ -124,7 +124,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
 
         // The subject stays literal: widths, operations and leaves are not taken from the provider.
         $vectors = [
-            'users' => [['users', 'whole', 'add'], ['person', 'rows', 'update'], ['holder', 'whole', 'add,remove,update']],
+            'users' => [['users', 'whole', 'add'], ['person', 'rows', 'update'], ['holder', 'whole', 'remove,update']],
             'identities' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove,update']],
             'verifications' => [['users', 'whole', 'add,remove,update'], ['holder', 'whole', 'remove']],
             'passkeyCredentials' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove,update']],
@@ -148,7 +148,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'userPhotos' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'remove']],
         ];
         $leaves = [
-            'users' => ['HIL-1898', 'HIL-1952', 'HIL-1999'],
+            'users' => ['HIL-1952', 'HIL-1999'],
             'identities' => ['HIL-1952', 'HIL-1999'],
             'verifications' => ['HIL-1952'],
             'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],
@@ -338,7 +338,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
     {
         $catalog = ChatHilos::getDbWriterTransitions();
         $users = $this->statesByPendingLeaves($catalog['users']);
-        self::assertSame(['', 'HIL-1898,HIL-1952,HIL-1999', 'HIL-1952,HIL-1999', 'HIL-1999'], array_keys($users));
+        self::assertSame(['', 'HIL-1952,HIL-1999', 'HIL-1999'], array_keys($users));
         $this->assertVector([
             UsersLibraryAgent::class . ':whole:add', UserAgent::class . ':rows:update',
             SessionsLibraryAgent::class . ':whole:remove,update',
@@ -513,8 +513,6 @@ final class DbWriterTransitionCatalogTest extends TestCase
     {
         $ceiling = [
             'users' => [
-                'HIL-1898,HIL-1952,HIL-1999' => [
-                    'users:whole:add', 'person:rows:update', 'holder:whole:add,remove,update'],
                 'HIL-1952,HIL-1999' => ['users:whole:add', 'person:rows:update', 'holder:whole:remove,update'],
                 'HIL-1999' => ['users:whole:add', 'person:rows:remove,update', 'holder:whole:update'],
                 '' => ['users:whole:add', 'person:rows:remove,update'],

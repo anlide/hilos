@@ -443,7 +443,7 @@ final class Hilos extends HilosFacade
         HilosDbContext::stepUps => ['HIL-1952'],
         HilosDbContext::userPhotos => ['HIL-1952'],
         HilosDbContext::userRenames => ['HIL-1896', 'HIL-1952'],
-        HilosDbContext::users => ['HIL-1898', 'HIL-1952', 'HIL-1999'],
+        HilosDbContext::users => ['HIL-1952', 'HIL-1999'],
         HilosDbContext::verifications => ['HIL-1952'],
     ];
 

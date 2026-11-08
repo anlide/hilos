@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Chat\Agents\Hilos\UserAgent;
+use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Database\Database;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
@@ -275,6 +277,71 @@ final class JournalReceiptCommandIntegrationTest extends IntegrationTestCase
         Database::sql('SELECT @hilos_receipt AS `id`');
         $this->assertNull(Database::field('id'));
         $this->assertNull(JournalReceiptScope::currentId());
+    }
+
+    public function testRealAdminCreateMintKeepsReceiptAcrossUsersLibrary(): void
+    {
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), 'test-agent');
+        $sessionToken = RandomHelper::hex(16);
+        $sessionId = Hilos::$db->sessions->actions->createAnonymous($sessionToken)->id;
+        Hilos::initBrowser();
+        $worker = new JournalReceiptCommandTestWorker();
+        $worker->handleDaemonMessage(new AgentStartDTO(SessionsLibraryAgent::AGENT_TYPE));
+        $worker->handleDaemonMessage(new AgentStartDTO(UsersLibraryAgent::AGENT_TYPE));
+        $worker->handleDaemonMessage(new AgentStartDTO(ChatAgent::AGENT_TYPE));
+        try {
+            $correlationId = RandomHelper::hex(8);
+            $frame = new SignalDTO(
+                new SignalSource(SignalSource::DAEMON),
+                new SignalType(SignalTypeConstants::COMMAND_REQUEST),
+                new SignalName(CliCommands::ADMIN_CREATE),
+                new CommandRequestDTO($correlationId, CliCommands::ADMIN_CREATE, [
+                    AdminCommandConstants::FIELD_SESSION_TOKEN => $sessionToken,
+                ]),
+            );
+            $worker->handleDaemonMessage(new DaemonAgentMessageDTO(SessionsLibraryAgent::AGENT_TYPE, $frame));
+
+            $first = $this->nextAgentFrameNamed(HilosSignalConstants::HILOS_USER_ADMIN_CREATE);
+            $this->assertInstanceOf(AgentSignalData::class, $first->data);
+            $receiptId = $first->data->receiptId;
+            $this->assertNotNull($receiptId);
+            $worker->handleDaemonMessage(new DaemonAgentMessageDTO(UsersLibraryAgent::AGENT_TYPE, $first));
+
+            $second = $this->nextAgentFrameNamed(HilosSignalConstants::HILOS_USER_ADMIN_CREATE_DONE);
+            $this->assertInstanceOf(AgentSignalData::class, $second->data);
+            $this->assertSame($receiptId, $second->data->receiptId);
+            $worker->handleDaemonMessage(new DaemonAgentMessageDTO(SessionsLibraryAgent::AGENT_TYPE, $second));
+
+            $state = $this->nextAgentFrameNamed(HilosSignalConstants::HILOS_SESSION_STATE);
+            $this->assertInstanceOf(AgentSignalData::class, $state->data);
+            $this->assertSame($receiptId, $state->data->receiptId);
+            $worker->handleDaemonMessage(new DaemonAgentMessageDTO(ChatAgent::AGENT_TYPE, $state));
+
+            $reply = $this->nextCommandReply();
+            $this->assertTrue($reply->isOk(), var_export($reply->payload, true));
+            $this->assertSame($correlationId, $reply->correlationId);
+            $userId = $reply->payload[AdminCommandConstants::FIELD_USER_ID];
+            $this->userIds[] = $userId;
+            $this->assertTrue($reply->payload[AdminCommandConstants::FIELD_CREATED]);
+            $this->assertTrue(Hilos::$db->users[$userId]->admin);
+            $this->assertSame($userId, Hilos::$db->sessions[$sessionId]->userId);
+
+            Hilos::$sr->deliverTo($worker);
+            $receipt = $this->receipt($receiptId);
+            $this->assertNotNull($receipt);
+            $this->assertSame('cli', $receipt['channel']);
+            $this->assertSame(CliCommands::ADMIN_CREATE, $receipt['action']);
+            $this->assertSame(CliCommands::ADMIN_CREATE, $receipt['source']);
+            $this->assertSame(UsersLibraryAgent::AGENT_TYPE, $receipt['agent']);
+            $this->assertSame(0, (int)$receipt['open_handovers']);
+            $this->assertGreaterThan(0, $this->logCount($receiptId));
+            Database::sql('SELECT @hilos_receipt AS `id`');
+            $this->assertNull(Database::field('id'));
+            $this->assertNull(JournalReceiptScope::currentId());
+        } finally {
+            ExecutionContext::setCurrentAgentId($this->previousAgentId);
+            Hilos::$db->sessions[$sessionId]->actions->delete();
+        }
     }
 
     public function testRealAdminGrantCommandPreservesReceiptAcrossSessionsLibraryAndUserAgent(): void
@@ -660,7 +727,9 @@ final class JournalReceiptCommandTestAgentManager extends AgentManager
     {
         return match ($agentType) {
             DemoHilosChangeLogAgent::AGENT_TYPE => new DemoHilosChangeLogAgent(),
+            ChatAgent::AGENT_TYPE => new ChatAgent(),
             SessionsLibraryAgent::AGENT_TYPE => new SessionsLibraryAgent(),
+            UsersLibraryAgent::AGENT_TYPE => new UsersLibraryAgent(),
             SettingsLibraryAgent::AGENT_TYPE => new SettingsLibraryAgent(),
             UserAgent::AGENT_TYPE => new UserAgent($agentIndex ?? throw new LogicException('Person agent needs an index')),
             default => new JournalReceiptCommandTestAgent(),

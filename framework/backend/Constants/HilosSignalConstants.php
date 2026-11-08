@@ -132,6 +132,8 @@ use Hilos\Users\DTO\UserAccountDeletionCancelSignalData;
 use Hilos\Users\DTO\UserAddressVerifyDoneSignalData;
 use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
+use Hilos\Users\DTO\UserAdminCreateSignalData;
+use Hilos\Users\DTO\UserAdminCreateDoneSignalData;
 use Hilos\Users\DTO\UserAdminCommandSignalData;
 use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
@@ -726,6 +728,18 @@ final class HilosSignalConstants
      * {@see UserAdminCommandDoneSignalData}.
      */
     public const string HILOS_USER_ADMIN_COMMAND_DONE = 'hilos_user_admin_command_done';
+
+    /**
+     * Sessions holder → users library: create the first administrator.
+     * Carried by {@see UserAdminCreateSignalData}; answered under HILOS_USER_ADMIN_CREATE_DONE.
+     */
+    public const string HILOS_USER_ADMIN_CREATE = 'hilos_user_admin_create';
+
+    /**
+     * Users library → sessions holder: creation outcome carried by {@see UserAdminCreateDoneSignalData}.
+     * The holder binds the anonymous session and answers the parked command.
+     */
+    public const string HILOS_USER_ADMIN_CREATE_DONE = 'hilos_user_admin_create_done';
 
     /**
      * Sessions library → the person's agent: write the block flag the card asked for (HIL-1404).

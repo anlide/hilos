@@ -12,6 +12,8 @@ use Hilos\Auth\Session\DTO\AccountBlockChangedSignalData;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Constants\CliCommands;
+use Hilos\Users\DTO\UserAdminCreateSignalData;
+use Hilos\Users\DTO\UserAdminCreateDoneSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Feature\HilosFeature;
@@ -222,8 +224,22 @@ final class SignInNoticeIntegrationTest extends HilosSessionIntegrationTestCase
             '',
         );
 
+        $ask = null;
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof UserAdminCreateSignalData) {
+                self::assertSame(HilosSignalConstants::HILOS_USER_ADMIN_CREATE, $signal->signalName->getName());
+                $ask = $signal->data->data;
+            }
+        }
+        self::assertNotNull($ask);
+        self::assertSame(self::SESSION_TOKEN, $ask->sessionToken);
+        self::assertNull(self::boundUserId());
+        $holder->onSignalAgent(
+            new AgentSignalData(UserAdminCreateDoneSignalData::created($ask, SignInNoticeTestHolder::MINTED_ID)),
+            '',
+            HilosSignalConstants::HILOS_USER_ADMIN_CREATE_DONE,
+        );
         self::assertSame([], self::typesOf($this->drain()));
-        self::assertTrue($holder->minted);
         self::assertSame(SignInNoticeTestHolder::MINTED_ID, self::boundUserId());
     }
 
@@ -476,31 +492,18 @@ final class SignInNoticeWithoutLogTestCatalog implements LegalCatalogProviderInt
 }
 
 /**
- * Sessions library of the fixture project; its admin:create mint names the person the case seeded.
+ * Sessions library of the fixture project; the creation answer names the person the case seeded.
  */
 final class SignInNoticeTestHolder extends AbstractSessionsLibraryAgent
 {
     /** Person the mint reports; the case seeds the row. */
     public const int MINTED_ID = 296;
 
-    /** @var bool Whether admin:create reached the mint */
-    public bool $minted = false;
-
     public function onStop(): void
     {
     }
 
-    /**
-     * Records the call and names the person the case seeded for it.
-     *
-     * @return int Id of the administrator just minted
-     */
-    protected function mintAdminUser(): int
-    {
-        $this->minted = true;
 
-        return self::MINTED_ID;
-    }
 }
 
 /**

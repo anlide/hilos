@@ -70,6 +70,9 @@ use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\View\Item\HilosProfileNameChange;
 use Hilos\Users\DTO\UserSessionsRestateSignalData;
 use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Constants\CommandChannelWindows;
+use Hilos\Users\DTO\UserAdminCreateSignalData;
+use Hilos\Users\DTO\UserAdminCreateDoneSignalData;
 use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
 use Hilos\Users\DTO\UserAdminCommandSignalData;
 use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
@@ -266,7 +269,7 @@ use Throwable;
  * It is ABSTRACT by convention alone, like {@see AbstractNotificationsLibraryAgent} and
  * {@see AbstractUsersLibraryAgent}: every Hilos agent is mounted through a concrete class in the
  * project's registry. The operations over the person are the framework's over `hilos_user` in
- * every project (HIL-1197) - minting the first administrator ({@see mintAdminUser()}), judging the
+ * every project (HIL-1197) - requesting the first administrator from the users library, judging the
  * admin flag and the block and doing what follows them once the person's agent has written them
  * (HIL-1404, {@see AbstractUserAgent}), and whether one person may take another over
  * ({@see assertImpersonationAllowed()}). So is whether two accounts may be
@@ -329,18 +332,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * one is lazy. Unconditional because the writer is a method of this class, not a project seam:
      * a project that wires the merge inherits it.
      *
-     * The person table is held here for three set operations, a declared shape in
-     * docs/agents/architecture/instance-owners.md#operations-over-many-instances (HIL-1404): adding
-     * the first administrator an operator's command mints ({@see mintAdminUser()}), editing the
-     * loser's block flag inside the merge transaction ({@see foldAccount()}), and removing the
-     * erased person's row (HIL-1200). The ordinary edits of one person - the admin flag and the
-     * block an administrator asks for - are judged here and written by that person's agent
-     * ({@see AbstractUserAgent}); the claim cannot tell the merge's edit from those, which is the
-     * accepted price of keeping the merge in one transaction. The share may add, so the start does
-     * not wait for it the way it waits for a borrowed claim; nothing here reads a person at start,
-     * which is what a co-owner that may add owes (docs/agents/architecture/truth-source.md).
-     * Unconditional for the reason the identity entry is: the writers are methods of this class,
-     * not a project seam.
+     * The person table is held here for two terminal set operations: editing the loser's block
+     * inside the merge transaction and removing the erased person's row. Ordinary edits belong
+     * to the person's agent; creation belongs to the users library.
      *
      * The merge table (HIL-1199) is this library's whole: the merge writes its row and the
      * erasure of a folded account removes it, and both run here. Unconditional for the reason the
@@ -389,10 +383,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // and removed by the erasure: operations over many people. One person's trust is taken away by their agent (HIL-1407).
         // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::secondFactorTrusts => TruthSourceOperation::ALL,
-        // Minting the first administrator, the loser's block in the merge transaction and the erased person's row:
+        // The loser's block in the merge transaction and the erased person's row:
         // set operations of this library. The admin flag and the block are written by the person's agent.
         // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
-        HilosDbContext::users => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        HilosDbContext::users => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         // Borrowed for the account erasure and merge, each held by this library in one transaction.
         // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
@@ -584,6 +578,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE => UserSessionsRestateSignalData::class,
         HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE => UserAdminWriteDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE => UserAdminCommandDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_ADMIN_CREATE_DONE => UserAdminCreateDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE => UserBlockWriteDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT_DONE => UserStepUpCreditDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE_DONE => UserBrowserTrustRevokeDoneSignalData::class,
@@ -691,7 +686,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * The fixture bind also runs here: this holder owns the anonymous session it authenticates.
      *
      * Every project that registers the library answers these names. The first five are the
-     * framework's code over `hilos_user` in every one of them ({@see mintAdminUser()},
+     * framework's code over `hilos_user` in every one of them ({@see AbstractUsersLibraryAgent::createAdministrator()},
      * {@see AbstractUserAgent::writeAdminFlag()}, {@see assertImpersonationAllowed()}, HIL-1197);
      * only the merge still answers a REFUSAL by default, in a project that never wired it
      * ({@see applyAccountMerge()}), rather than nothing at all. That is the honest outcome for an
@@ -822,6 +817,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *     answered (HIL-1404): the last-administrator check counts them as gone already
      */
     private array $adminRemovalsInFlight = [];
+
+    /** @var ?AdminCreateWaits Creation commands parked in this process */
+    private ?AdminCreateWaits $adminCreateWaits = null;
 
     /**
      * Arms the scheduled sweeps, and ends what a predecessor left open.
@@ -1046,6 +1044,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->sweepSessionToasts();
         $this->sweepEndedSessions();
         $this->republishChangedStanding();
+        $this->sweepAdminCreates(microtime(true));
         if (!$this->hasSignInSurface()) {
             return;
         }
@@ -2018,55 +2017,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Makes one browser session an administrator - the agent half of
-     * {@see CliCommands::ADMIN_CREATE} (HIL-609).
-     *
-     * One path, taken whole every time: resolve the session by its token, take the user it
-     * carries or mint one through {@see self::mintAdminUser()}, then authenticate the
-     * session onto that user. The five outcomes an operator can meet - a session with no
-     * user, a session carrying a visitor, a session that is already an administrator, a
-     * session whose expiry has passed, a token naming no session - fall out of that one path
-     * rather than out of five branches, which would be five places to forget the re-point
-     * that makes the grant visible.
-     *
-     * A person who already exists is flagged by their own agent (HIL-1404): the frame carries the
-     * session's token and its expiry, and the bind and the reply happen on the agent's answer
-     * ({@see self::finishAdminCommand()}). Minting a new person is an operation over the set and
-     * stays here, without a hop.
-     *
-     * {@see self::authenticateSession()} runs even when the flag was already set: it is what
-     * re-points the session's live connections and fans the handshake response out to every
-     * tab, so a fresh administrator is shown the way in without a reload. Re-binding the
-     * same user changes nothing else, so the repeat costs nothing.
-     *
-     * Whether a row was minted is read BEFORE the write is called: once the session is bound
-     * nothing tells a mint from a grant, and that is the one thing the operator cannot infer
-     * for himself.
-     *
-     * Any failure - a session naming a user with no row behind it, a token of the wrong shape, a
-     * refused write - becomes exactly one error reply, because a CLI parked on the command
-     * socket must learn the outcome rather than time out.
-     *
-     * The session goes through {@see self::resolveSession()}, the very door a
-     * handshake uses, so an expired session named by an operator is dropped to anonymous by
-     * the HIL-398 rule instead of being re-bound and slid forward: an expired access stays
-     * expired, and the administrator becomes a NEW user rather than the one the stale cookie
-     * still names. The operator learns it happened from
-     * {@see AdminCommandConstants::FIELD_EXPIRED}, because the reply otherwise differs only
-     * by a user id he has never seen.
-     *
-     * Since HIL-1126 an expiry also moves the row onto a new token. This command resolves
-     * without a connecting socket: a live tab receives the sign-out ticket, and the bind
-     * below names the resolved token so the new administrator is reachable on the new cookie.
-     *
-     * The plain lookup stays in FRONT of that door and is not redundant: the door mints an
-     * anonymous session for a token it does not know, so without the lookup an operator's
-     * typo would create both a session and an account.
-     *
-     * The block flag this command still does not consult, and that remains deliberate: it
-     * judges a BROWSER presenting a cookie by itself, and this is an operator naming a
-     * session on purpose. It grants nothing extra either - whoever reaches this
-     * unauthenticated socket can already {@see CliCommands::ADMIN_GRANT} any user id.
+     * Resolves the operator's session through the handshake door, preserving expiry rotation.
+     * An existing person is flagged by their agent; an anonymous session asks the users library
+     * to create an administrator. Each answer finishes the bind and the parked command.
      *
      * @param CommandRequestDTO $data Command request carrying the session cookie token
      * @throws InvalidArgumentException When the reply carries an empty correlation id
@@ -2079,7 +2032,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $sessionToken = (string)($data->payload[AdminCommandConstants::FIELD_SESSION_TOKEN] ?? '');
 
         $request = null;
-        $userId = null;
+        $ask = null;
         try {
             SessionToken::ensureValid($sessionToken);
             $session = Hilos::$db->sessions->findByToken($sessionToken);
@@ -2109,9 +2062,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     expired: $expired,
                 );
             } else {
-                $userId = $this->mintAdminUser();
-                // A new account, like a registration, is not a sign-in the person is told about (HIL-294).
-                $this->authenticateSession($session->token, $userId, null, announceSignIn: false);
+                if ($this->adminCreateWaits()->isWaiting($session->token)) {
+                    $this->replyToCommand(CommandReplyDTO::error(
+                        $data->correlationId,
+                        'An administrator is already being created for this session',
+                    ));
+
+                    return;
+                }
+                $ask = new UserAdminCreateSignalData($data->correlationId, $session->token, $expired);
             }
         } catch (WiringRefusal $refusal) {
             // Answered rather than raised: the command socket parks its caller until a reply
@@ -2137,34 +2096,97 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
-            AdminCommandConstants::FIELD_USER_ID => $userId,
-            AdminCommandConstants::FIELD_ADMIN => true,
-            AdminCommandConstants::FIELD_CREATED => true,
-            AdminCommandConstants::FIELD_EXPIRED => $expired,
-        ]));
+        if ($ask !== null) {
+            $this->adminCreateWaits()->park($ask, microtime(true));
+            $this->sendToAgent(HilosSignalConstants::HILOS_USER_ADMIN_CREATE, $ask);
+        }
     }
 
     /**
-     * Mints a new person who is an administrator - the write behind {@see self::handleAdminCreateCommand()}
-     * for a session that carries nobody.
-     *
-     * The framework's in every project, the chat demo included (owner's decision 2026-09-28,
-     * HIL-1197): the command is the one way out of an installation whose every sign-in method
-     * is switched off, so no project may be left without it. Creating a person is an operation
-     * over the set and stays here; flagging a person who already exists is their agent's
-     * (HIL-1404).
-     *
-     * Not final, for the reason {@see AbstractUsersLibraryAgent::createUser()} gives: the
-     * framework's test stands replace it to pin the command route apart from the table. The
-     * session bind is not done here - the command does it around this call.
-     *
-     * @return int Id of the administrator just minted
-     * @throws HilosException On database failure while minting
+     * @param UserAdminCreateDoneSignalData $done Users library's creation outcome
+     * @throws InvalidArgumentException When the command correlation id is empty
      */
-    protected function mintAdminUser(): int
+    private function finishAdminCreate(UserAdminCreateDoneSignalData $done): void
     {
-        return (int)Hilos::$db->users->actions->registerAdmin()->id;
+        $ask = $done->request;
+        $waiting = $this->adminCreateWaits()->settle($ask) !== null;
+        if ($done->userId === null) {
+            if ($waiting) {
+                $this->replyToCommand(CommandReplyDTO::error($ask->correlationId, $done->errorDetail ?? $done->error));
+            } else {
+                $this->logAgentError('Late administrator creation refusal: ' . ($done->errorDetail ?? $done->error));
+            }
+
+            return;
+        }
+
+        try {
+            $session = Hilos::$db->sessions->findByToken($ask->sessionToken);
+            if ($session === null || $session->userId !== null) {
+                $message = $session === null
+                    ? "User #{$done->userId} was created as an administrator, but the session no longer exists"
+                    : "User #{$done->userId} was created as an administrator,"
+                        . ' but the session was signed in meanwhile and stays as it is';
+                if ($waiting) {
+                    $this->replyToCommand(CommandReplyDTO::error($ask->correlationId, $message));
+                } else {
+                    $this->logAgentError($message);
+                }
+
+                return;
+            }
+            $this->authenticateSession($ask->sessionToken, $done->userId, null, announceSignIn: false);
+        } catch (WiringRefusal $refusal) {
+            $this->logAgentError("Admin create could not read the sessions here: {$refusal->getMessage()}");
+            if ($waiting) {
+                $this->replyToCommand(CommandReplyDTO::error(
+                    $ask->correlationId,
+                    'This process does not read the sessions collection: ' . $refusal->getMessage(),
+                ));
+            }
+
+            return;
+        } catch (Throwable $e) {
+            if ($waiting) {
+                $this->replyToCommand(CommandReplyDTO::error($ask->correlationId, $e->getMessage()));
+            } else {
+                $this->logAgentError('Late administrator creation could not bind the session: ' . $e->getMessage());
+            }
+
+            return;
+        }
+
+        if ($waiting) {
+            $this->replyToCommand(CommandReplyDTO::ok($ask->correlationId, [
+                AdminCommandConstants::FIELD_USER_ID => $done->userId,
+                AdminCommandConstants::FIELD_ADMIN => true,
+                AdminCommandConstants::FIELD_CREATED => true,
+                AdminCommandConstants::FIELD_EXPIRED => $ask->expired,
+            ]));
+        } else {
+            $this->logAgentWarning("User #{$done->userId} was created as an administrator and bound after the command timed out");
+        }
+    }
+
+    /**
+     * @param float $now Current time in seconds; tests can bring the deadline forward
+     * @throws InvalidArgumentException When a parked command's correlation id is empty
+     */
+    protected function sweepAdminCreates(float $now): void
+    {
+        foreach ($this->adminCreateWaits()->expired($now) as $ask) {
+            $seconds = (int)CommandChannelWindows::AGENT_WAIT_SECONDS;
+            $this->replyToCommand(CommandReplyDTO::error(
+                $ask->correlationId,
+                "The users library did not answer within {$seconds}s, so the session was not bound; run the command again",
+            ));
+        }
+    }
+
+    /** @return AdminCreateWaits Parked commands private to this holder process */
+    private function adminCreateWaits(): AdminCreateWaits
+    {
+        return $this->adminCreateWaits ??= new AdminCreateWaits();
     }
 
     /**
@@ -4303,6 +4325,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_USER_ADMIN_CREATE_DONE:
+                if (!$data->data instanceof UserAdminCreateDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserAdminCreateDoneSignalData::class, $data->data);
+                }
+
+                $this->finishAdminCreate($data->data);
+
+                return;
+
             case HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE:
                 if (!$data->data instanceof UserAdminCommandDoneSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, UserAdminCommandDoneSignalData::class, $data->data);
@@ -6119,7 +6150,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * whom - blocked, frozen, equal - judge only the start, the way a sign-in method switched off
      * signs nobody out. What may be done inside is judged on every action instead, by the action
      * dispatcher. The asker naming their own user is not "another administrator": that one the
-     * library refuses on its own, after. Not final, for the reason {@see self::mintAdminUser()} gives.
+     * library refuses on its own, after. Not final: test stands replace this check to isolate the command route.
      *
      * @param int $adminUserId User the acting session currently carries
      * @param int $targetUserId User that session asks to act as
