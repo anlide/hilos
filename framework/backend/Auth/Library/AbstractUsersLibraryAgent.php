@@ -75,6 +75,7 @@ use Hilos\Auth\Library\DTO\LegalConsentReplyDTO;
 use Hilos\Auth\Library\DTO\LegalReconsentActionDTO;
 use Hilos\Auth\Library\DTO\LegalReconsentPreviewActionDTO;
 use Hilos\Auth\Library\DTO\LegalReconsentPreviewReplyDTO;
+use Hilos\Legal\LegalCatalogResolver;
 use Hilos\Legal\LegalConsentProjector;
 use Hilos\Legal\LegalDocument;
 use Hilos\Legal\LegalHoldCommandConstants;
@@ -183,6 +184,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
@@ -239,6 +241,7 @@ use Hilos\Users\DTO\UserSecondFactorResetDueDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
+use Hilos\Users\DTO\UserLegalHoldForgetDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteDoneSignalData;
 use Hilos\Users\DTO\UserStepUpRecordDoneSignalData;
 use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
@@ -359,7 +362,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
         HilosDbContext::secondFactorResets => [TruthSourceOperation::Add],
         HilosDbContext::accountDeletions => [TruthSourceOperation::Add],
-        HilosDbContext::legalAcceptances => TruthSourceOperation::ALL,
+        HilosDbContext::legalAcceptances => [TruthSourceOperation::Add],
         HilosDbContext::userRenames => [TruthSourceOperation::Update],
     ];
 
@@ -435,6 +438,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE_DONE => UserSecondFactorResetDueDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE => UserSecondFactorResetRemindDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE => UserSecondFactorUnlockDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET_DONE => UserLegalHoldForgetDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_STEP_UP_RECORD_DONE => UserStepUpRecordDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL_DONE => UserAccountDeletionCancelDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_PHOTO_PUT_DONE => UserPhotoPutDoneSignalData::class,
@@ -687,7 +691,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * The commands answered by the users library.
      *
      * The test: prefix enforces the production ban via NonProductionGate.
-     * Routed here because this library creates people and identities and owns acceptance and verification rows
+     * Routed here because this library creates people, identities and acceptances and owns verification rows
      * ({@see self::OWNS_DB}). The operator's {@see CliCommands::SECOND_FACTOR_UNLOCK} runs on
      * production (HIL-1285): it is answered here because this library coordinates the second
      * factor, and the person's agent lifts the lock on its frame (HIL-1406).
@@ -1430,6 +1434,15 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET_DONE:
+                $done = $data->data;
+                if (!$done instanceof UserLegalHoldForgetDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserLegalHoldForgetDoneSignalData::class, $done);
+                }
+                $this->finishLegalHold($done);
+
+                return;
+
             case HilosSignalConstants::HILOS_USER_STEP_UP_RECORD_DONE:
                 $recorded = $data->data;
                 if (!$recorded instanceof UserStepUpRecordDoneSignalData) {
@@ -1608,7 +1621,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Runs {@see CliCommands::LEGAL_TEST_HOLD} and answers the parked socket exactly once.
+     * Validates the test hold and parks its command until the personal owner answers.
      *
      * @param CommandRequestDTO $data Command request carrying user id, document and revision id
      * @throws InvalidArgumentException When the reply carries an empty correlation id
@@ -1630,22 +1643,71 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         }
 
         try {
-            $standing = $this->legalAcceptanceCommands()->hold($userId, $documentKey, $revisionId);
-            $frozen = AccountStandingResolver::isFrozen($userId);
+            $this->legalAcceptanceCommands()->beginHold($userId, $documentKey, $revisionId, $data->correlationId);
         } catch (Throwable $e) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+        }
+    }
+
+    /**
+     * Prepares the whole hold result in one local read transaction after the owner's removal.
+     *
+     * @param UserLegalHoldForgetDoneSignalData $done Removal outcome carrying the original command
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    private function finishLegalHold(UserLegalHoldForgetDoneSignalData $done): void
+    {
+        if ($done->error !== null) {
+            $this->replyToCommand(CommandReplyDTO::error($done->request->correlationId, $done->errorDetail ?? $done->error));
 
             return;
         }
 
-        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
-            LegalHoldCommandConstants::FIELD_USER_ID => $userId,
-            LegalHoldCommandConstants::FIELD_DOCUMENT => $standing->document->value,
-            LegalHoldCommandConstants::FIELD_REVISION_ID => $revisionId,
-            LegalHoldCommandConstants::FIELD_STANDING => $standing->standing->value,
-            LegalHoldCommandConstants::FIELD_DEADLINE => $standing->deadline,
-            LegalHoldCommandConstants::FIELD_FROZEN => $frozen,
-        ]));
+        try {
+            $acceptanceEntity = Hilos::$db->getMountedEntities()[HilosDbContext::legalAcceptances];
+            $reply = Database::transaction($acceptanceEntity::getDatabaseName(), function () use ($done): CommandReplyDTO {
+                $document = LegalDocument::from($done->request->document);
+                LegalCatalogResolver::revision($document, $done->request->revisionId);
+                $acceptedRevisionIds = [];
+                foreach (Hilos::$db->legalAcceptances->ofUser($done->request->userId) as $acceptance) {
+                    if ($acceptance->document === $document->value) {
+                        $acceptedRevisionIds[] = $acceptance->revisionId;
+                    }
+                }
+                if (LegalStandingResolver::standingOf($document, $acceptedRevisionIds, LegalStandingResolver::today())->held?->id
+                    !== $done->request->revisionId) {
+                    throw new ValidationException('Legal hold overlapped another command; please retry');
+                }
+
+                AccountStandingResolver::forget($done->request->userId);
+                Database::onRollback(static fn () => AccountStandingResolver::forget($done->request->userId));
+                $frozen = AccountStandingResolver::isFrozen($done->request->userId);
+                $standing = $this->legalAcceptanceCommands()->finishHold(
+                    $done->request->userId,
+                    $done->request->document,
+                    $done->request->revisionId,
+                );
+
+                return CommandReplyDTO::ok($done->request->correlationId, [
+                    LegalHoldCommandConstants::FIELD_USER_ID => $done->request->userId,
+                    LegalHoldCommandConstants::FIELD_DOCUMENT => $standing->document->value,
+                    LegalHoldCommandConstants::FIELD_REVISION_ID => $done->request->revisionId,
+                    LegalHoldCommandConstants::FIELD_STANDING => $standing->standing->value,
+                    LegalHoldCommandConstants::FIELD_DEADLINE => $standing->deadline,
+                    LegalHoldCommandConstants::FIELD_FROZEN => $frozen,
+                ]);
+            });
+        } catch (WiringRefusal $refusal) {
+            $this->replyToCommand(CommandReplyDTO::error($done->request->correlationId, $refusal->getMessage()));
+
+            return;
+        } catch (Throwable $e) {
+            $this->replyToCommand(CommandReplyDTO::error($done->request->correlationId, $e->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand($reply);
     }
 
     /**

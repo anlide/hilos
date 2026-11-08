@@ -136,7 +136,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'secondFactorTrusts' => [['person', 'set', 'remove,update'], ['holder', 'whole', 'add,remove,update']],
             'stepUps' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'remove']],
             'accountDeletions' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'update']],
-            'legalAcceptances' => [['users', 'whole', 'add,remove,update'], ['holder', 'whole', 'remove']],
+            'legalAcceptances' => [['users', 'whole', 'add'], ['person', 'set', 'remove'], ['holder', 'whole', 'remove']],
             'notifications' => [['notifications', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove']],
             'notificationDeliveries' => [
                 ['notifications', 'whole', 'add,remove,update'], ['mail', 'whole', 'update'], ['holder', 'whole', 'remove']],
@@ -159,7 +159,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'secondFactorTrusts' => ['HIL-1907', 'HIL-1908', 'HIL-1909', 'HIL-1952', 'HIL-1999'],
             'stepUps' => ['HIL-1952'],
             'accountDeletions' => ['HIL-1952'],
-            'legalAcceptances' => ['HIL-1899', 'HIL-1952'],
+            'legalAcceptances' => ['HIL-1952'],
             'notifications' => ['HIL-1952'],
             'notificationDeliveries' => ['HIL-1893', 'HIL-1902', 'HIL-1910', 'HIL-1952'],
             'notificationPreferences' => ['HIL-1952'],
@@ -369,7 +369,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             }
         }
         $legal = $this->statesByPendingLeaves($catalog['legalAcceptances']);
-        self::assertSame(['', 'HIL-1899,HIL-1952', 'HIL-1952'], array_keys($legal));
+        self::assertSame(['', 'HIL-1952'], array_keys($legal));
         $this->assertVector([
             UsersLibraryAgent::class . ':whole:add', UserAgent::class . ':set:remove',
             SessionsLibraryAgent::class . ':whole:remove',
@@ -576,7 +576,6 @@ final class DbWriterTransitionCatalogTest extends TestCase
                 '' => ['users:whole:add', 'person:set:remove,update'],
             ],
             'legalAcceptances' => [
-                'HIL-1899,HIL-1952' => ['users:whole:add,remove,update', 'holder:whole:remove'],
                 'HIL-1952' => ['users:whole:add', 'person:set:remove', 'holder:whole:remove'],
                 '' => ['users:whole:add', 'person:set:remove'],
             ],

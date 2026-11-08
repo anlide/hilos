@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Closure;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettingsCatalog;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
 use Hilos\Auth\Impersonation\ImpersonationMessages;
@@ -28,6 +29,16 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
+use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Users\DTO\UserLegalHoldForgetDoneSignalData;
+use Hilos\Users\DTO\UserLegalHoldForgetSignalData;
+use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
@@ -59,6 +70,7 @@ use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
@@ -98,6 +110,7 @@ use Hilos\Users\AccountStandingChangeSubscriber;
 use Hilos\Users\AccountStandingKind;
 use Hilos\Users\AccountStandingResolver;
 use Hilos\Utils\Helpers\TimeHelper;
+use PHPUnit\Framework\Assert;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Throwable;
 
@@ -707,8 +720,10 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
             '',
             '',
         );
+        $this->carryPersonFrames($this->library);
 
         $drained = $this->drained();
+        self::assertCount(1, $drained['corr-1'] ?? []);
         $reply = $drained['corr-1'][0] ?? null;
         self::assertInstanceOf(CommandReplyDTO::class, $reply);
         self::assertTrue($reply->isOk());
@@ -765,8 +780,10 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
                 '',
                 '',
             );
+            $this->carryPersonFrames($this->library);
 
             $drained = $this->drained();
+            self::assertCount(1, $drained['corr-1'] ?? []);
             $reply = $drained['corr-1'][0] ?? null;
             self::assertInstanceOf(CommandReplyDTO::class, $reply);
             self::assertTrue($reply->isOk());
@@ -796,8 +813,10 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
             '',
             '',
         );
+        $this->carryPersonFrames($this->library);
 
         $drained = $this->drained();
+        self::assertCount(1, $drained['corr-1'] ?? []);
         $reply = $drained['corr-1'][0] ?? null;
         self::assertInstanceOf(CommandReplyDTO::class, $reply);
         self::assertTrue($reply->isOk());
@@ -835,8 +854,10 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
                 '',
                 '',
             );
+            $this->carryPersonFrames($this->library);
 
             $drained = $this->drained();
+            self::assertCount(1, $drained['corr-1'] ?? []);
             $reply = $drained['corr-1'][0] ?? null;
             self::assertInstanceOf(CommandReplyDTO::class, $reply);
             self::assertTrue($reply->isOk());
@@ -867,7 +888,12 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
             '',
             '',
         );
-        $reply1 = $this->drained()['corr-1'][0] ?? null;
+        $this->carryPersonFrames($this->library);
+        $drained = $this->drained();
+        self::assertCount(1, $drained['corr-1'] ?? []);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET, $drained);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $drained);
+        $reply1 = $drained['corr-1'][0] ?? null;
         self::assertInstanceOf(CommandReplyDTO::class, $reply1);
         self::assertFalse($reply1->isOk());
         self::assertSame('Legal document cookies is not declared in this installation', $reply1->payload[CommandConstants::FIELD_MESSAGE] ?? null);
@@ -882,7 +908,12 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
             '',
             '',
         );
-        $reply2 = $this->drained()['corr-2'][0] ?? null;
+        $this->carryPersonFrames($this->library);
+        $drained = $this->drained();
+        self::assertCount(1, $drained['corr-2'] ?? []);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET, $drained);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $drained);
+        $reply2 = $drained['corr-2'][0] ?? null;
         self::assertInstanceOf(CommandReplyDTO::class, $reply2);
         self::assertFalse($reply2->isOk());
         self::assertSame('No such user: 999999', $reply2->payload[CommandConstants::FIELD_MESSAGE] ?? null);
@@ -897,16 +928,579 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
             '',
             '',
         );
-        $reply3 = $this->drained()['corr-3'][0] ?? null;
+        $this->carryPersonFrames($this->library);
+        $drained = $this->drained();
+        self::assertCount(1, $drained['corr-3'] ?? []);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET, $drained);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $drained);
+        $reply3 = $drained['corr-3'][0] ?? null;
         self::assertInstanceOf(CommandReplyDTO::class, $reply3);
         self::assertFalse($reply3->isOk());
         self::assertSame('Legal document terms declares no revision third', $reply3->payload[CommandConstants::FIELD_MESSAGE] ?? null);
         self::assertSame($countBefore, count(Hilos::$db->legalAcceptances));
     }
 
+    public function testHoldChangesOnlyTheSelectedPersonsDocumentAndRepeatKeepsTheOriginalRow(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'first');
+        self::accept(self::USER_ID, 'terms', 'second');
+        self::accept(self::USER_ID, 'privacy', 'privacy');
+        self::accept(self::OTHER_USER_ID, 'terms', 'second');
+        $before = $this->acceptanceRows();
+        $this->startHold();
+        $queued = $this->drained();
+        self::assertArrayNotHasKey('corr-1', $queued);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $queued);
+        self::assertCount(1, $queued[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET] ?? []);
+        $ask = $queued[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET][0];
+        self::assertInstanceOf(UserLegalHoldForgetSignalData::class, $ask);
+        self::assertSame($before, $this->acceptanceRows());
+
+        $this->forgetForHold($ask);
+        $this->carryPersonFrames($this->library);
+        $frames = $this->drained();
+        self::assertCount(1, $frames['corr-1'] ?? []);
+        self::assertTrue($frames['corr-1'][0]->isOk());
+        $expected = array_values(array_filter($before, static fn (array $row): bool =>
+            (int)$row['user_id'] !== self::USER_ID || $row['document'] !== 'terms' || $row['revision_id'] !== 'second'));
+        self::assertSame($expected, $this->acceptanceRows());
+        self::assertFalse($this->personAgent(self::USER_ID)->shouldStop());
+
+        $this->startHold(correlationId: 'corr-repeat');
+        $this->carryPersonFrames($this->library);
+        $repeated = $this->drained();
+        self::assertCount(1, $repeated['corr-repeat'] ?? []);
+        self::assertTrue($repeated['corr-repeat'][0]->isOk());
+        self::assertSame($expected, $this->acceptanceRows());
+    }
+
+    public function testOwnerRefusalKeepsThePreparedAcceptanceAndAnswersWithoutPublishing(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'second');
+        self::assertFalse(AccountStandingResolver::isFrozen(self::USER_ID));
+        $before = $this->acceptanceRows();
+        $this->startHold();
+        $queued = $this->drained();
+        self::assertArrayNotHasKey('corr-1', $queued);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $queued);
+        self::assertCount(1, $queued[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET] ?? []);
+        $ask = $queued[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET][0];
+        self::assertInstanceOf(UserLegalHoldForgetSignalData::class, $ask);
+        $prepared = $this->acceptanceRows();
+        self::assertCount(2, $prepared);
+        self::assertSame($before[0], $prepared[0]);
+        self::assertSame(self::USER_ID, (int)$prepared[1]['user_id']);
+        self::assertSame('terms', $prepared[1]['document']);
+        self::assertSame('first', $prepared[1]['revision_id']);
+        AccountStandingResolver::forget(self::USER_ID);
+        self::assertFalse(AccountStandingResolver::isFrozen(self::USER_ID));
+        // A refusal after validation: the owner receives a document it cannot handle.
+        $this->forgetForHold(new UserLegalHoldForgetSignalData(
+            $ask->userId, 'cookies', $ask->revisionId, $ask->replySignal, $ask->correlationId,
+        ));
+        $answers = $this->drained();
+        self::assertCount(1, $answers[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET_DONE] ?? []);
+        self::assertArrayNotHasKey('corr-1', $answers);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $answers);
+        $done = $answers[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET_DONE][0];
+        self::assertInstanceOf(UserLegalHoldForgetDoneSignalData::class, $done);
+        self::assertSame('Legal document cookies is not declared in this installation', $done->error);
+        $this->finishHoldAnswer($done);
+
+        $frames = $this->drained();
+        self::assertCount(1, $frames['corr-1'] ?? []);
+        self::assertFalse($frames['corr-1'][0]->isOk());
+        self::assertSame($done->error, $frames['corr-1'][0]->payload[CommandConstants::FIELD_MESSAGE]);
+        self::assertSame($prepared, $this->acceptanceRows());
+        AccountStandingResolver::forget(self::USER_ID);
+        self::assertFalse(AccountStandingResolver::isFrozen(self::USER_ID));
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $frames);
+    }
+
+    public function testAFailedFinishKeepsTheOwnersRemovalAndARetryConverges(): void
+    {
+        StandingLapsedHoldHilos::initBrowser(new StandingIntegrationBrowser());
+        self::accept(self::USER_ID, 'terms', 'second');
+        self::assertTrue(AccountStandingResolver::isFrozen(self::USER_ID));
+        $sessions = new StandingSessionsLibrary();
+        $sessions->onTick();
+        $this->drained();
+        $before = $this->acceptanceRows();
+        $this->startHold();
+        $queued = $this->drained();
+        self::assertArrayNotHasKey('corr-1', $queued);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $queued);
+        self::assertCount(1, $queued[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET] ?? []);
+        $ask = $queued[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET][0];
+        self::assertInstanceOf(UserLegalHoldForgetSignalData::class, $ask);
+        $prepared = $this->acceptanceRows();
+        self::assertCount(2, $prepared);
+        self::assertSame($before[0], $prepared[0]);
+        self::assertSame(self::USER_ID, (int)$prepared[1]['user_id']);
+        self::assertSame('terms', $prepared[1]['document']);
+        self::assertSame('first', $prepared[1]['revision_id']);
+        AccountStandingResolver::forget(self::USER_ID);
+        self::assertTrue(AccountStandingResolver::isFrozen(self::USER_ID));
+        $sessions->onTick();
+        $beforeRemoval = $this->drained();
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_SESSION_STATE, $beforeRemoval);
+        self::assertArrayNotHasKey(SignalConstants::PAGE_ACCESS_REASSESS_USER, $beforeRemoval);
+        $this->forgetForHold($ask);
+        $answers = $this->drained();
+        self::assertArrayNotHasKey('corr-1', $answers);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $answers);
+        self::assertCount(1, $answers[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET_DONE] ?? []);
+        $done = $answers[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET_DONE][0];
+        self::assertInstanceOf(UserLegalHoldForgetDoneSignalData::class, $done);
+        self::assertNull($done->error);
+        self::assertSame([$prepared[1]], $this->acceptanceRows());
+        AccountStandingResolver::forget(self::USER_ID);
+        self::assertTrue(AccountStandingResolver::isFrozen(self::USER_ID));
+        $sessions->onTick();
+        $between = $this->drained();
+        $states = $between[HilosSignalConstants::HILOS_SESSION_STATE] ?? [];
+        self::assertCount(2, $states);
+        foreach ($states as $state) {
+            self::assertInstanceOf(SessionStateSignalData::class, $state);
+            self::assertTrue($state->accountStanding[AccountStanding::frozen]);
+        }
+        self::assertArrayNotHasKey(SignalConstants::PAGE_ACCESS_REASSESS_USER, $between);
+        $this->finishHoldAnswer(UserLegalHoldForgetDoneSignalData::ok(new UserLegalHoldForgetSignalData(
+            $ask->userId, $ask->document, 'third', $ask->replySignal, $ask->correlationId,
+        )));
+
+        $failed = $this->drained();
+        self::assertCount(1, $failed['corr-1'] ?? []);
+        self::assertFalse($failed['corr-1'][0]->isOk());
+        self::assertSame('Legal document terms declares no revision third', $failed['corr-1'][0]->payload[CommandConstants::FIELD_MESSAGE]);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $failed);
+        self::assertSame([$prepared[1]], $this->acceptanceRows());
+        self::assertTrue(AccountStandingResolver::isFrozen(self::USER_ID));
+
+        $this->startHold(correlationId: 'corr-retry');
+        $this->carryPersonFrames($this->library);
+        $retried = $this->drained();
+        self::assertCount(1, $retried['corr-retry'] ?? []);
+        self::assertTrue($retried['corr-retry'][0]->isOk());
+        self::assertNotEmpty($retried[HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE] ?? []);
+        self::assertSame([
+            LegalHoldCommandConstants::FIELD_USER_ID => self::USER_ID,
+            LegalHoldCommandConstants::FIELD_DOCUMENT => 'terms',
+            LegalHoldCommandConstants::FIELD_REVISION_ID => 'first',
+            LegalHoldCommandConstants::FIELD_STANDING => 'lapsed',
+            LegalHoldCommandConstants::FIELD_DEADLINE => '2026-03-01',
+            LegalHoldCommandConstants::FIELD_FROZEN => true,
+        ], $retried['corr-retry'][0]->payload);
+        self::assertSame([$prepared[1]], $this->acceptanceRows());
+    }
+
+    public function testAFailedFrozenReadAnswersWithoutPublishingAndARetryKeepsThePreparedRow(): void
+    {
+        self::accept(self::USER_ID, LegalDocument::TERMS->value, 'second');
+        self::assertFalse(AccountStandingResolver::isFrozen(self::USER_ID));
+        $this->startHold();
+        $queued = $this->drained();
+        self::assertArrayNotHasKey('corr-1', $queued);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $queued);
+        self::assertCount(1, $queued[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET] ?? []);
+        $ask = $queued[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET][0];
+        self::assertInstanceOf(UserLegalHoldForgetSignalData::class, $ask);
+        $prepared = $this->acceptanceRows();
+        self::assertCount(2, $prepared);
+        self::assertSame('first', $prepared[1]['revision_id']);
+
+        $this->forgetForHold($ask);
+        $answers = $this->drained();
+        self::assertArrayNotHasKey('corr-1', $answers);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $answers);
+        self::assertCount(1, $answers[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET_DONE] ?? []);
+        $done = $answers[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET_DONE][0];
+        self::assertInstanceOf(UserLegalHoldForgetDoneSignalData::class, $done);
+        self::assertNull($done->error);
+        self::assertSame([$prepared[1]], $this->acceptanceRows());
+
+        $settings = Hilos::$setting;
+        Hilos::$setting = new class (StandingIntegrationSettingsCatalog::class) extends SettingsAccessor {
+            /**
+             * @param string $key Setting key
+             * @return mixed An unreadable refusal value, or the ordinary value of another key
+             */
+            public function effectiveValueFor(string $key): mixed
+            {
+                return $key === LegalSettings::REFUSAL_KEY ? [] : parent::effectiveValueFor($key);
+            }
+        };
+        try {
+            $this->finishHoldAnswer($done);
+        } finally {
+            Hilos::$setting = $settings;
+        }
+
+        $failed = $this->drained();
+        self::assertCount(1, $failed['corr-1'] ?? []);
+        self::assertInstanceOf(CommandReplyDTO::class, $failed['corr-1'][0]);
+        self::assertFalse($failed['corr-1'][0]->isOk());
+        self::assertSame(
+            "Setting 'legal.refusal_after_deadline' value cannot be converted to string",
+            $failed['corr-1'][0]->payload[CommandConstants::FIELD_MESSAGE],
+        );
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $failed);
+        self::assertSame([$prepared[1]], $this->acceptanceRows());
+
+        $this->startHold(correlationId: 'corr-retry');
+        $this->carryPersonFrames($this->library);
+        $retried = $this->drained();
+        self::assertCount(1, $retried['corr-retry'] ?? []);
+        self::assertTrue($retried['corr-retry'][0]->isOk());
+        self::assertCount(1, $retried[HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE] ?? []);
+        self::assertSame([
+            LegalHoldCommandConstants::FIELD_USER_ID => self::USER_ID,
+            LegalHoldCommandConstants::FIELD_DOCUMENT => 'terms',
+            LegalHoldCommandConstants::FIELD_REVISION_ID => 'first',
+            LegalHoldCommandConstants::FIELD_STANDING => 'lapsed',
+            LegalHoldCommandConstants::FIELD_DEADLINE => '2026-03-01',
+            LegalHoldCommandConstants::FIELD_FROZEN => true,
+        ], $retried['corr-retry'][0]->payload);
+        self::assertSame([$prepared[1]], $this->acceptanceRows());
+    }
+
+    public function testIntersectingHoldsRefuseAMissingHeldRevisionOrALaterAcceptanceWithoutPublishing(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'second');
+        $this->startHold('second', 'corr-current');
+        $this->startHold('first', 'corr-earlier');
+        $queued = $this->drained();
+        self::assertCount(2, $queued[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET] ?? []);
+        self::assertArrayNotHasKey('corr-current', $queued);
+        self::assertArrayNotHasKey('corr-earlier', $queued);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $queued);
+        $prepared = $this->acceptanceRows();
+        self::assertSame(['second', 'first'], array_column($prepared, 'revision_id'));
+        foreach ($queued[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET] as $ask) {
+            self::assertInstanceOf(UserLegalHoldForgetSignalData::class, $ask);
+            $this->forgetForHold($ask);
+        }
+        $answers = $this->drained();
+        self::assertCount(2, $answers[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET_DONE] ?? []);
+        self::assertArrayNotHasKey('corr-current', $answers);
+        self::assertArrayNotHasKey('corr-earlier', $answers);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $answers);
+        self::assertSame([$prepared[1]], $this->acceptanceRows());
+        $currentDone = $answers[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET_DONE][0];
+        $earlierDone = $answers[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET_DONE][1];
+        self::assertInstanceOf(UserLegalHoldForgetDoneSignalData::class, $currentDone);
+        self::assertInstanceOf(UserLegalHoldForgetDoneSignalData::class, $earlierDone);
+        self::assertNull($currentDone->error);
+        self::assertNull($earlierDone->error);
+        self::assertSame('corr-current', $currentDone->request->correlationId);
+        self::assertSame('corr-earlier', $earlierDone->request->correlationId);
+        $this->finishHoldAnswer($currentDone);
+        $missing = $this->drained();
+        self::assertCount(1, $missing['corr-current'] ?? []);
+        self::assertFalse($missing['corr-current'][0]->isOk());
+        self::assertSame(
+            'Legal hold overlapped another command; please retry',
+            $missing['corr-current'][0]->payload[CommandConstants::FIELD_MESSAGE],
+        );
+        self::assertArrayNotHasKey('corr-earlier', $missing);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $missing);
+        self::assertSame([$prepared[1]], $this->acceptanceRows());
+
+        // A retry of the current hold creates its acceptance while the earlier answer is still parked.
+        $this->startHold('second', 'corr-current-retry');
+        $retryQueued = $this->drained();
+        self::assertCount(1, $retryQueued[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET] ?? []);
+        self::assertArrayNotHasKey('corr-current-retry', $retryQueued);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $retryQueued);
+        $retryAsk = $retryQueued[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET][0];
+        self::assertInstanceOf(UserLegalHoldForgetSignalData::class, $retryAsk);
+        $withLater = $this->acceptanceRows();
+        self::assertSame(['first', 'second'], array_column($withLater, 'revision_id'));
+        self::assertSame($prepared[1], $withLater[0]);
+        $this->finishHoldAnswer($earlierDone);
+        $later = $this->drained();
+        self::assertCount(1, $later['corr-earlier'] ?? []);
+        self::assertFalse($later['corr-earlier'][0]->isOk());
+        self::assertSame('Legal hold overlapped another command; please retry', $later['corr-earlier'][0]->payload[CommandConstants::FIELD_MESSAGE]);
+        self::assertArrayNotHasKey('corr-current-retry', $later);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $later);
+        self::assertSame($withLater, $this->acceptanceRows());
+
+        $this->forgetForHold($retryAsk);
+        $this->carryPersonFrames($this->library);
+        $current = $this->drained();
+        self::assertCount(1, $current['corr-current-retry'] ?? []);
+        self::assertTrue($current['corr-current-retry'][0]->isOk());
+        self::assertNotEmpty($current[HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE] ?? []);
+        self::assertSame([
+            LegalHoldCommandConstants::FIELD_USER_ID => self::USER_ID,
+            LegalHoldCommandConstants::FIELD_DOCUMENT => 'terms',
+            LegalHoldCommandConstants::FIELD_REVISION_ID => 'second',
+            LegalHoldCommandConstants::FIELD_STANDING => 'covered',
+            LegalHoldCommandConstants::FIELD_DEADLINE => null,
+            LegalHoldCommandConstants::FIELD_FROZEN => false,
+        ], $current['corr-current-retry'][0]->payload);
+        self::assertSame($withLater, $this->acceptanceRows());
+
+        $this->startHold(correlationId: 'corr-earlier-retry');
+        $this->carryPersonFrames($this->library);
+        $earlier = $this->drained();
+        self::assertCount(1, $earlier['corr-earlier-retry'] ?? []);
+        self::assertTrue($earlier['corr-earlier-retry'][0]->isOk());
+        self::assertNotEmpty($earlier[HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE] ?? []);
+        self::assertSame([
+            LegalHoldCommandConstants::FIELD_USER_ID => self::USER_ID,
+            LegalHoldCommandConstants::FIELD_DOCUMENT => 'terms',
+            LegalHoldCommandConstants::FIELD_REVISION_ID => 'first',
+            LegalHoldCommandConstants::FIELD_STANDING => 'lapsed',
+            LegalHoldCommandConstants::FIELD_DEADLINE => '2026-03-01',
+            LegalHoldCommandConstants::FIELD_FROZEN => true,
+        ], $earlier['corr-earlier-retry'][0]->payload);
+        self::assertSame([$prepared[1]], $this->acceptanceRows());
+    }
+
+    /**
+     * The overlap fits between two reads of one handler, shorter than a stand tick. The missing
+     * participant is the personal owner, not an external service, so a pipe drives that same
+     * owner through both requests in another PHP process at the existing settings read seam.
+     */
+    public function testHoldFinishesFromOneSnapshotWhenTheOwnerCommitsAnotherHoldBetweenReads(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'first');
+        self::accept(self::USER_ID, 'terms', 'second');
+        self::assertFalse(AccountStandingResolver::isFrozen(self::USER_ID));
+        $before = $this->acceptanceRows();
+        $this->startHold('second', 'corr-current');
+        $this->startHold('first', 'corr-earlier');
+        $queued = $this->drained();
+        self::assertCount(2, $queued[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET] ?? []);
+        self::assertArrayNotHasKey('corr-current', $queued);
+        self::assertArrayNotHasKey('corr-earlier', $queued);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $queued);
+        self::assertSame($before, $this->acceptanceRows());
+        [$currentAsk, $earlierAsk] = $queued[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET];
+        self::assertInstanceOf(UserLegalHoldForgetSignalData::class, $currentAsk);
+        self::assertInstanceOf(UserLegalHoldForgetSignalData::class, $earlierAsk);
+
+        $owner = new StandingHoldOwnerProcess();
+        $settings = Hilos::$setting;
+        try {
+            $current = $owner->remove($currentAsk);
+            self::assertNull($current->error);
+            self::assertSame($before, $owner->rows);
+            self::assertSame($before, $this->acceptanceRows());
+            $earlier = null;
+            $scriptedSettings = new class (StandingIntegrationSettingsCatalog::class) extends SettingsAccessor {
+                public ?Closure $beforeRefusal = null;
+
+                /**
+                 * @param string $key Setting key
+                 * @return mixed Ordinary value after the scripted owner step
+                 */
+                public function effectiveValueFor(string $key): mixed
+                {
+                    if ($key === LegalSettings::REFUSAL_KEY && $this->beforeRefusal !== null) {
+                        $step = $this->beforeRefusal;
+                        $this->beforeRefusal = null;
+                        $step();
+                    }
+
+                    return parent::effectiveValueFor($key);
+                }
+            };
+            Hilos::$setting = $scriptedSettings;
+            $scriptedSettings->beforeRefusal = function () use ($owner, $earlierAsk, $before, &$earlier): void {
+                // The first result read has finished; the frozen verdict is about to be composed.
+                self::assertSame($before, $this->acceptanceRows());
+                $earlier = $owner->remove($earlierAsk);
+                self::assertNull($earlier->error);
+                self::assertSame([$before[0]], $owner->rows);
+            };
+            $this->finishHoldAnswer($current);
+        } finally {
+            Hilos::$setting = $settings;
+            $owner->close();
+        }
+
+        self::assertInstanceOf(UserLegalHoldForgetDoneSignalData::class, $earlier);
+        self::assertFalse(Database::hasOpenTransactions());
+        self::assertSame([$before[0]], $this->acceptanceRows());
+        $finished = $this->drained();
+        self::assertCount(1, $finished['corr-current'] ?? []);
+        self::assertTrue($finished['corr-current'][0]->isOk());
+        self::assertSame([
+            LegalHoldCommandConstants::FIELD_USER_ID => self::USER_ID,
+            LegalHoldCommandConstants::FIELD_DOCUMENT => 'terms',
+            LegalHoldCommandConstants::FIELD_REVISION_ID => 'second',
+            LegalHoldCommandConstants::FIELD_STANDING => 'covered',
+            LegalHoldCommandConstants::FIELD_DEADLINE => null,
+            LegalHoldCommandConstants::FIELD_FROZEN => false,
+        ], $finished['corr-current'][0]->payload);
+        self::assertArrayNotHasKey('corr-earlier', $finished);
+        self::assertCount(1, $finished[HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE] ?? []);
+        $documents = $finished[HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE][0]->toArray()['documents'];
+        self::assertSame('second', $documents[0]['held']['revisionId']);
+        self::assertSame('covered', $documents[0]['standing']);
+        self::assertNull($documents[0]['deadline']);
+        self::assertSame(['first', 'second'], array_column($documents[0]['accepted'], 'revisionId'));
+
+        $this->finishHoldAnswer($earlier);
+        $later = $this->drained();
+        self::assertCount(1, $later['corr-earlier'] ?? []);
+        self::assertTrue($later['corr-earlier'][0]->isOk());
+        self::assertTrue($later['corr-earlier'][0]->payload[LegalHoldCommandConstants::FIELD_FROZEN]);
+        self::assertSame('lapsed', $later['corr-earlier'][0]->payload[LegalHoldCommandConstants::FIELD_STANDING]);
+        self::assertSame('2026-03-01', $later['corr-earlier'][0]->payload[LegalHoldCommandConstants::FIELD_DEADLINE]);
+        self::assertCount(1, $later[HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE] ?? []);
+        self::assertSame('first', $later[HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE][0]->toArray()['documents'][0]['held']['revisionId']);
+
+        $this->startHold('second', 'corr-retry');
+        $this->carryPersonFrames($this->library);
+        $retried = $this->drained();
+        self::assertCount(1, $retried['corr-retry'] ?? []);
+        self::assertTrue($retried['corr-retry'][0]->isOk());
+        self::assertSame($finished['corr-current'][0]->payload, $retried['corr-retry'][0]->payload);
+        self::assertSame(['first', 'second'], array_column($this->acceptanceRows(), 'revision_id'));
+        self::assertSame($before[0], $this->acceptanceRows()[0]);
+        self::assertFalse(Database::hasOpenTransactions());
+    }
+
+    public function testHoldRefreshesFrozenWhenTheHeldAcceptanceAlreadyExists(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'first');
+        self::accept(self::USER_ID, 'terms', 'second');
+        self::accept(self::USER_ID, 'privacy', 'privacy');
+        self::assertFalse(AccountStandingResolver::isFrozen(self::USER_ID));
+        $before = $this->acceptanceRows();
+        // Keep the library's remembered verdict while the owner writes, as before foreign DB sync arrives.
+        SourceChangeBus::reset();
+        SourceChangeBus::subscribe(new ViewCacheSubscriber());
+        try {
+            $this->startHold();
+            $ask = $this->drained()[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET][0];
+            self::assertInstanceOf(UserLegalHoldForgetSignalData::class, $ask);
+            $this->forgetForHold($ask);
+            self::assertFalse(AccountStandingResolver::isFrozen(self::USER_ID));
+            $this->carryPersonFrames($this->library);
+            $frames = $this->drained();
+            self::assertCount(1, $frames['corr-1'] ?? []);
+            self::assertTrue($frames['corr-1'][0]->isOk());
+            self::assertTrue($frames['corr-1'][0]->payload[LegalHoldCommandConstants::FIELD_FROZEN]);
+            self::assertTrue(AccountStandingResolver::isFrozen(self::USER_ID));
+            self::assertSame(
+                array_values(array_filter($before, static fn (array $row): bool => $row['revision_id'] !== 'second')),
+                $this->acceptanceRows(),
+            );
+        } finally {
+            SourceChangeBus::subscribe(new AccountStandingChangeSubscriber());
+        }
+    }
+
+    public function testHoldStillRepairsAFoldedAccountAndStopsItsAgentButRenameStaysRefused(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'second');
+        self::accept(self::USER_ID, 'privacy', 'privacy');
+        Hilos::$db->userMerges->actions->add(self::USER_ID, self::OTHER_USER_ID);
+        $before = $this->acceptanceRows();
+        OwnershipDeclaration::claimAll($this->library);
+        try {
+            ExecutionContext::run(new ExecutionFrame(agentId: $this->library->getId()), fn () => $this->startHold());
+        } finally {
+            TruthSourceRegistry::unregisterAgent($this->library->getId());
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($this->library->getId()));
+        }
+        $queued = $this->drained();
+        self::assertCount(1, $queued[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET] ?? []);
+        self::assertArrayNotHasKey('corr-1', $queued);
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE, $queued);
+        $prepared = $this->acceptanceRows();
+        self::assertCount(3, $prepared);
+        self::assertSame($before, array_slice($prepared, 0, 2));
+        self::assertSame(self::USER_ID, (int)$prepared[2]['user_id']);
+        self::assertSame('terms', $prepared[2]['document']);
+        self::assertSame('first', $prepared[2]['revision_id']);
+        $ask = $queued[HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET][0];
+        self::assertInstanceOf(UserLegalHoldForgetSignalData::class, $ask);
+        $this->forgetForHold($ask);
+        $this->carryPersonFrames($this->library);
+        $frames = $this->drained();
+        self::assertCount(1, $frames['corr-1'] ?? []);
+        self::assertTrue($frames['corr-1'][0]->isOk());
+        self::assertTrue($this->personAgent(self::USER_ID)->shouldStop());
+        $rows = $this->acceptanceRows();
+        self::assertCount(2, $rows);
+        self::assertSame(['privacy', 'first'], array_column($rows, 'revision_id'));
+        self::assertSame([$prepared[1], $prepared[2]], $rows);
+
+        $this->asPerson(self::USER_ID, static fn (AbstractUserAgent $agent) => $agent->onSignalAgent(
+            new AgentSignalData(new UserRenameSignalData(
+                self::USER_ID, 'Changed', self::USER_ID, HilosSignalConstants::HILOS_USER_RENAME_DONE,
+                self::ACCEPT_KEY, null, HilosSignalConstants::HILOS_USER_UPDATE, null, null,
+            )),
+            'test',
+            HilosSignalConstants::HILOS_USER_RENAME,
+        ));
+        $rename = $this->drained()[HilosSignalConstants::HILOS_USER_RENAME_DONE][0];
+        self::assertSame('Failed to update user: ' . AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE, $rename->error);
+        self::assertSame('Person', Database::sql('SELECT `name` FROM `hilos_user` WHERE `id` = ?', [self::USER_ID])->rows()[0]['name']);
+        self::assertSame($rows, $this->acceptanceRows());
+    }
+
+    public function testUsersLibraryCannotRemoveLaterAcceptancesItself(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'second');
+        $before = $this->acceptanceRows();
+        OwnershipDeclaration::claimAll($this->library);
+        try {
+            try {
+                ExecutionContext::run(new ExecutionFrame(agentId: $this->library->getId()), static fn () =>
+                    Hilos::$db->legalAcceptances->actions->forgetLaterThan(self::USER_ID, LegalDocument::TERMS, 'first'));
+                self::fail('The users library must not remove acceptances');
+            } catch (WriteNotAllowedException) {
+                self::assertSame($before, $this->acceptanceRows());
+            }
+        } finally {
+            TruthSourceRegistry::unregisterAgent($this->library->getId());
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($this->library->getId()));
+        }
+    }
+
     public function testUsersLibraryDeclaresLegalTestHoldCommand(): void
     {
         self::assertContains(CliCommands::LEGAL_TEST_HOLD, ProfileIntegrationLibrary::AGENT_COMMANDS);
+    }
+
+    /**
+     * @param string $revisionId Revision the test command holds
+     * @param string $correlationId Parked command id
+     */
+    private function startHold(string $revisionId = 'first', string $correlationId = 'corr-1'): void
+    {
+        $this->library->onSignalCommand(new CommandRequestDTO($correlationId, CliCommands::LEGAL_TEST_HOLD, [
+            LegalHoldCommandConstants::FIELD_USER_ID => self::USER_ID,
+            LegalHoldCommandConstants::FIELD_DOCUMENT => LegalDocument::TERMS->value,
+            LegalHoldCommandConstants::FIELD_REVISION_ID => $revisionId,
+        ]), '', '');
+    }
+
+    /** @param UserLegalHoldForgetSignalData $ask Owner request to deliver */
+    private function forgetForHold(UserLegalHoldForgetSignalData $ask): void
+    {
+        $this->asPerson($ask->userId, static fn (AbstractUserAgent $agent) => $agent->onSignalAgent(
+            new AgentSignalData($ask), 'test', HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET,
+        ));
+    }
+
+    /** @param UserLegalHoldForgetDoneSignalData $done Owner answer to deliver */
+    private function finishHoldAnswer(UserLegalHoldForgetDoneSignalData $done): void
+    {
+        $this->library->onSignalAgent(new AgentSignalData($done), 'test', HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET_DONE);
+    }
+
+    /** @return list<array<string, mixed>> Stored acceptance rows, including their original id and moment */
+    private function acceptanceRows(): array
+    {
+        return Database::sql('SELECT * FROM `hilos_legal_acceptance` ORDER BY `id`')->rows();
     }
 
     /**
@@ -992,6 +1586,102 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
     }
 }
 
+/** One personal owner serves both holds on its own connection, with pipe replies as deterministic barriers. */
+final class StandingHoldOwnerProcess
+{
+    /** @var list<array<string, mixed>> Rows committed by the last owner request */
+    public array $rows = [];
+
+    /** @var resource PHP child running the personal owner */
+    private $process;
+
+    /** @var array<int, resource> Request, response and diagnostic pipes */
+    private array $pipes = [];
+
+    /** Starts the isolated owner without recreating the case's tables or rows. */
+    public function __construct()
+    {
+        $this->process = proc_open([
+            PHP_BINARY,
+            '-r',
+            'require $argv[1]; require $argv[2]; Hilos\\Tests\\Integration\\StandingHoldOwnerProcess::serve();',
+            dirname(__DIR__, 2) . '/backend/Bootstrap/phpunit.php',
+            __FILE__,
+        ], [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']], $this->pipes);
+        Assert::assertIsResource($this->process);
+        fwrite($this->pipes[0], json_encode(get_object_vars(Database::getConnectionConfig(Database::getCurrentIndex())), JSON_THROW_ON_ERROR) . "\n");
+    }
+
+    /**
+     * @param UserLegalHoldForgetSignalData $ask Request addressed to the same personal owner
+     * @return UserLegalHoldForgetDoneSignalData Answer after that owner's real commit
+     */
+    public function remove(UserLegalHoldForgetSignalData $ask): UserLegalHoldForgetDoneSignalData
+    {
+        fwrite($this->pipes[0], json_encode($ask->toArray(), JSON_THROW_ON_ERROR) . "\n");
+        $line = fgets($this->pipes[1]);
+        if ($line === false) {
+            Assert::fail(stream_get_contents($this->pipes[2]));
+        }
+        $answer = json_decode($line, true, flags: JSON_THROW_ON_ERROR);
+        Assert::assertNotSame(getmypid(), $answer['pid']);
+        Assert::assertFalse($answer['transactionOpen']);
+        $this->rows = $answer['rows'];
+
+        return UserLegalHoldForgetDoneSignalData::fromArray($answer['reply']);
+    }
+
+    /** Ends the owner after closing its request stream, and reports any child failure. */
+    public function close(): void
+    {
+        fclose($this->pipes[0]);
+        fclose($this->pipes[1]);
+        $diagnostic = stream_get_contents($this->pipes[2]);
+        fclose($this->pipes[2]);
+        $exit = proc_close($this->process);
+        if ($exit !== 0) {
+            Assert::fail($diagnostic);
+        }
+    }
+
+    /** Child entry point: one DB context and one owner across both parked commands. */
+    public static function serve(): void
+    {
+        Database::configure(...json_decode(fgets(STDIN), true, flags: JSON_THROW_ON_ERROR));
+        StandingIntegrationHilos::initBrowser(new StandingIntegrationBrowser());
+        Hilos::$db = new class extends HilosDbContext {};
+        Hilos::$db->configure();
+        Hilos::$sr = new StandingIntegrationSignalRouter();
+        SourceChangeBus::subscribe(new ViewCacheSubscriber());
+        $owner = new IntegrationUserAgent((string)AccountStandingIntegrationTest::USER_ID);
+        OwnershipDeclaration::claimAll($owner);
+        while (($line = fgets(STDIN)) !== false) {
+            $ask = UserLegalHoldForgetSignalData::fromArray(json_decode($line, true, flags: JSON_THROW_ON_ERROR));
+            Database::handlerStart();
+            try {
+                ExecutionContext::run(new ExecutionFrame(agentId: $owner->getId()), static fn () => $owner->onSignalAgent(
+                    new AgentSignalData($ask), 'test', HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET,
+                ));
+            } finally {
+                Assert::assertSame([], Database::handlerEnd());
+            }
+            $replies = [];
+            while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof UserLegalHoldForgetDoneSignalData) {
+                    $replies[] = $signal->data->data;
+                }
+            }
+            Assert::assertCount(1, $replies);
+            fwrite(STDOUT, json_encode([
+                'pid' => getmypid(),
+                'reply' => $replies[0]->toArray(),
+                'rows' => Database::sql('SELECT * FROM `hilos_legal_acceptance` ORDER BY `id`')->rows(),
+                'transactionOpen' => Database::hasOpenTransactions(),
+            ], JSON_THROW_ON_ERROR) . "\n");
+        }
+    }
+}
+
 /** Terms whose second substantial revision has been in force since March; privacy in one revision. */
 final class StandingIntegrationCatalog implements LegalCatalogProviderInterface
 {
@@ -1007,6 +1697,21 @@ final class StandingIntegrationCatalog implements LegalCatalogProviderInterface
                 new LegalRevision(LegalDocument::PRIVACY, 'privacy', '2026-01-01', 1, LegalSignificance::SUBSTANTIAL, '2026-01-01', []),
             ],
         ];
+    }
+}
+
+/** The second terms revision is already lapsed while a hold prepares the missing first one. */
+final class StandingLapsedHoldCatalog implements LegalCatalogProviderInterface
+{
+    /** @return array<string, list<LegalRevision>> Fixture declarations with a later substantial deadline */
+    public static function revisions(): array
+    {
+        $revisions = StandingIntegrationCatalog::revisions();
+        $revisions['terms'][] = new LegalRevision(
+            LegalDocument::TERMS, 'later', '2026-03-01', 1, LegalSignificance::SUBSTANTIAL, '2026-04-01', [],
+        );
+
+        return $revisions;
     }
 }
 
@@ -1048,6 +1753,12 @@ abstract class StandingIntegrationHilos extends Hilos
     ];
 
     protected const ?string LEGAL_CATALOG = StandingIntegrationCatalog::class;
+}
+
+/** Binds the catalog that keeps the person frozen throughout both hold phases. */
+abstract class StandingLapsedHoldHilos extends StandingIntegrationHilos
+{
+    protected const ?string LEGAL_CATALOG = StandingLapsedHoldCatalog::class;
 }
 
 /** Binds the catalog whose second revision is not in force yet. */

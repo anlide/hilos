@@ -15,7 +15,7 @@ use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Immutable acceptance records: create once per person/document/revision, erase with the account.
- * Besides erasure, the one removal is test-only: forgetLaterThan() backs test:legal:hold (HIL-324).
+ * Besides erasure, the personal owner removes later acceptances for test:legal:hold (HIL-1899).
  *
  * @extends DbActions<LegalAcceptance, ObjectLegalAcceptances>
  * @property-read DbCollectionLegalAcceptances $collection
@@ -55,7 +55,7 @@ class LegalAcceptancesActions extends DbActions
     }
 
     /**
-     * Test-only removal for test:legal:hold (HIL-324).
+     * Test-only removal by the personal owner for test:legal:hold (HIL-1899).
      *
      * Acceptances declared later than the named revision are forgotten, so that
      * the person holds the named revision.

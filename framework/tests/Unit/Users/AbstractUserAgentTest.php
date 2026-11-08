@@ -73,6 +73,7 @@ use Hilos\Users\DTO\UserSecondFactorResetCancelSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetDueSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
+use Hilos\Users\DTO\UserLegalHoldForgetSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
 use Hilos\Users\DTO\UserStepUpCreditSignalData;
 use Hilos\Users\DTO\UserStepUpRecordSignalData;
@@ -156,6 +157,7 @@ final class AbstractUserAgentTest extends TestCase
             HilosDbContext::secondFactorTrusts,
             HilosDbContext::stepUps,
             HilosDbContext::accountDeletions,
+            HilosDbContext::legalAcceptances,
             HilosDbContext::userPhotos,
             HilosDbContext::notifications,
             HilosDbContext::notificationPreferences,
@@ -166,6 +168,7 @@ final class AbstractUserAgentTest extends TestCase
             self::assertSame([TruthSourceOperation::Update, TruthSourceOperation::Remove], TestUserAgent::OWNS_DB_SET[$collection]);
         }
         self::assertSame([TruthSourceOperation::Add], TestUserAgent::OWNS_DB_SET[HilosDbContext::userRenames]);
+        self::assertSame([TruthSourceOperation::Remove], TestUserAgent::OWNS_DB_SET[HilosDbContext::legalAcceptances]);
         self::assertSame(
             [TruthSourceOperation::Add, TruthSourceOperation::Update],
             TestUserAgent::OWNS_DB_SET[HilosDbContext::secondFactorSettings],
@@ -305,6 +308,7 @@ final class AbstractUserAgentTest extends TestCase
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE => UserSecondFactorResetDueSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND => UserSecondFactorResetRemindSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK => UserSecondFactorUnlockSignalData::class,
+            HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET => UserLegalHoldForgetSignalData::class,
             HilosSignalConstants::HILOS_USER_STEP_UP_RECORD => UserStepUpRecordSignalData::class,
             HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT => UserStepUpCreditSignalData::class,
             HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE => UserBrowserTrustRevokeSignalData::class,
@@ -531,6 +535,7 @@ final class AbstractUserAgentTest extends TestCase
                 HilosDbContext::stepUps,
                 HilosDbContext::notificationPreferences,
                 HilosDbContext::userPhotos,
+                HilosDbContext::legalAcceptances,
             ],
         ));
     }

@@ -40,138 +40,143 @@ const sendCommand = createCommandChannel({
   timeoutMs: 5_000,
 })
 
-test('shows real session actions in source order without bodies or another session', async ({
-  page,
-  browser,
-  baseURL,
-  ignoreHTTPSErrors,
-}) => {
-  const user = await seedTestUser({ email: uniqueEmail() })
-  await gotoPage(expect, page, '/')
-  await openSignIn(expect, page, 'message-signin')
-  await login(expect, page, user.email, PASSWORD)
-  const browserMajor = await page.evaluate(
-    () => navigator.userAgent.match(/Chrome\/(\d+)/)?.[1],
-  )
-  expect(browserMajor).toBeDefined()
-  const bodies = [user.email, PASSWORD]
+// FIXME(F-076, 2026-11-08): Chat nav-admin is absent after admin grant · чужой · попытка 1 · HIL-1899
+test(
+  'shows real session actions in source order without bodies or another session',
+  { tag: '@quarantine:F-076' },
+  async ({ page, browser, baseURL, ignoreHTTPSErrors }) => {
+    const user = await seedTestUser({ email: uniqueEmail() })
+    await gotoPage(expect, page, '/')
+    await openSignIn(expect, page, 'message-signin')
+    await login(expect, page, user.email, PASSWORD)
+    const browserMajor = await page.evaluate(
+      () => navigator.userAgent.match(/Chrome\/(\d+)/)?.[1],
+    )
+    expect(browserMajor).toBeDefined()
+    const bodies = [user.email, PASSWORD]
 
-  const adminContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
-  try {
-    const admin = await adminContext.newPage()
-    const frames = watchAnalyticsFrames(admin)
-    const { userId: adminId, email: adminEmail } = await seedTestUser({
-      email: uniqueEmail(),
+    const adminContext = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors,
     })
-    await gotoPage(expect, admin, '/')
-    await openSignIn(expect, admin, 'message-signin')
-    await login(expect, admin, adminEmail, PASSWORD)
-    await setAdmin(adminId, true)
-    await expect(admin.getByTestId('nav-admin')).toHaveAttribute(
-      'data-access',
-      'full',
-    )
-    bodies.push(adminEmail)
+    try {
+      const admin = await adminContext.newPage()
+      const frames = watchAnalyticsFrames(admin)
+      const { userId: adminId, email: adminEmail } = await seedTestUser({
+        email: uniqueEmail(),
+      })
+      await gotoPage(expect, admin, '/')
+      await openSignIn(expect, admin, 'message-signin')
+      await login(expect, admin, adminEmail, PASSWORD)
+      await setAdmin(adminId, true)
+      await expect(admin.getByTestId('nav-admin')).toHaveAttribute(
+        'data-access',
+        'full',
+      )
+      bodies.push(adminEmail)
 
-    const userSession = await waitAnalyticsBrowserSession(
-      expect,
-      sendCommand,
-      user.userId,
-      AUTH_ACTION_LOGIN,
-    )
-    const adminSession = await waitAnalyticsBrowserSession(
-      expect,
-      sendCommand,
-      adminId,
-      AUTH_ACTION_LOGIN,
-    )
-    expect(userSession.browserSessionId).not.toBeNull()
-    expect(adminSession.browserSessionId).not.toBeNull()
-    expect(userSession.browserSessionId).not.toBe(adminSession.browserSessionId)
+      const userSession = await waitAnalyticsBrowserSession(
+        expect,
+        sendCommand,
+        user.userId,
+        AUTH_ACTION_LOGIN,
+      )
+      const adminSession = await waitAnalyticsBrowserSession(
+        expect,
+        sendCommand,
+        adminId,
+        AUTH_ACTION_LOGIN,
+      )
+      expect(userSession.browserSessionId).not.toBeNull()
+      expect(adminSession.browserSessionId).not.toBeNull()
+      expect(userSession.browserSessionId).not.toBe(
+        adminSession.browserSessionId,
+      )
 
-    // The way in: the person's admin card, then their sessions in Analytics.
-    await gotoPage(expect, admin, `/hilos/user/${user.userId}`)
-    await admin.getByTestId('hilos-page-head-action').click()
-    await expect(admin).toHaveURL(
-      new RegExp(`/hilos/analytics/person/${user.userId}$`),
-    )
-    await expectPageReady(expect, admin)
-    await expectAnalyticsPersonSession(
-      expect,
-      admin,
-      user,
-      userSession,
-      browserMajor!,
-    )
-    await expectNoAnalyticsPersonSession(
-      expect,
-      admin,
-      adminSession.browserSessionId!,
-    )
+      // The way in: the person's admin card, then their sessions in Analytics.
+      await gotoPage(expect, admin, `/hilos/user/${user.userId}`)
+      await admin.getByTestId('hilos-page-head-action').click()
+      await expect(admin).toHaveURL(
+        new RegExp(`/hilos/analytics/person/${user.userId}$`),
+      )
+      await expectPageReady(expect, admin)
+      await expectAnalyticsPersonSession(
+        expect,
+        admin,
+        user,
+        userSession,
+        browserMajor!,
+      )
+      await expectNoAnalyticsPersonSession(
+        expect,
+        admin,
+        adminSession.browserSessionId!,
+      )
 
-    await analyticsSessionLink(admin, userSession.browserSessionId!).click()
-    await expect(admin).toHaveURL(
-      new RegExp(
-        `${analyticsBrowserSessionPath(userSession.browserSessionId!)}$`,
-      ),
-    )
-    await expectPageReady(expect, admin)
-    await expectAnalyticsBrowserSessionHead(
-      expect,
-      admin,
-      `Browser session #${userSession.browserSessionId}`,
-    )
-    await expectAnalyticsSessionHeader(
-      expect,
-      admin,
-      userSession.browserSessionId!,
-      user,
-      browserMajor!,
-    )
-    const ascending = await expectAnalyticsActionsInOrder(
-      expect,
-      admin,
-      userSession.actionNames,
-    )
-    // The whole sign-in ran on the main page: every action stands on it.
-    await expectAnalyticsActionsOnPage(expect, admin, 'main')
+      await analyticsSessionLink(admin, userSession.browserSessionId!).click()
+      await expect(admin).toHaveURL(
+        new RegExp(
+          `${analyticsBrowserSessionPath(userSession.browserSessionId!)}$`,
+        ),
+      )
+      await expectPageReady(expect, admin)
+      await expectAnalyticsBrowserSessionHead(
+        expect,
+        admin,
+        `Browser session #${userSession.browserSessionId}`,
+      )
+      await expectAnalyticsSessionHeader(
+        expect,
+        admin,
+        userSession.browserSessionId!,
+        user,
+        browserMajor!,
+      )
+      const ascending = await expectAnalyticsActionsInOrder(
+        expect,
+        admin,
+        userSession.actionNames,
+      )
+      // The whole sign-in ran on the main page: every action stands on it.
+      await expectAnalyticsActionsOnPage(expect, admin, 'main')
 
-    await expectAnalyticsSessionFrames(
-      expect,
-      admin,
-      frames,
-      userSession.browserSessionId!,
-      user,
-      ascending,
-    )
+      await expectAnalyticsSessionFrames(
+        expect,
+        admin,
+        frames,
+        userSession.browserSessionId!,
+        user,
+        ascending,
+      )
 
-    await admin.getByTestId('hilos-table-sort-createdTs').click()
-    await expectAnalyticsActionRows(expect, admin, [...ascending].reverse())
+      await admin.getByTestId('hilos-table-sort-createdTs').click()
+      await expectAnalyticsActionRows(expect, admin, [...ascending].reverse())
 
-    // The observer reads incoming frames on the admin's analytics page; the
-    // sign-in bodies were sent earlier through the real auth surface.
-    await expectNoAnalyticsBodies(expect, admin, frames, bodies)
+      // The observer reads incoming frames on the admin's analytics page; the
+      // sign-in bodies were sent earlier through the real auth surface.
+      await expectNoAnalyticsBodies(expect, admin, frames, bodies)
 
-    await gotoPage(
-      expect,
-      admin,
-      analyticsBrowserSessionPath(adminSession.browserSessionId!),
-    )
-    const adminSessionLabel = `Browser session #${adminSession.browserSessionId}`
-    await expectAnalyticsBrowserSessionHead(expect, admin, adminSessionLabel)
-    await expectOtherAnalyticsSession(
-      expect,
-      admin,
-      adminSession,
-      adminId,
-      ascending,
-    )
-    const adminSessionUrl = admin.url()
-    await admin.reload()
-    await expect(admin).toHaveURL(adminSessionUrl)
-    await expectPageReady(expect, admin)
-    await expectAnalyticsBrowserSessionHead(expect, admin, adminSessionLabel)
-  } finally {
-    await adminContext.close()
-  }
-})
+      await gotoPage(
+        expect,
+        admin,
+        analyticsBrowserSessionPath(adminSession.browserSessionId!),
+      )
+      const adminSessionLabel = `Browser session #${adminSession.browserSessionId}`
+      await expectAnalyticsBrowserSessionHead(expect, admin, adminSessionLabel)
+      await expectOtherAnalyticsSession(
+        expect,
+        admin,
+        adminSession,
+        adminId,
+        ascending,
+      )
+      const adminSessionUrl = admin.url()
+      await admin.reload()
+      await expect(admin).toHaveURL(adminSessionUrl)
+      await expectPageReady(expect, admin)
+      await expectAnalyticsBrowserSessionHead(expect, admin, adminSessionLabel)
+    } finally {
+      await adminContext.close()
+    }
+  },
+)

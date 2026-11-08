@@ -52,6 +52,7 @@ use Hilos\Database\View\Collection\Identities;
 use Hilos\Database\View\Item\UserRename;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Legal\LegalDocument;
 use Hilos\Notification\DTO\NotificationPreferencesChangedSignalData;
 use Hilos\Notification\DTO\NotificationReadSignalData;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
@@ -113,6 +114,8 @@ use Hilos\Users\DTO\UserSecondFactorResetRemindDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
+use Hilos\Users\DTO\UserLegalHoldForgetDoneSignalData;
+use Hilos\Users\DTO\UserLegalHoldForgetSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
 use Hilos\Users\DTO\UserStepUpCreditDoneSignalData;
@@ -255,6 +258,10 @@ abstract class AbstractUserAgent extends AbstractAgent
             AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorUnlockSignalData::userId,
             AgentSignalConfigKey::DTO => UserSecondFactorUnlockSignalData::class,
         ],
+        HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET => [
+            AgentSignalConfigKey::INDEX_FIELD => UserLegalHoldForgetSignalData::userId,
+            AgentSignalConfigKey::DTO => UserLegalHoldForgetSignalData::class,
+        ],
         HilosSignalConstants::HILOS_USER_STEP_UP_RECORD => [
             AgentSignalConfigKey::INDEX_FIELD => UserStepUpRecordSignalData::userId,
             AgentSignalConfigKey::DTO => UserStepUpRecordSignalData::class,
@@ -318,7 +325,7 @@ abstract class AbstractUserAgent extends AbstractAgent
      *     (owner's decision, 2026-10-10, HIL-1408). The person's one photo row (`hilos_user_photo`,
      *     keyed by the person) is born the same way, by the first photo the person sets: the agent
      *     claims that set whole (owner's decision, 2026-10-10, HIL-1409). A claim that may add is not
-     *     borrowed, so the start does not wait for it.
+     *     borrowed, so the start does not wait for it. Legal acceptances are removed here only by the test hold command.
      */
     public const array OWNS_DB_SET = [
         HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
@@ -330,6 +337,7 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosDbContext::secondFactorTrusts => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::stepUps => TruthSourceOperation::ALL,
         HilosDbContext::accountDeletions => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        HilosDbContext::legalAcceptances => [TruthSourceOperation::Remove],
         HilosDbContext::userPhotos => TruthSourceOperation::ALL,
         HilosDbContext::notifications => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::notificationPreferences => TruthSourceOperation::ALL,
@@ -429,6 +437,8 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws AgentException When the frame names another person
      * @throws InvalidArgumentException When the answer frame cannot be named or queued
+     * @throws DatabaseException When the folded-account lookup fails
+     * @throws LogicException When the folded-account collection cannot be read
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
@@ -744,6 +754,20 @@ abstract class AbstractUserAgent extends AbstractAgent
                     fn () => $this->secondFactorEdits()->unlock($unlock),
                     fn (ActionRefusal $refusal) => UserSecondFactorUnlockDoneSignalData::refused($unlock, $refusal),
                 ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET:
+                $ask = $data->data;
+                if (!$ask instanceof UserLegalHoldForgetSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserLegalHoldForgetSignalData::class, $ask);
+                }
+
+                $this->refuseAnotherPerson($ask->userId, $name);
+                $this->sendToAgent($ask->replySignal, $this->legalHoldForgetAnswer($ask));
+                if (isset(Hilos::$db->userMerges[$this->userId])) {
+                    $this->selfStop();
+                }
 
                 return;
 
@@ -1798,6 +1822,55 @@ abstract class AbstractUserAgent extends AbstractAgent
             }
 
             return $refused($refusal);
+        }
+    }
+
+    /**
+     * Removes later acceptances for a test hold, including for a folded account.
+     *
+     * @param UserLegalHoldForgetSignalData $ask The document, held revision and parked command
+     * @return UserLegalHoldForgetDoneSignalData Removal outcome carrying the unchanged request
+     */
+    private function legalHoldForgetAnswer(UserLegalHoldForgetSignalData $ask): UserLegalHoldForgetDoneSignalData
+    {
+        try {
+            if (!isset(Hilos::$db->users[$this->userId])) {
+                throw new ItemNotFoundForUpdateException("No such user: {$this->userId}");
+            }
+            $document = LegalDocument::tryFrom($ask->document);
+            if ($document === null) {
+                throw new ValidationException("Legal document {$ask->document} is not declared in this installation");
+            }
+
+            Database::transactionStart();
+            try {
+                Hilos::$db->legalAcceptances->actions->forgetLaterThan($this->userId, $document, $ask->revisionId);
+                Database::transactionCommit();
+            } catch (WiringRefusal $e) {
+                Database::transactionRollback();
+                throw $e;
+            } catch (Throwable $e) {
+                Database::transactionRollback();
+                throw $e;
+            }
+
+            return UserLegalHoldForgetDoneSignalData::ok($ask);
+        } catch (ValidationException $e) {
+            return UserLegalHoldForgetDoneSignalData::refused($ask, ActionRefusal::said($e->getMessage()));
+        } catch (WiringRefusal $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Legal hold of #{$this->userId} failed: {$e->getMessage()}");
+            }
+
+            return UserLegalHoldForgetDoneSignalData::refused($ask, $refusal);
+        } catch (Throwable $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Legal hold of #{$this->userId} failed: {$e->getMessage()}");
+            }
+
+            return UserLegalHoldForgetDoneSignalData::refused($ask, $refusal);
         }
     }
 

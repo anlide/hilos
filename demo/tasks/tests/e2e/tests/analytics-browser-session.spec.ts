@@ -44,7 +44,7 @@ const sendCommand = createCommandChannel({
 
 test.use({ timezoneId: 'Pacific/Johnston' })
 
-// FIXME(F-073, 2026-11-08): Tasks nav-admin is absent after admin grant · свой · попытка 4 · HIL-1899
+// FIXME(F-073, 2026-11-08): Tasks nav-admin is absent after admin grant · чужой · попытка 4 · HIL-1899
 test(
   'shows real session actions in source order without bodies or another session',
   { tag: '@quarantine:F-073' },

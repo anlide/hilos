@@ -22,7 +22,6 @@ class DbWriterTransitionCatalog
     protected const string PUSH_GONE = 'HIL-1895';
     protected const string RENAME_LINK = 'HIL-1896';
     protected const string RENAME_UNLINK = 'HIL-1897';
-    protected const string LEGAL_HOLD = 'HIL-1899';
     protected const string DELIVERY_PRUNE = 'HIL-1902';
     protected const string FACTOR_REPLACE = 'HIL-1903';
     protected const string BACKUP_CODES_REPLACE = 'HIL-1904';
@@ -128,12 +127,9 @@ class DbWriterTransitionCatalog
         );
 
         $definitions[HilosDbContext::legalAcceptances] = $this->states(
-            $this->claim($users, DbWriterClaimWidth::Whole, TruthSourceOperation::Add),
-            [self::LEGAL_HOLD => $this->claim($users, DbWriterClaimWidth::Whole,
-                TruthSourceOperation::Update, TruthSourceOperation::Remove),
-                self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
-            [self::LEGAL_HOLD => $this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Remove),
-                self::ERASURE => $this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Remove)],
+            base: [...$this->claim($users, DbWriterClaimWidth::Whole, TruthSourceOperation::Add),
+                ...$this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Remove)],
+            pending: [self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
         );
 
         foreach ([HilosDbContext::stepUps, HilosDbContext::userPhotos, HilosDbContext::notificationPreferences,

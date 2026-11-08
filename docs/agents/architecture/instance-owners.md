@@ -248,6 +248,10 @@ An edit that moved travels in one shape, and the next ones follow it (HIL-1404):
   folded account are refused in the words they were refused in before, and the
   agent is not raised. The agent repeats the same check for the race in which
   the hop left before the erasure or the merge arrived.
+- **The test-only legal hold is the only exception to that gate.** Its frame
+  lets the personal owner remove retained acceptance rows for a folded account
+  without `AddressablePerson::require`; the agent stops after answering that
+  folded account's frame. This is no general bypass for folded accounts.
 - **A check the hop splits is held across it.** The sessions holder counts a
   removal of rights, or a block of an administrator, that it has sent and the
   agent has not yet answered as done, so two removals crossing each other cannot

@@ -51,6 +51,7 @@ use Hilos\Users\DTO\UserSecondFactorResetCancelSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetDueSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
+use Hilos\Users\DTO\UserLegalHoldForgetSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
 use Hilos\Users\DTO\UserStepUpCreditSignalData;
 use Hilos\Users\DTO\UserStepUpRecordSignalData;
@@ -148,6 +149,7 @@ trait PersonAgentFrames
             $ask instanceof UserSecondFactorResetDueSignalData,
             $ask instanceof UserSecondFactorResetRemindSignalData,
             $ask instanceof UserSecondFactorUnlockSignalData,
+            $ask instanceof UserLegalHoldForgetSignalData,
             $ask instanceof UserStepUpRecordSignalData,
             $ask instanceof UserStepUpCreditSignalData,
             $ask instanceof UserBrowserTrustRevokeSignalData,
@@ -178,7 +180,7 @@ trait PersonAgentFrames
      * @param AbstractUsersLibraryAgent $library The library that asks and is answered
      * @throws HilosException When the agent or the library fails on a frame
      */
-    private function carryPersonFrames(AbstractUsersLibraryAgent $library): void
+    protected function carryPersonFrames(AbstractUsersLibraryAgent $library): void
     {
         $kept = [];
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {

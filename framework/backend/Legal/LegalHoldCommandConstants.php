@@ -13,8 +13,9 @@ use Hilos\Core\CLI\Commands\LegalTestHoldCommand;
  * {@see CliCommands::LEGAL_TEST_HOLD}.
  *
  * The CLI side ({@see LegalTestHoldCommand}) sends the person, document and revision to hold,
- * and the users library ({@see AbstractUsersLibraryAgent}) answers with the resulting document
- * standing and account freeze status.
+ * and the users library ({@see AbstractUsersLibraryAgent}) creates the held acceptance before asking
+ * the personal owner to remove later ones. It checks the result, then answers with the resulting
+ * document standing and account freeze status.
  */
 final class LegalHoldCommandConstants
 {

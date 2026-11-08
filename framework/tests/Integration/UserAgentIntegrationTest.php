@@ -168,13 +168,24 @@ final class UserAgentIntegrationTest extends FrameworkIntegrationTestCase
         );
         $this->assertWriteDenied(HilosDbContext::secondFactorSettings, '43', ['43']);
         foreach (self::borrowedSets() as $collection) {
+            $operation = $collection === HilosDbContext::legalAcceptances
+                ? TruthSourceOperation::Remove
+                : TruthSourceOperation::Update;
             TruthSourceRegistry::checkCanWriteItem(
                 $collection,
                 '1',
                 static fn (): array => [self::USER_ID],
-                TruthSourceOperation::Update,
+                $operation,
             );
-            $this->assertWriteDenied($collection, '2', ['43']);
+            $this->assertWriteDenied($collection, '2', ['43'], $operation);
+            if ($collection === HilosDbContext::legalAcceptances) {
+                $this->assertWriteDenied(
+                    $collection,
+                    '1',
+                    [self::USER_ID],
+                    TruthSourceOperation::Update,
+                );
+            }
             try {
                 TruthSourceRegistry::checkCanCreate($collection, static fn (): array => [self::USER_ID]);
                 self::fail("{$collection} allowed a child-row creation");
@@ -194,12 +205,15 @@ final class UserAgentIntegrationTest extends FrameworkIntegrationTestCase
         }
         $this->assertWriteDenied(HilosDbContext::secondFactorSettings, self::USER_ID, [self::USER_ID]);
         foreach (self::borrowedSets() as $collection) {
-            $this->assertWriteDenied($collection, '1', [self::USER_ID]);
+            $operation = $collection === HilosDbContext::legalAcceptances
+                ? TruthSourceOperation::Remove
+                : TruthSourceOperation::Update;
+            $this->assertWriteDenied($collection, '1', [self::USER_ID], $operation);
         }
     }
 
     /**
-     * @return list<string> Child sets the agent borrows to edit and remove, never to add
+     * @return list<string> Child sets borrowed for updates or removal, including remove-only sets
      */
     private static function borrowedSets(): array
     {
@@ -238,15 +252,21 @@ final class UserAgentIntegrationTest extends FrameworkIntegrationTestCase
      * @param string $collection Collection being checked
      * @param string $rowId Row key being checked
      * @param list<string> $setKeys Row's root set keys
+     * @param TruthSourceOperation $operation Operation expected to be refused
      */
-    private function assertWriteDenied(string $collection, string $rowId, array $setKeys): void
+    private function assertWriteDenied(
+        string $collection,
+        string $rowId,
+        array $setKeys,
+        TruthSourceOperation $operation = TruthSourceOperation::Update,
+    ): void
     {
         try {
             TruthSourceRegistry::checkCanWriteItem(
                 $collection,
                 $rowId,
                 static fn (): array => $setKeys,
-                TruthSourceOperation::Update,
+                $operation,
             );
             self::fail("{$collection} allowed a write to row {$rowId} outside this agent's claim");
         } catch (WriteNotAllowedException $refusal) {

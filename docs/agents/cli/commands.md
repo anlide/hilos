@@ -541,7 +541,9 @@ each to its owning library and prints the reply; database work stays in the daem
 `test:settings:write` (the same shape: the Status owner or the settings library answers and
 writes, and the CLI process has nothing to read or write — HIL-1856),
 `test:account:force-purge`, `test:verification:sweep`,
-`test:legal:hold`, `test:i18n:language:on <code>`, `test:i18n:language:off <code>`,
+`test:legal:hold` (the users library creates the held acceptance if missing without publication,
+then the personal owner removes later rows; the library checks the result before publishing),
+`test:i18n:language:on <code>`, `test:i18n:language:off <code>`,
 `test:i18n:language:delete <code>`,
 `test:i18n:locale:on <code>`, `test:i18n:country:off <code>` and `test:i18n:country:on <code>` (every row they cause is written by
 the agent that answers them, so the CLI process itself has nothing to read or write),

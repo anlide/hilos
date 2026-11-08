@@ -1019,154 +1019,158 @@ test.describe('daemon node pages', () => {
   test.afterEach(() => setAdminViewMode(false))
 
   for (const viewer of [false, true]) {
-    test(`cold loads the addressed Node, reloads and follows every tab with history as ${viewer ? 'a viewer' : 'an admin'}`, async ({
-      page,
-      context,
-    }) => {
-      // Cold reply hold, reload and every addressed tab's table subscription.
-      test.slow()
-      await setAdminViewMode(viewer)
-      if (!viewer) await grantAdminToSelf(expect, page)
-      const cold = await context.newPage()
-      const held = await holdPageReply(cold, HilosPages.DAEMON_NODE)
-      const reports = watchDaemonNodeFrames(cold)
-      const refusals = watchPageErrorFrames(cold)
-      const subscribes = countSentFrames(cold, '"type":"page_subscribe"')
-      const actions = countSentFrames(cold, '"type":"action"')
-      try {
-        const ready = gotoPage(expect, cold, DAEMON_NODE_PATH, PAGE_READY)
-        await held.received
-        await expect(cold.getByTestId('hilos-page-skeleton')).toBeVisible()
-        await expect(cold.getByTestId('hilos-page-head')).toHaveCount(0)
-        await expect(cold.getByTestId('hilos-breadcrumb')).toHaveCount(0)
-        held.release()
-        await ready
-        await expectStandaloneNodeOverview(expect, cold, {
-          nodeName: DAEMON_STANDALONE_NODE_NAME,
-        })
-        await expectDaemonNodeAnswer(expect, cold, reports.frames)
-        await expectDaemonNodeFits(expect, cold)
-        expect(subscribes()).toBe(1)
-        expect(actions()).toBe(0)
-        const beforeLive = reports.frames.length
-        const visitor = await context.newPage()
+    // FIXME(F-077, 2026-11-08): Binance viewer has no accepted data-only Node frame after visitor · чужой · попытка 1 · HIL-1899
+    test(
+      `cold loads the addressed Node, reloads and follows every tab with history as ${viewer ? 'a viewer' : 'an admin'}`,
+      viewer ? { tag: '@quarantine:F-077' } : {},
+      async ({ page, context }) => {
+        // Cold reply hold, reload and every addressed tab's table subscription.
+        test.slow()
+        await setAdminViewMode(viewer)
+        if (!viewer) await grantAdminToSelf(expect, page)
+        const cold = await context.newPage()
+        const held = await holdPageReply(cold, HilosPages.DAEMON_NODE)
+        const reports = watchDaemonNodeFrames(cold)
+        const refusals = watchPageErrorFrames(cold)
+        const subscribes = countSentFrames(cold, '"type":"page_subscribe"')
+        const actions = countSentFrames(cold, '"type":"action"')
         try {
-          await gotoPage(expect, visitor, '/', PAGE_READY)
-          await expectDaemonNodeLive(expect, cold, reports.frames, beforeLive)
+          const ready = gotoPage(expect, cold, DAEMON_NODE_PATH, PAGE_READY)
+          await held.received
+          await expect(cold.getByTestId('hilos-page-skeleton')).toBeVisible()
+          await expect(cold.getByTestId('hilos-page-head')).toHaveCount(0)
+          await expect(cold.getByTestId('hilos-breadcrumb')).toHaveCount(0)
+          held.release()
+          await ready
           await expectStandaloneNodeOverview(expect, cold, {
             nodeName: DAEMON_STANDALONE_NODE_NAME,
           })
+          await expectDaemonNodeAnswer(expect, cold, reports.frames)
+          await expectDaemonNodeFits(expect, cold)
           expect(subscribes()).toBe(1)
           expect(actions()).toBe(0)
-        } finally {
-          await visitor.close()
-        }
-        if (viewer)
-          await expect(cold.getByTestId('view-mode-banner')).toBeVisible()
-        await cold.reload()
-        await expectStandaloneNodeOverview(expect, cold, {
-          nodeName: DAEMON_STANDALONE_NODE_NAME,
-        })
-        for (const tab of DAEMON_NODE_TABS.slice(1)) {
-          const link = cold.getByTestId(`hilos-page-tab-${tab.key}`)
-          await link.focus()
-          await expect(link).toBeFocused()
-          await link.press('Enter')
-          await expect(cold).toHaveURL(`${DAEMON_NODE_PATH}${tab.path}`)
-          await expectDaemonNodeHead(expect, cold, tab.key, 'standalone', {
-            nodeName: DAEMON_STANDALONE_NODE_NAME,
-          })
-          if (
-            tab.key !== HilosPages.DAEMON_ENV &&
-            tab.key !== HilosPages.DAEMON_WEBSOCKETS
-          )
-            await expectDaemonNodeTableName(
-              expect,
-              cold,
-              DAEMON_STANDALONE_NODE_NAME,
-            )
-          if (tab.key === HilosPages.DAEMON_AGENTS) {
-            const restart = shownByTestId(
-              cold,
-              `hilos-daemon-agent-restart-${DAEMON_PLACEMENT_TYPE}`,
-            )
-            if (viewer) await expect(restart).toBeDisabled()
-            else await expect(restart).toBeEnabled()
+          const beforeLive = reports.frames.length
+          const visitor = await context.newPage()
+          try {
+            await gotoPage(expect, visitor, '/', PAGE_READY)
+            await expectDaemonNodeLive(expect, cold, reports.frames, beforeLive)
+            await expectStandaloneNodeOverview(expect, cold, {
+              nodeName: DAEMON_STANDALONE_NODE_NAME,
+            })
+            expect(subscribes()).toBe(1)
+            expect(actions()).toBe(0)
+          } finally {
+            await visitor.close()
           }
-          await cold
-            .getByTestId(`hilos-page-tab-${HilosPages.DAEMON_NODE}`)
-            .click()
+          if (viewer)
+            await expect(cold.getByTestId('view-mode-banner')).toBeVisible()
+          await cold.reload()
           await expectStandaloneNodeOverview(expect, cold, {
             nodeName: DAEMON_STANDALONE_NODE_NAME,
           })
-        }
-        await cold.getByTestId('hilos-daemon-environment-link').click()
-        await expectDaemonNodeHead(
-          expect,
-          cold,
-          HilosPages.DAEMON_ENV,
-          'standalone',
-          { nodeName: DAEMON_STANDALONE_NODE_NAME },
-        )
-        await cold.goBack()
-        await expectStandaloneNodeOverview(expect, cold, {
-          nodeName: DAEMON_STANDALONE_NODE_NAME,
-        })
-        await cold.goForward()
-        await expectDaemonNodeHead(
-          expect,
-          cold,
-          HilosPages.DAEMON_ENV,
-          'standalone',
-          { nodeName: DAEMON_STANDALONE_NODE_NAME },
-        )
-        await cold.goBack()
-        await expectStandaloneNodeOverview(expect, cold, {
-          nodeName: DAEMON_STANDALONE_NODE_NAME,
-        })
-        await cold.getByTestId('hilos-daemon-node-log').click()
-        await expectDaemonPage(expect, cold, HilosPages.LOGS_VIEW)
-        await expect(cold).toHaveURL(
-          resolveHilosPath(HilosPages.LOGS_VIEW, {
-            nodeId: 'standalone',
-            source: 'live',
-          }),
-        )
-        await expect(cold.getByTestId('hilos-log-source')).toHaveValue('live')
-        await cold.goBack()
-        await expectStandaloneNodeOverview(expect, cold, {
-          nodeName: DAEMON_STANDALONE_NODE_NAME,
-        })
-        await gotoPage(
-          expect,
-          cold,
-          resolveHilosPath(HilosPages.DAEMON_NODE, { nodeId: 'unknown-node' }),
-        )
-        await expect
-          .poll(() => refusals.at(-1)?.data)
-          .toMatchObject({
-            page: HilosPages.DAEMON_NODE,
-            httpCode: 404,
-            errorCode: PAGE_ERROR_NOT_FOUND,
+          for (const tab of DAEMON_NODE_TABS.slice(1)) {
+            const link = cold.getByTestId(`hilos-page-tab-${tab.key}`)
+            await link.focus()
+            await expect(link).toBeFocused()
+            await link.press('Enter')
+            await expect(cold).toHaveURL(`${DAEMON_NODE_PATH}${tab.path}`)
+            await expectDaemonNodeHead(expect, cold, tab.key, 'standalone', {
+              nodeName: DAEMON_STANDALONE_NODE_NAME,
+            })
+            if (
+              tab.key !== HilosPages.DAEMON_ENV &&
+              tab.key !== HilosPages.DAEMON_WEBSOCKETS
+            )
+              await expectDaemonNodeTableName(
+                expect,
+                cold,
+                DAEMON_STANDALONE_NODE_NAME,
+              )
+            if (tab.key === HilosPages.DAEMON_AGENTS) {
+              const restart = shownByTestId(
+                cold,
+                `hilos-daemon-agent-restart-${DAEMON_PLACEMENT_TYPE}`,
+              )
+              if (viewer) await expect(restart).toBeDisabled()
+              else await expect(restart).toBeEnabled()
+            }
+            await cold
+              .getByTestId(`hilos-page-tab-${HilosPages.DAEMON_NODE}`)
+              .click()
+            await expectStandaloneNodeOverview(expect, cold, {
+              nodeName: DAEMON_STANDALONE_NODE_NAME,
+            })
+          }
+          await cold.getByTestId('hilos-daemon-environment-link').click()
+          await expectDaemonNodeHead(
+            expect,
+            cold,
+            HilosPages.DAEMON_ENV,
+            'standalone',
+            { nodeName: DAEMON_STANDALONE_NODE_NAME },
+          )
+          await cold.goBack()
+          await expectStandaloneNodeOverview(expect, cold, {
+            nodeName: DAEMON_STANDALONE_NODE_NAME,
           })
-        await expect(cold.getByTestId('page-error')).toHaveAttribute(
-          'data-error-code',
-          '404',
-        )
-        await expect(cold.getByTestId('hilos-page-head')).toHaveCount(0)
-        await expect(cold.getByTestId('hilos-page-tabs')).toHaveCount(0)
-        await expect(
-          cold.getByTestId('hilos-daemon-node-overview'),
-        ).toHaveCount(0)
-        await expect(cold.getByTestId('page-error')).not.toContainText(
-          'standalone',
-        )
-      } finally {
-        held.dispose()
-        reports.stop()
-        await cold.close()
-      }
-    })
+          await cold.goForward()
+          await expectDaemonNodeHead(
+            expect,
+            cold,
+            HilosPages.DAEMON_ENV,
+            'standalone',
+            { nodeName: DAEMON_STANDALONE_NODE_NAME },
+          )
+          await cold.goBack()
+          await expectStandaloneNodeOverview(expect, cold, {
+            nodeName: DAEMON_STANDALONE_NODE_NAME,
+          })
+          await cold.getByTestId('hilos-daemon-node-log').click()
+          await expectDaemonPage(expect, cold, HilosPages.LOGS_VIEW)
+          await expect(cold).toHaveURL(
+            resolveHilosPath(HilosPages.LOGS_VIEW, {
+              nodeId: 'standalone',
+              source: 'live',
+            }),
+          )
+          await expect(cold.getByTestId('hilos-log-source')).toHaveValue('live')
+          await cold.goBack()
+          await expectStandaloneNodeOverview(expect, cold, {
+            nodeName: DAEMON_STANDALONE_NODE_NAME,
+          })
+          await gotoPage(
+            expect,
+            cold,
+            resolveHilosPath(HilosPages.DAEMON_NODE, {
+              nodeId: 'unknown-node',
+            }),
+          )
+          await expect
+            .poll(() => refusals.at(-1)?.data)
+            .toMatchObject({
+              page: HilosPages.DAEMON_NODE,
+              httpCode: 404,
+              errorCode: PAGE_ERROR_NOT_FOUND,
+            })
+          await expect(cold.getByTestId('page-error')).toHaveAttribute(
+            'data-error-code',
+            '404',
+          )
+          await expect(cold.getByTestId('hilos-page-head')).toHaveCount(0)
+          await expect(cold.getByTestId('hilos-page-tabs')).toHaveCount(0)
+          await expect(
+            cold.getByTestId('hilos-daemon-node-overview'),
+          ).toHaveCount(0)
+          await expect(cold.getByTestId('page-error')).not.toContainText(
+            'standalone',
+          )
+        } finally {
+          held.dispose()
+          reports.stop()
+          await cold.close()
+        }
+      },
+    )
   }
 
   for (const viewer of [false, true]) {

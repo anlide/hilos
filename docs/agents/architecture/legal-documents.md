@@ -85,18 +85,25 @@ undeclared document or revision is a programming error at this internal entry.
 server's `accepted_at`, with an auto-increment `id` and a unique key over the
 person/document/revision. Repeating a recorded acceptance returns its original
 row and timestamp. There are no item actions: a stored acceptance is immutable.
-The users library currently claims `Add`/`Update`/`Remove`; it creates the
-immutable acceptance, and its test hold path removes rows. The sessions
+The users library claims `Add` only and creates these acceptances. The sessions
 library borrows `Remove` for account erasure, which removes all of the person's
 acceptances. That terminal right remains until the live erasure switch
 (not in the code yet — HIL-1952).
 The only other removal is test-only: `test:legal:hold <userId> <document> <revisionId>` (HIL-324)
-forgets acceptances of revisions declared after the named one, and records it, so the test
-holds the person on the former revision; window, lapse, and freeze follow by calculation.
-That deletion moves to the personal owner of the acceptance set; the library
-keeps creating immutable acceptances (not in the code yet — HIL-1899).
-The current test door remains until this move lands. Merging accounts leaves
-those rows with the account that gave the acceptance.
+first records the named acceptance if missing, in the users library's own
+transaction without publishing state, then asks the personal owner to remove
+acceptances declared after it. The held acceptance is present throughout the
+removal, so a hold to an earlier revision cannot briefly lift an existing freeze. On the
+owner's success the library rereads the document's rows: if the named acceptance
+is missing or a later declared one remains, another hold crossed this one and
+the command asks for a retry without publishing. This check, the fresh freeze
+verdict, standing and the complete legal-state projection use one local read
+transaction on the acceptance rows' connection. It prepares every result before
+commit, then publishes that prepared projection and answers the command; window,
+lapse, and freeze follow by calculation from the same acceptance snapshot.
+An owner's refusal or a failed finish leaves the prepared acceptance in place
+without explicit publication; a new attempt starts from those rows. Merging
+accounts leaves those rows with the account that gave the acceptance.
 
 A person's [data copy](data-export.md) carries every acceptance, including
 revisions the catalog no longer declares. The profile projection omits those

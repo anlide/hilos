@@ -24,10 +24,12 @@ use Hilos\Legal\LegalDocumentStanding;
 use Hilos\Legal\LegalReconsentProjector;
 use Hilos\Legal\LegalSettings;
 use Hilos\Legal\LegalStandingResolver;
+use Hilos\Users\DTO\UserLegalHoldForgetSignalData;
+use Hilos\WiringRefusal;
 
 /**
  * One acceptance write boundary for registration and re-consent (HIL-498).
- * A test holds a person on a named revision with hold() (test:legal:hold, HIL-324).
+ * A test hold creates the held acceptance before asking the personal owner to remove later ones (HIL-1899).
  *
  * Registration calls record() inside its account transaction.
  * Re-consent calls acceptCurrent(), which checks the revisions are current and calls accept().
@@ -143,19 +145,18 @@ final class LegalAcceptanceCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Test-only hold of an exact revision: forgets later acceptances, records the revision if missing,
-     * and returns the resulting document standing.
+     * Creates the held acceptance without publication, then asks the owner to remove later ones.
      *
      * @param int $userId Person holding the revision
      * @param string $documentKey Document key ('terms' or 'privacy')
      * @param string $revisionId Exact revision to hold
-     * @return LegalDocumentStanding Standing of the document after the update
+     * @param string $correlationId Parked command id
      * @throws ValidationException When the document is not declared in this installation
      * @throws ItemNotFoundForUpdateException When the person does not exist
      * @throws LegalException When the catalog declaration fails or revision is unknown
-     * @throws HilosException When the transaction or write fails
+     * @throws HilosException When the transaction, acceptance write or request fails
      */
-    public function hold(int $userId, string $documentKey, string $revisionId): LegalDocumentStanding
+    public function beginHold(int $userId, string $documentKey, string $revisionId, string $correlationId): void
     {
         $document = LegalDocument::tryFrom($documentKey);
         if ($document === null || !in_array($document, LegalCatalogResolver::documents(), true)) {
@@ -167,18 +168,42 @@ final class LegalAcceptanceCommands extends AbstractLibraryCommands
         }
 
         LegalCatalogResolver::revision($document, $revisionId);
-
         Database::transactionStart();
         try {
-            Hilos::$db->legalAcceptances->actions->forgetLaterThan($userId, $document, $revisionId);
             Hilos::$db->legalAcceptances->actions->accept($userId, $document, $revisionId);
             Database::transactionCommit();
+        } catch (WiringRefusal $refusal) {
+            Database::transactionRollback();
+            throw $refusal;
         } catch (HilosException $e) {
             Database::transactionRollback();
             throw $e;
         }
 
-        $this->publishState($userId);
+        $this->library->sendToAgent(
+            HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET,
+            new UserLegalHoldForgetSignalData(
+                $userId,
+                $documentKey,
+                $revisionId,
+                HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET_DONE,
+                $correlationId,
+            ),
+        );
+    }
+
+    /**
+     * Prepares standing and state inside the caller's finish transaction; only the prepared state waits for commit.
+     *
+     * @param int $userId Person holding the revision
+     * @param string $documentKey Document key ('terms' or 'privacy')
+     * @param string $revisionId Exact revision to hold
+     * @return LegalDocumentStanding Standing after the completed hold
+     * @throws HilosException When the state cannot be read or published
+     */
+    public function finishHold(int $userId, string $documentKey, string $revisionId): LegalDocumentStanding
+    {
+        $document = LegalDocument::from($documentKey);
 
         $acceptedRevisionIds = [];
         foreach (Hilos::$db->legalAcceptances->ofUser($userId) as $acceptance) {
@@ -187,7 +212,15 @@ final class LegalAcceptanceCommands extends AbstractLibraryCommands
             }
         }
 
-        return LegalStandingResolver::standingOf($document, $acceptedRevisionIds, LegalStandingResolver::today());
+        $standing = LegalStandingResolver::standingOf($document, $acceptedRevisionIds, LegalStandingResolver::today());
+        $state = LegalAgreementsProjector::stateFor($userId, LegalStandingResolver::today());
+        Database::afterCommit(fn () => $this->library->sendToGroup(
+            HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE,
+            LegalAgreementsGroup::forUser($userId),
+            $state,
+        ));
+
+        return $standing;
     }
 
     /**

@@ -3,13 +3,14 @@ import { createCommandChannel } from '../../../../../framework/frontend/scripts/
 // The daemon command channel — the same socket the CLI test:legal:hold command
 // speaks (HIL-324). The Playwright runner has no PHP, so the e2e holds a person
 // on a revision over the wire directly; the master parks the request for the
-// users library, which rewrites the person's acceptance records and publishes
-// their agreements state.
+// users library, which creates the held acceptance if missing without publishing,
+// then asks the person's agent to remove later acceptances. The library checks
+// that the hold still stands before publishing the resulting agreements state.
 const COMMAND_HOST = process.env.COMMAND_HOST ?? 'polls-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
-// Unlike the admin view mode, the reply waits for an agent: the users library
-// writes the records inside a transaction and only then answers.
+// Unlike the admin view mode, the reply waits for the personal owner's removal,
+// then the users library checks the final rows and publishes the result.
 const REPLY_TIMEOUT_MS = 15_000
 
 const LEGAL_HOLD_COMMAND = 'test:legal:hold'
@@ -31,8 +32,8 @@ export interface LegalHoldStanding {
 }
 
 /**
- * Holds a person on one revision of one document: their acceptances of later
- * revisions are forgotten and this one is recorded if it is missing (HIL-324).
+ * Holds a person on one revision of one document: this one is recorded if missing,
+ * then their acceptances of later revisions are forgotten and checked (HIL-324).
  * Window, lapse and freeze then follow by calculation - nothing else is set.
  *
  * The person's open tabs learn the new standing on the sessions library's next

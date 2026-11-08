@@ -183,6 +183,8 @@ use Hilos\Users\DTO\UserSecondFactorResetRemindDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
+use Hilos\Users\DTO\UserLegalHoldForgetDoneSignalData;
+use Hilos\Users\DTO\UserLegalHoldForgetSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
 use Hilos\Users\DTO\UserStepUpCreditDoneSignalData;
@@ -1041,6 +1043,20 @@ final class HilosSignalConstants
      * The library answers the parked command. Carried by {@see UserSecondFactorUnlockDoneSignalData}.
      */
     public const string HILOS_USER_SECOND_FACTOR_UNLOCK_DONE = 'hilos_user_second_factor_unlock_done';
+
+    /**
+     * Test-only users library → the person's agent: forget later acceptances of a document (HIL-1899).
+     *
+     * Carried by {@see UserLegalHoldForgetSignalData}.
+     */
+    public const string HILOS_USER_LEGAL_HOLD_FORGET = 'hilos_user_legal_hold_forget';
+
+    /**
+     * Test-only person's agent → users library: later acceptances are removed, or why not (HIL-1899).
+     *
+     * The library checks the result and answers the command. Carried by {@see UserLegalHoldForgetDoneSignalData}.
+     */
+    public const string HILOS_USER_LEGAL_HOLD_FORGET_DONE = 'hilos_user_legal_hold_forget_done';
 
     /**
      * Users library → the confirming person's agent: record the confirmation a password or a code proved (HIL-1407).

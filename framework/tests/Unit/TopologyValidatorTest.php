@@ -9103,7 +9103,6 @@ abstract class TopologyLegacyDbHilos extends HilosFacade
     ];
 
     public const array SHARED_DB_OWNERS = [
-        'legalAcceptances' => ['HIL-1899', 'HIL-1952'],
         'secondFactorBackupCodes' => ['HIL-1904', 'HIL-1952', 'HIL-1999'],
         'secondFactors' => ['HIL-1903', 'HIL-1952', 'HIL-1999'],
         'userRenames' => ['HIL-1896', 'HIL-1952'],

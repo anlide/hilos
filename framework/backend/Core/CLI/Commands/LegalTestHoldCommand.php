@@ -17,7 +17,7 @@ use Hilos\Legal\LegalStanding;
  *
  * Forgets acceptances declared later than the named revision and records it if missing,
  * so that tests can place a user into covered, window or lapsed standing.
- * It is database-free because every row is written by the answering users library agent.
+ * It is database-free: the personal owner removes later rows and the users library creates the held acceptance.
  */
 final class LegalTestHoldCommand extends AbstractCommandChannelTestCommand implements DatabaseFreeCommand
 {
