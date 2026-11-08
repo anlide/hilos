@@ -1018,7 +1018,7 @@ export function HilosViewportTable<R>({
         className={`table-responsive ${tableView === 'tiles' ? 'd-none' : 'd-none d-md-block'} position-relative`}
       >
         <div
-          className="table hilos-table-room hilos-table-room-wide invisible"
+          className="d-table hilos-table-room hilos-table-room-wide invisible position-absolute top-0 start-0 end-0 pe-none"
           aria-hidden="true"
           inert
           style={
@@ -1027,14 +1027,12 @@ export function HilosViewportTable<R>({
             } as CSSProperties
           }
         >
-          <div className="hilos-table-replacement-body">
-            <div className="hilos-table-replacement-row">
-              <div className="hilos-table-replacement-cell">
-                {reasonTwins()}
-              </div>
+          <div className="hilos-table-replacement-row d-table-row">
+            <div className="d-table-cell p-0 border-top border-bottom">
+              {reasonTwins()}
             </div>
           </div>
-          <div className="hilos-table-fallback" />
+          <div className="hilos-table-fallback position-absolute py-4" />
         </div>
         <table
           ref={table}
@@ -1387,13 +1385,13 @@ export function HilosViewportTable<R>({
         data-id="hilos-table-cards"
       >
         <div
-          className="hilos-table-room hilos-table-room-card invisible card mb-2"
+          className="hilos-table-room hilos-table-room-card invisible card mb-2 position-absolute top-0 start-0 end-0 pe-none"
           aria-hidden="true"
           inert
         >
           <div className="card-body py-2 px-3 small">
             {reasonTwins()}
-            <div className="hilos-table-fallback" />
+            <div className="hilos-table-fallback position-absolute py-4" />
           </div>
         </div>
         {body === 'rows' ? (
@@ -1442,13 +1440,17 @@ export function HilosViewportTable<R>({
               is as wide as a real tile and wraps the departure words as one
               would. It never holds a picture, a row value or an interactive
               clone, and takes no id. */}
-          <div className="hilos-table-room invisible" aria-hidden="true" inert>
+          <div
+            className="hilos-table-room invisible position-absolute top-0 start-0 end-0 pe-none"
+            aria-hidden="true"
+            inert
+          >
             <div className="row row-cols-2 row-cols-md-3 row-cols-xl-4 g-3">
               <div className="col">
                 <div className="card hilos-table-tile hilos-table-room-tiles">
                   <div className="card-body py-2 px-3 small">
                     {reasonTwins()}
-                    <div className="hilos-table-fallback" />
+                    <div className="hilos-table-fallback position-absolute py-4" />
                   </div>
                 </div>
               </div>

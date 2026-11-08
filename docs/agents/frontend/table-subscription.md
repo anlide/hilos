@@ -1221,12 +1221,13 @@ guards and recovery.
 
 For Q1=A, a usable capture in either projection remains allocated across layout
 changes and only grows to fit the currently readable reason plus its shell and
-gap. A projection with no usable capture gets the Sass `3rem` body fallback plus
-shell and gap on its first visible display, latched in CSS pixels. Later
-font/rem/width changes do not recalculate that fallback, and a smaller reason
-floor never shrinks a grown allocation. A wide extent is not transferred to a
-card. Allocations stay until the replacement window or controller lifecycle
-releases them; there is no timer, compaction, or page-size cap.
+gap. A projection with no usable capture gets the empty absolute `py-4` (`3rem`)
+fallback block in the inert projection probe plus shell and gap on its first
+visible display, latched in CSS pixels. Later font/rem/width changes do not
+recalculate that fallback, and a smaller reason floor never shrinks a grown
+allocation. A wide extent is not transferred to a card. Allocations stay until
+the replacement window or controller lifecycle releases them; there is no timer,
+compaction, or page-size cap.
 
 The mounted Vue
 [`useTableViewportGeometry`](../../../framework/frontend/vue/src/useTableViewportGeometry.ts)
@@ -1262,15 +1263,20 @@ Tiles, or the target disappears or is ambiguous, the hidden table/card does not
 receive focus: focus returns to the visible search or otherwise the table root.
 A focus choice made during the update is preserved. The projection identity and
 DOM marker are browser-local and add no server signal, route, or DTO contract.
-Static fallback geometry lives in the sanctioned Vue
+Static fallback geometry in the CSS layer preserves the `3rem` minimum height of
+an empty `.hilos-table-record-space`
+(`:not([style*='--hilos-table-record-px'])`) in the sanctioned Vue
 [`hilos-styles.scss`](../../../framework/frontend/vue/src/hilos-styles.scss) and
 React [`hilos-styles.scss`](../../../framework/frontend/react/src/hilos-styles.scss)
 files and Angular's
-[`hilos-styles.scss`](../../../framework/frontend/angular/src/hilos-styles.scss),
-while validated fractional measurements pass through numeric CSS custom
-properties. Each adapter subtracts the measured card-body chrome and outside
-gap from the retained extent before publishing the inner record-space height.
-The shared Sass rule applies that height without a second subtraction;
+[`hilos-styles.scss`](../../../framework/frontend/angular/src/hilos-styles.scss).
+For the inert probe, the CSS layer retains only the measured width and
+`border-collapse: collapse` of the wide probe (`.hilos-table-room-wide`), while
+the rest of the probe styling is moved to Bootstrap utilities in the templates
+of all three SDKs. Validated fractional measurements pass through numeric CSS
+custom properties. Each adapter subtracts the measured card-body chrome and
+outside gap from the retained extent before publishing the inner record-space
+height. The shared Sass rule applies that height without a second subtraction;
 Bootstrap keeps the shell and gutter around it. The generic `3rem` fallback
 occupies only the inner block. Bootstrap supplies the grid, 4:3 ratio frame, and
 spacing; only measured numeric values travel through `--hilos-*` properties.

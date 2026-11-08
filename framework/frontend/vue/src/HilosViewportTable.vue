@@ -502,34 +502,26 @@ function onSelectPage(event: Event): void {
       :class="tableView === 'tiles' ? 'd-none' : 'd-none d-md-block'"
     >
       <div
-        class="table hilos-table-room hilos-table-room-wide invisible"
+        class="d-table hilos-table-room hilos-table-room-wide invisible position-absolute top-0 start-0 end-0 pe-none"
         aria-hidden="true"
         inert
         :style="{ '--hilos-table-width-px': tracks?.tableWidth }"
       >
-        <div class="hilos-table-replacement-body">
-          <div class="hilos-table-replacement-row">
-            <div class="hilos-table-replacement-cell">
-              <div
-                class="hilos-table-reason-twins hilos-stack text-center fst-italic"
+        <div class="hilos-table-replacement-row d-table-row">
+          <div class="d-table-cell p-0 border-top border-bottom">
+            <div
+              class="hilos-table-reason-twins hilos-stack text-center fst-italic"
+            >
+              <span
+                v-for="reason in ['deleted', 'left_set', 'moved_out'] as const"
+                :key="reason"
+                ><i :class="`bi ${hilosTablePlaceholder(reason).icon} me-1`"></i
+                >{{ hilosTablePlaceholder(reason).text }}</span
               >
-                <span
-                  v-for="reason in [
-                    'deleted',
-                    'left_set',
-                    'moved_out',
-                  ] as const"
-                  :key="reason"
-                  ><i
-                    :class="`bi ${hilosTablePlaceholder(reason).icon} me-1`"
-                  ></i
-                  >{{ hilosTablePlaceholder(reason).text }}</span
-                >
-              </div>
             </div>
           </div>
         </div>
-        <div class="hilos-table-fallback"></div>
+        <div class="hilos-table-fallback position-absolute py-4"></div>
       </div>
       <table
         ref="table"
@@ -1105,7 +1097,7 @@ function onSelectPage(event: Event): void {
       data-id="hilos-table-cards"
     >
       <div
-        class="hilos-table-room hilos-table-room-card invisible card mb-2"
+        class="hilos-table-room hilos-table-room-card invisible card mb-2 position-absolute top-0 start-0 end-0 pe-none"
         aria-hidden="true"
         inert
       >
@@ -1120,7 +1112,7 @@ function onSelectPage(event: Event): void {
               >{{ hilosTablePlaceholder(reason).text }}</span
             >
           </div>
-          <div class="hilos-table-fallback"></div>
+          <div class="hilos-table-fallback position-absolute py-4"></div>
         </div>
       </div>
       <div v-if="body === 'rows'" role="list" :aria-labelledby="nameId">
@@ -1191,7 +1183,11 @@ function onSelectPage(event: Event): void {
     >
       <!-- A framework-only twin has the same Bootstrap column width and shell.
       It never holds a picture, a row value, or an interactive clone. -->
-      <div class="hilos-table-room invisible" aria-hidden="true" inert>
+      <div
+        class="hilos-table-room invisible position-absolute top-0 start-0 end-0 pe-none"
+        aria-hidden="true"
+        inert
+      >
         <div class="row row-cols-2 row-cols-md-3 row-cols-xl-4 g-3">
           <div class="col">
             <div class="card hilos-table-tile hilos-table-room-tiles">
@@ -1212,7 +1208,7 @@ function onSelectPage(event: Event): void {
                     >{{ hilosTablePlaceholder(reason).text }}</span
                   >
                 </div>
-                <div class="hilos-table-fallback"></div>
+                <div class="hilos-table-fallback position-absolute py-4"></div>
               </div>
             </div>
           </div>

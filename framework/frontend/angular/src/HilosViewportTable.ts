@@ -232,28 +232,26 @@ class HilosViewportTableRecord {
         [class.d-md-block]="tableView() !== 'tiles'"
       >
         <div
-          class="table hilos-table-room hilos-table-room-wide invisible"
+          class="d-table hilos-table-room hilos-table-room-wide invisible position-absolute top-0 start-0 end-0 pe-none"
           aria-hidden="true"
           inert
           [style.--hilos-table-width-px]="geometry()?.tracks()?.tableWidth"
         >
-          <div class="hilos-table-replacement-body">
-            <div class="hilos-table-replacement-row">
-              <div class="hilos-table-replacement-cell">
-                <div
-                  class="hilos-table-reason-twins hilos-stack text-center fst-italic"
-                >
-                  @for (reason of removalReasons; track reason) {
-                    <span
-                      ><i class="bi {{ placeholder(reason).icon }} me-1"></i
-                      >{{ placeholder(reason).text }}</span
-                    >
-                  }
-                </div>
+          <div class="hilos-table-replacement-row d-table-row">
+            <div class="d-table-cell p-0 border-top border-bottom">
+              <div
+                class="hilos-table-reason-twins hilos-stack text-center fst-italic"
+              >
+                @for (reason of removalReasons; track reason) {
+                  <span
+                    ><i class="bi {{ placeholder(reason).icon }} me-1"></i
+                    >{{ placeholder(reason).text }}</span
+                  >
+                }
               </div>
             </div>
           </div>
-          <div class="hilos-table-fallback"></div>
+          <div class="hilos-table-fallback position-absolute py-4"></div>
         </div>
         <table
           #geometryTable
@@ -821,7 +819,7 @@ class HilosViewportTableRecord {
         data-id="hilos-table-cards"
       >
         <div
-          class="hilos-table-room hilos-table-room-card invisible card mb-2"
+          class="hilos-table-room hilos-table-room-card invisible card mb-2 position-absolute top-0 start-0 end-0 pe-none"
           aria-hidden="true"
           inert
         >
@@ -836,7 +834,7 @@ class HilosViewportTableRecord {
                 >
               }
             </div>
-            <div class="hilos-table-fallback"></div>
+            <div class="hilos-table-fallback position-absolute py-4"></div>
           </div>
         </div>
         @if (body() === 'rows') {
@@ -899,7 +897,11 @@ class HilosViewportTableRecord {
           <!-- A framework-only twin with the column width and shell of a
           tile, for the geometry to measure. It never holds a picture, a row
           value, or an interactive clone. -->
-          <div class="hilos-table-room invisible" aria-hidden="true" inert>
+          <div
+            class="hilos-table-room invisible position-absolute top-0 start-0 end-0 pe-none"
+            aria-hidden="true"
+            inert
+          >
             <div class="row row-cols-2 row-cols-md-3 row-cols-xl-4 g-3">
               <div class="col">
                 <div class="card hilos-table-tile hilos-table-room-tiles">
@@ -914,7 +916,9 @@ class HilosViewportTableRecord {
                         >
                       }
                     </div>
-                    <div class="hilos-table-fallback"></div>
+                    <div
+                      class="hilos-table-fallback position-absolute py-4"
+                    ></div>
                   </div>
                 </div>
               </div>

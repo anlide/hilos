@@ -675,39 +675,12 @@ body.modal-open .toast-container > * {
   height: calc(var(--hilos-table-work-px) * 1px);
 }
 
-// WHY: the static reason needs a measurable width before departure, and hidden
-// branches need a Sass-owned fallback rather than a JS rem-to-pixel constant.
-// WHAT: inert framework-only probes; they contain no row values or controls.
-.hilos-table-room {
-  position: absolute;
-  inset-inline: 0;
-  top: 0;
-  pointer-events: none;
-}
-
+// WHY: the wide probe takes the used width of the live table, which may
+// overflow its scrollport, while Bootstrap sizing stops at 100% of the parent;
+// the probe is a div in table display, and Bootstrap collapses borders only
+// for the table element, which a second table on the page must not be.
+// WHAT: the measured width and collapsed border model of the wide reason probe.
 .hilos-table-room-wide {
-  display: table;
   border-collapse: collapse;
   width: calc(var(--hilos-table-width-px) * 1px);
-}
-
-.hilos-table-replacement-body {
-  display: table-row-group;
-}
-
-.hilos-table-replacement-row {
-  display: table-row;
-}
-
-.table .hilos-table-replacement-cell {
-  display: table-cell;
-  padding: 0;
-  // Bootstrap puts its cell border on td/th, not on this static div probe.
-  // Both edges reproduce the two collapsed half-borders of an occupied row.
-  border-block: var(--bs-border-width) solid var(--bs-table-border-color);
-}
-
-.hilos-table-fallback {
-  position: absolute;
-  height: 3rem;
 }
