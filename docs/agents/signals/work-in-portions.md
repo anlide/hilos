@@ -155,6 +155,20 @@ event, and no DB poll on every tick or remembered cursor is added
 (not in the code yet — HIL-1951). These paths become live only at erasure's
 cutover (not in the code yet — HIL-1952).
 
+For [merge](../architecture/account-operations.md#merge), the loser commits
+its work with result and copy (not in the code yet — HIL-1992), the survivor
+its own work with receipt (not in the code yet — HIL-1994), and the holder
+its own work with result (not in the code yet — HIL-1995). Declared project
+participants follow that same local atomic boundary
+(not in the code yet — HIL-1996), including chat's author transfer
+(not in the code yet — HIL-1997). Operation/stage correlation rejects
+duplicate, old and foreign answers without advancing unrelated work
+(not in the code yet — HIL-2000). Recovery selects unfinished obligations
+from DB at start, on subsequent coordinator passes and on operation frames
+(not in the code yet — HIL-2002). These paths become live only at the merge
+cutover (not in the code yet — HIL-1999). No transaction spans frames and no
+new after-commit, file or external retry guarantee follows.
+
 ## Anti-Patterns
 
 - `sendToUser()` in a loop over changed rows → use the page's declared source.

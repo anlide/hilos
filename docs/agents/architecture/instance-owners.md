@@ -77,9 +77,10 @@ The current set guard grants a cross-set move only to a whole-table claimant,
 because one set claim cannot cover both origin and destination. This is the
 mechanism today, not a license to add such a claimant. The agreed terminal
 direction is each owner deleting its own rows in its own transaction, and
-the loser giving rows away under a narrow operation right. Its exact protocol
-belongs to the later phases in
-[account-operations.md](account-operations.md#three-phases). The old erasure
+the loser giving rows away under a narrow
+[operation right](account-operations.md#the-transfer-right), judged against
+the operation and both preparations without a new claim width or `_setVia`
+change (not in the code yet — HIL-1991). The old erasure
 remains live until HIL-1952 (not in the code yet — HIL-1952), and the old merge
 until HIL-1999 (not in the code yet — HIL-1999); preparation stays inert.
 
@@ -292,9 +293,11 @@ for any sweep, erasure or merge:
   (not in the code yet — HIL-1999).
 - **Stops:** today a deleted person row or a merge row stops the affected
   personal agent; an agent not running does not rise, and the survivor is not
-  stopped. The terminal protocols move this stop after the owner's confirmed
-  part, at the erasure cutover (not in the code yet — HIL-1952) and the merge
-  cutover (not in the code yet — HIL-1999).
+  stopped. Erasure moves this stop after the owner's confirmed part at its
+  cutover (not in the code yet — HIL-1952). Merge prepares a loser stop only
+  after its copy is cleaned following receipt (not in the code yet — HIL-1998).
+  The old immediate stop is removed only at the merge cutover
+  (not in the code yet — HIL-1999).
 
 Ordinary cross-owner writes are separate, finite transitions. The chat agent's
 borrowed journal `Update` for `unlinkEvents()` goes to the journal's personal
@@ -321,10 +324,18 @@ Assignments and answers belong to one operation and stage
 (not in the code yet — HIL-1950), and start/recovery finds open obligations
 from DB (not in the code yet — HIL-1951).
 
-HIL-1986 retains the precise merge and transfer protocol. Preparatory erasure
-code is inert: a new handler does not authorize finishing old requests by the
-new path. Today's stops, producers and necessary rights remain until live
-erasure switches (not in the code yet — HIL-1952).
+The detailed [merge canon](account-operations.md#merge) gives the folded loser
+a finishing mode: it accepts only continuation of its own operation, copy
+replay and cleanup, and stops after cleanup following receipt. Ordinary access
+stays closed and `AddressablePerson::require()` gains no general bypass
+(not in the code yet — HIL-1998). Recovery raises it only to complete those
+durable obligations, including after a lost frame or a move
+(not in the code yet — HIL-2002). This mode replaces the current immediate
+stop only at live merge cutover (not in the code yet — HIL-1999).
+
+Preparatory erasure code is inert: a new handler does not authorize finishing
+old requests by the new path. Today's stops, producers and necessary rights
+remain until live erasure switches (not in the code yet — HIL-1952).
 
 Keep the grants, comments and debt entries needed by the old path until its
 actual switch. In the commit that enables a move, its implementing leaf removes

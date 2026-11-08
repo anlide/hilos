@@ -402,9 +402,10 @@ table does — is why the merge of two accounts is the sessions holder's today
 design names a narrower right for the loser's agent: to give its rows away
 under one operation, judged by that operation's record and not by the width of
 a claim ([The Transfer Right](account-operations.md#the-transfer-right)). That
-right is a design and not code: no door for it exists in the tree, no width or
-mode is added here, and a set claim moving a row is refused as this section
-says.
+operation-scoped door is prepared over the strict guard
+(not in the code yet — HIL-1991). It remains design and not code: no door for
+it exists in the tree, no width or mode is added here, and a set claim moving
+a row is refused as this section says.
 
 **One statement over one set asks for that set whole.** An UPDATE or DELETE cut
 by one value of the set column — every notification of one recipient, every

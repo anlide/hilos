@@ -106,8 +106,20 @@ by their agent (HIL-1406). The complete-only topology comparison does not catch
 this overlap; it is named terminal debt, not a permission for partial DB
 co-owners. Old erasure rights remain until its live switch
 (not in the code yet — HIL-1952), and old merge rights until its own
-(not in the code yet — HIL-1999). HIL-1935 and HIL-1986 own those detailed
-protocols; see [instance-owners.md](instance-owners.md#operations-over-many-instances).
+(not in the code yet — HIL-1999). The detailed
+[erasure](account-operations.md#erasure) and [merge](account-operations.md#merge)
+canons give each prepared capability its own address. For merge, each owner
+checks its protection, shown flag and pending-removal refusals at preparation
+(not in the code yet — HIL-1988). Reservation restrictions cover protection
+changes and affected policy entrances, including late service frames
+(not in the code yet — HIL-1989). The loser transfers or deletes its factor
+and backup codes by fate, preserving spent status, and removes its other
+second-factor rows with its result (not in the code yet — HIL-1992). The
+survivor writes the longer effective wait when protection transfers and
+deletes its own trusts under the existing policy, with receipt
+(not in the code yet — HIL-1994). The holder ends loser sessions after the
+fact and survivor sessions after receipt when the loser's factor first
+protects it (not in the code yet — HIL-1995).
 
 The loser's sessions end after commit. When its factor first protects the
 survivor, the survivor's sessions end too. A confirmed loser factor revokes

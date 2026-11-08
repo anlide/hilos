@@ -125,6 +125,14 @@ confirmation of the merge (the step-up operation `merge_accounts`, see
 [step-up.md](../architecture/step-up.md)) — the operator at the console has nothing to
 confirm with.
 
+Under the detailed [merge canon](../architecture/account-operations.md#merge-cutover-and-observation),
+`account:merge` will distinguish preparing, wait, refusal and end, with the chosen
+fates, through the daemon channel. Waiting must not block the event loop; a channel
+disconnect is neither cancellation nor success. Success means durable end. The exact
+response is that leaf's contract, with no new command declared here
+(not in the code yet — HIL-2001). This becomes the live command path only at the
+single merge switch (not in the code yet — HIL-1999).
+
 `impersonate:start` is judged by the same `assertImpersonationAllowed()` as the person's
 card, the impersonation settings included (HIL-1170,
 [people-table.md](../architecture/people-table.md)): it is refused while impersonation is

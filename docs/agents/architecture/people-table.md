@@ -105,7 +105,11 @@ separate from ordinary creation. Under the detailed
 [erasure canon](account-operations.md#erasure), the personal owner removes
 `userRenames` and `users` last, after required participant results, and completes
 its own request in that final local transaction
-(not in the code yet — HIL-1942). HIL-1986 retains the detailed merge protocol.
+(not in the code yet — HIL-1942). Under the detailed
+[merge canon](account-operations.md#merge), the loser writes its own block
+after its merge row in its own fact transaction
+(not in the code yet — HIL-1992). The holder's old `Update` remains until the
+merge switch named above.
 
 ## What The Framework Does For A Person
 
@@ -285,19 +289,20 @@ refusal from `assertMergeable()` names both accounts by name and number, and a
 merged account by the live end of its chain (HIL-1294); the window and the
 console receive that one sentence.
 
-That one transaction is the merge in the tree. The approved research design
-([Merge](account-operations.md#merge)) keeps what the tombstone means and the
-order it is written in — the merge row first, the block second, every
-re-pointed row under its old id — and moves the writes: the loser's agent
-re-points its own ways in and second factor and writes the merge row and its
-block in one transaction of its own, under a transfer right judged by the
-operation; the survivor's agent takes the rows into memory and confirms; the
-lock and the re-read of the second-factor tables go; and the loser's agent,
-which stops today the moment the row appears, stops after its confirmed part.
-The keys, the chain and its readers below do not change. HIL-1986 owns the
-next phase's precise merge protocol. Preparation remains inert and
+That one transaction is the merge in the tree. The detailed
+[merge canon](account-operations.md#merge) keeps what the tombstone means and
+its order: the loser transfers its own rows under their existing ids, applies
+the fate to its own previous password, then writes the merge row and its own
+block in the same transaction with its result and hand-over copy
+(not in the code yet — HIL-1992). The survivor's memory admission and fence
+against stale frames (not in the code yet — HIL-1993) are separate from its
+own password/protection writes and receipt (not in the code yet — HIL-1994).
+The loser stops only after deleting its copy following receipt
+(not in the code yet — HIL-1998). The keys, chain and readers below retain
+their meanings. Preparation remains inert and
 `mergeAccounts()` remains the only normal producer until the live switch
-retires its foreign writes, grants, comments and debt
+retires its foreign writes, grants, comments, debt, locks, rereads and the
+immediate stop on a merge row
 (not in the code yet — HIL-1999). A prepared handler does not clear this marker.
 
 The existing merge gains a refusal when any affected account has started

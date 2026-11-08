@@ -31,6 +31,16 @@ through this agent. Uploads belong to the framework uploads agent.
   The framework [erasure canon](../../../../docs/agents/architecture/account-operations.md#erasure)
   owns the protocol and its participant boundary.
 
+- **Merge participant**: transfers the loser's message authorship across every room
+  in one transaction with its result. Other message and attachment fates remain
+  unchanged; it writes no rename journal (not in the code yet — HIL-1997).
+  Chat declares that owner through the project participant seam
+  (not in the code yet — HIL-1996). The holder's current `applyAccountMerge()` and
+  borrowed `Update` on `eventMessages` remain until the single live switch
+  (not in the code yet — HIL-1999). The framework
+  [merge canon](../../../../docs/agents/architecture/account-operations.md#merge)
+  owns the protocol and its participant boundary.
+
 ## Key Signal Handlers
 
 | Signal | Handler |
