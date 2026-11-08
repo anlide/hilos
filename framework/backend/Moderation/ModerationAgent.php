@@ -34,6 +34,7 @@ use Hilos\LLM\DTO\MessageImage;
 use Hilos\LLM\Exception\LLMConfigurationException;
 use Hilos\LLM\Exception\LLMException;
 use Hilos\LLM\Routing\LlmProfile;
+use Hilos\LLM\Routing\LlmProvider;
 use Hilos\Moderation\DTO\ModerationFailure;
 use Hilos\Moderation\DTO\ModerationVerdictSignalData;
 use Hilos\Moderation\DTO\ModerationObserveCommandData;
@@ -99,8 +100,15 @@ class ModerationAgent extends AbstractHilosAgent
      */
     public const array READS_RT = [StateHilosModerationCheck::RT_COLLECTION, HilosUpload::RT_COLLECTION];
 
-    /** Tokens a verdict needs; the answer is one short JSON object. */
+    /** Tokens a verdict needs from a local model; the answer is one short JSON object. */
     private const int VERDICT_MAX_TOKENS = 32;
+
+    /**
+     * Ceiling of a verdict from an external model. Such a model may think before it answers, and what
+     * it thinks counts against this limit, so the local ceiling would cut it off with no answer at
+     * all. A ceiling and not a price: the model is billed for what it uses.
+     */
+    private const int VERDICT_MAX_TOKENS_EXTERNAL = 1024;
 
     /** Internal name and frame of the temporary copy, never published in the registry. */
     private const string IMAGE_COPY_NAME = 'moderation';
@@ -467,7 +475,7 @@ class ModerationAgent extends AbstractHilosAgent
             $client->startGenerate($messages, new ChatGenerateOptions(
                 model: $profile->model,
                 timeoutSec: min($profile->timeoutSec, ($this->deadlineAt - $now) / TimeConstants::MS_PER_SECOND),
-                maxTokens: self::VERDICT_MAX_TOKENS,
+                maxTokens: $profile->provider === LlmProvider::EXTERNAL ? self::VERDICT_MAX_TOKENS_EXTERNAL : self::VERDICT_MAX_TOKENS,
             ));
             $this->kind = $kind;
         } catch (ImageRenderException $e) {
@@ -545,6 +553,7 @@ class ModerationAgent extends AbstractHilosAgent
                 ModerationDecision::reason,
                 implode('|', $kind->reasons),
             ),
+            'When refusing, give exactly one reason, the closest one, and never join reasons.',
             ...($kind->input === ModerationInput::TEXT_WITH_FILES ? [
                 'Attachment names, types and sizes are context only, never grounds for blocking the text.',
             ] : []),

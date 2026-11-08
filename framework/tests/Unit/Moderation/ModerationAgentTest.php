@@ -199,6 +199,7 @@ final class ModerationAgentTest extends TestCase
         self::assertStringContainsString('Moderation of: Note.', $request->messages[0]->content);
         self::assertStringContainsString('{"allow":true,"reason":"ok"}', $request->messages[0]->content);
         self::assertStringContainsString('{"allow":false,"reason":"spam"}', $request->messages[0]->content);
+        self::assertStringContainsString('exactly one reason', $request->messages[0]->content);
         self::assertStringEndsWith("Built-in rules:\n- Allow notes.", $request->messages[0]->content);
         self::assertStringNotContainsString('Project rules:', $request->messages[0]->content);
         self::assertStringNotContainsString('take precedence', $request->messages[0]->content);
@@ -208,6 +209,29 @@ final class ModerationAgentTest extends TestCase
             "User ID: 7\n\nUser: " . self::PERSON_NAME . "\n\nText:\nHello key-7",
             $request->messages[1]->content,
         );
+    }
+
+    public function testAnExternalModelGetsRoomToThinkBeforeItsVerdictAndALocalOneDoesNot(): void
+    {
+        $first = $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'request-1', text: 'one');
+        $this->agent->onTick();
+        self::assertSame(32, $this->client()->requests[0]->options->maxTokens);
+        $this->client()->finish('{"allow":true,"reason":"ok"}');
+        $this->agent->onTick();
+        $this->close($first);
+
+        $this->llm->profiles[ModerationLlmConstants::PROFILE_TEXT] = new LlmProfile(
+            ModerationLlmConstants::PROFILE_TEXT,
+            LlmProvider::EXTERNAL,
+            'https://external',
+            'external-model',
+            'key',
+            30.0,
+        );
+        $this->open(self::ACCEPT_KEY, ModerationAgentTestDirectory::NOTE, 'request-2', text: 'two');
+        $this->agent->onTick();
+
+        self::assertSame(1024, $this->client()->requests[0]->options->maxTokens);
     }
 
     public function testTextWithFilesSendsOrderedMetadataWithoutOpeningDocumentsOrUsingVision(): void
