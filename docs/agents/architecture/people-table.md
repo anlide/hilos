@@ -101,7 +101,11 @@ foreign `Remove` retires at its live switch
 (not in the code yet — HIL-1952), and the old merge's foreign `Update` at its
 own (not in the code yet — HIL-1999). The
 [Writer Map](account-operations.md#writer-map) keeps those terminal debts
-separate from ordinary creation; HIL-1935/HIL-1986 own the detailed protocols.
+separate from ordinary creation. Under the detailed
+[erasure canon](account-operations.md#erasure), the personal owner removes
+`userRenames` and `users` last, after required participant results, and completes
+its own request in that final local transaction
+(not in the code yet — HIL-1942). HIL-1986 retains the detailed merge protocol.
 
 ## What The Framework Does For A Person
 
@@ -193,6 +197,14 @@ Keep the current grants and hook until their actual moves; the journal's
 terminal deletion remains at the holder until erasure's live switch
 (not in the code yet — HIL-1952).
 
+For erasure, rename-feed event ids are saved durably before their journal
+anchors go, and unlink is confirmed by the journal's personal owner
+(not in the code yet — HIL-1940). That owner deletes its journal only in the
+final personal transaction after required results
+(not in the code yet — HIL-1942). These are the erasure steps of
+[account-operations.md](account-operations.md#erasure); neither gives
+`ChatAgent` a new journal write.
+
 ## Taking A Person Over
 
 Whether one person may take another over is
@@ -253,6 +265,12 @@ without making a folded account an unmerged candidate. Erasure takes folded
 accounts first (HIL-1200), so this key does not run on its normal path. The
 HIL-1202 confirms this choice as the pattern for the other person keys.
 
+In the split erasure, the circle is fixed before any link is broken
+(not in the code yet — HIL-1938). Each folded account's personal owner removes
+its own merge row before its survivor goes, keeping that leaf-first order
+(not in the code yet — HIL-1941). The holder retains today's erasure rights
+until the live switch (not in the code yet — HIL-1952).
+
 The table is the sessions library's whole, and the whole operation is framework
 code (`AbstractSessionsLibraryAgent::mergeAccounts()`): whether the two accounts
 may be merged — both exist, neither is folded already (`assertMergeable()`) —
@@ -281,6 +299,10 @@ next phase's precise merge protocol. Preparation remains inert and
 `mergeAccounts()` remains the only normal producer until the live switch
 retires its foreign writes, grants, comments and debt
 (not in the code yet — HIL-1999). A prepared handler does not clear this marker.
+
+The existing merge gains a refusal when any affected account has started
+erasure (not in the code yet — HIL-1960). This is a guard beside the erasure
+cutover; it does not implement the future merge or its transfer/receipt rules.
 
 The second-factor choice is independent of the password choice. A protected
 loser requires an explicit transfer, or retaining the survivor's existing
@@ -331,12 +353,16 @@ waits and lowers blocked-account cards before deleting the person. A forgotten
 session reference must refuse erasure too (HIL-1202).
 
 That rollback is the whole erasure's today, because the erasure is one
-transaction. Under the approved research design
+transaction. Under the detailed erasure canon
 ([Erasure](account-operations.md#erasure), step 7) the keys keep the same role
 as the last check: a forgotten row refuses the person's agent's final delete
 and rolls back that one transaction, the operation stays open at that step with
-the refusal named, and the end is proved by every owner's recorded result — the
-soft references among them, which no key catches. The keys, their `RESTRICT` /
+the safe refusal named, and the end is proved by every owner's recorded result —
+the soft references among them, which no key catches
+(not in the code yet — HIL-1942). The sessions holder prepares its own confirmed
+release of all four references, waits and cards
+(not in the code yet — HIL-1943). These parts enter the live path only at the
+erasure switch (not in the code yet — HIL-1952). The keys, their `RESTRICT` /
 `SET NULL` choice and the absence of `CASCADE` do not change, and no key is
 added to a soft reference by it.
 

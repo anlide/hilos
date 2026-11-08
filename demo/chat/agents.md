@@ -69,6 +69,11 @@ Framework rules stay in `/docs/agents/**`; nothing here overrides them.
    borrowed `userRenames` update for history cleanup moves to the journal's personal
    owner (not in the code yet — HIL-1897). Its RT truth sources remain `connections` and
    `userStates`.
+   The [chat erasure part](spec/agents/chat-agent.md#responsibilities) deletes messages
+   across all rooms, attachments, registrations and feed events in one `ChatAgent`
+   transaction with its result (not in the code yet — HIL-1949). The current borrowed
+   erasure rights stay until the live switch (not in the code yet — HIL-1952), and
+   whatever rights the old merge needs stay afterward.
 2. `LibraryAgent` is the **only** truth source for the admin library DB collection `bots`
 3. `ChatContextAnalyzerAgent` is the only truth source for `chatContexts`
 4. Uploads belong to the framework uploads agent (`hilosUploads`) and attached files to the files registry (`hilos_file`); the composer projection lives on `Connection`, the shared moderation attempt lives in `hilosModerationChecks`, and the submit rate limit lives on `ChatUserState`.

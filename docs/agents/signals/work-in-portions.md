@@ -107,12 +107,18 @@ example of this rule, because its one transaction crosses other owners'
 tables; the approved research design that replaces it keeps each owner's
 related writes in one transaction of that owner and puts a recorded fact and a
 signal between owners
-([account-operations.md](../architecture/account-operations.md)). The old
+([account-operations.md](../architecture/account-operations.md#erasure)). For
+erasure, the obligation is durable and the participant alone writes its
+preparation/result; its work and result stand or fall in one local transaction,
+and a repeat answers from the saved result
+(not in the code yet — HIL-1937). The coordinator correlates assignments and
+answers by operation and stage, without a transaction across frames
+(not in the code yet — HIL-1950). The old
 terminal path and its required grants remain until the live erasure switch
 (not in the code yet — HIL-1952); an inert preparatory handler does not clear
-that marker. HIL-1935 owns the detailed erasure norms. This boundary promises
-no distributed transaction, new `afterCommit()` guarantee or retry of files
-and outside actions.
+that marker. The linked canon records the detailed erasure norms. This boundary
+promises no distributed transaction, new `afterCommit()` guarantee or retry of
+files and outside actions.
 
 ## After A Failure
 
@@ -139,6 +145,15 @@ split erasure and merge finishes an unfinished operation — from the records it
 owners hold, not from a cursor and not by retrying an after-commit step
 ([Recovery](../architecture/account-operations.md#recovery)). It is a design
 and not code, and it gives no after-commit step a retry.
+
+For erasure, the participant's atomic result makes that repeat safe
+(not in the code yet — HIL-1937); a duplicate, old or foreign answer cannot
+advance the current operation (not in the code yet — HIL-1950). The coordinator
+at start and on a later pass, and each participant at start or on an operation
+frame, select open obligations from DB. A lost frame needs no fresh external
+event, and no DB poll on every tick or remembered cursor is added
+(not in the code yet — HIL-1951). These paths become live only at erasure's
+cutover (not in the code yet — HIL-1952).
 
 ## Anti-Patterns
 

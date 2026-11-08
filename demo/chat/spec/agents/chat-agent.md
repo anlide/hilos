@@ -21,6 +21,15 @@ through this agent. Uploads belong to the framework uploads agent.
   borrowed `Update` on `userRenames` for clearing history moves to the journal's
   personal owner, whose unlink is confirmed before events are deleted (not in the code
   yet — HIL-1897).
+- **Erasure participant**: deletes the person's messages across every room, attachment
+  links, registration details and feed events in one transaction of its own with its result.
+  It uses saved event ids and the personal journal owner's confirmed unlink; other
+  people's mentions keep their existing `SET NULL` fate, and attachment files follow
+  the existing post-commit path (not in the code yet — HIL-1949). The current session
+  holder's project seam and borrowed terminal rights remain until live erasure switches
+  (not in the code yet — HIL-1952); rights needed for the old merge remain afterward.
+  The framework [erasure canon](../../../../docs/agents/architecture/account-operations.md#erasure)
+  owns the protocol and its participant boundary.
 
 ## Key Signal Handlers
 

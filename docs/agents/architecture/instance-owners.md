@@ -310,10 +310,21 @@ the other rows and the exact current operations.
 
 The three phases have distinct end points: ordinary moves leave only the
 named erasure/merge debts; HIL-1952 switches erasure and leaves only merge
-debt; HIL-1999 switches merge and removes that remainder. HIL-1935 owns the
-next erasure documentation and HIL-1986 the merge documentation, including
-the precise durable and transfer protocols. Their preparatory code is inert:
-the existence of a new handler does not retire a live producer.
+debt; HIL-1999 switches merge and removes that remainder. The detailed
+[erasure canon](account-operations.md#erasure) records the personal finishing
+mode: the same agent, including a folded account's, closes ordinary actions
+and late frames, accepts only continuation of its own operation and finishes
+its own part (not in the code yet — HIL-1939). Its final deletion of the
+journal and person and completion of its request follow the required results;
+its stop follows its last own write (not in the code yet — HIL-1942).
+Assignments and answers belong to one operation and stage
+(not in the code yet — HIL-1950), and start/recovery finds open obligations
+from DB (not in the code yet — HIL-1951).
+
+HIL-1986 retains the precise merge and transfer protocol. Preparatory erasure
+code is inert: a new handler does not authorize finishing old requests by the
+new path. Today's stops, producers and necessary rights remain until live
+erasure switches (not in the code yet — HIL-1952).
 
 Keep the grants, comments and debt entries needed by the old path until its
 actual switch. In the commit that enables a move, its implementing leaf removes

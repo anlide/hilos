@@ -22,11 +22,14 @@ carried out under a borrowed `Update` claim, because it is the one that erases.
 
 That is the code today: `complete()` is written inside the erasure's one
 transaction and rolls back with it, so a committed `completed_at` still means
-the whole circle succeeded. The approved research direction in
-[account-operations.md](account-operations.md#erasure) separates starting and
-finishing, but this page adds no started field or new meaning to today's
-column. HIL-1935 owns the detailed erasure protocol. The old writer and its
-borrowed right remain until the live switch
+the whole circle succeeded. The detailed
+[erasure canon](account-operations.md#erasure) separates the conditional start
+at the request's personal owner (not in the code yet — HIL-1939) from that
+owner's final completion after required results and the deletion of its person
+row (not in the code yet — HIL-1942). HIL-1936/HIL-1937/HIL-1939/HIL-1942 choose
+the physical carriers; this page adds no started field or new meaning to
+today's column. The old writer, borrowed right and current `completed_at`
+semantics remain until the live switch
 (not in the code yet — HIL-1952); the cancel/due race and the retained trace
 remain requirements.
 
@@ -139,18 +142,17 @@ Any failure rolls all of it back; the request stays live and due, and the next
 minute tries again. Half an erased account never exists.
 
 That one transaction and its rollback are the implementation in the tree. The
-approved research design ([Erasure](account-operations.md#erasure)) replaces
-them with one operation across owners: the person's agent, the users library,
-each channel, each export executor, the holder for its sessions and its access
-log, `ChatAgent` and the project's declared owners each delete their own rows
-in a transaction of their own and record the result, with a recorded fact and a
-signal between them. The price is said rather than hidden: the one transaction
-goes, and with it the rollback of the whole — once the start is recorded, a
-failure leaves a visible unfinished operation that is finished forward, never
-an account that comes back. The circle, folded accounts first, the order of
-children before parents and `RESTRICT` as the last check stay. HIL-1935 owns
-the detailed next-phase norms. Preparation is inert: the due sweep above and
-force-purge below remain the only live producers until HIL-1952 enables the
+target obligations, owners and order are detailed in
+[Erasure](account-operations.md#erasure). Each participant's work and result
+share its own local transaction (not in the code yet — HIL-1937); after start,
+failure leaves an open operation to finish forward, without a common rollback
+(not in the code yet — HIL-1950). The fixed circle and folded-first ordering
+are prepared separately (not in the code yet — HIL-1938). The final personal
+delete follows required results and uses `RESTRICT` as the last safeguard
+(not in the code yet — HIL-1942). The canon names the personal, library,
+channel, export, sessions and project portions individually, including their
+saved anchors and post-commit limits. Preparation is inert: the due sweep above
+and force-purge below remain the only live producers until HIL-1952 enables the
 new erasure and retires the old path (not in the code yet — HIL-1952). Keep
 its necessary grants, comments and debt until that switch, and keep whatever
 rights the old merge still needs afterward. An inert handler does not clear
@@ -207,8 +209,10 @@ removed in the seam: a file gone from disk cannot come back if the transaction
 rolls back, so the library removes them after the commit.
 
 That is the seam today, and a project written today writes it. Under the
-approved research design a project names its own participants for those rows,
-each deleting in a transaction of its own with a recorded result
-([Erasure](account-operations.md#erasure), step 6). HIL-1935 owns the precise
-participant contract; the seam and its borrowed rights stay live until the
+target [participant boundary](account-operations.md#erasure), a project names
+its own owners, each deleting its rows with a result. A table never activated
+owes no participant; existing rows with no owner remain visible unfinished
+work, with no fallback writer (not in the code yet — HIL-1948). Its exact
+signature and activation form belong to that implementing leaf, not to this
+document. The seam and its borrowed rights stay live until the
 HIL-1952 switch retires them (not in the code yet — HIL-1952).
