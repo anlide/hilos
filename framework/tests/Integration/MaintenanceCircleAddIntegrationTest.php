@@ -23,6 +23,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\Maintenance\AbstractHilosMaintenanceCirclePage;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleAddActionDTO;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration coverage for naming a verifier from the maintenance section (HIL-1120).
@@ -97,6 +98,23 @@ final class MaintenanceCircleAddIntegrationTest extends HilosSessionIntegrationT
 
         $this->assertSame([[self::EMAIL_TYPE, self::ANN_EMAIL]], self::circle());
         $this->assertSame('ann@example.test added to the circle.', $message, 'The screen is told the address as stored');
+    }
+
+    /**
+     * @throws HilosException When a step against the database fails
+     */
+    public function testANamedAddressRecordsTheMomentInEpochMilliseconds(): void
+    {
+        self::seedIdentity(self::ANN_USER_ID, self::EMAIL_TYPE, self::ANN_EMAIL);
+
+        $before = TimeHelper::nowMs();
+        $this->add(self::ANN_EMAIL);
+        $after = TimeHelper::nowMs();
+
+        Database::sql('SELECT `created_at` FROM `hilos_verifier_circle`');
+        $createdAt = (int)Database::rows()[0]['created_at'];
+        $this->assertGreaterThanOrEqual($before, $createdAt);
+        $this->assertLessThanOrEqual($after, $createdAt);
     }
 
     /**

@@ -391,7 +391,7 @@ final class ProfileNameCommands extends AbstractLibraryCommands
             if (ProtectedModeRuntime::hashSessionToken($session->token) !== $change->sessionTokenHash) {
                 continue;
             }
-            if ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::getSqlDateTime()) {
+            if ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::nowMs()) {
                 break;
             }
             new StepUpGate()->require($session->token, $change->userId, StepUpOperationKey::CHANGE_NAME);

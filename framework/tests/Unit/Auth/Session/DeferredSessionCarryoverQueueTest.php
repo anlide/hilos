@@ -11,6 +11,8 @@ use Hilos\Auth\Session\SessionIdentityRef;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
+use Hilos\Log\AgentLogStream;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -63,8 +65,8 @@ final class DeferredSessionCarryoverQueueTest extends TestCase
         $queued = $this->take()->sessions;
 
         self::assertSame(['aaa', 'bbb'], array_map(static fn(SessionCarryover $c): string => $c->token, $queued));
-        self::assertSame('2026-08-01 09:15:00', $queued[0]->createdAt);
-        self::assertSame('2036-09-01 09:15:00', $queued[0]->expiresAt);
+        self::assertSame(1785575700000, $queued[0]->createdAt);
+        self::assertSame(2103873300000, $queued[0]->expiresAt);
         self::assertCount(1, $queued[0]->identities);
         self::assertSame('password', $queued[0]->identities[0]->type);
         self::assertSame('ann@example.test', $queued[0]->identities[0]->identifier);
@@ -77,10 +79,84 @@ final class DeferredSessionCarryoverQueueTest extends TestCase
     public function testAnOpenEndedLoginKeepsItsAbsentExpiry(): void
     {
         DeferredSessionCarryoverQueue::defer([
-            new SessionCarryover('ccc', '2026-08-01 09:15:00', null, [new SessionIdentityRef('password', 'a@b.test')]),
+            new SessionCarryover('ccc', 1785575700000, null, [new SessionIdentityRef('password', 'a@b.test')]),
         ]);
 
         self::assertNull($this->take()->sessions[0]->expiresAt);
+    }
+
+    /**
+     * The queue carries moments exactly: the epoch and a moment before it are ordinary values, not
+     * absence. Only the expiry can be absent, so a zero or negative one is checked in its own field
+     * beside the creation moment, in both orders.
+     */
+    public function testTheEpochAndAMomentBeforeItComeBackExact(): void
+    {
+        DeferredSessionCarryoverQueue::defer([
+            new SessionCarryover('ddd', 0, -1, [new SessionIdentityRef('password', 'a@b.test')]),
+            new SessionCarryover('fff', -1, 0, [new SessionIdentityRef('password', 'a@b.test')]),
+        ]);
+
+        $queued = $this->take()->sessions;
+
+        self::assertSame(0, $queued[0]->createdAt);
+        self::assertSame(-1, $queued[0]->expiresAt);
+        self::assertSame(-1, $queued[1]->createdAt);
+        self::assertSame(0, $queued[1]->expiresAt);
+    }
+
+    /** The file itself says "no expiry" with null, beside a creation moment that stays a number. */
+    public function testAnAbsentExpiryIsWrittenAsNullBesideANumericCreationMoment(): void
+    {
+        DeferredSessionCarryoverQueue::defer([
+            new SessionCarryover('eee', 1785575700123, null, [new SessionIdentityRef('password', 'a@b.test')]),
+        ]);
+
+        $line = json_decode(trim(FsPath::read($this->path())), true, flags: JSON_THROW_ON_ERROR);
+
+        self::assertSame(1785575700123, $line['createdAt']);
+        self::assertNull($line['expiresAt']);
+        self::assertNull($this->take()->sessions[0]->expiresAt);
+    }
+
+    /**
+     * A line in the old string shape is not a session any more: it is logged and skipped, and nothing
+     * converts it. A line whose creation moment is a number but whose expiry is a string is refused
+     * on the expiry, and it is logged under its own reason.
+     */
+    public function testALineWithStringMomentsIsDroppedWithALogLine(): void
+    {
+        Logger::setLogFile($this->directory . '/daemon.log');
+
+        try {
+            DeferredSessionCarryoverQueue::defer([$this->carryover('aaa')]);
+            FsPath::append($this->path(), json_encode([
+                'token' => 'old',
+                'createdAt' => '2026-08-01 09:15:00',
+                'expiresAt' => '2036-09-01 09:15:00',
+                'identities' => [],
+            ], JSON_THROW_ON_ERROR) . "\n");
+            FsPath::append($this->path(), json_encode([
+                'token' => 'half',
+                'createdAt' => 1785575700000,
+                'expiresAt' => '2036-09-01 09:15:00',
+                'identities' => [],
+            ], JSON_THROW_ON_ERROR) . "\n");
+            DeferredSessionCarryoverQueue::defer([$this->carryover('bbb')]);
+
+            self::assertSame(['aaa', 'bbb'], $this->tokens($this->take()));
+            $log = FsPath::read(AgentLogStream::pathFor($this->directory, 'sessions', true));
+            self::assertStringContainsString(
+                'is not a session and was dropped: queued session names no token or no integer creation moment',
+                $log,
+            );
+            self::assertStringContainsString(
+                'is not a session and was dropped: queued session carries a malformed expiry',
+                $log,
+            );
+        } finally {
+            Logger::resetLogFile();
+        }
     }
 
     /**
@@ -211,8 +287,8 @@ final class DeferredSessionCarryoverQueueTest extends TestCase
     {
         return new SessionCarryover(
             token: $token,
-            createdAt: '2026-08-01 09:15:00',
-            expiresAt: '2036-09-01 09:15:00',
+            createdAt: 1785575700000,
+            expiresAt: 2103873300000,
             identities: [new SessionIdentityRef('password', 'ann@example.test')],
         );
     }

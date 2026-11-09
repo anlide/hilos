@@ -53,7 +53,6 @@ final class ProfileSessionsBrowserList
                     Session::expiresAt,
                     Session::impersonatorUserId,
                 ],
-                BrowserListFieldKey::SQL_MOMENTS => [Session::createdAt, Session::lastSeenAt, Session::expiresAt],
             ],
             [
                 BrowserListFieldKey::SOURCE => PollsBrowserSource::RT_CONNECTIONS,

@@ -82,6 +82,11 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
 
     private const string CREATED_AT = '2026-09-26 10:00:00';
     private const string PAST = '2026-01-01 00:00:00';
+
+    /** The session rows keep epoch milliseconds, unlike the datetime columns the other fixtures fill. */
+    private const int SESSION_CREATED_AT = 1790416800000;
+
+    private const int SECOND_FACTOR_WAIT_UNTIL = 2082758400000;
     private const string FUTURE = '2036-01-01 00:00:00';
 
     /** Session signed in as the person. */
@@ -186,14 +191,14 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     {
         $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
         $this->seedPerson(self::NEIGHBOUR_ID, self::NEIGHBOUR_TOKEN);
-        self::seedSession(self::TAKEOVER_TOKEN, self::NEIGHBOUR_ID, self::CREATED_AT, null, self::USER_ID);
-        self::seedSession(self::WAITING_TOKEN, null, self::CREATED_AT, null);
+        self::seedSession(self::TAKEOVER_TOKEN, self::NEIGHBOUR_ID, self::SESSION_CREATED_AT, null, self::USER_ID);
+        self::seedSession(self::WAITING_TOKEN, null, self::SESSION_CREATED_AT, null);
         Database::sqlRun(
             'UPDATE `hilos_session` SET `pending_second_factor_user_id` = ?, `pending_second_factor_mode` = ?,'
             . ' `pending_second_factor_until` = ? WHERE `token` = ?',
-            [self::USER_ID, SecondFactorPendingMode::VERIFY, self::FUTURE, self::WAITING_TOKEN],
+            [self::USER_ID, SecondFactorPendingMode::VERIFY, self::SECOND_FACTOR_WAIT_UNTIL, self::WAITING_TOKEN],
         );
-        self::seedSession(self::BLOCKED_TOKEN, null, self::CREATED_AT, null);
+        self::seedSession(self::BLOCKED_TOKEN, null, self::SESSION_CREATED_AT, null);
         Database::sqlRun(
             'UPDATE `hilos_session` SET `blocked_user_id` = ?, `blocked_signed_in` = 1 WHERE `token` = ?',
             [self::USER_ID, self::BLOCKED_TOKEN],
@@ -642,7 +647,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         $this->seedPerson(self::NEIGHBOUR_ID, self::NEIGHBOUR_TOKEN);
         self::seedPersonRows();
         self::seedMerge(self::NEIGHBOUR_ID, self::USER_ID);
-        self::seedSession(self::TAKEOVER_TOKEN, self::NEIGHBOUR_ID, self::CREATED_AT, null, self::USER_ID);
+        self::seedSession(self::TAKEOVER_TOKEN, self::NEIGHBOUR_ID, self::SESSION_CREATED_AT, null, self::USER_ID);
         $signedInId = Hilos::$db->sessions->findByToken(self::SIGNED_IN_TOKEN)->id;
         $takeoverId = Hilos::$db->sessions->findByToken(self::TAKEOVER_TOKEN)->id;
         $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::FUTURE);
@@ -779,7 +784,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             "INSERT IGNORE INTO `hilos_user` (`id`, `name`) VALUES (?, 'Fixture person')",
             [$userId],
         );
-        self::seedSession($token, $userId, self::CREATED_AT, null);
+        self::seedSession($token, $userId, self::SESSION_CREATED_AT, null);
         $sessionId = (int)Hilos::$db->sessions->findByToken($token)?->id;
 
         Database::sqlRun(

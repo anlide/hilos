@@ -26,6 +26,7 @@ use Hilos\Database\Schema\EntitySchemaAudit;
 use Hilos\Database\Schema\EntitySchemaMismatch;
 use Hilos\Hilos;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -76,7 +77,10 @@ final class FrameworkMigrationBaselineIntegrationTest extends FrameworkIntegrati
 
         // A successful baseline down deliberately removes the selected tables with their rows.
         Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('baseline rollback fixture')");
-        Database::sql("INSERT INTO `hilos_session` (`token`, `user_id`) VALUES ('baseline-session', ?)", [Database::lastInsertId()]);
+        Database::sql(
+            "INSERT INTO `hilos_session` (`token`, `user_id`, `created_at`, `last_seen_at`) VALUES ('baseline-session', ?, ?, ?)",
+            [Database::lastInsertId(), TimeHelper::nowMs(), TimeHelper::nowMs()],
+        );
         $this->assertSame(1, Migration::migrateDown(0));
         $this->assertSame([], Migration::appliedIndices());
         $this->assertNull(MigrationClaim::current());

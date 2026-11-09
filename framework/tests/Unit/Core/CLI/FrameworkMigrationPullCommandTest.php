@@ -64,7 +64,7 @@ final class FrameworkMigrationPullCommandTest extends TestCase
         self::assertNull($manager->answerWithoutRunning());
         [$code, $output] = $this->capture(fn (): int => $manager->run());
         self::assertSame(ExitCode::SUCCESS, $code, $output);
-        self::assertSame(2, substr_count($output, ': created 14 files'));
+        self::assertSame(2, substr_count($output, ': created 18 files'));
         foreach (['one', 'two'] as $name) {
             $files = glob($this->track($name) . '/002_framework_install_setting*.sql');
             self::assertCount(2, $files);
@@ -101,6 +101,18 @@ final class FrameworkMigrationPullCommandTest extends TestCase
                 self::assertSame([$unit], $change->units);
                 self::assertCount(1, $change->parts);
                 self::assertSame('20261109000848893922_HIL-1918_bootstrap_moments/' . $unit, $change->parts[0]->key());
+            }
+            foreach ([
+                '009_framework_change_aa31db5ae2cee3bd8d3e639ef921281b10620f82f13f4122e5bd0c7b78993de7' => 'session',
+                '010_framework_change_05d494466ac3a8dd1c8e1e6f7809d9f96d14cd89f991bb9a07e5b9c1f1b7c948' => 'verifier_circle',
+            ] as $stem => $unit) {
+                $changes = glob($this->track($name) . '/' . $stem . '*.sql');
+                self::assertCount(2, $changes);
+                $change = FrameworkMigrationOrigin::parsePair(file_get_contents($changes[0]), file_get_contents($changes[1]));
+                self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+                self::assertSame([$unit], $change->units);
+                self::assertCount(1, $change->parts);
+                self::assertSame('20261109120150360881_HIL-1919_session_moments/' . $unit, $change->parts[0]->key());
             }
         }
         [$repeat, $repeatOutput] = $this->capture(fn (): int => $manager->run());

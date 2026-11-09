@@ -96,21 +96,30 @@
 -- (`hilos_user.time_zone`); a missing or unusable report clears it. No index: it is read
 -- off the row already in hand. Purged with the table, so it needs no anonymization
 -- strategy of its own.
+--
+-- The five moments of the row (`created_at`, `last_seen_at`, `expires_at`,
+-- `pending_registration_since`, `pending_second_factor_until`) are signed BIGINT epoch
+-- milliseconds (HIL-1919), with no time zone and no database writer: the application stamps
+-- each one. NULL is the absence of a deadline or of a wait, and 0 is the epoch rather than
+-- absence. A new anonymous row takes `created_at` and `last_seen_at` from one computed
+-- moment, so `last_seen_at` = `created_at` keeps meaning that only the opening handshake
+-- touched it. A carried-over row is the exception: it keeps the `created_at` it was
+-- captured with beside a fresh `last_seen_at`.
 
 CREATE TABLE `hilos_session` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `token` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     `user_id` INT UNSIGNED DEFAULT NULL,
     `impersonator_user_id` INT UNSIGNED DEFAULT NULL,
-    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `last_seen_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `expires_at` TIMESTAMP NULL DEFAULT NULL,
+    `created_at` BIGINT NOT NULL,
+    `last_seen_at` BIGINT NOT NULL,
+    `expires_at` BIGINT NULL DEFAULT NULL,
     `pending_registration_identifier` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
-    `pending_registration_since` TIMESTAMP NULL DEFAULT NULL,
+    `pending_registration_since` BIGINT NULL DEFAULT NULL,
     `pending_ack` VARCHAR(64) DEFAULT NULL,
     `pending_second_factor_user_id` INT UNSIGNED DEFAULT NULL,
     `pending_second_factor_mode` VARCHAR(16) DEFAULT NULL,
-    `pending_second_factor_until` TIMESTAMP NULL DEFAULT NULL,
+    `pending_second_factor_until` BIGINT NULL DEFAULT NULL,
     `pending_second_factor_attempts` TINYINT UNSIGNED NOT NULL DEFAULT 0,
     `pending_second_factor_ack` VARCHAR(64) DEFAULT NULL,
     `device_name` VARCHAR(64) DEFAULT NULL,

@@ -25,15 +25,15 @@ use Hilos\Database\SqlParamCollection;
  * @property string $token
  * @property ?int $userId
  * @property ?int $impersonatorUserId
- * @property string $createdAt
- * @property string $lastSeenAt
- * @property ?string $expiresAt
+ * @property int $createdAt Epoch milliseconds
+ * @property int $lastSeenAt Epoch milliseconds
+ * @property ?int $expiresAt Epoch milliseconds, or null for no deadline
  * @property ?string $pendingRegistrationIdentifier
- * @property ?string $pendingRegistrationSince
+ * @property ?int $pendingRegistrationSince Epoch milliseconds, or null when no registration waits
  * @property ?string $pendingAck
  * @property ?int $pendingSecondFactorUserId
  * @property ?string $pendingSecondFactorMode
- * @property ?string $pendingSecondFactorUntil
+ * @property ?int $pendingSecondFactorUntil Epoch milliseconds, or null when no sign-in waits
  * @property int $pendingSecondFactorAttempts
  * @property ?string $pendingSecondFactorAck
  * @property ?string $deviceName
@@ -119,20 +119,20 @@ class Session extends Object_
             self::token => $this->entity->token = (string)$value,
             self::userId => $this->entity->user_id = $value === null ? null : (int)$value,
             self::impersonatorUserId => $this->entity->impersonator_user_id = $value === null ? null : (int)$value,
-            self::createdAt => $this->entity->created_at = (string)$value,
-            self::lastSeenAt => $this->entity->last_seen_at = (string)$value,
-            self::expiresAt => $this->entity->expires_at = is_scalar($value) ? (string)$value : null,
+            self::createdAt => $this->entity->created_at = (int)$value,
+            self::lastSeenAt => $this->entity->last_seen_at = (int)$value,
+            self::expiresAt => $this->entity->expires_at = $value === null ? null : (int)$value,
             self::pendingRegistrationIdentifier => $this->entity->pending_registration_identifier
                 = is_scalar($value) ? (string)$value : null,
             self::pendingRegistrationSince => $this->entity->pending_registration_since
-                = is_scalar($value) ? (string)$value : null,
+                = $value === null ? null : (int)$value,
             self::pendingAck => $this->entity->pending_ack = is_scalar($value) ? (string)$value : null,
             self::pendingSecondFactorUserId => $this->entity->pending_second_factor_user_id
                 = $value === null ? null : (int)$value,
             self::pendingSecondFactorMode => $this->entity->pending_second_factor_mode
                 = is_scalar($value) ? (string)$value : null,
             self::pendingSecondFactorUntil => $this->entity->pending_second_factor_until
-                = is_scalar($value) ? (string)$value : null,
+                = $value === null ? null : (int)$value,
             self::pendingSecondFactorAttempts => $this->entity->pending_second_factor_attempts = (int)$value,
             self::pendingSecondFactorAck => $this->entity->pending_second_factor_ack
                 = is_scalar($value) ? (string)$value : null,

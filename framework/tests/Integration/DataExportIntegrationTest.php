@@ -43,6 +43,9 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
 {
     private const int PHOTO_FILE_ID = 9001;
 
+    /** The session rows keep epoch milliseconds, unlike the datetime columns the other fixtures fill. */
+    private const int SESSION_CREATED_AT = 1767225600000;
+
     private const array EXTRA_TABLES = [
         'hilos_passkey_credential', 'hilos_push_subscription', 'hilos_notification', 'hilos_notification_preference',
         'hilos_file', 'hilos_user_photo',
@@ -129,9 +132,9 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::seedIdentity(7, 'magic_link', 'person@example.test');
         self::seedIdentity(8, 'magic_link', 'foreign@example.test');
         Database::sqlRun("UPDATE hilos_identity SET secret = 'PASSWORD_SECRET', created_at = '2025-01-01 00:00:00' WHERE user_id = 7");
-        self::seedSession('PERSON_SESSION_TOKEN', 7, '2026-01-01 00:00:00', null);
-        self::seedSession('FOREIGN_SESSION_TOKEN', 8, '2026-01-01 00:00:00', null);
-        self::seedSession('IMPERSONATED_SESSION_TOKEN', 7, '2026-01-01 00:00:00', null, 8);
+        self::seedSession('PERSON_SESSION_TOKEN', 7, self::SESSION_CREATED_AT, null);
+        self::seedSession('FOREIGN_SESSION_TOKEN', 8, self::SESSION_CREATED_AT, null);
+        self::seedSession('IMPERSONATED_SESSION_TOKEN', 7, self::SESSION_CREATED_AT, null, 8);
         Database::sqlRun("UPDATE hilos_session SET ip_address = '192.0.2.7' WHERE token = 'PERSON_SESSION_TOKEN'");
         Database::sqlRun("UPDATE hilos_session SET ip_address = '192.0.2.8' WHERE token <> 'PERSON_SESSION_TOKEN'");
         Database::sqlRun("INSERT INTO hilos_access_log (user_id, event, ip_address, occurred_at) VALUES "
@@ -318,8 +321,8 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             . "VALUES (8, 'ready', '2026-10-22 23:00:00', '2026-10-22 23:30:00', ?, 'older.zip', 4, NULL)",
             [$expiresAt],
         );
-        self::seedSession('owner', 7, '2026-01-01 00:00:00', null);
-        self::seedSession('older', 8, '2026-01-01 00:00:00', null);
+        self::seedSession('owner', 7, self::SESSION_CREATED_AT, null);
+        self::seedSession('older', 8, self::SESSION_CREATED_AT, null);
         Hilos::$db->dataExports->actions->order(7, '2026-10-22 23:00:00')->actions->finishReady(
             'snapshot.zip', 4, '2026-10-22 23:30:00', $expiresAt, 'Europe/Warsaw',
         );
@@ -438,13 +441,13 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
      */
     public function testHttpDownloadUsesSessionIdentityAndEnforcesExpiry(): void
     {
-        self::seedSession('owner', 7, '2026-01-01 00:00:00', null);
-        self::seedSession('blocked', null, '2026-01-01 00:00:00', null);
+        self::seedSession('owner', 7, self::SESSION_CREATED_AT, null);
+        self::seedSession('blocked', null, self::SESSION_CREATED_AT, null);
         Hilos::$db->sessions->findByToken('blocked')->actions->holdBlockedNotice(7, true);
-        self::seedSession('guest', null, '2026-01-01 00:00:00', null);
-        self::seedSession('other', 8, '2026-01-01 00:00:00', null);
-        self::seedSession('impersonated', 7, '2026-01-01 00:00:00', null, 8);
-        self::seedSession('expired', 7, '2026-01-01 00:00:00', '2026-01-01 00:01:00');
+        self::seedSession('guest', null, self::SESSION_CREATED_AT, null);
+        self::seedSession('other', 8, self::SESSION_CREATED_AT, null);
+        self::seedSession('impersonated', 7, self::SESSION_CREATED_AT, null, 8);
+        self::seedSession('expired', 7, self::SESSION_CREATED_AT, 1767225660000);
         Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
         $agent = new DataExportTestAgent();
         $agent->onStart();
@@ -479,7 +482,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
      */
     public function testHttpDownloadToABrowserOnAnotherNodeNeedsNginx(): void
     {
-        self::seedSession('owner', 7, '2026-01-01 00:00:00', null);
+        self::seedSession('owner', 7, self::SESSION_CREATED_AT, null);
         Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
         $agent = new DataExportTestAgent();
         $agent->onStart();

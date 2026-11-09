@@ -49,7 +49,7 @@ final class SessionPendingRegistrationTest extends HilosSessionIntegrationTestCa
     /** Lifetime a wait keeps being served; the same number the verification TTL carries. */
     private const int TTL_SECONDS = 900;
 
-    private const string CREATED_AT = '2026-08-01 09:15:00';
+    private const int CREATED_AT = 1785575700000;
 
     private const string ABANDONED_TOKEN = 'aa00000000000000000000000000aa01';
 
@@ -535,7 +535,7 @@ final class SessionPendingRegistrationTest extends HilosSessionIntegrationTestCa
             'UPDATE `hilos_session` '
             . 'SET `pending_registration_identifier` = ?, `pending_registration_since` = ? '
             . 'WHERE `token` = ?',
-            [$identifier, date('Y-m-d H:i:s', time() - $ageSeconds), $token],
+            [$identifier, self::secondsAgo($ageSeconds), $token],
         );
     }
 
@@ -556,12 +556,14 @@ final class SessionPendingRegistrationTest extends HilosSessionIntegrationTestCa
      * Reads the moment a session's wait was last written, straight from the database.
      *
      * @param string $token Session cookie token
-     * @return ?string SQL datetime in the row, or null when the session waits on nothing
+     * @return ?int Epoch milliseconds in the row, or null when the session waits on nothing
      * @throws DatabaseException When the query fails
      */
-    private static function waitSince(string $token): ?string
+    private static function waitSince(string $token): ?int
     {
-        return self::waitColumn($token, 'pending_registration_since');
+        $since = self::waitColumn($token, 'pending_registration_since');
+
+        return $since === null ? null : (int)$since;
     }
 
     /**

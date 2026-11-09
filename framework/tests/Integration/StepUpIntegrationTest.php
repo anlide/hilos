@@ -63,7 +63,7 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
 {
     use PersonAgentFrames;
 
-    private const string CREATED_AT = '2026-09-25 10:00:00';
+    private const int CREATED_AT = 1790330400000;
     public const string SESSION_TOKEN = 'aa00000000000000000000000000495';
     public const string OTHER_SESSION_TOKEN = 'bb00000000000000000000000000495';
     public const string ACCEPT_KEY = 'accept-step-up';

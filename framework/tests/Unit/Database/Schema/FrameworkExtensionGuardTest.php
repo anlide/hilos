@@ -674,7 +674,7 @@ final class MovedTableMembers extends NotedMembers
  */
 final class LostColumnEntity extends NotedMemberEntity
 {
-    public const array _columns = [self::id, self::identity_type, self::note];
+    public const array _columns = [self::id, self::identity_type, self::created_at, self::note];
 }
 
 /**

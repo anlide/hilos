@@ -57,6 +57,11 @@ use Hilos\Database\PhpType;
  * session without a browser. It is not the person's own choice (`hilos_user.time_zone`); a missing
  * or unusable report clears only this column. Server-side only, never part of the browser row.
  *
+ * The five moments are signed epoch milliseconds (HIL-1919) and the application writes each of them:
+ * null means no deadline or no wait, and 0 is the epoch rather than absence. A new anonymous row takes
+ * `created_at` and `last_seen_at` from one computed moment, because their equality is what says that
+ * only the opening handshake touched it.
+ *
  * @method static EntitySessions get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntitySessions getAll()
  */
@@ -121,15 +126,15 @@ class Session extends Entity
         self::token => PhpType::STRING->value,
         self::user_id => PhpType::INTEGER->value,
         self::impersonator_user_id => PhpType::INTEGER->value,
-        self::created_at => PhpType::DATETIME->value,
-        self::last_seen_at => PhpType::DATETIME->value,
-        self::expires_at => PhpType::DATETIME->value,
+        self::created_at => PhpType::INTEGER->value,
+        self::last_seen_at => PhpType::INTEGER->value,
+        self::expires_at => PhpType::INTEGER->value,
         self::pending_registration_identifier => PhpType::STRING->value,
-        self::pending_registration_since => PhpType::DATETIME->value,
+        self::pending_registration_since => PhpType::INTEGER->value,
         self::pending_ack => PhpType::STRING->value,
         self::pending_second_factor_user_id => PhpType::INTEGER->value,
         self::pending_second_factor_mode => PhpType::STRING->value,
-        self::pending_second_factor_until => PhpType::DATETIME->value,
+        self::pending_second_factor_until => PhpType::INTEGER->value,
         self::pending_second_factor_attempts => PhpType::INTEGER->value,
         self::pending_second_factor_ack => PhpType::STRING->value,
         self::device_name => PhpType::STRING->value,
@@ -180,15 +185,15 @@ class Session extends Entity
     public string $token;
     public ?int $user_id = null;
     public ?int $impersonator_user_id = null;
-    public string $created_at;
-    public string $last_seen_at;
-    public ?string $expires_at = null;
+    public int $created_at;
+    public int $last_seen_at;
+    public ?int $expires_at = null;
     public ?string $pending_registration_identifier = null;
-    public ?string $pending_registration_since = null;
+    public ?int $pending_registration_since = null;
     public ?string $pending_ack = null;
     public ?int $pending_second_factor_user_id = null;
     public ?string $pending_second_factor_mode = null;
-    public ?string $pending_second_factor_until = null;
+    public ?int $pending_second_factor_until = null;
     public int $pending_second_factor_attempts = 0;
     public ?string $pending_second_factor_ack = null;
     public ?string $device_name = null;

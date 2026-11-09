@@ -77,10 +77,10 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
     /** A second live session, whose socket is the one that dies while its agent is stopped. */
     private const string OTHER_TOKEN = '0f9e8d7c6b5a493827160f5e4d3c2b1a';
 
-    private const string CREATED_AT = '2026-08-01 09:15:00';
+    private const int CREATED_AT = 1785575700000;
 
     /** Well past any run of this suite: these cases are about a live session, not about expiry. */
-    private const string EXPIRES_AT = '2036-09-01 09:15:00';
+    private const int EXPIRES_AT = 2103873300000;
 
     /** The initiator before the swap; the announcement must not be sent to this id afterwards. */
     public const int OLD_USER_ID = 41;

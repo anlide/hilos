@@ -1,0 +1,24 @@
+{
+    "format": 1,
+    "id": "20261109120150360881_HIL-1919_session_moments",
+    "parts": [
+        {
+            "unit": "verifier_circle",
+            "up": "verifier_circle.sql",
+            "down": "verifier_circle_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "8341825360adbacd7c9428c4198c41ca38715861e6a372006f9266a2c605fcad",
+            "afterStubDownSha256": "a073f64f51f73d43412547b7b8ae005a68114ec5ec66822ce6c5d68211eb3db9"
+        },
+        {
+            "unit": "session",
+            "up": "session.sql",
+            "down": "session_down.sql",
+            "requires": [
+                {"changeId": "20261022124515804554_HIL-1582_browser_time_zones", "unit": "session"}
+            ],
+            "afterStubUpSha256": "23f447ec772e747c535d9f74208b2c8ff91fd8461341a1745ea0d7fb53ea37ad",
+            "afterStubDownSha256": "266759368da3c7656ed84f4435275d2a140c539aea98a2165606e465d3f12128"
+        }
+    ]
+}

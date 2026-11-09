@@ -28,10 +28,13 @@ final class SessionCarrierIntegrationTest extends HilosSessionIntegrationTestCas
 
     private const string SECOND_TOKEN = 'ffeeddccbbaa99887766554433221100';
 
-    private const string CREATED_AT = '2026-08-01 09:15:00';
+    private const int CREATED_AT = 1785575700000;
 
     /** Well past any run of this suite: the case is about a live session, not about expiry. */
-    private const string EXPIRES_AT = '2036-09-01 09:15:00';
+    private const int EXPIRES_AT = 2103873300000;
+
+    /** Creation moment of the row that came back with the archive. */
+    private const int ARCHIVED_CREATED_AT = 1783408027000;
 
     /** User id before the swap; every "after" id differs, so a carried id can only come from an identity. */
     private const int OLD_USER_ID = 41;
@@ -88,7 +91,7 @@ final class SessionCarrierIntegrationTest extends HilosSessionIntegrationTestCas
         $row = self::sessionRow(self::TOKEN);
         $this->assertNotNull($row, 'The token resolves again after the restore');
         $this->assertSame((string)self::NEW_USER_ID, (string)$row['user_id'], 'The identity, not the old id, decides');
-        $this->assertSame(self::CREATED_AT, (string)$row['created_at']);
+        $this->assertSame(self::CREATED_AT, $row['created_at']);
     }
 
     /**
@@ -133,7 +136,7 @@ final class SessionCarrierIntegrationTest extends HilosSessionIntegrationTestCas
      */
     public function testASessionThatOutlivedItsExpiryIsNotCarried(): void
     {
-        $snapshot = $this->captureLiveSession(expiresAt: '2026-08-02 09:15:00');
+        $snapshot = $this->captureLiveSession(expiresAt: 1785662100000);
         $this->swapDatabase([[self::NEW_USER_ID, self::EMAIL_TYPE, self::EMAIL]]);
 
         $result = SessionCarrier::carryOver($snapshot);
@@ -150,7 +153,7 @@ final class SessionCarrierIntegrationTest extends HilosSessionIntegrationTestCas
     {
         $snapshot = $this->captureLiveSession();
         $this->swapDatabase([[self::NEW_USER_ID, self::EMAIL_TYPE, self::EMAIL]]);
-        self::seedSession(self::TOKEN, self::NEW_USER_ID, '2026-07-07 07:07:07', null);
+        self::seedSession(self::TOKEN, self::NEW_USER_ID, self::ARCHIVED_CREATED_AT, null);
 
         $result = SessionCarrier::carryOver($snapshot);
 
@@ -159,7 +162,7 @@ final class SessionCarrierIntegrationTest extends HilosSessionIntegrationTestCas
         $this->assertSame(1, $result->kept, 'The outcome has a number of its own now');
         $row = self::sessionRow(self::TOKEN);
         $this->assertNotNull($row);
-        $this->assertSame('2026-07-07 07:07:07', (string)$row['created_at'], 'The archived row is left as it is');
+        $this->assertSame(self::ARCHIVED_CREATED_AT, $row['created_at'], 'The archived row is left as it is');
     }
 
     /**
@@ -237,11 +240,11 @@ final class SessionCarrierIntegrationTest extends HilosSessionIntegrationTestCas
     /**
      * Seeds one live authenticated session with a single identity and photographs it.
      *
-     * @param ?string $expiresAt Session expiry as an SQL datetime, or null for an open-ended session
+     * @param ?int $expiresAt Session expiry in epoch milliseconds, or null for an open-ended session
      * @return list<SessionCarryover> The snapshot the swap will be replayed against
      * @throws HilosException When a step against the database fails
      */
-    private function captureLiveSession(?string $expiresAt = self::EXPIRES_AT): array
+    private function captureLiveSession(?int $expiresAt = self::EXPIRES_AT): array
     {
         self::seedSession(self::TOKEN, self::OLD_USER_ID, self::CREATED_AT, $expiresAt);
         self::seedIdentity(self::OLD_USER_ID, self::EMAIL_TYPE, self::EMAIL);

@@ -206,13 +206,13 @@ class Sessions extends DbCollection
      */
     public function findExpired(int $limit): static
     {
-        return $this->sessionsForKeys($this->objectCollection->findExpired(TimeHelper::getSqlDateTime(), $limit));
+        return $this->sessionsForKeys($this->objectCollection->findExpired(TimeHelper::nowMs(), $limit));
     }
 
     /**
      * Lists old anonymous sessions whose browser never returned, oldest row first.
      *
-     * @param string $cutoffSql Latest first-handshake moment eligible for removal
+     * @param int $cutoffMs Latest first-handshake moment eligible for removal, in epoch milliseconds
      * @param int $limit Maximum rows to load
      * @return static Never-returned session Db items, empty when none
      * @throws LogicException When the collection class constants are not configured
@@ -221,9 +221,9 @@ class Sessions extends DbCollection
      * @throws ObjectGetIdStringNotImplementedException If a session's Object does not implement getIdString()
      * @throws CollectionNotManualException When add() rejects an item on a non-manual collection
      */
-    public function findNeverReturned(string $cutoffSql, int $limit): static
+    public function findNeverReturned(int $cutoffMs, int $limit): static
     {
-        return $this->sessionsForKeys($this->objectCollection->findNeverReturned($cutoffSql, $limit));
+        return $this->sessionsForKeys($this->objectCollection->findNeverReturned($cutoffMs, $limit));
     }
 
     /**

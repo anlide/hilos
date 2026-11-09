@@ -237,7 +237,7 @@ final class LegalAcceptancesExports
     public static function serve(PageAgentInterface $agent, HttpRequestDTO $request): HttpReplyDTO
     {
         $session = $request->sessionToken === null ? null : Hilos::$db->sessions->findByToken($request->sessionToken);
-        if ($session === null || ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::getSqlDateTime())) {
+        if ($session === null || ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::nowMs())) {
             return HttpReplyDTO::refusal($request, HttpConstants::HTTP_UNAUTHORIZED);
         }
         if ($session->impersonatorUserId !== null) {

@@ -73,7 +73,7 @@ final class ProfileFlowSessionIntegrationTest extends HilosSessionIntegrationTes
 
     private const string CURRENT = 'current@example.test';
 
-    private const string CREATED_AT = '2026-10-01 10:00:00';
+    private const int CREATED_AT = 1790848800000;
 
     /** Long enough that no case outlives the code its flow stands on. */
     private const int CODE_LIFETIME_MS = 900_000;

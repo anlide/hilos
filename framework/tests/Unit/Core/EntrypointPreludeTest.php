@@ -417,6 +417,19 @@ final class EntrypointPreludeTest extends TestCase
                 $this->fail("Cannot write {$unit} moment down source");
             }
         }
+        $part = new FrameworkMigrationCatalog()->part('20261109120150360881_HIL-1919_session_moments', 'session');
+        $change = new FrameworkMigrationPair(
+            'session_moments',
+            FrameworkMigrationOrigin::forBodies(FrameworkMigrationOrigin::CHANGE, ['session'], [$part], $part->upSql, $part->downSql),
+            $part->upSql,
+            $part->downSql,
+        );
+        if (file_put_contents($track . '/008_' . $change->name . '.sql', $change->upSql) === false) {
+            $this->fail('Cannot write session moment up source');
+        }
+        if (file_put_contents($track . '/008_' . $change->name . '_down.sql', $change->downSql) === false) {
+            $this->fail('Cannot write session moment down source');
+        }
     }
 
     private function root(): string

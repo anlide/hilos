@@ -45,7 +45,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
  */
 final class OAuthTripSignInTest extends HilosSessionIntegrationTestCase
 {
-    private const string CREATED_AT = '2026-09-01 09:15:00';
+    private const int CREATED_AT = 1788254100000;
 
     /** Cookie the trip is started under. */
     private const string SESSION_TOKEN = 'aa00000000000000000000000000aa44';

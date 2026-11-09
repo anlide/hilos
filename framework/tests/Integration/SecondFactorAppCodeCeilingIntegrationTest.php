@@ -75,7 +75,7 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
 {
     use PersonAgentFrames;
 
-    private const string CREATED_AT = '2026-10-08 09:00:00';
+    private const int CREATED_AT = 1791450000000;
 
     /** Browser on the code step of a sign-in. */
     public const string SIGN_IN_TOKEN = 'dd00000000000000000000000000dd85';

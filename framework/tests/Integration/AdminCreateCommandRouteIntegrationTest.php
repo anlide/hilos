@@ -33,6 +33,7 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AdminCommandConstants;
 use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * The agent side of the admin:create command route (HIL-609).
@@ -70,7 +71,7 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
      * A fixed date rather than an offset from the clock: the door only asks whether the
      * value is behind now, and a literal cannot land on the wrong side of a slow test.
      */
-    private const string PAST_EXPIRY = '2000-01-01 00:00:00';
+    private const int PAST_EXPIRY = 946684800000;
 
     /**
      * @var list<string> Framework tables this case needs. `hilos_setting` is the one
@@ -520,14 +521,15 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
      *
      * @param string $token Session cookie token
      * @param ?int $userId Bound user id, or null for an anonymous session
-     * @param ?string $expiresAt SQL datetime the session expires at, or null for open-ended
+     * @param ?int $expiresAt Epoch milliseconds the session expires at, or null for open-ended
      * @throws DatabaseException When the insert fails
      */
-    private static function seedSession(string $token, ?int $userId, ?string $expiresAt = null): void
+    private static function seedSession(string $token, ?int $userId, ?int $expiresAt = null): void
     {
+        $now = TimeHelper::nowMs();
         Database::sqlRun(
-            'INSERT INTO `hilos_session` (`token`, `user_id`, `expires_at`) VALUES (?, ?, ?)',
-            [$token, $userId, $expiresAt],
+            'INSERT INTO `hilos_session` (`token`, `user_id`, `created_at`, `last_seen_at`, `expires_at`) VALUES (?, ?, ?, ?, ?)',
+            [$token, $userId, $now, $now, $expiresAt],
         );
     }
 

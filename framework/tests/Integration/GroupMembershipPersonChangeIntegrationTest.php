@@ -176,7 +176,7 @@ final class GroupMembershipPersonChangeIntegrationTest extends HilosSessionInteg
 
     public function testABlockLeavesTheTabOnlyInTheCardsExportGroupAndClosingTheCardEndsIt(): void
     {
-        self::seedSession(self::SESSION_TOKEN, self::FIRST, '2026-10-07 10:00:00', null);
+        self::seedSession(self::SESSION_TOKEN, self::FIRST, 1791367200000, null);
         $this->openTab(self::TAB, self::FIRST);
         $this->joinEveryGroup(self::TAB, self::FIRST);
         $this->replay();

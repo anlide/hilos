@@ -15,6 +15,7 @@ use Hilos\Backup\Exception\UnclassifiedLiveSchemaException;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\SqlParamCollection;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration test: the collected PII registry against the demo's live schema.
@@ -302,9 +303,10 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
      */
     private static function insertProbeSession(): void
     {
+        $now = TimeHelper::nowMs();
         Database::sqlRun(
-            'INSERT INTO `hilos_session` (`token`, `browser_time_zone`) VALUES (?, ?)',
-            SqlParamCollection::fromArray([self::PROBE_SESSION_TOKEN, self::PROBE_SESSION_BROWSER_TIME_ZONE]),
+            'INSERT INTO `hilos_session` (`token`, `browser_time_zone`, `created_at`, `last_seen_at`) VALUES (?, ?, ?, ?)',
+            SqlParamCollection::fromArray([self::PROBE_SESSION_TOKEN, self::PROBE_SESSION_BROWSER_TIME_ZONE, $now, $now]),
         );
     }
 

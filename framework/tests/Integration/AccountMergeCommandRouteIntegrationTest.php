@@ -62,6 +62,7 @@ use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\SecondFactorFate;
 use Hilos\Users\SecondFactorOutcome;
 use Hilos\Users\AccountMergeSummary;
+use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Hilos\Users\AdminAudience;
 use Hilos\Users\DTO\AccountMergeSignalData;
@@ -1611,9 +1612,10 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
      */
     private static function seedSession(string $token, int $userId): void
     {
+        $now = TimeHelper::nowMs();
         Database::sqlRun(
-            'INSERT INTO `hilos_session` (`token`, `user_id`) VALUES (?, ?)',
-            [$token, $userId],
+            'INSERT INTO `hilos_session` (`token`, `user_id`, `created_at`, `last_seen_at`) VALUES (?, ?, ?, ?)',
+            [$token, $userId, $now, $now],
         );
     }
 

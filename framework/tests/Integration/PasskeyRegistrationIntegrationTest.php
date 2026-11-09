@@ -77,7 +77,7 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
      */
     public const string FIXTURE_USER_TABLE = 'passkey_registration_fixture_user';
 
-    private const string CREATED_AT = '2026-09-26 09:00:00';
+    private const int CREATED_AT = 1790413200000;
 
     private const string SESSION_TOKEN = 'cc00000000000000000000000000cc04';
 

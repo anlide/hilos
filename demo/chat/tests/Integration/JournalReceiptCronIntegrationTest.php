@@ -18,6 +18,7 @@ use Hilos\Auth\Verification\VerificationSweepSettings;
 use Hilos\Auth\Verification\VerificationSweepSettingsCatalog;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
@@ -64,6 +65,7 @@ use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
+use Hilos\Utils\Helpers\TimeHelper;
 use LogicException;
 use mysqli;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -497,11 +499,13 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
     {
         $neighborSessionId = null;
         $neighborAccessId = null;
+        $now = TimeHelper::nowMs();
+        $dayMs = TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         if ($withNeighbor) {
             $neighborId = (int)Hilos::$db->users->actions->createWithName('Cron sweep neighbor')->id;
             $this->userIds[] = $neighborId;
-            Database::sql('INSERT INTO `hilos_session` (`token`, `user_id`, `expires_at`)'
-                . ' VALUES (?, ?, DATE_SUB(NOW(), INTERVAL 2 DAY))', ['1456ffffffffffffffffffffffffffff', $neighborId]);
+            Database::sql('INSERT INTO `hilos_session` (`token`, `user_id`, `created_at`, `last_seen_at`, `expires_at`)'
+                . ' VALUES (?, ?, ?, ?, ?)', ['1456ffffffffffffffffffffffffffff', $neighborId, $now, $now, $now - 2 * $dayMs]);
             $neighborSessionId = Database::lastInsertId();
             Database::sql('INSERT INTO `hilos_access_log` (`user_id`, `event`, `occurred_at`)'
                 . ' VALUES (?, ?, DATE_SUB(NOW(), INTERVAL 3 YEAR))', [$neighborId, 'sign_in']);
@@ -512,8 +516,8 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
         $sessionIds = [];
         $accessIds = [];
         for ($index = 0; $index < 501; $index++) {
-            Database::sql('INSERT INTO `hilos_session` (`token`, `user_id`, `expires_at`)'
-                . ' VALUES (?, ?, DATE_SUB(NOW(), INTERVAL 1 DAY))', ['14560000' . sprintf('%024x', $index), $userId]);
+            Database::sql('INSERT INTO `hilos_session` (`token`, `user_id`, `created_at`, `last_seen_at`, `expires_at`)'
+                . ' VALUES (?, ?, ?, ?, ?)', ['14560000' . sprintf('%024x', $index), $userId, $now, $now, $now - $dayMs]);
             $sessionIds[] = Database::lastInsertId();
             Database::sql('INSERT INTO `hilos_access_log` (`user_id`, `event`, `occurred_at`)'
                 . ' VALUES (?, ?, DATE_SUB(NOW(), INTERVAL 2 YEAR))', [$userId, 'sign_in']);

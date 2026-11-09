@@ -201,17 +201,17 @@ class Sessions extends Objects
      *
      * A null expiry is deliberately open-ended and does not belong to the sweep.
      *
-     * @param string $nowSql Current moment as an SQL datetime
+     * @param int $nowMs Current moment in epoch milliseconds
      * @param int $limit Maximum rows to load
      * @return list<int> Keys of the expired sessions, empty when none
      * @throws DatabaseException When the lookup query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
-    public function findExpired(string $nowSql, int $limit): array
+    public function findExpired(int $nowMs, int $limit): array
     {
         return $this->hydrateAll(static::entityClass()::get(
             '`' . EntitySession::expires_at . '` IS NOT NULL AND `' . EntitySession::expires_at . '` <= ?',
-            [$nowSql],
+            [$nowMs],
             [EntitySession::id => SqlSortDirection::ASC],
             $limit,
         ));
@@ -223,19 +223,19 @@ class Sessions extends Objects
      * `last_seen_at = created_at` is the durable proof that only the opening handshake
      * touched the row; the cutoff is applied to the indexed last-seen column.
      *
-     * @param string $cutoffSql Latest first-handshake moment eligible for removal
+     * @param int $cutoffMs Latest first-handshake moment eligible for removal, in epoch milliseconds
      * @param int $limit Maximum rows to load
      * @return list<int> Keys of the never-returned sessions, empty when none
      * @throws DatabaseException When the lookup query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
-    public function findNeverReturned(string $cutoffSql, int $limit): array
+    public function findNeverReturned(int $cutoffMs, int $limit): array
     {
         return $this->hydrateAll(static::entityClass()::get(
             '`' . EntitySession::user_id . '` IS NULL'
                 . ' AND `' . EntitySession::last_seen_at . '` <= ?'
                 . ' AND `' . EntitySession::last_seen_at . '` = `' . EntitySession::created_at . '`',
-            [$cutoffSql],
+            [$cutoffMs],
             [EntitySession::id => SqlSortDirection::ASC],
             $limit,
         ));
@@ -254,16 +254,16 @@ class Sessions extends Objects
      * the number is what the log line is built from. The sessions themselves survive
      * untouched - only their memory of an unfinished registration goes.
      *
-     * @param string $cutoffSql Oldest write moment a wait may keep, as an SQL datetime
+     * @param int $cutoffMs Oldest write moment a wait may keep, in epoch milliseconds
      * @return int Number of sessions whose wait this call cleared
      * @throws DatabaseException If the lookup or write query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
-    public function releaseStalePendingRegistrations(string $cutoffSql): int
+    public function releaseStalePendingRegistrations(int $cutoffMs): int
     {
         $stale = $this->hydrateAll(static::entityClass()::get(
             '`' . EntitySession::pending_registration_since . '` <= ?',
-            [$cutoffSql],
+            [$cutoffMs],
         ));
 
         foreach ($stale as $key) {

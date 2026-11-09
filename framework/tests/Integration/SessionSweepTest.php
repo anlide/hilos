@@ -6,8 +6,10 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Router\AgentSignalData;
@@ -25,6 +27,7 @@ use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastSta
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\TimeHelper;
 use ReflectionProperty;
 
 /**
@@ -290,8 +293,70 @@ final class SessionSweepTest extends HilosSessionIntegrationTestCase
         $row = self::sessionRow(Hilos::$db->sessions[$sessionId]->token);
         self::assertNotNull($row);
         self::assertNull($row['user_id']);
-        self::assertGreaterThan($expiredAt, (string)$row['expires_at']);
-        self::assertGreaterThan(self::daysAgo(1), (string)$row['last_seen_at']);
+        self::assertGreaterThan($expiredAt, $row['expires_at']);
+        self::assertGreaterThan(self::daysAgo(1), $row['last_seen_at']);
+    }
+
+    /**
+     * Only the opening handshake leaves the two moments equal, which is how the sweep tells a
+     * browser that never came back. A later handshake breaks the equality even within one second,
+     * because the row keeps milliseconds. The opening also stamps the row from the clock in
+     * milliseconds: the creation moment lies between two looks at the clock, and the expiry lies
+     * one configured lifetime past them.
+     *
+     * @throws HilosException When a handshake fails
+     * @throws DatabaseException When reading or aging the row fails
+     */
+    public function testLastSeenEqualsCreatedOnlyUntilTheNextHandshake(): void
+    {
+        $lifetime = Hilos::$env[EnvConstants::HILOS_SESSION_COOKIE_MAX_AGE]->int() * TimeConstants::MS_PER_SECOND;
+
+        $before = TimeHelper::nowMs();
+        $this->handshake(self::NEVER_RETURNED, 'accept-first-visit');
+        $after = TimeHelper::nowMs();
+
+        $opened = self::sessionRow(self::NEVER_RETURNED);
+        self::assertNotNull($opened);
+        self::assertSame($opened['created_at'], $opened['last_seen_at']);
+        self::assertGreaterThanOrEqual($before, $opened['created_at']);
+        self::assertLessThanOrEqual($after, $opened['created_at']);
+        self::assertGreaterThanOrEqual($before + $lifetime, $opened['expires_at']);
+        self::assertLessThanOrEqual($after + $lifetime, $opened['expires_at']);
+
+        // Aging the stored moments stands in for waiting: the touch below stamps a later one.
+        Database::sqlRun(
+            'UPDATE `hilos_session` SET `created_at` = `created_at` - 1, `last_seen_at` = `last_seen_at` - 1 WHERE `token` = ?',
+            [self::NEVER_RETURNED],
+        );
+        Hilos::$db->forgetLoadedDataForTest();
+        $this->handshake(self::NEVER_RETURNED, 'accept-second-visit');
+
+        $returned = self::sessionRow(self::NEVER_RETURNED);
+        self::assertNotNull($returned);
+        self::assertSame($opened['created_at'] - 1, $returned['created_at']);
+        self::assertGreaterThan($returned['created_at'], $returned['last_seen_at']);
+    }
+
+    /**
+     * Delivers one handshake of a browser that names the token, the way the transport does.
+     *
+     * @param string $token Session token of the browser
+     * @param string $acceptKey Connection the handshake arrived on
+     * @throws HilosException When the handshake fails
+     */
+    private function handshake(string $token, string $acceptKey): void
+    {
+        new SessionSweepTestAgent()->onSignalHandshake(
+            new WebSocketHandshakeSignalDTO(
+                headers: [],
+                acceptKey: $acceptKey,
+                cookies: [],
+                clientIp: null,
+                sessionToken: $token,
+            ),
+            'test',
+            'handshake',
+        );
     }
 
     /**
@@ -320,19 +385,19 @@ final class SessionSweepTest extends HilosSessionIntegrationTestCase
 
     /**
      * @param int $days Days before now
-     * @return string SQL datetime that many days ago
+     * @return int Epoch milliseconds that many days ago
      */
-    private static function daysAgo(int $days): string
+    private static function daysAgo(int $days): int
     {
-        return date('Y-m-d H:i:s', time() - ($days * 24 * 60 * 60));
+        return self::secondsAgo($days * TimeConstants::SECONDS_PER_DAY);
     }
 
     /**
      * @param string $token Session token to update
-     * @param string $lastSeenAt New last-seen moment
+     * @param int $lastSeenAt New last-seen moment in epoch milliseconds
      * @throws DatabaseException When the update fails
      */
-    private static function setLastSeen(string $token, string $lastSeenAt): void
+    private static function setLastSeen(string $token, int $lastSeenAt): void
     {
         Database::sqlRun(
             'UPDATE `hilos_session` SET `last_seen_at` = ? WHERE `token` = ?',

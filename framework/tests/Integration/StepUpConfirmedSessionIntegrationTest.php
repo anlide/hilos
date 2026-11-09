@@ -50,7 +50,7 @@ final class StepUpConfirmedSessionIntegrationTest extends HilosSessionIntegratio
 
     public const int USER_ID = 1330;
 
-    private const string CREATED_AT = '2026-10-08 10:00:00';
+    private const int CREATED_AT = 1791453600000;
 
     /** Long enough that no case outlives the confirmation it seeds. */
     private const int CONFIRMATION_LIFETIME_SECONDS = 900;

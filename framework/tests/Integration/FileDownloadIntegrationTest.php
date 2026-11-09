@@ -9,6 +9,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
@@ -33,6 +34,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration coverage for serving a registry file by id (HIL-138).
@@ -362,9 +364,10 @@ final class FileDownloadIntegrationTest extends FrameworkIntegrationTestCase
     private function session(?int $userId, string $expiresIn = '+1 day'): string
     {
         $token = bin2hex(random_bytes(16));
+        $now = TimeHelper::nowMs();
         Database::sqlRun(
-            'INSERT INTO `hilos_session` (`token`, `user_id`, `expires_at`) VALUES (?, ?, ?)',
-            [$token, $userId, date('Y-m-d H:i:s', (int)strtotime($expiresIn))],
+            'INSERT INTO `hilos_session` (`token`, `user_id`, `created_at`, `last_seen_at`, `expires_at`) VALUES (?, ?, ?, ?, ?)',
+            [$token, $userId, $now, $now, (int)strtotime($expiresIn) * TimeConstants::MS_PER_SECOND],
         );
         $this->assertInstanceOf(Session::class, Hilos::$db->sessions->findByToken($token));
 

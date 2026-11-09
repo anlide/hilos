@@ -3431,7 +3431,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         $session = Hilos::$db->sessions->findByToken($connection->sessionToken);
         if ($session?->userId === null || $session->userId !== $connection->userId
             || $session->impersonatorUserId !== null
-            || ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::getSqlDateTime())
+            || ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::nowMs())
         ) {
             throw new ValidationException(self::THEME_ADOPT_SESSION_REFUSAL);
         }
@@ -3466,7 +3466,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         $session = Hilos::$db->sessions->findByToken($connection->sessionToken);
         if ($session?->userId === null || $session->userId !== $connection->userId
             || $session->impersonatorUserId !== null
-            || ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::getSqlDateTime())
+            || ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::nowMs())
         ) {
             throw new ValidationException(self::THEME_PICK_SESSION_REFUSAL);
         }
@@ -3501,7 +3501,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         $session = Hilos::$db->sessions->findByToken($connection->sessionToken);
         if ($session?->userId === null || $session->userId !== $connection->userId
             || $session->impersonatorUserId !== null
-            || ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::getSqlDateTime())
+            || ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::nowMs())
         ) {
             throw new ValidationException(self::TIME_ZONE_PICK_SESSION_REFUSAL);
         }

@@ -123,7 +123,7 @@ final class HilosUserSessionsPageTest extends IntegrationTestCase
         $this->signIn($this->adminId, 'admin', [self::ADMIN_KEY]);
         $this->signIn($viewerId, 'viewer', [self::VIEWER_KEY]);
         // Fixture-only dates through the mounted ORM; no production write API accepts a chosen clock.
-        $this->stampSession($this->laptopSessionId, '2026-01-02 00:00:00');
+        $this->stampSession($this->laptopSessionId, 1767312000000);
         $this->stampSession($this->idleSessionId, null);
 
         Hilos::$sr->subscribeToPage(
@@ -422,13 +422,13 @@ final class HilosUserSessionsPageTest extends IntegrationTestCase
      * Gives one session fixed moments, the way no production write can.
      *
      * @param int $sessionId Session to stamp
-     * @param ?string $expiresAt SQL UTC moment the session expires at, or null for none
+     * @param ?int $expiresAt Epoch milliseconds the session expires at, or null for none
      */
-    private function stampSession(int $sessionId, ?string $expiresAt): void
+    private function stampSession(int $sessionId, ?int $expiresAt): void
     {
         $session = Hilos::$db->getObjectCollection(ChatDbContext::sessions)->get($sessionId);
-        $session->createdAt = '2026-01-01 00:00:00';
-        $session->lastSeenAt = '2026-01-01 00:30:00';
+        $session->createdAt = 1767225600000;
+        $session->lastSeenAt = 1767227400000;
         $session->expiresAt = $expiresAt;
         $session->sync();
     }

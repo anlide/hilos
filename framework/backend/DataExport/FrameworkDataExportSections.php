@@ -123,8 +123,8 @@ final class FrameworkDataExportSections
                 continue;
             }
             $sessions[] = [
-                'startedAt' => DataExportTime::iso($session->createdAt, $timeZone),
-                'lastSeenAt' => DataExportTime::iso($session->lastSeenAt, $timeZone),
+                'startedAt' => DataExportTime::isoMs($session->createdAt, $timeZone),
+                'lastSeenAt' => DataExportTime::isoMs($session->lastSeenAt, $timeZone),
                 'device' => $session->deviceName,
                 'address' => $keepsSessionAddress ? $session->ipAddress : null,
             ];

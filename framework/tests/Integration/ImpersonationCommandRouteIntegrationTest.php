@@ -36,6 +36,7 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Tests\Unit\Auth\Session\ImpersonationTwoStepTest;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AdminCommandConstants;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * The agent side of the impersonate:start / impersonate:stop command route (HIL-166, HIL-729).
@@ -798,9 +799,10 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
      */
     private static function seedSession(string $token, ?int $userId, ?int $impersonatorUserId = null): void
     {
+        $now = TimeHelper::nowMs();
         Database::sqlRun(
-            'INSERT INTO `hilos_session` (`token`, `user_id`, `impersonator_user_id`) VALUES (?, ?, ?)',
-            [$token, $userId, $impersonatorUserId],
+            'INSERT INTO `hilos_session` (`token`, `user_id`, `impersonator_user_id`, `created_at`, `last_seen_at`) VALUES (?, ?, ?, ?, ?)',
+            [$token, $userId, $impersonatorUserId, $now, $now],
         );
     }
 

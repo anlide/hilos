@@ -6,6 +6,7 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
@@ -50,8 +51,8 @@ final class PersonForeignKeysIntegrationTest extends FrameworkIntegrationTestCas
             [999, 'password', 'nobody@example.test'],
         ];
         yield 'session' => [
-            'INSERT INTO `hilos_session` (`token`, `user_id`) VALUES (?, ?)',
-            ['ffffffffffffffffffffffffffffffff', 999],
+            'INSERT INTO `hilos_session` (`token`, `user_id`, `created_at`, `last_seen_at`) VALUES (?, ?, ?, ?)',
+            ['ffffffffffffffffffffffffffffffff', 999, TimeHelper::nowMs(), TimeHelper::nowMs()],
         ];
         yield 'notification' => [
             'INSERT INTO `hilos_notification` (`user_id`, `type`, `title`) VALUES (?, ?, ?)',

@@ -30,6 +30,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Worker\DTO\ProtectedModeReadyDTO;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use RuntimeException;
 
@@ -52,10 +53,10 @@ final class ProtectedModeReadyCirclePhotoIntegrationTest extends HilosSessionInt
 {
     private const string TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
 
-    private const string CREATED_AT = '2026-08-01 09:15:00';
+    private const int CREATED_AT = 1785575700000;
 
     /** Well past any run of this suite: these cases are about live sessions, not about expiry. */
-    private const string EXPIRES_AT = '2036-09-01 09:15:00';
+    private const int EXPIRES_AT = 2103873300000;
 
     private const int MEMBER_USER_ID = 41;
 
@@ -299,8 +300,8 @@ final class ProtectedModeReadyCirclePhotoIntegrationTest extends HilosSessionInt
     private static function seedCircle(string $type, string $identifier): void
     {
         Database::sqlRun(
-            'INSERT INTO `hilos_verifier_circle` (`identity_type`, `identifier`) VALUES (?, ?)',
-            [$type, $identifier],
+            'INSERT INTO `hilos_verifier_circle` (`identity_type`, `identifier`, `created_at`) VALUES (?, ?, ?)',
+            [$type, $identifier, TimeHelper::nowMs()],
         );
     }
 

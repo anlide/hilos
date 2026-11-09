@@ -123,7 +123,7 @@ final class SessionCarrier
      */
     public static function carryOver(array $snapshot): SessionCarryResult
     {
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
         $carried = 0;
         $dropped = 0;
         $kept = 0;

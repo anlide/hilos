@@ -14,6 +14,7 @@ use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration coverage for photographing the verifier circle at a freeze (HIL-643).
@@ -33,10 +34,10 @@ final class VerifierCircleSnapshotIntegrationTest extends HilosSessionIntegratio
 
     private const string SECOND_TOKEN = 'ffeeddccbbaa99887766554433221100';
 
-    private const string CREATED_AT = '2026-08-01 09:15:00';
+    private const int CREATED_AT = 1785575700000;
 
     /** Well past any run of this suite: these cases are about live sessions, not about expiry. */
-    private const string EXPIRES_AT = '2036-09-01 09:15:00';
+    private const int EXPIRES_AT = 2103873300000;
 
     private const int MEMBER_USER_ID = 41;
 
@@ -248,8 +249,8 @@ final class VerifierCircleSnapshotIntegrationTest extends HilosSessionIntegratio
     private static function seedCircle(string $type, string $identifier): void
     {
         Database::sqlRun(
-            'INSERT INTO `hilos_verifier_circle` (`identity_type`, `identifier`) VALUES (?, ?)',
-            [$type, $identifier],
+            'INSERT INTO `hilos_verifier_circle` (`identity_type`, `identifier`, `created_at`) VALUES (?, ?, ?)',
+            [$type, $identifier, TimeHelper::nowMs()],
         );
     }
 

@@ -170,7 +170,7 @@ final class ProfileNameIntegrationTest extends ProfileIntegrationTestCase
         self::assertFalse(Hilos::hasFeature(HilosFeature::MODERATION));
         self::assertNotContains('hilosModerationChecks', $rt->collectionKeys());
         Hilos::$rt->connectionsSource()->add(ProfileIntegrationConnection::create('same-browser-tab', self::USER_ID, self::SESSION_TOKEN));
-        self::seedSession(str_repeat('d', 32), self::USER_ID, '2026-10-01 10:00:00', null);
+        self::seedSession(str_repeat('d', 32), self::USER_ID, 1790848800000, null);
         ExecutionContext::run(new ExecutionFrame(agentId: $this->holder->getId()), static function (): void {
             $session = Hilos::$db->sessions->findByToken(self::OTHER_SESSION_TOKEN);
             $session->actions->setImpersonator(self::ADMIN_USER_ID);
@@ -883,7 +883,7 @@ final class ProfileNameIntegrationTest extends ProfileIntegrationTestCase
         ExecutionContext::run(new ExecutionFrame(agentId: $this->holder->getId()), function (): void {
             for ($index = 0; $index < 40; $index++) {
                 $token = hash('sha256', 'retained-name-result-' . $index);
-                self::seedSession($token, self::USER_ID, '2026-10-01 10:00:00', null);
+                self::seedSession($token, self::USER_ID, 1790848800000, null);
                 $hash = ProtectedModeRuntime::hashSessionToken($token);
                 Hilos::$rt->hilosProfileNameChanges->actions->open($hash, self::USER_ID, str_repeat('a', 32),
                     self::ACCEPT_KEY, 'Person', TimeHelper::nowMs(), null);
@@ -1002,7 +1002,7 @@ final class ProfileNameIntegrationTest extends ProfileIntegrationTestCase
         self::assertSame($requestId, $this->change()->requestId);
         // A wall-clock expiry has no DB write: age the fixture row without announcing a source event.
         Database::sqlRun('UPDATE `hilos_session` SET `expires_at` = ? WHERE `token` = ?',
-            [date('Y-m-d H:i:s', time() - 1), self::SESSION_TOKEN]);
+            [self::secondsAgo(1), self::SESSION_TOKEN]);
         Hilos::$db->forgetLoadedDataForTest();
         new ReflectionProperty(AbstractSessionsLibraryAgent::class, 'sessionSweepBacklog')->setValue($this->holder, true);
         ExecutionContext::run(new ExecutionFrame(agentId: $this->holder->getId()), fn () => $this->holder->onTick());

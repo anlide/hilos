@@ -1,0 +1,4 @@
+-- hilos-framework: {"format":1,"kind":"change","units":["verifier_circle"],"parts":[{"changeId":"20261109120150360881_HIL-1919_session_moments","unit":"verifier_circle","upSha256":"e7b4ac3d68e1df08d69b52033e40e90c1176bb075f89d405a9a8af57dbee813c","downSha256":"12d25906c8344f6105a6c17523914829f2c0754f077e77e9ede1e36cf67dcd32"}],"upSha256":"e7b4ac3d68e1df08d69b52033e40e90c1176bb075f89d405a9a8af57dbee813c","downSha256":"12d25906c8344f6105a6c17523914829f2c0754f077e77e9ede1e36cf67dcd32"}
+ALTER TABLE `hilos_verifier_circle` ADD COLUMN `__hil1919_created_at` BIGINT NULL AFTER `created_at`;
+UPDATE `hilos_verifier_circle` SET `__hil1919_created_at` = UNIX_TIMESTAMP(`created_at`) * 1000;
+ALTER TABLE `hilos_verifier_circle` DROP COLUMN `created_at`, CHANGE COLUMN `__hil1919_created_at` `created_at` BIGINT NOT NULL;

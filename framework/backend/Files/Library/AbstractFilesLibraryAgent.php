@@ -341,7 +341,7 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
         $access = FileAccess::judge(
             $file->visibility,
             $file->ownerUserId,
-            FileAccess::signedInUserId($session, TimeHelper::getSqlDateTime()),
+            FileAccess::signedInUserId($session, TimeHelper::nowMs()),
         );
         if ($access !== FileAccess::ALLOW && $this->grantsRead($file, $session)) {
             $access = FileAccess::ALLOW;

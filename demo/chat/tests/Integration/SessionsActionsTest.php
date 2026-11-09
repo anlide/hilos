@@ -188,7 +188,8 @@ final class SessionsActionsTest extends IntegrationTestCase
         $session = Hilos::$db->sessions->actions->expireByToken($token);
 
         $this->assertNotNull($session);
-        $this->assertLessThan(TimeHelper::getSqlDateTime(), (string) $session->expiresAt);
+        $this->assertNotNull($session->expiresAt);
+        $this->assertLessThan(TimeHelper::nowMs(), $session->expiresAt);
         $this->assertNull(Hilos::$db->sessions->actions->expireByToken(RandomHelper::hex(16)));
     }
 }

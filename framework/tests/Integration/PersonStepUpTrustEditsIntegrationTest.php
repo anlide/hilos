@@ -66,7 +66,7 @@ final class PersonStepUpTrustEditsIntegrationTest extends HilosSessionIntegratio
 
     private const string OTHER_SESSION_TOKEN = 'cd000000000000000000000000001407';
 
-    private const string CREATED_AT = '2026-10-10 10:00:00';
+    private const int CREATED_AT = 1791626400000;
 
     /** Days a trust is written for and asked about. */
     private const int TRUST_DAYS = 30;

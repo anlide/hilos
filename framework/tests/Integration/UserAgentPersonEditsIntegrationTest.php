@@ -871,7 +871,7 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
      */
     private function seedAdministratorBrowser(int $userId, string $acceptKey, string $token): void
     {
-        self::seedSession($token, $userId, '2026-01-01 00:00:00', null);
+        self::seedSession($token, $userId, 1767225600000, null);
         $sessionId = Hilos::$db->sessions->findByToken($token)?->id;
         self::assertNotNull($sessionId);
         Hilos::$rt->addConnection(PersonEditsTestConnection::create($acceptKey, $userId, $token, $sessionId));

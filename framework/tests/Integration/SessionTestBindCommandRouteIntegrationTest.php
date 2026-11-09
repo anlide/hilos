@@ -72,7 +72,7 @@ final class SessionTestBindCommandRouteIntegrationTest extends HilosSessionInteg
         OwnershipDeclaration::claimDb($this->library::class, $this->library->getId());
         AccountStandingResolver::forgetAll();
         Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (42, 'Fixture person'), (43, 'Other person')");
-        self::seedSession(self::TOKEN, null, '2026-01-01 00:00:00', null);
+        self::seedSession(self::TOKEN, null, 1767225600000, null);
     }
 
     protected function tearDown(): void

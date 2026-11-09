@@ -37,10 +37,10 @@ enum FileAccess
      * guest session is not signed in.
      *
      * @param ?Session $session Session the request presented, or null when it presented none
-     * @param string $nowSql The present moment, as SQL datetime
+     * @param int $nowMs The present moment, in epoch milliseconds
      * @return ?int Id of the signed-in user, or null when nobody is signed in
      */
-    public static function signedInUserId(?Session $session, string $nowSql): ?int
+    public static function signedInUserId(?Session $session, int $nowMs): ?int
     {
         $userId = $session?->userId;
         if ($userId === null) {
@@ -49,7 +49,7 @@ enum FileAccess
 
         $expiresAt = $session->expiresAt;
 
-        return $expiresAt === null || $expiresAt > $nowSql ? $userId : null;
+        return $expiresAt === null || $expiresAt > $nowMs ? $userId : null;
     }
 
     /**

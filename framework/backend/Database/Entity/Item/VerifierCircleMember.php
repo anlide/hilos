@@ -26,9 +26,8 @@ use Hilos\Database\PhpType;
  * naming the same address twice is refused by the database rather than by a read before
  * the write, because two admin tabs fit between such a read and its insert.
  *
- * `created_at` is DB-maintained and, like created/updated columns elsewhere, is
- * intentionally not ORM-mapped: nothing reads it. It is named as a constant only so the
- * personal-data verdict below can cover it.
+ * `created_at` is the moment the person was named, in signed epoch milliseconds. The
+ * application writes it when the row is created; the column has no database default.
  *
  * Framework holds the contract; a project that declares the backup feature activates the
  * table thinly (copy the migration stub) and the framework DbContext exposes the
@@ -42,7 +41,6 @@ class VerifierCircleMember extends Entity
     public const string id = 'id';
     public const string identity_type = 'identity_type';
     public const string identifier = 'identifier';
-    /** DB-only stamp written by the database itself; named here so the PII verdict can name it. */
     public const string created_at = 'created_at';
 
     public const string _table = 'hilos_verifier_circle';
@@ -51,6 +49,7 @@ class VerifierCircleMember extends Entity
         self::id,
         self::identity_type,
         self::identifier,
+        self::created_at,
     ];
 
     public const array _moments = [self::created_at];
@@ -59,6 +58,7 @@ class VerifierCircleMember extends Entity
         self::id => PhpType::INTEGER->value,
         self::identity_type => PhpType::STRING->value,
         self::identifier => PhpType::STRING->value,
+        self::created_at => PhpType::INTEGER->value,
     ];
 
     public const array _indexes = [
@@ -90,4 +90,5 @@ class VerifierCircleMember extends Entity
     public ?int $id = null;
     public string $identity_type;
     public string $identifier;
+    public int $created_at;
 }

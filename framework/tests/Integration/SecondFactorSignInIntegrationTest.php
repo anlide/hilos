@@ -25,6 +25,7 @@ use Hilos\Auth\SecondFactor\Totp;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\SessionAck;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -60,7 +61,9 @@ use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastSta
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
+use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * The sign-in half of the second factor, against the real tables (HIL-494).
@@ -79,7 +82,7 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
 {
     use PersonAgentFrames;
 
-    private const string CREATED_AT = '2026-09-24 09:00:00';
+    private const int CREATED_AT = 1790240400000;
 
     private const string SESSION_TOKEN = 'bb00000000000000000000000000bb94';
 
@@ -192,6 +195,44 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         $session = Hilos::$db->sessions->findByToken(self::SESSION_TOKEN);
         $this->assertSame(self::USER_ID, $session?->pendingSecondFactorUserId);
         $this->assertSame(SecondFactorPendingMode::VERIFY, $session?->pendingSecondFactorMode);
+    }
+
+    /**
+     * The code step counts down to the deadline the row stores, in the same milliseconds, on the
+     * sign-in frame and on a reload: nothing multiplies it a second time.
+     *
+     * @throws HilosException When the grant or the handshake fails
+     * @throws DatabaseException When reading the row fails
+     */
+    public function testTheCodeStepCarriesTheStoredDeadlineInMilliseconds(): void
+    {
+        $this->enrol();
+        $ttl = Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int() * TimeConstants::MS_PER_SECOND;
+
+        $before = TimeHelper::nowMs();
+        $this->grant();
+        $after = TimeHelper::nowMs();
+
+        Database::sql('SELECT `pending_second_factor_until` FROM `hilos_session` WHERE `token` = ?', [self::SESSION_TOKEN]);
+        $until = (int)Database::field('pending_second_factor_until');
+        $this->assertGreaterThanOrEqual($before + $ttl, $until);
+        $this->assertLessThanOrEqual($after + $ttl, $until);
+        $frames = $this->stateFrames();
+        $this->assertSame($until, $frames[1]->pendingAuthStep[HandshakeResponseSignalData::expiresAt] ?? null);
+
+        $this->holder->onSignalHandshake(
+            new WebSocketHandshakeSignalDTO(
+                headers: [],
+                acceptKey: self::ACCEPT_KEY,
+                cookies: [],
+                clientIp: null,
+                sessionToken: self::SESSION_TOKEN,
+            ),
+            'test',
+            'handshake',
+        );
+
+        $this->assertSame($until, $this->lastStateFrame()?->pendingAuthStep[HandshakeResponseSignalData::expiresAt] ?? null);
     }
 
     /**

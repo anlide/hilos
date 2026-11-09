@@ -61,7 +61,7 @@ use ReflectionProperty;
  */
 final class SignInNoticeIntegrationTest extends HilosSessionIntegrationTestCase
 {
-    private const string CREATED_AT = '2026-10-15 10:00:00';
+    private const int CREATED_AT = 1792058400000;
 
     private const string SESSION_TOKEN = 'a2940000000000000000000000000294';
 

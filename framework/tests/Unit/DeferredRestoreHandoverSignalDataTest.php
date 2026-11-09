@@ -38,11 +38,11 @@ final class DeferredRestoreHandoverSignalDataTest extends TestCase
         $sent = new DeferredSessionCarryoverHandoverSignalData(self::BATCH, [
             new SessionCarryover(
                 token: 'token-a',
-                createdAt: '2026-09-12 10:00:00',
-                expiresAt: '2026-10-12 10:00:00',
+                createdAt: 1789207200000,
+                expiresAt: 1791799200000,
                 identities: [new SessionIdentityRef('email', 'person@example.com')],
             ),
-            new SessionCarryover('token-b', '2026-09-12 11:00:00', null, []),
+            new SessionCarryover('token-b', 1789210800000, null, []),
         ]);
 
         $received = DeferredSessionCarryoverHandoverSignalData::fromArray(self::overTheWire($sent->toArray()));
@@ -50,8 +50,8 @@ final class DeferredRestoreHandoverSignalDataTest extends TestCase
         self::assertSame(self::BATCH, $received->batch);
         self::assertCount(2, $received->sessions);
         self::assertSame('token-a', $received->sessions[0]->token);
-        self::assertSame('2026-09-12 10:00:00', $received->sessions[0]->createdAt);
-        self::assertSame('2026-10-12 10:00:00', $received->sessions[0]->expiresAt);
+        self::assertSame(1789207200000, $received->sessions[0]->createdAt);
+        self::assertSame(1791799200000, $received->sessions[0]->expiresAt);
         self::assertSame('email', $received->sessions[0]->identities[0]->type);
         self::assertSame('person@example.com', $received->sessions[0]->identities[0]->identifier);
         self::assertNull($received->sessions[1]->expiresAt, 'A login with no expiry does not gain one on the way');

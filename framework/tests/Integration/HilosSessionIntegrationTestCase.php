@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Constants\TimeConstants;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Hilos;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Base for the session cases that need the framework session tables and a live Hilos::$db.
@@ -119,16 +121,16 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
      *
      * @param string $token Session cookie token
      * @param ?int $userId Bound user id, or null for an anonymous session
-     * @param string $createdAt Creation time as an SQL datetime
-     * @param ?string $expiresAt Expiry as an SQL datetime, or null for an open-ended session
+     * @param int $createdAt Creation moment in epoch milliseconds
+     * @param ?int $expiresAt Expiry in epoch milliseconds, or null for an open-ended session
      * @param ?int $impersonatorUserId Real administrator behind a takeover, or null when there is none
      * @throws DatabaseException When the insert fails
      */
     protected static function seedSession(
         string $token,
         ?int $userId,
-        string $createdAt,
-        ?string $expiresAt,
+        int $createdAt,
+        ?int $expiresAt,
         ?int $impersonatorUserId = null,
     ): void {
         foreach ([$userId, $impersonatorUserId] as $personId) {
@@ -148,10 +150,21 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
     }
 
     /**
+     * Names a moment relative to now, in the form a session row stores it.
+     *
+     * @param int $seconds Seconds before now; a negative count names a moment ahead
+     * @return int That moment in epoch milliseconds
+     */
+    protected static function secondsAgo(int $seconds): int
+    {
+        return TimeHelper::nowMs() - $seconds * TimeConstants::MS_PER_SECOND;
+    }
+
+    /**
      * Reads a session straight from the database, past every in-memory collection.
      *
      * @param string $token Session cookie token
-     * @return ?array<string, mixed> Raw session row, or null when the token holds none
+     * @return ?array<string, mixed> Raw session row with its three moments as integers, or null when the token holds none
      * @throws DatabaseException When the query fails
      */
     protected static function sessionRow(string $token): ?array
@@ -162,7 +175,16 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
             [$token],
         );
 
-        return Database::row();
+        $row = Database::row();
+        if ($row === null) {
+            return null;
+        }
+
+        $row['created_at'] = (int)$row['created_at'];
+        $row['last_seen_at'] = (int)$row['last_seen_at'];
+        $row['expires_at'] = $row['expires_at'] === null ? null : (int)$row['expires_at'];
+
+        return $row;
     }
 
     /**

@@ -51,7 +51,7 @@ use ReflectionProperty;
  */
 final class AccessLogIntegrationTest extends HilosSessionIntegrationTestCase
 {
-    private const string CREATED_AT = '2026-09-26 10:00:00';
+    private const int CREATED_AT = 1790416800000;
 
     private const string SESSION_TOKEN = 'a1000000000000000000000000001174';
 

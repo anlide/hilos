@@ -23,9 +23,12 @@ final class SessionsActionsCarryOverTest extends HilosSessionIntegrationTestCase
 {
     private const string TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
 
-    private const string CREATED_AT = '2026-08-01 09:15:00';
+    private const int CREATED_AT = 1785575700000;
 
-    private const string EXPIRES_AT = '2026-09-01 09:15:00';
+    private const int EXPIRES_AT = 1788254100000;
+
+    /** Creation moment of the row that came back with the archive, older than the carried one. */
+    private const int ARCHIVED_CREATED_AT = 1783408027000;
 
     /**
      * @throws HilosException When the write fails
@@ -40,9 +43,9 @@ final class SessionsActionsCarryOverTest extends HilosSessionIntegrationTestCase
         $row = self::sessionRow(self::TOKEN);
         $this->assertNotNull($row);
         $this->assertSame('41', (string)$row['user_id']);
-        $this->assertSame(self::CREATED_AT, (string)$row['created_at'], 'Creation time is carried verbatim');
-        $this->assertSame(self::EXPIRES_AT, (string)$row['expires_at'], 'Expiry is carried verbatim, not extended');
-        $this->assertNotSame(self::CREATED_AT, (string)$row['last_seen_at'], 'Only last_seen_at is fresh');
+        $this->assertSame(self::CREATED_AT, $row['created_at'], 'Creation time is carried verbatim');
+        $this->assertSame(self::EXPIRES_AT, $row['expires_at'], 'Expiry is carried verbatim, not extended');
+        $this->assertNotSame(self::CREATED_AT, $row['last_seen_at'], 'Only last_seen_at is fresh');
         $this->assertNull($row['impersonator_user_id'], 'Impersonation does not survive a restore');
     }
 
@@ -66,7 +69,7 @@ final class SessionsActionsCarryOverTest extends HilosSessionIntegrationTestCase
      */
     public function testATokenThatAlreadyHasARowIsLeftUntouched(): void
     {
-        self::seedSession(self::TOKEN, 99, '2026-07-07 07:07:07', null);
+        self::seedSession(self::TOKEN, 99, self::ARCHIVED_CREATED_AT, null);
 
         $session = Hilos::$db->sessions->actions->carryOver(self::TOKEN, 41, self::CREATED_AT, self::EXPIRES_AT);
 
@@ -74,7 +77,7 @@ final class SessionsActionsCarryOverTest extends HilosSessionIntegrationTestCase
         $row = self::sessionRow(self::TOKEN);
         $this->assertNotNull($row);
         $this->assertSame('99', (string)$row['user_id'], 'The archived row keeps its own user');
-        $this->assertSame('2026-07-07 07:07:07', (string)$row['created_at']);
+        $this->assertSame(self::ARCHIVED_CREATED_AT, $row['created_at']);
     }
 
     /**

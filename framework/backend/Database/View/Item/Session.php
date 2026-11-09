@@ -23,15 +23,15 @@ use Hilos\HilosException;
  * @property-read string $token Session cookie token
  * @property-read ?int $userId Bound user id, or null when the session is anonymous
  * @property-read ?int $impersonatorUserId Admin behind an active impersonation, or null when acting as itself
- * @property-read string $createdAt Creation timestamp
- * @property-read string $lastSeenAt Last-seen timestamp
- * @property-read ?string $expiresAt Expiry timestamp, or null when open-ended
+ * @property-read int $createdAt Creation moment in epoch milliseconds
+ * @property-read int $lastSeenAt Last-seen moment in epoch milliseconds
+ * @property-read ?int $expiresAt Expiry in epoch milliseconds, or null when open-ended
  * @property-read ?string $pendingRegistrationIdentifier Address whose code this session is waiting on, or null when it waits on none
- * @property-read ?string $pendingRegistrationSince Moment that wait was last written, or null when there is none
+ * @property-read ?int $pendingRegistrationSince Moment that wait was last written in epoch milliseconds, or null when there is none
  * @property-read ?string $pendingAck Success ack this session still owes its person, or null when it owes none
  * @property-read ?int $pendingSecondFactorUserId Person whose proven sign-in waits on a second factor, or null when none waits
  * @property-read ?string $pendingSecondFactorMode Screen that sign-in waits on (a SecondFactorPendingMode value), or null
- * @property-read ?string $pendingSecondFactorUntil Moment the wait runs out, or null when none waits
+ * @property-read ?int $pendingSecondFactorUntil Moment the wait runs out in epoch milliseconds, or null when none waits
  * @property-read int $pendingSecondFactorAttempts Wrong codes the wait has taken so far
  * @property-read ?string $pendingSecondFactorAck Success ack to show once the step passes, or null when none is owed
  * @property-read ?string $deviceName Browser and platform label, or null when unrecognized

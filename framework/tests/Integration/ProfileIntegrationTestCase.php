@@ -148,7 +148,7 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
     /** Lifetime of a seeded challenge or confirmation; long enough that no case outlives it. */
     protected const int TTL_SECONDS = 3600;
 
-    private const string CREATED_AT = '2026-09-26 10:00:00';
+    private const int CREATED_AT = 1790416800000;
 
     protected ProfileIntegrationLibrary $library;
 

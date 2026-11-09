@@ -286,10 +286,10 @@ options for new moments; the general mapping, hydration, nullability and DEFAULT
 rules still apply to other fields.
 
 - **The application owns it.** The column is in `_columns`, its property is non-nullable
-  and carries no initializer (`public string $created_at;`), and the writer sets it before
+  and carries no initializer (`public int $created_at;`), and the writer sets it before
   `sync()`. Hydration then fills the property on every read, so the value is available to
-  the object and view layers. The current `hilos_session.created_at` is an old moment
-  example; move its storage and writer together (not in the code yet — HIL-1919).
+  the object and view layers. `hilos_session.created_at` is the moment example: a signed
+  `BIGINT` with no DEFAULT at all, which its creating code stamps itself.
   The notification tables' `created_at` / `updated_at` are also old moment examples;
   move their storage and writers together (not in the code yet — HIL-1923).
 - **The database owns it.** The column is left out of `_columns` entirely, so the ORM

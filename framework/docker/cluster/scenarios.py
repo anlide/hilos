@@ -4480,7 +4480,9 @@ def scenario_23_verifier_circle_on_every_master():
     views = wait_converge(ALL_NODES)
     leader = leaders(views)[0]
     term = views[leader].get("term")
-    db_sql(f"INSERT INTO hilos_verifier_circle (identity_type, identifier) VALUES ('password', '{CIRCLE_ADDRESS}')")
+    named_at = int(time.time() * 1000)
+    db_sql("INSERT INTO hilos_verifier_circle (identity_type, identifier, created_at) "
+           f"VALUES ('password', '{CIRCLE_ADDRESS}', {named_at})")
     named = db_sql(f"SELECT COUNT(*) FROM hilos_verifier_circle WHERE identifier = '{CIRCLE_ADDRESS}'")
     assert named == "1", f"the circle row was not written: {named!r}"
     try:

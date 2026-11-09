@@ -28,7 +28,7 @@ CREATE TABLE `hilos_verifier_circle` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `identity_type` ENUM('password', 'oauth', 'magic_link', 'sms', 'passkey') NOT NULL,
     `identifier` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `created_at` BIGINT NOT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_verifier_circle_identity` (`identity_type`, `identifier`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

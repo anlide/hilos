@@ -991,7 +991,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $change = Hilos::$rt->hilosProfileNameChanges[StateProtectedModeRuntime::hashSessionToken($session->token)];
         if ($change !== null && $change->staleSince() === null
             && ($session->userId !== $change->userId || $session->impersonatorUserId !== null
-            || ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::getSqlDateTime()))
+            || ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::nowMs()))
         ) {
             $this->forgetProfileNameChange($session->token);
         }
@@ -1148,7 +1148,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 $neverReturned = $connections === null
                     ? []
                     : Hilos::$db->sessions->findNeverReturned(
-                        date('Y-m-d H:i:s', time() - self::NEVER_RETURNED_GRACE_SECONDS),
+                        TimeHelper::nowMs() - self::NEVER_RETURNED_GRACE_SECONDS * TimeConstants::MS_PER_SECOND,
                         self::SESSION_SWEEP_BATCH,
                     );
                 $deletedSessionIds = [];
@@ -1668,7 +1668,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         $expiresAt = $session->expiresAt;
-        if ($expiresAt !== null && $expiresAt <= TimeHelper::getSqlDateTime()) {
+        if ($expiresAt !== null && $expiresAt <= TimeHelper::nowMs()) {
             return null;
         }
 
@@ -2482,7 +2482,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $expiresAt = $session->expiresAt;
         if ($session->userId !== null
             && $expiresAt !== null
-            && $expiresAt <= TimeHelper::getSqlDateTime()
+            && $expiresAt <= TimeHelper::nowMs()
         ) {
             // The cookie resolved to an authenticated session that has outlived its
             // expiry: drop it to anonymous before handing it back, then slide the row
@@ -4919,7 +4919,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return;
             }
-            if ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::getSqlDateTime()) {
+            if ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::nowMs()) {
                 $this->refuseProfileNameAdmission($frame, self::SESSION_NOT_ON_CONNECTION_MESSAGE);
 
                 return;
@@ -5127,7 +5127,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         foreach (Hilos::$db->sessions->findByUserId($change->userId) as $session) {
             if (StateProtectedModeRuntime::hashSessionToken($session->token) === $change->sessionTokenHash
                 && $session->impersonatorUserId === null
-                && ($session->expiresAt === null || $session->expiresAt > TimeHelper::getSqlDateTime())
+                && ($session->expiresAt === null || $session->expiresAt > TimeHelper::nowMs())
             ) {
                 return $session;
             }
@@ -7647,7 +7647,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         ?string $action,
     ): void {
         $mode = $verdict === SecondFactorGate::SETUP ? SecondFactorPendingMode::SETUP : SecondFactorPendingMode::VERIFY;
-        $until = date('Y-m-d H:i:s', time() + Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int());
+        $until = TimeHelper::nowMs() + Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int() * TimeConstants::MS_PER_SECOND;
         $session->actions->holdPendingSecondFactor($userId, $mode, $until, $ack);
 
         $step = $this->secondFactorStep($userId, $mode, $until);
@@ -7983,7 +7983,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $userId = $session->pendingSecondFactorUserId;
         $mode = $session->pendingSecondFactorMode;
         $until = $session->pendingSecondFactorUntil;
-        if ($userId === null || $mode === null || $until === null || $until <= TimeHelper::getSqlDateTime()) {
+        if ($userId === null || $mode === null || $until === null || $until <= TimeHelper::nowMs()) {
             return null;
         }
 
@@ -7999,11 +7999,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * @param int $userId Person the wait is for
      * @param string $mode Screen the wait is on (a {@see SecondFactorPendingMode} value)
-     * @param string $until Moment the wait runs out (SQL datetime)
+     * @param int $until Moment the wait runs out, in epoch milliseconds
      * @return array<string, mixed> Step node
      * @throws HilosException On database or settings failure
      */
-    private function secondFactorStep(int $userId, string $mode, string $until): array
+    private function secondFactorStep(int $userId, string $mode, int $until): array
     {
         $reset = Hilos::$db->secondFactorResets->liveOf($userId);
 
@@ -8015,7 +8015,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 ? AuthFlowStep::SECOND_FACTOR_SETUP
                 : AuthFlowStep::SECOND_FACTOR,
             HandshakeResponseSignalData::channel => null,
-            HandshakeResponseSignalData::expiresAt => TimeHelper::sqlToMs($until),
+            HandshakeResponseSignalData::expiresAt => $until,
             HandshakeResponseSignalData::code => null,
             HandshakeResponseSignalData::message => null,
             HandshakeResponseSignalData::secondFactor => [

@@ -418,6 +418,15 @@ final class FrameworkMigrationStartupGuardTest extends TestCase
                 [$part],
             ));
         }
+        $part = new FrameworkMigrationCatalog()->part('20261109120150360881_HIL-1919_session_moments', 'session');
+        $this->writePair('010_session_moments.sql', $this->pair(
+            'session_moments',
+            FrameworkMigrationOrigin::CHANGE,
+            ['session'],
+            $part->upSql,
+            $part->downSql,
+            [$part],
+        ));
         $persistenceCalled = false;
         EntrypointPrelude::run(StartupCoreHilos::class, $this->root, static function () use (&$persistenceCalled): void {
             $persistenceCalled = true;

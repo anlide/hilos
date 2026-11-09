@@ -296,7 +296,7 @@ final class DeferredQueueHandoverTest extends TestCase
     {
         return new SessionCarryover(
             token: $token,
-            createdAt: '2026-09-12 10:00:00',
+            createdAt: 1789207200000,
             expiresAt: null,
             identities: [new SessionIdentityRef('email', 'person@example.com')],
         );

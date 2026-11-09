@@ -17,14 +17,14 @@ final class SessionCarryover
 {
     /**
      * @param string $token Session cookie token
-     * @param string $createdAt Session creation time as an SQL datetime
-     * @param ?string $expiresAt Session expiry as an SQL datetime, or null for an open-ended session
+     * @param int $createdAt Session creation moment in epoch milliseconds
+     * @param ?int $expiresAt Session expiry in epoch milliseconds, or null for an open-ended session
      * @param list<SessionIdentityRef> $identities Identity pairs of the person the session belongs to
      */
     public function __construct(
         public readonly string $token,
-        public readonly string $createdAt,
-        public readonly ?string $expiresAt,
+        public readonly int $createdAt,
+        public readonly ?int $expiresAt,
         public readonly array $identities,
     ) {
     }

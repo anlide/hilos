@@ -83,7 +83,7 @@ signed `BIGINT` or milliseconds.
 | Semantic moment metadata, inheritance/default and explicit project storage opt-out; [Entity and provider API](../orm/entity.md#persisted-moments). | — | Implemented |
 | Token-based direct-writer check, physical moment schema axes, and exact closed baseline of existing debt; [checks and coverage](../code-style/automated-checks.md#moment-storage-checks). | — | Implemented |
 | Bootstrap migration claim, admin-view latch and database marker | 3 | Implemented |
-| Sessions and verifier circle | 6 | (not in the code yet — HIL-1919) |
+| Sessions and verifier circle | 6 | Implemented |
 | Identity, OAuth provider and passkey | 7 | (not in the code yet — HIL-1920) |
 | Verification, registration, step-up and auth blocks | 10 | (not in the code yet — HIL-1921) |
 | Second factor, trust, reset and backup codes | 16 | (not in the code yet — HIL-1922) |

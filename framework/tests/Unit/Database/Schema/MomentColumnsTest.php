@@ -247,7 +247,6 @@ final class MomentColumnsTest extends TestCase
             Identity::class => [Identity::created_at, Identity::updated_at],
             OAuthProvider::class => [OAuthProvider::created_at, OAuthProvider::updated_at],
             RegistrationReservation::class => [RegistrationReservation::created_at],
-            VerifierCircleMember::class => [VerifierCircleMember::created_at],
         ] as $class => $columns) {
             $moments = MomentColumns::forEntity($class);
             foreach ($columns as $column) {
@@ -255,6 +254,10 @@ final class MomentColumnsTest extends TestCase
             }
         }
         self::assertTrue(MomentColumns::forEntity(AuthBlock::class)[AuthBlock::blocked_until]->mapped);
+        self::assertEquals(
+            new MomentColumn(VerifierCircleMember::created_at, true, true),
+            MomentColumns::forEntity(VerifierCircleMember::class)[VerifierCircleMember::created_at],
+        );
         self::assertTrue(MomentColumns::forEntity(User::class)[User::last_activity]->frameworkOwned);
         $unmapped = new class extends OwnMomentEntity {
             public const array _columns = [self::id, self::calendar_day];

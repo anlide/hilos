@@ -28,19 +28,19 @@ final class FileAccessTest extends TestCase
     /** A signed-in user who does not own the fixture file */
     private const int STRANGER_ID = 8;
 
-    /** The present moment every case is judged at */
-    private const string NOW = '2026-09-26 12:00:00';
+    /** The present moment every case is judged at, in epoch milliseconds */
+    private const int NOW = 1790424000000;
 
     /**
      * @return array<string, array{?array<string, mixed>, FileVisibility, FileAccess}> Session row, visibility, verdict
      */
     public static function viewers(): array
     {
-        $guest = [EntitySession::user_id => null, EntitySession::expires_at => '2027-01-01 00:00:00'];
-        $owner = [EntitySession::user_id => self::OWNER_ID, EntitySession::expires_at => '2027-01-01 00:00:00'];
+        $guest = [EntitySession::user_id => null, EntitySession::expires_at => 1798761600000];
+        $owner = [EntitySession::user_id => self::OWNER_ID, EntitySession::expires_at => 1798761600000];
         $ownerForever = [EntitySession::user_id => self::OWNER_ID, EntitySession::expires_at => null];
-        $ownerExpired = [EntitySession::user_id => self::OWNER_ID, EntitySession::expires_at => '2026-09-26 11:59:59'];
-        $stranger = [EntitySession::user_id => self::STRANGER_ID, EntitySession::expires_at => '2027-01-01 00:00:00'];
+        $ownerExpired = [EntitySession::user_id => self::OWNER_ID, EntitySession::expires_at => 1790423999000];
+        $stranger = [EntitySession::user_id => self::STRANGER_ID, EntitySession::expires_at => 1798761600000];
 
         return [
             'public, no session' => [null, FileVisibility::PUBLIC, FileAccess::ALLOW],
@@ -79,7 +79,7 @@ final class FileAccessTest extends TestCase
         );
     }
 
-    public function testASessionExpiringThisVerySecondIsNoLongerSignedIn(): void
+    public function testASessionExpiringThisVeryMillisecondIsNoLongerSignedIn(): void
     {
         $session = new Session(ObjectSession::fromEntity(EntitySession::fromRow([
             EntitySession::token => str_repeat('a', 32),
@@ -88,6 +88,35 @@ final class FileAccessTest extends TestCase
         ])));
 
         $this->assertNull(FileAccess::signedInUserId($session, self::NOW));
+    }
+
+    /**
+     * @return array<string, array{int, ?int}> Stored expiry, and who it leaves signed in
+     */
+    public static function expiryBoundaries(): array
+    {
+        return [
+            'one millisecond ahead' => [self::NOW + 1, self::OWNER_ID],
+            'exactly now' => [self::NOW, null],
+            'the epoch is a moment in the past' => [0, null],
+            'before the epoch' => [-1, null],
+        ];
+    }
+
+    /**
+     * @param int $expiresAt Stored expiry in epoch milliseconds
+     * @param ?int $expected User the session still signs in, or null when closed
+     */
+    #[DataProvider('expiryBoundaries')]
+    public function testTheExpiryIsJudgedAsANumberAndZeroIsNotAbsence(int $expiresAt, ?int $expected): void
+    {
+        $session = new Session(ObjectSession::fromEntity(EntitySession::fromRow([
+            EntitySession::token => str_repeat('a', 32),
+            EntitySession::user_id => self::OWNER_ID,
+            EntitySession::expires_at => $expiresAt,
+        ])));
+
+        $this->assertSame($expected, FileAccess::signedInUserId($session, self::NOW));
     }
 
     public function testAnOwnerOnlyFileWhoseOwnerWasErasedCannotBeClaimed(): void

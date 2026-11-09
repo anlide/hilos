@@ -318,20 +318,6 @@
         },
         {
             "rule": "MOMENT-AUTO-WRITE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Session\",\"hilos_session\",\"created_at\"]",
-            "actual": "DEFAULT current_timestamp()",
-            "count": 1,
-            "owner": "HIL-1919"
-        },
-        {
-            "rule": "MOMENT-AUTO-WRITE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Session\",\"hilos_session\",\"last_seen_at\"]",
-            "actual": "DEFAULT current_timestamp()",
-            "count": 1,
-            "owner": "HIL-1919"
-        },
-        {
-            "rule": "MOMENT-AUTO-WRITE",
             "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StepUp\",\"hilos_step_up\",\"created_at\"]",
             "actual": "DEFAULT current_timestamp()",
             "count": 1,
@@ -350,13 +336,6 @@
             "actual": "DEFAULT current_timestamp()",
             "count": 1,
             "owner": "HIL-1921"
-        },
-        {
-            "rule": "MOMENT-AUTO-WRITE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\VerifierCircleMember\",\"hilos_verifier_circle\",\"created_at\"]",
-            "actual": "DEFAULT current_timestamp()",
-            "count": 1,
-            "owner": "HIL-1919"
         },
         {
             "rule": "MOMENT-TYPE",
@@ -773,41 +752,6 @@
         },
         {
             "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Session\",\"hilos_session\",\"created_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1919"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Session\",\"hilos_session\",\"expires_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1919"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Session\",\"hilos_session\",\"last_seen_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1919"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Session\",\"hilos_session\",\"pending_registration_since\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1919"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Session\",\"hilos_session\",\"pending_second_factor_until\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1919"
-        },
-        {
-            "rule": "MOMENT-TYPE",
             "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\StatusIncidentUpdate\",\"hilos_status_incident_update\",\"at\"]",
             "actual": "bigint unsigned",
             "count": 1,
@@ -1015,13 +959,6 @@
             "actual": "timestamp",
             "count": 1,
             "owner": "HIL-1924"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\VerifierCircleMember\",\"hilos_verifier_circle\",\"created_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1919"
         },
         {
             "rule": "MOMENT-TYPE",

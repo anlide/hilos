@@ -18,6 +18,7 @@ use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTableRow;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration coverage for the live online mark of the verifier circle table (HIL-1119).
@@ -323,8 +324,8 @@ final class HilosVerifierCircleTableLiveMarkIntegrationTest extends HilosSession
         // Not sqlRun(): it restores the statement timeout after the insert, and that statement
         // resets the id the insert left behind.
         Database::sql(
-            'INSERT INTO `hilos_verifier_circle` (`identity_type`, `identifier`) VALUES (?, ?)',
-            [$type, $identifier],
+            'INSERT INTO `hilos_verifier_circle` (`identity_type`, `identifier`, `created_at`) VALUES (?, ?, ?)',
+            [$type, $identifier, TimeHelper::nowMs()],
         );
 
         return Database::lastInsertId();

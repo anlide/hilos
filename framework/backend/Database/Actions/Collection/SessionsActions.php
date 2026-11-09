@@ -6,6 +6,7 @@ namespace Hilos\Database\Actions\Collection;
 
 use Hilos\Auth\Session\SessionToken;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\Actions\Item\SessionActions;
@@ -45,7 +46,7 @@ class SessionsActions extends DbActions
             throw new DuplicateValueException('Session with this token already exists');
         }
 
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
         $objectClass = $this->objectCollection::OBJECT_CLASS;
         $session = $objectClass::create();
         $session->token = $token;
@@ -75,13 +76,13 @@ class SessionsActions extends DbActions
      *
      * @param string $token Session cookie token (32 lowercase hex characters)
      * @param int $userId User id the token resolved to in the restored database
-     * @param string $createdAt Captured creation time as an SQL datetime
-     * @param ?string $expiresAt Captured expiry as an SQL datetime, or null for an open-ended session
+     * @param int $createdAt Captured creation moment in epoch milliseconds
+     * @param ?int $expiresAt Captured expiry in epoch milliseconds, or null for an open-ended session
      * @return ?Session Created session, or null when the token already holds a row
      * @throws InvalidFormatException When the token is not a 32-character lowercase hex string
      * @throws HilosException On database error
      */
-    public function carryOver(string $token, int $userId, string $createdAt, ?string $expiresAt): ?Session
+    public function carryOver(string $token, int $userId, int $createdAt, ?int $expiresAt): ?Session
     {
         $this->ensureCanCreate();
         SessionToken::ensureValid($token);
@@ -95,7 +96,7 @@ class SessionsActions extends DbActions
         $session->token = $token;
         $session->userId = $userId;
         $session->createdAt = $createdAt;
-        $session->lastSeenAt = TimeHelper::getSqlDateTime();
+        $session->lastSeenAt = TimeHelper::nowMs();
         $session->expiresAt = $expiresAt;
         $session->sync();
 
@@ -144,18 +145,18 @@ class SessionsActions extends DbActions
     public function sweepStalePendingRegistrations(int $ttlSeconds): int
     {
         return $this->objectCollection->releaseStalePendingRegistrations(
-            date('Y-m-d H:i:s', time() - $ttlSeconds),
+            TimeHelper::nowMs() - $ttlSeconds * TimeConstants::MS_PER_SECOND,
         );
     }
 
     /**
      * Computes a session expiry timestamp from the configured session lifetime.
      *
-     * @return string Expiry as an SQL datetime (now + HILOS_SESSION_COOKIE_MAX_AGE)
+     * @return int Expiry in epoch milliseconds (now + HILOS_SESSION_COOKIE_MAX_AGE)
      * @throws EnvException When the key is invalid, uncataloged, or its value is not an integer
      */
-    public static function expiryFromNow(): string
+    public static function expiryFromNow(): int
     {
-        return date('Y-m-d H:i:s', time() + Hilos::$env[EnvConstants::HILOS_SESSION_COOKIE_MAX_AGE]->int());
+        return TimeHelper::nowMs() + Hilos::$env[EnvConstants::HILOS_SESSION_COOKIE_MAX_AGE]->int() * TimeConstants::MS_PER_SECOND;
     }
 }

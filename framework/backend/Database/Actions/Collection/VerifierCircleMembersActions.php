@@ -19,6 +19,7 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
 use Hilos\Database\View\Item\VerifierCircleMember;
 use Hilos\HilosException;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * VerifierCircleMembersActions - write operations for the VerifierCircleMembers collection.
@@ -68,6 +69,7 @@ class VerifierCircleMembersActions extends DbActions
         $member = $objectClass::create();
         $member->identityType = $identityType;
         $member->identifier = $identifier;
+        $member->createdAt = TimeHelper::nowMs();
         try {
             $member->sync();
         } catch (DuplicateEntryException) {

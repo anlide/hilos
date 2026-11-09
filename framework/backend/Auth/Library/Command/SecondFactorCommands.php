@@ -967,7 +967,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
             throw new ValidationException(SecondFactorMessages::STEP_EXPIRED);
         }
 
-        if ($until <= TimeHelper::getSqlDateTime()) {
+        if ($until <= TimeHelper::nowMs()) {
             $this->library->announceSecondFactorCanceled(
                 $acting,
                 AuthFlowOutcome::rejectTo(

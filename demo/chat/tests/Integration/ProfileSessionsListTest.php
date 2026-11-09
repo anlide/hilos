@@ -154,9 +154,9 @@ final class ProfileSessionsListTest extends IntegrationTestCase
 
         foreach (['Europe/Warsaw', null] as $zone) {
             Hilos::$db->sessions[$selfSessionId]->actions->setBrowserTimeZone($zone);
-            // Fixture-only clock control: the public action stamps now, not a chosen SQL instant.
+            // Fixture-only clock control: the public action stamps now, not a chosen instant.
             $session = Hilos::$db->getObjectCollection(ChatDbContext::sessions)->get($selfSessionId);
-            $session->lastSeenAt = '2026-01-01 01:30:00';
+            $session->lastSeenAt = 1767231000000;
             $session->sync();
             while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
                 if ($signal->data instanceof DbSyncUpdatedSignalData && $signal->data->collectionKey === ChatDbContext::sessions) {
@@ -408,9 +408,9 @@ final class ProfileSessionsListTest extends IntegrationTestCase
         // Fixture-only dates through the mounted ORM; no production write API accepts a chosen clock.
         foreach ([$selfSession, $otherSession] as $session) {
             $object = Hilos::$db->getObjectCollection(ChatDbContext::sessions)->get($session->id);
-            $object->createdAt = '2026-01-01 00:00:00';
-            $object->lastSeenAt = '2026-01-01 00:30:00';
-            $object->expiresAt = $session->id === $selfSession->id ? '2026-01-02 00:00:00' : null;
+            $object->createdAt = 1767225600000;
+            $object->lastSeenAt = 1767227400000;
+            $object->expiresAt = $session->id === $selfSession->id ? 1767312000000 : null;
             $object->sync();
         }
 

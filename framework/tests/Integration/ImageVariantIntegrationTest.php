@@ -9,6 +9,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
@@ -48,6 +49,7 @@ use Hilos\Fs\Exception\FileWriteException;
 use Hilos\Hilos;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
+use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionProperty;
 
@@ -642,8 +644,9 @@ final class ImageVariantIntegrationTest extends FrameworkIntegrationTestCase
     private function session(int $userId): string
     {
         $token = bin2hex(random_bytes(16));
-        Database::sqlRun('INSERT INTO hilos_session (token, user_id, expires_at) VALUES (?, ?, ?)',
-            [$token, $userId, date('Y-m-d H:i:s', time() + 3600)]);
+        $now = TimeHelper::nowMs();
+        Database::sqlRun('INSERT INTO hilos_session (token, user_id, created_at, last_seen_at, expires_at) VALUES (?, ?, ?, ?, ?)',
+            [$token, $userId, $now, $now, $now + TimeConstants::SECONDS_PER_HOUR * TimeConstants::MS_PER_SECOND]);
         return $token;
     }
 

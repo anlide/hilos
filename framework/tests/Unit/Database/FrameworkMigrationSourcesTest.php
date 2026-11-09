@@ -82,6 +82,7 @@ final class FrameworkMigrationSourcesTest extends TestCase
                 '20261109000848893922_HIL-1918_bootstrap_moments/admin_view_mode_latch',
                 '20261109000848893922_HIL-1918_bootstrap_moments/database_marker',
                 '20261109000848893922_HIL-1918_bootstrap_moments/migration_claim',
+                '20261109120150360881_HIL-1919_session_moments/session',
             ],
             array_map(
                 static fn (FrameworkMigrationPart $part): string => $part->key(),
@@ -107,6 +108,25 @@ final class FrameworkMigrationSourcesTest extends TestCase
             $this->assertNull($schema->unit($part->unit)->downPath);
         }
         $catalog->verifyCurrentStubs($units);
+    }
+
+    public function testRealSessionMomentsCarryBothPartsInTheirChainsWithCurrentStubHashes(): void
+    {
+        $schema = new FrameworkSchemaCatalog();
+        $catalog = new FrameworkMigrationCatalog($schema);
+        $change = '20261109120150360881_HIL-1919_session_moments';
+        $session = $catalog->part($change, 'session');
+        $circle = $catalog->part($change, 'verifier_circle');
+
+        $this->assertSame(['20261022124515804554_HIL-1582_browser_time_zones/session'], $session->requires);
+        $this->assertSame([], $circle->requires);
+        foreach ([$session, $circle] as $part) {
+            $this->assertFalse($part->introducesUnit);
+            $unit = $schema->unit($part->unit);
+            $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->upPath)), $part->afterStubUpSha256);
+            $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->downPath)), $part->afterStubDownSha256);
+        }
+        $catalog->verifyCurrentStubs(['session', 'verifier_circle']);
     }
 
     public function testErasureStorageUnitsAreIntroducedOnceInDependencyOrder(): void

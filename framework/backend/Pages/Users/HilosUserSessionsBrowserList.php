@@ -109,7 +109,6 @@ final class HilosUserSessionsBrowserList
                     Session::expiresAt,
                     Session::impersonatorUserId,
                 ],
-                BrowserListFieldKey::SQL_MOMENTS => [Session::createdAt, Session::lastSeenAt, Session::expiresAt],
             ],
             [
                 BrowserListFieldKey::SOURCE => self::RT_CONNECTIONS,

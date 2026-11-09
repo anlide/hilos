@@ -22,6 +22,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property-read ?int $id
  * @property string $identityType
  * @property string $identifier
+ * @property int $createdAt
  */
 class VerifierCircleMember extends Object_
 {
@@ -30,11 +31,12 @@ class VerifierCircleMember extends Object_
     public const string id = 'id';
     public const string identityType = 'identityType';
     public const string identifier = 'identifier';
+    public const string createdAt = 'createdAt';
 
     /**
      * Magic getter for entity properties.
      *
-     * @param string $property Property name (id, identityType, identifier)
+     * @param string $property Property name (id, identityType, identifier, createdAt)
      * @return mixed Property value
      * @throws DatabaseException When the property is not a known VerifierCircleMember field
      */
@@ -44,6 +46,7 @@ class VerifierCircleMember extends Object_
             self::id => $this->entity->id,
             self::identityType => $this->entity->identity_type,
             self::identifier => $this->entity->identifier,
+            self::createdAt => $this->entity->created_at,
             default => parent::__get($property),
         };
     }
@@ -51,7 +54,7 @@ class VerifierCircleMember extends Object_
     /**
      * Magic setter for entity properties.
      *
-     * @param string $property Property name (identityType, identifier)
+     * @param string $property Property name (identityType, identifier, createdAt)
      * @param mixed $value Value to set
      * @throws DatabaseException When the property cannot be set on a VerifierCircleMember
      */
@@ -60,6 +63,7 @@ class VerifierCircleMember extends Object_
         match ($property) {
             self::identityType => $this->entity->identity_type = (string)$value,
             self::identifier => $this->entity->identifier = (string)$value,
+            self::createdAt => $this->entity->created_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }

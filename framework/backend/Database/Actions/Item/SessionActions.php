@@ -8,6 +8,7 @@ use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
 use Hilos\Auth\Session\BrowserTimeZone;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Session\SessionToken;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
@@ -46,7 +47,7 @@ class SessionActions extends DbActions
         }
 
         $this->object->userId = $userId;
-        $this->object->lastSeenAt = TimeHelper::getSqlDateTime();
+        $this->object->lastSeenAt = TimeHelper::nowMs();
         $this->object->expiresAt = SessionsActions::expiryFromNow();
         $this->object->sync();
     }
@@ -92,7 +93,7 @@ class SessionActions extends DbActions
 
         $this->object->token = $newToken;
         $this->object->userId = $userId;
-        $this->object->lastSeenAt = TimeHelper::getSqlDateTime();
+        $this->object->lastSeenAt = TimeHelper::nowMs();
         $this->object->expiresAt = SessionsActions::expiryFromNow();
         $this->object->sync();
     }
@@ -129,7 +130,7 @@ class SessionActions extends DbActions
         $this->object->userId = null;
         $this->object->pendingAck = null;
         $this->object->impersonatorUserId = null;
-        $this->object->lastSeenAt = TimeHelper::getSqlDateTime();
+        $this->object->lastSeenAt = TimeHelper::nowMs();
         $this->object->sync();
     }
 
@@ -162,7 +163,7 @@ class SessionActions extends DbActions
         $this->object->userId = null;
         $this->object->pendingAck = null;
         $this->object->impersonatorUserId = null;
-        $this->object->lastSeenAt = TimeHelper::getSqlDateTime();
+        $this->object->lastSeenAt = TimeHelper::nowMs();
         $this->object->sync();
     }
 
@@ -212,7 +213,7 @@ class SessionActions extends DbActions
         }
 
         $this->object->pendingRegistrationIdentifier = $identifier;
-        $this->object->pendingRegistrationSince = TimeHelper::getSqlDateTime();
+        $this->object->pendingRegistrationSince = TimeHelper::nowMs();
         $this->object->sync();
     }
 
@@ -357,12 +358,12 @@ class SessionActions extends DbActions
      *
      * @param int $userId Person whose sign-in is being held
      * @param string $mode Screen the sign-in waits on (a {@see SecondFactorPendingMode} value)
-     * @param string $until Moment the wait runs out (SQL datetime)
+     * @param int $until Moment the wait runs out, in epoch milliseconds
      * @param ?string $ack Success ack to show once the step passes, or null when none is owed
      * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
      * @throws HilosException On database error
      */
-    public function holdPendingSecondFactor(int $userId, string $mode, string $until, ?string $ack): void
+    public function holdPendingSecondFactor(int $userId, string $mode, int $until, ?string $ack): void
     {
         $this->ensureCanWrite();
 
@@ -462,7 +463,7 @@ class SessionActions extends DbActions
             throw new ItemNotFoundForUpdateException('Session not found for touch (id is null)');
         }
 
-        $this->object->lastSeenAt = TimeHelper::getSqlDateTime();
+        $this->object->lastSeenAt = TimeHelper::nowMs();
         $this->object->expiresAt = SessionsActions::expiryFromNow();
         $this->object->sync();
     }
@@ -582,7 +583,7 @@ class SessionActions extends DbActions
             throw new ItemNotFoundForUpdateException('Session not found for expire (id is null)');
         }
 
-        $this->object->expiresAt = date('Y-m-d H:i:s', time() - 1);
+        $this->object->expiresAt = TimeHelper::nowMs() - TimeConstants::MS_PER_SECOND;
         $this->object->sync();
     }
 }

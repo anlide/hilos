@@ -56,6 +56,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Utils\Helpers\TimeHelper;
 use JsonException;
 use Random\RandomException;
 
@@ -299,7 +300,7 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $cardId = $card->id;
         $cardToken = $card->token;
         $row = $card->actions->object;
-        $row->expiresAt = date('Y-m-d H:i:s', time() - 1);
+        $row->expiresAt = TimeHelper::nowMs() - TimeConstants::MS_PER_SECOND;
         $row->sync();
 
         $this->unblock($userId);

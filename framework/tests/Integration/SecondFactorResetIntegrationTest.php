@@ -78,6 +78,9 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
 
     private const string CREATED_AT = '2026-09-24 09:00:00';
 
+    /** The session row keeps epoch milliseconds, unlike the reminder frame that carries the text above. */
+    private const int SESSION_CREATED_AT = 1790240400000;
+
     private const string SESSION_TOKEN = 'cc00000000000000000000000000cc94';
 
     private const string ACCEPT_KEY = 'accept-profile';
@@ -127,7 +130,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         SourceChangeBus::reset();
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
 
-        self::seedSession(self::SESSION_TOKEN, self::USER_ID, self::CREATED_AT, null);
+        self::seedSession(self::SESSION_TOKEN, self::USER_ID, self::SESSION_CREATED_AT, null);
         $this->library = new SecondFactorResetTestLibrary();
     }
 

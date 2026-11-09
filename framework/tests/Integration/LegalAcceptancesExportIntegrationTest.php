@@ -87,7 +87,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
     private const string OTHER_ADMIN_KEY = 'accept-legal-export-other-admin';
     private const string PERSON_KEY = 'accept-legal-export-person';
     private const string IMPERSONATED_KEY = 'accept-legal-export-impersonated';
-    private const string CREATED_AT = '2026-01-01 00:00:00';
+    private const int CREATED_AT = 1767225600000;
     private const string PAST = '2026-01-01 00:00:00';
 
     /** The person every refusal and erasure case is about: no administrator. */
@@ -1357,7 +1357,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         self::seedSession(self::OTHER_ADMIN_TOKEN, self::OTHER_ADMIN_ID, self::CREATED_AT, null);
         self::seedSession(self::PERSON_TOKEN, self::PERSON_ID, self::CREATED_AT, null);
         self::seedSession(self::IMPERSONATED_TOKEN, self::ADMIN_ID, self::CREATED_AT, null, self::OTHER_ADMIN_ID);
-        self::seedSession(self::EXPIRED_TOKEN, self::ADMIN_ID, self::CREATED_AT, '2026-01-01 00:01:00');
+        self::seedSession(self::EXPIRED_TOKEN, self::ADMIN_ID, self::CREATED_AT, 1767225660000);
         self::seedSession(self::ANONYMOUS_TOKEN, null, self::CREATED_AT, null);
     }
 

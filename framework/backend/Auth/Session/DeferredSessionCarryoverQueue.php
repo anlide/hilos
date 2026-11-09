@@ -217,7 +217,7 @@ final class DeferredSessionCarryoverQueue
      *
      * @param array<mixed> $data One decoded line
      * @return SessionCarryover The captured session
-     * @throws InvalidFormatException When the line names no token, no creation time, or bad identities
+     * @throws InvalidFormatException When the line names no token, no integer creation moment, a malformed expiry, or bad identities
      */
     public static function carryoverFromArray(array $data): SessionCarryover
     {
@@ -225,11 +225,11 @@ final class DeferredSessionCarryoverQueue
         $createdAt = $data['createdAt'] ?? null;
         $expiresAt = $data['expiresAt'] ?? null;
         $identities = $data['identities'] ?? null;
-        if (!is_string($token) || $token === '' || !is_string($createdAt) || $createdAt === '') {
-            throw new InvalidFormatException('queued session names no token or no creation time');
+        if (!is_string($token) || $token === '' || !is_int($createdAt)) {
+            throw new InvalidFormatException('queued session names no token or no integer creation moment');
         }
 
-        if ($expiresAt !== null && !is_string($expiresAt)) {
+        if ($expiresAt !== null && !is_int($expiresAt)) {
             throw new InvalidFormatException('queued session carries a malformed expiry');
         }
 
