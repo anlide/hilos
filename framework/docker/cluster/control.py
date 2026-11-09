@@ -1054,6 +1054,42 @@ def mend(stand, *node_ids):
                       f"with {', '.join(node.id for node in rest)}\n", "")
 
 
+def _database_island(stand, services, command):
+    """Database data members and voters on both sides, validated before touching any route."""
+    servers = {server.service: server for server in (*stand.database_members, *stand.database_voters)}
+    for service in services:
+        if service not in servers:
+            raise StandRefused(f"unknown database server '{service}' (expected one of: {' '.join(servers)})")
+    island = [servers[service] for service in services]
+    rest = [server for service, server in servers.items() if service not in services]
+    if not island or not rest:
+        raise StandRefused(f"usage: cluster {command} <server>... — the island must leave some database server outside it")
+    for server in servers.values():
+        if not server.ip:
+            raise StandRefused(f"database server {server.service} has no static IP address")
+    return island, rest
+
+
+def db_cut(stand, *services):
+    """Cut database servers off their peers, keeping every client and proxy link."""
+    island, rest = _database_island(stand, services, "db-cut")
+    refused = _route_island(island, rest, "add", "cut")
+    if refused is not None:
+        return refused
+    return Outcome(0, f"cluster: cut database servers {', '.join(server.service for server in island)} "
+                      f"off {', '.join(server.service for server in rest)}\n", "")
+
+
+def db_mend(stand, *services):
+    """Lift database routes from both sides, including servers whose routes are already gone."""
+    island, rest = _database_island(stand, services, "db-mend")
+    refused = _route_island(island, rest, "del", "mend")
+    if refused is not None:
+        return refused
+    return Outcome(0, f"cluster: mended database servers {', '.join(server.service for server in island)} "
+                      f"with {', '.join(server.service for server in rest)}\n", "")
+
+
 def logs(stand, node_id):
     """Follow a node's container logs."""
     return compose(stand, "logs", "-f", stand.member(node_id).service, capture=False)
@@ -1144,6 +1180,8 @@ def cluster_directory_exec(stand, node_id, *argv):
 
 def _database_member(stand, member):
     """A member named by service, with one refusal shared by SQL and lifecycle switches."""
+    if any(voter.service == member for voter in stand.database_voters):
+        raise StandRefused(f"{member} is a database voter: it holds no data and answers no SQL")
     database = next((m for m in stand.database_members if m.service == member), None)
     if database is None:
         raise StandRefused(f"unknown database member '{member}' (expected one of: "
@@ -1163,6 +1201,34 @@ def db_start(stand, member):
     database = _database_member(stand, member)
     return _said(compose(stand, "up", "-d", database.service),
                  f"cluster: started database member {database.container}")
+
+
+def _database_voter(stand, voter):
+    """A data-free voter named by service, never a SQL member."""
+    database = next((v for v in stand.database_voters if v.service == voter), None)
+    if database is None:
+        raise StandRefused(f"unknown database voter '{voter}' (expected one of: "
+                           f"{' '.join(v.service for v in stand.database_voters)})")
+    return database
+
+
+def db_voter_kill(stand, voter):
+    """SIGKILL one database voter, leaving its container for db-voter-start."""
+    database = _database_voter(stand, voter)
+    return _said(_run(["docker", "kill", database.container]),
+                 f"cluster: killed database voter {database.container}")
+
+
+def db_voter_start(stand, voter):
+    """Start the voter's service as the stand's compose declares it."""
+    database = _database_voter(stand, voter)
+    return _said(compose(stand, "up", "-d", database.service),
+                 f"cluster: started database voter {database.container}")
+
+
+def db_voter_log(stand, voter):
+    """The database voter's container log so far, without following it."""
+    return _run(["docker", "logs", _database_voter(stand, voter).container], merge_stderr=True)
 
 
 def node_started_at(stand, node):
@@ -1268,6 +1334,13 @@ def execute(stand, command, *args):
         if len(args) != 1:
             raise StandRefused(f"usage: cluster {command} <member>")
         return (db_kill if command == "db-kill" else db_start)(stand, args[0])
+    if command in ("db-voter-kill", "db-voter-start", "db-voter-log"):
+        if len(args) != 1:
+            raise StandRefused(f"usage: cluster {command} <voter>")
+        return {"db-voter-kill": db_voter_kill, "db-voter-start": db_voter_start,
+                "db-voter-log": db_voter_log}[command](stand, args[0])
+    if command in ("db-cut", "db-mend"):
+        return (db_cut if command == "db-cut" else db_mend)(stand, *args)
     if command == "db-proxy":
         if args:
             raise StandRefused("usage: cluster db-proxy")

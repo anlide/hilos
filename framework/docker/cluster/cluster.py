@@ -53,6 +53,11 @@ Usage: framework/docker/cluster/run <compose-file> <command> [args]
                        to name why a replica stopped (HIL-1229)
   db-kill <member>     SIGKILL one member of a clustered database (scenarios 27 and 28, HIL-1231)
   db-start <member>    start that member's existing container again
+  db-voter-kill <voter>  SIGKILL one database voter, retaining its container
+  db-voter-start <voter>  start that database voter's service again
+  db-voter-log <voter>  print one database voter's container log so far, without following
+  db-cut <server>...   cut data members or voters off the other database servers
+  db-mend <server>...  lift a database cut from both sides
   db-proxy             print the state of every server behind the stand's database proxy
   scenarios [n ...]    run the scenario matrix on a fresh stand: the stand's scenarios, or
                        the ones named, which must be the stand's; open saved freezes via CLI
@@ -90,6 +95,7 @@ COMMANDS = ("up", "down", "restart", "status", "inspect", "inspect-local", "clie
             "container-id", "container-log",
             "partition", "heal", "cut", "mend", "logs",
             "stranger", "own-directory", "own-env", "db-sql", "db-log", "db-kill", "db-start",
+            "db-voter-kill", "db-voter-start", "db-voter-log", "db-cut", "db-mend",
             "db-proxy", "scenarios", "e2e", "unit")
 
 

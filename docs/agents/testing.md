@@ -870,7 +870,7 @@ They are not run or counted as passed by any current matrix.
 Scenario 31 belongs on file-gallery-manager (not in the code yet — HIL-2032).
 Scenarios 26/27/28 return on concert-tickets (not in the code yet — HIL-2041);
 their component model and preconditions count votes separately from data
-members (not in the code yet — HIL-2026). Their two-data-node + `garbd` form
+members. Their two-data-node + `garbd` form
 belongs on roblox-game-server (not in the code yet — HIL-2040).
 
 The one-time schema rollout is needed on one server too (HIL-1228). Nodes that
@@ -1076,8 +1076,8 @@ The harness uses the database service's application credentials. Scenario 26
 asks every member of a multi-primary; scenario 31 asks every replica. A proxy
 is labeled `hilos.database.proxy: "true"`; scenario 28 reads its server states.
 A Galera arbitrator (`garbd`) votes and stores no data: it is declared apart
-from the data members, never labeled `hilos.database.member` and never asked
-SQL (not in the code yet — HIL-2026). Scenario 26 asks for the READ bit of
+from the data members, labeled `hilos.database.voter: "true"`, never labeled
+`hilos.database.member` and never asked SQL. Scenario 26 asks for the READ bit of
 `wsrep_sync_wait`, not a value of at least 1 (not in the code yet — HIL-2027).
 binance-btc-tracker, ecommerce-shop and online-testing declare no database
 member or proxy label; each labels its single MariaDB `hilos.role: database`.

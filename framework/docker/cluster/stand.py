@@ -31,6 +31,9 @@ the harness signs in there as on the database service. Scenario 26 asks every me
 multi-primary; scenario 31 asks every replica.
 The proxy is labelled `hilos.database.proxy: "true"`; scenario 28 reads its server states.
 
+A Galera arbitrator is labelled `hilos.database.voter: "true"`. It adds a vote without storing
+data or answering SQL, and carries none of the member, database-role or proxy labels.
+
 The file is read whole through `docker compose config` as JSON rather than parsed as YAML:
 the host has no YAML parser, and compose resolves the anchors, the relative paths and the
 defaults on its way out, so what is read here is what compose itself would run.
@@ -40,6 +43,7 @@ containers (StandRefused), in one line naming the service and what it lacks.
 """
 
 import json
+import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -61,6 +65,10 @@ DATABASE_MEMBER = "true"
 # The proxy whose per-member states the harness reads for a clustered database.
 DATABASE_PROXY_LABEL = "hilos.database.proxy"
 DATABASE_PROXY = "true"
+# An arbitrator votes in Galera without storing data or answering SQL.
+DATABASE_VOTER_LABEL = "hilos.database.voter"
+DATABASE_VOTER = "true"
+GARBD_PROGRAM = "garbd"
 # What the database image of a stand is started with, and what db-sql signs in with.
 DATABASE_ENV = ("MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DATABASE")
 # The image's own declaration of the member a replica follows. Its schema and users arrive
@@ -115,6 +123,16 @@ class Database:
     image: str = ""
     # The service this member replicates, or None for a member that is not a replica.
     replica_of: str | None = None
+    # The service's only static address, or None when compose does not assign one.
+    ip: str | None = None
+
+
+@dataclass(frozen=True)
+class DatabaseVoter:
+    """One Galera arbitrator: a vote with no data or SQL endpoint."""
+    service: str
+    container: str
+    ip: str
 
 
 @dataclass(frozen=True)
@@ -171,6 +189,7 @@ class Stand:
     # Proxy container labelled by the stand, or None on a stand without one.
     database_proxy: str | None = None
     e2e: E2e | None = None
+    database_voters: tuple = ()
 
     @property
     def database_servers(self):
@@ -181,6 +200,16 @@ class Stand:
     def database_replicas(self):
         """Members started as replicas of the stand's database (HIL-1229)."""
         return tuple(member for member in self.database_members if member.replica_of is not None)
+
+    @property
+    def database_sql_backends(self):
+        """Data members that answer SQL without following a primary."""
+        return tuple(member for member in self.database_members if member.replica_of is None)
+
+    @property
+    def database_votes(self):
+        """The votes of data members and arbitrators; replicas do not vote."""
+        return len(self.database_sql_backends) + len(self.database_voters)
 
     @property
     def demo_dir(self):
@@ -260,7 +289,9 @@ def stand_from_config(shown, compose, config):
 
     members = {node_id: node for node_id, node in sorted(nodes.items()) if node.profile is None}
     entry = _entry(shown, block, services, network_keys)
+    _refuse_misdeclared_garbd(shown, services)
     database = _database(shown, project, services)
+    database_members = _database_members(shown, project, services, database)
     return Stand(
         compose=compose,
         project=project,
@@ -277,9 +308,10 @@ def stand_from_config(shown, compose, config):
         scenarios=_scenarios(shown, block.get("scenarios")),
         slave_work_grace_sec=_slave_work_grace_sec(shown, services, members),
         database=database,
-        database_members=_database_members(shown, project, services, database),
+        database_members=database_members,
         database_proxy=_database_proxy(shown, project, services),
         e2e=_e2e(shown, project, block.get("e2e"), services, entry),
+        database_voters=_database_voters(shown, project, services, database_members, network_keys),
     )
 
 
@@ -452,8 +484,81 @@ def _database_members(shown, project, services, database):
             data_dir=data_dir,
             image=spec.get("image") or "",
             replica_of=database.service,
+            ip=_static_ip(spec),
         ))
     return tuple(members)
+
+
+def _static_ip(spec):
+    """The service's only static IPv4 address, or None when it has no single address."""
+    addresses = [net["ipv4_address"] for net in (spec.get("networks") or {}).values()
+                 if isinstance(net, dict) and net.get("ipv4_address")]
+    return addresses[0] if len(addresses) == 1 else None
+
+
+def _runs_garbd(spec):
+    """Whether the resolved entrypoint or command names the Galera arbitrator program."""
+    for field in ("entrypoint", "command"):
+        elements = spec.get(field) or ()
+        if isinstance(elements, str):
+            elements = (elements,)
+        for element in elements:
+            try:
+                words = shlex.split(element)
+            except ValueError:
+                words = element.split()
+            if any(Path(word).name == GARBD_PROGRAM for word in words):
+                return True
+    return False
+
+
+def _refuse_misdeclared_garbd(shown, services):
+    """Refuse arbitrators declared as SQL services before asking for database credentials."""
+    for service, spec in services.items():
+        labels = spec.get("labels") or {}
+        runs_garbd = _runs_garbd(spec)
+        if runs_garbd:
+            forbidden = [label for label in (DATABASE_MEMBER_LABEL, DATABASE_PROXY_LABEL) if label in labels]
+            if labels.get(DATABASE_LABEL) == DATABASE_ROLE:
+                forbidden.append(DATABASE_LABEL)
+            if forbidden:
+                raise StandRefused(f"{shown}: service {service} runs {GARBD_PROGRAM} but carries "
+                                   f"{', '.join(forbidden)}: an arbitrator is only a database voter")
+            if labels.get(DATABASE_VOTER_LABEL) != DATABASE_VOTER:
+                raise StandRefused(f"{shown}: service {service} runs {GARBD_PROGRAM} without "
+                                   f"{DATABASE_VOTER_LABEL}: {DATABASE_VOTER}")
+        elif labels.get(DATABASE_VOTER_LABEL) == DATABASE_VOTER:
+            raise StandRefused(f"{shown}: service {service} carries {DATABASE_VOTER_LABEL} "
+                               f"but does not run {GARBD_PROGRAM}")
+
+
+def _database_voters(shown, project, services, members, network_keys):
+    """Read arbitrators on the node network and refuse an invalid voting database shape."""
+    labelled = sorted(service for service, spec in services.items()
+                      if (spec.get("labels") or {}).get(DATABASE_VOTER_LABEL) == DATABASE_VOTER)
+    if not labelled:
+        return ()
+    voters = []
+    for service in labelled:
+        spec = services[service]
+        if spec.get("profiles"):
+            raise StandRefused(f"{shown}: database voter {service} is under a profile")
+        addresses = {key: net["ipv4_address"] for key, net in (spec.get("networks") or {}).items()
+                     if isinstance(net, dict) and net.get("ipv4_address")}
+        if len(addresses) != 1 or next(iter(addresses)) not in network_keys:
+            raise StandRefused(f"{shown}: database voter {service} must have one address on the node network")
+        voters.append(DatabaseVoter(service, spec.get("container_name") or f"{project}-{service}-1",
+                                    next(iter(addresses.values()))))
+    names = ', '.join(labelled)
+    if any(member.replica_of is not None for member in members):
+        raise StandRefused(f"{shown}: database voters {names} cannot accompany database replicas")
+    data = [member for member in members if member.replica_of is None]
+    if len(data) < 2:
+        raise StandRefused(f"{shown}: database voters {names} need at least two data members")
+    votes = len(data) + len(voters)
+    if votes % 2 == 0:
+        raise StandRefused(f"{shown}: database voters {names} make an even number of database votes ({votes})")
+    return tuple(voters)
 
 
 def _database_of(shown, project, services, service, what):
@@ -474,6 +579,7 @@ def _database_of(shown, project, services, service, what):
         name=env["MYSQL_DATABASE"],
         data_dir=data_dir,
         image=spec.get("image") or "",
+        ip=_static_ip(spec),
     )
 
 

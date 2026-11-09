@@ -354,6 +354,7 @@ QUORUM_TIMEOUT = 30.0 * TIMEOUT_SCALE
 CRASH_RECOVERY_TIMEOUT = 90.0 * TIMEOUT_SCALE
 DB_MEMBER_DEATH_TIMEOUT = 60.0 * TIMEOUT_SCALE
 DB_MEMBER_RETURN_TIMEOUT = 120.0 * TIMEOUT_SCALE
+DB_VOTER_JOIN_TIMEOUT = 30.0 * TIMEOUT_SCALE
 # A replica must catch up to the primary's position after every preceding scenario wrote.
 REPLICA_CATCH_UP_TIMEOUT = 30.0 * TIMEOUT_SCALE
 PRIMARY_POSITION_SQL = "SELECT @@GLOBAL.gtid_binlog_pos"
@@ -5179,6 +5180,37 @@ def member_status(member):
     return status
 
 
+def wait_database_votes(timeout=DB_VOTER_JOIN_TIMEOUT):
+    """Wait for every data member to see the voters in the full component; never retry a miss."""
+    if not STAND.database_voters:
+        return
+    deadline = time.monotonic() + timeout
+    while True:
+        sizes = {}
+        for member in STAND.database_members:
+            raw = db_sql(CLUSTER_STATUS_SQL, member.service)
+            status = dict((name.lower(), value) for name, _, value in
+                          (line.partition("\t") for line in raw.splitlines()))
+            sizes[member.service] = status.get("wsrep_cluster_size", "unavailable")
+        if all(size == str(STAND.database_votes) for size in sizes.values()):
+            return
+        if time.monotonic() >= deadline:
+            voters = ", ".join(voter.service for voter in STAND.database_voters)
+            seen = ", ".join(f"{member}={size}" for member, size in sizes.items())
+            raise AssertionError(f"database voters {voters} did not join within {timeout:.0f}s: "
+                                 f"expected component size {STAND.database_votes}, saw {seen}")
+        time.sleep(POLL_INTERVAL)
+
+
+def database_shape_words():
+    """Describe the full component's data members and voters, with the counts in words."""
+    members = in_words(len(STAND.database_members))
+    voters = len(STAND.database_voters)
+    if not voters:
+        return f"{members} members"
+    return f"{members} data members and {in_words(voters)} voter{'s' if voters != 1 else ''}"
+
+
 def scenario_26_database_is_one_cluster():
     """Every member of the stand's clustered database is one synced cluster the application writes
     to (HIL-1230).
@@ -5187,7 +5219,7 @@ def scenario_26_database_is_one_cluster():
     member, or a database quietly living on one member, reads and writes as well as three. So the
     shape itself is asked, of each member the stand declares, through db-sql on that member:
 
-    - the cluster it sees is as large as the stand declares, and it is in the primary component;
+    - the component it sees includes every data member and voter the stand declares, and is Primary;
     - it is Synced, that is it has applied what the cluster committed and takes writes;
     - wsrep_sync_wait is at least 1: a read there waits for the writes the other members
       committed, which is the READ_AFTER_WRITE the demo declares (docs/agents/app-topology.md,
@@ -5196,21 +5228,25 @@ def scenario_26_database_is_one_cluster():
       address the nodes know leads to every member, so every member is written to. The daemons
       and the workers of the nodes hold more long connections than there are members, and the
       proxy lays each next one on the least busy member.
+    - no voter is a backend of the proxy: HAProxy server names must match service names, as
+      member_back() also requires when checking a returned member's admission.
 
-    Only reads, and asked once: the stand has converged before the matrix, so there is nothing to
-    wait for, and every miss is a hard failure naming the member. A user without the PROCESS
-    privilege still sees every thread of its own account in PROCESSLIST, and the application signs
-    in as the same user db-sql does, so no privilege is added for this.
+    Only reads. A stand with voters first waits for every data member to see the full component;
+    without voters it is asked once, as before. Every miss is a hard failure, never retried.
+    A user without the PROCESS privilege still sees every thread of its own account in PROCESSLIST,
+    and the application signs in as the same user db-sql does, so no privilege is added for this.
     """
+    wait_database_votes()
     members = [member.service for member in STAND.database_members]
-    count = len(members)
+    count = STAND.database_votes
     user = STAND.database.user
     sync_waits = set()
     held = {}
     for member in members:
         status = member_status(member)
         size = status.get("wsrep_cluster_size")
-        assert size == str(count), f"{member} sees a database cluster of {size}, the stand declares {count} members"
+        assert size == str(count), (f"{member} sees a database cluster of {size}, "
+                                    f"the stand declares {database_shape_words()}")
         state = status.get("wsrep_cluster_status")
         assert state == "Primary", f"{member} is outside the primary component: wsrep_cluster_status={state}"
         local = status.get("wsrep_local_state_comment")
@@ -5230,10 +5266,17 @@ def scenario_26_database_is_one_cluster():
         assert held[member] >= 1, (f"{member} holds no connection of {user}: the one address does not lead "
                                    "to every member, so the database is not written as a multi-primary")
 
+    if STAND.database_proxy and STAND.database_voters:
+        states = proxy_states()
+        assert states, ("could not read HAProxy backend states: "
+                        "cannot verify that database voters are absent")
+        for voter in STAND.database_voters:
+            assert voter.service not in states, f"database voter {voter.service} appears among HAProxy backends: {states}"
+
     spread = ", ".join(f"{held[member]} connection(s) on {member}" if index == 0 else f"{held[member]} on {member}"
                        for index, member in enumerate(members))
     waits = "/".join(str(value) for value in sorted(sync_waits))
-    return (f"one cluster of {in_words(count)} members, all synced in the primary component with "
+    return (f"one cluster of {database_shape_words()}, all synced in the primary component with "
             f"wsrep_sync_wait={waits}; the application holds {spread}")
 
 
@@ -5436,10 +5479,10 @@ def database_value(member, node):
 
 
 def assert_member_synced(member, count):
-    """Assert the same size, Primary and Synced checks as scenario 26."""
+    """Assert the expected component size in votes, Primary and Synced, as in scenario 26."""
     status = member_status(member)
     size = status.get("wsrep_cluster_size")
-    assert size == str(count), f"{member} sees a database cluster of {size}, the stand declares {count} members"
+    assert size == str(count), f"{member} sees a database cluster of {size}, expected component size is {count}"
     state = status.get("wsrep_cluster_status")
     assert state == "Primary", f"{member} is outside the primary component: wsrep_cluster_status={state}"
     local = status.get("wsrep_local_state_comment")
@@ -5449,9 +5492,10 @@ def assert_member_synced(member, count):
 def scenario_27_database_member_dies_under_load():
     """Every node writes through the survivors when the member under the first probe dies."""
     wait_converge(ALL_NODES)
+    wait_database_votes()
     members = [member.service for member in STAND.database_members]
     for member in members:
-        assert_member_synced(member, len(members))
+        assert_member_synced(member, STAND.database_votes)
     by_host = database_members_by_hostname()
     started_at = {}
     for node in ALL_NODES:
@@ -5480,9 +5524,9 @@ def scenario_27_database_member_dies_under_load():
         for member in survivors:
             status = member_status(member)
             size = status.get("wsrep_cluster_size")
-            expected = len(survivors)
+            expected = STAND.database_votes - 1
             assert size == str(expected), (f"{member} sees a database cluster of {size} after {victim} "
-                                           f"was killed, {expected} members are left")
+                                           f"was killed, {expected} votes are left")
             state = status.get("wsrep_cluster_status")
             assert state == "Primary", f"{member} is outside the primary component: wsrep_cluster_status={state}"
             local = status.get("wsrep_local_state_comment")
@@ -5501,21 +5545,22 @@ def scenario_27_database_member_dies_under_load():
         load.stop()
         if killed:
             db_start(victim)
-            _, back = member_back(victim, len(members), DB_MEMBER_RETURN_TIMEOUT)
+            _, back = member_back(victim, STAND.database_votes, DB_MEMBER_RETURN_TIMEOUT)
 
     recovery = ", ".join(f"{node} after {recovered[node]:.1f}s" for node in ALL_NODES)
     return (f"{victim} killed under {MASTERS[0]}'s probe; every node wrote again ({recovery}), "
             f"{MASTERS[0]} through {new_member}; {failed} write(s) failed in the window; "
-            f"{', '.join(survivors)} kept a primary cluster of {in_words(len(survivors))} "
+            f"{', '.join(survivors)} kept a primary cluster of {in_words(STAND.database_votes - 1)} votes "
             f"holding every acknowledged write; {victim} back and synced after {back:.0f}s")
 
 
 def scenario_28_database_member_comes_back_and_catches_up():
     """The returned member catches every confirmed write and takes new links only when Synced."""
     wait_converge(ALL_NODES)
+    wait_database_votes()
     members = [member.service for member in STAND.database_members]
     for member in members:
-        assert_member_synced(member, len(members))
+        assert_member_synced(member, STAND.database_votes)
     victim = next((member for member in sorted(members, reverse=True)
                    if member != STAND.database.service), None)
     assert victim is not None, "no non-primary database member to kill"
@@ -5535,7 +5580,7 @@ def scenario_28_database_member_comes_back_and_catches_up():
         db_start(victim)
         started = True
         since_start = time.monotonic()
-        synced, up = member_back(victim, len(members), DB_MEMBER_RETURN_TIMEOUT, since_start)
+        synced, up = member_back(victim, STAND.database_votes, DB_MEMBER_RETURN_TIMEOUT, since_start)
         load.stop()
 
         for node in ALL_NODES:
@@ -5551,21 +5596,22 @@ def scenario_28_database_member_comes_back_and_catches_up():
         load.stop()
         if killed and not started:
             db_start(victim)
-            member_back(victim, len(members), DB_MEMBER_RETURN_TIMEOUT)
+            member_back(victim, STAND.database_votes, DB_MEMBER_RETURN_TIMEOUT)
 
-    return (f"{victim} killed and brought back: synced in a cluster of {in_words(len(members))} "
+    return (f"{victim} killed and brought back: synced in a cluster of {database_shape_words()} "
             f"after {synced:.0f}s and up behind the proxy after {up:.0f}s, holding every write "
             f"acknowledged while it was away; none of {len(after_start)} writes failed while it came back")
 
 
 class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes master_ram database_members "
-                     "cluster_directory entry database_replicas",
-                     defaults=(0, 0, False, False, 0, False, 0, False, False, 0))):
+                     "cluster_directory entry database_replicas database_votes",
+                     defaults=(0, 0, False, False, 0, False, 0, False, False, 0, 0))):
     """The shape of stand a scenario is written against: at least `masters` masters and `slaves`
     slaves, a stranger, a slave that declares ram, at least `nodes` members in all, every master
     declaring ram - masters that carry placed work themselves - and a database of at least
     `database_members` members, a cluster directory, a browser entry the stand names, and at least
-    `database_replicas` replicas of its database. What a
+    `database_replicas` replicas of its database, and at least `database_votes` votes in the
+    database component, counting data members and voters but not replicas. What a
     scenario names by role - the third master, the second slave - is what it needs."""
 
 
@@ -5594,7 +5640,8 @@ SCENARIOS = [
     # Right after 24 and before every scenario that leans on the shared database: a database that
     # is not one cluster of every member is named here rather than failed for in 11 or 22. It
     # only reads.
-    Scenario("26 database is one cluster", scenario_26_database_is_one_cluster, Need(database_members=2)),
+    Scenario("26 database is one cluster", scenario_26_database_is_one_cluster,
+             Need(database_members=2, database_votes=2)),
     # Keep 24's initial fleet placement, then read fresh global DDL counters before later
     # scenarios can touch the database or replace containers.
     Scenario("40 journal triggers are installed once", scenario_40_journal_triggers_are_installed_once, Need(nodes=2)),
@@ -5639,9 +5686,9 @@ SCENARIOS = [
     # These kill one member only after every shared-database scenario has read the intact stand,
     # and each returns it before the next scenario begins.
     Scenario("27 database member dies under load", scenario_27_database_member_dies_under_load,
-             Need(database_members=3)),
+             Need(database_members=2, database_votes=3)),
     Scenario("28 database member comes back and catches up", scenario_28_database_member_comes_back_and_catches_up,
-             Need(database_members=3)),
+             Need(database_members=2, database_votes=3)),
     # After the ordinary failovers: the master alone must retain waiting work, then start it on a
     # returning slave without another ask. Its full restart removes the ballast before either ceiling.
     Scenario("43 waiting work retries when a node returns", scenario_43_waiting_work_retries_when_a_node_returns,
@@ -5833,7 +5880,8 @@ def unmet_need(stand, scenario):
                               (need.slaves, len(stand.slaves), "slaves"),
                               (need.nodes, len(stand.members), "nodes"),
                               (need.database_members, len(stand.database_members), "database members"),
-                              (need.database_replicas, len(stand.database_replicas), "database replicas")):
+                              (need.database_replicas, len(stand.database_replicas), "database replicas"),
+                              (need.database_votes, stand.database_votes, "database votes")):
         if has < wanted:
             return f"it needs {wanted} {what}, the stand has {has}"
     if need.stranger and stand.stranger is None:
