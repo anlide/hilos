@@ -38,17 +38,17 @@ class Files extends Objects
     /**
      * Lists files nobody has linked yet that were registered before a moment, oldest row first.
      *
-     * @param string $cutoffSql Moment as an SQL datetime; only rows created strictly before it are listed
+     * @param int $cutoffMs Moment as epoch milliseconds; only rows created strictly before it are listed
      * @param int $limit Maximum rows to load
      * @return list<ObjectFile> Unbound file objects, empty when none
      * @throws DatabaseException When the lookup query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
-    public function findUnboundBefore(string $cutoffSql, int $limit): array
+    public function findUnboundBefore(int $cutoffMs, int $limit): array
     {
         return $this->hydrateAll(static::entityClass()::get(
             '`' . EntityFile::bound . '` = 0 AND `' . EntityFile::created_at . '` < ?',
-            [$cutoffSql],
+            [$cutoffMs],
             [EntityFile::id => SqlSortDirection::ASC],
             $limit,
         ));

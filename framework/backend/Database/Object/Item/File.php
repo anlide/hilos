@@ -27,7 +27,7 @@ use Hilos\Files\FileVisibility;
  * @property ?int $ownerUserId
  * @property string $visibility
  * @property bool $bound
- * @property string $createdAt
+ * @property int $createdAt
  */
 class File extends Object_
 {
@@ -86,7 +86,7 @@ class File extends Object_
             self::ownerUserId => $this->entity->owner_user_id = $value === null ? null : (int)$value,
             self::visibility => $this->entity->visibility = (string)$value,
             self::bound => $this->entity->bound = (bool)$value,
-            self::createdAt => $this->entity->created_at = (string)$value,
+            self::createdAt => $this->entity->created_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }

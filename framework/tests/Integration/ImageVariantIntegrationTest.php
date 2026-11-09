@@ -459,7 +459,8 @@ final class ImageVariantIntegrationTest extends FrameworkIntegrationTestCase
         $file = $this->publish();
         $this->complete($file);
         $oldName = $this->copy($file)->storedName;
-        Database::sqlRun('UPDATE hilos_file SET created_at = ? WHERE id = ?', [date('Y-m-d H:i:s', time() - 90000), $file->id]);
+        $oldCreatedAt = TimeHelper::nowMs() - 25 * TimeConstants::SECONDS_PER_HOUR * TimeConstants::MS_PER_SECOND;
+        Database::sqlRun('UPDATE hilos_file SET created_at = ? WHERE id = ?', [$oldCreatedAt, $file->id]);
         Database::sqlRun('INSERT INTO image_variant_link (file_id) VALUES (?)', [$file->id]);
         new ReflectionProperty(AbstractFilesLibraryAgent::class, 'filesSweepBacklog')->setValue($this->library, true);
         $this->library->onTick();

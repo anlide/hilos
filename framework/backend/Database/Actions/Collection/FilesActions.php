@@ -84,7 +84,7 @@ class FilesActions extends DbActions
         $file->ownerUserId = $ownerUserId;
         $file->visibility = $visibility->value;
         $file->bound = false;
-        $file->createdAt = TimeHelper::getSqlDateTime();
+        $file->createdAt = TimeHelper::nowMs();
         $file->sync();
 
         $this->addObjectToCollection($file);

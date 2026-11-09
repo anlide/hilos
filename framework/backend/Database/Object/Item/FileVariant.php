@@ -19,7 +19,7 @@ use Hilos\Database\Object\Collection\FileVariants as ObjectFileVariants;
  * @property string $storedName
  * @property string $mimeType
  * @property int $size
- * @property string $createdAt
+ * @property int $createdAt
  */
 class FileVariant extends Object_
 {
@@ -68,7 +68,7 @@ class FileVariant extends Object_
             self::storedName => $this->entity->stored_name = (string)$value,
             self::mimeType => $this->entity->mime_type = (string)$value,
             self::size => $this->entity->size = (int)$value,
-            self::createdAt => $this->entity->created_at = (string)$value,
+            self::createdAt => $this->entity->created_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }

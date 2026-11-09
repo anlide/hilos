@@ -550,8 +550,13 @@ final class TableStructure
     private function renameColumn(string $old, string $new): void
     {
         $this->refuseCheckedColumnChange($old);
-        if (!isset($this->columns[$old]) || isset($this->columns[$new]) || $this->foreignKeys !== []) {
+        if (!isset($this->columns[$old]) || isset($this->columns[$new])) {
             throw new RestoreFailedException('Column rename has ambiguous structural effects');
+        }
+        foreach ($this->foreignKeys as $foreignKey) {
+            if (in_array($old, $foreignKey->columns, true)) {
+                throw new RestoreFailedException('Column rename has ambiguous structural effects');
+            }
         }
         foreach ($this->keys as $key) {
             if (isset($key->columns[$old])) {

@@ -520,8 +520,11 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             self::seedPersonRows();
             Database::sqlRun(
                 'INSERT INTO `hilos_file` (`id`, `stored_name`, `filename`, `mime_type`, `size`, `content_hash`, '
-                . '`owner_user_id`, `visibility`, `bound`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [self::PHOTO_FILE_ID, 'photo.jpg', 'photo.jpg', 'image/jpeg', 4, str_repeat('a', 64), self::USER_ID, 'public', 1],
+                . '`owner_user_id`, `visibility`, `bound`, `created_at`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [
+                    self::PHOTO_FILE_ID, 'photo.jpg', 'photo.jpg', 'image/jpeg', 4,
+                    str_repeat('a', 64), self::USER_ID, 'public', 1, TimeHelper::nowMs(),
+                ],
             );
             $fileId = self::PHOTO_FILE_ID;
             Database::sqlRun(

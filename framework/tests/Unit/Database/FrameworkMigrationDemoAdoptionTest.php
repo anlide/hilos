@@ -384,6 +384,30 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                     $source->afterStubDownSha256);
                 $origins[] = $change;
             }
+            if ($index < 3) {
+                $fileIndices = [130, 88, 88];
+                $fileParts = [
+                    'file' => '4e60a3b0f879d84bcc5d0def1f5f5e94c7505c7ea53fcb6583ba23eaf4fa4025',
+                    'file_variant' => 'b7a43257c371381a444d7cb8d1d82331d8f4524a3396d2dd4874e79e9ecad2c3',
+                ];
+                foreach (array_keys($fileParts) as $offset => $key) {
+                    $base = $project->root . '/' . sprintf('%03d', $fileIndices[$index] + $offset)
+                        . '_framework_change_' . $fileParts[$key];
+                    $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+                    self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+                    self::assertSame([$key], $change->units);
+                    self::assertCount(1, $change->parts);
+                    self::assertSame('20261109114206000000_HIL-1926_file_moments/' . $key, $change->parts[0]->key());
+                    $source = $catalog->part($change->parts[0]->changeId, $key);
+                    self::assertFalse($source->introducesUnit);
+                    self::assertSame([], $source->requires);
+                    self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
+                        $source->afterStubUpSha256);
+                    self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
+                        $source->afterStubDownSha256);
+                    $origins[] = $change;
+                }
+            }
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);

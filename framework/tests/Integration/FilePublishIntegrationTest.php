@@ -276,6 +276,33 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         self::assertSame([[self::SIGNED_IN, 'u1']], $this->goneFrames);
     }
 
+    /**
+     * Publication sets an epoch millisecond integer creation moment between nowMs before and after.
+     */
+    public function testPublishedFileCarriesNumericCreationMomentInMilliseconds(): void
+    {
+        $before = TimeHelper::nowMs();
+        $this->complete(self::SIGNED_IN, 'u1', 'hello');
+        $answer = $this->publish(self::SIGNED_IN, ['u1']);
+        $after = TimeHelper::nowMs();
+
+        self::assertCount(1, $answer->fileIds);
+        $fileId = $answer->fileIds[0];
+        $row = self::row($fileId);
+        self::assertNotNull($row);
+        self::assertIsNumeric($row['created_at']);
+        $createdAtRow = (int)$row['created_at'];
+        self::assertGreaterThanOrEqual($before, $createdAtRow);
+        self::assertLessThanOrEqual($after, $createdAtRow);
+
+        $file = Hilos::$db->files[$fileId];
+        self::assertNotNull($file);
+        self::assertIsInt($file->createdAt);
+        self::assertSame($createdAtRow, $file->createdAt);
+        self::assertGreaterThanOrEqual($before, $file->createdAt);
+        self::assertLessThanOrEqual($after, $file->createdAt);
+    }
+
     /** The frame carries a tmp index; the library resolves it under its own mount path. */
     public function testTheLibraryOnAnotherNodeKeepsWhatTheUploadsAgentAssembled(): void
     {

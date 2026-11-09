@@ -6,6 +6,7 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\AgentSignalData;
@@ -33,6 +34,7 @@ use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Utils\Helpers\TimeHelper;
 use ReflectionProperty;
 
 /**
@@ -268,6 +270,113 @@ final class FileSweepTest extends FrameworkIntegrationTestCase
         self::assertSame([], $this->agent->infos);
     }
 
+    /**
+     * Checks that an image variant carries an epoch millisecond integer creation moment between nowMs before and after.
+     */
+    public function testFileVariantCarriesNumericCreationMomentInMilliseconds(): void
+    {
+        $fileId = $this->publish('variant-moments.bin', hoursAgo: 0);
+        $before = TimeHelper::nowMs();
+        $this->keepVariant($fileId, 'thumb', 'variant-thumb.webp');
+        $after = TimeHelper::nowMs();
+
+        $variant = Hilos::$db->fileVariants->findFor($fileId, 'thumb');
+        self::assertNotNull($variant);
+        self::assertIsInt($variant->createdAt);
+        self::assertGreaterThanOrEqual($before, $variant->createdAt);
+        self::assertLessThanOrEqual($after, $variant->createdAt);
+
+        Database::sql('SELECT `created_at` FROM `hilos_file_variant` WHERE `id` = ?', [$variant->id]);
+        $row = Database::row();
+        self::assertNotNull($row);
+        self::assertIsNumeric($row['created_at']);
+        $rowCreatedAt = (int)$row['created_at'];
+        self::assertSame($variant->createdAt, $rowCreatedAt);
+        self::assertGreaterThanOrEqual($before, $rowCreatedAt);
+        self::assertLessThanOrEqual($after, $rowCreatedAt);
+    }
+
+    /**
+     * Checks the strict boundary of findUnboundBefore without clock dependency.
+     */
+    public function testFindUnboundBeforeStrictBoundary(): void
+    {
+        $fileId = $this->publish('boundary.bin', hoursAgo: 0);
+        $momentX = 1700000000000;
+        Database::sqlRun('UPDATE `hilos_file` SET `created_at` = ? WHERE `id` = ?', [$momentX, $fileId]);
+
+        $beforeX = Hilos::$db->files->findUnboundBefore($momentX, 10);
+        $idsBeforeX = array_map(static fn(File $file): ?int => $file->id, $beforeX);
+        self::assertNotContains($fileId, $idsBeforeX);
+
+        $beforeXPlusOne = Hilos::$db->files->findUnboundBefore($momentX + 1, 10);
+        $idsBeforeXPlusOne = array_map(static fn(File $file): ?int => $file->id, $beforeXPlusOne);
+        self::assertContains($fileId, $idsBeforeXPlusOne);
+    }
+
+    /**
+     * Checks that files older than TTL by one minute are swept while files younger by one minute stay.
+     */
+    public function testSweepRemovesFilesOlderThanTtlByOneMinuteAndPreservesYounger(): void
+    {
+        $ttlMs = FilesSettingsCatalog::DEFAULT_UNBOUND_TTL_HOURS * TimeConstants::SECONDS_PER_HOUR * TimeConstants::MS_PER_SECOND;
+        $oneMinuteMs = TimeConstants::SECONDS_PER_MINUTE * TimeConstants::MS_PER_SECOND;
+
+        $older = $this->publish('older-by-minute.bin', hoursAgo: 0);
+        $younger = $this->publish('younger-by-minute.bin', hoursAgo: 0);
+
+        Database::sqlRun('UPDATE `hilos_file` SET `created_at` = ? WHERE `id` = ?', [TimeHelper::nowMs() - $ttlMs - $oneMinuteMs, $older]);
+        Database::sqlRun('UPDATE `hilos_file` SET `created_at` = ? WHERE `id` = ?', [TimeHelper::nowMs() - $ttlMs + $oneMinuteMs, $younger]);
+
+        $this->runSweep();
+
+        self::assertFalse(self::rowExists($older));
+        self::assertFileDoesNotExist($this->filesPath . '/older-by-minute.bin');
+        self::assertTrue(self::rowExists($younger));
+        self::assertFileExists($this->filesPath . '/younger-by-minute.bin');
+    }
+
+    /**
+     * Checks that unbound files with zero and negative creation moments are swept.
+     */
+    public function testSweepRemovesZeroAndNegativeCreationMoments(): void
+    {
+        $zero = $this->publish('zero.bin', hoursAgo: 0);
+        $negative = $this->publish('negative.bin', hoursAgo: 0);
+
+        Database::sqlRun('UPDATE `hilos_file` SET `created_at` = 0 WHERE `id` = ?', [$zero]);
+        Database::sqlRun('UPDATE `hilos_file` SET `created_at` = -86400000 WHERE `id` = ?', [$negative]);
+
+        $this->runSweep();
+
+        self::assertFalse(self::rowExists($zero));
+        self::assertFileDoesNotExist($this->filesPath . '/zero.bin');
+        self::assertFalse(self::rowExists($negative));
+        self::assertFileDoesNotExist($this->filesPath . '/negative.bin');
+    }
+
+    /**
+     * Checks that a creation moment past 2038 stays and is read back as int with preserved milliseconds.
+     */
+    public function testPost2038CreationMomentStaysAndPreservesSubsecondPrecision(): void
+    {
+        $post2038 = $this->publish('post-2038.bin', hoursAgo: 0);
+        $momentPost2038 = 2208988800123;
+        Database::sqlRun('UPDATE `hilos_file` SET `created_at` = ? WHERE `id` = ?', [$momentPost2038, $post2038]);
+
+        $this->runSweep();
+
+        self::assertTrue(self::rowExists($post2038));
+        self::assertFileExists($this->filesPath . '/post-2038.bin');
+
+        Hilos::$db = new FileSweepTestDbContext();
+        Hilos::$db->configure();
+        $file = Hilos::$db->files[$post2038];
+        self::assertNotNull($file);
+        self::assertIsInt($file->createdAt);
+        self::assertSame($momentPost2038, $file->createdAt);
+    }
+
     public function testALifetimeOfZeroSwitchesTheJanitorOff(): void
     {
         Hilos::$setting = new SettingsAccessor(FileSweepDisabledSettingsCatalog::class);
@@ -478,7 +587,7 @@ final class FileSweepTest extends FrameworkIntegrationTestCase
         self::assertIsInt($id);
         Database::sqlRun(
             'UPDATE `hilos_file` SET `created_at` = ? WHERE `id` = ?',
-            [date('Y-m-d H:i:s', time() - $hoursAgo * 3600), $id],
+            [TimeHelper::nowMs() - $hoursAgo * TimeConstants::SECONDS_PER_HOUR * TimeConstants::MS_PER_SECOND, $id],
         );
 
         return $id;

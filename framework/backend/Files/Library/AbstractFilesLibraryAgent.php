@@ -770,7 +770,7 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
             return;
         }
 
-        $cutoff = date('Y-m-d H:i:s', time() - $ttlHours * TimeConstants::SECONDS_PER_HOUR);
+        $cutoff = TimeHelper::nowMs() - $ttlHours * TimeConstants::SECONDS_PER_HOUR * TimeConstants::MS_PER_SECOND;
         $files = Hilos::$db->files->findUnboundBefore($cutoff, self::FILES_SWEEP_BATCH);
         $removed = 0;
         $marked = 0;

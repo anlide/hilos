@@ -1,0 +1,22 @@
+{
+    "format": 1,
+    "id": "20261109114206000000_HIL-1926_file_moments",
+    "parts": [
+        {
+            "unit": "file",
+            "up": "file.sql",
+            "down": "file_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "b68779902d213e120e5372900505f0c3d53705c1690c74471196cca2afd0230d",
+            "afterStubDownSha256": "f2a940077724421dee78ff78528db41420284ce04e1e8019ca3648f2e327dc99"
+        },
+        {
+            "unit": "file_variant",
+            "up": "file_variant.sql",
+            "down": "file_variant_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "c5dd09c379dc9dc5d122a6603be8d4a840e41877a50ab202d85adba03a4dbb2d",
+            "afterStubDownSha256": "798523b36b0eebbed81733fa6aab098fd74da550ed42a5454271d607969f76d5"
+        }
+    ]
+}

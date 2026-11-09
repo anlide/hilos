@@ -64,7 +64,7 @@ class File extends Entity
         self::owner_user_id => PhpType::INTEGER->value,
         self::visibility => PhpType::STRING->value,
         self::bound => PhpType::BOOLEAN->value,
-        self::created_at => PhpType::DATETIME->value,
+        self::created_at => PhpType::INTEGER->value,
     ];
 
     public const array _foreign = [
@@ -109,5 +109,5 @@ class File extends Entity
     public ?int $owner_user_id = null;
     public string $visibility;
     public bool $bound;
-    public string $created_at;
+    public int $created_at;
 }

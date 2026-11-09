@@ -192,20 +192,6 @@
         },
         {
             "rule": "MOMENT-AUTO-WRITE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\FileVariant\",\"hilos_file_variant\",\"created_at\"]",
-            "actual": "DEFAULT current_timestamp()",
-            "count": 1,
-            "owner": "HIL-1926"
-        },
-        {
-            "rule": "MOMENT-AUTO-WRITE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\File\",\"hilos_file\",\"created_at\"]",
-            "actual": "DEFAULT current_timestamp()",
-            "count": 1,
-            "owner": "HIL-1926"
-        },
-        {
-            "rule": "MOMENT-AUTO-WRITE",
             "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Identity\",\"hilos_identity\",\"created_at\"]",
             "actual": "DEFAULT current_timestamp()",
             "count": 1,
@@ -455,20 +441,6 @@
             "actual": "timestamp",
             "count": 1,
             "owner": "HIL-1925"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\FileVariant\",\"hilos_file_variant\",\"created_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1926"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\File\",\"hilos_file\",\"created_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1926"
         },
         {
             "rule": "MOMENT-TYPE",

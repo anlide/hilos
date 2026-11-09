@@ -67,7 +67,7 @@ class FileVariantsActions extends DbActions
         $copy->storedName = $storedName;
         $copy->mimeType = $mimeType;
         $copy->size = $size;
-        $copy->createdAt = TimeHelper::getSqlDateTime();
+        $copy->createdAt = TimeHelper::nowMs();
         $copy->sync();
         $this->addObjectToCollection($copy);
 

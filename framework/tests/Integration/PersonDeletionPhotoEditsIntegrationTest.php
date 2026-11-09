@@ -28,6 +28,7 @@ use Hilos\Users\DTO\UserAccountDeletionCancelDoneSignalData;
 use Hilos\Users\DTO\UserAccountDeletionCancelSignalData;
 use Hilos\Users\DTO\UserPhotoPutDoneSignalData;
 use Hilos\Users\DTO\UserPhotoPutSignalData;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Users\DTO\UserPhotoRemoveDoneSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveSignalData;
 
@@ -278,8 +279,8 @@ final class PersonDeletionPhotoEditsIntegrationTest extends HilosSessionIntegrat
     {
         Database::sqlRun(
             'INSERT INTO `hilos_file` (`id`, `stored_name`, `filename`, `mime_type`, `size`, `content_hash`, '
-            . '`owner_user_id`, `visibility`, `bound`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [self::FILE_ID, 'photo-14091.jpg', 'photo.jpg', 'image/jpeg', 4, str_repeat('a', 64), $userId, 'public', 0],
+            . '`owner_user_id`, `visibility`, `bound`, `created_at`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [self::FILE_ID, 'photo-14091.jpg', 'photo.jpg', 'image/jpeg', 4, str_repeat('a', 64), $userId, 'public', 0, TimeHelper::nowMs()],
         );
     }
 

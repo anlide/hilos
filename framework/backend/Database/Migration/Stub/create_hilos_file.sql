@@ -30,7 +30,7 @@ CREATE TABLE `hilos_file` (
     `owner_user_id` INT UNSIGNED DEFAULT NULL,
     `visibility` ENUM('public', 'authenticated', 'owner') NOT NULL,
     `bound` TINYINT(1) NOT NULL DEFAULT 0,
-    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `created_at` BIGINT NOT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_file_stored_name` (`stored_name`),
     KEY `idx_file_bound_created` (`bound`, `created_at`),

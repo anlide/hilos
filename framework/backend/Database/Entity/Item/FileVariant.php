@@ -47,7 +47,7 @@ class FileVariant extends Entity
         self::stored_name => PhpType::STRING->value,
         self::mime_type => PhpType::STRING->value,
         self::size => PhpType::INTEGER->value,
-        self::created_at => PhpType::DATETIME->value,
+        self::created_at => PhpType::INTEGER->value,
     ];
 
     public const array _foreign = [self::file_id => File::_table];
@@ -80,5 +80,5 @@ class FileVariant extends Entity
     public string $stored_name;
     public string $mime_type;
     public int $size;
-    public string $created_at;
+    public int $created_at;
 }

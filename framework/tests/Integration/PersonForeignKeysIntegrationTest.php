@@ -95,9 +95,9 @@ final class PersonForeignKeysIntegrationTest extends FrameworkIntegrationTestCas
         Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (7, 'Owner')");
         Database::sqlRun(
             'INSERT INTO `hilos_file` '
-            . '(`stored_name`, `filename`, `mime_type`, `size`, `content_hash`, `owner_user_id`, `visibility`) '
-            . 'VALUES (?, ?, ?, ?, ?, ?, ?)',
-            ['stored.txt', 'name.txt', 'text/plain', 1, str_repeat('a', 64), 7, 'owner'],
+            . '(`stored_name`, `filename`, `mime_type`, `size`, `content_hash`, `owner_user_id`, `visibility`, `created_at`) '
+            . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            ['stored.txt', 'name.txt', 'text/plain', 1, str_repeat('a', 64), 7, 'owner', TimeHelper::nowMs()],
         );
 
         Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = 7');

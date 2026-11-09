@@ -35,6 +35,7 @@ use Hilos\Fs\FsException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Legal\LegalCatalogStub;
+use Hilos\Utils\Helpers\TimeHelper;
 use PharData;
 use PHPUnit\Framework\Attributes\DataProvider;
 
@@ -363,8 +364,8 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             DataExportPhotoTestHilos::initBrowser();
             Database::sqlRun(
                 'INSERT INTO `hilos_file` (`id`, `stored_name`, `filename`, `mime_type`, `size`, `content_hash`, '
-                . '`owner_user_id`, `visibility`, `bound`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [self::PHOTO_FILE_ID, 'photo.jpg', 'photo.jpg', 'image/jpeg', 4, str_repeat('a', 64), 7, 'public', 1],
+                . '`owner_user_id`, `visibility`, `bound`, `created_at`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [self::PHOTO_FILE_ID, 'photo.jpg', 'photo.jpg', 'image/jpeg', 4, str_repeat('a', 64), 7, 'public', 1, TimeHelper::nowMs()],
             );
             Database::sqlRun(
                 'INSERT INTO `hilos_user_photo` (`user_id`, `file_id`, `set_at`) VALUES (?, ?, ?)',
@@ -414,8 +415,8 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             DataExportPhotoTestHilos::initBrowser();
             Database::sqlRun(
                 'INSERT INTO `hilos_file` (`id`, `stored_name`, `filename`, `mime_type`, `size`, `content_hash`, '
-                . '`owner_user_id`, `visibility`, `bound`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [self::PHOTO_FILE_ID, 'missing.jpg', 'missing.jpg', 'image/jpeg', 4, str_repeat('a', 64), 7, 'public', 1],
+                . '`owner_user_id`, `visibility`, `bound`, `created_at`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [self::PHOTO_FILE_ID, 'missing.jpg', 'missing.jpg', 'image/jpeg', 4, str_repeat('a', 64), 7, 'public', 1, TimeHelper::nowMs()],
             );
             Database::sqlRun(
                 'INSERT INTO `hilos_user_photo` (`user_id`, `file_id`, `set_at`) VALUES (?, ?, ?)',

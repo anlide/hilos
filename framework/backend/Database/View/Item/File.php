@@ -26,7 +26,7 @@ use Hilos\HilosException;
  * @property-read ?int $ownerUserId
  * @property-read FileVisibility $visibility
  * @property-read bool $bound
- * @property-read string $createdAt
+ * @property-read int $createdAt
  */
 class File extends DbItem
 {

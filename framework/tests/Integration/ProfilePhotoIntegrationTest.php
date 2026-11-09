@@ -43,6 +43,7 @@ use Hilos\Moderation\ModerationAgentDaemon;
 use Hilos\Moderation\ModerationInput;
 use Hilos\Moderation\ModerationKind;
 use Hilos\Moderation\ModerationKindDirectory;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Moderation\ModerationKindKey;
 use Hilos\Moderation\ModerationReason;
 use Hilos\Moderation\ModerationSettingsCatalog;
@@ -602,8 +603,8 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
     {
         Database::sqlRun(
             'INSERT INTO `hilos_file` (`id`, `stored_name`, `filename`, `mime_type`, `size`, `content_hash`, '
-            . '`owner_user_id`, `visibility`, `bound`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [$fileId, "photo-{$fileId}.jpg", 'photo.jpg', 'image/jpeg', 4, str_repeat('a', 64), self::USER_ID, 'public', 0],
+            . '`owner_user_id`, `visibility`, `bound`, `created_at`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [$fileId, "photo-{$fileId}.jpg", 'photo.jpg', 'image/jpeg', 4, str_repeat('a', 64), self::USER_ID, 'public', 0, TimeHelper::nowMs()],
         );
     }
 

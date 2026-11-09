@@ -14,7 +14,7 @@ CREATE TABLE `hilos_file_variant` (
     `stored_name` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     `mime_type` VARCHAR(255) NOT NULL,
     `size` BIGINT UNSIGNED NOT NULL,
-    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `created_at` BIGINT NOT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_file_variant` (`file_id`, `variant`),
     UNIQUE KEY `uk_file_variant_stored_name` (`stored_name`),

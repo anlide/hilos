@@ -35,17 +35,17 @@ class Files extends DbCollection
     /**
      * Lists files nobody has linked yet that were registered before a moment, oldest row first.
      *
-     * @param string $cutoffSql Moment as an SQL datetime; only rows created strictly before it are listed
+     * @param int $cutoffMs Moment as epoch milliseconds; only rows created strictly before it are listed
      * @param int $limit Maximum rows to load
      * @return list<File> Unbound file Db items, empty when none
      * @throws LogicException When the collection class constants are not configured
      * @throws InvalidArgumentException When a loaded object or order direction is invalid
      * @throws DatabaseException When the lookup or lazy file load fails
      */
-    public function findUnboundBefore(string $cutoffSql, int $limit): array
+    public function findUnboundBefore(int $cutoffMs, int $limit): array
     {
         $result = [];
-        foreach ($this->objectCollection->findUnboundBefore($cutoffSql, $limit) as $objectFile) {
+        foreach ($this->objectCollection->findUnboundBefore($cutoffMs, $limit) as $objectFile) {
             $item = $objectFile->id !== null ? $this->getItemForKey($objectFile->id) : null;
             if ($item === null) {
                 continue;

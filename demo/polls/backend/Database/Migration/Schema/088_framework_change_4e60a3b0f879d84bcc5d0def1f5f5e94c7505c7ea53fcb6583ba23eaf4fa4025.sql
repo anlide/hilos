@@ -1,0 +1,4 @@
+-- hilos-framework: {"format":1,"kind":"change","units":["file"],"parts":[{"changeId":"20261109114206000000_HIL-1926_file_moments","unit":"file","upSha256":"9bf624040b50bf6233db92de60e9450fff4d3012809bc7af0535365e7aa47884","downSha256":"f43f297700aacb6d3eecdb25b6b973b523abece0b1672f6683bacf88d65b6c4f"}],"upSha256":"9bf624040b50bf6233db92de60e9450fff4d3012809bc7af0535365e7aa47884","downSha256":"f43f297700aacb6d3eecdb25b6b973b523abece0b1672f6683bacf88d65b6c4f"}
+ALTER TABLE `hilos_file` ADD COLUMN `__hil1926_created_at` BIGINT NULL AFTER `created_at`;
+UPDATE `hilos_file` SET `__hil1926_created_at` = UNIX_TIMESTAMP(`created_at`) * 1000;
+ALTER TABLE `hilos_file` DROP INDEX `idx_file_bound_created`, DROP COLUMN `created_at`, CHANGE COLUMN `__hil1926_created_at` `created_at` BIGINT NOT NULL, ADD KEY `idx_file_bound_created` (`bound`, `created_at`);

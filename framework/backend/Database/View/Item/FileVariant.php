@@ -23,7 +23,7 @@ use Hilos\HilosException;
  * @property-read string $storedName
  * @property-read string $mimeType
  * @property-read int $size
- * @property-read string $createdAt
+ * @property-read int $createdAt
  */
 class FileVariant extends DbItem
 {

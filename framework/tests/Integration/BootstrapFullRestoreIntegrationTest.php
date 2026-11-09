@@ -110,6 +110,36 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
             Database::sql($statement);
         }
         Database::sql(self::HISTORICAL_SESSION);
+        Database::sql('CREATE TABLE `hilos_file` (
+            `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `stored_name` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+            `filename` VARCHAR(255) NOT NULL,
+            `mime_type` VARCHAR(255) NOT NULL,
+            `size` BIGINT UNSIGNED NOT NULL,
+            `content_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+            `owner_user_id` INT UNSIGNED NOT NULL,
+            `visibility` ENUM(\'public\', \'authenticated\', \'owner\') NOT NULL,
+            `bound` TINYINT(1) NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_file_stored_name` (`stored_name`),
+            KEY `idx_file_bound_created` (`bound`, `created_at`),
+            KEY `idx_file_owner_hash` (`owner_user_id`, `content_hash`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci');
+        Database::sql('CREATE TABLE `hilos_file_variant` (
+            `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `file_id` INT UNSIGNED NOT NULL,
+            `variant` VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+            `signature` CHAR(8) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+            `stored_name` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+            `mime_type` VARCHAR(255) NOT NULL,
+            `size` BIGINT UNSIGNED NOT NULL,
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_file_variant` (`file_id`, `variant`),
+            UNIQUE KEY `uk_file_variant_stored_name` (`stored_name`),
+            CONSTRAINT `fk_file_variant_file` FOREIGN KEY (`file_id`) REFERENCES `hilos_file` (`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci');
         Database::sql('CREATE TABLE restore_probe (id INT PRIMARY KEY, label VARCHAR(32) NOT NULL)');
         Database::sql("INSERT INTO restore_probe VALUES(1,'untouched')");
         Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
@@ -149,11 +179,11 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
             DatabaseMarker::put($marker);
         }
         if ($applied) {
-            $this->assertSame(12, Migration::migrateUp());
+            $this->assertSame(14, Migration::migrateUp());
         }
         $plan = FullRestorePlanner::prepare(FullRestorePlan::prepare($this->connections(), $this->root . '/build'));
         $this->assertSame(
-            [118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 128, 128, 129, 129, 129, 129, 129],
+            [118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 128, 128, 129, 129, 129, 129, 129, 130, 130, 130, 131, 131, 131],
             array_map(static fn ($step): int => $step->file->index, $plan->migrations->targets[DatabaseConnectionDefaults::PRIMARY_INDEX]->pending),
         );
         $this->assertSame($applied ? [
@@ -171,6 +201,12 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
         $this->assertSame($legacy ? 2208988800000 : 2208988800456, DatabaseMarker::current()?->writtenAt);
         $this->assertSame('bigint', Database::sql('SELECT DATA_TYPE FROM information_schema.COLUMNS'
             . ' WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?', [DatabaseMarker::TABLE, 'written_at'])->row()['DATA_TYPE']);
+        $this->assertSame('bigint', Database::sql('SELECT DATA_TYPE FROM information_schema.COLUMNS'
+            . ' WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?', ['hilos_file', 'created_at'])->row()['DATA_TYPE']);
+        $this->assertSame('bigint', Database::sql('SELECT DATA_TYPE FROM information_schema.COLUMNS'
+            . ' WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?', ['hilos_file_variant', 'created_at'])->row()['DATA_TYPE']);
+        $this->assertSame(1794139200000, (int)Database::sql('SELECT created_at FROM hilos_file WHERE id=1')->row()['created_at']);
+        $this->assertSame(1794139200000, (int)Database::sql('SELECT created_at FROM hilos_file_variant WHERE id=1')->row()['created_at']);
         $this->assertSame(1700000000000, AdminViewModeLatchTable::read()['closedAt']);
         $this->assertNull(MigrationClaim::current());
         $this->assertSame([[
@@ -181,7 +217,7 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
         ]], Database::sql('SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME'
             . ' FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?'
             . ' AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY CONSTRAINT_NAME', [AccountOperationResult::_table])->rows());
-        $this->assertSame([118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129], array_values(array_filter(
+        $this->assertSame([118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131], array_values(array_filter(
             Migration::readHistory(DatabaseConnectionDefaults::PRIMARY_INDEX)->successfulIndices(),
             static fn (int $index): bool => $index > self::ARCHIVE_LEVEL,
         )));
@@ -497,6 +533,42 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
             . $circleDefinition . "\n"
             . "DROP TABLE IF EXISTS hilos_session;\n"
             . self::HISTORICAL_SESSION . ";\n"
+            . "DROP TABLE IF EXISTS hilos_file_variant;\n"
+            . "DROP TABLE IF EXISTS hilos_file;\n"
+            . "CREATE TABLE `hilos_file` (\n"
+            . "    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,\n"
+            . "    `stored_name` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,\n"
+            . "    `filename` VARCHAR(255) NOT NULL,\n"
+            . "    `mime_type` VARCHAR(255) NOT NULL,\n"
+            . "    `size` BIGINT UNSIGNED NOT NULL,\n"
+            . "    `content_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,\n"
+            . "    `owner_user_id` INT UNSIGNED NOT NULL,\n"
+            . "    `visibility` ENUM('public', 'authenticated', 'owner') NOT NULL,\n"
+            . "    `bound` TINYINT(1) NOT NULL DEFAULT 0,\n"
+            . "    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
+            . "    PRIMARY KEY (`id`),\n"
+            . "    UNIQUE KEY `uk_file_stored_name` (`stored_name`),\n"
+            . "    KEY `idx_file_bound_created` (`bound`, `created_at`),\n"
+            . "    KEY `idx_file_owner_hash` (`owner_user_id`, `content_hash`)\n"
+            . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;\n"
+            . "INSERT INTO `hilos_file` VALUES (1, 'archived_file_1', 'f1.txt', 'text/plain', 10, '"
+            . str_repeat('0', 64) . "', 1, 'public', 1, '2026-11-08 12:00:00');\n"
+            . "CREATE TABLE `hilos_file_variant` (\n"
+            . "    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,\n"
+            . "    `file_id` INT UNSIGNED NOT NULL,\n"
+            . "    `variant` VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,\n"
+            . "    `signature` CHAR(8) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,\n"
+            . "    `stored_name` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,\n"
+            . "    `mime_type` VARCHAR(255) NOT NULL,\n"
+            . "    `size` BIGINT UNSIGNED NOT NULL,\n"
+            . "    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
+            . "    PRIMARY KEY (`id`),\n"
+            . "    UNIQUE KEY `uk_file_variant` (`file_id`, `variant`),\n"
+            . "    UNIQUE KEY `uk_file_variant_stored_name` (`stored_name`),\n"
+            . "    CONSTRAINT `fk_file_variant_file` FOREIGN KEY (`file_id`) REFERENCES `hilos_file` (`id`) ON DELETE CASCADE\n"
+            . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;\n"
+            . "INSERT INTO `hilos_file_variant` VALUES (1, 1, 'thumb', 'sig12345', 'archived_thumb_1', 'image/jpeg',"
+            . " 100, '2026-11-08 12:00:00');\n"
             . "DROP TABLE IF EXISTS restore_probe;\n"
             . "CREATE TABLE restore_probe (id INT PRIMARY KEY, label VARCHAR(32) NOT NULL);\n"
             . "INSERT INTO restore_probe VALUES(1,'archive');\n"

@@ -308,7 +308,7 @@ final class FileDownloadResponseTest extends TestCase
             EntityFileVariant::stored_name => 'copy.webp',
             EntityFileVariant::mime_type => 'image/webp',
             EntityFileVariant::size => 9,
-            EntityFileVariant::created_at => '2026-09-27 12:00:00',
+            EntityFileVariant::created_at => 1790510400000,
         ])));
     }
 
@@ -362,7 +362,7 @@ final class FileDownloadResponseTest extends TestCase
             EntityFile::owner_user_id => 7,
             EntityFile::visibility => $visibility->value,
             EntityFile::bound => 1,
-            EntityFile::created_at => '2026-09-26 12:00:00',
+            EntityFile::created_at => 1790424000000,
         ])));
     }
 
