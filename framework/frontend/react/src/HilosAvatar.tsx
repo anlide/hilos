@@ -7,6 +7,9 @@
 import { formatInitials, type HilosAvatarMark } from '@hilos/core/base'
 import { useEffect, useState } from 'react'
 
+/** Stock text-size class of the initials, per avatar size. */
+const TEXT_CLASS_BY_SIZE = { sm: 'small', md: 'fs-6', lg: 'fs-4' } as const
+
 /** Props for {@link HilosAvatar}. */
 export interface HilosAvatarProps {
   /** The person's name, from the same source as the surrounding text. */
@@ -44,7 +47,7 @@ export function HilosAvatar({
 
   return (
     <span
-      className={`hilos-avatar-${size} rounded-circle bg-secondary-subtle d-inline-flex align-items-center justify-content-center fw-semibold flex-shrink-0${ringClasses}`}
+      className={`hilos-avatar-${size} ${TEXT_CLASS_BY_SIZE[size]} rounded-circle bg-secondary-subtle d-inline-flex align-items-center justify-content-center fw-semibold flex-shrink-0${ringClasses}`}
       data-id="hilos-avatar"
       aria-hidden="true"
     >
@@ -62,10 +65,12 @@ export function HilosAvatar({
         initials || <i className="bi bi-person" />
       )}
       {mark !== null && (
-        <i
-          className={`bi ${mark.icon} position-absolute hilos-avatar-mark text-${mark.tone}-emphasis`}
-          data-id="avatar-mark"
-        />
+        <span className="badge p-0 position-absolute bottom-0 end-0">
+          <i
+            className={`bi ${mark.icon} text-${mark.tone}-emphasis`}
+            data-id="avatar-mark"
+          />
+        </span>
       )}
     </span>
   )

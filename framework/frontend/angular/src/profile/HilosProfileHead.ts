@@ -54,9 +54,9 @@ import { HilosProfilePhoto } from './HilosProfilePhoto.js'
           >
             <hilos-avatar [name]="name()" [photo]="photo()" size="lg" />
             <span
-              class="position-absolute hilos-avatar-camera bg-body border rounded-circle d-inline-flex align-items-center justify-content-center text-body-emphasis"
+              class="position-absolute bottom-0 end-0 bg-body border rounded-circle p-1 small lh-1 d-inline-flex align-items-center justify-content-center text-body-emphasis"
               aria-hidden="true"
-              ><i class="bi bi-camera"></i
+              ><i class="bi bi-camera d-flex lh-1"></i
             ></span>
           </button>
         } @else {

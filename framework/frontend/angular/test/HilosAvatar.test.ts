@@ -92,13 +92,7 @@ describe('HilosAvatar', () => {
         expect(drawn.classList.contains(name)).toBe(true)
       }
       const icon = drawn.querySelector('[data-id="avatar-mark"]')!
-      for (const name of [
-        'bi',
-        mark.icon,
-        'position-absolute',
-        'hilos-avatar-mark',
-        `text-${mark.tone}-emphasis`,
-      ]) {
+      for (const name of ['bi', mark.icon, `text-${mark.tone}-emphasis`]) {
         expect(icon.classList.contains(name)).toBe(true)
       }
       expect(drawn.textContent?.trim()).toBe('A')

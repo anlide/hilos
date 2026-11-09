@@ -55,13 +55,7 @@ describe('HilosAvatar', () => {
       )
       const icon = wrapper.find('[data-id="avatar-mark"]')
       expect(icon.classes()).toEqual(
-        expect.arrayContaining([
-          'bi',
-          mark.icon,
-          'position-absolute',
-          'hilos-avatar-mark',
-          `text-${mark.tone}-emphasis`,
-        ]),
+        expect.arrayContaining(['bi', mark.icon, `text-${mark.tone}-emphasis`]),
       )
       expect(wrapper.text()).toBe('A')
       expect(wrapper.attributes('aria-hidden')).toBe('true')

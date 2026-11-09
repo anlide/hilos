@@ -488,7 +488,7 @@ describe('Main roster links', () => {
       'running',
     )
     expect(bot?.querySelector('[data-id="hilos-avatar"]')).not.toBeNull()
-    expect(bot?.querySelector('.small')?.textContent?.trim()).toBe(
+    expect(bot?.querySelector('.small.text-muted')?.textContent?.trim()).toBe(
       'Answers questions',
     )
   })

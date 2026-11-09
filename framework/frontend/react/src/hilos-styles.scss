@@ -579,55 +579,31 @@ body.modal-open .toast-container > * {
   min-width: 0;
 }
 
-// WHY: Bootstrap has no fixed square sizes with matching font sizes, and an
-// avatar must stay a circle regardless of the initials it holds.
-// WHAT: HilosAvatar in the header (sm), admin card (md) and profile (lg), sized
-// as in mockups/framework/layout, mockups/admin/users and mockups/framework/account.
+// WHY: Bootstrap has no fixed square sizes, and an avatar must stay a circle
+// regardless of the initials it holds.
+// WHAT: the square of HilosAvatar in the header (sm), admin card (md) and
+// profile (lg), as in mockups/framework/layout, mockups/admin/users and
+// mockups/profile/account. The views set its text size with a stock class.
 .hilos-avatar-sm {
   width: 2rem;
   height: 2rem;
-  font-size: 0.75rem;
 }
 
 .hilos-avatar-md {
   width: 3rem;
   height: 3rem;
-  font-size: 1rem;
 }
 
 .hilos-avatar-lg {
   width: 4rem;
   height: 4rem;
-  font-size: 1.5rem;
 }
 
-// WHY: the mark sits over the corner of the avatar circle, so it needs a
-// font-size below every Bootstrap step and an overhang past the circle's own
-// box, which no offset utility expresses — the stock .bottom-0/.end-0 sit flush
-// and carry !important besides.
-// WHAT: the icon of the standing mark by the header avatar (HIL-945), laid out
-// as in mockups/framework/layout ("метка у аватара"). Position and color stay
-// stock utilities; only what they cannot say lives here.
-.hilos-avatar-mark {
-  font-size: 0.6rem;
-  right: -0.1rem;
-  bottom: -0.1rem;
-  line-height: 1;
-}
-
-// WHY: Bootstrap's sizes do not give the crop a fixed square on every shell,
-// and touch dragging must not scroll the page beneath the modal.
-// WHAT: the 8rem photo crop preview and its pointer surface.
+// WHY: Bootstrap has no touch-action utility, and touch dragging must not
+// scroll the page beneath the modal.
+// WHAT: the pointer surface of the photo crop preview.
 .hilos-photo-crop {
-  width: 8rem;
-  height: 8rem;
   touch-action: none;
-}
-
-// WHY: the picker in the profile mockup uses a dashed frame, which Bootstrap's
-// border utilities cannot name directly.
-.hilos-photo-drop {
-  --bs-border-style: dashed;
 }
 
 // WHY: Bootstrap's z-index utilities stop at 3, and an input group lifts its
@@ -658,15 +634,4 @@ body.modal-open .toast-container > * {
 // WHAT: the × of an upload chip, scaled to the badge it sits in.
 .hilos-upload-remove {
   font-size: 0.5rem;
-}
-
-// WHY: no Bootstrap size step makes a 1.4rem camera badge at the circle's corner.
-// WHAT: the decorative camera badge on the profile's Change your photo button.
-.hilos-avatar-camera {
-  width: 1.4rem;
-  height: 1.4rem;
-  font-size: 0.7rem;
-  right: -0.1rem;
-  bottom: -0.1rem;
-  line-height: 1;
 }

@@ -79,7 +79,7 @@ function mirror<T>(
       @if (step() === 'pick') {
         <div class="text-center">
           <div
-            class="rounded-circle bg-secondary-subtle d-inline-flex align-items-center justify-content-center fw-semibold hilos-avatar-lg"
+            class="rounded-circle bg-secondary-subtle d-inline-flex align-items-center justify-content-center fw-semibold fs-4 hilos-avatar-lg"
           >
             {{ initials() }}
           </div>
@@ -87,7 +87,7 @@ function mirror<T>(
             {{ copy.initialsNow }}
           </div>
           <div
-            class="border border-2 hilos-photo-drop rounded py-4"
+            class="border border-2 rounded py-4"
             data-id="profile-photo-drop"
             (dragover)="$event.preventDefault()"
             (drop)="dropped($event)"

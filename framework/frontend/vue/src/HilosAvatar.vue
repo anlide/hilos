@@ -8,6 +8,9 @@ says the same in words — so the mark is decorative too. -->
 import { computed, ref, watch } from 'vue'
 import { formatInitials, type HilosAvatarMark } from '@hilos/core/base'
 
+/** Stock text-size class of the initials, per avatar size. */
+const TEXT_CLASS_BY_SIZE = { sm: 'small', md: 'fs-6', lg: 'fs-4' } as const
+
 const props = withDefaults(
   defineProps<{
     /** The person's name, from the same source as the surrounding text. */
@@ -47,7 +50,11 @@ const ringClasses = computed(() =>
 <template>
   <span
     class="rounded-circle bg-secondary-subtle d-inline-flex align-items-center justify-content-center fw-semibold flex-shrink-0"
-    :class="[`hilos-avatar-${props.size}`, ringClasses]"
+    :class="[
+      `hilos-avatar-${props.size}`,
+      TEXT_CLASS_BY_SIZE[props.size],
+      ringClasses,
+    ]"
     data-id="hilos-avatar"
     aria-hidden="true"
   >
@@ -67,11 +74,15 @@ const ringClasses = computed(() =>
     />
     <template v-else-if="initials">{{ initials }}</template>
     <i v-else class="bi bi-person"></i>
-    <i
+    <span
       v-if="props.mark !== null"
-      class="bi position-absolute hilos-avatar-mark"
-      :class="[props.mark.icon, `text-${props.mark.tone}-emphasis`]"
-      data-id="avatar-mark"
-    ></i>
+      class="badge p-0 position-absolute bottom-0 end-0"
+    >
+      <i
+        class="bi"
+        :class="[props.mark.icon, `text-${props.mark.tone}-emphasis`]"
+        data-id="avatar-mark"
+      ></i>
+    </span>
   </span>
 </template>

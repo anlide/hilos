@@ -88,10 +88,10 @@ export function HilosProfileHead({ context, store }: HilosProfileHeadProps) {
             >
               <HilosAvatar name={name} photo={photo} size="lg" />
               <span
-                className="position-absolute hilos-avatar-camera bg-body border rounded-circle d-inline-flex align-items-center justify-content-center text-body-emphasis"
+                className="position-absolute bottom-0 end-0 bg-body border rounded-circle p-1 small lh-1 d-inline-flex align-items-center justify-content-center text-body-emphasis"
                 aria-hidden="true"
               >
-                <i className="bi bi-camera" />
+                <i className="bi bi-camera d-flex lh-1" />
               </span>
             </button>
           ) : (

@@ -153,14 +153,14 @@ export function HilosProfilePhoto({ flow }: HilosProfilePhotoProps) {
         />
         {step === 'pick' ? (
           <div className="text-center">
-            <div className="rounded-circle bg-secondary-subtle d-inline-flex align-items-center justify-content-center fw-semibold hilos-avatar-lg">
+            <div className="rounded-circle bg-secondary-subtle d-inline-flex align-items-center justify-content-center fw-semibold fs-4 hilos-avatar-lg">
               {initials}
             </div>
             <div className="small text-body-secondary mt-2 mb-3">
               {COPY.initialsNow}
             </div>
             <div
-              className="border border-2 hilos-photo-drop rounded py-4"
+              className="border border-2 rounded py-4"
               data-id="profile-photo-drop"
               onDragOver={(event) => event.preventDefault()}
               onDrop={dropped}

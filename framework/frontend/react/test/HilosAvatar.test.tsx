@@ -62,13 +62,7 @@ describe('HilosAvatar', () => {
         expect(circle.classList.contains(name)).toBe(true)
       }
       const icon = container.querySelector('[data-id="avatar-mark"]')!
-      for (const name of [
-        'bi',
-        mark.icon,
-        'position-absolute',
-        'hilos-avatar-mark',
-        `text-${mark.tone}-emphasis`,
-      ]) {
+      for (const name of ['bi', mark.icon, `text-${mark.tone}-emphasis`]) {
         expect(icon.classList.contains(name)).toBe(true)
       }
       expect(circle.textContent).toBe('A')

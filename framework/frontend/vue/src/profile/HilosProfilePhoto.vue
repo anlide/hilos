@@ -129,7 +129,7 @@ function arrow(event: KeyboardEvent): void {
     />
     <div v-if="step === 'pick'" class="text-center">
       <div
-        class="rounded-circle bg-secondary-subtle d-inline-flex align-items-center justify-content-center fw-semibold hilos-avatar-lg"
+        class="rounded-circle bg-secondary-subtle d-inline-flex align-items-center justify-content-center fw-semibold fs-4 hilos-avatar-lg"
       >
         {{ initials }}
       </div>
@@ -137,7 +137,7 @@ function arrow(event: KeyboardEvent): void {
         {{ COPY.initialsNow }}
       </div>
       <div
-        class="border border-2 hilos-photo-drop rounded py-4"
+        class="border border-2 rounded py-4"
         data-id="profile-photo-drop"
         @dragover.prevent
         @drop.prevent="dropped"
@@ -165,7 +165,7 @@ function arrow(event: KeyboardEvent): void {
         ref="canvas"
         width="128"
         height="128"
-        class="hilos-photo-crop rounded-circle mx-auto d-block touch-action-none"
+        class="hilos-photo-crop rounded-circle mx-auto d-block"
         role="img"
         :aria-label="COPY.position"
         :aria-disabled="inFlight || undefined"

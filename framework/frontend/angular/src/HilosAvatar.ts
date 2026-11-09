@@ -13,6 +13,9 @@ import {
 } from '@angular/core'
 import { formatInitials, type HilosAvatarMark } from '@hilos/core/base'
 
+/** Stock text-size class of the initials, per avatar size. */
+const TEXT_CLASS_BY_SIZE = { sm: 'small', md: 'fs-6', lg: 'fs-4' } as const
+
 /** A decorative circle with an icon, the person's photo or initials, or a person icon. */
 @Component({
   selector: 'hilos-avatar',
@@ -40,11 +43,13 @@ import { formatInitials, type HilosAvatarMark } from '@hilos/core/base'
         <i class="bi bi-person"></i>
       }
       @if (mark(); as shown) {
-        <i
-          class="bi position-absolute hilos-avatar-mark"
-          [class]="shown.icon + ' text-' + shown.tone + '-emphasis'"
-          data-id="avatar-mark"
-        ></i>
+        <span class="badge p-0 position-absolute bottom-0 end-0">
+          <i
+            class="bi"
+            [class]="shown.icon + ' text-' + shown.tone + '-emphasis'"
+            data-id="avatar-mark"
+          ></i>
+        </span>
       }
     </span>
   `,
@@ -72,7 +77,7 @@ export class HilosAvatar {
   })
   protected readonly circleClass = computed(() => {
     const mark = this.mark()
-    const size = 'hilos-avatar-' + this.size()
+    const size = `hilos-avatar-${this.size()} ${TEXT_CLASS_BY_SIZE[this.size()]}`
 
     return mark === null
       ? size
