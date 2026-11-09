@@ -247,17 +247,6 @@
   min-width: 0;
 }
 
-// WHY: Bootstrap has no letter-spacing utility and no font-size step this
-// small, and the signature needs both to read as a label above the message
-// rather than as a first line of it.
-// WHAT: the toast card's source — who sent a notice the reader did not ask for.
-.hilos-toast-source {
-  font-size: 0.6875rem;
-  letter-spacing: 0.04em;
-  line-height: 1.2;
-  text-transform: uppercase;
-}
-
 // WHY: stock .text-truncate clips at one line; Bootstrap has no multi-line
 // clamp utility at all.
 // WHAT: the toast card's message, three lines at most — the rest of the story
@@ -276,11 +265,9 @@
 // cannot read a TypeScript constant, and the only way to hand it over would be
 // that same inline style, so the duplication is named out loud instead of
 // hidden. Move one and move the other.
-// WHAT: the toast card's life bar — the one visible sign of the time left.
+// WHAT: only the burn-down of the toast card's life bar; the utilities on its
+// element draw the bar itself.
 .hilos-toast-life {
-  height: 2px;
-  background: currentColor;
-  opacity: 0.4;
   transform-origin: left center;
   animation: hilos-toast-life-burn 20000ms linear forwards;
 }
@@ -305,13 +292,12 @@
 
 // WHY: this is the app's own animation, so nobody else guards it: Bootstrap
 // covers only its own components, and a blanket reduced-motion reset is banned
-// (accessibility.md). The bar stands dimmed instead of moving — the COUNTDOWN
-// still runs, because that is a rule about time and not about motion.
+// (accessibility.md). The bar stands at full length instead of moving — the
+// COUNTDOWN still runs, because that is a rule about time and not about motion.
 // WHAT: the life bar for a reader who asked for less movement.
 @media (prefers-reduced-motion: reduce) {
   .hilos-toast-life {
     animation: none;
-    opacity: 0.25;
   }
 }
 

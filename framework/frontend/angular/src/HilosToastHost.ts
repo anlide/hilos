@@ -49,11 +49,11 @@ import type {
 import { HilosLink } from './HilosLink.js'
 import type { HilosToastCorner } from './hilosToastCorner.js'
 
-// What names a severity on the light card: the color of the rail down its left
-// edge, the color of its icon, and the icon itself. One table of the three
-// rather than three lookups or class strings glued together in the template —
-// glued classes read badly and cannot be grepped (CONN_VISUAL in HilosLayout is
-// the same shape).
+// What names a severity on the light card: the border color of the rail down
+// its left edge and of the life bar under it, the color of its icon, and the
+// icon itself. One table of the three rather than three lookups or class
+// strings glued together in the template — glued classes read badly and cannot
+// be grepped (CONN_VISUAL in HilosLayout is the same shape).
 type ToastVisual = { rail: string; accent: string; icon: string }
 const TOAST_VISUAL: Record<HilosToastSeverity, ToastVisual> = {
   error: {
@@ -185,7 +185,7 @@ function occupiedHeight(element: HTMLElement): number {
             <div class="flex-grow-1 min-w-0">
               @if (toast.source !== null) {
                 <div
-                  class="hilos-toast-source text-body-secondary mb-1"
+                  class="small text-uppercase lh-sm text-body-secondary mb-1"
                   data-id="hilos-toast-source"
                 >
                   {{ toast.source }}
@@ -229,8 +229,8 @@ function occupiedHeight(element: HTMLElement): number {
           @if (toast.measured && toast.severity !== 'error') {
             @for (round of [toast.repeats]; track round) {
               <div
-                class="hilos-toast-life"
-                [class]="visual(toast.severity).accent"
+                class="hilos-toast-life border-top border-2 opacity-50"
+                [class]="visual(toast.severity).rail"
                 [class.hilos-toast-life-paused]="frozen()"
                 data-id="hilos-toast-life"
               ></div>

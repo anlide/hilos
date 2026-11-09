@@ -61,11 +61,11 @@ const overflow = useSignal(store.overflow)
 // are visible and hand the store a hold on their countdown.
 const MEASURING_LAYER = 'position-absolute opacity-0 pe-none'
 
-// What names a severity on the light card: the color of the rail down its left
-// edge, the color of its icon, and the icon itself. One table of the three
-// rather than three lookups or class strings glued together in the template —
-// glued classes read badly and cannot be grepped (CONN_VISUAL in HilosLayout is
-// the same shape).
+// What names a severity on the light card: the border color of the rail down
+// its left edge and of the life bar under it, the color of its icon, and the
+// icon itself. One table of the three rather than three lookups or class strings
+// glued together in the template — glued classes read badly and cannot be
+// grepped (CONN_VISUAL in HilosLayout is the same shape).
 type ToastVisual = { rail: string; accent: string; icon: string }
 const TOAST_VISUAL: Record<HilosToastSeverity, ToastVisual> = {
   error: {
@@ -451,7 +451,7 @@ function dismissIfNavigated(event: MouseEvent, id: number): void {
         <div class="flex-grow-1 min-w-0">
           <div
             v-if="toast.source !== null"
-            class="hilos-toast-source text-body-secondary mb-1"
+            class="small text-uppercase lh-sm text-body-secondary mb-1"
             data-id="hilos-toast-source"
           >
             {{ toast.source }}
@@ -492,9 +492,9 @@ function dismissIfNavigated(event: MouseEvent, id: number): void {
       <div
         v-if="toast.measured && toast.severity !== 'error'"
         :key="toast.repeats"
-        class="hilos-toast-life"
+        class="hilos-toast-life border-top border-2 opacity-50"
         :class="[
-          TOAST_VISUAL[toast.severity].accent,
+          TOAST_VISUAL[toast.severity].rail,
           { 'hilos-toast-life-paused': frozen },
         ]"
         data-id="hilos-toast-life"

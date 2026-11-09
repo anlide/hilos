@@ -365,7 +365,7 @@ describe('HilosToastHost', () => {
     expect(barBeforeMeasurement).toBeNull()
     expect(store.toasts.get()[0].measured).toBe(true)
     const bar = byId(container, 'hilos-toast-life') as HTMLElement
-    expect(bar.className).toContain('text-success')
+    expect(bar.className).toContain('border-success')
     expect(bar.className).not.toContain('hilos-toast-life-paused')
   })
 

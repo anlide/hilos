@@ -231,7 +231,7 @@ describe('HilosToastHost', () => {
     await nextTick()
     expect(store.toasts.get()[0].measured).toBe(true)
     const bar = wrapper.find('[data-id="hilos-toast-life"]')
-    expect(bar.classes()).toContain('text-success')
+    expect(bar.classes()).toContain('border-success')
     expect(bar.classes()).not.toContain('hilos-toast-life-paused')
   })
 

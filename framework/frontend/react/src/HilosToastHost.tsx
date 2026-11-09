@@ -50,11 +50,11 @@ export interface HilosToastHostProps {
   corner?: HilosToastCorner
 }
 
-// What names a severity on the light card: the color of the rail down its left
-// edge, the color of its icon, and the icon itself. One table of the three
-// rather than three lookups or class strings glued together in the markup —
-// glued classes read badly and cannot be grepped (CONN_VISUAL in HilosLayout is
-// the same shape).
+// What names a severity on the light card: the border color of the rail down
+// its left edge and of the life bar under it, the color of its icon, and the
+// icon itself. One table of the three rather than three lookups or class
+// strings glued together in the markup — glued classes read badly and cannot
+// be grepped (CONN_VISUAL in HilosLayout is the same shape).
 type ToastVisual = { rail: string; accent: string; icon: string }
 const TOAST_VISUAL: Record<HilosToastSeverity, ToastVisual> = {
   error: {
@@ -448,7 +448,7 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
               <div className="flex-grow-1 min-w-0">
                 {toast.source !== null && (
                   <div
-                    className="hilos-toast-source text-body-secondary mb-1"
+                    className="small text-uppercase lh-sm text-body-secondary mb-1"
                     data-id="hilos-toast-source"
                   >
                     {toast.source}
@@ -494,7 +494,7 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
             {toast.measured && toast.severity !== 'error' && (
               <div
                 key={toast.repeats}
-                className={`hilos-toast-life ${TOAST_VISUAL[toast.severity].accent}${frozen ? ' hilos-toast-life-paused' : ''}`}
+                className={`hilos-toast-life border-top border-2 opacity-50 ${TOAST_VISUAL[toast.severity].rail}${frozen ? ' hilos-toast-life-paused' : ''}`}
                 data-id="hilos-toast-life"
               ></div>
             )}
