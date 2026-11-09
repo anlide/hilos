@@ -714,9 +714,10 @@ For its data and privacy boundaries, read
    pairs after provisioning it in step 3; never start a second migrator on
    connection 1.
 3. Provision `<primary>-change-log` on the same server and grant the application
-   access. Configure/connect index 1 through `ChangeLogDatabase` after the
-   primary connection and schema, before `if ($initHilos)`, keeping primary
-   active. Mount `init-change-log.sh` at
+   access. Configure/connect index 1 through `ChangeLogDatabase` in
+   `Database::openConnections()`, right after the primary connection, keeping
+   primary active; `initialize()` reads the primary schema after both
+   connections, before `if ($initHilos)`. Mount `init-change-log.sh` at
    `/docker-entrypoint-initdb.d/init-change-log.sh` and `provision-change-log.sh`
    at `/usr/local/bin/provision-change-log.sh` on each MariaDB service: local,
    test and cluster. The init script calls the same repeatable root script

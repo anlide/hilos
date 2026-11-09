@@ -115,7 +115,9 @@ baseline command in step 7:
    INITIAL_AGENTS_START), `WebSocketServer` (`onCreateClient` + `onStart`),
    `WebSocketClient` (`onHandshake` + `onActionValidated` — the base default
    rejects EVERY action; validate against `Hilos::getPageActionRoutes()`).
-7. **Database**: `Database` (configure/connect from `DB_*` env),
+7. **Database**: `Database` (`openConnections()` configures and connects from
+   `DB_*` env and is what `docker.php` calls; `initialize()` adds the schema
+   read and `Hilos::init()`),
    `<Name>DbContext extends HilosDbContext` (can be empty — the base registers
    the framework settings collection), and an `EnvCatalog` overriding the
    `DB_DATABASE` default (the framework stub default is an empty string). The
@@ -155,9 +157,11 @@ re-authored — through the per-feature recipes in
 settings (the first one, above), and `backup` (a catalog + env + agent/CLI/RT
 binding over the framework backup engine).
 
-Load-bearing boot order in `docker.php`: `Database::initialize(initHilos:
-false, retryConnection: true)` → `Migration::migrateUp()` → `Hilos::init()`.
-Calling `Hilos::init()` before migrations breaks first boot on an empty DB.
+Load-bearing boot order in `docker.php`:
+`Database::openConnections(retryConnection: true)` → `Migration::migrateUp()` →
+`Hilos::init()`. Calling `Hilos::init()` before migrations breaks first boot on
+an empty DB. The connect step does not read the schema: a neighbouring
+migration that dropped a table would otherwise crash the start (HIL-2086).
 
 ## Docker stacks
 

@@ -51,7 +51,8 @@ final class DockerApplication
      * @param string $bootstrapDir Directory containing daemon.php and the Database/Migration tree
      * @param string $projectRoot Project root that holds .env
      * @param class-string<Hilos> $hilosClass Project Hilos facade whose catalogs drive env/cluster init
-     * @param callable(): void $databaseInit Database connect (without Hilos init) run before migrations
+     * @param callable(): void $databaseInit Database connect run before migrations, without Hilos init and without
+     *        reading the schema (the daemon reads it after the rollout)
      * @param ?callable(): void $postMigration Project DDL before Hilos init; already under the claim when the journal is active
      * @return never
      */
@@ -69,7 +70,8 @@ final class DockerApplication
                 $databaseInit,
                 $postMigration,
             ): void {
-                // Connect the database first; migrations must run before Hilos accesses any table.
+                // Connect the database first, without Hilos and without reading the schema: migrations must
+                // run before Hilos accesses any table, and the daemon reads the schema after the rollout.
                 $databaseInit();
 
                 // Run migrations once on startup (creates tables before Hilos accesses them), under

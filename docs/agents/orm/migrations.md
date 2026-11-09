@@ -64,6 +64,13 @@ a target that had none is left without one — the marker is the database's name
   failure. `db:migration:up`, `:down`, `:retry`, a restore and `test:db:reset` take the same
   claim; `recordAppliedLevel()` does not. A restore takes the primary claim again for journal
   trigger installation, after anonymization and the settlement of restored pending deliveries.
+- **A node reads the schema after the queue, not before it.** Before the queue the watchdog of a
+  node reads no table definitions: its connect step, `Database::openConnections()`, only opens
+  the primary database and then the journal when the project carries one. A migration of a
+  neighbouring node may drop a table an early read would still list, and the start would fail on
+  a table that no longer exists. Under the claim a reader cannot meet such a drop, which is why
+  the trigger installation may read live definitions there. The daemon reads the primary schema
+  through `Database::initialize()` once the rollout is over (HIL-2086).
 - **Waiting has no deadline.** A waiting process reads the row once a second and names the
   holder in its log on the first poll and every 30th after it: `Waiting for the schema rollout
   claim held by <holder> since <claimed_at>`. Only the row being gone lets it go on.

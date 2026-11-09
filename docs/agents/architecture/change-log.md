@@ -442,12 +442,13 @@ providers remain the mechanism for genuinely unmapped tables. Coverage,
 compatibility, column strategies and restore results are unchanged.
 
 A project carrying `CHANGE_LOG` provisions the derived database and grants the
-app access to it before starting. Its `Database::initialize()` configures and
-connects index 1 through `ChangeLogDatabase` after the primary connection and
-schema, before the `if ($initHilos)` branch. Only the primary schema is
+app access to it before starting. Its `Database::openConnections()` configures
+and connects index 1 through `ChangeLogDatabase` after the primary connection,
+and `Database::initialize()` reads the primary schema only after both
+connections, before the `if ($initHilos)` branch. Only the primary schema is
 initialized, and the primary connection stays active. This ordering also covers
-a direct CLI or worker entry, so Hilos sees the journal configuration when it
-checks column coverage.
+a direct CLI or worker entry, since both go through `initialize()`, so Hilos
+sees the journal configuration when it checks column coverage.
 
 Every demo's fresh local volume, test tmpfs or cluster data directory runs
 `init-change-log.sh` and grants the app access to exactly the derived database.
