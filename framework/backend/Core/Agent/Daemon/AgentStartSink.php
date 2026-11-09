@@ -54,13 +54,12 @@ interface AgentStartSink
     /**
      * Reports that an agent stopped on this node, ending any startup wait it satisfied.
      *
-     * A separate method rather than a flag on the two above: the listener does not answer the
-     * held frames, it lets them go so they ask the address again. Runs on the master's message
-     * path, after the roster already forgot the agent, under the same no-blocking rule as its
-     * siblings.
+     * Startup-held frames ask the address again; test node-report waits are refused. Runs on
+     * the master's message path after roster removal, under the same no-blocking rule as its siblings.
      *
      * @param string $agentId Id of the agent that stopped, in the `type` or `type:index` form
      * @throws InvalidFormatException When a pending page recovery address is malformed
+     * @throws EventLoopException When a live node-report deadline cannot be armed or canceled
      */
     public function onAgentStopped(string $agentId): void;
 }

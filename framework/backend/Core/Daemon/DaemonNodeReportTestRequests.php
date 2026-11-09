@@ -11,6 +11,7 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
+use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\EventLoop\EventLoopTimer;
@@ -20,6 +21,7 @@ use Hilos\Environment\NonProductionGate;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Throwable;
@@ -32,18 +34,24 @@ use Throwable;
  * fact only after the other forced master frames, over their existing worker link. A node
  * without an HTTP server or router owes no HTTP frame.
  *
- * A wait ends four ways: the roster went out and the node agent is asked to report, which
- * answers the console itself; the roster could not be built; the deadline passed; the caller
- * left. Nothing here touches the database, a file or the network - the ask leaves over the
- * master's existing link to its worker.
+ * The original worker channel and deadline survive the roster send until the agent answers,
+ * the roster or send fails, the worker or agent leaves, the deadline passes, or the caller leaves.
+ * The ask leaves over the master's existing link to its worker.
  */
 final class DaemonNodeReportTestRequests
 {
+    private const string AGENT_NOT_RUNNING = 'The Daemon node agent is not running on this node.';
+
+    private const string TIMEOUT_REASON = 'The Daemon node agent did not report in time.';
+
     /** @var array<string, float> Epoch arrival of each pending ask, by console correlation */
     private array $requestedAt = [];
 
     /** @var array<string, float> Last moment each pending ask may still be answered, by console correlation */
     private array $deadlines = [];
+
+    /** @var array<string, WorkerClient> Original worker channel of each live ask */
+    private array $workers = [];
 
     private float $nextDeadline = INF;
 
@@ -90,6 +98,7 @@ final class DaemonNodeReportTestRequests
      * @param CommandRequestDTO $request Held request, independently checked at this boundary
      * @param float $now Epoch seconds at the actual request arrival
      * @param ?float $monotonicNow Monotonic observation for deadline tests
+     * @throws AgentNotLinkedToWorkerException When an admitted proxy cannot supply its declared worker channel
      * @throws EventLoopException When the nearest live deadline cannot be armed or canceled
      */
     public function request(CommandRequestDTO $request, float $now, ?float $monotonicNow = null): void
@@ -108,7 +117,14 @@ final class DaemonNodeReportTestRequests
             return;
         }
         if (!$this->agents->isAgentStarted(HilosAgentType::HILOS_DAEMON_NODE)) {
-            ($this->reply)(CommandReplyDTO::error($request->correlationId, 'The Daemon node agent is not running on this node.'));
+            ($this->reply)(CommandReplyDTO::error($request->correlationId, self::AGENT_NOT_RUNNING));
+            return;
+        }
+
+        $agent = $this->agents->getAgent(HilosAgentType::HILOS_DAEMON_NODE);
+        $worker = $agent !== null && $agent->hasWorkerClient() ? $agent->getWorkerClient() : null;
+        if ($worker === null || $worker->shouldClose()) {
+            ($this->reply)(CommandReplyDTO::error($request->correlationId, self::AGENT_NOT_RUNNING));
             return;
         }
 
@@ -117,6 +133,7 @@ final class DaemonNodeReportTestRequests
             + CommandChannelWindows::AGENT_WAIT_SECONDS;
         $this->requestedAt[$request->correlationId] = $now;
         $this->deadlines[$request->correlationId] = $deadline;
+        $this->workers[$request->correlationId] = $worker;
         $this->rearmDeadlineTimer();
     }
 
@@ -137,7 +154,15 @@ final class DaemonNodeReportTestRequests
             }
         }
         foreach ($due as $correlationId) {
-            $this->abandon($correlationId);
+            if (!isset($this->deadlines[$correlationId])) {
+                continue;
+            }
+            if ($this->workers[$correlationId]->shouldClose()) {
+                $this->workerGone($this->workers[$correlationId]);
+                continue;
+            }
+            unset($this->requestedAt[$correlationId]);
+            $error = null;
             try {
                 $this->signals->sendToAgent(
                     HilosAgentType::HILOS_DAEMON_NODE,
@@ -149,8 +174,66 @@ final class DaemonNodeReportTestRequests
                     ),
                 );
             } catch (Throwable $failure) {
-                ($this->reply)(CommandReplyDTO::error($correlationId, $failure->getMessage()));
+                $error = $failure->getMessage();
             }
+            if ($error !== null) {
+                $this->finish($correlationId, $error);
+            }
+        }
+    }
+
+    /**
+     * @param string $correlationId Local command correlation
+     * @return bool Whether report-now was sent and its outcome is still held
+     */
+    public function hasWaiter(string $correlationId): bool
+    {
+        return isset($this->deadlines[$correlationId]) && !isset($this->requestedAt[$correlationId]);
+    }
+
+    /**
+     * Consumes a dispatched wait before delivering its original reply, enforcing the original deadline.
+     *
+     * @param CommandReplyDTO $reply Agent outcome for the held local console
+     * @param ?float $now Monotonic observation for deadline tests
+     * @throws EventLoopException When the nearest live deadline cannot be armed or canceled
+     */
+    public function acceptReply(CommandReplyDTO $reply, ?float $now = null): void
+    {
+        if (!$this->hasWaiter($reply->correlationId)) {
+            return;
+        }
+        $now ??= hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
+        if ($now >= $this->deadlines[$reply->correlationId]) {
+            $this->finish($reply->correlationId, self::TIMEOUT_REASON);
+            return;
+        }
+        if ($this->workers[$reply->correlationId]->shouldClose()) {
+            $this->workerGone($this->workers[$reply->correlationId]);
+            return;
+        }
+        $this->abandon($reply->correlationId);
+        ($this->reply)($reply);
+    }
+
+    /**
+     * @param WorkerClient $worker Exact original channel that went down
+     * @throws EventLoopException When the nearest live deadline cannot be armed or canceled
+     */
+    public function workerGone(WorkerClient $worker): void
+    {
+        foreach ($this->workers as $correlationId => $original) {
+            if ($original === $worker) {
+                $this->finish((string)$correlationId, 'The worker running the Daemon node agent went down before it reported.');
+            }
+        }
+    }
+
+    /** @throws EventLoopException When the nearest live deadline cannot be armed or canceled */
+    public function agentStopped(): void
+    {
+        foreach (array_keys($this->deadlines) as $correlationId) {
+            $this->finish((string)$correlationId, 'The Daemon node agent stopped before it reported.');
         }
     }
 
@@ -171,10 +254,10 @@ final class DaemonNodeReportTestRequests
      */
     public function abandon(string $correlationId): void
     {
-        if (!isset($this->requestedAt[$correlationId])) {
+        if (!isset($this->deadlines[$correlationId])) {
             return;
         }
-        unset($this->requestedAt[$correlationId], $this->deadlines[$correlationId]);
+        unset($this->requestedAt[$correlationId], $this->workers[$correlationId], $this->deadlines[$correlationId]);
         $this->rearmDeadlineTimer();
     }
 
@@ -191,7 +274,7 @@ final class DaemonNodeReportTestRequests
         }
         foreach ($this->deadlines as $correlationId => $deadline) {
             if ($now >= $deadline) {
-                $this->finish((string)$correlationId, 'The Daemon node agent did not report in time.');
+                $this->finish((string)$correlationId, self::TIMEOUT_REASON);
             }
         }
     }
@@ -203,6 +286,9 @@ final class DaemonNodeReportTestRequests
      */
     private function finish(string $correlationId, string $error): void
     {
+        if (!isset($this->deadlines[$correlationId])) {
+            return;
+        }
         $this->abandon($correlationId);
         ($this->reply)(CommandReplyDTO::error($correlationId, $error));
     }

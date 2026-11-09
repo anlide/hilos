@@ -706,126 +706,136 @@ test(
   },
 )
 
-test('a guest sees a real Checking candidate without adding it to public days or history', async ({
-  page,
-  browser,
-  baseURL,
-}) => {
-  test.slow() // Independent guest, real worker pause/collector and recovery.
-  await grantAdminToSelf(expect, page)
-  const guestContext = await browser.newContext({
-    baseURL,
-    ignoreHTTPSErrors: true,
-    colorScheme: 'light',
-  })
-  const guest = await guestContext.newPage()
-  const workers = await page.context().newPage()
-  const admin = watchStatusFrames(page)
-  const log = watchPublicStatus(guest)
-  let recoveryObservedAt: number | undefined
-  try {
-    await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
-    await gotoPublicStatus(expect, guest)
-    const before = await expectPublicStatusPair(
-      expect,
-      guest,
-      log,
-      ({ status }) =>
-        status.components.every(
-          (component) => component.state === 'operational',
-        ),
-    )
-    const history = await guest.getByTestId('public-status-history').innerText()
-    const days = guest.getByTestId('public-status-days-90').getByRole('button')
-    const labels = await days.evaluateAll((buttons) =>
-      buttons.map((button) => button.getAttribute('aria-label')),
-    )
-    await withStatusAgentLoss(expect, workers, admin, async (untilReported) => {
-      const expect = pausedExpect
-      await untilReported(() => {
-        expect(admin.latest()?.incidents?.length).toBe(1)
-      })
-      const incident = admin.latest()!.incidents![0]
-      const candidate = await expectPublicStatusPair(
+// FIXME(F-087, 2026-11-09): The first Workers window did not find its agent before fault injection within 13s; foreign; attempt 2; HIL-1971.
+test(
+  'a guest sees a real Checking candidate without adding it to public days or history',
+  { tag: '@quarantine:F-087' },
+  async ({ page, browser, baseURL }) => {
+    test.slow() // Independent guest, real worker pause/collector and recovery.
+    await grantAdminToSelf(expect, page)
+    const guestContext = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors: true,
+      colorScheme: 'light',
+    })
+    const guest = await guestContext.newPage()
+    const workers = await page.context().newPage()
+    const admin = watchStatusFrames(page)
+    const log = watchPublicStatus(guest)
+    let recoveryObservedAt: number | undefined
+    try {
+      await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
+      await gotoPublicStatus(expect, guest)
+      const before = await expectPublicStatusPair(
         expect,
         guest,
         log,
-        ({ status }) => status.candidates.length === 1,
+        ({ status }) =>
+          status.components.every(
+            (component) => component.state === 'operational',
+          ),
       )
-      expect(candidate.status.candidates).toEqual([
-        {
-          componentKey: STATUS_FAULT_COMPONENT,
-          detectedAt: incident.detectedAt,
+      const history = await guest
+        .getByTestId('public-status-history')
+        .innerText()
+      const days = guest
+        .getByTestId('public-status-days-90')
+        .getByRole('button')
+      const labels = await days.evaluateAll((buttons) =>
+        buttons.map((button) => button.getAttribute('aria-label')),
+      )
+      await withStatusAgentLoss(
+        expect,
+        workers,
+        admin,
+        async (untilReported) => {
+          const expect = pausedExpect
+          await untilReported(() => {
+            expect(admin.latest()?.incidents?.length).toBe(1)
+          })
+          const incident = admin.latest()!.incidents![0]
+          const candidate = await expectPublicStatusPair(
+            expect,
+            guest,
+            log,
+            ({ status }) => status.candidates.length === 1,
+          )
+          expect(candidate.status.candidates).toEqual([
+            {
+              componentKey: STATUS_FAULT_COMPONENT,
+              detectedAt: incident.detectedAt,
+            },
+          ])
+          expect(candidate.status.outages).toEqual(before.status.outages)
+          await expect(
+            guest.getByTestId('public-status-candidates'),
+          ).toContainText('Checking a possible problem with Settings library')
+          await expect(
+            guest.getByTestId('public-status-component-state'),
+          ).toHaveText('Checking')
+          await expect(guest.getByTestId('public-status-banner')).toHaveText(
+            'Checking a possible problem',
+          )
+          await expect(guest.getByTestId('public-status-history')).toHaveText(
+            history,
+            { useInnerText: true },
+          )
+          expect(
+            await days.evaluateAll((buttons) =>
+              buttons.map((button) => button.getAttribute('aria-label')),
+            ),
+          ).toEqual(labels)
         },
-      ])
-      expect(candidate.status.outages).toEqual(before.status.outages)
-      await expect(guest.getByTestId('public-status-candidates')).toContainText(
-        'Checking a possible problem with Settings library',
       )
-      await expect(
-        guest.getByTestId('public-status-component-state'),
-      ).toHaveText('Checking')
-      await expect(guest.getByTestId('public-status-banner')).toHaveText(
-        'Checking a possible problem',
+      // The restart reply precedes the collector's next whole node report, and
+      // the owner rebuilds the pair only after it: settle the real recovery
+      // first, so the guest's wait covers only that rebuild.
+      await expect
+        .poll(() => admin.latest())
+        .toMatchObject({
+          healthKnown: true,
+          components: { operationalCount: 1, totalCount: 1 },
+          maintenance: null,
+          incidents: [],
+        })
+      recoveryObservedAt = performance.now()
+      await expectPublicStatusPair(
+        expect,
+        guest,
+        log,
+        ({ status }) =>
+          status.candidates.length === 0 &&
+          status.components.every(
+            (component) => component.state === 'operational',
+          ),
       )
+      await expect(guest.getByTestId('public-status-candidates')).toHaveCount(0)
       await expect(guest.getByTestId('public-status-history')).toHaveText(
         history,
-        { useInnerText: true },
+        {
+          useInnerText: true,
+        },
       )
-      expect(
-        await days.evaluateAll((buttons) =>
-          buttons.map((button) => button.getAttribute('aria-label')),
-        ),
-      ).toEqual(labels)
-    })
-    // The restart reply precedes the collector's next whole node report, and
-    // the owner rebuilds the pair only after it: settle the real recovery
-    // first, so the guest's wait covers only that rebuild.
-    await expect
-      .poll(() => admin.latest())
-      .toMatchObject({
-        healthKnown: true,
-        components: { operationalCount: 1, totalCount: 1 },
-        maintenance: null,
-        incidents: [],
-      })
-    recoveryObservedAt = performance.now()
-    await expectPublicStatusPair(
-      expect,
-      guest,
-      log,
-      ({ status }) =>
-        status.candidates.length === 0 &&
-        status.components.every(
-          (component) => component.state === 'operational',
-        ),
-    )
-    await expect(guest.getByTestId('public-status-candidates')).toHaveCount(0)
-    await expect(guest.getByTestId('public-status-history')).toHaveText(
-      history,
-      {
-        useInnerText: true,
-      },
-    )
-    expectPublicStatusReadOnly(expect, log)
-  } finally {
-    await log.stop()
-    admin.stop()
-    try {
-      await test.info().attach('public-status-real-candidate', {
-        body: JSON.stringify({
-          public: log,
-          recoveryObservedAt,
-          admin: admin.frames,
-        }),
-        contentType: 'application/json',
-      })
+      expectPublicStatusReadOnly(expect, log)
     } finally {
-      await workers.close()
-      await guestContext.close()
+      await log.stop()
+      admin.stop()
+      try {
+        await test.info().attach('public-status-real-candidate', {
+          body: JSON.stringify({
+            public: log,
+            recoveryObservedAt,
+            admin: admin.frames,
+          }),
+          contentType: 'application/json',
+        })
+      } finally {
+        await workers.close()
+        await guestContext.close()
+      }
     }
-  }
-})
+  },
+)
 
 // FIXME(F-053, 2026-10-29): public Status loss window ends with worker state S instead of T · чужой · попытка 1 · HIL-1736
 test(

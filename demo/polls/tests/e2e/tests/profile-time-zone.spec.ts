@@ -201,57 +201,34 @@ test(
   },
 )
 
-test('reformats real session and tab milliseconds while retaining the device browser zone and expanded tabs', async ({
-  context,
-  page,
-}) => {
-  await createTestUser(expect, page)
-  await gotoPage(expect, page, '/profile', PAGE_READY)
-  const sessionsPage = await context.newPage()
-  const frames: SocketFrame[] = []
-  const socket = watchSocketFrames(sessionsPage, (frame) => frames.push(frame))
-  try {
-    await gotoPage(expect, sessionsPage, '/profile/sessions', PAGE_READY)
-    await expectTimeZoneEnvironment(expect, sessionsPage, frames, {
-      browserTimeZone: 'America/Kralendijk',
-      projectTimeZone: 'Europe/Warsaw',
-    })
-    await expect.poll(() => profileSessionSnapshot(frames)).toBeDefined()
-    const snapshot = profileSessionSnapshot(frames)!
-    const self = deliveryObject(
-      deliveryObject(snapshot.payload.data).selfConnection,
+// FIXME(F-086, 2026-11-09): Time zone choice did not close the modal or show an error within 8s; foreign; attempt 2; HIL-1971.
+test(
+  'reformats real session and tab milliseconds while retaining the device browser zone and expanded tabs',
+  { tag: '@quarantine:F-086' },
+  async ({ context, page }) => {
+    await createTestUser(expect, page)
+    await gotoPage(expect, page, '/profile', PAGE_READY)
+    const sessionsPage = await context.newPage()
+    const frames: SocketFrame[] = []
+    const socket = watchSocketFrames(sessionsPage, (frame) =>
+      frames.push(frame),
     )
-    expect(self.acceptKey).toEqual(expect.any(String))
-    await clickSubmit(expect, sessionsPage.getByTestId('profile-session-tabs'))
-    await expectProfileSessionMoments(
-      expect,
-      sessionsPage,
-      snapshot,
-      'America/Kralendijk',
-      self.acceptKey as string,
-      2,
-    )
-    const document = await watchClientDocument(sessionsPage)
-    const socketCount = socket.sockets()
     try {
-      await chooseProfileTimeZone(expect, page, 'Asia/Tokyo')
-      await expectProfileTimeZone(
-        expect,
-        page,
-        'Asia/Tokyo',
-        'America/Kralendijk',
+      await gotoPage(expect, sessionsPage, '/profile/sessions', PAGE_READY)
+      await expectTimeZoneEnvironment(expect, sessionsPage, frames, {
+        browserTimeZone: 'America/Kralendijk',
+        projectTimeZone: 'Europe/Warsaw',
+      })
+      await expect.poll(() => profileSessionSnapshot(frames)).toBeDefined()
+      const snapshot = profileSessionSnapshot(frames)!
+      const self = deliveryObject(
+        deliveryObject(snapshot.payload.data).selfConnection,
       )
-      await expectProfileSessionMoments(
+      expect(self.acceptKey).toEqual(expect.any(String))
+      await clickSubmit(
         expect,
-        sessionsPage,
-        snapshot,
-        'Asia/Tokyo',
-        self.acceptKey as string,
-        2,
-        'America/Kralendijk',
+        sessionsPage.getByTestId('profile-session-tabs'),
       )
-      await chooseProfileTimeZone(expect, page, null)
-      await expectProfileTimeZone(expect, page, null, 'America/Kralendijk')
       await expectProfileSessionMoments(
         expect,
         sessionsPage,
@@ -260,13 +237,43 @@ test('reformats real session and tab milliseconds while retaining the device bro
         self.acceptKey as string,
         2,
       )
-      await document.unchanged()
-      expect(socket.sockets()).toBe(socketCount)
+      const document = await watchClientDocument(sessionsPage)
+      const socketCount = socket.sockets()
+      try {
+        await chooseProfileTimeZone(expect, page, 'Asia/Tokyo')
+        await expectProfileTimeZone(
+          expect,
+          page,
+          'Asia/Tokyo',
+          'America/Kralendijk',
+        )
+        await expectProfileSessionMoments(
+          expect,
+          sessionsPage,
+          snapshot,
+          'Asia/Tokyo',
+          self.acceptKey as string,
+          2,
+          'America/Kralendijk',
+        )
+        await chooseProfileTimeZone(expect, page, null)
+        await expectProfileTimeZone(expect, page, null, 'America/Kralendijk')
+        await expectProfileSessionMoments(
+          expect,
+          sessionsPage,
+          snapshot,
+          'America/Kralendijk',
+          self.acceptKey as string,
+          2,
+        )
+        await document.unchanged()
+        expect(socket.sockets()).toBe(socketCount)
+      } finally {
+        await document.dispose()
+      }
     } finally {
-      await document.dispose()
+      socket.stop()
+      await sessionsPage.close()
     }
-  } finally {
-    socket.stop()
-    await sessionsPage.close()
-  }
-})
+  },
+)

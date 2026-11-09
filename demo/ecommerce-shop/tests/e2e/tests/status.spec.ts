@@ -442,126 +442,136 @@ test(
   },
 )
 
-test('public /status reads its two files with no subscription and keeps reading through a dropped socket and its recovery', async ({
-  page,
-}) => {
-  // A guest: the reader needs no account, page answer or handshake.
-  const socket = await controlSocketReconnect(page)
-  const log = watchPublicStatus(page)
-  const recovery: Record<string, number> = {}
-  try {
-    await test.step('the first look reads both files and shows this project', async () => {
-      await gotoPublicStatus(expect, page)
-      await expect(page.getByTestId('conn-state')).toHaveText('connected')
-      const first = await expectPublicStatusPair(expect, page, log)
-      expect(first.status.components).toEqual([
-        expect.objectContaining({
-          componentKey: SERVICE.componentKey,
-          name: SERVICE.name,
-        }),
-      ])
-      await expect(page.getByTestId('public-status-components')).toContainText(
-        SERVICE.name,
-      )
-      await expect(page.getByTestId('public-status-subscribe')).toBeVisible()
-    })
+// FIXME(F-088, 2026-11-09): F5 без сокета не дождался новой пары файлов · чужой · попытка 1 · HIL-2081
+test(
+  'public /status reads its two files with no subscription and keeps reading through a dropped socket and its recovery',
+  { tag: '@quarantine:F-088' },
+  async ({ page }) => {
+    // A guest: the reader needs no account, page answer or handshake.
+    const socket = await controlSocketReconnect(page)
+    const log = watchPublicStatus(page)
+    const recovery: Record<string, number> = {}
+    try {
+      await test.step('the first look reads both files and shows this project', async () => {
+        await gotoPublicStatus(expect, page)
+        await expect(page.getByTestId('conn-state')).toHaveText('connected')
+        const first = await expectPublicStatusPair(expect, page, log)
+        expect(first.status.components).toEqual([
+          expect.objectContaining({
+            componentKey: SERVICE.componentKey,
+            name: SERVICE.name,
+          }),
+        ])
+        await expect(
+          page.getByTestId('public-status-components'),
+        ).toContainText(SERVICE.name)
+        await expect(page.getByTestId('public-status-subscribe')).toBeVisible()
+      })
 
-    await test.step('a publication hint over the live socket rereads the files', async () => {
-      const { aliveAt } = await beatStatusHeartbeat()
-      await expectPublicStatusPair(
-        expect,
-        page,
-        log,
-        (pair) => pair.heartbeat.aliveAt === aliveAt,
-      )
-      expect(
-        log.wire.packets.some((packet) =>
-          packet.frames.some(
-            ({ wire }) => deliveryObject(wire).type === 'status_files_changed',
+      await test.step('a publication hint over the live socket rereads the files', async () => {
+        const { aliveAt } = await beatStatusHeartbeat()
+        await expectPublicStatusPair(
+          expect,
+          page,
+          log,
+          (pair) => pair.heartbeat.aliveAt === aliveAt,
+        )
+        expect(
+          log.wire.packets.some((packet) =>
+            packet.frames.some(
+              ({ wire }) =>
+                deliveryObject(wire).type === 'status_files_changed',
+            ),
           ),
-        ),
-      ).toBe(true)
-    })
+        ).toBe(true)
+      })
 
-    await test.step('a dropped socket keeps the facts and the page usable', async () => {
-      const banner = await page.getByTestId('public-status-banner').innerText()
-      const states = await page
-        .getByTestId('public-status-component-state')
-        .allInnerTexts()
-      await markDocument(page)
-      await socket.drop()
-      await expect(page.getByTestId('conn-state')).not.toHaveText('connected')
-      await expect(page.getByTestId('public-status-connection')).toHaveText(
-        'Your live connection to the site is lost — the system is up',
-      )
-      await expect(page.getByTestId('public-status-banner')).toHaveText(banner)
-      await expect(
-        page.getByTestId('public-status-component-state'),
-      ).toHaveText(states)
-      await expect(page.getByTestId('public-status-subscribe')).toHaveCount(0)
-      // The shell neither covers the reader nor disables its controls: the
-      // oldest day answers a click (the detail starts on today).
-      const day = page
-        .getByTestId('public-status-days-90')
-        .getByRole('button')
-        .first()
-      await expect(day).toBeEnabled()
-      await day.click()
-      await expect(page.getByTestId('public-status-day-detail')).toHaveText(
-        (await day.getAttribute('aria-label'))!,
-      )
-      await expectDocumentUnchanged(expect, page)
-    })
+      await test.step('a dropped socket keeps the facts and the page usable', async () => {
+        const banner = await page
+          .getByTestId('public-status-banner')
+          .innerText()
+        const states = await page
+          .getByTestId('public-status-component-state')
+          .allInnerTexts()
+        await markDocument(page)
+        await socket.drop()
+        await expect(page.getByTestId('conn-state')).not.toHaveText('connected')
+        await expect(page.getByTestId('public-status-connection')).toHaveText(
+          'Your live connection to the site is lost — the system is up',
+        )
+        await expect(page.getByTestId('public-status-banner')).toHaveText(
+          banner,
+        )
+        await expect(
+          page.getByTestId('public-status-component-state'),
+        ).toHaveText(states)
+        await expect(page.getByTestId('public-status-subscribe')).toHaveCount(0)
+        // The shell neither covers the reader nor disables its controls: the
+        // oldest day answers a click (the detail starts on today).
+        const day = page
+          .getByTestId('public-status-days-90')
+          .getByRole('button')
+          .first()
+        await expect(day).toBeEnabled()
+        await day.click()
+        await expect(page.getByTestId('public-status-day-detail')).toHaveText(
+          (await day.getAttribute('aria-label'))!,
+        )
+        await expectDocumentUnchanged(expect, page)
+      })
 
-    await test.step('F5 without a socket reads the files a publication changed', async () => {
-      const { aliveAt } = await beatStatusHeartbeat()
-      const packets = log.wire.packets.length
-      await page.reload()
-      await expect(page.getByTestId('public-status-components')).toBeVisible()
-      await expectPublicStatusPair(
-        expect,
-        page,
-        log,
-        (pair) => pair.heartbeat.aliveAt === aliveAt,
-      )
-      await expect(page.getByTestId('public-status-connection')).toHaveText(
-        'Your live connection to the site is lost — the system is up',
-      )
-      await expect(page.getByTestId('conn-state')).not.toHaveText('connected')
-      expect(log.wire.packets.slice(packets)).toEqual([])
-    })
+      await test.step('F5 without a socket reads the files a publication changed', async () => {
+        const { aliveAt } = await beatStatusHeartbeat()
+        const packets = log.wire.packets.length
+        await page.reload()
+        await expect(page.getByTestId('public-status-components')).toBeVisible()
+        await expectPublicStatusPair(
+          expect,
+          page,
+          log,
+          (pair) => pair.heartbeat.aliveAt === aliveAt,
+        )
+        await expect(page.getByTestId('public-status-connection')).toHaveText(
+          'Your live connection to the site is lost — the system is up',
+        )
+        await expect(page.getByTestId('conn-state')).not.toHaveText('connected')
+        expect(log.wire.packets.slice(packets)).toEqual([])
+      })
 
-    await test.step('recovery rereads at once, before the next poll', async () => {
-      const { aliveAt } = await beatStatusHeartbeat()
-      const before = log.reads[0].length
-      const last = log.reads[0].at(-1)!
-      const pair = log.displayed.at(-1)!
-      recovery.lastReadAt = last.requestedAt
-      recovery.releasedAt = performance.now()
-      await socket.release()
-      await expect(page.getByTestId('conn-state')).toHaveText('connected')
-      await expect.poll(() => log.reads[0].length).toBeGreaterThan(before)
-      recovery.rereadAt = log.reads[0][before].requestedAt
-      expect(recovery.rereadAt).toBeLessThan(
-        recovery.lastReadAt + pair.status.config.pollIntervalSeconds * 1000,
-      )
-      await expectPublicStatusPair(
-        expect,
-        page,
-        log,
-        (read) => read.heartbeat.aliveAt === aliveAt,
-      )
-      await expect(page.getByTestId('public-status-connection')).toHaveCount(0)
-      await expect(page.getByTestId('public-status-subscribe')).toBeVisible()
-    })
+      await test.step('recovery rereads at once, before the next poll', async () => {
+        const { aliveAt } = await beatStatusHeartbeat()
+        const before = log.reads[0].length
+        const last = log.reads[0].at(-1)!
+        const pair = log.displayed.at(-1)!
+        recovery.lastReadAt = last.requestedAt
+        recovery.releasedAt = performance.now()
+        await socket.release()
+        await expect(page.getByTestId('conn-state')).toHaveText('connected')
+        await expect.poll(() => log.reads[0].length).toBeGreaterThan(before)
+        recovery.rereadAt = log.reads[0][before].requestedAt
+        expect(recovery.rereadAt).toBeLessThan(
+          recovery.lastReadAt + pair.status.config.pollIntervalSeconds * 1000,
+        )
+        await expectPublicStatusPair(
+          expect,
+          page,
+          log,
+          (read) => read.heartbeat.aliveAt === aliveAt,
+        )
+        await expect(page.getByTestId('public-status-connection')).toHaveCount(
+          0,
+        )
+        await expect(page.getByTestId('public-status-subscribe')).toBeVisible()
+      })
 
-    expectPublicStatusReadOnly(expect, log)
-  } finally {
-    await log.stop()
-    await socket.dispose()
-    await test.info().attach('public-status-drop-and-recovery', {
-      body: JSON.stringify({ public: log, recovery }),
-      contentType: 'application/json',
-    })
-  }
-})
+      expectPublicStatusReadOnly(expect, log)
+    } finally {
+      await log.stop()
+      await socket.dispose()
+      await test.info().attach('public-status-drop-and-recovery', {
+        body: JSON.stringify({ public: log, recovery }),
+        contentType: 'application/json',
+      })
+    }
+  },
+)

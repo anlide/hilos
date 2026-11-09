@@ -13,6 +13,13 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Router\SignalSourceInterface;
+use Hilos\Core\Router\SignalTypeInterface;
+use Hilos\Core\Router\SignalNameInterface;
+use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\SignalData;
 use Hilos\Core\Daemon\DaemonMeasurements;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Router\AgentSignalData;
@@ -197,6 +204,41 @@ final class DaemonNodePictureTest extends TestCase
             }
         }
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testReportFailureAnswersTheOriginalCommandWithItsReasonAndNoOk(): void
+    {
+        $router = new ReportFailureSignalRouter();
+        Hilos::$sr = $router;
+        $agent = new DaemonNodeAgent();
+        $agent->onStart();
+        self::assertNotNull($router->getNextQueuedSignal(), 'Start succeeds before the report path fails');
+        $router->refuseReport = true;
+        $agent->onSignalAgent(
+            new AgentSignalData(data: new DaemonMasterReportNowSignalData('standalone', '1234567890123456')),
+            SignalSource::DAEMON,
+            HilosSignalConstants::DAEMON_MASTER_REPORT_NOW,
+        );
+        $reply = $router->getNextQueuedSignal()?->data;
+        self::assertInstanceOf(CommandReplyDTO::class, $reply);
+        self::assertSame('1234567890123456', $reply->correlationId);
+        self::assertFalse($reply->isOk());
+        self::assertSame('The Daemon node agent could not report: Report routing refused', $reply->payload[CommandConstants::FIELD_MESSAGE]);
+        self::assertNull($router->getNextQueuedSignal());
+    }
+
+    public function testMalformedReportNowDoesNotAnswerACommand(): void
+    {
+        $agent = new DaemonNodeAgent();
+        $agent->onStart();
+        Hilos::$sr->getNextQueuedSignal();
+        try {
+            $agent->onSignalAgent(new AgentSignalData(data: new SignalData()), SignalSource::DAEMON,
+                HilosSignalConstants::DAEMON_MASTER_REPORT_NOW);
+            self::fail('Malformed report-now was accepted');
+        } catch (InvalidAgentSignalPayloadException) {
+            self::assertNull(Hilos::$sr->getNextQueuedSignal());
+        }
     }
 
     public function testReportNowWireCarriesNodeAndCorrelation(): void
@@ -812,5 +854,29 @@ final class DaemonNodePictureTest extends TestCase
             CronRule::nextRunAfter(self::DAILY_AT_THREE, $before),
             CronRule::nextRunAfter(self::DAILY_AT_THREE, $after),
         ]);
+    }
+}
+
+/** Refuses only the picture report after a successful start, leaving command replies observable. */
+final class ReportFailureSignalRouter extends SignalRouter
+{
+    public bool $refuseReport = false;
+
+    /**
+     * @param SignalSourceInterface $signalSource Original source
+     * @param SignalTypeInterface $signalType Original type
+     * @param SignalNameInterface $signalName Original name
+     * @param SignalDataInterface $signalData Original payload
+     */
+    public function queueSignal(
+        SignalSourceInterface $signalSource,
+        SignalTypeInterface $signalType,
+        SignalNameInterface $signalName,
+        SignalDataInterface $signalData,
+    ): void {
+        if ($this->refuseReport && $signalName->getName() === HilosSignalConstants::DAEMON_NODE_PICTURE_REPORT) {
+            throw new InvalidArgumentException('Report routing refused');
+        }
+        parent::queueSignal($signalSource, $signalType, $signalName, $signalData);
     }
 }

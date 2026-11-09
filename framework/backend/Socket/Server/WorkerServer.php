@@ -94,6 +94,7 @@ use Random\RandomException;
 use Throwable;
 use LogicException;
 use Hilos\Core\Daemon\CronFireTestDoor;
+use Hilos\Core\Daemon\DaemonNodeReportTestDoor;
 use Hilos\Core\Daemon\TestOrmForgetDoor;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFireDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleDTO;
@@ -335,6 +336,9 @@ abstract class WorkerServer extends AbstractServer implements
     /** Master owning the test-only cron firing waits on this server. */
     private ?CronFireTestDoor $cronFireTestDoor = null;
 
+    /** Master owning the local node-report waits on this server. */
+    private ?DaemonNodeReportTestDoor $daemonNodeReportTestDoor = null;
+
     /** Process scheduling shares the master's base but outlives initial registration. */
     private ?EventLoop $processLoop = null;
 
@@ -466,6 +470,18 @@ abstract class WorkerServer extends AbstractServer implements
     public function cronFireTestDoor(): ?CronFireTestDoor
     {
         return $this->cronFireTestDoor;
+    }
+
+    /** @param DaemonNodeReportTestDoor $door Master owning the node-report waits */
+    public function setDaemonNodeReportTestDoor(DaemonNodeReportTestDoor $door): void
+    {
+        $this->daemonNodeReportTestDoor = $door;
+    }
+
+    /** @return ?DaemonNodeReportTestDoor Master entrance, or null before wiring */
+    public function daemonNodeReportTestDoor(): ?DaemonNodeReportTestDoor
+    {
+        return $this->daemonNodeReportTestDoor;
     }
 
     /**

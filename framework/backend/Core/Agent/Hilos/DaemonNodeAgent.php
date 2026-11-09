@@ -228,7 +228,15 @@ final class DaemonNodeAgent extends AbstractHilosAgent
                 // picture published here already carries them, and the next change waits its full
                 // interval from this report like after any other.
                 $now = microtime(true);
-                $this->report($now);
+                try {
+                    $this->report($now);
+                } catch (InvalidArgumentException $failure) {
+                    $this->replyToCommand(CommandReplyDTO::error(
+                        $ask->correlationId,
+                        'The Daemon node agent could not report: ' . $failure->getMessage(),
+                    ));
+                    return;
+                }
                 $this->replyToCommand(CommandReplyDTO::ok($ask->correlationId, [
                     CommandConstants::FIELD_NODE_ID => $this->picture->nodeId,
                     CommandConstants::FIELD_REPORTED_AT => (int)round($now * TimeConstants::MS_PER_SECOND),

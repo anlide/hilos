@@ -23,6 +23,9 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Client\WorkerClient;
+use Hilos\Core\Agent\Daemon\DaemonNodeAgentDaemon;
+use ReflectionClass;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use LogicException;
 use PHPUnit\Framework\TestCase;
@@ -162,6 +165,9 @@ final class DaemonManagerProcessRosterTest extends TestCase
         Hilos::$env = new EnvAccessor();
         $started = new ProcessRosterTestDaemonManager();
         $asked = new ProcessRosterTestDaemonManager();
+        $agent = new DaemonNodeAgentDaemon();
+        $agent->setWorkerClient(new ReflectionClass(WorkerClient::class)->newInstanceWithoutConstructor());
+        $asked->getAgentManagerDaemon()->addAgent(HilosAgentType::HILOS_DAEMON_NODE, $agent, 1, false);
         self::assertSame([false, false, false, false, false], $this->forceFlags($asked));
 
         $started->onAgentStarted(HilosAgentType::HILOS_DAEMON_NODE);

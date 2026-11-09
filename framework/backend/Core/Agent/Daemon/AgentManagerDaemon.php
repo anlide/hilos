@@ -551,10 +551,11 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * Tells the start sink that a removed agent no longer satisfies a startup wait.
      *
      * The caller has already taken the agent off the roster: this method does not. A stop is not
-     * a failed start - the frames held for it are let go, not answered (HIL-1041).
+     * a failed start - startup-held frames are let go (HIL-1041); test node-report waits are refused.
      *
      * @param string $agentId Id of the agent that stopped, in the `type` or `type:index` form
      * @throws InvalidFormatException When a pending page recovery address is malformed
+     * @throws EventLoopException When a live node-report deadline cannot be armed or canceled
      */
     public function reportAgentStopped(string $agentId): void
     {
@@ -568,6 +569,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      *
      * @param WorkerAgentStoppedDTO $dto DTO with agent stopped data
      * @throws InvalidFormatException When the start sink cannot resolve a pending page recovery
+     * @throws EventLoopException When a live node-report deadline cannot be armed or canceled
      */
     public function handleAgentStopped(WorkerAgentStoppedDTO $dto): void
     {

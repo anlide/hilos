@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Closure;
 use Generator;
 use Hilos\Core\Analytics\AnalyticsCollector;
@@ -190,6 +191,7 @@ use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterHttpSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterMeasurementsSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
+use Hilos\DaemonSection\DTO\DaemonMasterReportNowSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterStandingSignalData;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
@@ -3496,6 +3498,7 @@ abstract class DaemonManager extends BaseManager implements
             $server->setLiveConnectionRoster($this);
             $server->setTestOrmForgetDoor($this);
             $server->setCronFireTestDoor($this);
+            $server->setDaemonNodeReportTestDoor($this);
             $server->setPageAgentRestartDoor($this);
         }
     }
@@ -3629,13 +3632,17 @@ abstract class DaemonManager extends BaseManager implements
      * out at the head of the next drain ({@see drainSignals()}), through the ordinary
      * door - the agent running elsewhere is forwarded to, the agent here is started again, no
      * address asks for a placement. The freeze, a placement revoke and a lost singleton host
-     * all stop through the same call, and all three mean the same thing to a held frame.
+     * all stop through the same call. Test node-report waits are refused immediately instead.
      *
      * @param string $agentId Id of the agent that stopped, in the `type` or `type:index` form
      * @throws InvalidFormatException When the recovery page or params are malformed
+     * @throws EventLoopException When the next node-report deadline cannot be armed or canceled
      */
     public function onAgentStopped(string $agentId): void
     {
+        if ($agentId === HilosAgentType::HILOS_DAEMON_NODE) {
+            $this->daemonNodeReportTestRequests->agentStopped();
+        }
         $this->wakeReadiness();
         $this->policyDeclarations->noteChanged($agentId);
         $recovery = $this->pendingPageRecovery([$agentId]);
@@ -3804,11 +3811,21 @@ abstract class DaemonManager extends BaseManager implements
      * no earlier than that arrival ({@see DaemonNodeReportTestRequests}).
      *
      * @param CommandRequestDTO $request Held test-only request for a node report
+     * @throws AgentNotLinkedToWorkerException When an admitted proxy cannot supply its declared worker channel
      * @throws EventLoopException When the next command-request deadline cannot be armed or canceled
      */
     public function requestNodeReport(CommandRequestDTO $request): void
     {
         $this->daemonNodeReportTestRequests->request($request, microtime(true));
+    }
+
+    /**
+     * @param WorkerClient $worker Original worker channel closing before roster cleanup
+     * @throws EventLoopException When the next node-report deadline cannot be armed or canceled
+     */
+    public function nodeReportWorkerGone(WorkerClient $worker): void
+    {
+        $this->daemonNodeReportTestRequests->workerGone($worker);
     }
 
     /**
@@ -4185,10 +4202,10 @@ abstract class DaemonManager extends BaseManager implements
      * {@see deliverToAgentDestination()}'s, and what is left here is the reaction, which is this
      * caller's alone.
      *
-     * That reaction is a line and nothing else, because there is nobody to answer: the caller is
-     * code of this node, not a browser on a subscription or an operator on a command. A held
-     * frame is silence for the same reason - it will go out or be answered without anyone
-     * waiting on the return of this call, which is void by design.
+     * The caller normally owes nobody an answer, so a refusal is only logged. The local
+     * report-now test ask also queues its known worker-send refusal as a command reply;
+     * the existing guarded signal phase completes that ask outside this send catch.
+     * A held frame will go out or be answered without anyone waiting on this void call.
      *
      * Nothing is raised out of here, whatever the delivery path decides: this runs on the
      * master loop, where an escaping exception ends run() and takes the node down. A refusal
@@ -6847,6 +6864,10 @@ abstract class DaemonManager extends BaseManager implements
             if ($reply instanceof CommandReplyDTO) {
                 if ($this->pageAgentRestarts->hasWaiter($reply->correlationId)) {
                     $this->pageAgentRestarts->acceptReply($reply);
+                    return;
+                }
+                if ($this->daemonNodeReportTestRequests->hasWaiter($reply->correlationId)) {
+                    $this->daemonNodeReportTestRequests->acceptReply($reply);
                     return;
                 }
                 $commandServer?->deliver($destination->correlationId, $reply);
@@ -12161,6 +12182,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param bool $localOnly Whether a frame held here must never be placed again, which a forwarded one must not
      * @return AgentDeliveryOutcome Delivered, Held while the agent's start is under way or while a connection's
      *     close waits for the protected-mode lift, ShutdownSkipped when the node is on its way out, or StartRefused
+     * @throws InvalidArgumentException When a local report-now refusal cannot be named
      */
     private function sendSignalToAgentDestination(
         WorkerServer $workerServer,
@@ -12219,6 +12241,23 @@ abstract class DaemonManager extends BaseManager implements
                 new DaemonAgentMessageDTO(agentId: $agentId, signal: $signal),
             );
         } catch (HilosException $failure) {
+            $report = $signal->data;
+            if (!$localOnly
+                && $agentType === HilosAgentType::HILOS_DAEMON_NODE && $agentIndex === null
+                && $signal->signalSource->getSource() === SignalSource::DAEMON
+                && $signalType === SignalTypeConstants::AGENT_SIGNAL
+                && $signalName === HilosSignalConstants::DAEMON_MASTER_REPORT_NOW
+                && $report instanceof AgentSignalData && $report->data instanceof DaemonMasterReportNowSignalData
+                && $this->daemonNodeReportTestRequests->hasWaiter($report->data->correlationId)) {
+                // Queue only: completing the owner here would put its timer failure inside the sender's catch.
+                Hilos::$sr->queueSignal(
+                    signalSource: new SignalSource(SignalSource::DAEMON),
+                    signalType: new SignalType(SignalTypeConstants::COMMAND_REPLY),
+                    signalName: new SignalName($report->data->correlationId),
+                    signalData: CommandReplyDTO::error($report->data->correlationId, $failure->getMessage()),
+                );
+            }
+
             // A node on its way out has no workers for any of these - not a refusal worth a card
             if ($this->shouldExit) {
                 Logger::info("Signal skipped during shutdown: {$signalType}/{$signalName}"

@@ -1074,6 +1074,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     {
         $this->workerServer->testOrmForgetDoor()?->ormForgetWorkerGone($this);
         $this->workerServer->cronFireTestDoor()?->cronFireWorkerGone($this);
+        $this->workerServer->daemonNodeReportTestDoor()?->nodeReportWorkerGone($this);
 
         // No upload receipt is released here: EOF does not prove the process has exited.
         // Delete transport payloads before WorkerServer records the queue-deletion fact.

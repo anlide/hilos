@@ -42,6 +42,7 @@ use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Server\CommandServer;
@@ -539,6 +540,8 @@ final class DaemonManagerProcessRosterNativeTest extends TestCase
         $this->manager->registerServer($this->server);
         $this->manager->registerServer($this->commands);
         $this->agent = $this->createStub(AgentDaemonInterface::class);
+        $this->agent->method('hasWorkerClient')->willReturn(true);
+        $this->agent->method('getWorkerClient')->willReturn($this->createStub(WorkerClient::class));
         $this->start(HilosAgentType::HILOS_DAEMON_NODE);
         $this->set('eventLoop', $this->loop);
         $this->invoke('attachProcessRosterEventLoop');
