@@ -57,12 +57,13 @@ The erasure norms below name the leaves that prepare each capability separately
 from HIL-1952, which enables it on the live path. The [merge norms](#merge)
 likewise separate preparation from the single live switch HIL-1999. Operation,
 assignment, preparation, result, receipt and copy name logical obligations,
-authorship and order. HIL-1936 now supplies physical framework tables and
-callable storage APIs for the inert erasure operation and assignments;
-HIL-1937 still settles participant preparation and result records. HIL-1987
-settles the merge extension on that durable basis, without a second operation
-journal or participant catalog. This does not declare the erasure carriers
-general-purpose. The implementing participants settle their own contracts.
+authorship and order. HIL-1936 and HIL-1937 introduced the erasure operation,
+assignment and result storage. HIL-1987 gives them common `AccountOperation*`
+carriers for erasure and merge, and adds the inert merge opening record and
+its initial assignments. It does not add a second operation journal or
+participant catalog. These storage APIs do not connect participant business
+work or the live merge path; the implementing leaves still settle those
+contracts.
 No reservation field, receipt field, admission metadata, partition, frame or
 business stage beyond the initial `preparing` storage value is declared as an
 API here. The contract gate stands unchanged.
@@ -316,6 +317,31 @@ are ended, and the survivor's too when the loser's protection was kept.
 (`RESTRICT`), the survivor (`SET NULL`) and `merged_at`; it has no receipt, no
 fence, no phase and no record of what reached the survivor.
 
+**The shared account-operation carriers.** The framework now mounts
+`Hilos::$db->accountOperations`, `accountOperationAssignments` and
+`accountOperationResults` over `hilos_account_operation`,
+`hilos_account_operation_assignment` and `hilos_account_operation_result`.
+The operation stores its kind and either the erasure request and circle or the
+merge pair and choice. Assignments carry a stage and stable owner address;
+results carry an immutable participant payload. All three tables are purged
+on anonymized restore and are not journaled. `AccountMergeOpening::open()`
+records a merge operation and the survivor's and loser's preparing assignments
+in one primary-database transaction, addressed as `hilos_user:<id>`. It has no
+live caller: the existing merge remains the only live merge producer. The
+kind-required `openPage()` and `openForOwner()` keep erasure and merge reads
+separate, and `AccountOperation::mergeFact()` reads the loser's go/give result;
+the coordinator does not write that result.
+
+The operation table keeps `open_loser_user_id` as an ordinary nullable `INT`
+in `_columns` and `_types`, with a UNIQUE index. `recordMerge()` sets it, and
+`finish()` clears it in the same UPDATE that records the finish. The current
+FULL restore structure replay cannot model generated columns, so the
+open-merge key remains a stored column. One immutable Change creates the three
+new tables and a second drops the three former erasure tables; the changes do
+not use `RENAME`. The historical
+`account_erasure_*` schema-unit keys stay in place because immutable Change and
+install references already name them; the restore mechanism is unchanged.
+
 **The stop.** `AbstractUserAgent` (`Users/Agent/AbstractUserAgent.php`) stops
 itself the moment its person row is deleted (`onSignalDbSyncDeleted()`) or a
 merge row keyed by its person appears (`onSignalDbSyncCreated()`, HIL-1410).
@@ -349,32 +375,32 @@ the target follows: the name and its journal row in one transaction of one
 owner, and what follows the commit is the library's, on the answer.
 
 **The participant result carrier and step.** The framework mounts
-`Hilos::$db->accountErasureResults` over `hilos_account_erasure_result`, with
+`Hilos::$db->accountOperationResults` over `hilos_account_operation_result`, with
 at most one immutable result row per assignment. `owner_agent_id` stores the
 assigned owner's full agent id and partitions the table through `_setVia`; the
 unique assignment key enforces the one-result limit, and the assignment foreign
 key cascades on delete. The row stores `assignment_id`, `owner_agent_id`,
 `payload_json` and signed epoch-millisecond `created_at`. The table is
 classified `PURGE` under anonymization and is not journaled. Its typed readers
-find a result by assignment or return an `AccountErasureResults` collection
+find a result by assignment or return an `AccountOperationResults` collection
 for an operation and stage, ordered by result id.
 Assignments and results use typed readonly payloads over a shared JSON-object
 base. The base preserves submitted JSON and compares payloads semantically;
-`AccountErasureOwnerAddress::agentId()` provides the full agent id used by the
+`AccountOperationOwnerAddress::agentId()` provides the full agent id used by the
 result set.
 
 The entity mapping is in
-`framework/backend/Database/Entity/Item/AccountErasureResult.php`, and the
+`framework/backend/Database/Entity/Item/AccountOperationResult.php`, and the
 typed collection reader is in
-`framework/backend/Database/View/Collection/AccountErasureResults.php`.
-`AccountErasureResultsActions::record()` requires an open transaction and the
+`framework/backend/Database/View/Collection/AccountOperationResults.php`.
+`AccountOperationResultsActions::record()` requires an open transaction and the
 participant's `Add` right over its own result set. A semantically equal JSON
 payload returns the saved result; a different payload for that assignment is
 refused.
 The action lives in
-`framework/backend/Database/Actions/Collection/AccountErasureResultsActions.php`.
-`AccountErasureParticipantStep::run()` in
-`framework/backend/Auth/AccountErasure/AccountErasureParticipantStep.php`
+`framework/backend/Database/Actions/Collection/AccountOperationResultsActions.php`.
+`AccountOperationParticipantStep::run()` in
+`framework/backend/Auth/AccountOperation/AccountOperationParticipantStep.php`
 checks the current agent, assignment and assigned owner. It returns an
 existing result first, then refuses new work for a finished or changed stage;
 otherwise it commits the participant callback's work and the result in one
@@ -387,19 +413,19 @@ answer correlation remains HIL-1950. No production participant or live
 erasure path uses it yet; the due and force-purge paths remain on the old flow
 until HIL-1952.
 
-**The participant result claim.** A future erasure participant using the
-generic step declares `HilosDbContext::accountErasureResults` with
+**The participant result claim.** A future participant using the generic step
+declares `HilosDbContext::accountOperationResults` with
 `[TruthSourceOperation::Add]` in `OWNS_DB_SET`. Its
-`ownedDbSetKey(HilosDbContext::accountErasureResults)` returns its full
-`getId()`. It lists `HilosDbContext::accountErasureAssignments` and
-`HilosDbContext::accountErasureOperations` in `READS_DB`; the set claim already
+`ownedDbSetKey(HilosDbContext::accountOperationResults)` returns its full
+`getId()`. It lists `HilosDbContext::accountOperationAssignments` and
+`HilosDbContext::accountOperations` in `READS_DB`; the set claim already
 supplies reader interest for results, so repeating
-`HilosDbContext::accountErasureResults` in `READS_DB` duplicates that interest
+`HilosDbContext::accountOperationResults` in `READS_DB` duplicates that interest
 and refuses the start. `AbstractUserAgent::ownedDbSetKey()` currently returns
 the person's id for its set collections. A participant based on it must branch
 on the results collection and use the full agent id there, preserving the
-person id for its other sets. HIL-1937 adds no production participant grant,
-and does not change `AbstractUserAgent`.
+person id for its other sets. The common carriers add no production participant
+grant and do not change `AbstractUserAgent`.
 
 **Creators.** `AbstractUsersLibraryAgent::OWNS_DB`
 (`Auth/Library/AbstractUsersLibraryAgent.php`) creates `users`,
@@ -503,11 +529,12 @@ at HIL-1952 (not in the code yet — HIL-1952), merge at HIL-1999
 ## Operation And Participant Records
 
 The protocol rests on records, not on messages: a message is how a participant
-learns that there is work, and a record is what makes the work owed. Every
-record below is a logical model — what it holds, who writes it and when — and
-not a table, an Entity or a frame. The detailed [erasure](#erasure) and
-[merge](#merge) norms are recorded here. The implementing leaves settle
-physical contracts under the gate (*Scope And Status*).
+learns that there is work, and a record is what makes the work owed. The
+operation, assignment and participant-result records are backed by shared
+framework ORM carriers; those storage APIs do not connect future participant
+work to a live path. The detailed [erasure](#erasure) and [merge](#merge)
+norms are recorded here. Other physical contracts remain with their
+implementing leaves under the gate (*Scope And Status*).
 
 **The coordinator and its operation record.** The sessions holder coordinates
 both operations, as it holds authorization today: it is the process that sees
@@ -523,46 +550,54 @@ exists for. In the protocol, the holder is the single changing writer of this
 working record, lawful under *Scope And Status*: it is not a claim over
 anybody's business table, and holding it gives the holder no write into a
 person's rows.
-For erasure, `Hilos::$db->accountErasureOperations` and
-`Hilos::$db->accountErasureAssignments` are mounted framework ORM chains in
-`framework/backend/Database/Context/HilosDbContext.php`. An operation stores
-its immutable request, root and ordered circle, plus its current stage and
-optional outcome. Its initial `preparing` stage means that a plan is recorded;
-it does not mean erasure has started. An assignment is an immutable plan entry
-with a stable owner address. `AbstractSessionsLibraryAgent` is the sole creator
-and changing writer of operations (`Add`/`Update`) and the sole creator of
+For both erasure and merge, `Hilos::$db->accountOperations`,
+`accountOperationAssignments` and `accountOperationResults` are mounted
+framework ORM chains in `framework/backend/Database/Context/HilosDbContext.php`.
+`AccountOperation` stores either the immutable erasure request, root and
+ordered circle, or the merge pair, fates and supplied protection flags,
+together with kind, current stage and optional outcome. Its initial
+`preparing` stage records a plan; it does not mean the erasure or merge has
+started. An `AccountOperationAssignment` is an immutable plan entry with a
+stable owner address. `AbstractSessionsLibraryAgent` is the sole creator and
+changing writer of operations (`Add`/`Update`) and the sole creator of
 assignments (`Add`); see its `OWNS_DB` declaration in
 `framework/backend/Auth/Library/AbstractSessionsLibraryAgent.php`. Assignments
-have no update or remove action. Participant results use a separate carrier;
-HIL-1937 supplies that inert carrier and its generic atomic step.
+have no update or remove action.
 
-The operation and assignment `record()` actions return exact repeats and
-reject conflicting contents. `advance(expectedStage, nextStage)` is a
-low-level compare-and-set; `finish(expectedStage, outcome)` conditionally
-closes the operation with the coordinator-supplied outcome. These actions
-persist facts but do not validate business transitions, write the request
-owner's start, or prove participant work. The business protocol remains with
-later leaves; see *Current Implementation* for the participant result carrier
-and generic step. `openPage()` and `openForOwner()` return
-bounded pages ordered by `id ASC` (limit 1–1000) using the persisted owner
-address; `openForOwner()` can read open assignments without a registered or
-live owner. The entities, record actions, stage actions and readers are in
-`framework/backend/Database/Entity/Item/AccountErasureOperation.php`,
-`framework/backend/Database/Entity/Item/AccountErasureAssignment.php`,
-`framework/backend/Database/Actions/Collection/AccountErasureOperationsActions.php`,
-`framework/backend/Database/Actions/Collection/AccountErasureAssignmentsActions.php`,
-`framework/backend/Database/Actions/Item/AccountErasureOperationActions.php`,
-`framework/backend/Database/Object/Collection/AccountErasureOperations.php`, and
-`framework/backend/Database/Object/Collection/AccountErasureAssignments.php`.
+The operation and assignment record actions return exact repeats and reject
+conflicting contents. `recordMerge()` returns the same open merge for an exact
+repeat and refuses a conflicting pair or choice. `AccountMergeOpening::open()`
+records that operation and its survivor and loser preparation assignments in
+one transaction. No live caller invokes the merge opener, and the common
+`recordErasure()` path does not replace the due and force-purge paths.
+`advance(expectedStage, nextStage)` is a low-level
+compare-and-set; `finish(expectedStage, outcome)` conditionally closes the
+operation with the coordinator-supplied outcome. These actions persist facts
+but do not validate business transitions, write the request owner's start, or
+prove participant work. `openPage(AccountOperationKind, ...)` and
+`openForOwner(AccountOperationKind, ...)` return bounded pages ordered by
+`id ASC` (limit 1–1000), and the required kind keeps erasure and merge reads
+separate. `openForOwner()` can read open assignments without a registered or
+live owner. The entities, actions, readers and opening API are in
+`framework/backend/Database/Entity/Item/AccountOperation.php`,
+`framework/backend/Database/Entity/Item/AccountOperationAssignment.php`,
+`framework/backend/Database/Entity/Item/AccountOperationResult.php`,
+`framework/backend/Database/Actions/Collection/AccountOperationsActions.php`,
+`framework/backend/Database/Actions/Collection/AccountOperationAssignmentsActions.php`,
+`framework/backend/Database/Actions/Collection/AccountOperationResultsActions.php`,
+`framework/backend/Database/Actions/Item/AccountOperationActions.php`,
+`framework/backend/Database/Object/Collection/AccountOperations.php`,
+`framework/backend/Database/Object/Collection/AccountOperationAssignments.php`,
+`framework/backend/Database/Object/Collection/AccountOperationResults.php`, and
+`framework/backend/Auth/AccountOperation/AccountMergeOpening.php`.
 
 For merge, it records the immutable pair, password and second-factor fates
 and protection flags shown by the browser, with the current stage and expected
 participants at stable addresses. Finding the same work again creates no
 second operation.
 The merge extends the common durable erasure basis without a second operation
-journal or participant catalog; its physical extension is future work, not a
-declaration that today's erasure carriers already serve both operations (not
-in the code yet — HIL-1987).
+journal or participant catalog. Its initial operation and assignments are
+stored on the common `AccountOperation*` carriers.
 
 **The participants' records.** A participant is every owner the operation
 needs: the agent of each account in the circle, the users library, each
@@ -638,30 +673,30 @@ repository or a query of their own. Whether a record is a row of a table of
 its own or a column beside an existing row, and what it is keyed by, is the
 leaf's; what this page fixes is that it exists, what it holds and who writes
 it. Every table that carries such a record is one an archive carries, so each
-needs its per-column verdict when it is added
+needs its anonymization verdict when it is added
 ([backup-anonymization.md](backup-anonymization.md#adding-a-table-or-a-column)):
 the preparations and results hold addresses, ids and, in a merge, the rows
 given away.
 
-The erasure operation and assignments live in the separate framework-owned
-tables `hilos_account_erasure_operation` and
-`hilos_account_erasure_assignment`. Ordinary backup preserves these rows;
-anonymized restore PURGEs both tables. Their moments use signed epoch
-milliseconds. The request ID, root/circle user IDs and assignment user ID are
-soft references; `operation_id` on an assignment has a cascading foreign key
-to its operation. The table mappings and whole-table `PURGE` classifications
-are defined in
-`framework/backend/Database/Entity/Item/AccountErasureOperation.php` and
-`framework/backend/Database/Entity/Item/AccountErasureAssignment.php`.
-The participant result carrier is also durable and has a whole-table `PURGE`
-classification, an owner set and an assignment key as described above. Its
-business payload and the participants that use it remain with their
+The shared operation, assignment and result records live in the
+framework-owned tables `hilos_account_operation`,
+`hilos_account_operation_assignment` and `hilos_account_operation_result`.
+Ordinary backup preserves these rows; anonymized restore PURGEs all three
+tables. Their moments use signed epoch milliseconds. The request ID,
+root/circle user IDs and assignment user ID are soft references;
+`operation_id` on an assignment has a cascading foreign key to its operation.
+Each Entity declares whole-table `PURGE` and `_journaled = false`; the mappings
+are in `framework/backend/Database/Entity/Item/AccountOperation.php`,
+`framework/backend/Database/Entity/Item/AccountOperationAssignment.php` and
+`framework/backend/Database/Entity/Item/AccountOperationResult.php`. The
+participant result has an owner set and assignment key as described above.
+Its business payload and the participants that use it remain with their
 implementing leaves. This document chooses none of those payloads.
 
-For merge, the operation's physical carriers enter backup with their
-per-column personal-data verdict when introduced
-(not in the code yet — HIL-1987). The same obligation applies immediately to
-the loser's hand-over copy, including its secrets and addresses
+These carriers already have their whole-table `PURGE` verdicts and backup
+coverage.
+The same obligation applies immediately to the loser's hand-over copy,
+including its secrets and addresses
 (not in the code yet — HIL-1992). Neither classification nor backup coverage
 is deferred to the live switch or to the later recovery evidence.
 
@@ -881,11 +916,12 @@ becomes the live administrator and `account:merge` path only at the
    showed. The holder judges what it judges today without raising anybody —
    the two ids differ, both exist, neither is folded, and a password fate is
    named when both accounts have a password. The split path preserves those
-   refusals and also refuses an account occupied by an open operation. What
-   passes becomes the holder's operation: immutable pair, fates and expected
-   flags, with stage *preparing* and required participants at stable addresses.
-   Rediscovering the same work creates no second operation; accepting a
-   request is not its end (not in the code yet — HIL-1987).
+   refusals. Refusing an account occupied by an open operation remains future
+   work (not in the code yet — HIL-2000). The `AccountMergeOpening::open()`
+   scaffold records the immutable pair, fates and expected flags, stage
+   *preparing* and both initial assignments at stable addresses in one
+   transaction. An exact repeat creates no second operation. This records the
+   initial plan; accepting it does not end the merge.
 2. **Both owners prepare.** The holder asks the loser's agent and the
    survivor's agent to prepare. Each, in a transaction of its own, checks
    against its own rows what the lock and the re-read check today — whether it
@@ -1137,8 +1173,8 @@ moves.
 | `sessions` | holder `Add`/`Update`/`Remove`: the anonymous row on the handshake, the bind at sign-in, the revert at sign-out, `killUserSessions()` in the merge and the erasure, the blocked notices released, the sweep `hilos_sessions_expire`; `SessionTestExpireCommand`, test-only | the holder, as today — a session has no instance owner ([Session Ownership](entity-libraries.md#session-ownership), HIL-1403). In the protocol the holder is a participant for its own rows: it releases every reference of a session to the person — the four `RESTRICT` columns, the waits, the cards — as its own step with a recorded result, before the person row can go | Created by the holder; `Add`/`Update`/`Remove` remain there. Release with an atomic participant result is prepared separately (not in the code yet — HIL-1943). For merge, the holder ends loser sessions after the fact and survivor sessions after receipt when the loser's factor first protects it (not in the code yet — HIL-1995). Its own release work becomes a participant step at the erasure switch (not in the code yet — HIL-1952) and merge switch (not in the code yet — HIL-1999); no ordinary writer move. |
 | `accessLogEntries` | holder `Add`/`Update`/`Remove`: `record()`, the hourly sweep, `rePointToUser()` in the merge, `deleteForUser()` in the erasure | the same owner; it moves and deletes its own rows itself as a participant, on the signal | Created by the holder; `Add`/`Update`/`Remove` remain there. Erasure with an atomic participant result is prepared separately (not in the code yet — HIL-1943). Merge transfer commits with its own result; a repeat does not transfer twice (not in the code yet — HIL-1995). Its own delete/repoint become participant steps at erasure (not in the code yet — HIL-1952) and merge (not in the code yet — HIL-1999); no foreign writer is added. |
 | `userMerges` | holder `Add`/`Update`/`Remove`: `add()` in `foldAccount()`, `deleteForUser()` in the erasure | changes and deletion go with the personal life cycle to the personal owner: the loser's agent writes its own tombstone with its block in the transaction that gives its rows away, and the erasure of a folded account deletes its merge row with its own rows, leaves before survivors so the survivor's `SET NULL` does not run | Created by the holder today. Leaf-first personal erasure of the merge row is prepared separately (not in the code yet — HIL-1941). Loser tombstone creation, merge row before its own block, commits with the transfer result (not in the code yet — HIL-1992). Erasure deletion moves with the personal life cycle (not in the code yet — HIL-1952); tombstone creation moves to the loser with live merge (not in the code yet — HIL-1999). Keep the old holder rights required by merge after erasure switches. |
-| the operation record | The legacy `AccountDeletion` and `UserMerge` rows still carry the live trace and tombstone. HIL-1936's separate erasure operation and assignment carriers are built but inert; due erasure and force-purge remain the only production producers. | For erasure, the sessions holder owns operation creation/change and assignment creation; assignments are immutable. Participant preparation and result records belong to their own future leaf. The merge pair, fates and protection flags require the future merge extension. | `AbstractSessionsLibraryAgent::OWNS_DB` declares operations `[Add, Update]` and assignments `[Add]`. The record actions preserve exact repeats and reject conflicts; stage advance/finish are low-level persistence only and do not establish start, participant results, business transitions or live recovery/failover. The framework mounts and entity classifications are documented above. Merge carrier classification and backup coverage (not in the code yet — HIL-1987), merge stage correlation (not in the code yet — HIL-2000), merge end after receipt, results and copy absence (not in the code yet — HIL-1998), and the live merge and erasure switches (not in the code yet — HIL-1999/HIL-1952) remain future work. |
-| the participants' preparations and results | The immutable result carrier and generic atomic step exist but are inert; no production participant is connected. | each participant's own, written in the same transaction as its work; the coordinator may create the initial assignment and never edits a recorded result. A durable record in `Hilos::$db` through the ordinary collections and actions, not the agent's memory and not a runtime overlay — it has to survive a restart and a restored backup. A result that carries rows given away — the merge's hand-over copy at the loser — is personal data with a bounded life: kept until the survivor's confirmation, then deleted by its one writer | Erasure results are stored in `hilos_account_erasure_result`, at most one immutable JSON payload per assignment. `owner_agent_id` is the full participant agent id and the result set key; the assignment foreign key cascades. The table is `PURGE` under anonymization and is not journaled. `record()` requires the participant transaction and its `Add` set claim, returns an exact semantic repeat, and rejects a changed result. `AccountErasureParticipantStep::run()` checks the caller, assignment and owner, returns a saved result before new work, then runs work and records its result in one transaction; only a duplicate result insert may return the committed winner after rollback. `forOperationStage()` returns a typed `AccountErasureResults` collection in result-id order. No production participant claim or consumer is wired yet. Merge reservations belong to each personal owner (not in the code yet — HIL-1988); each releases its own with result before the fact (not in the code yet — HIL-1990). Loser work/result and full copy (not in the code yet — HIL-1992); survivor work/receipt (not in the code yet — HIL-1994); holder work/result (not in the code yet — HIL-1995); project participants (not in the code yet — HIL-1996); chat work/result (not in the code yet — HIL-1997). Only the loser cleans its copy after receipt and stops afterward (not in the code yet — HIL-1998). Live merge uses these records only at cutover (not in the code yet — HIL-1999). Live erasure uses them only at cutover (not in the code yet — HIL-1952). |
+| the operation record | The legacy `AccountDeletion` and `UserMerge` rows still carry the live request and tombstone. The common `AccountOperation*` carriers are built but inert on both live paths; the due erasure and force-purge paths and the existing merge remain the production producers. | The sessions holder owns operation creation/change and initial assignment creation; assignments are immutable. Each participant owns its future preparation and result records. | `AbstractSessionsLibraryAgent::OWNS_DB` declares operations `[Add, Update]` and assignments `[Add]`. The record actions preserve exact repeats and reject conflicts; `AccountMergeOpening::open()` atomically stores a merge and its two initial assignments but has no live caller. Stage advance/finish are low-level persistence only; they do not establish start, participant results, business transitions or live recovery/failover. The common tables, whole-table `PURGE` verdicts and migration are documented above. Merge stage correlation (not in the code yet — HIL-2000), merge end after receipt, results and copy absence (not in the code yet — HIL-1998), and the live merge and erasure switches (not in the code yet — HIL-1999/HIL-1952) remain future work. |
+| the participants' preparations and results | The immutable result carrier and generic atomic step exist but are inert; no production participant is connected. | Each participant owns its preparation or result, written in the same transaction as its work; the coordinator may create the initial assignment and never edits a recorded result. These durable records use `Hilos::$db` collections and actions, not agent memory or a runtime overlay. A result carrying rows given away — the merge's hand-over copy at the loser — is personal data with a bounded life: kept until the survivor's confirmation, then deleted by its one writer. | Participant results are stored in `hilos_account_operation_result`, at most one immutable JSON payload per assignment. `owner_agent_id` is the full participant agent id and the result set key; the assignment foreign key cascades. The table is `PURGE` under anonymization and is not journaled. `record()` requires the participant transaction and its `Add` set claim, returns an exact semantic repeat, and rejects a changed result. `AccountOperationParticipantStep::run()` checks the caller, assignment and owner, returns a saved result before new work, then runs work and records its result in one transaction; an equal-result refusal or duplicate insert may return the committed winner only after that transaction rolls back. `forOperationStage()` returns a typed `AccountOperationResults` collection in result-id order. No production participant claim or consumer is wired yet. Merge reservations belong to each personal owner (not in the code yet — HIL-1988); each releases its own with result before the fact (not in the code yet — HIL-1990). Loser work/result and full copy (not in the code yet — HIL-1992); survivor work/receipt (not in the code yet — HIL-1994); holder work/result (not in the code yet — HIL-1995); project participants (not in the code yet — HIL-1996); chat work/result (not in the code yet — HIL-1997). Only the loser cleans its copy after receipt and stops afterward (not in the code yet — HIL-1998). Live merge uses these records only at cutover (not in the code yet — HIL-1999). Live erasure uses them only at cutover (not in the code yet — HIL-1952). |
 
 **Deltas against the first census.** The census of the research base listed
 the four chat tables as "`ChatAgent` owns, the holder borrows"; the chat users

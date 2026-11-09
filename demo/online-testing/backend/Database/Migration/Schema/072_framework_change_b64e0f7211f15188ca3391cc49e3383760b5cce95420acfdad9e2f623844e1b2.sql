@@ -1,0 +1,2 @@
+-- hilos-framework: {"format":1,"kind":"change","units":["account_erasure_operation"],"parts":[{"changeId":"20261109072435317522_HIL-1987_drop_account_erasure_tables","unit":"account_erasure_operation","upSha256":"ff3dbd084beab6ab7b7eb9d7d3a5fed4b8e7cfc163e2c245af16b740874018e4","downSha256":"60b3f37006521890d48915e6211602a178934d023758e4151c9dbf0a9628c6f6"}],"upSha256":"ff3dbd084beab6ab7b7eb9d7d3a5fed4b8e7cfc163e2c245af16b740874018e4","downSha256":"60b3f37006521890d48915e6211602a178934d023758e4151c9dbf0a9628c6f6"}
+DROP TABLE IF EXISTS `hilos_account_erasure_operation`;

@@ -204,8 +204,8 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
     {
         $this->assertOrdinaryVisibilityBoundary();
         $this->acquireVisibility();
-        $this->assertSame(121, Migration::getCurrentIndex());
-        $this->assertSame(12, Migration::migrateDown(109));
+        $this->assertSame(127, Migration::getCurrentIndex());
+        $this->assertSame(18, Migration::migrateDown(109));
         Schema::reset();
         Database::sql('INSERT INTO `moderator_prompt_piece` (`section`, `prompt_piece`) VALUES (?, ?)',
             ['message_rule', 'Historical non-personal moderation rule']);
@@ -234,20 +234,20 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
                 file_get_contents($this->storeRoot . '/unpacked/db-1.sql'));
         }
 
-        $this->assertSame(12, Migration::migrateUp());
+        $this->assertSame(18, Migration::migrateUp());
         Database::sql('UPDATE `hilos_user` SET `name` = ? WHERE `id` = ?', ['Written after historical archive', $userId]);
         $decision = RestoreEnvGuard::decide(AppEnv::fromString($archive->env), AppEnv::TEST, false)->decision;
         $this->assertSame(RestoreEnvDecision::REQUIRE_ANONYMIZATION, $decision);
         new BackupRestorer()->restore(self::ARCHIVE_ID, BackupScope::FULL, $decision);
         Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
 
-        $this->assertSame(121, Migration::getCurrentIndex());
+        $this->assertSame(127, Migration::getCurrentIndex());
         $schema = LiveSchemaReader::read(DatabaseConnectionDefaults::PRIMARY_INDEX);
         $this->assertArrayNotHasKey('moderator_prompt_piece', $schema);
-        $this->assertArrayHasKey('hilos_account_erasure_operation', $schema);
-        $this->assertArrayHasKey('hilos_account_erasure_assignment', $schema);
-        $this->assertSame([], Database::sql('SELECT * FROM `hilos_account_erasure_operation`')->rows());
-        $this->assertSame([], Database::sql('SELECT * FROM `hilos_account_erasure_assignment`')->rows());
+        $this->assertArrayHasKey('hilos_account_operation', $schema);
+        $this->assertArrayHasKey('hilos_account_operation_assignment', $schema);
+        $this->assertSame([], Database::sql('SELECT * FROM `hilos_account_operation`')->rows());
+        $this->assertSame([], Database::sql('SELECT * FROM `hilos_account_operation_assignment`')->rows());
         $this->assertSame([], Database::sql('SELECT `key` FROM `hilos_setting` WHERE `key` IN (?, ?, ?, ?)', [
             'chat_moderation_model', 'chat_moderation_url', 'chat_moderation_provider', 'chat_moderation_timeout_sec',
         ])->rows());

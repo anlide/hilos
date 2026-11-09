@@ -30,12 +30,12 @@ final class DeclaredDbOwnershipTest extends TestCase
         $claims = OwnershipDeclaration::dbCollectionsOf(AbstractSessionsLibraryAgent::class);
         self::assertSame(
             [TruthSourceOperation::Add, TruthSourceOperation::Update],
-            $claims[HilosDbContext::accountErasureOperations]->asList(),
+            $claims[HilosDbContext::accountOperations]->asList(),
         );
-        self::assertSame([TruthSourceOperation::Add], $claims[HilosDbContext::accountErasureAssignments]->asList());
-        self::assertFalse($claims[HilosDbContext::accountErasureOperations]->allows(TruthSourceOperation::Remove));
-        self::assertFalse($claims[HilosDbContext::accountErasureAssignments]->allows(TruthSourceOperation::Update));
-        self::assertFalse($claims[HilosDbContext::accountErasureAssignments]->allows(TruthSourceOperation::Remove));
+        self::assertSame([TruthSourceOperation::Add], $claims[HilosDbContext::accountOperationAssignments]->asList());
+        self::assertFalse($claims[HilosDbContext::accountOperations]->allows(TruthSourceOperation::Remove));
+        self::assertFalse($claims[HilosDbContext::accountOperationAssignments]->allows(TruthSourceOperation::Update));
+        self::assertFalse($claims[HilosDbContext::accountOperationAssignments]->allows(TruthSourceOperation::Remove));
     }
 
     public function testJournalDeclaresExactFrameworkAndAgentOperations(): void

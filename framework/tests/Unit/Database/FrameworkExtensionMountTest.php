@@ -20,8 +20,8 @@ use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\View\Collection\AccountDeletions as DbCollectionAccountDeletions;
 use Hilos\Database\View\Collection\AuthBlocks as DbCollectionAuthBlocks;
-use Hilos\Database\View\Collection\AccountErasureOperations as DbCollectionAccountErasureOperations;
-use Hilos\Database\View\Collection\AccountErasureAssignments as DbCollectionAccountErasureAssignments;
+use Hilos\Database\View\Collection\AccountOperations as DbCollectionAccountOperations;
+use Hilos\Database\View\Collection\AccountOperationAssignments as DbCollectionAccountOperationAssignments;
 use Hilos\Database\View\Collection\Countries as DbCollectionCountries;
 use Hilos\Database\View\Collection\CountryNames as DbCollectionCountryNames;
 use Hilos\Database\View\Collection\DataExports as DbCollectionDataExports;
@@ -58,7 +58,7 @@ use Hilos\Database\View\Collection\UserRenames as DbCollectionUserRenames;
 use Hilos\Database\View\Collection\Users as DbCollectionUsers;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
-use Hilos\Database\View\Collection\AccountErasureResults as DbCollectionAccountErasureResults;
+use Hilos\Database\View\Collection\AccountOperationResults as DbCollectionAccountOperationResults;
 use Hilos\Database\View\Item\Identity;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -109,9 +109,9 @@ final class FrameworkExtensionMountTest extends TestCase
         HilosDbContext::accessLogEntries => DbCollectionAccessLogEntries::class,
         HilosDbContext::legalAcceptances => DbCollectionLegalAcceptances::class,
         HilosDbContext::accountDeletions => DbCollectionAccountDeletions::class,
-        HilosDbContext::accountErasureOperations => DbCollectionAccountErasureOperations::class,
-        HilosDbContext::accountErasureAssignments => DbCollectionAccountErasureAssignments::class,
-        HilosDbContext::accountErasureResults => DbCollectionAccountErasureResults::class,
+        HilosDbContext::accountOperations => DbCollectionAccountOperations::class,
+        HilosDbContext::accountOperationAssignments => DbCollectionAccountOperationAssignments::class,
+        HilosDbContext::accountOperationResults => DbCollectionAccountOperationResults::class,
         HilosDbContext::dataExports => DbCollectionDataExports::class,
         HilosDbContext::legalAcceptanceExports => DbCollectionLegalAcceptanceExports::class,
         HilosDbContext::files => DbCollectionFiles::class,

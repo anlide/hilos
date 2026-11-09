@@ -13,9 +13,9 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Entity\Item\AccessLogEntry;
 use Hilos\Database\Entity\Item\AccountDeletion;
 use Hilos\Database\Entity\Item\LegalAcceptance;
-use Hilos\Database\Entity\Item\AccountErasureOperation;
-use Hilos\Database\Entity\Item\AccountErasureAssignment;
-use Hilos\Database\Entity\Item\AccountErasureResult;
+use Hilos\Database\Entity\Item\AccountOperation;
+use Hilos\Database\Entity\Item\AccountOperationAssignment;
+use Hilos\Database\Entity\Item\AccountOperationResult;
 use Hilos\Database\Entity\Item\LegalAcceptanceExport;
 use Hilos\Database\Entity\Item\DataExport;
 use Hilos\Database\Entity\Item\Identity;
@@ -120,9 +120,9 @@ final class AuthFeature extends FeatureDefinition
                 StepUp::_table,
                 AccessLogEntry::_table,
                 AccountDeletion::_table,
-                AccountErasureOperation::_table,
-                AccountErasureAssignment::_table,
-                AccountErasureResult::_table,
+                AccountOperation::_table,
+                AccountOperationAssignment::_table,
+                AccountOperationResult::_table,
                 LegalAcceptance::_table,
                 DataExport::_table,
                 UserRename::_table,

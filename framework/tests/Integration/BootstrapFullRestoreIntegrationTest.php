@@ -24,9 +24,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseMarker;
 use Hilos\Database\DatabaseMarkerRow;
-use Hilos\Database\Entity\Item\AccountErasureAssignment;
-use Hilos\Database\Entity\Item\AccountErasureOperation;
-use Hilos\Database\Entity\Item\AccountErasureResult;
+use Hilos\Database\Entity\Item\AccountOperationResult;
 use Hilos\Database\Migration;
 use Hilos\Database\Migration\FrameworkMigrationCatalog;
 use Hilos\Database\Migration\FrameworkMigrationOrigin;
@@ -138,12 +136,16 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
             DatabaseMarker::put($marker);
         }
         if ($applied) {
-            $this->assertSame(4, Migration::migrateUp());
+            $this->assertSame(10, Migration::migrateUp());
         }
         $plan = FullRestorePlanner::prepare(FullRestorePlan::prepare($this->connections(), $this->root . '/build'));
-        $this->assertSame([118, 119, 120, 121], array_map(static fn ($step): int => $step->file->index,
+        $this->assertSame([118, 119, 120, 121, 122, 123, 124, 125, 126, 127], array_map(static fn ($step): int => $step->file->index,
             $plan->migrations->targets[DatabaseConnectionDefaults::PRIMARY_INDEX]->pending));
-        $this->assertSame($applied ? [[DatabaseConnectionDefaults::PRIMARY_INDEX, 'hilos_account_erasure_result']] : [],
+        $this->assertSame($applied ? [
+            [DatabaseConnectionDefaults::PRIMARY_INDEX, 'hilos_account_operation_result'],
+            [DatabaseConnectionDefaults::PRIMARY_INDEX, 'hilos_account_operation_assignment'],
+            [DatabaseConnectionDefaults::PRIMARY_INDEX, 'hilos_account_operation'],
+        ] : [],
             array_map(static fn (TableDrop $drop): array => [$drop->index, $drop->table], $plan->cleanup));
         $plan->assertUnchanged();
 
@@ -157,14 +159,14 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
         $this->assertSame(1700000000000, AdminViewModeLatchTable::read()['closedAt']);
         $this->assertNull(MigrationClaim::current());
         $this->assertSame([[
-            'TABLE_NAME' => 'hilos_account_erasure_result',
+            'TABLE_NAME' => 'hilos_account_operation_result',
             'COLUMN_NAME' => 'assignment_id',
-            'REFERENCED_TABLE_NAME' => 'hilos_account_erasure_assignment',
+            'REFERENCED_TABLE_NAME' => 'hilos_account_operation_assignment',
             'REFERENCED_COLUMN_NAME' => 'id',
         ]], Database::sql('SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME'
             . ' FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?'
-            . ' AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY CONSTRAINT_NAME', [AccountErasureResult::_table])->rows());
-        $this->assertSame([118, 119, 120, 121], array_values(array_filter(
+            . ' AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY CONSTRAINT_NAME', [AccountOperationResult::_table])->rows());
+        $this->assertSame([118, 119, 120, 121, 122, 123, 124, 125, 126, 127], array_values(array_filter(
             Migration::readHistory(DatabaseConnectionDefaults::PRIMARY_INDEX)->successfulIndices(),
             static fn (int $index): bool => $index > self::ARCHIVE_LEVEL,
         )));
@@ -472,8 +474,8 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
             . ' (id TINYINT UNSIGNED PRIMARY KEY, marker CHAR(32) NOT NULL, written_by VARCHAR(255) NOT NULL,'
             . " written_at DATETIME NOT NULL);\n"
             . 'INSERT INTO ' . DatabaseMarker::TABLE . " VALUES(1,'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','archive-node','2026-11-08 12:00:00');\n"
-            . 'DROP TABLE IF EXISTS ' . AccountErasureAssignment::_table . ";\n"
-            . 'DROP TABLE IF EXISTS ' . AccountErasureOperation::_table . ";\n"
+            . 'DROP TABLE IF EXISTS hilos_account_erasure_assignment' . ";\n"
+            . 'DROP TABLE IF EXISTS hilos_account_erasure_operation' . ";\n"
             . implode("\n", $erasureDefinitions) . "\n"
             . "DROP TABLE IF EXISTS restore_probe;\n"
             . "CREATE TABLE restore_probe (id INT PRIMARY KEY, label VARCHAR(32) NOT NULL);\n"

@@ -268,7 +268,6 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $origins[] = $change;
             $erasureIndices = [115, 73, 73, 58, 58, 60];
             foreach (['account_erasure_operation', 'account_erasure_assignment'] as $offset => $key) {
-                $unit = $schema->unit($key);
                 $base = $project->root . '/' . sprintf('%03d', $erasureIndices[$index] + $offset) . '_framework_install_' . $key;
                 $up = FsPath::read($base . '.sql');
                 $down = FsPath::read($base . '_down.sql');
@@ -283,12 +282,11 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                     static fn (FrameworkMigrationPart $part): array => $part->toArray(),
                     $install->parts,
                 ));
-                self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
-                self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
+                self::assertSame($source->afterStubUpSha256, FrameworkMigrationOrigin::bodyHash(substr($up, strpos($up, "\n") + 1)));
+                self::assertSame($source->afterStubDownSha256, FrameworkMigrationOrigin::bodyHash(substr($down, strpos($down, "\n") + 1)));
                 $origins[] = $install;
             }
             $resultIndices = [118, 76, 76, 61, 61, 63];
-            $unit = $schema->unit('account_erasure_result');
             $base = $project->root . '/' . sprintf('%03d', $resultIndices[$index]) . '_framework_install_account_erasure_result';
             $up = FsPath::read($base . '.sql');
             $down = FsPath::read($base . '_down.sql');
@@ -303,8 +301,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 static fn (FrameworkMigrationPart $part): array => $part->toArray(),
                 $install->parts,
             ));
-            self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
-            self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
+            self::assertSame($source->afterStubUpSha256, FrameworkMigrationOrigin::bodyHash(substr($up, strpos($up, "\n") + 1)));
+            self::assertSame($source->afterStubDownSha256, FrameworkMigrationOrigin::bodyHash(substr($down, strpos($down, "\n") + 1)));
             $origins[] = $install;
             $bootstrapIndices = [119, 77, 77, 62, 62, 64];
             $bootstrapParts = [
@@ -327,6 +325,39 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 self::assertNull($source->afterStubDownSha256);
                 self::assertNull($schema->unit($key)->upPath);
                 self::assertNull($schema->unit($key)->downPath);
+                $origins[] = $change;
+            }
+            $operationIndices = [122, 80, 80, 65, 65, 67];
+            $operationParts = [
+                '20261109072435317521_HIL-1987_account_operation_tables/account_erasure_operation'
+                    => '7555e2e059f8d281ee25405b9a970796528d46c4c8d6548c6193a5238a78e91b',
+                '20261109072435317521_HIL-1987_account_operation_tables/account_erasure_assignment'
+                    => '7afd41034fd719f8c1ef5ec2a4d35fe71a4a6d339be3f3dfb9010c85dd77d003',
+                '20261109072435317521_HIL-1987_account_operation_tables/account_erasure_result'
+                    => '3336d60036170fdabd0cd21e1d0433a619b02550e68b50ecbb683cd33dc8216c',
+                '20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_result'
+                    => 'b0f4161d453f2f3c4fa5ff77d6be845420883999602165c4ee446bb73101e615',
+                '20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_assignment'
+                    => '085f93251c72f6936bd6c760db53cfabf95a744ed6f9e00a5481466ba64d54af',
+                '20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_operation'
+                    => 'b64e0f7211f15188ca3391cc49e3383760b5cce95420acfdad9e2f623844e1b2',
+
+            ];
+            foreach (array_keys($operationParts) as $offset => $partKey) {
+                [$changeId, $key] = explode('/', $partKey);
+                $base = $project->root . '/' . sprintf('%03d', $operationIndices[$index] + $offset)
+                    . '_framework_change_' . $operationParts[$partKey];
+                $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+                self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+                self::assertSame([$key], $change->units);
+                self::assertCount(1, $change->parts);
+                self::assertSame($partKey, $change->parts[0]->key());
+                $source = $catalog->part($changeId, $key);
+                self::assertFalse($source->introducesUnit);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
+                    $source->afterStubUpSha256);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
+                    $source->afterStubDownSha256);
                 $origins[] = $change;
             }
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));

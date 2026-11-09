@@ -113,12 +113,39 @@ final class FrameworkMigrationSourcesTest extends TestCase
     {
         $schema = new FrameworkSchemaCatalog();
         $catalog = new FrameworkMigrationCatalog($schema);
-        $parts = $catalog->partsForUnits(['account_erasure_assignment', 'account_erasure_operation']);
-        self::assertSame(['account_erasure_operation', 'account_erasure_assignment'], array_column($parts, 'unit'));
-        self::assertTrue($parts[0]->introducesUnit);
-        self::assertTrue($parts[1]->introducesUnit);
-        self::assertSame([$parts[0]->key()], $parts[1]->requires);
+        $units = ['account_erasure_operation', 'account_erasure_assignment', 'account_erasure_result'];
+        $parts = $catalog->partsForUnits($units);
+        $introductions = array_values(array_filter($parts, static fn (FrameworkMigrationPart $part): bool => $part->introducesUnit));
+        self::assertSame($units, array_column($introductions, 'unit'));
+        self::assertSame([], $introductions[0]->requires);
+        self::assertSame([$introductions[0]->key()], $introductions[1]->requires);
+        self::assertSame([$introductions[1]->key()], $introductions[2]->requires);
         self::assertSame(['account_erasure_operation'], $schema->unit('account_erasure_assignment')->dependencies);
+        self::assertSame(['account_erasure_assignment'], $schema->unit('account_erasure_result')->dependencies);
+        self::assertSame([
+            '20261108074007375591_HIL-1936_account_erasure_storage/account_erasure_operation',
+        ], $catalog->part('20261109072435317521_HIL-1987_account_operation_tables', 'account_erasure_operation')->requires);
+        self::assertSame([
+            '20261108074007375591_HIL-1936_account_erasure_storage/account_erasure_assignment',
+            '20261109072435317521_HIL-1987_account_operation_tables/account_erasure_operation',
+        ], $catalog->part('20261109072435317521_HIL-1987_account_operation_tables', 'account_erasure_assignment')->requires);
+        self::assertSame([
+            '20261108210743046351_HIL-1937_account_erasure_results/account_erasure_result',
+            '20261109072435317521_HIL-1987_account_operation_tables/account_erasure_assignment',
+        ], $catalog->part('20261109072435317521_HIL-1987_account_operation_tables', 'account_erasure_result')->requires);
+        self::assertSame([
+            '20261109072435317521_HIL-1987_account_operation_tables/account_erasure_result',
+        ], $catalog->part('20261109072435317522_HIL-1987_drop_account_erasure_tables', 'account_erasure_result')->requires);
+        self::assertSame([
+            '20261109072435317521_HIL-1987_account_operation_tables/account_erasure_assignment',
+            '20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_result',
+        ], $catalog->part('20261109072435317522_HIL-1987_drop_account_erasure_tables', 'account_erasure_assignment')->requires);
+        self::assertSame([
+            '20261109072435317521_HIL-1987_account_operation_tables/account_erasure_operation',
+            '20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_assignment',
+        ], $catalog->part('20261109072435317522_HIL-1987_drop_account_erasure_tables', 'account_erasure_operation')->requires);
+        self::assertCount(9, $parts);
+        $catalog->verifyCurrentStubs($units);
     }
 
     public function testSelectionUsesUnitUnionAndDoesNotCareAboutFeatureFolder(): void

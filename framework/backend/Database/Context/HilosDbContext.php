@@ -29,13 +29,13 @@ use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Database\View\Collection\AccessLogEntries as DbCollectionAccessLogEntries;
 use Hilos\Database\View\Collection\AccountDeletions as DbCollectionAccountDeletions;
 use Hilos\Database\View\Collection\DataExports as DbCollectionDataExports;
-use Hilos\Database\View\Collection\AccountErasureOperations as DbCollectionAccountErasureOperations;
-use Hilos\Database\View\Collection\AccountErasureAssignments as DbCollectionAccountErasureAssignments;
-use Hilos\Database\View\Collection\AccountErasureResults as DbCollectionAccountErasureResults;
-use Hilos\Database\Actions\Collection\AccountErasureOperationsActions;
-use Hilos\Database\Actions\Collection\AccountErasureAssignmentsActions;
-use Hilos\Database\Actions\Collection\AccountErasureResultsActions;
-use Hilos\Database\Actions\Item\AccountErasureOperationActions;
+use Hilos\Database\View\Collection\AccountOperations as DbCollectionAccountOperations;
+use Hilos\Database\View\Collection\AccountOperationAssignments as DbCollectionAccountOperationAssignments;
+use Hilos\Database\View\Collection\AccountOperationResults as DbCollectionAccountOperationResults;
+use Hilos\Database\Actions\Collection\AccountOperationsActions;
+use Hilos\Database\Actions\Collection\AccountOperationAssignmentsActions;
+use Hilos\Database\Actions\Collection\AccountOperationResultsActions;
+use Hilos\Database\Actions\Item\AccountOperationActions;
 use Hilos\Database\View\Collection\LegalAcceptances as DbCollectionLegalAcceptances;
 use Hilos\Database\View\Collection\LegalAcceptanceExports as DbCollectionLegalAcceptanceExports;
 use Hilos\Database\View\Collection\AuthBlocks as DbCollectionAuthBlocks;
@@ -190,9 +190,9 @@ use Hilos\Database\Exception\InvalidMountedCollectionException;
  * @property-read DbCollectionAccessLogEntries $accessLogEntries Account access log
  * @property-read DbCollectionDataExports $dataExports Data export requests
  * @property-read DbCollectionAccountDeletions $accountDeletions
- * @property-read DbCollectionAccountErasureOperations $accountErasureOperations
- * @property-read DbCollectionAccountErasureAssignments $accountErasureAssignments
- * @property-read DbCollectionAccountErasureResults $accountErasureResults
+ * @property-read DbCollectionAccountOperations $accountOperations
+ * @property-read DbCollectionAccountOperationAssignments $accountOperationAssignments
+ * @property-read DbCollectionAccountOperationResults $accountOperationResults
  * @property-read DbCollectionLegalAcceptances $legalAcceptances
  * @property-read DbCollectionLegalAcceptanceExports $legalAcceptanceExports Administrators' files of acceptance records
  * @property-read DbCollectionFiles $files
@@ -282,9 +282,9 @@ abstract class HilosDbContext extends DbContext
     public const string accessLogEntry = 'accessLogEntry';
     public const string accountDeletions = 'accountDeletions';
     public const string accountDeletion = 'accountDeletion';
-    public const string accountErasureOperations = 'accountErasureOperations';
-    public const string accountErasureAssignments = 'accountErasureAssignments';
-    public const string accountErasureResults = 'accountErasureResults';
+    public const string accountOperations = 'accountOperations';
+    public const string accountOperationAssignments = 'accountOperationAssignments';
+    public const string accountOperationResults = 'accountOperationResults';
     public const string legalAcceptances = 'legalAcceptances';
     public const string legalAcceptance = 'legalAcceptance';
     public const string dataExports = 'dataExports';
@@ -543,23 +543,23 @@ abstract class HilosDbContext extends DbContext
             AccountDeletionActions::class,
         );
         $this->mountFramework(
-            self::accountErasureOperations,
+            self::accountOperations,
             Objects::LAZY_STRATEGY_KEY,
-            DbCollectionAccountErasureOperations::class,
-            AccountErasureOperationsActions::class,
-            AccountErasureOperationActions::class,
+            DbCollectionAccountOperations::class,
+            AccountOperationsActions::class,
+            AccountOperationActions::class,
         );
         $this->mountFramework(
-            self::accountErasureAssignments,
+            self::accountOperationAssignments,
             Objects::LAZY_STRATEGY_KEY,
-            DbCollectionAccountErasureAssignments::class,
-            AccountErasureAssignmentsActions::class,
+            DbCollectionAccountOperationAssignments::class,
+            AccountOperationAssignmentsActions::class,
         );
         $this->mountFramework(
-            self::accountErasureResults,
+            self::accountOperationResults,
             Objects::LAZY_STRATEGY_KEY,
-            DbCollectionAccountErasureResults::class,
-            AccountErasureResultsActions::class,
+            DbCollectionAccountOperationResults::class,
+            AccountOperationResultsActions::class,
         );
         $this->mountFramework(
             self::dataExports,

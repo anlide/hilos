@@ -1,0 +1,53 @@
+{
+    "format": 1,
+    "id": "20261109072435317522_HIL-1987_drop_account_erasure_tables",
+    "parts": [
+        {
+            "unit": "account_erasure_result",
+            "up": "account_erasure_result.sql",
+            "down": "account_erasure_result_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261109072435317521_HIL-1987_account_operation_tables",
+                    "unit": "account_erasure_result"
+                }
+            ],
+            "afterStubUpSha256": "1702548fe5a976c44f43f905176038ff7518d6573ed6e568b71d7bbfee518a7f",
+            "afterStubDownSha256": "59a89ba5fe898aef7344c47b7e73dda637cb5639ce0240adc42d20ede71fe08f"
+        },
+        {
+            "unit": "account_erasure_assignment",
+            "up": "account_erasure_assignment.sql",
+            "down": "account_erasure_assignment_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261109072435317521_HIL-1987_account_operation_tables",
+                    "unit": "account_erasure_assignment"
+                },
+                {
+                    "changeId": "20261109072435317522_HIL-1987_drop_account_erasure_tables",
+                    "unit": "account_erasure_result"
+                }
+            ],
+            "afterStubUpSha256": "fe67ccd3c07a0a5672487f803cc9eac53a9af1fcd832d52112baa14ef612e65a",
+            "afterStubDownSha256": "dd8dbcc1eaab1fe1dd3226b5679d59e89b38023df513778531e6074072fe3e4f"
+        },
+        {
+            "unit": "account_erasure_operation",
+            "up": "account_erasure_operation.sql",
+            "down": "account_erasure_operation_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261109072435317521_HIL-1987_account_operation_tables",
+                    "unit": "account_erasure_operation"
+                },
+                {
+                    "changeId": "20261109072435317522_HIL-1987_drop_account_erasure_tables",
+                    "unit": "account_erasure_assignment"
+                }
+            ],
+            "afterStubUpSha256": "b45d411a90362b9cba870265e8071e4870dc3c69ff22ea7df450bedb44f1beba",
+            "afterStubDownSha256": "76829ea1906bd7a43c979d586f230a1bdc15c7a6aa697a7c42dc1e659efb1a80"
+        }
+    ]
+}
