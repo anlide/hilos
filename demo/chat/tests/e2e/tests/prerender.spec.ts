@@ -10,97 +10,93 @@ import { readFile } from 'node:fs/promises'
 // browser), so they assert the served markup itself, not what the client
 // renders afterwards.
 
-test('a public page is prerendered with its content and title', async ({
+test('the public pages and crawler files are served prerendered', async ({
   request,
 }) => {
-  const res = await request.get('/about')
-  expect(res.status()).toBe(200)
-  const html = await res.text()
-  // The About prose is in the served HTML, before any JavaScript runs.
-  expect(html).toContain('Hilos Chat is a demonstration')
-  // The support block is behavior, and it is in the served HTML too: the plate
-  // and its button render on a machine with no browser, inert until the SPA mounts.
-  expect(html).toContain('Support the project')
-  expect(html).toMatch(/<title>About[^<]*<\/title>/)
+  await test.step('a public page is prerendered with its content and title', async () => {
+    const res = await request.get('/about')
+    expect(res.status()).toBe(200)
+    const html = await res.text()
+    // The About prose is in the served HTML, before any JavaScript runs.
+    expect(html).toContain('Hilos Chat is a demonstration')
+    // The support block is behavior, and it is in the served HTML too: the plate
+    // and its button render on a machine with no browser, inert until the SPA mounts.
+    expect(html).toContain('Support the project')
+    expect(html).toMatch(/<title>About[^<]*<\/title>/)
+  })
+
+  await test.step('the project license is prerendered as exact text', async () => {
+    const res = await request.get('/license')
+    expect(res.status()).toBe(200)
+    const html = await res.text()
+    const projectLicenseText = await readFile(
+      new URL('../../../LICENSE', import.meta.url),
+      'utf8',
+    )
+    // SSR may serialize quotes as text or as &quot;; compare the response with the
+    // complete source text after normalizing that HTML representation.
+    expect(html.replaceAll('&quot;', '"')).toContain(projectLicenseText)
+  })
+
+  await test.step('the privacy page is prerendered with the erase block whole', async () => {
+    const res = await request.get('/privacy')
+    expect(res.status()).toBe(200)
+    const html = await res.text()
+    // The block is a declaration and a click handler, never a read of the browser,
+    // so it renders whole on a machine that has none — button included, inert until
+    // the SPA mounts.
+    expect(html).toContain('data-id="privacy-erase"')
+    expect(html).toContain('Erase and sign out')
+  })
+
+  await test.step('the terms page is prerendered with the introduction and the loading line', async () => {
+    const res = await request.get('/terms')
+    expect(res.status()).toBe(200)
+    const html = await res.text()
+    // The text of the revision in force lives in the backend's legal catalog,
+    // which the frontend build does not read: the file carries the heading, the
+    // project's introduction and the loading line, and the text arrives with the
+    // subscription (HIL-501).
+    expect(html).toContain('This is a demonstration application')
+    expect(html).toContain('data-id="terms-loading"')
+    expect(html).toMatch(/<title>Terms[^<]*<\/title>/)
+    expect(html).not.toContain('implies acceptance')
+  })
+
+  await test.step('robots.txt and sitemap.xml advertise the public surface', async () => {
+    const robots = await request.get('/robots.txt')
+    expect(robots.status()).toBe(200)
+    expect(await robots.text()).toContain('Sitemap:')
+
+    const sitemap = await request.get('/sitemap.xml')
+    expect(sitemap.status()).toBe(200)
+    expect(await sitemap.text()).toContain('/about')
+  })
 })
 
-test('the project license is prerendered as exact text', async ({
+test('private and unknown paths fall back to the SPA shell, a missing asset does not', async ({
   request,
 }) => {
-  const res = await request.get('/license')
-  expect(res.status()).toBe(200)
-  const html = await res.text()
-  const projectLicenseText = await readFile(
-    new URL('../../../LICENSE', import.meta.url),
-    'utf8',
-  )
-  // SSR may serialize quotes as text or as &quot;; compare the response with the
-  // complete source text after normalizing that HTML representation.
-  expect(html.replaceAll('&quot;', '"')).toContain(projectLicenseText)
-})
+  await test.step('an app deep link cold-loads the SPA shell, not a prerender', async () => {
+    const res = await request.get('/profile')
+    expect(res.status()).toBe(200)
+    // The SPA shell: an empty mount point the client fills, with no prerendered
+    // content — the authed area is never forced through the prerender path.
+    expect(await res.text()).toContain('<div id="app"></div>')
+  })
 
-test('the privacy page is prerendered with the erase block whole', async ({
-  request,
-}) => {
-  const res = await request.get('/privacy')
-  expect(res.status()).toBe(200)
-  const html = await res.text()
-  // The block is a declaration and a click handler, never a read of the browser,
-  // so it renders whole on a machine that has none — button included, inert until
-  // the SPA mounts.
-  expect(html).toContain('data-id="privacy-erase"')
-  expect(html).toContain('Erase and sign out')
-})
+  await test.step('an unknown public path cold-loads the SPA shell', async () => {
+    const res = await request.get('/nope')
+    expect(new URL(res.url()).pathname).toBe('/nope')
+    expect(res.status()).toBe(200)
+    // The shell, not a prerendered page: the app mounts and shows its own 404.
+    expect(await res.text()).toContain('<div id="app"></div>')
+  })
 
-test('the terms page is prerendered with the introduction and the loading line', async ({
-  request,
-}) => {
-  const res = await request.get('/terms')
-  expect(res.status()).toBe(200)
-  const html = await res.text()
-  // The text of the revision in force lives in the backend's legal catalog,
-  // which the frontend build does not read: the file carries the heading, the
-  // project's introduction and the loading line, and the text arrives with the
-  // subscription (HIL-501).
-  expect(html).toContain('This is a demonstration application')
-  expect(html).toContain('data-id="terms-loading"')
-  expect(html).toMatch(/<title>Terms[^<]*<\/title>/)
-  expect(html).not.toContain('implies acceptance')
-})
-
-test('robots.txt and sitemap.xml advertise the public surface', async ({
-  request,
-}) => {
-  const robots = await request.get('/robots.txt')
-  expect(robots.status()).toBe(200)
-  expect(await robots.text()).toContain('Sitemap:')
-
-  const sitemap = await request.get('/sitemap.xml')
-  expect(sitemap.status()).toBe(200)
-  expect(await sitemap.text()).toContain('/about')
-})
-
-test('an app deep link cold-loads the SPA shell, not a prerender', async ({
-  request,
-}) => {
-  const res = await request.get('/profile')
-  expect(res.status()).toBe(200)
-  // The SPA shell: an empty mount point the client fills, with no prerendered
-  // content — the authed area is never forced through the prerender path.
-  expect(await res.text()).toContain('<div id="app"></div>')
-})
-
-test('an unknown public path cold-loads the SPA shell', async ({ request }) => {
-  const res = await request.get('/nope')
-  expect(new URL(res.url()).pathname).toBe('/nope')
-  expect(res.status()).toBe(200)
-  // The shell, not a prerendered page: the app mounts and shows its own 404.
-  expect(await res.text()).toContain('<div id="app"></div>')
-})
-
-test('a missing static asset is not the SPA shell', async ({ request }) => {
-  const res = await request.get('/assets/hil1523-missing.js')
-  expect(new URL(res.url()).pathname).toBe('/assets/hil1523-missing.js')
-  expect(res.status()).toBe(404)
-  expect(await res.text()).not.toContain('<div id="app"></div>')
+  await test.step('a missing static asset is not the SPA shell', async () => {
+    const res = await request.get('/assets/hil1523-missing.js')
+    expect(new URL(res.url()).pathname).toBe('/assets/hil1523-missing.js')
+    expect(res.status()).toBe(404)
+    expect(await res.text()).not.toContain('<div id="app"></div>')
+  })
 })

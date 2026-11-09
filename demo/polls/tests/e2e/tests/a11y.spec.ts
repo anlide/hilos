@@ -258,48 +258,82 @@ test('a sortable header reports aria-sort and sorts from the keyboard', async ({
   await expect(header).toHaveAttribute('aria-sort', /^(ascending|descending)$/)
 })
 
-test('the shell exposes a skip link and marks the active nav item', async ({
+test('the shell supports accessible navigation without reload or reconnect', async ({
   page,
 }) => {
-  await gotoPage(expect, page, '/hilos')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await test.step('the shell exposes a skip link and marks the active nav item', async () => {
+    await gotoPage(expect, page, '/hilos')
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
-  // The skip link targets the main landmark.
-  await expect(page.getByTestId('skip-to-content')).toHaveAttribute(
-    'href',
-    '#hilos-main-content',
-  )
-  await expect(page.locator('main#hilos-main-content')).toBeVisible()
-
-  // No admin entry for a plain visitor: since HIL-611 a visitor carries no account
-  // at all, so the shell draws no way into a surface the page access gate would
-  // refuse anyway.
-  await expect(page.getByTestId('nav-admin')).toHaveCount(0)
-
-  // Granted, the same shell grows the entry — and marks it as the active nav
-  // item, which is the half of this test's subject the gear had to arrive for:
-  // aria-current is how assistive tech reads "you are here" off a nav.
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos')
-  await expect(page.getByTestId('nav-admin')).toHaveAttribute(
-    'aria-current',
-    'page',
-  )
-
-  await expectPageReady(expect, page)
-  const build = await expectDesktopShell(expect, page, 'nav-profile-name')
-  const document = await watchClientDocument(page)
-  try {
-    await page.getByTestId('nav-brand').click()
-    await expect(page).toHaveURL('/')
-    await expectPageReady(expect, page)
-    await document.unchanged()
-    expect(await expectDesktopShell(expect, page, 'nav-profile-name')).toBe(
-      build,
+    // The skip link targets the main landmark.
+    await expect(page.getByTestId('skip-to-content')).toHaveAttribute(
+      'href',
+      '#hilos-main-content',
     )
-  } finally {
-    await document.dispose()
-  }
+    await expect(page.locator('main#hilos-main-content')).toBeVisible()
+
+    // No admin entry for a plain visitor: since HIL-611 a visitor carries no account
+    // at all, so the shell draws no way into a surface the page access gate would
+    // refuse anyway.
+    await expect(page.getByTestId('nav-admin')).toHaveCount(0)
+
+    // Granted, the same shell grows the entry — and marks it as the active nav
+    // item, which is the half of this test's subject the gear had to arrive for:
+    // aria-current is how assistive tech reads "you are here" off a nav.
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, '/hilos')
+    await expect(page.getByTestId('nav-admin')).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+
+    await expectPageReady(expect, page)
+    const build = await expectDesktopShell(expect, page, 'nav-profile-name')
+    const document = await watchClientDocument(page)
+    try {
+      await page.getByTestId('nav-brand').click()
+      await expect(page).toHaveURL('/')
+      await expectPageReady(expect, page)
+      await document.unchanged()
+      expect(await expectDesktopShell(expect, page, 'nav-profile-name')).toBe(
+        build,
+      )
+    } finally {
+      await document.dispose()
+    }
+  })
+
+  // No-refresh navigation e2e: the shell's gear moves to the framework dashboard
+  // and the brand moves back home through the core navigator (HilosRouter),
+  // without reloading the document or dropping the WebSocket. A hard navigation
+  // would fire a fresh `load`; the count staying put proves every transition
+  // stayed in the same live document, and `conn-state` staying `connected` proves
+  // the socket was never torn down.
+  await test.step('navigates main <-> dashboard with no reload or reconnect', async () => {
+    let fullLoads = 0
+    page.on('load', () => {
+      fullLoads += 1
+    })
+
+    // Gear -> dashboard.
+    await page.getByTestId('nav-admin').click()
+    await expect(page.getByTestId('dashboard-view')).toBeVisible()
+    // The framework dashboard renders the real admin section cards from the
+    // catalog (HilosDashboardPage), not a placeholder.
+    await expect(
+      page.locator('[data-id^="dashboard-card-"]').first(),
+    ).toBeVisible()
+    expect(new URL(page.url()).pathname).toBe('/hilos')
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    expect(fullLoads).toBe(0)
+
+    // Brand -> home.
+    await page.getByTestId('nav-brand').click()
+    await expect(page.getByTestId('self-user')).toBeVisible()
+    expect(new URL(page.url()).pathname).toBe('/')
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    expect(fullLoads).toBe(0)
+  })
 })
 
 test('each page titles the tab and announces the page on navigation', async ({

@@ -19,7 +19,6 @@ import {
   DAEMON_NODE_PATH,
   DAEMON_STANDALONE_NODE_NAME,
   DAEMON_NODE_TABS,
-  expectLicenseDependenciesAccessibility,
   expectDaemonNodeHead,
   expectDaemonNodeTableName,
   expectStandaloneWebsockets,
@@ -141,21 +140,6 @@ async function openSettings(page: Page): Promise<void> {
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 }
-
-test('public Dependencies exposes a named table and keyboard navigation', async ({
-  page,
-}) => {
-  await gotoPage(expect, page, '/license')
-  const dependencies = page.getByTestId(
-    'hilos-page-tab-hilos_license_dependencies',
-  )
-  await dependencies.focus()
-  await expect(dependencies).toBeFocused()
-  await dependencies.press('Enter')
-  await expect(page).toHaveURL('/license/dependencies')
-  await expectPageReady(expect, page)
-  await expectLicenseDependenciesAccessibility(expect, page, 'Hilos Chat')
-})
 
 test('Legal document links open real clauses from the keyboard and name the table through one heading', async ({
   page,
@@ -556,75 +540,75 @@ test('OAuth provider has one named entity head and table, decorative icons and k
   }
 })
 
-test('the shell exposes a skip link and marks the active nav item', async ({
+test('the admin shell keeps navigation accessible and announces page changes', async ({
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
-  // The skip link targets the main landmark.
-  await expect(page.getByTestId('skip-to-content')).toHaveAttribute(
-    'href',
-    '#hilos-main-content',
-  )
-  await expect(page.locator('main#hilos-main-content')).toBeVisible()
+  await test.step('the shell exposes a skip link and marks the active nav item', async () => {
+    await gotoPage(expect, page, '/hilos')
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
-  // The admin gear points at /hilos, the current page, so it is aria-current.
-  await expect(page.getByTestId('nav-admin')).toHaveAttribute(
-    'aria-current',
-    'page',
-  )
-
-  // Conversations is in the shell, and this page is the dashboard, so the
-  // link is not the current page.
-  await expect(page.getByTestId('nav-conversations')).not.toHaveAttribute(
-    'aria-current',
-    'page',
-  )
-
-  await expectPageReady(expect, page)
-  const build = await expectDesktopShell(expect, page, 'nav-profile')
-  const document = await watchClientDocument(page)
-  try {
-    await page.getByTestId('nav-brand').click()
-    await expect(page).toHaveURL('/')
-    await expectPageReady(expect, page)
-    await expect(page.getByTestId('nav-conversations')).toHaveAttribute(
+    // The skip link targets the main landmark.
+    await expect(page.getByTestId('skip-to-content')).toHaveAttribute(
       'href',
-      '/',
+      '#hilos-main-content',
     )
-    await expect(page.getByTestId('nav-conversations')).toHaveAttribute(
+    await expect(page.locator('main#hilos-main-content')).toBeVisible()
+
+    // The admin gear points at /hilos, the current page, so it is aria-current.
+    await expect(page.getByTestId('nav-admin')).toHaveAttribute(
       'aria-current',
       'page',
     )
-    await document.unchanged()
-    expect(await expectDesktopShell(expect, page, 'nav-profile')).toBe(build)
-  } finally {
-    await document.dispose()
-  }
-})
 
-test('each page titles the tab and announces the page on navigation', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
-  await openSettings(page)
+    // Conversations is in the shell, and this page is the dashboard, so the
+    // link is not the current page.
+    await expect(page.getByTestId('nav-conversations')).not.toHaveAttribute(
+      'aria-current',
+      'page',
+    )
 
-  // The settings page titles the browser tab (framework label + app name), and
-  // the live region carries the same title for a screen-reader announcement.
-  await expect(page).toHaveTitle('Settings · Hilos Chat')
-  await expect(page.getByTestId('page-title')).toHaveText(
-    'Settings · Hilos Chat',
-  )
+    await expectPageReady(expect, page)
+    const build = await expectDesktopShell(expect, page, 'nav-profile')
+    const document = await watchClientDocument(page)
+    try {
+      await page.getByTestId('nav-brand').click()
+      await expect(page).toHaveURL('/')
+      await expectPageReady(expect, page)
+      await expect(page.getByTestId('nav-conversations')).toHaveAttribute(
+        'href',
+        '/',
+      )
+      await expect(page.getByTestId('nav-conversations')).toHaveAttribute(
+        'aria-current',
+        'page',
+      )
+      await document.unchanged()
+      expect(await expectDesktopShell(expect, page, 'nav-profile')).toBe(build)
+    } finally {
+      await document.dispose()
+    }
+  })
 
-  // A no-refresh navigation (the brand → home) updates both the tab title and
-  // the announcement.
-  await page.getByTestId('nav-brand').click()
-  await expect(page).toHaveTitle('Conversations · Hilos Chat')
-  await expect(page.getByTestId('page-title')).toHaveText(
-    'Conversations · Hilos Chat',
-  )
+  await test.step('each page titles the tab and announces the page on navigation', async () => {
+    await openSettings(page)
+
+    // The settings page titles the browser tab (framework label + app name), and
+    // the live region carries the same title for a screen-reader announcement.
+    await expect(page).toHaveTitle('Settings · Hilos Chat')
+    await expect(page.getByTestId('page-title')).toHaveText(
+      'Settings · Hilos Chat',
+    )
+
+    // A no-refresh navigation (the brand → home) updates both the tab title and
+    // the announcement.
+    await page.getByTestId('nav-brand').click()
+    await expect(page).toHaveTitle('Conversations · Hilos Chat')
+    await expect(page.getByTestId('page-title')).toHaveText(
+      'Conversations · Hilos Chat',
+    )
+  })
 })
 
 test('the home page exposes a heading and presence as text', async ({

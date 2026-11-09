@@ -28,54 +28,93 @@ import {
 import { orphanSessionToken } from '../helpers/session.js'
 import { uniquePhone } from '../../../../../framework/frontend/scripts/standSms.mjs'
 
-// Step-7.1 transport e2e (testing-strategy.md): the built app reaches the
-// live daemon through the test nginx /ws WebSocket upgrade proxy, and the
-// Connection machine reports `connected` on the page. The guest's live
-// welcome names the stand's project time zone, and the welcome after a
-// dropped socket does too. Chat leaves the zone unset, so both frames carry
-// the catalog default UTC. A non-UTC zone is proved by the backend tests.
-test('websocket transport reaches connected', async ({ page }) => {
+test('subscribes the URL page and reconnects with the project time zone', async ({
+  page,
+}) => {
+  const sentFrames: string[] = []
+  page.on('websocket', (ws) => {
+    ws.on('framesent', (frame) => {
+      if (typeof frame.payload === 'string') {
+        sentFrames.push(frame.payload)
+      }
+    })
+  })
+
   await armSocketDrop(page)
   const welcomes = watchHandshakeFrames(page)
 
-  await gotoPage(expect, page, '/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect
-    .poll(() => welcomes.map(welcomeProjectTimeZone))
-    .toEqual([STAND_PROJECT_TIME_ZONE])
+  // Step-7.3.3 page-subscription infra e2e: on cold load the app subscribes the
+  // page named by the URL, so a page_subscribe frame for `main` goes out over
+  // the live nginx /ws upgrade once the connection reaches `connected`.
+  await test.step('subscribes the URL page on load', async () => {
+    await gotoPage(expect, page, '/')
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
-  const seen = welcomes.length
-  const reconnected = page.waitForEvent('websocket')
-  await dropSocket(page)
-  await reconnected
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect
-    .poll(() => welcomes.slice(seen).map(welcomeProjectTimeZone))
-    .toEqual([STAND_PROJECT_TIME_ZONE])
+    await expect
+      .poll(() =>
+        sentFrames.some((payload) => {
+          try {
+            const message = JSON.parse(payload) as {
+              type?: string
+              page?: string
+            }
+
+            return message.type === 'page_subscribe' && message.page === 'main'
+          } catch {
+            return false
+          }
+        }),
+      )
+      .toBe(true)
+  })
+
+  // Step-7.1 transport e2e (testing-strategy.md): the built app reaches the
+  // live daemon through the test nginx /ws WebSocket upgrade proxy, and the
+  // Connection machine reports `connected` on the page. The guest's live
+  // welcome names the stand's project time zone, and the welcome after a
+  // dropped socket does too. Chat leaves the zone unset, so both frames carry
+  // the catalog default UTC. A non-UTC zone is proved by the backend tests.
+  await test.step('websocket transport reaches connected', async () => {
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    await expect
+      .poll(() => welcomes.map(welcomeProjectTimeZone))
+      .toEqual([STAND_PROJECT_TIME_ZONE])
+
+    const seen = welcomes.length
+    const reconnected = page.waitForEvent('websocket')
+    await dropSocket(page)
+    await reconnected
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    await expect
+      .poll(() => welcomes.slice(seen).map(welcomeProjectTimeZone))
+      .toEqual([STAND_PROJECT_TIME_ZONE])
+  })
 })
 
-// Session bootstrap e2e: the client-minted cookie rides the handshake and the
-// session scope tracks the current user. Under session≠user a fresh visitor is
-// anonymous, so a fixture binds the user; the session update rides the same
-// connection and the current user renders in place.
-test('session bootstrap resolves the current user', async ({ page }) => {
-  const user = await createTestUser(expect, page)
-  await expect(page.getByTestId('self-user')).toHaveText(user.name)
-})
-
-// Identity-line e2e (HIL-625): the other branch of that same line. A visitor with
-// no account reads an explicit anonymous sentence, and the authenticated branch's
-// marker is ABSENT rather than empty — Chat hands a guest no name, so there is
-// nothing for `self-user` to carry, and an empty one is the bug this pins.
-test('renders the anonymous identity line for a visitor with no account', async ({
+test('updates the anonymous identity when the session gains a user', async ({
   page,
 }) => {
-  await gotoPage(expect, page, '/')
+  // Identity-line e2e (HIL-625): the other branch of that same line. A visitor with
+  // no account reads an explicit anonymous sentence, and the authenticated branch's
+  // marker is ABSENT rather than empty — Chat hands a guest no name, so there is
+  // nothing for `self-user` to carry, and an empty one is the bug this pins.
+  await test.step('renders the anonymous identity line for a visitor with no account', async () => {
+    await gotoPage(expect, page, '/')
 
-  await expect(page.getByTestId('self-anonymous')).toHaveText(
-    'Browsing anonymously',
-  )
-  await expect(page.getByTestId('self-user')).toHaveCount(0)
+    await expect(page.getByTestId('self-anonymous')).toHaveText(
+      'Browsing anonymously',
+    )
+    await expect(page.getByTestId('self-user')).toHaveCount(0)
+  })
+
+  // Session bootstrap e2e: the client-minted cookie rides the handshake and the
+  // session scope tracks the current user. Under session≠user a fresh visitor is
+  // anonymous, so a fixture binds the user; the session update rides the same
+  // connection and the current user renders in place.
+  await test.step('session bootstrap resolves the current user', async () => {
+    const user = await createTestUser(expect, page)
+    await expect(page.getByTestId('self-user')).toHaveText(user.name)
+  })
 })
 
 // The case that opened HIL-625: an anonymized restore purged hilos_session while
@@ -107,40 +146,6 @@ test('renders the anonymous identity line when the cookie names no session', asy
     'Browsing anonymously',
   )
   await expect(page.getByTestId('self-user')).toHaveCount(0)
-})
-
-// Step-7.3.3 page-subscription infra e2e: on cold load the app subscribes the
-// page named by the URL, so a page_subscribe frame for `main` goes out over
-// the live nginx /ws upgrade once the connection reaches `connected`.
-test('subscribes the URL page on load', async ({ page }) => {
-  const sentFrames: string[] = []
-  page.on('websocket', (ws) => {
-    ws.on('framesent', (frame) => {
-      if (typeof frame.payload === 'string') {
-        sentFrames.push(frame.payload)
-      }
-    })
-  })
-
-  await gotoPage(expect, page, '/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-
-  await expect
-    .poll(() =>
-      sentFrames.some((payload) => {
-        try {
-          const message = JSON.parse(payload) as {
-            type?: string
-            page?: string
-          }
-
-          return message.type === 'page_subscribe' && message.page === 'main'
-        } catch {
-          return false
-        }
-      }),
-    )
-    .toBe(true)
 })
 
 /** Chat stand default: the catalog answer when the project zone is unset. */

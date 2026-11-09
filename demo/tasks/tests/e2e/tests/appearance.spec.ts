@@ -157,88 +157,154 @@ test('Appearance card, typed settings and live value remain visible to a viewer'
   }
 })
 
-test('Appearance default theme reaches guests and accounts without overriding a personal Light choice', async ({
+test('Appearance editors discard keyboard changes and the default theme preserves personal choices', async ({
   browser,
-  page: admin,
+  page,
   baseURL,
 }) => {
   // Account preparation, three visitors and live setting delivery.
   test.slow()
-  await emulateSystemTheme(admin, 'light')
-  await grantAdminToSelf(expect, admin)
-  const contexts: BrowserContext[] = []
-  try {
-    await gotoPage(expect, admin, APPEARANCE_PATH, PAGE_READY)
-    await expectAppearanceRows(expect, admin)
-    const visitors: Page[] = []
-    const loads = new Map<Page, number>()
-    for (let index = 0; index < 3; index += 1) {
-      const context = await browser.newContext({
-        baseURL,
-        ignoreHTTPSErrors: true,
-        colorScheme: 'light',
-        viewport: test.info().project.use.viewport,
-      })
-      contexts.push(context)
-      const visitor = await context.newPage()
-      visitors.push(visitor)
-      loads.set(visitor, 0)
-      visitor.on('load', () => {
-        loads.set(visitor, (loads.get(visitor) ?? 0) + 1)
-      })
-      await gotoPage(expect, visitor, '/', PAGE_READY)
-    }
-    const [, person, lightGuest] = visitors
-    await chooseHeaderTheme(expect, lightGuest, 'light')
-    await createTestUser(expect, person)
-    for (const visitor of visitors) {
-      await expectThemeMode(expect, visitor, 'light')
+
+  await test.step('both Appearance windows support keyboard, focus and discard', async () => {
+    await emulateSystemTheme(page, 'light')
+    await gotoPage(expect, page, '/', PAGE_READY)
+    await chooseHeaderTheme(expect, page, 'light')
+    await createTestAdmin(expect, page, { themePick: 'light' })
+    await gotoPage(expect, page, APPEARANCE_PATH, PAGE_READY)
+    await expectThemeMode(expect, page, 'light')
+    await expectAppearanceRows(expect, page)
+    await dismissToasts(page)
+
+    const pencil = shownByTestId(
+      page,
+      `appearance-setting-edit-${THEME_SWITCHING_KEY}`,
+    )
+    await expect(pencil).toContainText('Edit')
+    await pencil.focus()
+    await pencil.press('Enter')
+    const dialog = page.getByTestId('modal')
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toHaveAccessibleName('Edit · Theme switching')
+    const switching = page.getByTestId('appearance-switching-input')
+    await expect(switching).toBeFocused()
+    await switching.press('Space')
+    await expect(switching).not.toBeChecked()
+    await expect(page.getByTestId('appearance-switching-save')).toBeEnabled()
+    await switching.press('Escape')
+    await expect(page.getByTestId('modal-confirm')).toContainText(
+      'Discard changes?',
+    )
+    await page.getByTestId('modal-confirm-discard').click()
+    await expect(dialog).toBeHidden()
+    await expect(pencil).toBeFocused()
+    await expect(appearanceSettingValue(page, THEME_SWITCHING_KEY)).toHaveText(
+      'On',
+    )
+
+    const themePencil = shownByTestId(
+      page,
+      `appearance-setting-edit-${THEME_DEFAULT_KEY}`,
+    )
+    await themePencil.focus()
+    await themePencil.press('Enter')
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toHaveAccessibleName('Edit · Default theme')
+    const system = page.getByTestId('appearance-default-theme-system')
+    await expect(system).toBeChecked()
+    await system.focus()
+    await system.press('ArrowLeft')
+    await expect(
+      page.getByTestId('appearance-default-theme-dark'),
+    ).toBeChecked()
+    await expect(
+      page.getByTestId('appearance-default-theme-save'),
+    ).toBeEnabled()
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('modal-confirm')).toContainText(
+      'Discard changes?',
+    )
+    await page.getByTestId('modal-confirm-discard').click()
+    await expect(dialog).toBeHidden()
+    await expect(themePencil).toBeFocused()
+    await expectAppearanceRows(expect, page)
+    await expectThemeMode(expect, page, 'light')
+  })
+
+  await test.step('Appearance default theme reaches guests and accounts without overriding a personal Light choice', async () => {
+    const contexts: BrowserContext[] = []
+    try {
+      await gotoPage(expect, page, APPEARANCE_PATH, PAGE_READY)
+      await expectAppearanceRows(expect, page)
+      const visitors: Page[] = []
+      const loads = new Map<Page, number>()
+      for (let index = 0; index < 3; index += 1) {
+        const context = await browser.newContext({
+          baseURL,
+          ignoreHTTPSErrors: true,
+          colorScheme: 'light',
+          viewport: test.info().project.use.viewport,
+        })
+        contexts.push(context)
+        const visitor = await context.newPage()
+        visitors.push(visitor)
+        loads.set(visitor, 0)
+        visitor.on('load', () => {
+          loads.set(visitor, (loads.get(visitor) ?? 0) + 1)
+        })
+        await gotoPage(expect, visitor, '/', PAGE_READY)
+      }
+      const [, person, lightGuest] = visitors
+      await chooseHeaderTheme(expect, lightGuest, 'light')
+      await createTestUser(expect, person)
+      for (const visitor of visitors) {
+        await expectThemeMode(expect, visitor, 'light')
+        expect(
+          await visitor.evaluate(
+            (key) => localStorage.getItem(key),
+            THEME_PICK_STORAGE_KEY,
+          ),
+        ).toBe(visitor === lightGuest ? 'light' : null)
+      }
+      const loadsBeforeChange = new Map(loads)
+
+      await openAppearanceSetting(expect, page, THEME_DEFAULT_KEY)
+      await expect(
+        page.getByTestId('appearance-default-theme-system'),
+      ).toBeChecked()
+      await expect(
+        page.getByTestId('appearance-default-theme-save'),
+      ).toBeDisabled()
+      await page.getByTestId('appearance-default-theme-dark').check()
+      await saveAppearanceDefaultTheme(expect, page, 'dark')
+      await expectAppearanceRows(expect, page, true, 'dark')
+      for (const visitor of visitors) {
+        await expectThemeMode(
+          expect,
+          visitor,
+          visitor === lightGuest ? 'light' : 'dark',
+        )
+        await expectThemeHeader(
+          expect,
+          visitor,
+          visitor === lightGuest ? 'light' : 'dark',
+          visitor !== lightGuest,
+        )
+        expect(loads.get(visitor)).toBe(loadsBeforeChange.get(visitor))
+      }
       expect(
-        await visitor.evaluate(
+        await lightGuest.evaluate(
           (key) => localStorage.getItem(key),
           THEME_PICK_STORAGE_KEY,
         ),
-      ).toBe(visitor === lightGuest ? 'light' : null)
-    }
-    const loadsBeforeChange = new Map(loads)
-
-    await openAppearanceSetting(expect, admin, THEME_DEFAULT_KEY)
-    await expect(
-      admin.getByTestId('appearance-default-theme-system'),
-    ).toBeChecked()
-    await expect(
-      admin.getByTestId('appearance-default-theme-save'),
-    ).toBeDisabled()
-    await admin.getByTestId('appearance-default-theme-dark').check()
-    await saveAppearanceDefaultTheme(expect, admin, 'dark')
-    await expectAppearanceRows(expect, admin, true, 'dark')
-    for (const visitor of visitors) {
-      await expectThemeMode(
-        expect,
-        visitor,
-        visitor === lightGuest ? 'light' : 'dark',
-      )
-      await expectThemeHeader(
-        expect,
-        visitor,
-        visitor === lightGuest ? 'light' : 'dark',
-        visitor !== lightGuest,
-      )
-      expect(loads.get(visitor)).toBe(loadsBeforeChange.get(visitor))
-    }
-    expect(
-      await lightGuest.evaluate(
-        (key) => localStorage.getItem(key),
-        THEME_PICK_STORAGE_KEY,
-      ),
-    ).toBe('light')
-  } finally {
-    try {
-      await restoreSetting(admin, THEME_DEFAULT_KEY)
+      ).toBe('light')
     } finally {
-      await Promise.all(contexts.map((context) => context.close()))
+      try {
+        await restoreSetting(page, THEME_DEFAULT_KEY)
+      } finally {
+        await Promise.all(contexts.map((context) => context.close()))
+      }
     }
-  }
+  })
 })
 
 test('Appearance switching restores guest and account Dark choices without reload', async ({
@@ -324,67 +390,4 @@ test('Appearance switching restores guest and account Dark choices without reloa
       await Promise.all(contexts.map((context) => context.close()))
     }
   }
-})
-
-test('both Appearance windows support keyboard, focus and discard', async ({
-  page,
-}) => {
-  await emulateSystemTheme(page, 'light')
-  await gotoPage(expect, page, '/', PAGE_READY)
-  await chooseHeaderTheme(expect, page, 'light')
-  await createTestAdmin(expect, page, { themePick: 'light' })
-  await gotoPage(expect, page, APPEARANCE_PATH, PAGE_READY)
-  await expectThemeMode(expect, page, 'light')
-  await expectAppearanceRows(expect, page)
-  await dismissToasts(page)
-
-  const pencil = shownByTestId(
-    page,
-    `appearance-setting-edit-${THEME_SWITCHING_KEY}`,
-  )
-  await expect(pencil).toContainText('Edit')
-  await pencil.focus()
-  await pencil.press('Enter')
-  const dialog = page.getByTestId('modal')
-  await expect(dialog).toBeVisible()
-  await expect(dialog).toHaveAccessibleName('Edit · Theme switching')
-  const switching = page.getByTestId('appearance-switching-input')
-  await expect(switching).toBeFocused()
-  await switching.press('Space')
-  await expect(switching).not.toBeChecked()
-  await expect(page.getByTestId('appearance-switching-save')).toBeEnabled()
-  await switching.press('Escape')
-  await expect(page.getByTestId('modal-confirm')).toContainText(
-    'Discard changes?',
-  )
-  await page.getByTestId('modal-confirm-discard').click()
-  await expect(dialog).toBeHidden()
-  await expect(pencil).toBeFocused()
-  await expect(appearanceSettingValue(page, THEME_SWITCHING_KEY)).toHaveText(
-    'On',
-  )
-
-  const themePencil = shownByTestId(
-    page,
-    `appearance-setting-edit-${THEME_DEFAULT_KEY}`,
-  )
-  await themePencil.focus()
-  await themePencil.press('Enter')
-  await expect(dialog).toBeVisible()
-  await expect(dialog).toHaveAccessibleName('Edit · Default theme')
-  const system = page.getByTestId('appearance-default-theme-system')
-  await expect(system).toBeChecked()
-  await system.focus()
-  await system.press('ArrowLeft')
-  await expect(page.getByTestId('appearance-default-theme-dark')).toBeChecked()
-  await expect(page.getByTestId('appearance-default-theme-save')).toBeEnabled()
-  await page.keyboard.press('Escape')
-  await expect(page.getByTestId('modal-confirm')).toContainText(
-    'Discard changes?',
-  )
-  await page.getByTestId('modal-confirm-discard').click()
-  await expect(dialog).toBeHidden()
-  await expect(themePencil).toBeFocused()
-  await expectAppearanceRows(expect, page)
-  await expectThemeMode(expect, page, 'light')
 })
