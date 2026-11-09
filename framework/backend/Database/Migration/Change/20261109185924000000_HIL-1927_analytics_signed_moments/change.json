@@ -1,0 +1,14 @@
+{
+    "format": 1,
+    "id": "20261109185924000000_HIL-1927_analytics_signed_moments",
+    "parts": [
+        {
+            "unit": "analytics",
+            "up": "analytics.sql",
+            "down": "analytics_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "5904442d416d40fdf99884cd9b6b8ad7e253e60f57abacd4cae0f147e2a0d5e7",
+            "afterStubDownSha256": "099ef20cfa0adccd9f5c727f307bda3b10fa443178ff5f5ab4ed717c34802695"
+        }
+    ]
+}

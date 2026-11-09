@@ -131,7 +131,7 @@ final class AnalyticsTablesIntegrationTest extends AnalyticsSchemaIntegrationTes
                 ['rowKey' => null], ['rowKey' => 0], ['rowKey' => -1], ['rowKey' => 9007199254740992]];
             if ($sort !== null) {
                 array_push($invalid, ['rowKey' => 1], ['rowKey' => 1, 'lastSeenTs' => '300'],
-                    ['rowKey' => 1, 'lastSeenTs' => -1], ['rowKey' => 1, 'lastSeenTs' => 9007199254740992]);
+                    ['rowKey' => 1, 'lastSeenTs' => -9007199254740992], ['rowKey' => 1, 'lastSeenTs' => 9007199254740992]);
             }
             foreach ($invalid as $anchor) {
                 try {
@@ -733,7 +733,7 @@ final class AnalyticsTablesIntegrationTest extends AnalyticsSchemaIntegrationTes
                 ['rowKey' => null], ['rowKey' => 0], ['rowKey' => -1], ['rowKey' => 9007199254740992]];
             if ($sort !== null) {
                 array_push($invalid, ['rowKey' => 1], ['rowKey' => 1, 'lastSeenTs' => '300'],
-                    ['rowKey' => 1, 'lastSeenTs' => -1], ['rowKey' => 1, 'lastSeenTs' => 9007199254740992]);
+                    ['rowKey' => 1, 'lastSeenTs' => -9007199254740992], ['rowKey' => 1, 'lastSeenTs' => 9007199254740992]);
             }
             foreach ($invalid as $anchor) {
                 try {
@@ -933,6 +933,79 @@ final class AnalyticsTablesIntegrationTest extends AnalyticsSchemaIntegrationTes
         $afterEnd = $table->getPage(new TableQueryDTO(filter: $filter, sort: $sort, limit: 2, anchor: $tail->lastAnchor));
         self::assertSame([], $afterEnd->rows);
         self::assertSame(count($expected), $afterEnd->rowsBefore);
+    }
+
+    public function testPeopleTablePaginatesAcrossNegativeZeroAndPositiveMoments(): void
+    {
+        Database::sql("INSERT INTO `hilos_user` (`id`, `name`) VALUES (10, 'Person 10'), (20, 'Person 20'), (30, 'Person 30')");
+        $this->session('p_neg', 10, -2000, -1000);
+        $this->session('p_zero', 20, -500, 0);
+        $this->session('p_pos', 30, 500, 1000);
+
+        $table = new HilosAnalyticsPeopleTable();
+        $sort = TableSortOrderDTO::of(new TableSortDTO('lastSeenTs', TableConstants::ORDER_ASC));
+
+        $page1 = $table->getPage(new TableQueryDTO(filter: self::PEOPLE_CONTEXT, sort: $sort, limit: 1));
+        self::assertCount(1, $page1->rows);
+        self::assertSame(10, $page1->rows[0]->rowKey);
+        self::assertSame(-1000, $page1->rows[0]->lastSeenTs);
+
+        $page2 = $table->getPage(new TableQueryDTO(filter: self::PEOPLE_CONTEXT, sort: $sort, limit: 1, anchor: $page1->lastAnchor));
+        self::assertCount(1, $page2->rows);
+        self::assertSame(20, $page2->rows[0]->rowKey);
+        self::assertSame(0, $page2->rows[0]->lastSeenTs);
+
+        $page3 = $table->getPage(new TableQueryDTO(filter: self::PEOPLE_CONTEXT, sort: $sort, limit: 1, anchor: $page2->lastAnchor));
+        self::assertCount(1, $page3->rows);
+        self::assertSame(30, $page3->rows[0]->rowKey);
+        self::assertSame(1000, $page3->rows[0]->lastSeenTs);
+
+        $prev = $table->getPage(new TableQueryDTO(
+            filter: self::PEOPLE_CONTEXT,
+            sort: $sort,
+            limit: 1,
+            anchor: $page3->firstAnchor,
+            anchorDirection: TableAnchorDirection::Before,
+        ));
+        self::assertCount(1, $prev->rows);
+        self::assertSame(20, $prev->rows[0]->rowKey);
+        self::assertSame(0, $prev->rows[0]->lastSeenTs);
+    }
+
+    public function testBrowserSessionListTablePaginatesAcrossNegativeZeroAndPositiveMoments(): void
+    {
+        $id1 = $this->session('bs_neg', 10, -2000, -1000);
+        $id2 = $this->session('bs_zero', 20, -500, 0);
+        $id3 = $this->session('bs_pos', 30, 500, 1000);
+
+        $table = new HilosAnalyticsBrowserSessionListTable();
+        $sort = TableSortOrderDTO::of(new TableSortDTO('lastSeenTs', TableConstants::ORDER_ASC));
+
+        $page1 = $table->getPage(new TableQueryDTO(filter: self::PEOPLE_CONTEXT, sort: $sort, limit: 1));
+        self::assertCount(1, $page1->rows);
+        self::assertSame($id1, $page1->rows[0]->rowKey);
+        self::assertSame(-1000, $page1->rows[0]->lastSeenTs);
+
+        $page2 = $table->getPage(new TableQueryDTO(filter: self::PEOPLE_CONTEXT, sort: $sort, limit: 1, anchor: $page1->lastAnchor));
+        self::assertCount(1, $page2->rows);
+        self::assertSame($id2, $page2->rows[0]->rowKey);
+        self::assertSame(0, $page2->rows[0]->lastSeenTs);
+
+        $page3 = $table->getPage(new TableQueryDTO(filter: self::PEOPLE_CONTEXT, sort: $sort, limit: 1, anchor: $page2->lastAnchor));
+        self::assertCount(1, $page3->rows);
+        self::assertSame($id3, $page3->rows[0]->rowKey);
+        self::assertSame(1000, $page3->rows[0]->lastSeenTs);
+
+        $prev = $table->getPage(new TableQueryDTO(
+            filter: self::PEOPLE_CONTEXT,
+            sort: $sort,
+            limit: 1,
+            anchor: $page3->firstAnchor,
+            anchorDirection: TableAnchorDirection::Before,
+        ));
+        self::assertCount(1, $prev->rows);
+        self::assertSame($id2, $prev->rows[0]->rowKey);
+        self::assertSame(0, $prev->rows[0]->lastSeenTs);
     }
 
     /** @param int $writerIndex Case-local SQL session on the same physical schema */

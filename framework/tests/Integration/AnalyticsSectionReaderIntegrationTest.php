@@ -192,6 +192,54 @@ final class AnalyticsSectionReaderIntegrationTest extends AnalyticsSchemaIntegra
     }
 
     /** @throws HilosException When a fixture or section query fails */
+    public function testActionWindowPreservesNegativeZeroAndPost2038MomentsInOrderWithAnchor(): void
+    {
+        $sessionId = $this->session('wide_moments', 7, -2000, 4102444800123);
+        $conn = $this->connection('wide_conn', $sessionId);
+        $actNeg = $this->action($conn, -1500, 'action_neg', null);
+        $actZero = $this->action($conn, 0, 'action_zero', null);
+        $actPost = $this->action($conn, 4102444800123, 'action_post', null);
+
+        $reader = new AnalyticsSectionReader();
+
+        // TIME_ASC: -1500, 0, 4102444800123
+        $asc1 = $reader->actionWindow($sessionId, AnalyticsWindowOrder::TIME_ASC, null, TableAnchorDirection::After, 1);
+        self::assertCount(1, $asc1);
+        self::assertSame($actNeg, $asc1[0]->id);
+        self::assertSame(-1500, $asc1[0]->createdTs);
+
+        $anchor1 = new AnalyticsWindowAnchor($asc1[0]->createdTs, $asc1[0]->id);
+        $asc2 = $reader->actionWindow($sessionId, AnalyticsWindowOrder::TIME_ASC, $anchor1, TableAnchorDirection::After, 1);
+        self::assertCount(1, $asc2);
+        self::assertSame($actZero, $asc2[0]->id);
+        self::assertSame(0, $asc2[0]->createdTs);
+
+        $anchor2 = new AnalyticsWindowAnchor($asc2[0]->createdTs, $asc2[0]->id);
+        $asc3 = $reader->actionWindow($sessionId, AnalyticsWindowOrder::TIME_ASC, $anchor2, TableAnchorDirection::After, 1);
+        self::assertCount(1, $asc3);
+        self::assertSame($actPost, $asc3[0]->id);
+        self::assertSame(4102444800123, $asc3[0]->createdTs);
+
+        // TIME_DESC: 4102444800123, 0, -1500
+        $desc1 = $reader->actionWindow($sessionId, AnalyticsWindowOrder::TIME_DESC, null, TableAnchorDirection::After, 1);
+        self::assertCount(1, $desc1);
+        self::assertSame($actPost, $desc1[0]->id);
+        self::assertSame(4102444800123, $desc1[0]->createdTs);
+
+        $anchorDesc = new AnalyticsWindowAnchor($desc1[0]->createdTs, $desc1[0]->id);
+        $desc2 = $reader->actionWindow($sessionId, AnalyticsWindowOrder::TIME_DESC, $anchorDesc, TableAnchorDirection::After, 1);
+        self::assertCount(1, $desc2);
+        self::assertSame($actZero, $desc2[0]->id);
+        self::assertSame(0, $desc2[0]->createdTs);
+
+        $anchorDesc2 = new AnalyticsWindowAnchor($desc2[0]->createdTs, $desc2[0]->id);
+        $desc3 = $reader->actionWindow($sessionId, AnalyticsWindowOrder::TIME_DESC, $anchorDesc2, TableAnchorDirection::After, 1);
+        self::assertCount(1, $desc3);
+        self::assertSame($actNeg, $desc3[0]->id);
+        self::assertSame(-1500, $desc3[0]->createdTs);
+    }
+
+    /** @throws HilosException When a fixture or section query fails */
     public function testSessionSummariesUseLastIdentityAndOnlyAttachedActionCounts(): void
     {
         Database::sql('INSERT INTO `hilos_user` (`id`, `name`) VALUES (7, ?)', ['Current name']);

@@ -182,8 +182,8 @@ class HilosAnalyticsBrowserSessionListTable extends TableDefinition implements V
         $moment = null;
         if ($order !== AnalyticsWindowOrder::NUMBER) {
             $moment = $anchor->values[HilosAnalyticsBrowserSessionListTableRow::lastSeenTs] ?? null;
-            if (!is_int($moment) || $moment < 0 || $moment > self::MAX_SAFE_TS_MS) {
-                throw new ValidationException('Choose an analytics anchor with a nonnegative safe integer lastSeenTs.');
+            if (!is_int($moment) || $moment < -self::MAX_SAFE_TS_MS || $moment > self::MAX_SAFE_TS_MS) {
+                throw new ValidationException('Choose an analytics anchor with a safe integer lastSeenTs.');
             }
         }
         return new AnalyticsWindowAnchor($moment, $id);

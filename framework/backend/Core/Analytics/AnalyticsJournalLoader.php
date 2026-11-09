@@ -38,7 +38,7 @@ final class AnalyticsJournalLoader
     private const string KIND_NULLABLE_SHORT_NAME = 'nullable_short_name';
     private const string KIND_LONG_NAME = 'long_name';
     private const string KIND_NULLABLE_TEXT = 'nullable_text';
-    private const string KIND_INT = 'int';
+    private const string KIND_MOMENT = 'moment';
     private const string KIND_UNSIGNED_INT = 'unsigned_int';
     private const string KIND_NULLABLE_SMALL_UNSIGNED_INT = 'nullable_small_unsigned_int';
     private const string KIND_NULLABLE_UNSIGNED_INT = 'nullable_unsigned_int';
@@ -77,102 +77,102 @@ final class AnalyticsJournalLoader
             AnalyticsJournalRecord::KEY_KEY => self::KIND_SESSION_KEY,
             AnalyticsJournalRecord::KEY_WORKER_INDEX => self::KIND_UNSIGNED_INT,
             AnalyticsJournalRecord::KEY_MONOPOLISTIC => self::KIND_BOOL,
-            AnalyticsJournalRecord::KEY_STARTED_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_STARTED_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_WORKER_SESSION_STOP => [
             AnalyticsJournalRecord::KEY_KEY => self::KIND_SESSION_KEY,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_AGENT_SESSION => [
             AnalyticsJournalRecord::KEY_KEY => self::KIND_SESSION_KEY,
             AnalyticsJournalRecord::KEY_WORKER_KEY => self::KIND_SESSION_KEY,
             AnalyticsJournalRecord::KEY_AGENT_TYPE => self::KIND_SHORT_NAME,
             AnalyticsJournalRecord::KEY_AGENT_INDEX => self::KIND_NULLABLE_SHORT_NAME,
-            AnalyticsJournalRecord::KEY_STARTED_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_STARTED_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_AGENT_SESSION_STOP => [
             AnalyticsJournalRecord::KEY_KEY => self::KIND_SESSION_KEY,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_AGENT_USER_ACTION => [
             AnalyticsJournalRecord::KEY_AGENT_KEY => self::KIND_SESSION_KEY,
             AnalyticsJournalRecord::KEY_USER_ACTION_KEY => self::KIND_NULLABLE_SESSION_KEY,
             AnalyticsJournalRecord::KEY_SIGNAL => self::KIND_NAME,
             AnalyticsJournalRecord::KEY_PAYLOAD => self::KIND_PAYLOAD,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_AGENT_SYSTEM_SIGNAL => [
             AnalyticsJournalRecord::KEY_AGENT_KEY => self::KIND_SESSION_KEY,
             AnalyticsJournalRecord::KEY_SIGNAL => self::KIND_NAME,
             AnalyticsJournalRecord::KEY_PAYLOAD => self::KIND_PAYLOAD,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_AGENT_CRON_SIGNAL => [
             AnalyticsJournalRecord::KEY_AGENT_KEY => self::KIND_SESSION_KEY,
             AnalyticsJournalRecord::KEY_CRON => self::KIND_NAME,
             AnalyticsJournalRecord::KEY_PAYLOAD => self::KIND_PAYLOAD,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_WORKER_SYSTEM_SIGNAL => [
             AnalyticsJournalRecord::KEY_WORKER_KEY => self::KIND_SESSION_KEY,
             AnalyticsJournalRecord::KEY_SIGNAL => self::KIND_NAME,
             AnalyticsJournalRecord::KEY_PAYLOAD => self::KIND_PAYLOAD,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_API_AGENT_ACTION => [
             AnalyticsJournalRecord::KEY_API_REQUEST_KEY => self::KIND_SESSION_KEY,
             AnalyticsJournalRecord::KEY_AGENT_KEY => self::KIND_SESSION_KEY,
             AnalyticsJournalRecord::KEY_SIGNAL => self::KIND_NAME,
             AnalyticsJournalRecord::KEY_PAYLOAD => self::KIND_PAYLOAD,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_WS_CONNECTION_ATTACH => [
             AnalyticsJournalRecord::KEY_ACCEPT_KEY => self::KIND_NAME,
             AnalyticsJournalRecord::KEY_SESSION_TOKEN => self::KIND_NAME,
             AnalyticsJournalRecord::KEY_USER_AGENT => self::KIND_NULLABLE_TEXT,
             AnalyticsJournalRecord::KEY_ACCEPT_LANGUAGE => self::KIND_NULLABLE_TEXT,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_BROWSER_SESSION_RENAME => [
             AnalyticsJournalRecord::KEY_OLD_TOKEN => self::KIND_NAME,
             AnalyticsJournalRecord::KEY_NEW_TOKEN => self::KIND_NAME,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_BROWSER_SESSION_IDENTITY => [
             AnalyticsJournalRecord::KEY_SESSION_TOKEN => self::KIND_NAME,
             AnalyticsJournalRecord::KEY_IDENTITY_TYPE => self::KIND_SHORT_NAME,
             AnalyticsJournalRecord::KEY_IDENTITY_VALUE => self::KIND_LONG_NAME,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_WS_CONNECTION_OPEN => [
             AnalyticsJournalRecord::KEY_ACCEPT_KEY => self::KIND_NAME,
             AnalyticsJournalRecord::KEY_IP => self::KIND_NULLABLE_TEXT,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_WS_CONNECTION_CLOSE => [
             AnalyticsJournalRecord::KEY_ACCEPT_KEY => self::KIND_NAME,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_WS_CONNECTION_IP_CHANGE => [
             AnalyticsJournalRecord::KEY_ACCEPT_KEY => self::KIND_NAME,
             AnalyticsJournalRecord::KEY_IP => self::KIND_NAME,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_PAGE_SESSION_OPEN => [
             AnalyticsJournalRecord::KEY_KEY => self::KIND_SESSION_KEY,
             AnalyticsJournalRecord::KEY_ACCEPT_KEY => self::KIND_NAME,
             AnalyticsJournalRecord::KEY_PAGE => self::KIND_NAME,
             AnalyticsJournalRecord::KEY_PARAMS => self::KIND_PAYLOAD,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_PAGE_SESSION_UPDATE => [
             AnalyticsJournalRecord::KEY_KEY => self::KIND_SESSION_KEY,
             AnalyticsJournalRecord::KEY_PARAMS => self::KIND_PAYLOAD,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_PAGE_SESSION_CLOSE => [
             AnalyticsJournalRecord::KEY_KEY => self::KIND_SESSION_KEY,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_USER_ACTION => [
             AnalyticsJournalRecord::KEY_KEY => self::KIND_SESSION_KEY,
@@ -180,7 +180,7 @@ final class AnalyticsJournalLoader
             AnalyticsJournalRecord::KEY_PAGE_KEY => self::KIND_NULLABLE_SESSION_KEY,
             AnalyticsJournalRecord::KEY_ACTION => self::KIND_NAME,
             AnalyticsJournalRecord::KEY_PAYLOAD => self::KIND_PAYLOAD,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_API_REQUEST => [
             AnalyticsJournalRecord::KEY_KEY => self::KIND_SESSION_KEY,
@@ -190,10 +190,10 @@ final class AnalyticsJournalLoader
             AnalyticsJournalRecord::KEY_PARAMS => self::KIND_PAYLOAD,
             AnalyticsJournalRecord::KEY_USER_AGENT => self::KIND_NULLABLE_TEXT,
             AnalyticsJournalRecord::KEY_ACCEPT_LANGUAGE => self::KIND_NULLABLE_TEXT,
-            AnalyticsJournalRecord::KEY_STARTED_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_STARTED_TS => self::KIND_MOMENT,
             AnalyticsJournalRecord::KEY_STATUS => self::KIND_NULLABLE_SMALL_UNSIGNED_INT,
             AnalyticsJournalRecord::KEY_DURATION_MS => self::KIND_NULLABLE_UNSIGNED_INT,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_PERSON_EVENT => [
             AnalyticsJournalRecord::KEY_SESSION_TOKEN => self::KIND_NULLABLE_NAME,
@@ -205,13 +205,13 @@ final class AnalyticsJournalLoader
             AnalyticsJournalRecord::KEY_PAGE => self::KIND_NULLABLE_NAME,
             AnalyticsJournalRecord::KEY_PARAMS => self::KIND_PAYLOAD,
             AnalyticsJournalRecord::KEY_IP => self::KIND_NULLABLE_TEXT,
-            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_MOMENT,
         ],
         AnalyticsJournalRecord::TYPE_LOSS => [
             AnalyticsJournalRecord::KEY_REASON => self::KIND_LOSS_REASON,
             AnalyticsJournalRecord::KEY_EVENTS => self::KIND_POSITIVE_INT,
-            AnalyticsJournalRecord::KEY_FROM_TS => self::KIND_INT,
-            AnalyticsJournalRecord::KEY_TO_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_FROM_TS => self::KIND_MOMENT,
+            AnalyticsJournalRecord::KEY_TO_TS => self::KIND_MOMENT,
         ],
     ];
 
@@ -261,7 +261,7 @@ final class AnalyticsJournalLoader
                 $record = json_decode($line, true);
                 if (is_array($record) && ($record[AnalyticsJournalRecord::KEY_TYPE] ?? null) === AnalyticsJournalRecord::TYPE_JOURNAL) {
                     $opened = $record[AnalyticsJournalRecord::KEY_OPENED_TS] ?? null;
-                    if (is_int($opened) && $opened >= 0) {
+                    if (is_int($opened)) {
                         $openedTs = $opened;
                     }
                     continue;
@@ -269,7 +269,7 @@ final class AnalyticsJournalLoader
 
                 if (is_array($record) && ($record[AnalyticsJournalRecord::KEY_TYPE] ?? null) === AnalyticsJournalRecord::TYPE_JOURNAL_END) {
                     $closed = $record[AnalyticsJournalRecord::KEY_CLOSED_TS] ?? null;
-                    if (is_int($closed) && $closed >= 0) {
+                    if (is_int($closed)) {
                         $closedTs = $closed;
                     }
                     continue;
@@ -755,7 +755,7 @@ final class AnalyticsJournalLoader
             self::KIND_NULLABLE_SHORT_NAME => $value === null || (is_string($value) && mb_strlen($value) <= self::SHORT_NAME_MAX_CHARS),
             self::KIND_LONG_NAME => $this->isName($value, self::LONG_NAME_MAX_CHARS),
             self::KIND_NULLABLE_TEXT => $value === null || is_string($value),
-            self::KIND_INT => is_int($value) && $value >= 0,
+            self::KIND_MOMENT => is_int($value),
             self::KIND_UNSIGNED_INT => is_int($value) && $value >= 0 && $value <= self::UNSIGNED_INT_MAX,
             self::KIND_NULLABLE_SMALL_UNSIGNED_INT => $value === null || (is_int($value) && $value >= 0 && $value <= self::SMALL_UNSIGNED_INT_MAX),
             self::KIND_NULLABLE_UNSIGNED_INT => $value === null || (is_int($value) && $value >= 0 && $value <= self::UNSIGNED_INT_MAX),

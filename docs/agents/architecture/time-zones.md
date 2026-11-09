@@ -91,7 +91,7 @@ signed `BIGINT` or milliseconds.
 | People, access log, deletion, photo, rename and merge | 9 | (not in the code yet — HIL-1924) |
 | Legal acceptances and both export queues; preserve the finished file's IANA-zone snapshot | 7 | (not in the code yet — HIL-1925) |
 | Files and variants | 2 | Implemented |
-| Analytics: already milliseconds, change the sign; leave IDs, foreign keys and counters alone | 35 | (not in the code yet — HIL-1927) |
+| Analytics: already milliseconds, change the sign; leave IDs, foreign keys and counters alone | 35 | Implemented |
 | Status: already milliseconds, change the sign; corrected census includes `hilos_status_incident_update.at`. A new signed-ms moment is not old unsigned debt. | 21 | (not in the code yet — HIL-1928) |
 | Journal: database writers, triggers, stamps, receipts, numeric month boundaries, ordering, readers and restore | 4 | (not in the code yet — HIL-1929) |
 | Project sources: `chat.event.timestamp` through its TypeScript readers, `polls.guest.created_at` and `tasks.guest.created_at` | 3 | (not in the code yet — HIL-1930) |

@@ -47,7 +47,7 @@ final readonly class AnalyticsLossCount
         if (
             !is_string($reason) || AnalyticsLossReason::tryFrom($reason) === null
             || !is_int($events) || $events < 1 || $events > self::MAX_EVENTS
-            || !is_int($fromTs) || $fromTs < 0 || !is_int($toTs) || $toTs < 0
+            || !is_int($fromTs) || !is_int($toTs)
         ) {
             throw new InvalidFormatException('Invalid analytics loss count');
         }

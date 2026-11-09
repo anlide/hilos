@@ -71,6 +71,27 @@ final class AnalyticsJournalRecordTest extends TestCase
         self::assertEquals($portion, AnalyticsJournalPortionSignalData::fromArray($portion->toArray()));
     }
 
+    public function testLossCountsAcceptNegativeAndZeroMoments(): void
+    {
+        foreach ([
+            [0, 0],
+            [-1500, 0],
+            [-2000, -1000],
+            [0, 1000],
+        ] as [$fromTs, $toTs]) {
+            $count = AnalyticsLossCount::fromArray([
+                AnalyticsJournalRecord::KEY_REASON => AnalyticsLossReason::RESTORE->value,
+                AnalyticsJournalRecord::KEY_EVENTS => 3,
+                AnalyticsJournalRecord::KEY_FROM_TS => $fromTs,
+                AnalyticsJournalRecord::KEY_TO_TS => $toTs,
+            ]);
+            self::assertSame($fromTs, $count->fromTs);
+            self::assertSame($toTs, $count->toTs);
+            self::assertSame(AnalyticsLossReason::RESTORE, $count->reason);
+            self::assertSame(3, $count->events);
+        }
+    }
+
     public function testUnknownLossReasonIsRefusedAtTheBoundary(): void
     {
         $this->expectException(InvalidFormatException::class);

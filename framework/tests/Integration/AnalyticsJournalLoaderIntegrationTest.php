@@ -16,6 +16,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosClusterNode;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * The writer's half of the analytics journal: a ready file loaded into the analytics tables (HIL-1154).
@@ -286,6 +287,66 @@ final class AnalyticsJournalLoaderIntegrationTest extends AnalyticsSchemaIntegra
         $this->assertSame([
             ['unknown_type', (string)self::STARTED_TS, (string)self::STARTED_TS],
         ], $this->rows('SELECT `reason`, `from_ts`, `to_ts` FROM `hilos_analytics_loss`'));
+    }
+
+    /**
+     * @param int $ts Moment value under test
+     * @throws HilosException When a load fails
+     */
+    #[DataProvider('supportedMoments')]
+    public function testRecordsWithZeroNegativeAndPost2038MomentsAreLoadedWithoutRescaling(int $ts): void
+    {
+        $outcome = $this->load([
+            AnalyticsJournalRecord::journal(self::NODE, $ts),
+            ...$this->sessions(),
+            AnalyticsJournalRecord::agentSystemSignal(self::AGENT_KEY, 'system_signal', null, $ts),
+            ['t' => 'unrecognized'],
+        ]);
+
+        $this->assertFalse($outcome->alreadyLoaded);
+        $this->assertSame(4, $outcome->recordCount);
+        $this->assertSame(['unknown_type' => 1], $outcome->skipped);
+
+        $signalRows = $this->rows('SELECT `created_ts` FROM `hilos_analytics_agent_system_signal`');
+        $this->assertSame([[(string)$ts]], $signalRows);
+
+        $lossRows = $this->rows('SELECT `reason`, `from_ts`, `to_ts` FROM `hilos_analytics_loss`');
+        $this->assertSame([['unknown_type', (string)$ts, (string)$ts]], $lossRows);
+    }
+
+    /**
+     * @return list<array{int}>
+     */
+    public static function supportedMoments(): array
+    {
+        return [
+            [0],
+            [-1500],
+            [4102444800123],
+        ];
+    }
+
+    /**
+     * @throws HilosException When a load fails
+     */
+    public function testStringAndFloatMomentsRemainMalformed(): void
+    {
+        foreach (['12345', 12345.67] as $invalidTs) {
+            $outcome = $this->load([
+                AnalyticsJournalRecord::journal(self::NODE, self::STARTED_TS),
+                ...$this->sessions(),
+                [
+                    AnalyticsJournalRecord::KEY_TYPE => AnalyticsJournalRecord::TYPE_AGENT_SYSTEM_SIGNAL,
+                    AnalyticsJournalRecord::KEY_AGENT_KEY => self::AGENT_KEY,
+                    AnalyticsJournalRecord::KEY_SIGNAL => 'signal',
+                    AnalyticsJournalRecord::KEY_PAYLOAD => null,
+                    AnalyticsJournalRecord::KEY_TS => $invalidTs,
+                ],
+            ]);
+
+            $this->assertSame(['malformed' => 1], $outcome->skipped);
+            $this->assertSame([], $this->rows('SELECT * FROM `hilos_analytics_agent_system_signal`'));
+        }
     }
 
     /**

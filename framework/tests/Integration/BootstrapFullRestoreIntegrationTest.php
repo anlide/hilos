@@ -43,6 +43,7 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
 {
     private const string CHANGE = '20261109000848893922_HIL-1918_bootstrap_moments';
     private const int ARCHIVE_LEVEL = 117;
+    private const int LAST_BOOTSTRAP_INDEX = 131;
 
     /** The session moments as an archive taken before they moved to milliseconds holds them, cut to what the delivered part alters. */
     private const string HISTORICAL_SESSION = 'CREATE TABLE hilos_session (id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,'
@@ -75,7 +76,12 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
         $this->root = sys_get_temp_dir() . '/' . $this->database;
         FsPath::ensureDirectory($this->root . '/Schema', 0700);
         foreach (glob(dirname(__DIR__, 3) . '/demo/chat/backend/Database/Migration/Schema/*.sql') as $file) {
-            FsPath::copy($file, $this->root . '/Schema/' . basename($file));
+            $base = basename($file);
+            $index = (int)explode('_', $base, 2)[0];
+            if ($index > self::LAST_BOOTSTRAP_INDEX) {
+                continue;
+            }
+            FsPath::copy($file, $this->root . '/Schema/' . $base);
         }
         Migration::setMigrationListPath($this->root);
         Migration::setMigrationName('Schema');
