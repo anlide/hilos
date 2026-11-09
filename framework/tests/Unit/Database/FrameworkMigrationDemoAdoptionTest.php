@@ -176,8 +176,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                     array_map(static fn (FrameworkMigrationPart $part): array => $part->toArray(), $install->parts),
                 );
                 self::assertTrue($source->introducesUnit);
-                self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
-                self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
+                self::assertSame($source->afterStubUpSha256, FrameworkMigrationOrigin::bodyHash(substr($up, strpos($up, "\n") + 1)));
+                self::assertSame($source->afterStubDownSha256, FrameworkMigrationOrigin::bodyHash(substr($down, strpos($down, "\n") + 1)));
                 $origins[] = $install;
             }
             $historyIndices = [109, 68, 68, 54, 54, 54];
@@ -191,10 +191,6 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $source = $catalog->part($change->parts[0]->changeId, 'status_incident');
             self::assertFalse($source->introducesUnit);
             self::assertSame(['20261023115508508976_HIL-1688_status_machine/status_incident'], $source->requires);
-            self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('status_incident')->upPath)),
-                $source->afterStubUpSha256);
-            self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('status_incident')->downPath)),
-                $source->afterStubDownSha256);
             $origins[] = $change;
             $identityIndices = [111, 69, 69, 55, 55, 55];
             $base = $project->root . '/' . sprintf('%03d', $identityIndices[$index])
@@ -424,6 +420,46 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('analytics')->downPath)),
                 $source->afterStubDownSha256);
             $origins[] = $change;
+            $statusMomentIndices = [133, 91, 91, 74, 74, 76];
+            $statusMomentParts = [
+                'status_incident' => [
+                    'sha' => 'a18d93d33c80b1e95083e4c7824ab7e8bc82a6d3bd58d5d94cb1c9c23b2fbafe',
+                    'requires' => ['20261029183938100830_HIL-1693_status_history_order/status_incident'],
+                ],
+                'status_incident_update' => [
+                    'sha' => '2eb8efa9f78619a68190b2acbc342be1b7fb8c13b58e98cddc5ffef7b74ab09b',
+                    'requires' => ['20261023115508508976_HIL-1688_status_machine/status_incident_update'],
+                ],
+                'status_maintenance_period' => [
+                    'sha' => '3e4923a290d5ccea9ef5e30cffd82631913cf88ce756548a1697c7630b608b8b',
+                    'requires' => ['20261029024734382401_HIL-1692_status_works/status_maintenance_period'],
+                ],
+                'status_subscriber' => [
+                    'sha' => 'e7873ec5c042f5f4fc6271315ed3ce06bbb7f2f163f2db79f77a24be4b7988ef',
+                    'requires' => ['20261028002725141545_HIL-1691_status_subscribers/status_subscriber'],
+                ],
+                'status_work' => [
+                    'sha' => 'b073557d07eb3771122d548f8d8d6388823ac40c664d51910ad6de980b04aa4b',
+                    'requires' => ['20261029024734382401_HIL-1692_status_works/status_work'],
+                ],
+            ];
+            foreach (array_keys($statusMomentParts) as $offset => $key) {
+                $base = $project->root . '/' . sprintf('%03d', $statusMomentIndices[$index] + $offset)
+                    . '_framework_change_' . $statusMomentParts[$key]['sha'];
+                $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+                self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+                self::assertSame([$key], $change->units);
+                self::assertCount(1, $change->parts);
+                self::assertSame('20261109203922000000_HIL-1928_status_signed_moments/' . $key, $change->parts[0]->key());
+                $source = $catalog->part($change->parts[0]->changeId, $key);
+                self::assertFalse($source->introducesUnit);
+                self::assertSame($statusMomentParts[$key]['requires'], $source->requires);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
+                    $source->afterStubUpSha256);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
+                    $source->afterStubDownSha256);
+                $origins[] = $change;
+            }
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);

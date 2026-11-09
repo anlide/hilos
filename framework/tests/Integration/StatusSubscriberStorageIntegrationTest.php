@@ -8,6 +8,7 @@ use Hilos\AdminViewMode\HiddenValue;
 use Hilos\AdminViewMode\ViewerFields;
 use Hilos\AdminViewMode\WireField;
 use Hilos\Backup\Anonymization\PiiRegistry;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -191,6 +192,37 @@ final class StatusSubscriberStorageIntegrationTest extends StatusSubscriberStora
                     self::assertTrue($direction === TableConstants::ORDER_ASC ? $left < $right : $left > $right);
                 }
             }
+        }
+    }
+
+    /** Subscription writes refuse negative moments and leave table rows and tokens untouched. */
+    public function testNegativeMomentsAreRefusedAcrossSubscriberWritePaths(): void
+    {
+        try {
+            Hilos::$db->statusSubscribers->actions->create('neg@example.org', -1);
+            self::fail('Negative subscribedAt must be refused on create');
+        } catch (ValidationException $exception) {
+            self::assertSame('The subscription time is outside the supported range.', $exception->getMessage());
+            self::assertSame(0, (int)Database::sql('SELECT COUNT(*) AS c FROM `hilos_status_subscriber`')->row()['c']);
+        }
+
+        $issued = Hilos::$db->statusSubscribers->actions->create('valid@example.org', 1000);
+        $before = $this->stored($issued->subscriberId);
+
+        try {
+            Hilos::$db->statusSubscribers[$issued->subscriberId]->actions->issueConfirmation(-1);
+            self::fail('Negative at must be refused on issueConfirmation');
+        } catch (ValidationException $exception) {
+            self::assertSame('The confirmation time is outside the supported range.', $exception->getMessage());
+            self::assertSame($before, $this->stored($issued->subscriberId));
+        }
+
+        try {
+            Hilos::$db->statusSubscribers[$issued->subscriberId]->actions->confirm($issued->token, -1);
+            self::fail('Negative at must be refused on confirm');
+        } catch (ValidationException $exception) {
+            self::assertSame('The confirmation time must be nonnegative.', $exception->getMessage());
+            self::assertSame($before, $this->stored($issued->subscriberId));
         }
     }
 }

@@ -1,0 +1,1 @@
+ALTER TABLE `hilos_status_subscriber` MODIFY COLUMN `subscribed_at` BIGINT UNSIGNED NOT NULL, MODIFY COLUMN `confirmed_at` BIGINT UNSIGNED NULL, MODIFY COLUMN `confirmation_expires_at` BIGINT UNSIGNED NULL;

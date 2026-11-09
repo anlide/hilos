@@ -1,0 +1,71 @@
+{
+    "format": 1,
+    "id": "20261109203922000000_HIL-1928_status_signed_moments",
+    "parts": [
+        {
+            "unit": "status_incident",
+            "up": "status_incident.sql",
+            "down": "status_incident_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261029183938100830_HIL-1693_status_history_order",
+                    "unit": "status_incident"
+                }
+            ],
+            "afterStubUpSha256": "49513613311a5ea818dd048096d1a47c1a8794fd00c8b1b1e2badfaddc2df336",
+            "afterStubDownSha256": "5a90a8f3305d729279f7e117a8e7cd451fb761515549f258347d5346e88e485b"
+        },
+        {
+            "unit": "status_incident_update",
+            "up": "status_incident_update.sql",
+            "down": "status_incident_update_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261023115508508976_HIL-1688_status_machine",
+                    "unit": "status_incident_update"
+                }
+            ],
+            "afterStubUpSha256": "e3197c084b443954959c6519bcabdb499119fdc49a50a945e5f685c788d95b58",
+            "afterStubDownSha256": "3aeba9679051715e56397306feda3e4f64d30fd8c2c7c79b56f0cc21ccf9014a"
+        },
+        {
+            "unit": "status_subscriber",
+            "up": "status_subscriber.sql",
+            "down": "status_subscriber_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261028002725141545_HIL-1691_status_subscribers",
+                    "unit": "status_subscriber"
+                }
+            ],
+            "afterStubUpSha256": "7d4230827f5e9310cb2c87e233dabf1819b0390c966a2bee2e7e038c6874b272",
+            "afterStubDownSha256": "1989af400b2b333b4e8dec23c200469e11ea1d419bd5874948ed3a278dfa1470"
+        },
+        {
+            "unit": "status_work",
+            "up": "status_work.sql",
+            "down": "status_work_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261029024734382401_HIL-1692_status_works",
+                    "unit": "status_work"
+                }
+            ],
+            "afterStubUpSha256": "a5507708b66cd16432886fe3d54eb5c2aa5441c0d2e5d90cee31d62682a9a656",
+            "afterStubDownSha256": "5c737331e60001c450c9a28d4a9fffe7b289f82c75a73d241edf42611344935d"
+        },
+        {
+            "unit": "status_maintenance_period",
+            "up": "status_maintenance_period.sql",
+            "down": "status_maintenance_period_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261029024734382401_HIL-1692_status_works",
+                    "unit": "status_maintenance_period"
+                }
+            ],
+            "afterStubUpSha256": "75666d1e9b2a92275b640c99dfec35f5a90ef74c9c4c6b61c508a4e98bd46165",
+            "afterStubDownSha256": "d6b6e574d4506b07af6700b20c0e2cd45435b4a36e26f25625770df5adbc4510"
+        }
+    ]
+}

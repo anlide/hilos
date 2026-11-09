@@ -72,7 +72,7 @@ final class StatusHistorySchemaIntegrationTest extends FrameworkIntegrationTestC
             $up = file_get_contents($path);
             $down = file_get_contents(substr($path, 0, -4) . '_down.sql');
             $origin = $catalog->verifyPair($up, $down);
-            if ($origin->units === ['status_incident']) {
+            if ($origin->units === ['status_incident'] && str_contains($origin->parts[0]->changeId, '_HIL-1693_status_history_order')) {
                 $matches[] = [$up, $down, $origin];
             }
         }

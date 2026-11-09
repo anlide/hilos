@@ -572,7 +572,9 @@ below.
 With `STATUS` enabled, the framework lazily mounts full Entity/Object/View
 chains at `Hilos::$db->statusWorks`, `statusWorkComponents` and
 `statusMaintenancePeriods`. Their primary tables are not journaled. All stored
-moments are unsigned `BIGINT` epoch milliseconds UTC. All persisted fields are
+moments are signed `BIGINT` epoch milliseconds UTC. Status refuses a moment
+before the epoch on every write path; the column type no longer does (owner
+decision, 2026-11-09). All persisted fields are
 classified nonpersonal (`_pii = []`); these records carry no actor, session,
 address, IP or account relation.
 

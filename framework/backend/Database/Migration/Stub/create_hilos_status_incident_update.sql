@@ -5,7 +5,7 @@ CREATE TABLE `hilos_status_incident_update` (
     `kind` VARCHAR(32) NOT NULL,
     `severity` VARCHAR(32) NOT NULL,
     `text` TEXT NOT NULL,
-    `at` BIGINT UNSIGNED NOT NULL,
+    `at` BIGINT NOT NULL,
     `request_id` VARCHAR(128) COLLATE utf8mb4_bin NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_status_incident_update_timeline` (`incident_id`, `at`, `id`),

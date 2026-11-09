@@ -11,16 +11,19 @@ use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Collection\StatusIncidentsActions;
+use Hilos\Database\Actions\Collection\StatusIncidentUpdatesActions;
 use Hilos\Database\Actions\Collection\StatusMaintenancePeriodsActions;
 use Hilos\Database\Actions\Item\StatusIncidentActions;
 use Hilos\Database\Actions\Item\StatusMaintenancePeriodActions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Object\Collection\StatusIncidents as ObjectStatusIncidents;
+use Hilos\Database\Object\Collection\StatusIncidentUpdates as ObjectStatusIncidentUpdates;
 use Hilos\Database\Object\Collection\StatusMaintenancePeriods as ObjectStatusMaintenancePeriods;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\View\Collection\StatusIncidents;
+use Hilos\Database\View\Collection\StatusIncidentUpdates;
 use Hilos\Database\View\Collection\StatusMaintenancePeriods;
 use Hilos\Hilos;
 use Hilos\Status\StatusAgent;
@@ -29,7 +32,12 @@ use Hilos\Status\StatusAgent;
 abstract class StatusHistoryStorageTestCase extends FrameworkRollbackIntegrationTestCase
 {
     private const string OWNER = 'status-history-storage';
-    private const array TABLES = ['hilos_status_work', 'hilos_status_maintenance_period', 'hilos_status_incident'];
+    private const array TABLES = [
+        'hilos_status_work',
+        'hilos_status_maintenance_period',
+        'hilos_status_incident',
+        'hilos_status_incident_update',
+    ];
 
     private ?int $ownerToken = null;
 
@@ -119,6 +127,8 @@ final class StatusHistoryStorageDbContext extends HilosDbContext
     {
         $this->_objectCollections[self::statusIncidents] = ObjectStatusIncidents::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::statusIncidents, StatusIncidents::class, StatusIncidentsActions::class, StatusIncidentActions::class);
+        $this->_objectCollections[self::statusIncidentUpdates] = ObjectStatusIncidentUpdates::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::statusIncidentUpdates, StatusIncidentUpdates::class, StatusIncidentUpdatesActions::class);
         $this->_objectCollections[self::statusMaintenancePeriods] = ObjectStatusMaintenancePeriods::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::statusMaintenancePeriods, StatusMaintenancePeriods::class,
             StatusMaintenancePeriodsActions::class, StatusMaintenancePeriodActions::class);

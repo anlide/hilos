@@ -7,6 +7,11 @@ namespace Hilos\Tests\Integration;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Database\Database;
+use Hilos\Hilos;
+use Hilos\Status\Exception\StatusIncidentWriteException;
+use Hilos\Status\StatusSeverity;
+use Hilos\Status\StatusUpdateKind;
+use Hilos\Status\StatusUpdateText;
 use Hilos\Tables\Status\HilosStatusHistoryTable;
 use Hilos\Testing\BreaksOrmState;
 use Hilos\Testing\IntegrationTest;
@@ -50,5 +55,71 @@ final class StatusHistoryOrmStateIntegrationTest extends StatusHistoryStorageTes
         self::assertSame(['maintenance:2', 'incident:2'], array_column($after->rows, 'id'));
         self::assertSame(3, $after->rowsBefore);
         self::assertSame(5, $after->totalCount);
+    }
+
+    /** Write paths refuse negative moments and leave table rows and loaded state untouched. */
+    public function testNegativeMomentsAreRefusedOnAllIncidentWritePaths(): void
+    {
+        try {
+            Hilos::$db->statusIncidents->actions->candidate('web', 'Web component', StatusSeverity::MAJOR_OUTAGE, -1, 1000);
+            self::fail('Negative detected_at must be refused');
+        } catch (StatusIncidentWriteException $exception) {
+            self::assertSame('The publication deadline must be at or after detection.', $exception->getMessage());
+        }
+        self::assertSame(0, (int)Database::sql('SELECT COUNT(*) AS c FROM `hilos_status_incident`')->row()['c']);
+
+        try {
+            Hilos::$db->statusIncidents->actions->candidate('web', 'Web component', StatusSeverity::MAJOR_OUTAGE, 1000, -1);
+            self::fail('Negative publish_at must be refused');
+        } catch (StatusIncidentWriteException $exception) {
+            self::assertSame('The publication deadline must be at or after detection.', $exception->getMessage());
+        }
+        self::assertSame(0, (int)Database::sql('SELECT COUNT(*) AS c FROM `hilos_status_incident`')->row()['c']);
+
+        $incident = Hilos::$db->statusIncidents->actions->candidate('web', 'Web component', StatusSeverity::MAJOR_OUTAGE, 0, 1000);
+        self::assertSame(1, (int)Database::sql('SELECT COUNT(*) AS c FROM `hilos_status_incident`')->row()['c']);
+
+        try {
+            Hilos::$db->statusIncidentUpdates->actions->append(
+                $incident->id,
+                StatusUpdateKind::PUBLISHED,
+                StatusSeverity::MAJOR_OUTAGE,
+                new StatusUpdateText('Detected'),
+                -1,
+            );
+            self::fail('Negative at must be refused on append');
+        } catch (StatusIncidentWriteException $exception) {
+            self::assertSame('Choose an existing incident and a valid update time.', $exception->getMessage());
+        }
+        self::assertSame(0, (int)Database::sql('SELECT COUNT(*) AS c FROM `hilos_status_incident_update`')->row()['c']);
+
+        try {
+            $incident->actions->suppress(-1);
+            self::fail('Negative at must be refused on suppress');
+        } catch (StatusIncidentWriteException $exception) {
+            self::assertSame('The operation time cannot precede detection.', $exception->getMessage());
+        }
+        self::assertNull($incident->suppressedAt);
+
+        try {
+            $incident->actions->publish(-1);
+            self::fail('Negative at must be refused on publish');
+        } catch (StatusIncidentWriteException $exception) {
+            self::assertSame('The operation time cannot precede detection.', $exception->getMessage());
+        }
+        self::assertNull($incident->publishedAt);
+
+        try {
+            $incident->actions->resolve(-1);
+            self::fail('Negative at must be refused on resolve');
+        } catch (StatusIncidentWriteException $exception) {
+            self::assertSame('The operation time cannot precede detection.', $exception->getMessage());
+        }
+        self::assertNull($incident->resolvedAt);
+
+        $row = Database::sql('SELECT * FROM `hilos_status_incident` WHERE `id` = ?', [$incident->id])->row();
+        self::assertNull($row['suppressed_at']);
+        self::assertNull($row['published_at']);
+        self::assertNull($row['resolved_at']);
     }
 }

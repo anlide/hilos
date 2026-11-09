@@ -317,6 +317,108 @@ final class StatusWorksStorageIntegrationTest extends StatusWorksStorageIntegrat
         }
     }
 
+    /** Negative moments refuse across create, change, lifecycle, queueing, import, and reconciliation. */
+    public function testNegativeMomentsAreRefusedAcrossAllWorkAndMaintenanceWritePaths(): void
+    {
+        try {
+            Hilos::$db->statusWorks->actions->create('Planned work', null, -1, 20000, 1000);
+            self::fail('Negative startsAt must be refused on create');
+        } catch (ValidationException) {
+            self::assertSame([], Database::sql('SELECT * FROM `hilos_status_work`')->rows());
+        }
+
+        try {
+            Hilos::$db->statusWorks->actions->create('Planned work', null, 10000, 20000, -1);
+            self::fail('Negative at must be refused on create');
+        } catch (ValidationException) {
+            self::assertSame([], Database::sql('SELECT * FROM `hilos_status_work`')->rows());
+        }
+
+        $work = Hilos::$db->statusWorks->actions->create('Planned work', null, 10000, 20000, 1000);
+        $beforeWork = $this->storedWork($work->id);
+
+        try {
+            $work->actions->change('Changed work', null, -1, 20000, 2000, ['web']);
+            self::fail('Negative startsAt must be refused on change');
+        } catch (ValidationException) {
+            self::assertSame($beforeWork, $this->storedWork($work->id));
+        }
+
+        try {
+            $work->actions->change('Changed work', null, 10000, 20000, -1, ['web']);
+            self::fail('Negative at must be refused on change');
+        } catch (ValidationException) {
+            self::assertSame($beforeWork, $this->storedWork($work->id));
+        }
+
+        try {
+            $work->actions->cancel(-1);
+            self::fail('Negative at must be refused on cancel');
+        } catch (ValidationException) {
+            self::assertSame($beforeWork, $this->storedWork($work->id));
+        }
+
+        try {
+            $work->actions->consume(-1);
+            self::fail('Negative at must be refused on consume');
+        } catch (ValidationException) {
+            self::assertSame($beforeWork, $this->storedWork($work->id));
+        }
+
+        try {
+            $work->actions->expire(-1);
+            self::fail('Negative at must be refused on expire');
+        } catch (ValidationException) {
+            self::assertSame($beforeWork, $this->storedWork($work->id));
+        }
+
+        try {
+            $work->actions->markMailQueued(-1);
+            self::fail('Negative at must be refused on markMailQueued');
+        } catch (ValidationException) {
+            self::assertSame($beforeWork, $this->storedWork($work->id));
+        }
+
+        try {
+            Hilos::$db->statusMaintenancePeriods->actions->create(null, null, false, 'Observed maint', ['web'], -1);
+            self::fail('Negative startedAt must be refused on maintenance create');
+        } catch (ValidationException) {
+            self::assertSame([], Database::sql('SELECT * FROM `hilos_status_maintenance_period`')->rows());
+        }
+
+        try {
+            Hilos::$db->statusMaintenancePeriods->actions->import(
+                bin2hex(random_bytes(16)), null, null, false, 'Imported maint', ['web'], -1, 1000, null, null,
+            );
+            self::fail('Negative startedAt must be refused on maintenance import');
+        } catch (ValidationException) {
+            self::assertSame([], Database::sql('SELECT * FROM `hilos_status_maintenance_period`')->rows());
+        }
+
+        try {
+            Hilos::$db->statusMaintenancePeriods->actions->import(
+                bin2hex(random_bytes(16)), null, null, false, 'Imported maint', ['web'], 1000, -1, null, null,
+            );
+            self::fail('Negative lastObservedAt must be refused on maintenance import');
+        } catch (ValidationException) {
+            self::assertSame([], Database::sql('SELECT * FROM `hilos_status_maintenance_period`')->rows());
+        }
+
+        $period = Hilos::$db->statusMaintenancePeriods->actions->create(null, null, false, 'Observed maint', ['web'], 1000);
+        $beforePeriod = Database::sql('SELECT * FROM `hilos_status_maintenance_period` WHERE `id` = ?', [$period->id])->first()->first();
+
+        try {
+            $period->actions->reconcile(-1, null, null);
+            self::fail('Negative lastObservedAt must be refused on maintenance reconcile');
+        } catch (ValidationException) {
+            $stored = Database::sql(
+                'SELECT * FROM `hilos_status_maintenance_period` WHERE `id` = ?',
+                [$period->id],
+            )->first()->first();
+            self::assertSame($beforePeriod, $stored);
+        }
+    }
+
     /**
      * @param int $id Work primary id
      * @return array<string, mixed> Independent persisted work
