@@ -96,12 +96,19 @@ final class RtSyncApplicator
      * next local `sync()` therefore re-sends those fields instead of treating a
      * half-applied diff as agreed.
      *
+     * On the master path a late echo of the protected mode row is dropped before any of that,
+     * see {@see self::isStaleProtectedModeEcho()}: nothing is written and the baseline stays.
+     *
      * @param RtSyncUpdatedSignalData $data Diff payload from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
      */
     public static function applyUpdated(RtSyncUpdatedSignalData $data, bool $skipSelfBroadcastCheck = true): void
     {
         if (!self::shouldApplyRtSyncRow($data->collectionKey, $data->stateId, $data->row, $skipSelfBroadcastCheck)) {
+            return;
+        }
+
+        if ($skipSelfBroadcastCheck && self::isStaleProtectedModeEcho($data)) {
             return;
         }
 
@@ -196,6 +203,43 @@ final class RtSyncApplicator
         if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipRtSyncApply($collectionKey, $stateId)) {
             return false;
         }
+
+        return true;
+    }
+
+    /**
+     * Whether a frame of the protected mode row would take the phase back: self-echo accounting is
+     * one mark per row, so an echo can get here after the row moved on. Stale means both ends of
+     * the frame's phase move differ from the row's phase; a phase that is not a string is left to
+     * `applyDiff()` to refuse, because a Hilos process does not outlive the warning of printing one.
+     *
+     * @param RtSyncUpdatedSignalData $data Diff payload the master is about to apply
+     * @return bool True when the frame is stale, already logged, and must not be applied
+     */
+    private static function isStaleProtectedModeEcho(RtSyncUpdatedSignalData $data): bool
+    {
+        if ($data->collectionKey !== StateProtectedModeRuntime::RT_ITEM) {
+            return false;
+        }
+
+        $previous = $data->previous[StateProtectedModeRuntime::phase] ?? null;
+        $target = $data->row[StateProtectedModeRuntime::phase] ?? null;
+        if (!is_string($previous) || !is_string($target)) {
+            return false;
+        }
+
+        $state = Hilos::$rt?->getStateItem(StateProtectedModeRuntime::RT_ITEM);
+        if (!$state instanceof StateProtectedModeRuntime) {
+            return false;
+        }
+
+        if ($previous === $state->phase || $target === $state->phase) {
+            return false;
+        }
+
+        Logger::warning(
+            "Protected mode: dropped a late echo moving the phase from '{$previous}' to '{$target}' while the row reads '{$state->phase}'",
+        );
 
         return true;
     }

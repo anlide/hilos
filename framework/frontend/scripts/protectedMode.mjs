@@ -32,8 +32,9 @@ const MANUAL_MAINTENANCE_OPERATION = 'manual_maintenance'
  * A refusal the daemon answered with, as opposed to a command it never answered.
  *
  * The distinction is the whole point of {@link openProtectedModeIfAny}: "there is no freeze
- * here" is an answer and means the teardown has nothing left to do, while a timeout or a dead
- * socket means the node never said it was open. Those two must not share a catch.
+ * here" is an answer, after which the teardown reads the master to learn whether the node is
+ * open, while a timeout or a dead socket means the node never said it was open. Those two
+ * must not share a catch.
  */
 export class ProtectedModeCommandRefused extends Error {}
 
@@ -228,7 +229,7 @@ export async function mintProtectedModePass() {
 }
 
 /**
- * Opens the system, swallowing a refusal.
+ * Opens the system, swallowing a refusal, and fails unless the node then reads inactive.
  *
  * For unconditional teardown: an enter may have been refused, or may have landed
  * after the test gave up on it, and either way the node must not be left frozen
@@ -237,30 +238,38 @@ export async function mintProtectedModePass() {
  * behind. A manual window it refuses by design
  * (framework/backend/Core/Agent/ProtectedModeTestDriverTrait.php:342-346), so after a
  * refusal the teardown asks the master and turns a manual window off with its
- * production command; any other refusal means there was nothing to lift.
+ * production command. A refusal is swallowed, but never taken for proof that the node
+ * is open: whatever the branch, the master is read once more at the end, and a node
+ * that is not inactive fails the teardown, so the spec that left it goes red.
  */
 export async function openProtectedModeIfAny() {
   try {
     await openProtectedMode()
   } catch (error) {
-    if (error instanceof ProtectedModeCommandRefused) {
-      // Answered. The refusal may stand for a manual window, which the test open never
-      // drives, so the master is asked and a window it reports is turned off; any other
-      // refusal means there is nothing to lift - the state the teardown wanted anyway.
-      // A failed inspect or disable goes red here, in the spec that left the window.
-      const snapshot = await inspectProtectedMode()
-      if (
-        snapshot.phase !== 'inactive' &&
-        snapshot.operation === MANUAL_MAINTENANCE_OPERATION
-      ) {
-        await disableManualMaintenance()
-      }
-      return
+    if (!(error instanceof ProtectedModeCommandRefused)) {
+      // Anything else is the opposite of "nothing to lift". A freeze left standing takes the
+      // whole node with it, so the spec that left it has to be the one that goes red: swallowed
+      // here, the failure surfaces in whatever spec runs next and looks like that one's defect.
+      throw error
     }
-    // Anything else is the opposite of "nothing to lift". A freeze left standing takes the
-    // whole node with it, so the spec that left it has to be the one that goes red: swallowed
-    // here, the failure surfaces in whatever spec runs next and looks like that one's defect.
-    throw error
+    // Answered. The refusal may stand for a manual window, which the test open never
+    // drives, so the master is asked and a window it reports is turned off. Any other
+    // refusal is not a reason to stop here: the closing read below decides whether the
+    // node is open. A failed inspect or disable goes red here, in the spec that left the window.
+    const snapshot = await inspectProtectedMode()
+    if (
+      snapshot.phase !== 'inactive' &&
+      snapshot.operation === MANUAL_MAINTENANCE_OPERATION
+    ) {
+      await disableManualMaintenance()
+    }
+  }
+
+  const settled = await inspectProtectedMode()
+  if (settled.phase !== 'inactive') {
+    throw new Error(
+      `the node is still closed after the teardown: phase '${settled.phase}', operation '${settled.operation}'`,
+    )
   }
 }
 

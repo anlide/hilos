@@ -1704,6 +1704,16 @@ about projects opting out described a contract that no longer exists. The
 executor keeps its null branch and its log line as defense in depth even though
 the guards now refuse before reaching it.
 
+**The master never takes a phase back from its own echo (HIL-2085).** Self-echo
+accounting is one mark per row, not one per frame, so when a lift writes
+`deactivating` and `inactive` in one call while another own frame of the row is
+still queued, an echo can reach the apply path after the row has moved on. A
+frame is stale when both its `previous` phase and its target phase differ from
+the row's current phase; `RtSyncApplicator::applyUpdated()` drops it on the
+master path and logs one warning. Workers apply frames in the order the master
+sent them and are not guarded. This is not a watchdog verdict: the watchdog
+still never lifts a freeze.
+
 ## Anti-Patterns
 
 ```php

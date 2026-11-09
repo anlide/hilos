@@ -267,6 +267,7 @@ it('turns off a refused manual window with its production disable command', asyn
   answer({ message: 'manual window' }, 'error')
   answer(snapshot({ phase: 'verifying', operation: 'manual_maintenance' }))
   answer({ phase: 'inactive' })
+  answer(snapshot({ phase: 'inactive', operation: null }))
 
   await expect(openProtectedModeIfAny()).resolves.toBeUndefined()
 
@@ -274,16 +275,63 @@ it('turns off a refused manual window with its production disable command', asyn
     { command: 'test:protected-mode:open', payload: {} },
     { command: 'protected-mode:inspect', payload: {} },
     { command: 'maintenance:disable', payload: {} },
+    { command: 'protected-mode:inspect', payload: {} },
   ])
 })
 
 it('has nothing to disable after a refusal when inspect says inactive', async () => {
   answer({ message: 'no freeze' }, 'error')
   answer(snapshot({ phase: 'inactive', operation: null }))
+  answer(snapshot({ phase: 'inactive', operation: null }))
 
   await expect(openProtectedModeIfAny()).resolves.toBeUndefined()
 
+  expect(net.connect).toHaveBeenCalledTimes(3)
+})
+
+it('reads the master once after a successful open and accepts an inactive node', async () => {
+  answer({ phase: 'inactive' })
+  answer(snapshot({ phase: 'inactive', operation: null }))
+
+  await expect(openProtectedModeIfAny()).resolves.toBeUndefined()
+
+  expect(requests.map(({ command }) => command)).toEqual([
+    'test:protected-mode:open',
+    'protected-mode:inspect',
+  ])
   expect(net.connect).toHaveBeenCalledTimes(2)
+})
+
+it('fails the teardown when a successful open leaves the master closed', async () => {
+  answer({ phase: 'inactive' })
+  answer(snapshot({ phase: 'deactivating', operation: null }))
+
+  await expect(openProtectedModeIfAny()).rejects.toThrow(
+    "the node is still closed after the teardown: phase 'deactivating', operation 'null'",
+  )
+
+  expect(requests.map(({ command }) => command)).toEqual([
+    'test:protected-mode:open',
+    'protected-mode:inspect',
+  ])
+  expect(net.connect).toHaveBeenCalledTimes(2)
+})
+
+it('fails the teardown when a refusal with no manual window leaves the master closed', async () => {
+  answer({ message: 'no freeze is active here' }, 'error')
+  answer(snapshot({ phase: 'deactivating', operation: null }))
+  answer(snapshot({ phase: 'deactivating', operation: null }))
+
+  await expect(openProtectedModeIfAny()).rejects.toThrow(
+    "the node is still closed after the teardown: phase 'deactivating', operation 'null'",
+  )
+
+  expect(requests.map(({ command }) => command)).toEqual([
+    'test:protected-mode:open',
+    'protected-mode:inspect',
+    'protected-mode:inspect',
+  ])
+  expect(net.connect).toHaveBeenCalledTimes(3)
 })
 
 it('lets a failed teardown inspect fail the caller', async () => {
