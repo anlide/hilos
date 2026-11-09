@@ -186,6 +186,7 @@ class FrameworkSchemaCatalog
             $this->tableUnit('account_deletion', 'hilos_account_deletion'),
             $this->tableUnit('account_erasure_operation', 'hilos_account_erasure_operation'),
             $this->tableUnit('account_erasure_assignment', 'hilos_account_erasure_assignment', ['account_erasure_operation']),
+            $this->tableUnit('account_erasure_result', 'hilos_account_erasure_result', ['account_erasure_assignment']),
             $this->tableUnit('legal_acceptance', 'hilos_legal_acceptance', [self::USER]),
             $this->tableUnit('data_export', 'hilos_data_export', [self::USER]),
             $this->tableUnit('user_rename', 'hilos_user_rename', [self::USER]),

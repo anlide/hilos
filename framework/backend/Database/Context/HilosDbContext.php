@@ -31,8 +31,10 @@ use Hilos\Database\View\Collection\AccountDeletions as DbCollectionAccountDeleti
 use Hilos\Database\View\Collection\DataExports as DbCollectionDataExports;
 use Hilos\Database\View\Collection\AccountErasureOperations as DbCollectionAccountErasureOperations;
 use Hilos\Database\View\Collection\AccountErasureAssignments as DbCollectionAccountErasureAssignments;
+use Hilos\Database\View\Collection\AccountErasureResults as DbCollectionAccountErasureResults;
 use Hilos\Database\Actions\Collection\AccountErasureOperationsActions;
 use Hilos\Database\Actions\Collection\AccountErasureAssignmentsActions;
+use Hilos\Database\Actions\Collection\AccountErasureResultsActions;
 use Hilos\Database\Actions\Item\AccountErasureOperationActions;
 use Hilos\Database\View\Collection\LegalAcceptances as DbCollectionLegalAcceptances;
 use Hilos\Database\View\Collection\LegalAcceptanceExports as DbCollectionLegalAcceptanceExports;
@@ -190,6 +192,7 @@ use Hilos\Database\Exception\InvalidMountedCollectionException;
  * @property-read DbCollectionAccountDeletions $accountDeletions
  * @property-read DbCollectionAccountErasureOperations $accountErasureOperations
  * @property-read DbCollectionAccountErasureAssignments $accountErasureAssignments
+ * @property-read DbCollectionAccountErasureResults $accountErasureResults
  * @property-read DbCollectionLegalAcceptances $legalAcceptances
  * @property-read DbCollectionLegalAcceptanceExports $legalAcceptanceExports Administrators' files of acceptance records
  * @property-read DbCollectionFiles $files
@@ -281,6 +284,7 @@ abstract class HilosDbContext extends DbContext
     public const string accountDeletion = 'accountDeletion';
     public const string accountErasureOperations = 'accountErasureOperations';
     public const string accountErasureAssignments = 'accountErasureAssignments';
+    public const string accountErasureResults = 'accountErasureResults';
     public const string legalAcceptances = 'legalAcceptances';
     public const string legalAcceptance = 'legalAcceptance';
     public const string dataExports = 'dataExports';
@@ -550,6 +554,12 @@ abstract class HilosDbContext extends DbContext
             Objects::LAZY_STRATEGY_KEY,
             DbCollectionAccountErasureAssignments::class,
             AccountErasureAssignmentsActions::class,
+        );
+        $this->mountFramework(
+            self::accountErasureResults,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionAccountErasureResults::class,
+            AccountErasureResultsActions::class,
         );
         $this->mountFramework(
             self::dataExports,

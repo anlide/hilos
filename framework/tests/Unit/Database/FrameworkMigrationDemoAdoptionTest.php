@@ -287,6 +287,25 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
                 $origins[] = $install;
             }
+            $resultIndices = [118, 76, 76, 61, 61, 63];
+            $unit = $schema->unit('account_erasure_result');
+            $base = $project->root . '/' . sprintf('%03d', $resultIndices[$index]) . '_framework_install_account_erasure_result';
+            $up = FsPath::read($base . '.sql');
+            $down = FsPath::read($base . '_down.sql');
+            $install = $catalog->verifyPair($up, $down);
+            self::assertSame(FrameworkMigrationOrigin::INSTALL, $install->kind);
+            self::assertSame(['account_erasure_result'], $install->units);
+            self::assertCount(1, $install->parts);
+            $source = $catalog->part($install->parts[0]->changeId, 'account_erasure_result');
+            self::assertSame('20261108210743046351_HIL-1937_account_erasure_results/account_erasure_result', $source->key());
+            self::assertTrue($source->introducesUnit);
+            self::assertSame([$source->toArray()], array_map(
+                static fn (FrameworkMigrationPart $part): array => $part->toArray(),
+                $install->parts,
+            ));
+            self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
+            self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
+            $origins[] = $install;
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\AccountErasure;
 
+use Hilos\Constants\AgentConstants;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ValueTooLongException;
 
@@ -33,6 +34,18 @@ final readonly class AccountErasureOwnerAddress
         if ($ownerIndex !== null && mb_strlen($ownerIndex, 'UTF-8') > self::OWNER_INDEX_MAX_CHARACTERS) {
             throw new ValueTooLongException('The erasure owner index is too long.');
         }
+    }
+
+    /**
+     * @return string Agent identity with its literal optional index
+     */
+    public function agentId(): string
+    {
+        if ($this->ownerIndex === null) {
+            return $this->ownerType;
+        }
+
+        return $this->ownerType . AgentConstants::ID_SEPARATOR . $this->ownerIndex;
     }
 
     /**

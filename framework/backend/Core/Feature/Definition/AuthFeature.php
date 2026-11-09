@@ -15,6 +15,7 @@ use Hilos\Database\Entity\Item\AccountDeletion;
 use Hilos\Database\Entity\Item\LegalAcceptance;
 use Hilos\Database\Entity\Item\AccountErasureOperation;
 use Hilos\Database\Entity\Item\AccountErasureAssignment;
+use Hilos\Database\Entity\Item\AccountErasureResult;
 use Hilos\Database\Entity\Item\LegalAcceptanceExport;
 use Hilos\Database\Entity\Item\DataExport;
 use Hilos\Database\Entity\Item\Identity;
@@ -121,6 +122,7 @@ final class AuthFeature extends FeatureDefinition
                 AccountDeletion::_table,
                 AccountErasureOperation::_table,
                 AccountErasureAssignment::_table,
+                AccountErasureResult::_table,
                 LegalAcceptance::_table,
                 DataExport::_table,
                 UserRename::_table,

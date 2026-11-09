@@ -109,10 +109,11 @@ related writes in one transaction of that owner and puts a recorded fact and a
 signal between owners
 ([account-operations.md](../architecture/account-operations.md#erasure)). For
 erasure, the obligation is durable and the participant alone writes its
-preparation/result; its work and result stand or fall in one local transaction,
-and a repeat answers from the saved result
-(not in the code yet — HIL-1937). The coordinator correlates assignments and
-answers by operation and stage, without a transaction across frames
+assigned result. The generic participant step commits callback work and result
+in one local transaction, and a repeat answers from the saved result. It is
+built but inert: no production participant uses it yet. The coordinator
+correlates assignments and answers by operation and stage, without a
+transaction across frames
 (not in the code yet — HIL-1950). The old
 terminal path and its required grants remain until the live erasure switch
 (not in the code yet — HIL-1952); an inert preparatory handler does not clear
@@ -143,12 +144,14 @@ that wins once, a result recorded in the same transaction as the work so that
 a second ask answers with it. That is how the approved research design of the
 split erasure and merge finishes an unfinished operation — from the records its
 owners hold, not from a cursor and not by retrying an after-commit step
-([Recovery](../architecture/account-operations.md#recovery)). It is a design
-and not code, and it gives no after-commit step a retry.
+([Recovery](../architecture/account-operations.md#recovery)). HIL-1937 builds
+an inert generic participant result step for erasure; later leaves connect
+production participants and cut over the flow. No after-commit step receives
+a retry.
 
-For erasure, the participant's atomic result makes that repeat safe
-(not in the code yet — HIL-1937); a duplicate, old or foreign answer cannot
-advance the current operation (not in the code yet — HIL-1950). The coordinator
+For erasure, the built participant step returns a saved result instead of
+running its work again; a duplicate, old or foreign answer cannot advance the
+current operation (not in the code yet — HIL-1950). The coordinator
 at start and on a later pass, and each participant at start or on an operation
 frame, select open obligations from DB. A lost frame needs no fresh external
 event, and no DB poll on every tick or remembered cursor is added

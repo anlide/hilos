@@ -58,6 +58,7 @@ use Hilos\Database\View\Collection\UserRenames as DbCollectionUserRenames;
 use Hilos\Database\View\Collection\Users as DbCollectionUsers;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
+use Hilos\Database\View\Collection\AccountErasureResults as DbCollectionAccountErasureResults;
 use Hilos\Database\View\Item\Identity;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -110,6 +111,7 @@ final class FrameworkExtensionMountTest extends TestCase
         HilosDbContext::accountDeletions => DbCollectionAccountDeletions::class,
         HilosDbContext::accountErasureOperations => DbCollectionAccountErasureOperations::class,
         HilosDbContext::accountErasureAssignments => DbCollectionAccountErasureAssignments::class,
+        HilosDbContext::accountErasureResults => DbCollectionAccountErasureResults::class,
         HilosDbContext::dataExports => DbCollectionDataExports::class,
         HilosDbContext::legalAcceptanceExports => DbCollectionLegalAcceptanceExports::class,
         HilosDbContext::files => DbCollectionFiles::class,

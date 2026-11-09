@@ -235,6 +235,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         self::assertSame(1, self::deliveryCount(), 'The erased notification leaves no orphan delivery');
         self::assertSame([], Database::sql('SELECT * FROM `hilos_account_erasure_operation`')->rows());
         self::assertSame([], Database::sql('SELECT * FROM `hilos_account_erasure_assignment`')->rows());
+        self::assertSame([], Database::sql('SELECT * FROM `hilos_account_erasure_result`')->rows());
     }
 
     /**
@@ -682,6 +683,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         self::assertNull(self::userOf(self::NEIGHBOUR_TOKEN));
         self::assertSame([], Database::sql('SELECT * FROM `hilos_account_erasure_operation`')->rows());
         self::assertSame([], Database::sql('SELECT * FROM `hilos_account_erasure_assignment`')->rows());
+        self::assertSame([], Database::sql('SELECT * FROM `hilos_account_erasure_result`')->rows());
     }
 
     /**
@@ -1148,6 +1150,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             'hilos_legal_acceptance_export',
             'hilos_account_erasure_operation',
             'hilos_account_erasure_assignment',
+            'hilos_account_erasure_result',
         ];
         // external-boundary: the up stub has no suffix in its file name
         $suffix = $down ? '_down' : '';

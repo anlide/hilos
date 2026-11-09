@@ -161,7 +161,7 @@ final class FrameworkMigrationBaselineTest extends TestCase
     public function testAuthAndCodeChannelsComposeTheirSharedUnitExactlyOnce(): void
     {
         $pair = $this->installer()->planBaseline($this->project('auth', BaselineAuthCodesHilos::class))[0]->publications[0]->pair;
-        $this->assertCount(26, $pair->origin->units);
+        $this->assertCount(27, $pair->origin->units);
         $this->assertSame(1, count(array_keys($pair->origin->units, 'user_verification', true)));
         $this->assertSame(1, substr_count($pair->upSql, $this->stub('user_verification')));
         $this->assertSame(1, substr_count($pair->downSql, $this->stub('user_verification', true)));

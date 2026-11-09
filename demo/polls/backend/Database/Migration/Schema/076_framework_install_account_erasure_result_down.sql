@@ -1,0 +1,2 @@
+-- hilos-framework: {"format":1,"kind":"install","units":["account_erasure_result"],"parts":[{"changeId":"20261108210743046351_HIL-1937_account_erasure_results","unit":"account_erasure_result","upSha256":"da747c9bec6a3cfdfe2975db343d27f129d155f739b0c0311fb087044a2e740c","downSha256":"733a7d68e9fafbbd003ebb25cf3cceb821380b42eeee52a5563df70558338f13"}],"upSha256":"da747c9bec6a3cfdfe2975db343d27f129d155f739b0c0311fb087044a2e740c","downSha256":"733a7d68e9fafbbd003ebb25cf3cceb821380b42eeee52a5563df70558338f13"}
+DROP TABLE IF EXISTS `hilos_account_erasure_result`;

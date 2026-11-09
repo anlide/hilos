@@ -29,8 +29,9 @@ owner's final completion after required results and the deletion of its person
 row (not in the code yet — HIL-1942). HIL-1936 builds the separate, inert
 [operation and assignment carriers](account-operations.md#erasure);
 it does not add a started field here or change today's `completed_at` meaning.
-HIL-1937's participant results, HIL-1939's request-owner start and HIL-1942's
-final completion remain future physical work. The old writer, borrowed right
+HIL-1937's participant result carrier and generic atomic step are built but
+inert; HIL-1939's request-owner start and HIL-1942's final completion remain
+future physical work. The old writer, borrowed right
 and current `completed_at` semantics remain until the live switch
 (not in the code yet — HIL-1952); the cancel/due race and the retained trace
 remain requirements.
@@ -145,9 +146,10 @@ minute tries again. Half an erased account never exists.
 
 That one transaction and its rollback are the implementation in the tree. The
 target obligations, owners and order are detailed in
-[Erasure](account-operations.md#erasure). Each participant's work and result
-share its own local transaction (not in the code yet — HIL-1937); after start,
-failure leaves an open operation to finish forward, without a common rollback
+[Erasure](account-operations.md#erasure). The generic participant step commits
+work and result in its local transaction and answers repeats from the saved
+result; it is built but has no live erasure consumer yet. After start, failure
+leaves an open operation to finish forward, without a common rollback
 (not in the code yet — HIL-1950). The fixed circle and folded-first ordering
 are prepared separately (not in the code yet — HIL-1938). The final personal
 delete follows required results and uses `RESTRICT` as the last safeguard
