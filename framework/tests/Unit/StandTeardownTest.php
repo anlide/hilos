@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 
+require_once __DIR__ . '/../../../scripts/stand-instance.php';
 require_once __DIR__ . '/../../../scripts/stand-teardown.php';
 
 /**
@@ -343,6 +344,39 @@ final class StandTeardownTest extends TestCase
         }
     }
 
+    /**
+     * A teardown running in one instance reaches no name of another: the default instance and
+     * each numbered one own disjoint projects and networks, and the residue lookup is closed by
+     * its quote, so `hilos-chat-test` is never read as the start of `hilos-chat-test-s2`.
+     */
+    public function testEveryInstanceTearsDownOnlyItsOwnStands(): void
+    {
+        $suffixes = [false];
+        for ($instance = STAND_INSTANCE_MIN; $instance <= STAND_INSTANCE_MAX; $instance++) {
+            $suffixes[] = standInstanceEnvironment($instance)[STAND_INSTANCE_SUFFIX_VAR];
+        }
+
+        $taken = [];
+        foreach ($suffixes as $suffix) {
+            $stands = self::standsOfInstance($suffix);
+            $names = array_merge(array_column($stands, 'project'), ...array_column($stands, 'networks'));
+            $this->assertSame(
+                [],
+                array_values(array_intersect($names, $taken)),
+                'instance ' . var_export($suffix, true) . ' tears down names of another instance',
+            );
+            $taken = array_merge($taken, $names);
+
+            foreach ($stands as $stand) {
+                $this->assertStringContainsString(
+                    "--filter 'label=com.docker.compose.project=" . $stand['project'] . "'",
+                    standResidueContainersCommand($stand),
+                    'stand ' . $stand['id'] . ' looks its containers up by more than its exact project',
+                );
+            }
+        }
+    }
+
     /** A stand whose profiles resolved, and a stand with no profiles to resolve, both report none. */
     public function testReportsNoProblemWhenTheStandCouldBeAsked(): void
     {
@@ -366,5 +400,32 @@ final class StandTeardownTest extends TestCase
             'removedNetworks' => [],
             'residue' => ['containers' => [], 'networks' => []],
         ];
+    }
+
+    /**
+     * The registry as a process of the given instance reads it. The caller's own suffix comes
+     * back afterwards, because these tests may themselves run inside an instance.
+     *
+     * @param string|false $suffix The instance suffix, or false for the default instance
+     * @return array<int, array<string, mixed>> The stands of that instance
+     */
+    private static function standsOfInstance(string|false $suffix): array
+    {
+        $caller = getenv(STAND_INSTANCE_SUFFIX_VAR);
+
+        self::putInstanceSuffix($suffix);
+        try {
+            return require __DIR__ . '/../../../scripts/test-stands.php';
+        } finally {
+            self::putInstanceSuffix($caller);
+        }
+    }
+
+    /**
+     * @param string|false $suffix The value to set, or false to unset the variable
+     */
+    private static function putInstanceSuffix(string|false $suffix): void
+    {
+        putenv($suffix === false ? STAND_INSTANCE_SUFFIX_VAR : STAND_INSTANCE_SUFFIX_VAR . '=' . $suffix);
     }
 }

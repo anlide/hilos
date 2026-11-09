@@ -31,7 +31,7 @@ final class StandInstanceTest extends TestCase
                 $defaults[] = $octet;
             }
         }
-        $this->assertSame(16, count($variables));
+        $this->assertSame(19, count($variables));
         $this->assertSame($variables, array_values(array_unique($variables)));
         $this->assertSame($defaults, array_values(array_unique($defaults)));
 
@@ -94,5 +94,44 @@ final class StandInstanceTest extends TestCase
         $instance9 = standInstanceEnvironment(9);
         $this->assertSame('168', $instance9['HILOS_STAND_NET_PMD']);
         $this->assertSame('173', $instance9['HILOS_STAND_NET_CONCERT_TICKETS']);
+    }
+
+    /** The three cluster stands that open the third block start at octet 3 and end at 29. */
+    public function testTheThreeNewClusterStandsTakeTheThirdBlock(): void
+    {
+        $instance1 = standInstanceEnvironment(1);
+        $this->assertSame('3', $instance1['HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER']);
+        $this->assertSame('5', $instance1['HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER']);
+
+        $instance9 = standInstanceEnvironment(9);
+        $this->assertSame('27', $instance9['HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER']);
+        $this->assertSame('29', $instance9['HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER']);
+    }
+
+    /**
+     * The cluster runner hands its container a fixed list of variables, so a cluster network
+     * missing from that list would leave the stand on its default octet, inside every instance.
+     */
+    public function testTheClusterRunnerForwardsEveryClusterNetwork(): void
+    {
+        $runner = file_get_contents(__DIR__ . '/../../docker/cluster/run');
+        $this->assertIsString($runner, 'framework/docker/cluster/run is unreadable');
+
+        $forwarded = 0;
+        foreach (STAND_INSTANCE_BLOCKS as $stands) {
+            foreach (array_keys($stands) as $variable) {
+                if (!str_ends_with($variable, '_CLUSTER')) {
+                    continue;
+                }
+
+                $forwarded++;
+                $this->assertStringContainsString(
+                    '--env "' . $variable . '=$' . $variable . '"',
+                    $runner,
+                    "framework/docker/cluster/run does not forward {$variable}",
+                );
+            }
+        }
+        $this->assertGreaterThan(0, $forwarded, 'no cluster network was found in the octet table');
     }
 }

@@ -258,14 +258,17 @@ registry of taken host ports:
 | pmd test (not in the code yet — HIL-2016) | 33074 | 8173/8174/8175 | — | http 8177 / https 8178 | — | 10.214 |
 | roblox-game-server local (not in the code yet — HIL-2017) | 33075 | 8190/8191/8192 | 8200 | https 8196 | 5180 | 10.205 |
 | roblox-game-server test (not in the code yet — HIL-2017) | 33076 | 8193/8194/8195 | — | http 8197 / https 8198 | — | 10.215 |
+| roblox-game-server cluster (not in the code yet — HIL-2029) | — | — | — | — | — | 10.225 |
 | solar-system-model local (not in the code yet — HIL-2018) | 33077 | 8210/8211/8212 | 8220 | https 8216 | 5181 | 10.206 |
 | solar-system-model test (not in the code yet — HIL-2018) | 33078 | 8213/8214/8215 | — | http 8217 / https 8218 | — | 10.216 |
 | file-gallery-manager local (not in the code yet — HIL-2019) | 33079 | 8230/8231/8232 | 8240 | https 8236 | 5182 | 10.207 |
 | file-gallery-manager test (not in the code yet — HIL-2019) | 33080 | 8233/8234/8235 | — | http 8237 / https 8238 | — | 10.217 |
+| file-gallery-manager cluster (not in the code yet — HIL-2032) | — | — | — | — | — | 10.227 |
 | preferans local (not in the code yet — HIL-2020) | 33081 | 8250/8251/8252 | 8260 | https 8256 | 5183 | 10.208 |
 | preferans test (not in the code yet — HIL-2020) | 33082 | 8253/8254/8255 | — | http 8257 / https 8258 | — | 10.218 |
 | concert-tickets local (not in the code yet — HIL-2021) | 33083 | 8270/8271/8272 | 8280 | https 8276 | 5184 | 10.209 |
 | concert-tickets test (not in the code yet — HIL-2021) | 33084 | 8273/8274/8275 | — | http 8277 / https 8278 | — | 10.219 |
+| concert-tickets cluster (not in the code yet — HIL-2033) | — | — | — | — | — | 10.229 |
 | retired five-node stand — 10.185 stays unassigned (HIL-1218) | — | — | — | — | — | 10.185 |
 
 Every number comes from the stack's own compose file — the `${…:-N}` defaults

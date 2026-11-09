@@ -380,6 +380,9 @@ or its stand's `HILOS_STAND_NET_*` octet the same way; the table of octets lives
 [`scripts/stand-instance.php`](../../scripts/stand-instance.php). The table is
 written in blocks: the octet an instance occupies does not shift, and a new stand
 opens its own block rather than extending an old one.
+`framework/tests/Unit/ClusterStandIsolationGuardTest.php` holds every cluster stand
+to this, and a stack with a `docker/docker-compose.cluster.yml` needs its row in
+`scripts/test-stands.php`.
 
 **CPU weight of a stand.** Every stand service reads `cpu_shares` from
 `HILOS_STAND_CPU_SHARES`; unset, it is `0`, which docker reads as its own default.
@@ -698,7 +701,11 @@ or a container memory limit.
 Acceptance proves Hilos and database failures separately, keeping the other
 layer healthy (not in the code yet — HIL-2043). New fleets enter after ordinary
 activations HIL-2017/HIL-2019/HIL-2021 and phase-one acceptance HIL-2023, with
-isolation in every instance extending HIL-2015 (not in the code yet — HIL-2025).
+isolation in every instance extending HIL-2015: their octets are the third block of
+`scripts/stand-instance.php`, the variables `HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER`,
+`HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER` and
+`HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER` with default octets 225, 227 and 229, and the
+cluster runner forwards them.
 Do not add lanes or instances: the full run accepts all six carriers and
 measures their resource budget on the existing lanes
 (not in the code yet — HIL-2043).
@@ -1096,8 +1103,11 @@ intact. When defined, the launcher passes the existing
 `HILOS_E2E_TIMEOUT_SCALE` variables, plus the existing
 `HILOS_STAND_SUFFIX`, `HILOS_STAND_CPU_SHARES`,
 `HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER`,
-`HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER` and
-`HILOS_STAND_NET_ONLINE_TESTING_CLUSTER` variables. Its explicit deployment
+`HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER`,
+`HILOS_STAND_NET_ONLINE_TESTING_CLUSTER`,
+`HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER`,
+`HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER` and
+`HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER` variables. Its explicit deployment
 allowlist also carries the `HILOS_CLUSTER_*` runtime-file/storage selections,
 bind address, published ports and six entry upstream endpoints defined in the
 standalone examples. It preserves absent versus empty values and does not

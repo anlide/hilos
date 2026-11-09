@@ -52,13 +52,14 @@ const STAND_INSTANCE_MAX = 9;
  * and such trees run side by side for hours.
  *
  * A new set of stands opens its own block, on octets no instance of another block covers and
- * below the smallest default (186), outside the pools docker assigns from. Free are 1-29 and
- * 174-184; 185 is left. Three cluster stands need 27 in a row, which 1-29 holds; after them
- * there is room for exactly one stand (174-182). Past that, drop the rule that a block stays
- * below 186, or narrow the networks.
+ * below the smallest default (186), outside the pools docker assigns from. Free are 1-2 and
+ * 174-184, and 185 is left. A block takes nine octets per stand in a row, so there is room for
+ * exactly one more stand (174-182). Past that, drop the rule that a block stays below 186, or
+ * narrow the networks.
  *
  * The second block holds six ordinary demos, whose compose files arrive with their activation
- * leaves. Until then nobody reads their variables.
+ * leaves. Until then nobody reads their variables. The third block holds three cluster stands,
+ * whose compose files arrive with their own leaves, and until then nobody reads theirs either.
  */
 const STAND_INSTANCE_BLOCKS = [
     30 => [
@@ -80,6 +81,11 @@ const STAND_INSTANCE_BLOCKS = [
         'HILOS_STAND_NET_FILE_GALLERY_MANAGER' => 217,
         'HILOS_STAND_NET_PREFERANS' => 218,
         'HILOS_STAND_NET_CONCERT_TICKETS' => 219,
+    ],
+    3 => [
+        'HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER' => 225,
+        'HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER' => 227,
+        'HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER' => 229,
     ],
 ];
 
