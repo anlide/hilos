@@ -15,6 +15,8 @@ use Hilos\Database\DatabaseConnectionConfig;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseMarker;
 use Hilos\Database\Migration;
+use Hilos\Database\Migration\FrameworkMigrationCatalog;
+use Hilos\Database\Migration\FrameworkMigrationOrigin;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -75,9 +77,9 @@ final class FullRestoreTriggerIntegrationTest extends FrameworkIntegrationTestCa
             $this->grant($index, 'SELECT, SHOW VIEW, TRIGGER');
         }
         Database::sql('CREATE TABLE ' . self::identifier($this->databases[0]) . '.' . DatabaseMarker::TABLE
-            . '(id INT PRIMARY KEY, marker VARCHAR(64), written_by VARCHAR(64), written_at DATETIME)');
+            . '(id INT PRIMARY KEY, marker VARCHAR(64), written_by VARCHAR(64), written_at BIGINT)');
         Database::sql('INSERT INTO ' . self::identifier($this->databases[0]) . '.' . DatabaseMarker::TABLE
-            . " VALUES(1,'original-marker','fixture','2026-01-01 00:00:00')");
+            . " VALUES(1,'original-marker','fixture',1767225600123)");
         $this->connect(0, $this->databases[0], $this->users[0], self::PASSWORD);
         Database::useConnection(self::CONTROL_INDEX);
     }
@@ -156,6 +158,38 @@ final class FullRestoreTriggerIntegrationTest extends FrameworkIntegrationTestCa
         } catch (RestoreFailedException $failure) {
             $this->assertFalse($failure->databaseTouched());
             $this->assertStringContainsString('trigger ownership visibility', $failure->getMessage());
+            $this->assertEquals($snapshot, FullRestoreSchemaSnapshot::read($inputs->targets));
+            $this->assertIntact();
+        }
+    }
+
+    /** @param bool $partial Whether an unrelated table-only grant exposes one trigger but hides the marker's */
+    #[DataProvider('incompleteCatalogs')]
+    public function testBootstrapUpdateRequiresCompleteSchemaTriggerVisibility(bool $partial): void
+    {
+        $part = new FrameworkMigrationCatalog()->part('20261109000848893922_HIL-1918_bootstrap_moments', 'database_marker');
+        $origin = FrameworkMigrationOrigin::forBodies(FrameworkMigrationOrigin::CHANGE, [$part->unit], [$part], $part->upSql, $part->downSql);
+        FsPath::write($this->root . '/Schema/002_retire.sql', $origin->header() . "\n" . $part->upSql);
+        FsPath::write($this->root . '/Schema/002_retire_down.sql', $origin->header() . "\n" . $part->downSql);
+        $this->createTrigger(0, DatabaseMarker::TABLE);
+        Database::sql('REVOKE TRIGGER ON ' . $this->grantSchema(0) . '.* FROM ?@?', [$this->users[0], '%']);
+        if ($partial) {
+            Database::sql('GRANT TRIGGER ON ' . self::identifier($this->databases[0]) . '.retained TO ?@?', [$this->users[0], '%']);
+            Database::sql('CREATE TRIGGER ' . self::identifier($this->databases[0]) . '.visible_trigger BEFORE INSERT ON '
+                . self::identifier($this->databases[0]) . '.retained FOR EACH ROW SET NEW.id=NEW.id');
+        }
+        $this->connect(0, $this->databases[0], $this->users[0], self::PASSWORD);
+        Database::useConnection(self::CONTROL_INDEX);
+        $inputs = $this->inputs();
+        $snapshot = FullRestoreSchemaSnapshot::read($inputs->targets);
+        $this->assertFalse($snapshot->schemas[0]->completeTriggerVisibility);
+        $this->assertCount($partial ? 1 : 0, $snapshot->schemas[0]->triggers);
+        try {
+            FullRestorePlanner::prepare($inputs);
+            $this->fail('A hidden retained bootstrap trigger cannot be proven absent');
+        } catch (RestoreFailedException $failure) {
+            $this->assertFalse($failure->databaseTouched());
+            $this->assertStringContainsString('bootstrap trigger visibility', $failure->getMessage());
             $this->assertEquals($snapshot, FullRestoreSchemaSnapshot::read($inputs->targets));
             $this->assertIntact();
         }

@@ -181,13 +181,17 @@ SQL);
         }
     }
 
-    /** A legacy FULL without migration history yields unknown pending work, without a fabricated zero. */
+    /** A legacy FULL keeps its history level unknown and its source effects ordered, without a fabricated zero. */
     public function testAbsentArchiveHistoryRemainsUnknownAndDoesNotRefusePreparation(): void
     {
         FsPath::write($this->root . '/Schema/001_old.sql', 'SELECT 1;');
         $evidence = FullRestoreMigrationEvidence::prepare([$this->target(DatabaseConnectionDefaults::PRIMARY_INDEX, null)]);
         $this->assertNull($evidence->targets[DatabaseConnectionDefaults::PRIMARY_INDEX]->facts->archiveLevel);
-        $this->assertNull($evidence->targets[DatabaseConnectionDefaults::PRIMARY_INDEX]->pending);
+        $this->assertCount(1, $evidence->targets[DatabaseConnectionDefaults::PRIMARY_INDEX]->pending);
+        $this->assertSame(1, $evidence->targets[DatabaseConnectionDefaults::PRIMARY_INDEX]->pending[0]->file->index);
+        $this->assertSame(0, $evidence->targets[DatabaseConnectionDefaults::PRIMARY_INDEX]->pending[0]->statementIndex);
+        $this->assertSame(MigrationOperationKind::DATA, $evidence->targets[DatabaseConnectionDefaults::PRIMARY_INDEX]->pending[0]->operation->kind);
+        $this->assertSame('SELECT 1', $evidence->targets[DatabaseConnectionDefaults::PRIMARY_INDEX]->pending[0]->operation->sql);
         $this->assertSame([], $this->tables($this->database));
         $evidence->assertUnchanged();
     }

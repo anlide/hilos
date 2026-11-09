@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
+use Hilos\Utils\Helpers\UtcMoment;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Database\Database;
@@ -122,7 +123,7 @@ HELP;
 
         $claim = MigrationClaim::current();
         if ($claim !== null) {
-            echo "Rollout claim:      held by {$claim->holder} since {$claim->claimedAt}\n";
+            echo "Rollout claim:      held by {$claim->holder} since " . UtcMoment::fromMs($claim->claimedAt) . "\n";
         }
         
         echo "\nMigration list:\n";

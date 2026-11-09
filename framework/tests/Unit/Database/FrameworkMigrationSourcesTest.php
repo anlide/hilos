@@ -79,6 +79,9 @@ final class FrameworkMigrationSourcesTest extends TestCase
                 '20261021021039718057_HIL-1580_add_user_time_zone/user',
                 '20261022124515804554_HIL-1582_browser_time_zones/session',
                 '20261022124515804554_HIL-1582_browser_time_zones/user',
+                '20261109000848893922_HIL-1918_bootstrap_moments/admin_view_mode_latch',
+                '20261109000848893922_HIL-1918_bootstrap_moments/database_marker',
+                '20261109000848893922_HIL-1918_bootstrap_moments/migration_claim',
             ],
             array_map(
                 static fn (FrameworkMigrationPart $part): string => $part->key(),
@@ -87,6 +90,23 @@ final class FrameworkMigrationSourcesTest extends TestCase
         );
         $this->assertSame(1, $schema->unit('change_log')->connection);
         $this->assertNull($schema->unit('migration')->upPath);
+    }
+
+    public function testRealBootstrapMomentsHaveThreePartsAndNoInstallStubs(): void
+    {
+        $schema = new FrameworkSchemaCatalog();
+        $catalog = new FrameworkMigrationCatalog($schema);
+        $units = ['admin_view_mode_latch', 'database_marker', 'migration_claim'];
+        $parts = $catalog->partsForUnits($units);
+        $this->assertSame($units, array_column($parts, 'unit'));
+        foreach ($parts as $part) {
+            $this->assertFalse($part->introducesUnit);
+            $this->assertNull($part->afterStubUpSha256);
+            $this->assertNull($part->afterStubDownSha256);
+            $this->assertNull($schema->unit($part->unit)->upPath);
+            $this->assertNull($schema->unit($part->unit)->downPath);
+        }
+        $catalog->verifyCurrentStubs($units);
     }
 
     public function testErasureStorageUnitsAreIntroducedOnceInDependencyOrder(): void

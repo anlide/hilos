@@ -349,7 +349,7 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
             Database::sql('DROP TABLE `' . self::LATE_TABLE . '`');
             Database::sql('DELETE FROM migration WHERE `index` = ?', [self::CODE_MIGRATION_INDEX]);
             Database::sql('UPDATE `' . self::PROBE_TABLE . "` SET label='archive'");
-            DatabaseMarker::put(new DatabaseMarkerRow(self::ARCHIVED_MARKER, 'archive-node', '2026-08-08 11:59:59'));
+            DatabaseMarker::put(new DatabaseMarkerRow(self::ARCHIVED_MARKER, 'archive-node', 1786190399456));
             $metadata = new BackupCreator()->create('journal-old-full', BackupScope::FULL);
             $this->assertNotNull($metadata->sha256);
             $this->assertSame([0, 1], array_column($metadata->connections, 'index'));
@@ -361,7 +361,7 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
             Database::sql('INSERT INTO `' . self::LATE_TABLE . '` VALUES (11)');
             Database::sql('INSERT INTO `' . self::CHILD_TABLE . '` VALUES (12,11)');
             Database::sql('UPDATE ' . $journal . ".hilos_change_log_table SET name='target'");
-            $marker = new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00');
+            $marker = new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', 1788256800123);
             DatabaseMarker::put($marker);
             $phases = [];
             new BackupRestorer()->restore('journal-old-full', BackupScope::FULL, RestoreEnvDecision::ALLOW, null,
@@ -689,7 +689,7 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
     {
         Migration::initialize();
         Database::sql('DELETE FROM `' . AdminViewModeLatchTable::TABLE . '`');
-        AdminViewModeLatchTable::close('prod', 'latch-node', 1700000000);
+        AdminViewModeLatchTable::close('prod', 'latch-node', 1700000000123);
         $this->publishFixtureBackup($this->probeDumpSql([['1', 'alpha']]));
 
         try {
@@ -699,7 +699,7 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
                 [
                     AdminViewModeLatchFile::KEY_ENVIRONMENT => 'prod',
                     AdminViewModeLatchFile::KEY_NODE => 'latch-node',
-                    AdminViewModeLatchFile::KEY_CLOSED_AT => 1700000000,
+                    AdminViewModeLatchFile::KEY_CLOSED_AT => 1700000000123,
                 ],
                 AdminViewModeLatchTable::read(),
             );
@@ -756,7 +756,7 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         $this->raiseUntouchedProbe();
         Migration::initialize();
         $history = Migration::appliedIndices();
-        $marker = new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00');
+        $marker = new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', 1788256800123);
         DatabaseMarker::put($marker);
         try {
             new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
@@ -912,7 +912,7 @@ SQL);
                 return;
             }
             Migration::initialize();
-            $marker = new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00');
+            $marker = new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', 1788256800123);
             DatabaseMarker::put($marker);
             $this->publishFixtureBackup("SET SQL_MODE='';\n" . $this->markerDumpSql(self::ARCHIVED_MARKER)
                 . $this->probeDumpSql([['1', 'backslash\\\\end "quoted"']]));
@@ -999,11 +999,39 @@ SQL);
         $this->assertSame([['1', 'archive']], $this->probeRows());
     }
 
+    /** @param bool $legacy Whether the archive predates signed-millisecond marker storage */
+    #[DataProvider('markerArchiveFormats')]
+    public function testFullRestorePreservesExactTargetMillisecondsAndOmitsForeignMarker(bool $legacy): void
+    {
+        Migration::initialize();
+        $marker = new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', 2208988800456);
+        DatabaseMarker::put($marker);
+        $block = $this->markerDumpSql(self::ARCHIVED_MARKER);
+        if (!$legacy) {
+            $block = str_replace(['`written_at` datetime', "'2026-08-08 11:59:59'"],
+                ['`written_at` BIGINT', '-1'], $block);
+        }
+        $this->publishFixtureBackup($block . $this->probeDumpSql([['1', 'archive']]));
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+            $this->assertEquals($marker, DatabaseMarker::current());
+            $this->assertSame([['1', 'archive']], $this->probeRows());
+        } finally {
+            DatabaseMarker::clear();
+        }
+    }
+
+    /** @return list<array{bool}> Both historical and current marker blocks */
+    public static function markerArchiveFormats(): array
+    {
+        return [[true], [false]];
+    }
+
     /** Required operation evidence is written even with ordinary logging disabled. */
     public function testOperationLogRecordsTargetsAndMarkerAtErrorOnlyLevel(): void
     {
         Migration::initialize();
-        $marker = new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00');
+        $marker = new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', 1788256800123);
         DatabaseMarker::put($marker);
         $this->publishFixtureBackup($this->markerDumpSql(self::ARCHIVED_MARKER) . $this->probeDumpSql([['1', 'archive']]));
         $previousLevel = Logger::writeLevel();
@@ -1086,7 +1114,7 @@ SQL);
     {
         Migration::initialize();
         DatabaseMarker::clear();
-        $marker = $hasMarker ? new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00') : null;
+        $marker = $hasMarker ? new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', 1788256800123) : null;
         if ($marker !== null) {
             DatabaseMarker::put($marker);
         }
@@ -1120,7 +1148,7 @@ SQL);
     {
         Migration::initialize();
         DatabaseMarker::clear();
-        $marker = $hasMarker ? new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00') : null;
+        $marker = $hasMarker ? new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', 1788256800123) : null;
         if ($marker !== null) {
             DatabaseMarker::put($marker);
         }
@@ -1189,11 +1217,11 @@ SQL);
                             $this->configureSecondTarget($config->database);
                             break;
                         case 'marker':
-                            DatabaseMarker::put(new DatabaseMarkerRow(self::TARGET_MARKER, 'other-node', '2026-09-01 10:00:00'));
+                            DatabaseMarker::put(new DatabaseMarkerRow(self::TARGET_MARKER, 'other-node', 1788256800123));
                             break;
                         case 'rollout':
                             Database::sql('INSERT INTO `' . MigrationClaim::TABLE . '` VALUES (?, ?, ?)',
-                                [MigrationClaim::CLAIM_ID, 'foreign-process', '2026-09-01 10:00:00']);
+                                [MigrationClaim::CLAIM_ID, 'foreign-process', 1788256800123]);
                             break;
                         case 'sidecar':
                             $path = substr($archive, 0, -strlen(BackupCreator::ARCHIVE_EXTENSION)) . BackupCreator::SIDECAR_EXTENSION;
@@ -1208,6 +1236,9 @@ SQL);
         } catch (RestoreFailedException $failure) {
             $this->assertFalse($failure->databaseTouched());
             $this->assertStringContainsString('connections=0', $failure->getMessage());
+            if ($change === 'rollout') {
+                $this->assertStringContainsString('A schema rollout is held by foreign-process', $failure->getMessage());
+            }
         } finally {
             if ($change === 'config') {
                 Database::configure(index: 0, host: $config->host, user: $config->user, password: $config->password,
@@ -1287,7 +1318,7 @@ SQL);
     public function testTheTargetKeepsItsOwnDatabaseMarkerOverTheArchivedOne(): void
     {
         Migration::initialize();
-        DatabaseMarker::put(new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00'));
+        DatabaseMarker::put(new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', 1788256800123));
         $this->publishFixtureBackup($this->probeDumpSql([['1', 'alpha']]) . $this->markerDumpSql(self::ARCHIVED_MARKER));
 
         try {
@@ -1834,7 +1865,7 @@ SQL);
             . ' FOREIGN KEY(parent_id) REFERENCES `' . self::LATE_TABLE . '`(id) ON DELETE CASCADE)');
         Database::sql('CREATE TABLE `' . self::INDEPENDENT_TABLE . '` (id INT PRIMARY KEY)');
         Database::sql('INSERT INTO `' . self::INDEPENDENT_TABLE . '` VALUES (13)');
-        DatabaseMarker::put(new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00'));
+        DatabaseMarker::put(new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', 1788256800123));
     }
 
     /** @param string $reason Exact proof that should refuse this restore */
@@ -1867,7 +1898,7 @@ SQL);
         Database::sql('INSERT INTO `migration` (`index`, `failed`) VALUES (?,0),(?,1)',
             [self::TARGET_APPLIED_INDEX, self::TARGET_FAILED_INDEX]);
         $history = Database::sql('SELECT `index`, `failed` FROM `migration` ORDER BY `index`')->rows();
-        $marker = new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00');
+        $marker = new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', 1788256800123);
         DatabaseMarker::put($marker);
         Database::useConnection($restoreIndex);
         try {
@@ -1982,9 +2013,9 @@ SQL);
     {
         return 'DROP TABLE IF EXISTS `' . MigrationClaim::TABLE . "`;\n"
             . 'CREATE TABLE `' . MigrationClaim::TABLE . '` (`id` tinyint(3) UNSIGNED NOT NULL,'
-            . " `holder` varchar(255) NOT NULL, `claimed_at` datetime NOT NULL, PRIMARY KEY (`id`));\n"
+            . " `holder` varchar(255) NOT NULL, `claimed_at` bigint NOT NULL, PRIMARY KEY (`id`));\n"
             . 'INSERT INTO `' . MigrationClaim::TABLE . '` VALUES (' . MigrationClaim::CLAIM_ID
-            . ", '{$holder}', '2026-08-08 11:59:59');\n";
+            . ", '{$holder}', 1786190399000);\n";
     }
 
     /**

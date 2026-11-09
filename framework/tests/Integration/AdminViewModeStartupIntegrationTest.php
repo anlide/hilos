@@ -18,6 +18,7 @@ use Hilos\Database\Migration;
 use Hilos\Database\Settings\Exception\SettingInvalidValueException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use RuntimeException;
 
@@ -42,7 +43,7 @@ final class AdminViewModeStartupIntegrationTest extends FrameworkIntegrationTest
     private const string OTHER_NODE = 'another-node';
 
     /** When the latch of another node was closed: far from now, so a copy of it is told from a fresh one. */
-    private const int OTHER_CLOSED_AT = 1700000000;
+    private const int OTHER_CLOSED_AT = 1700000000123;
 
     /**
      * Connection index no other case migrates on, so the framework tables are probed on it afresh:
@@ -126,6 +127,29 @@ final class AdminViewModeStartupIntegrationTest extends FrameworkIntegrationTest
         $this->assertStringContainsString('closed on this installation for good', $this->journal());
     }
 
+    public function testVersionOneFileClosesTheMissingDatabaseHalfInMilliseconds(): void
+    {
+        $this->setVariable(true);
+        file_put_contents(AdminViewModeLatchFile::pathIn($this->logRoot), json_encode([
+            'version' => 1, 'environment' => self::OTHER_ENVIRONMENT, 'node' => self::OTHER_NODE, 'closedAt' => 1700000000,
+        ], JSON_THROW_ON_ERROR));
+        $before = TimeHelper::nowMs();
+        $this->assertFalse(AdminViewModeStartup::run());
+        $closedAt = AdminViewModeLatchTable::read()[AdminViewModeLatchFile::KEY_CLOSED_AT];
+        $this->assertGreaterThanOrEqual($before, $closedAt);
+        $this->assertLessThanOrEqual(TimeHelper::nowMs(), $closedAt);
+    }
+
+    public function testVersionTwoRestartPreservesTheExactMilliseconds(): void
+    {
+        $this->setVariable(true);
+        AdminViewModeLatchFile::publish($this->logRoot, self::OTHER_ENVIRONMENT, self::OTHER_NODE, self::OTHER_CLOSED_AT);
+        $this->assertFalse(AdminViewModeStartup::run());
+        $this->assertFalse(AdminViewModeStartup::run());
+        $this->assertSame($this->otherNodesRecord(), AdminViewModeLatchTable::read());
+        $this->assertSame($this->otherNodesRecord(), AdminViewModeLatchFile::read($this->logRoot, 'unused', 'unused'));
+    }
+
     public function testProductionWithTheVariableOnAndNoLatchHasTheModeOnAndWritesNothing(): void
     {
         $this->setVariable(true);
@@ -201,7 +225,7 @@ final class AdminViewModeStartupIntegrationTest extends FrameworkIntegrationTest
     {
         AdminViewModeLatchTable::close(self::OTHER_ENVIRONMENT, self::OTHER_NODE, self::OTHER_CLOSED_AT);
 
-        AdminViewModeLatchTable::close('prod', self::NODE, time());
+        AdminViewModeLatchTable::close('prod', self::NODE, TimeHelper::nowMs());
 
         $this->assertSame($this->otherNodesRecord(), AdminViewModeLatchTable::read());
     }

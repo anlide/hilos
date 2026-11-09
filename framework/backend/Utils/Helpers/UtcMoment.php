@@ -27,6 +27,26 @@ final class UtcMoment
     }
 
     /**
+     * Formats an integer moment for human-readable CLI and log text.
+     *
+     * @param int $milliseconds Unix epoch milliseconds, negative before 1970
+     * @return string ISO-8601 UTC instant with six fractional digits and Z
+     */
+    public static function fromMs(int $milliseconds): string
+    {
+        $seconds = intdiv($milliseconds, TimeConstants::MS_PER_SECOND);
+        $remainder = $milliseconds % TimeConstants::MS_PER_SECOND;
+        // Division truncates toward zero; borrow one second to keep the fraction nonnegative.
+        if ($remainder < 0) {
+            $seconds--;
+            $remainder += TimeConstants::MS_PER_SECOND;
+        }
+
+        return self::format(DateTimeImmutable::createFromTimestamp($seconds)
+            ->setMicrosecond($remainder * TimeConstants::US_PER_MILLISECOND));
+    }
+
+    /**
      * Accepts only a complete ISO instant with T and an explicit Z or numeric offset.
      * Calendar and clock overflows are refused rather than repaired by DateTime.
      *

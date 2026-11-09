@@ -13,7 +13,10 @@ use Hilos\Database\Exception\MigrationMarkedFailedException;
 use Hilos\Database\Migration;
 use Hilos\Database\MigrationClaim;
 use Hilos\Database\MigrationClaimHolder;
+use Hilos\Database\MigrationSqlReader;
 use Hilos\Hilos;
+use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Utils\Helpers\UtcMoment;
 use Hilos\Utils\Logger;
 
 /**
@@ -47,7 +50,7 @@ final class MigrationClaimIntegrationTest extends FrameworkIntegrationTestCase
     private const string OTHER_HOLDER = 'another-node';
 
     /** When a stale claim was taken: long enough ago that taking it back visibly moves it. */
-    private const string STALE_CLAIMED_AT = '2026-01-02 03:04:05';
+    private const int STALE_CLAIMED_AT = 1767323045000;
 
     /** Polls after which the pause of a waiting case removes the row it waits on. */
     private const int POLLS_BEFORE_RELEASE = 3;
@@ -108,6 +111,58 @@ final class MigrationClaimIntegrationTest extends FrameworkIntegrationTestCase
         $this->removeTree($this->migrationRoot);
 
         parent::tearDown();
+    }
+
+    public function testAcquisitionWritesApplicationMilliseconds(): void
+    {
+        $before = TimeHelper::nowMs();
+        MigrationClaim::take(MigrationClaimHolder::process(), $this->unexpectedPause(...));
+        $stamp = MigrationClaim::current()?->claimedAt;
+        $this->assertGreaterThanOrEqual($before, $stamp);
+        $this->assertLessThanOrEqual(TimeHelper::nowMs(), $stamp);
+    }
+
+    public function testLegacyAcquisitionAndOwnStaleClaimUseTheOldPhysicalBoundary(): void
+    {
+        Database::sql('ALTER TABLE `' . MigrationClaim::TABLE . '` MODIFY claimed_at DATETIME NOT NULL');
+        try {
+            $holder = MigrationClaimHolder::nodeStart();
+            $before = intdiv(TimeHelper::nowMs(), 1000) * 1000;
+            MigrationClaim::take($holder, $this->unexpectedPause(...));
+            $this->assertGreaterThanOrEqual($before, MigrationClaim::current()?->claimedAt);
+            Database::sql('UPDATE `' . MigrationClaim::TABLE . '` SET claimed_at = ?', ['2026-01-02 03:04:05']);
+            $this->assertSame(self::STALE_CLAIMED_AT, MigrationClaim::current()?->claimedAt);
+            MigrationClaim::take($holder, $this->unexpectedPause(...));
+            $this->assertGreaterThanOrEqual($before, MigrationClaim::current()?->claimedAt);
+        } finally {
+            MigrationClaim::clear();
+            Database::sql('ALTER TABLE `' . MigrationClaim::TABLE . '` MODIFY claimed_at BIGINT NOT NULL');
+        }
+    }
+
+    public function testWaiterRereadsPhysicalTypeAfterTheOwningRollout(): void
+    {
+        Database::sql('ALTER TABLE `' . MigrationClaim::TABLE . '` MODIFY claimed_at DATETIME NOT NULL');
+        try {
+            Database::sql('INSERT INTO `' . MigrationClaim::TABLE . '` VALUES(1, ?, ?)',
+                [self::OTHER_HOLDER, '2026-01-02 03:04:05']);
+            $pauses = 0;
+            MigrationClaim::take(MigrationClaimHolder::process(), function () use (&$pauses): void {
+                $this->assertSame(0, $pauses++);
+                $path = glob(dirname(__DIR__, 2) . '/backend/Database/Migration/Change/*HIL-1918*/migration_claim.sql')[0];
+                foreach (MigrationSqlReader::statements(file_get_contents($path)) as $statement) {
+                    Database::sql($statement);
+                }
+                $this->assertSame(self::OTHER_HOLDER, MigrationClaim::current()?->holder);
+                $this->assertSame(self::STALE_CLAIMED_AT, MigrationClaim::current()?->claimedAt);
+                MigrationClaim::releaseHeldBy(self::OTHER_HOLDER);
+            });
+            $this->assertSame(1, $pauses);
+            $this->assertGreaterThan(self::STALE_CLAIMED_AT, MigrationClaim::current()?->claimedAt);
+        } finally {
+            MigrationClaim::clear();
+            Database::sql('ALTER TABLE `' . MigrationClaim::TABLE . '` MODIFY claimed_at BIGINT NOT NULL');
+        }
     }
 
     public function testADatabaseAtItsLevelTakesNoClaim(): void
@@ -237,7 +292,7 @@ final class MigrationClaimIntegrationTest extends FrameworkIntegrationTestCase
         $this->assertSame(self::NODE, $claim?->holder);
         $this->assertNotSame(self::STALE_CLAIMED_AT, $claim?->claimedAt, 'Taking the row back must restamp it');
         $this->assertStringContainsString(
-            "Taking back the schema rollout claim this node's previous start left at " . self::STALE_CLAIMED_AT,
+            "Taking back the schema rollout claim this node's previous start left at " . UtcMoment::fromMs(self::STALE_CLAIMED_AT),
             $this->log(),
         );
     }

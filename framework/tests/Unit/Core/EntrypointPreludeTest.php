@@ -345,7 +345,7 @@ final class EntrypointPreludeTest extends TestCase
     }
 
     /**
-     * Supplies genesis and the current user and session changes to the real source gate, without opening a database.
+     * Supplies genesis and the current core changes to the real source gate, without opening a database.
      *
      * @throws DatabaseException When the no-op adoption pair is invalid
      */
@@ -400,6 +400,21 @@ final class EntrypointPreludeTest extends TestCase
             }
             if (file_put_contents($track . '/' . $number . '_' . $change->name . '_down.sql', $change->downSql) === false) {
                 $this->fail("Cannot write {$unit} browser time zone down source");
+            }
+        }
+        foreach (['admin_view_mode_latch' => '005', 'database_marker' => '006', 'migration_claim' => '007'] as $unit => $number) {
+            $part = new FrameworkMigrationCatalog()->part('20261109000848893922_HIL-1918_bootstrap_moments', $unit);
+            $change = new FrameworkMigrationPair(
+                $unit . '_moments',
+                FrameworkMigrationOrigin::forBodies(FrameworkMigrationOrigin::CHANGE, [$unit], [$part], $part->upSql, $part->downSql),
+                $part->upSql,
+                $part->downSql,
+            );
+            if (file_put_contents($track . '/' . $number . '_' . $change->name . '.sql', $change->upSql) === false) {
+                $this->fail("Cannot write {$unit} moment up source");
+            }
+            if (file_put_contents($track . '/' . $number . '_' . $change->name . '_down.sql', $change->downSql) === false) {
+                $this->fail("Cannot write {$unit} moment down source");
             }
         }
     }

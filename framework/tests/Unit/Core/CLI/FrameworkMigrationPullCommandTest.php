@@ -64,7 +64,7 @@ final class FrameworkMigrationPullCommandTest extends TestCase
         self::assertNull($manager->answerWithoutRunning());
         [$code, $output] = $this->capture(fn (): int => $manager->run());
         self::assertSame(ExitCode::SUCCESS, $code, $output);
-        self::assertSame(2, substr_count($output, ': created 8 files'));
+        self::assertSame(2, substr_count($output, ': created 14 files'));
         foreach (['one', 'two'] as $name) {
             $files = glob($this->track($name) . '/002_framework_install_setting*.sql');
             self::assertCount(2, $files);
@@ -88,6 +88,19 @@ final class FrameworkMigrationPullCommandTest extends TestCase
                 self::assertSame([$unit], $change->units);
                 self::assertCount(1, $change->parts);
                 self::assertSame('20261022124515804554_HIL-1582_browser_time_zones/' . $unit, $change->parts[0]->key());
+            }
+            foreach ([
+                '006_framework_change_b6f9ace5d003c5e5a222f56631950869f18630a9d7c408f6d5824baca0ff84a6' => 'admin_view_mode_latch',
+                '007_framework_change_28592ca92f7cd14e890e1cf6687a6d1b07d42cfe000870332b705fb759a28d55' => 'database_marker',
+                '008_framework_change_a21d019f0c9b7985932ee44d24d39c6ab3be9fbb784b00f8b7914ba04682543b' => 'migration_claim',
+            ] as $stem => $unit) {
+                $changes = glob($this->track($name) . '/' . $stem . '*.sql');
+                self::assertCount(2, $changes);
+                $change = FrameworkMigrationOrigin::parsePair(file_get_contents($changes[0]), file_get_contents($changes[1]));
+                self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+                self::assertSame([$unit], $change->units);
+                self::assertCount(1, $change->parts);
+                self::assertSame('20261109000848893922_HIL-1918_bootstrap_moments/' . $unit, $change->parts[0]->key());
             }
         }
         [$repeat, $repeatOutput] = $this->capture(fn (): int => $manager->run());

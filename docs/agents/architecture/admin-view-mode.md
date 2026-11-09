@@ -92,6 +92,13 @@ change the body of that question, not the mode around it.
   ([../orm/migrations.md](../orm/migrations.md)). A production node that
   starts with the mode off and finds neither half writes both, with a WARNING
   that the mode is closed on the installation for good.
+- The file format is version `2`; `closedAt` is a signed integer of Unix epoch
+  milliseconds. Only an absent file reads as no latch. Version 1, an unknown
+  version, malformed or incomplete JSON, and an unreadable file all remain a
+  latch; the reader supplies the current environment and node with
+  `TimeHelper::nowMs()`, so an old or invalid file cannot open the mode. When a
+  valid half survives and its counterpart is missing, startup copies the
+  recorded `closedAt` unchanged, without rescaling it.
 - A file and a row, because each alone can be lost by an ordinary operation: a
   restore from an old archive can take the row (the table is replayed as the
   archive had it, or left alone when the archive does not carry it), and a

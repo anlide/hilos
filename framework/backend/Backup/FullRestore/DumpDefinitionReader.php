@@ -101,9 +101,10 @@ final class DumpDefinitionReader
         if ($table === MigrationHistory::TABLE && !in_array(strtoupper($type->value), ['INT', 'INTEGER', 'TINYINT'], true)) {
             throw new RestoreFailedException('Unsupported migration column type');
         }
-        if ($table === DatabaseMarker::TABLE && strtoupper($type->value) !== match ($column) {
-            'id' => 'TINYINT', 'marker' => 'CHAR', 'written_by' => 'VARCHAR', 'written_at' => 'DATETIME', default => null,
-        }) {
+        if ($table === DatabaseMarker::TABLE && !in_array(strtoupper($type->value), match ($column) {
+            'id' => ['TINYINT'], 'marker' => ['CHAR'], 'written_by' => ['VARCHAR'],
+            'written_at' => ['DATETIME', 'BIGINT'], default => [],
+        }, true)) {
             throw new RestoreFailedException('Unsupported database marker column type');
         }
         if ($cursor->is('(')) {
@@ -118,6 +119,10 @@ final class DumpDefinitionReader
             $cursor->takeIf('PRECISION');
         }
         while (!$cursor->ended()) {
+            if ($table === DatabaseMarker::TABLE && $column === 'written_at'
+                && ($cursor->is('UNSIGNED') || $cursor->is('ZEROFILL'))) {
+                throw new RestoreFailedException('Database marker moment must be signed');
+            }
             if ($cursor->takeIf('UNSIGNED') || $cursor->takeIf('SIGNED') || $cursor->takeIf('ZEROFILL')
                 || $cursor->takeIf('NULL') || $cursor->takeIf('AUTO_INCREMENT') || $cursor->takeIf('BINARY')
                 || $cursor->takeIf('INVISIBLE') || $cursor->takeIf('VISIBLE')) {

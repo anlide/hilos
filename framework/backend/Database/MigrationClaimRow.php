@@ -11,11 +11,11 @@ final readonly class MigrationClaimRow
 {
     /**
      * @param string $holder Name of the process holding the claim
-     * @param string $claimedAt When it took the claim, by the database server's clock; printed, never compared
+     * @param int $claimedAt Unix epoch milliseconds; printed, never compared
      */
     public function __construct(
         public string $holder,
-        public string $claimedAt,
+        public int $claimedAt,
     ) {
     }
 }

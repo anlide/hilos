@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace Hilos\Database;
 
 use Closure;
+use DateTimeImmutable;
+use DateTimeZone;
+use Hilos\Constants\TimeConstants;
 use Hilos\Backup\BackupRestorer;
 use Hilos\Database\Exception\SqlRuntime\DeadlockDetectedException;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Exception\SqlRuntime\TableNotFoundException;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 
 /**
@@ -82,8 +86,8 @@ final class DatabaseMarker
             try {
                 self::onPrimary(static function () use ($marker, $writtenBy): void {
                     Database::sql(
-                        'INSERT INTO `' . self::TABLE . '` (`id`, `marker`, `written_by`, `written_at`) VALUES (?, ?, ?, NOW())',
-                        [self::ROW_ID, $marker, $writtenBy],
+                        'INSERT INTO `' . self::TABLE . '` (`id`, `marker`, `written_by`, `written_at`) VALUES (?, ?, ?, ?)',
+                        [self::ROW_ID, $marker, $writtenBy, TimeHelper::nowMs()],
                     );
                 });
 
@@ -127,7 +131,7 @@ final class DatabaseMarker
 
         return $row === null
             ? null
-            : new DatabaseMarkerRow((string)$row['marker'], (string)$row['written_by'], (string)$row['written_at']);
+            : new DatabaseMarkerRow((string)$row['marker'], (string)$row['written_by'], self::readWrittenAt($row['written_at']));
     }
 
     /**
@@ -173,6 +177,26 @@ final class DatabaseMarker
         $config = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
 
         return "database '{$config->database}' on {$config->host}:{$config->port}";
+    }
+
+    /**
+     * Reads the historical DATETIME boundary before a restore migrates its target.
+     *
+     * @param int|string $value Stored milliseconds or a legacy UTC SQL datetime
+     * @return int Unix epoch milliseconds
+     * @throws DatabaseException When the legacy moment cannot be parsed
+     */
+    private static function readWrittenAt(int|string $value): int
+    {
+        if (is_int($value) || preg_match('/^-?[0-9]+$/D', $value) === 1) {
+            return (int)$value;
+        }
+        $moment = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $value, new DateTimeZone(TimeConstants::UTC_TIME_ZONE));
+        if ($moment === false || $moment->format('Y-m-d H:i:s') !== $value) {
+            throw new DatabaseException('Invalid legacy database marker moment');
+        }
+
+        return $moment->getTimestamp() * TimeConstants::MS_PER_SECOND;
     }
 
     /**

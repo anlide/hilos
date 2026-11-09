@@ -407,6 +407,17 @@ final class FrameworkMigrationStartupGuardTest extends TestCase
                 [$part],
             ));
         }
+        foreach (['admin_view_mode_latch' => '007', 'database_marker' => '008', 'migration_claim' => '009'] as $unit => $number) {
+            $part = new FrameworkMigrationCatalog()->part('20261109000848893922_HIL-1918_bootstrap_moments', $unit);
+            $this->writePair($number . '_' . $unit . '_moments.sql', $this->pair(
+                $unit . '_moments',
+                FrameworkMigrationOrigin::CHANGE,
+                [$unit],
+                $part->upSql,
+                $part->downSql,
+                [$part],
+            ));
+        }
         $persistenceCalled = false;
         EntrypointPrelude::run(StartupCoreHilos::class, $this->root, static function () use (&$persistenceCalled): void {
             $persistenceCalled = true;

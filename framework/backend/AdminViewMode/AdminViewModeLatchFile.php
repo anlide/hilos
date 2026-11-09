@@ -11,6 +11,7 @@ use Hilos\Fs\Exception\FileReadException;
 use Hilos\Fs\Exception\FileWriteException;
 use Hilos\Fs\FsPath;
 use Hilos\Log\LogRootOwnerMarker;
+use Hilos\Utils\Helpers\TimeHelper;
 use JsonException;
 
 /**
@@ -49,11 +50,11 @@ final class AdminViewModeLatchFile
     /** Key of the record under which the node that closed the mode is carried. */
     public const string KEY_NODE = 'node';
 
-    /** Key of the record under which the Unix time the mode was closed at is carried. */
+    /** Key of the record under which the Unix epoch milliseconds the mode was closed at is carried. */
     public const string KEY_CLOSED_AT = 'closedAt';
 
     /** Shape of the file this build writes; any other shape still reads as a latch. */
-    private const int FORMAT_VERSION = 1;
+    private const int FORMAT_VERSION = 2;
 
     /** File key carrying {@see FORMAT_VERSION}. */
     private const string KEY_VERSION = 'version';
@@ -79,14 +80,14 @@ final class AdminViewModeLatchFile
      * @param string $logRoot Absolute path of the log directory
      * @param string $environment APP_ENV of the process that is asking
      * @param string $node CLUSTER_NODE_ID of the process that is asking
-     * @return ?array{environment: string, node: string, closedAt: int} Latch record, or null when no file is there
+     * @return ?array{environment: string, node: string, closedAt: int} Latch record in epoch milliseconds, or null when no file is there
      */
     public static function read(string $logRoot, string $environment, string $node): ?array
     {
         $unreadable = [
             self::KEY_ENVIRONMENT => $environment,
             self::KEY_NODE => $node,
-            self::KEY_CLOSED_AT => time(),
+            self::KEY_CLOSED_AT => TimeHelper::nowMs(),
         ];
 
         try {
@@ -130,7 +131,7 @@ final class AdminViewModeLatchFile
      * @param string $logRoot Absolute path of the log directory
      * @param string $environment APP_ENV of the installation the mode was closed on
      * @param string $node CLUSTER_NODE_ID of the node that closed it
-     * @param int $closedAt Unix time the mode was closed at
+     * @param int $closedAt Unix epoch milliseconds the mode was closed at
      * @throws FileMoveException When the written latch cannot be renamed over its final name
      * @throws FileWriteException When the latch cannot be written into the log directory
      * @throws JsonException From {@see json_encode()} with {@see JSON_THROW_ON_ERROR}

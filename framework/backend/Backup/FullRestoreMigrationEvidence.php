@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Hilos\Backup;
 
 use Hilos\Backup\Exception\RestoreFailedException;
+use Hilos\Backup\FullRestore\BootstrapMigrationProof;
 use Hilos\Backup\FullRestore\MigrationBinding;
 use Hilos\Backup\FullRestore\MigrationFacts;
+use Hilos\Backup\FullRestore\MigrationOperationKind;
 use Hilos\Backup\FullRestore\MigrationOperationReader;
 use Hilos\Backup\FullRestore\MigrationStep;
 use Hilos\Backup\FullRestore\MigrationTargetEvidence;
@@ -54,17 +56,7 @@ final readonly class FullRestoreMigrationEvidence
                     $binding->source->dump->migrationHistory, $histories[$sourceIndex], $track, $target->connection->migrationIndex,
                     $binding->source->connection->migrationIndex,
                 );
-                $pending = null;
-                if ($facts->archiveLevel !== null) {
-                    $pending = [];
-                    foreach ($track->after($facts->archiveLevel) as $file) {
-                        foreach ($file->statements as $statementIndex => $sql) {
-                            foreach (MigrationOperationReader::read($sql, $binding->source->config->database) as $operation) {
-                                $pending[] = new MigrationStep($file, $statementIndex, $operation);
-                            }
-                        }
-                    }
-                }
+                $pending = self::readSteps($track, $facts->archiveLevel, $binding->source->config->database);
                 $evidence[$index] = new MigrationTargetEvidence($binding, $facts, $pending);
             }
             return new self($track, $evidence);
@@ -88,9 +80,39 @@ final readonly class FullRestoreMigrationEvidence
                 if (Migration::readHistory($evidence->binding->source->connection->index) != $evidence->facts->current) {
                     throw new RestoreFailedException('The live migration history changed after full restore preparation');
                 }
+                if (self::readSteps($this->track, $evidence->facts->archiveLevel, $evidence->binding->source->config->database)
+                    != $evidence->pending) {
+                    throw new RestoreFailedException('The UP effect proof changed after full restore preparation');
+                }
             }
         } catch (DatabaseException | RestoreFailedException $failure) {
             throw RestoreFailedException::beforeDestructive('Full restore migration recheck: ' . $failure->getMessage(), $failure);
         }
+    }
+
+    /**
+     * Proof and its source reads belong to preparation; the planner's compiler stays pure.
+     * Rebuilding also rechecks the DOWN body and immutable source immediately before import.
+     *
+     * @param MigrationUpTrack $track Exact UP source snapshot
+     * @param ?int $level Proven archive level, or absence requiring the complete track
+     * @param string $database Physical execution schema
+     * @return list<MigrationStep> Ordered effects, retaining opaque operations without a proof as UNKNOWN
+     * @throws RestoreFailedException When a claimed immutable bootstrap pair fails verification
+     */
+    private static function readSteps(MigrationUpTrack $track, ?int $level, string $database): array
+    {
+        $steps = [];
+        foreach ($level === null ? $track->files : $track->after($level) as $file) {
+            foreach ($file->statements as $statementIndex => $sql) {
+                foreach (MigrationOperationReader::read($sql, $database) as $operation) {
+                    if ($operation->kind === MigrationOperationKind::UNKNOWN) {
+                        $operation = BootstrapMigrationProof::read($file, $database) ?? $operation;
+                    }
+                    $steps[] = new MigrationStep($file, $statementIndex, $operation);
+                }
+            }
+        }
+        return $steps;
     }
 }

@@ -13,6 +13,7 @@ use Hilos\Database\DatabaseMarker;
 use Hilos\Database\DatabaseMarkerRow;
 use Hilos\Database\DatabaseSql;
 use Hilos\Database\Migration;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Hilos;
 
 /**
@@ -36,7 +37,7 @@ final class DatabaseMarkerIntegrationTest extends FrameworkIntegrationTestCase
     private const string OTHER_MARKER = '0123456789abcdef0123456789abcdef';
 
     /** When the other node wrote it. */
-    private const string OTHER_WRITTEN_AT = '2026-01-02 03:04:05';
+    private const int OTHER_WRITTEN_AT = 1767323045123;
 
     /**
      * Connection index no other case migrates on, so the framework tables are probed on it afresh:
@@ -65,11 +66,13 @@ final class DatabaseMarkerIntegrationTest extends FrameworkIntegrationTestCase
 
     public function testTheFirstReadWritesTheMarker(): void
     {
+        $before = TimeHelper::nowMs();
         $row = DatabaseMarker::ensure(self::NODE, $this->noPause());
 
         $this->assertMatchesRegularExpression('/^[0-9a-f]{32}$/', $row->marker);
         $this->assertSame(self::NODE, $row->writtenBy);
-        $this->assertNotSame('', $row->writtenAt);
+        $this->assertGreaterThanOrEqual($before, $row->writtenAt);
+        $this->assertLessThanOrEqual(TimeHelper::nowMs(), $row->writtenAt);
     }
 
     public function testASecondReadReturnsTheSameRow(): void
@@ -90,6 +93,28 @@ final class DatabaseMarkerIntegrationTest extends FrameworkIntegrationTestCase
         $this->assertSame(self::OTHER_MARKER, $row->marker);
         $this->assertSame(self::OTHER_NODE, $row->writtenBy);
         $this->assertSame(self::OTHER_WRITTEN_AT, $row->writtenAt);
+    }
+
+    public function testSignedMillisecondsArePreservedExactlyByPutAndCurrent(): void
+    {
+        foreach ([0, -1, 2208988800456] as $moment) {
+            $row = new DatabaseMarkerRow(self::OTHER_MARKER, self::OTHER_NODE, $moment);
+            DatabaseMarker::put($row);
+            $this->assertEquals($row, DatabaseMarker::current());
+        }
+    }
+
+    public function testHistoricalDatetimeIsReadExplicitlyAsUtc(): void
+    {
+        Database::sql('ALTER TABLE `' . DatabaseMarker::TABLE . '` MODIFY written_at DATETIME NOT NULL');
+        try {
+            Database::sql('INSERT INTO `' . DatabaseMarker::TABLE . '` VALUES(1, ?, ?, ?)',
+                [self::OTHER_MARKER, self::OTHER_NODE, '2040-01-01 00:00:00']);
+            $this->assertSame(2208988800000, DatabaseMarker::current()?->writtenAt);
+        } finally {
+            DatabaseMarker::clear();
+            Database::sql('ALTER TABLE `' . DatabaseMarker::TABLE . '` MODIFY written_at BIGINT NOT NULL');
+        }
     }
 
     public function testNoRowReadsAsNoMarker(): void

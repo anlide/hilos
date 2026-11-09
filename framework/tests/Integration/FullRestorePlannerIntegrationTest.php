@@ -122,6 +122,25 @@ final class FullRestorePlannerIntegrationTest extends FrameworkIntegrationTestCa
         $this->assertSame(7, Database::getCurrentIndex());
     }
 
+    /** Numeric archive markers are admitted and omitted while the target's exact marker remains pinned. */
+    public function testNumericArchiveMarkerKeepsTheTargetsMillisecondIdentity(): void
+    {
+        $marker = $this->jsonMarker();
+        FsPath::write($this->root . '/db-0.sql',
+            "CREATE TABLE migration (`index` INT PRIMARY KEY, failed TINYINT NOT NULL);\n"
+            . "INSERT INTO migration VALUES(1,0);\n"
+            . "CREATE TABLE hilos_database_marker(id TINYINT UNSIGNED NOT NULL PRIMARY KEY, marker CHAR(32) NOT NULL, "
+            . "written_by VARCHAR(255) NOT NULL, written_at BIGINT(20) NOT NULL);\n"
+            . "INSERT INTO hilos_database_marker VALUES(1,'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','archive-node',-1);\n"
+            . "-- Dump completed on 2026-01-01 00:00:00\n");
+        $inputs = $this->inputs();
+        $this->assertEquals($marker, $inputs->marker);
+        $planner = FullRestorePlanner::prepare($inputs);
+        $planner->assertUnchanged();
+        $this->assertEquals($marker, DatabaseMarker::current());
+        $this->assertStringNotContainsString('hilos_database_marker', FsPath::read($inputs->targets[0]->sqlPath));
+    }
+
     /** The real Chat UP110 only removes archive data during ordinary UP, with no preparatory DROP. */
     public function testChatModerationRemovalReplaysItsUnchangedMigration(): void
     {
@@ -575,8 +594,8 @@ final class FullRestorePlannerIntegrationTest extends FrameworkIntegrationTestCa
     private function jsonMarker(): DatabaseMarkerRow
     {
         Database::sql('CREATE TABLE ' . DatabaseMarker::TABLE . ' (id TINYINT UNSIGNED PRIMARY KEY, '
-            . 'marker CHAR(32) NOT NULL, written_by VARCHAR(128) NOT NULL, written_at DATETIME NOT NULL)');
-        $marker = new DatabaseMarkerRow('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'restore-json-proof', '2026-01-01 00:00:00');
+            . 'marker CHAR(32) NOT NULL, written_by VARCHAR(128) NOT NULL, written_at BIGINT NOT NULL)');
+        $marker = new DatabaseMarkerRow('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'restore-json-proof', 1767225600123);
         DatabaseMarker::put($marker);
         return $marker;
     }

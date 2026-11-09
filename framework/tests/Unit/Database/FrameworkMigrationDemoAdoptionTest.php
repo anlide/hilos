@@ -306,6 +306,29 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
             self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
             $origins[] = $install;
+            $bootstrapIndices = [119, 77, 77, 62, 62, 64];
+            $bootstrapParts = [
+                'admin_view_mode_latch' => 'b6f9ace5d003c5e5a222f56631950869f18630a9d7c408f6d5824baca0ff84a6',
+                'database_marker' => '28592ca92f7cd14e890e1cf6687a6d1b07d42cfe000870332b705fb759a28d55',
+                'migration_claim' => 'a21d019f0c9b7985932ee44d24d39c6ab3be9fbb784b00f8b7914ba04682543b',
+            ];
+            foreach (array_keys($bootstrapParts) as $offset => $key) {
+                $base = $project->root . '/' . sprintf('%03d', $bootstrapIndices[$index] + $offset)
+                    . '_framework_change_' . $bootstrapParts[$key];
+                $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+                self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+                self::assertSame([$key], $change->units);
+                self::assertCount(1, $change->parts);
+                self::assertSame('20261109000848893922_HIL-1918_bootstrap_moments/' . $key, $change->parts[0]->key());
+                $source = $catalog->part($change->parts[0]->changeId, $key);
+                self::assertFalse($source->introducesUnit);
+                self::assertSame([], $source->requires);
+                self::assertNull($source->afterStubUpSha256);
+                self::assertNull($source->afterStubDownSha256);
+                self::assertNull($schema->unit($key)->upPath);
+                self::assertNull($schema->unit($key)->downPath);
+                $origins[] = $change;
+            }
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);

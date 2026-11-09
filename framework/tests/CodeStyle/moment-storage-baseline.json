@@ -10,20 +10,6 @@
         },
         {
             "rule": "MOMENT-WRITE",
-            "subject": "[\"source\",\"framework/backend/Database/MigrationClaim.php\",\"Hilos\\\\Database\\\\MigrationClaim::take\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Schema\\\\\\\\FrameworkTablesWithoutEntity\\\",\\\"hilos_migration_claim\\\",\\\"claimed_at\\\"]\"]",
-            "actual": "2dd26e67246feb0e24ae4ddc94197405c5097f875a199c73044d780aca1eff23",
-            "count": 1,
-            "owner": "HIL-1918"
-        },
-        {
-            "rule": "MOMENT-WRITE",
-            "subject": "[\"source\",\"framework/backend/Database/MigrationClaim.php\",\"Hilos\\\\Database\\\\MigrationClaim::take\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Schema\\\\\\\\FrameworkTablesWithoutEntity\\\",\\\"hilos_migration_claim\\\",\\\"claimed_at\\\"]\"]",
-            "actual": "7631d885e2bb64b68b9909ca216e1b2c637fa1032529dd855a2eb29437994f1c",
-            "count": 1,
-            "owner": "HIL-1918"
-        },
-        {
-            "rule": "MOMENT-WRITE",
             "subject": "[\"source\",\"framework/backend/Database/Object/Collection/AccountDeletions.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\AccountDeletions::request\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\AccountDeletion\\\",\\\"hilos_account_deletion\\\",\\\"requested_at\\\"]\"]",
             "actual": "bce955fc37958d58d05706caf19f29c41745ecd3c05dc68302dae53c5056937f",
             "count": 1,
@@ -1039,13 +1025,6 @@
         },
         {
             "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_admin_view_mode_latch\",\"closed_at\"]",
-            "actual": "int(10) unsigned",
-            "count": 1,
-            "owner": "HIL-1918"
-        },
-        {
-            "rule": "MOMENT-TYPE",
             "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_analytics_accept_language\",\"created_ts\"]",
             "actual": "bigint unsigned",
             "count": 1,
@@ -1288,20 +1267,6 @@
             "actual": "bigint unsigned",
             "count": 1,
             "owner": "HIL-1927"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_database_marker\",\"written_at\"]",
-            "actual": "datetime",
-            "count": 1,
-            "owner": "HIL-1918"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Schema\\\\FrameworkTablesWithoutEntity\",\"hilos_migration_claim\",\"claimed_at\"]",
-            "actual": "datetime",
-            "count": 1,
-            "owner": "HIL-1918"
         }
     ]
 }

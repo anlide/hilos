@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Backup;
 
+use DateTimeImmutable;
+use DateTimeZone;
+use Hilos\Constants\TimeConstants;
 use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Backup\FullRestore\ByteRange;
 use Hilos\Backup\FullRestore\Dump;
@@ -439,12 +442,43 @@ final class FullRestoreDumpReader
         if ($this->markerRowSeen || $this->unsignedInteger($values[array_search('id', $columns, true)]) !== DatabaseMarker::ROW_ID) {
             throw new RestoreFailedException('Contradictory database marker data in full dump');
         }
-        foreach (array_slice(self::MARKER_COLUMNS, 1) as $column) {
+        foreach (['marker', 'written_by'] as $column) {
             if ($values[array_search($column, $columns, true)]->kind !== SqlToken::STRING) {
                 throw new RestoreFailedException('Unsupported database marker data in full dump');
             }
         }
+        $moment = $values[array_search('written_at', $columns, true)];
+        if ($moment->kind === SqlToken::STRING) {
+            if (str_contains($moment->value, "\0")) {
+                throw new RestoreFailedException('Invalid legacy database marker moment in full dump');
+            }
+            $parsed = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $moment->value, new DateTimeZone(TimeConstants::UTC_TIME_ZONE));
+            if ($parsed === false || $parsed->format('Y-m-d H:i:s') !== $moment->value) {
+                throw new RestoreFailedException('Invalid legacy database marker moment in full dump');
+            }
+        } else {
+            $this->signedMarkerInteger($moment);
+        }
         $this->markerRowSeen = true;
+    }
+
+    /**
+     * @param SqlToken $token Explicit signed decimal epoch-millisecond literal
+     * @return int Admitted int64 value, checked before conversion
+     * @throws RestoreFailedException When the marker moment is not a signed integer or exceeds int64
+     */
+    private function signedMarkerInteger(SqlToken $token): int
+    {
+        if (!$token->complete || $token->kind !== SqlToken::WORD || preg_match('/^[+-]?[0-9]+$/D', $token->value) !== 1) {
+            throw new RestoreFailedException('Unsupported database marker moment syntax in full dump');
+        }
+        $digits = ltrim(ltrim($token->value, '+-'), '0');
+        $limit = str_starts_with($token->value, '-') ? substr((string)PHP_INT_MIN, 1) : (string)PHP_INT_MAX;
+        if (strlen($digits) > strlen($limit) || (strlen($digits) === strlen($limit) && strcmp($digits, $limit) > 0)) {
+            throw new RestoreFailedException('Unsupported database marker moment range in full dump');
+        }
+
+        return (int)$token->value;
     }
 
     /**

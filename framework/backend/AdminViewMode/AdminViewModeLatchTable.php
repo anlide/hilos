@@ -35,7 +35,7 @@ final class AdminViewModeLatchTable
     public const int ROW_ID = 1;
 
     /**
-     * @return ?array{environment: string, node: string, closedAt: int} Latch record, or null when no row is there
+     * @return ?array{environment: string, node: string, closedAt: int} Latch record in epoch milliseconds, or null when no row is there
      * @throws DatabaseException When the primary connection or the latch table cannot be read
      */
     public static function read(): ?array
@@ -67,7 +67,7 @@ final class AdminViewModeLatchTable
      *
      * @param string $environment APP_ENV of the installation the mode was closed on
      * @param string $node CLUSTER_NODE_ID of the node that closed it
-     * @param int $closedAt Unix time the mode was closed at
+     * @param int $closedAt Unix epoch milliseconds the mode was closed at
      * @throws DatabaseException When the primary connection or the latch table cannot be written
      */
     public static function close(string $environment, string $node, int $closedAt): void

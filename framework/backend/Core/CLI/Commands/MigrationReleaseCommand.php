@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
+use Hilos\Utils\Helpers\UtcMoment;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Database\Database;
@@ -124,7 +125,7 @@ HELP;
 
         $claim = MigrationClaim::current();
         if ($claim !== null && $claim->holder === $holder && MigrationClaim::releaseHeldBy($holder)) {
-            echo "✓ Released the schema rollout claim held by {$holder} since {$claim->claimedAt}\n\n";
+            echo "✓ Released the schema rollout claim held by {$holder} since " . UtcMoment::fromMs($claim->claimedAt) . "\n\n";
             return ExitCode::SUCCESS;
         }
 
@@ -144,7 +145,8 @@ HELP;
             return ExitCode::SUCCESS;
         }
 
-        echo "✗ The schema rollout claim is held by {$claim->holder} since {$claim->claimedAt}, not by {$holder}\n\n";
+        echo "✗ The schema rollout claim is held by {$claim->holder} since "
+            . UtcMoment::fromMs($claim->claimedAt) . ", not by {$holder}\n\n";
         return ExitCode::ERROR;
     }
 }

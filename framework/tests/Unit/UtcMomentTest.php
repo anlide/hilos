@@ -29,6 +29,43 @@ final class UtcMomentTest extends TestCase
         }
     }
 
+    /**
+     * @param int $milliseconds Unix epoch milliseconds
+     * @param string $expected Exact UTC instant with six fractional digits
+     */
+    #[DataProvider('millisecondMoments')]
+    public function testFromMsPreservesTheInstantAndMilliseconds(int $milliseconds, string $expected): void
+    {
+        $this->assertSame($expected, UtcMoment::fromMs($milliseconds));
+    }
+
+    /** @return array<string, array{int, string}> Integer millisecond moments and exact UTC forms */
+    public static function millisecondMoments(): array
+    {
+        return [
+            'nonzero millisecond remainder' => [1_767_225_600_123, '2026-01-01T00:00:00.123000Z'],
+            'epoch' => [0, '1970-01-01T00:00:00.000000Z'],
+            'one millisecond before epoch' => [-1, '1969-12-31T23:59:59.999000Z'],
+            'negative whole second' => [-1000, '1969-12-31T23:59:59.000000Z'],
+            'fraction after 2038' => [2_208_988_800_987, '2040-01-01T00:00:00.987000Z'],
+        ];
+    }
+
+    /** Keeps UTC formatting independent of the process zone and leaves that zone unchanged. */
+    public function testFromMsDoesNotDependOnOrChangeTheProcessZone(): void
+    {
+        $previousZone = date_default_timezone_get();
+        try {
+            foreach (['Pacific/Honolulu', 'Asia/Kathmandu'] as $zone) {
+                date_default_timezone_set($zone);
+                $this->assertSame('2026-01-01T00:00:00.123000Z', UtcMoment::fromMs(1_767_225_600_123));
+                $this->assertSame($zone, date_default_timezone_get());
+            }
+        } finally {
+            date_default_timezone_set($previousZone);
+        }
+    }
+
     #[DataProvider('zonedMoments')]
     public function testNormalizePreservesTheInstantAndFraction(string $input, string $expected): void
     {

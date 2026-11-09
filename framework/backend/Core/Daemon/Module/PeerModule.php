@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon\Module;
 
+use Hilos\Utils\Helpers\UtcMoment;
 use Closure;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
@@ -135,7 +136,10 @@ final class PeerModule implements DaemonModule
         $nodeId = Hilos::$cluster->identity()->nodeId;
         $database = DatabaseMarker::ensure($nodeId);
         $place = DatabaseMarker::place();
-        Logger::info("Database marker {$database->marker} written by {$database->writtenBy} at {$database->writtenAt}, read from {$place}");
+        Logger::info(
+            "Database marker {$database->marker} written by {$database->writtenBy} at "
+            . UtcMoment::fromMs($database->writtenAt) . ", read from {$place}",
+        );
         $values = [PeerMarkers::DATABASE => $database->marker];
         $places = [PeerMarkers::DATABASE => $place];
 

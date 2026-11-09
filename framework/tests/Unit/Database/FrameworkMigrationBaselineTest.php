@@ -34,6 +34,7 @@ final class FrameworkMigrationBaselineTest extends TestCase
 {
     private const string TIME_ZONE = '20261021021039718057_HIL-1580_add_user_time_zone';
     private const string BROWSER_TIME_ZONES = '20261022124515804554_HIL-1582_browser_time_zones';
+    private const string BOOTSTRAP_MOMENTS = '20261109000848893922_HIL-1918_bootstrap_moments';
     private const string EARLY = '20261019120000000000_HIL-1519_early';
     private const string LATE = '20261022120000000000_HIL-1519_late';
 
@@ -108,7 +109,9 @@ final class FrameworkMigrationBaselineTest extends TestCase
             $pair->origin->units,
         );
         $this->assertSame(
-            [self::TIME_ZONE . '/user', self::BROWSER_TIME_ZONES . '/session', self::BROWSER_TIME_ZONES . '/user'],
+            [self::TIME_ZONE . '/user', self::BROWSER_TIME_ZONES . '/session', self::BROWSER_TIME_ZONES . '/user',
+                self::BOOTSTRAP_MOMENTS . '/admin_view_mode_latch', self::BOOTSTRAP_MOMENTS . '/database_marker',
+                self::BOOTSTRAP_MOMENTS . '/migration_claim'],
             array_map(static fn (FrameworkMigrationPart $part): string => $part->key(), $pair->origin->parts),
         );
         $up = $this->stub('user') . "\n" . $this->stub('session');
@@ -274,7 +277,8 @@ final class FrameworkMigrationBaselineTest extends TestCase
         $baseline = $this->sqlSnapshot($project);
         $origin = $this->installer()->readTrack($project)[0]->origin;
         $this->assertSame(
-            [self::TIME_ZONE, self::LATE, self::BROWSER_TIME_ZONES, self::BROWSER_TIME_ZONES],
+            [self::TIME_ZONE, self::LATE, self::BROWSER_TIME_ZONES, self::BROWSER_TIME_ZONES,
+                self::BOOTSTRAP_MOMENTS, self::BOOTSTRAP_MOMENTS, self::BOOTSTRAP_MOMENTS],
             array_column($origin->parts, 'changeId'),
         );
         $this->assertStringNotContainsString('ALTER session', $this->body($baseline['001_framework_baseline.sql']));

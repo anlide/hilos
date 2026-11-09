@@ -1,0 +1,30 @@
+{
+    "format": 1,
+    "id": "20261109000848893922_HIL-1918_bootstrap_moments",
+    "parts": [
+        {
+            "unit": "migration_claim",
+            "up": "migration_claim.sql",
+            "down": "migration_claim_down.sql",
+            "requires": [],
+            "afterStubUpSha256": null,
+            "afterStubDownSha256": null
+        },
+        {
+            "unit": "admin_view_mode_latch",
+            "up": "admin_view_mode_latch.sql",
+            "down": "admin_view_mode_latch_down.sql",
+            "requires": [],
+            "afterStubUpSha256": null,
+            "afterStubDownSha256": null
+        },
+        {
+            "unit": "database_marker",
+            "up": "database_marker.sql",
+            "down": "database_marker_down.sql",
+            "requires": [],
+            "afterStubUpSha256": null,
+            "afterStubDownSha256": null
+        }
+    ]
+}

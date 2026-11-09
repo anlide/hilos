@@ -142,7 +142,7 @@ class Migration
             'CREATE TABLE IF NOT EXISTS `' . MigrationClaim::TABLE . '` (
                 `id` tinyint(3) UNSIGNED NOT NULL,
                 `holder` varchar(255) NOT NULL,
-                `claimed_at` datetime NOT NULL,
+                `claimed_at` bigint NOT NULL,
                 PRIMARY KEY (`id`)
             ) ' . DatabaseConnectionDefaults::DDL_TABLE_SUFFIX
         );
@@ -152,7 +152,7 @@ class Migration
                 `id` tinyint(3) UNSIGNED NOT NULL,
                 `environment` varchar(32) NOT NULL,
                 `node` varchar(255) NOT NULL,
-                `closed_at` int(10) UNSIGNED NOT NULL,
+                `closed_at` bigint NOT NULL,
                 PRIMARY KEY (`id`)
             ) ' . DatabaseConnectionDefaults::DDL_TABLE_SUFFIX
         );
@@ -162,7 +162,7 @@ class Migration
                 `id` tinyint(3) UNSIGNED NOT NULL,
                 `marker` char(32) NOT NULL,
                 `written_by` varchar(255) NOT NULL,
-                `written_at` datetime NOT NULL,
+                `written_at` bigint NOT NULL,
                 PRIMARY KEY (`id`)
             ) ' . DatabaseConnectionDefaults::DDL_TABLE_SUFFIX
         );

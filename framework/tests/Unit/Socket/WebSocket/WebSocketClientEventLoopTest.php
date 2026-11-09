@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Socket\WebSocket;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\EventLoop\EventLoopTimer;
@@ -102,14 +103,14 @@ final class WebSocketClientEventLoopTest extends TestCase
         $life = $this->life($client);
         $heard = self::get($life, 'lastReceivedAtMs');
         self::assertSame($client->now, $heard);
-        self::assertSame(($heard + 40000) / 1000, $timer->getDeadline());
+        self::assertSame((float) (($heard + 40000) / TimeConstants::MS_PER_SECOND), $timer->getDeadline());
         $generation = self::get($timer, 'generation');
         $client->sendFrameBinary('outgoing');
         [$other] = $this->open();
         $other->sendFrame('{"type":"other"}');
         $this->pump();
         self::assertSame($heard, self::get($life, 'lastReceivedAtMs'));
-        self::assertSame(($heard + 40000) / 1000, $timer->getDeadline());
+        self::assertSame((float) (($heard + 40000) / TimeConstants::MS_PER_SECOND), $timer->getDeadline());
         self::assertSame($generation, self::get($timer, 'generation'));
         $client->read();
         self::assertSame($heard, self::get($life, 'lastReceivedAtMs'), 'EAGAIN does not renew life');
@@ -125,7 +126,7 @@ final class WebSocketClientEventLoopTest extends TestCase
         self::set($life, 'nextPingAtMs', $now - 10000);
         self::set($life, 'nextReconcileAtMs', $now + 80000);
         $this->arm($client);
-        self::assertSame($now / 1000, $this->timer($client)->getDeadline());
+        self::assertSame((float) ($now / TimeConstants::MS_PER_SECOND), $this->timer($client)->getDeadline());
         $portions = $this->manager->portions;
         $this->loop->tick();
         self::assertSame($portions, $this->manager->portions);
@@ -133,7 +134,7 @@ final class WebSocketClientEventLoopTest extends TestCase
         $this->loop->tick();
         self::assertSame("\x89\x00", $this->bytes($peer));
         self::assertSame($now + 50000, self::get($life, 'nextPingAtMs'));
-        self::assertSame(($now + 50000) / 1000, $this->timer($client)->getDeadline());
+        self::assertSame((float) (($now + 50000) / TimeConstants::MS_PER_SECOND), $this->timer($client)->getDeadline());
         $this->pump();
         self::assertSame('', $this->bytes($peer), 'A late pass sends one ping');
         self::assertFalse($this->loop->hasReadyWork());
@@ -150,14 +151,14 @@ final class WebSocketClientEventLoopTest extends TestCase
         $this->arm($client);
         $this->pump();
         self::assertSame([true], $this->transitions());
-        self::assertSame(($now + 10000) / 1000, $this->timer($client)->getDeadline());
+        self::assertSame((float) (($now + 10000) / TimeConstants::MS_PER_SECOND), $this->timer($client)->getDeadline());
         self::assertFalse($this->loop->hasReadyWork());
         socket_write($peer, self::PONG);
         $this->pump();
         self::assertSame([false], $this->transitions());
         self::assertSame($now, self::get($life, 'lastReceivedAtMs'));
         self::assertSame($now + 20000, self::get($life, 'nextReconcileAtMs'));
-        self::assertSame(($now + 20000) / 1000, $this->timer($client)->getDeadline());
+        self::assertSame((float) (($now + 20000) / TimeConstants::MS_PER_SECOND), $this->timer($client)->getDeadline());
         self::assertFalse($this->loop->hasReadyWork());
     }
 
@@ -247,7 +248,7 @@ final class WebSocketClientEventLoopTest extends TestCase
         self::assertSame("\x81\x10{\"type\":\"first\"}", $this->bytes($peer));
         $client->sendFrame('{"type":"later"}');
         $timer = $this->timer($client);
-        self::assertSame(($origin + 1000) / 1000, $timer->getDeadline());
+        self::assertSame((float) (($origin + 1000) / TimeConstants::MS_PER_SECOND), $timer->getDeadline());
         $generation = self::get($timer, 'generation');
         $mirror = new DeliverySettingsMirror();
         $client->setDeliverySettingsMirror($mirror);
@@ -256,7 +257,7 @@ final class WebSocketClientEventLoopTest extends TestCase
         socket_write($peer, self::PONG);
         $this->pump();
         self::assertSame('', $this->bytes($peer));
-        self::assertSame(($origin + 1000) / 1000, $timer->getDeadline());
+        self::assertSame((float) (($origin + 1000) / TimeConstants::MS_PER_SECOND), $timer->getDeadline());
         self::assertSame($generation, self::get($timer, 'generation'));
         self::assertFalse($this->loop->hasReadyWork());
         // Age only the captured observation, preserving the production span and native clock origin.
@@ -267,7 +268,7 @@ final class WebSocketClientEventLoopTest extends TestCase
         self::assertSame("\x81\x10{\"type\":\"later\"}", $this->bytes($peer));
         self::assertSame($origin + 2000, $queue->getNextDueAt());
         $client->sendFrame('{"type":"after"}');
-        self::assertSame(($origin + 2000) / 1000, $timer->getDeadline());
+        self::assertSame((float) (($origin + 2000) / TimeConstants::MS_PER_SECOND), $timer->getDeadline());
     }
 
     public function testHeldCompletionCancelAndUrgentReplyScheduleOnlyTheCurrentAttempt(): void
@@ -277,12 +278,12 @@ final class WebSocketClientEventLoopTest extends TestCase
         $this->pump();
         $this->bytes($peer);
         $client->sendFrame('{"type":"waiting"}');
-        self::assertSame(($client->now + 1000) / 1000, $this->timer($client)->getDeadline());
+        self::assertSame((float) (($client->now + 1000) / TimeConstants::MS_PER_SECOND), $this->timer($client)->getDeadline());
         $client->acceptJson('{"type":"page_subscribe","page":"p"}');
         $old = $client->pendingPageSubscribe();
         $this->pump();
         self::assertSame('', $this->bytes($peer));
-        self::assertSame(($client->now + 40000) / 1000, $this->timer($client)->getDeadline());
+        self::assertSame((float) (($client->now + 40000) / TimeConstants::MS_PER_SECOND), $this->timer($client)->getDeadline());
         $client->acceptJson('{"type":"page_subscribe","page":"q"}');
         $current = $client->pendingPageSubscribe();
         $client->sendFrame('{"type":"held"}');
@@ -504,7 +505,7 @@ final class WebSocketClientEventLoopTest extends TestCase
             $exchange->runUntil(fn(): bool => str_contains($exchange->received['dialing'], 'HTTP/1.1 101'));
             $heard = self::get($this->life($client), 'lastReceivedAtMs');
             self::assertSame($client->now, $heard);
-            self::assertSame(($heard + 40000) / 1000, $this->timer($client)->getDeadline());
+            self::assertSame((float) (($heard + 40000) / TimeConstants::MS_PER_SECOND), $this->timer($client)->getDeadline());
             $client->sendFrameBinary('final');
             $client->closeOnceWritten();
             $client->write();

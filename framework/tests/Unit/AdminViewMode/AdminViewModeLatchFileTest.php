@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\AdminViewMode;
 
 use Hilos\AdminViewMode\AdminViewModeLatchFile;
+use Hilos\Utils\Helpers\TimeHelper;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -23,7 +25,7 @@ final class AdminViewModeLatchFileTest extends TestCase
     private const string NODE = 'node-a';
 
     /** @var int When the fixture latch was closed: far from now, so a read of it is not "now" */
-    private const int CLOSED_AT = 1700000000;
+    private const int CLOSED_AT = 1700000000123;
 
     private string $dir = '';
 
@@ -63,6 +65,29 @@ final class AdminViewModeLatchFileTest extends TestCase
         );
     }
 
+    #[DataProvider('milliseconds')]
+    public function testVersionTwoPreservesEverySignedMoment(int $moment): void
+    {
+        AdminViewModeLatchFile::publish($this->dir, self::ENVIRONMENT, self::NODE, $moment);
+        $json = json_decode(file_get_contents(AdminViewModeLatchFile::pathIn($this->dir)), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame(2, $json['version']);
+        $this->assertSame($moment, $json['closedAt']);
+        $this->assertSame($moment, AdminViewModeLatchFile::read($this->dir, self::ENVIRONMENT, self::NODE)['closedAt']);
+    }
+
+    public static function milliseconds(): array
+    {
+        return [[1700000000123], [0], [-1], [2208988800456]];
+    }
+
+    public function testVersionOneRemainsClosedWithANewMillisecondRecord(): void
+    {
+        file_put_contents(AdminViewModeLatchFile::pathIn($this->dir), json_encode([
+            'version' => 1, 'environment' => 'staging', 'node' => 'old-node', 'closedAt' => 1700000000,
+        ], JSON_THROW_ON_ERROR));
+        $this->assertAskerClosedNow();
+    }
+
     public function testADirectoryWithNoFileHasNoLatch(): void
     {
         $this->assertNull(AdminViewModeLatchFile::read($this->dir, self::ENVIRONMENT, self::NODE));
@@ -97,42 +122,44 @@ final class AdminViewModeLatchFileTest extends TestCase
     {
         file_put_contents(AdminViewModeLatchFile::pathIn($this->dir), 'not json at all');
 
-        $this->assertAskerClosedNow(AdminViewModeLatchFile::read($this->dir, self::ENVIRONMENT, self::NODE));
+        $this->assertAskerClosedNow();
     }
 
     public function testAFileFromAFormatThisBuildDoesNotKnowIsALatch(): void
     {
         file_put_contents(AdminViewModeLatchFile::pathIn($this->dir), (string)json_encode([
-            'version' => 2,
+            'version' => 3,
             'environment' => 'staging',
             'node' => 'node-b',
             'closedAt' => self::CLOSED_AT,
         ]));
 
-        $this->assertAskerClosedNow(AdminViewModeLatchFile::read($this->dir, self::ENVIRONMENT, self::NODE));
+        $this->assertAskerClosedNow();
     }
 
     public function testAFileMissingAFieldIsALatch(): void
     {
         file_put_contents(AdminViewModeLatchFile::pathIn($this->dir), (string)json_encode([
-            'version' => 1,
+            'version' => 2,
             'environment' => 'staging',
         ]));
 
-        $this->assertAskerClosedNow(AdminViewModeLatchFile::read($this->dir, self::ENVIRONMENT, self::NODE));
+        $this->assertAskerClosedNow();
     }
 
     /**
      * An unreadable file comes back as the asking node closed now: the record the other half is
      * written back from when the row is gone.
-     *
-     * @param ?array{environment: string, node: string, closedAt: int} $latch What the read returned
      */
-    private function assertAskerClosedNow(?array $latch): void
+    private function assertAskerClosedNow(): void
     {
+        $before = TimeHelper::nowMs();
+        $latch = AdminViewModeLatchFile::read($this->dir, self::ENVIRONMENT, self::NODE);
+        $after = TimeHelper::nowMs();
         $this->assertNotNull($latch, 'A file that is there must close the mode, whatever it carries');
         $this->assertSame(self::ENVIRONMENT, $latch[AdminViewModeLatchFile::KEY_ENVIRONMENT]);
         $this->assertSame(self::NODE, $latch[AdminViewModeLatchFile::KEY_NODE]);
-        $this->assertGreaterThan(self::CLOSED_AT, $latch[AdminViewModeLatchFile::KEY_CLOSED_AT]);
+        $this->assertGreaterThanOrEqual($before, $latch[AdminViewModeLatchFile::KEY_CLOSED_AT]);
+        $this->assertLessThanOrEqual($after, $latch[AdminViewModeLatchFile::KEY_CLOSED_AT]);
     }
 }

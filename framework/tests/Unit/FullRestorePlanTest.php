@@ -270,6 +270,56 @@ SQL;
         $this->assertSame(self::completed($before), FsPath::read($source . '.staging'));
     }
 
+    /** @param string $literal Signed epoch milliseconds from a numeric dump */
+    #[DataProvider('signedMarkerMoments')]
+    public function testNumericMarkerBlockIsAdmittedAndOmitted(string $literal): void
+    {
+        $block = str_replace(['`written_at` datetime', "'2026-01-01 00:00:00'"],
+            ['`written_at` bIgInT(20) SIGNED', $literal], self::markerBlock());
+        $source = $this->source($block);
+        $dump = $this->stagePrimary($source, $source . '.staging');
+        $this->assertArrayHasKey('hilos_database_marker', $dump->objects);
+        $this->assertStringNotContainsString('hilos_database_marker', FsPath::read($source . '.staging'));
+    }
+
+    /** @return list<array{string}> Exact signed values, including int64 bounds */
+    public static function signedMarkerMoments(): array
+    {
+        return [['1767225600123'], ['0'], ['-1'], ['2208988800456'], ['-9223372036854775808'], ['9223372036854775807']];
+    }
+
+    /** @param string $literal Malformed or overflowing moment */
+    #[DataProvider('invalidMarkerMoments')]
+    public function testInvalidNumericMarkerMomentIsRefused(string $literal): void
+    {
+        $block = str_replace(['`written_at` datetime', "'2026-01-01 00:00:00'"],
+            ['`written_at` BIGINT', $literal], self::markerBlock());
+        $this->expectException(RestoreFailedException::class);
+        $this->read($this->source($block));
+    }
+
+    /** @return list<array{string}> Invalid scalar, expression and int64 overflow */
+    public static function invalidMarkerMoments(): array
+    {
+        return [['NULL'], ['1.5'], ['1+1'], ['9223372036854775808'], ['-9223372036854775809'],
+            ["'1700000000000'"], ["'2026-01-01 00:00:00\\0'"]];
+    }
+
+    /** @param string $modifier Unsigned representations must not enter the signed marker contract */
+    #[DataProvider('unsignedMarkerTypes')]
+    public function testUnsignedMarkerMomentTypeIsRefused(string $modifier): void
+    {
+        $block = str_replace('`written_at` datetime', '`written_at` BIGINT(20) ' . $modifier, self::markerBlock());
+        $this->expectException(RestoreFailedException::class);
+        $this->read($this->source($block));
+    }
+
+    /** @return list<array{string}> Unsigned BIGINT spellings */
+    public static function unsignedMarkerTypes(): array
+    {
+        return [['UNSIGNED'], ['ZEROFILL']];
+    }
+
     /** Old dumps carrying no database marker preserve every source byte in staging. */
     public function testStagingWithoutMarkerIsAnExactCopy(): void
     {

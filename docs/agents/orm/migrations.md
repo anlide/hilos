@@ -181,6 +181,51 @@ Account separately for the three bootstrap moments in migration claim,
 admin-view latch and database marker: initialization owns their DDL without
 stubs, and the existing bootstrap change parts use null stub hashes.
 
+`Migration::initialize()` creates each bootstrap table only when absent, with
+the three moment columns as signed `BIGINT`; it does not alter an existing
+table. The immutable bootstrap change checks each physical column type and
+converts a supported legacy form through a named staging column. An existing
+signed `BIGINT` is left at its current scale, and an unsupported type is
+refused. Projects receive the generated up/down pairs through the usual
+`db:framework:pull` path and apply them with their project migrations.
+
+FULL restore proves these three moment parts through the same immutable
+catalog's complete up/down pair verification and bootstrap ownership. Only
+their exact change identities receive a bootstrap-only alteration effect;
+arbitrary compound SQL remains opaque. Preparation and the final pre-import
+recheck both verify the counterpart and immutable source. This proof grants
+no cleanup lineage and leaves physical catalog and admission checks in place.
+The parts can UPDATE their bootstrap owner, so source identity alone does not
+prove their automatic effects safe. For a bootstrap alteration whose table
+survives import, the planner requires complete schema-local trigger visibility
+and refuses any trigger on that owner without interpreting its body. It also
+requires the owner's reserved staging column to be absent from the physical
+column snapshot: `__hil1918_claimed_at` for claim, `__hil1918_closed_at` for latch,
+and `__hil1918_written_at` for marker. Column names compare without case, as
+they do in SQL. An existing staging column can carry automatic FK effects even
+without triggers; neither its values nor the absence of a visible FK establish
+pristine staging. The same column snapshot must show no `ON UPDATE` auto-writer
+in `COLUMNS.EXTRA` on any column of the retained owner, with case-insensitive
+keyword matching. Updating pristine staging can otherwise change a different
+owner column and cascade into retained rows. An INSERT-only current-time
+default does not establish such an UPDATE path. No incoming FK needs to be
+visible for this conservative refusal.
+This stricter FULL preflight leaves ordinary migration and retry free to reuse
+staging. The marker always survives because its archive block is excluded;
+claim and latch tables can survive when absent from the archive or named by a
+conditional CREATE. Only a proven unconditional archive CREATE establishes
+that their old triggers, column auto-writers and staging cannot survive a
+successful import. These checks apply with known or unknown archive history
+and with no cleanup candidates. The existing physical snapshot recheck also
+rejects drift in staging, column auto-writers, triggers or visibility before
+the first destructive import.
+
+The rollout claim crosses that conversion boundary: before each write,
+`MigrationClaim` reads the physical type of `claimed_at` rather than retaining
+it across the migration. If a failed write observes that the type changed, it
+retries once using the newly observed type. Numeric reads are epoch
+milliseconds; the legacy SQL datetime read and write paths explicitly use UTC.
+
 Old stand data may be recreated without a preserving conversion. This does not
 permit rewriting genesis, published changes, old project SQL or their hashes;
 the immutable delivery and `introducesUnit` rules below still apply.

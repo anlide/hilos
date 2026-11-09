@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Backup;
 
+use Hilos\AdminViewMode\AdminViewModeLatchTable;
 use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Backup\FullRestore\DependencyProof;
 use Hilos\Backup\FullRestore\DumpObjectType;
@@ -20,6 +21,8 @@ use Hilos\Backup\FullRestore\TableDrop;
 use Hilos\Backup\FullRestore\TableName;
 use Hilos\Backup\FullRestore\TableStructure;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\DatabaseMarker;
+use Hilos\Database\MigrationClaim;
 use Hilos\Database\MigrationUpTrack;
 
 /**
@@ -117,7 +120,7 @@ final readonly class FullRestorePlanner
             $group = array_filter($evidence,
                 static fn (MigrationTargetEvidence $target): bool => $target->binding->source->connection->index === $sourceIndex);
             try {
-                array_push($candidates, ...self::group($group, $track, $schema));
+                array_push($candidates, ...self::group($group, $schema));
             } catch (RestoreFailedException $failure) {
                 throw RestoreFailedException::beforeDestructive("Full restore planner, connection {$sourceIndex}: "
                     . $failure->getMessage(), $failure);
@@ -128,12 +131,11 @@ final readonly class FullRestorePlanner
 
     /**
      * @param array<int, MigrationTargetEvidence> $group Destinations sharing one physical execution source
-     * @param MigrationUpTrack $track Complete source files for the unknown-level compatibility path
      * @param FullRestoreSchemaSnapshot $schema Physical catalog
      * @return list<TableDrop> Proven candidates before dependency sorting
      * @throws RestoreFailedException When lineage or replay is ambiguous
      */
-    private static function group(array $group, MigrationUpTrack $track, FullRestoreSchemaSnapshot $schema): array
+    private static function group(array $group, FullRestoreSchemaSnapshot $schema): array
     {
         $sourceFacts = reset($group);
         $pending = $sourceFacts->pending;
@@ -153,30 +155,31 @@ final readonly class FullRestorePlanner
                 }
             }
         }
+        foreach ($pending as $step) {
+            self::bootstrapEffects($step->operation, $targets, $schema);
+        }
         $sourceIndex = $sourceFacts->binding->source->connection->index;
         $metadata = $schema->servers[$schema->schemas[$sourceIndex]->server];
         $sqlMode = $schema->schemas[$sourceIndex]->structureDefaults->sqlMode;
-        if ($pending === null) {
-            foreach ($track->files as $file) {
-                foreach ($file->statements as $sql) {
-                    foreach (MigrationOperationReader::read($sql, $sourceFacts->binding->source->config->database) as $operation) {
-                        if ($operation->kind === MigrationOperationKind::UNKNOWN) {
-                            throw new RestoreFailedException('Opaque UP operation in ' . basename($file->path));
-                        }
-                        DependencyProof::assertReplayCallsSupported($operation, $sqlMode, $metadata, basename($file->path));
-                        if ($operation->kind === MigrationOperationKind::DATA) {
-                            foreach ($operation->references as $table) {
-                                self::dataScope($table, $targets);
-                            }
-                        } elseif ($operation->kind === MigrationOperationKind::DROP_TRIGGER) {
-                            self::dropTrigger($operation, self::archive($targets, $schema), $targets, $schema);
-                        }
-                        if (($operation->table !== null && isset($extra[self::key($operation->table)]))
-                            || ($operation->renamedTo !== null && isset($extra[self::key($operation->renamedTo)]))
-                            || array_any($operation->references, static fn (TableName $table): bool => isset($extra[self::key($table)]))) {
-                            throw new RestoreFailedException('An unknown archive level overlaps target-only objects; cleanup is not proven');
-                        }
+        if ($sourceFacts->facts->archiveLevel === null) {
+            foreach ($pending as $step) {
+                $file = $step->file;
+                $operation = $step->operation;
+                if ($operation->kind === MigrationOperationKind::UNKNOWN) {
+                    throw new RestoreFailedException('Opaque UP operation in ' . basename($file->path));
+                }
+                DependencyProof::assertReplayCallsSupported($operation, $sqlMode, $metadata, basename($file->path));
+                if ($operation->kind === MigrationOperationKind::DATA) {
+                    foreach ($operation->references as $table) {
+                        self::dataScope($table, $targets);
                     }
+                } elseif ($operation->kind === MigrationOperationKind::DROP_TRIGGER) {
+                    self::dropTrigger($operation, self::archive($targets, $schema), $targets, $schema);
+                }
+                if (($operation->table !== null && isset($extra[self::key($operation->table)]))
+                    || ($operation->renamedTo !== null && isset($extra[self::key($operation->renamedTo)]))
+                    || array_any($operation->references, static fn (TableName $table): bool => isset($extra[self::key($table)]))) {
+                    throw new RestoreFailedException('An unknown archive level overlaps target-only objects; cleanup is not proven');
                 }
             }
             return [];
@@ -272,6 +275,64 @@ final readonly class FullRestorePlanner
             }
         }
         return $objects;
+    }
+
+    /**
+     * Canonical bootstrap alterations can UPDATE their owner. Marker blocks never execute;
+     * other owners lose old automatic writers and staging only with unconditional archive replacement.
+     * Retained owners must have neither staging nor column ON UPDATE writers: either can cascade through FKs.
+     * Trigger programs and incoming FK visibility do not establish safety for these automatic effects.
+     *
+     * @param MigrationOperation $operation Source effect before either replay branch
+     * @param array<string, PreparedTarget> $targets Destinations of this execution source
+     * @param FullRestoreSchemaSnapshot $schema Existing schema-local column, trigger and grant evidence
+     * @throws RestoreFailedException When automatic effects on a retained bootstrap owner are unproven
+     */
+    private static function bootstrapEffects(MigrationOperation $operation, array $targets, FullRestoreSchemaSnapshot $schema): void
+    {
+        $table = $operation->table;
+        if ($operation->kind !== MigrationOperationKind::ALTER_TABLE || $table === null || !$table->isBootstrap()) {
+            return;
+        }
+        $target = $targets[$table->database] ?? null;
+        if ($target === null) {
+            throw new RestoreFailedException("Object {$table->database}.{$table->table}: bootstrap UP is outside prepared destinations");
+        }
+        if ($table->table !== DatabaseMarker::TABLE && isset($target->dump->objects[$table->table])) {
+            $creation = MigrationOperationReader::read(rtrim($target->dump->objects[$table->table]->createSql, "; \t\r\n"), $table->database)[0];
+            if ($creation->kind === MigrationOperationKind::CREATE_TABLE && !$creation->ifNotExists) {
+                return;
+            }
+        }
+        $metadata = $schema->schemas[$target->connection->index];
+        $stagingColumn = match ($table->table) {
+            MigrationClaim::TABLE => '__hil1918_claimed_at',
+            AdminViewModeLatchTable::TABLE => '__hil1918_closed_at',
+            DatabaseMarker::TABLE => '__hil1918_written_at',
+            default => null,
+        };
+        foreach ($metadata->columns as $column) {
+            if ($column['TABLE_SCHEMA'] !== $table->database || $column['TABLE_NAME'] !== $table->table) {
+                continue;
+            }
+            if ($stagingColumn !== null && strcasecmp($column['COLUMN_NAME'], $stagingColumn) === 0) {
+                throw new RestoreFailedException("Object {$table->database}.{$table->table}: existing bootstrap staging column "
+                    . $stagingColumn . ' survives import; automatic UPDATE effects are not proven');
+            }
+            if (preg_match('/\bON\s+UPDATE\b/i', (string)$column['EXTRA']) === 1) {
+                throw new RestoreFailedException("Object {$table->database}.{$table->table}: bootstrap column "
+                    . $column['COLUMN_NAME'] . ' has automatic ON UPDATE effects that survive import');
+            }
+        }
+        if (!$metadata->completeTriggerVisibility) {
+            throw new RestoreFailedException("Object {$table->database}.{$table->table}: bootstrap trigger visibility is not proven");
+        }
+        foreach ($metadata->triggers as $trigger) {
+            if ($trigger['EVENT_OBJECT_SCHEMA'] === $table->database && $trigger['EVENT_OBJECT_TABLE'] === $table->table) {
+                throw new RestoreFailedException("Object {$table->database}.{$table->table}: bootstrap UPDATE effects are unsupported"
+                    . ' while trigger ' . $trigger['TRIGGER_NAME'] . ' survives import');
+            }
+        }
     }
 
     /**

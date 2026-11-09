@@ -5,8 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Database;
 
 use Closure;
+use DateTimeImmutable;
+use DateTimeZone;
+use Hilos\Constants\TimeConstants;
 use Hilos\Database\Exception\SqlRuntime\DeadlockDetectedException;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
+use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Utils\Helpers\UtcMoment;
 use Hilos\Utils\Logger;
 
 /**
@@ -55,10 +60,7 @@ final class MigrationClaim
         $polls = 0;
         while (true) {
             try {
-                Database::sql(
-                    'INSERT INTO `' . self::TABLE . '` (`id`, `holder`, `claimed_at`) VALUES (?, ?, NOW())',
-                    [self::CLAIM_ID, $holder->name],
-                );
+                self::writeClaim($holder, false);
 
                 return;
             } catch (DuplicateEntryException | DeadlockDetectedException) {
@@ -73,13 +75,10 @@ final class MigrationClaim
             }
 
             if ($holder->mayTakeBack && $row->holder === $holder->name) {
-                Database::sql(
-                    'UPDATE `' . self::TABLE . '` SET `claimed_at` = NOW() WHERE `id` = ? AND `holder` = ?',
-                    [self::CLAIM_ID, $holder->name],
-                );
+                self::writeClaim($holder, true);
                 if (Database::affectedRows() === 1) {
                     Logger::warning(
-                        "Taking back the schema rollout claim this node's previous start left at {$row->claimedAt}",
+                        "Taking back the schema rollout claim this node's previous start left at " . UtcMoment::fromMs($row->claimedAt),
                     );
 
                     return;
@@ -89,7 +88,9 @@ final class MigrationClaim
             }
 
             if ($polls % self::POLLS_PER_WAITING_LINE === 0) {
-                Logger::warning("Waiting for the schema rollout claim held by {$row->holder} since {$row->claimedAt}");
+                Logger::warning(
+                    "Waiting for the schema rollout claim held by {$row->holder} since " . UtcMoment::fromMs($row->claimedAt),
+                );
             }
             $polls++;
 
@@ -127,7 +128,7 @@ final class MigrationClaim
         );
         $row = Database::row();
 
-        return $row === null ? null : new MigrationClaimRow((string)$row['holder'], (string)$row['claimed_at']);
+        return $row === null ? null : new MigrationClaimRow((string)$row['holder'], self::readClaimedAt($row['claimed_at']));
     }
 
     /**
@@ -157,5 +158,83 @@ final class MigrationClaim
     public static function clear(): void
     {
         Database::sql('DELETE FROM `' . self::TABLE . '`');
+    }
+
+    /**
+     * Writes through the pre-change boundary without retaining a physical type across a pause.
+     *
+     * @param MigrationClaimHolder $holder Process taking or reclaiming the row
+     * @param bool $reclaim Whether to restamp this holder's existing row
+     * @throws DatabaseException When the type is unsupported or the write fails without a type transition
+     */
+    private static function writeClaim(MigrationClaimHolder $holder, bool $reclaim): void
+    {
+        $milliseconds = TimeHelper::nowMs();
+        $legacy = self::legacyColumn();
+        $write = static function (bool $legacy) use ($milliseconds, $holder, $reclaim): void {
+            $stamp = $legacy
+                ? DateTimeImmutable::createFromTimestamp(intdiv($milliseconds, TimeConstants::MS_PER_SECOND))
+                    ->setTimezone(new DateTimeZone(TimeConstants::UTC_TIME_ZONE))->format('Y-m-d H:i:s')
+                : $milliseconds;
+            if ($reclaim) {
+                Database::sql(
+                    'UPDATE `' . self::TABLE . '` SET `claimed_at` = ? WHERE `id` = ? AND `holder` = ?',
+                    [$stamp, self::CLAIM_ID, $holder->name],
+                );
+            } else {
+                Database::sql(
+                    'INSERT INTO `' . self::TABLE . '` (`id`, `holder`, `claimed_at`) VALUES (?, ?, ?)',
+                    [self::CLAIM_ID, $holder->name, $stamp],
+                );
+            }
+        };
+        try {
+            $write($legacy);
+        } catch (DatabaseException $failure) {
+            if (self::legacyColumn() === $legacy) {
+                throw $failure;
+            }
+            $write(!$legacy);
+        }
+    }
+
+    /**
+     * @return bool Whether the current connection still carries the legacy DATETIME column
+     * @throws DatabaseException When the physical type cannot be read or is unsupported
+     */
+    private static function legacyColumn(): bool
+    {
+        Database::sql(
+            'SELECT DATA_TYPE, COLUMN_TYPE FROM information_schema.COLUMNS '
+            . 'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+            [self::TABLE, 'claimed_at'],
+        );
+        $column = Database::row();
+        if ($column !== null && strtolower($column['DATA_TYPE']) === 'datetime') {
+            return true;
+        }
+        if ($column !== null && preg_match('/^bigint(?:\([0-9]+\))?(?: signed)?$/iD', $column['COLUMN_TYPE']) === 1) {
+            return false;
+        }
+
+        throw new DatabaseException('Unsupported schema rollout claim moment type');
+    }
+
+    /**
+     * @param int|string $value Stored milliseconds or a legacy UTC SQL datetime
+     * @return int Unix epoch milliseconds
+     * @throws DatabaseException When the legacy moment cannot be parsed
+     */
+    private static function readClaimedAt(int|string $value): int
+    {
+        if (is_int($value) || preg_match('/^-?[0-9]+$/D', $value) === 1) {
+            return (int)$value;
+        }
+        $moment = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $value, new DateTimeZone(TimeConstants::UTC_TIME_ZONE));
+        if ($moment === false || $moment->format('Y-m-d H:i:s') !== $value) {
+            throw new DatabaseException('Invalid legacy schema rollout claim moment');
+        }
+
+        return $moment->getTimestamp() * TimeConstants::MS_PER_SECOND;
     }
 }

@@ -351,6 +351,326 @@ SQL;
             archive: ['carried' => 'CREATE TABLE carried(id INT)'], visible: false));
     }
 
+    /**
+     * @param string $table Bootstrap table that survives the import
+     * @param bool $archived Whether the archive also names the excluded marker table
+     * @param ?int $level Known or unknown archive history
+     */
+    #[DataProvider('retainedBootstrapTables')]
+    public function testRetainedBootstrapAlterationRefusesAutomaticTriggerEffects(string $table, bool $archived, ?int $level): void
+    {
+        $create = $table === 'hilos_database_marker'
+            ? 'CREATE TABLE hilos_database_marker(id TINYINT UNSIGNED PRIMARY KEY, marker CHAR(32) NOT NULL,'
+                . ' written_by VARCHAR(255) NOT NULL, written_at DATETIME NOT NULL)'
+            : 'CREATE TABLE ' . $table . '(id INT)';
+        $this->expectException(RestoreFailedException::class);
+        $this->expectExceptionMessage('bootstrap UPDATE effects');
+        $this->plan([2 => 'ALTER TABLE ' . $table . ' ADD own_column INT'], [$table => $create],
+            archive: $archived ? [$table => $create] : [], applied: [1], level: $level, visible: false, triggerVisible: true,
+            triggers: [['TRIGGER_SCHEMA' => 'target', 'TRIGGER_NAME' => 'automatic_effect',
+                'EVENT_OBJECT_SCHEMA' => 'target', 'EVENT_OBJECT_TABLE' => $table]]);
+    }
+
+    /** @return iterable<string, array{string, bool, ?int}> Every canonical bootstrap owner, including the marker exclusion */
+    public static function retainedBootstrapTables(): iterable
+    {
+        foreach ([1, null] as $level) {
+            $history = $level === null ? 'unknown' : 'known';
+            yield $history . ' marker absent from archive' => ['hilos_database_marker', false, $level];
+            yield $history . ' marker excluded from import' => ['hilos_database_marker', true, $level];
+            yield $history . ' claim absent from archive' => ['hilos_migration_claim', false, $level];
+            yield $history . ' latch absent from archive' => ['hilos_admin_view_mode_latch', false, $level];
+        }
+    }
+
+    /**
+     * @param string $table Retained bootstrap owner
+     * @param string $column Any auto-written owner column, including its moment column
+     * @param bool $archived Whether a conditional owner or excluded marker declaration is archived
+     * @param ?int $level Known or unknown archive history
+     * @param string $extra Physical ON UPDATE metadata, independent of identifier and keyword case
+     */
+    #[DataProvider('retainedBootstrapAutomaticUpdates')]
+    public function testRetainedBootstrapColumnAutomaticUpdateRefuses(
+        string $table,
+        string $column,
+        bool $archived,
+        ?int $level,
+        string $extra,
+    ): void {
+        $create = $table === 'hilos_database_marker'
+            ? 'CREATE TABLE hilos_database_marker(id TINYINT UNSIGNED PRIMARY KEY, marker CHAR(32) NOT NULL,'
+                . ' written_by VARCHAR(255) NOT NULL, written_at DATETIME NOT NULL)'
+            : 'CREATE TABLE IF NOT EXISTS ' . $table . '(id INT)';
+        $this->expectException(RestoreFailedException::class);
+        $this->expectExceptionMessage('bootstrap column ' . $column . ' has automatic ON UPDATE effects');
+        $this->plan([2 => 'ALTER TABLE ' . $table . ' ADD own_column INT'],
+            [$table => 'CREATE TABLE ' . $table . '(id INT)'],
+            archive: $archived ? [$table => $create] : [], level: $level, visible: false, triggerVisible: true, columns: [
+                ['TABLE_SCHEMA' => 'target', 'TABLE_NAME' => $table, 'COLUMN_NAME' => $column, 'EXTRA' => $extra],
+            ]);
+    }
+
+    /** @return iterable<string, array{string, string, bool, ?int, string}> Every retained mapping, without staging or visible dependencies */
+    public static function retainedBootstrapAutomaticUpdates(): iterable
+    {
+        foreach (['hilos_migration_claim' => 'claimed_at', 'hilos_admin_view_mode_latch' => 'closed_at',
+            'hilos_database_marker' => 'written_at'] as $table => $moment) {
+            foreach ([false, true] as $archived) {
+                foreach ([1, null] as $level) {
+                    foreach (['audit_stamp' => 'on update current_timestamp()', $moment => 'ON UPDATE CURRENT_TIMESTAMP(6)',
+                        'Other_Clock' => "DEFAULT_GENERATED oN\tUpDaTe CURRENT_TIMESTAMP"] as $column => $extra) {
+                        $case = $table . '.' . $column . ($archived ? ' archived' : ' absent') . ($level === null ? ' unknown' : ' known');
+                        yield $case => [$table, $column, $archived, $level, $extra];
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * @param string $table Bootstrap owner whose real migration is still pending on the target
+     * @param bool $archived Whether the excluded marker is also archived
+     * @param ?int $level Known or unknown archive history
+     */
+    #[DataProvider('retainedBootstrapTables')]
+    public function testPendingBootstrapColumnAutomaticUpdateRefuses(string $table, bool $archived, ?int $level): void
+    {
+        $create = $table === 'hilos_database_marker'
+            ? 'CREATE TABLE hilos_database_marker(id TINYINT UNSIGNED PRIMARY KEY, marker CHAR(32) NOT NULL,'
+                . ' written_by VARCHAR(255) NOT NULL, written_at DATETIME NOT NULL)'
+            : 'CREATE TABLE ' . $table . '(id INT)';
+        $this->expectException(RestoreFailedException::class);
+        $this->expectExceptionMessage('bootstrap column modified has automatic ON UPDATE effects');
+        $this->plan([2 => 'ALTER TABLE ' . $table . ' ADD own_column INT'], [$table => $create],
+            archive: $archived ? [$table => $create] : [], applied: [1], level: $level, columns: [
+                ['TABLE_SCHEMA' => 'target', 'TABLE_NAME' => $table, 'COLUMN_NAME' => 'modified', 'EXTRA' => 'on update current_timestamp()'],
+            ]);
+    }
+
+    /** DEFAULT CURRENT_TIMESTAMP writes only on INSERT, and auto-writers on another physical owner are irrelevant. */
+    public function testBootstrapAutomaticUpdateChecksExactOwnerAndAllowsInsertDefaults(): void
+    {
+        $this->assertSame([], $this->plan([2 => 'ALTER TABLE hilos_database_marker ADD own_column INT'],
+            ['hilos_database_marker' => 'CREATE TABLE hilos_database_marker(id INT)'], visible: false, triggerVisible: true, columns: [
+                ['TABLE_SCHEMA' => 'target', 'TABLE_NAME' => 'hilos_database_marker', 'COLUMN_NAME' => 'audit_stamp',
+                    'COLUMN_DEFAULT' => 'current_timestamp()', 'EXTRA' => 'DEFAULT_GENERATED'],
+                ['TABLE_SCHEMA' => 'target', 'TABLE_NAME' => 'hilos_database_marker', 'COLUMN_NAME' => 'another_clock',
+                    'COLUMN_DEFAULT' => 'current_timestamp()', 'EXTRA' => ''],
+                ['TABLE_SCHEMA' => 'target', 'TABLE_NAME' => 'independent', 'COLUMN_NAME' => 'audit_stamp',
+                    'EXTRA' => 'on update current_timestamp()'],
+                ['TABLE_SCHEMA' => 'elsewhere', 'TABLE_NAME' => 'hilos_database_marker', 'COLUMN_NAME' => 'audit_stamp',
+                    'EXTRA' => 'on update current_timestamp()'],
+            ]));
+    }
+
+    /** Unconditional claim/latch replacement also removes their automatic column writers. */
+    public function testImportedBootstrapOwnersDoNotRetainTheirAutomaticColumnWriters(): void
+    {
+        foreach (['hilos_migration_claim', 'hilos_admin_view_mode_latch'] as $table) {
+            $create = 'CREATE TABLE ' . $table . '(id INT)';
+            $this->assertSame([], $this->plan([2 => 'ALTER TABLE ' . $table . ' ADD own_column INT'], [$table => $create],
+                archive: [$table => $create], columns: [
+                    ['TABLE_SCHEMA' => 'target', 'TABLE_NAME' => $table, 'COLUMN_NAME' => 'audit_stamp', 'EXTRA' => 'on update current_timestamp()'],
+                ]));
+        }
+    }
+
+    /**
+     * @param string $table Retained bootstrap owner
+     * @param string $column Reserved staging column that the canonical UPDATE would reuse
+     * @param bool $archived Whether an excluded marker or conditional owner declaration is present
+     * @param ?int $level Known or unknown archive history
+     */
+    #[DataProvider('retainedBootstrapStagingColumns')]
+    public function testRetainedBootstrapStagingRefusesWithoutAnyVisibleDependency(
+        string $table,
+        string $column,
+        bool $archived,
+        ?int $level,
+    ): void {
+        $create = $table === 'hilos_database_marker'
+            ? 'CREATE TABLE hilos_database_marker(id TINYINT UNSIGNED PRIMARY KEY, marker CHAR(32) NOT NULL,'
+                . ' written_by VARCHAR(255) NOT NULL, written_at DATETIME NOT NULL)'
+            : 'CREATE TABLE IF NOT EXISTS ' . $table . '(id INT)';
+        $this->expectException(RestoreFailedException::class);
+        $this->expectExceptionMessage('existing bootstrap staging column ' . strtolower($column));
+        $this->plan([2 => 'ALTER TABLE ' . $table . ' ADD own_column INT'],
+            [$table => 'CREATE TABLE ' . $table . '(id INT, ' . $column . ' BIGINT)'],
+            archive: $archived ? [$table => $create] : [], applied: [1], level: $level, columns: [
+                ['TABLE_SCHEMA' => 'target', 'TABLE_NAME' => $table, 'COLUMN_NAME' => $column],
+            ]);
+    }
+
+    /** @return iterable<string, array{string, string, bool, ?int}> Exact owner/column pairs with every retained import shape */
+    public static function retainedBootstrapStagingColumns(): iterable
+    {
+        foreach ([1, null] as $level) {
+            foreach ([false, true] as $archived) {
+                $case = ($level === null ? 'unknown' : 'known') . ($archived ? ' archive declaration' : ' absent from archive');
+                yield 'claim ' . $case => ['hilos_migration_claim', '__hil1918_claimed_at', $archived, $level];
+                yield 'latch ' . $case => ['hilos_admin_view_mode_latch', '__hil1918_closed_at', $archived, $level];
+                yield 'marker ' . $case => ['hilos_database_marker', '__hil1918_written_at', $archived, $level];
+            }
+        }
+        yield 'case-insensitive claim column' => ['hilos_migration_claim', '__HIL1918_CLAIMED_AT', false, 1];
+        yield 'case-insensitive latch column' => ['hilos_admin_view_mode_latch', '__HIL1918_CLOSED_AT', false, 1];
+        yield 'case-insensitive marker column' => ['hilos_database_marker', '__HIL1918_WRITTEN_AT', false, 1];
+    }
+
+    /** A staging spelling on another physical owner or the wrong staging name does not belong to this UPDATE. */
+    public function testBootstrapStagingChecksTheExactOwnerAndColumn(): void
+    {
+        $this->assertSame([], $this->plan([2 => 'ALTER TABLE hilos_database_marker ADD own_column INT'],
+            ['hilos_database_marker' => 'CREATE TABLE hilos_database_marker(id INT)'], columns: [
+                ['TABLE_SCHEMA' => 'target', 'TABLE_NAME' => 'hilos_database_marker', 'COLUMN_NAME' => '__hil1918_claimed_at', 'EXTRA' => ''],
+                ['TABLE_SCHEMA' => 'target', 'TABLE_NAME' => 'independent', 'COLUMN_NAME' => '__hil1918_written_at'],
+                ['TABLE_SCHEMA' => 'elsewhere', 'TABLE_NAME' => 'hilos_database_marker', 'COLUMN_NAME' => '__hil1918_written_at'],
+            ]));
+    }
+
+    /** Unconditional import replaces claim/latch staging along with the rest of their old table. */
+    public function testImportedBootstrapOwnersDoNotRetainTheirStaging(): void
+    {
+        foreach (['hilos_migration_claim' => '__hil1918_claimed_at', 'hilos_admin_view_mode_latch' => '__hil1918_closed_at']
+            as $table => $column) {
+            $this->assertSame([], $this->plan([2 => 'ALTER TABLE ' . $table . ' ADD own_column INT'],
+                [$table => 'CREATE TABLE ' . $table . '(id INT, ' . $column . ' BIGINT)'],
+                archive: [$table => 'CREATE TABLE ' . $table . '(id INT)'], columns: [
+                    ['TABLE_SCHEMA' => 'target', 'TABLE_NAME' => $table, 'COLUMN_NAME' => $column],
+                ]));
+        }
+    }
+
+    /** @param bool $staging Whether the destination with pending bootstrap UP has its own staging column */
+    #[DataProvider('destinationStaging')]
+    public function testBootstrapStagingUsesItsOwnConnectionSnapshot(bool $staging): void
+    {
+        $path = $this->root . '/002_marker.sql';
+        FsPath::write($path, "ALTER TABLE hilos_database_marker ADD own_column INT;\n");
+        $file = MigrationUpFile::read(2, $path);
+        $track = new MigrationUpTrack($this->root, 'Schema', ['002_marker.sql'], [$file]);
+        $evidence = [];
+        $schemas = [];
+        $servers = [];
+        foreach ([DatabaseConnectionDefaults::PRIMARY_INDEX => 2, 2 => 1] as $index => $level) {
+            Database::configure($index, 'unused', 'unused', '', 'target');
+            $dump = new Dump([], new MigrationHistory(MigrationHistoryState::RECORDED, [new MigrationRow($level, false)]));
+            $target = new PreparedTarget(new BackupConnectionMeta($index, 'source', null), Database::getConnectionConfig($index),
+                json_encode(['server-' . $index, DatabaseConnectionDefaults::PORT, 1, 'target']), 'source', 'digest', 'staged', 'digest', $dump);
+            $facts = MigrationFacts::read($dump->migrationHistory,
+                new DatabaseMigrationHistory([new MigrationRecord($level, false)]), $track, null);
+            $pending = $level === 1 ? [new MigrationStep($file, 0, MigrationOperationReader::read($file->statements[0], 'target')[0])] : [];
+            $evidence[$index] = new MigrationTargetEvidence(MigrationBinding::resolve($target, [$target]), $facts, $pending);
+            $columns = $level === 2 || $staging
+                ? [['TABLE_SCHEMA' => 'target', 'TABLE_NAME' => 'hilos_database_marker', 'COLUMN_NAME' => '__hil1918_written_at']]
+                : [];
+            $schemas[$index] = new SchemaMetadata('server-' . $index, [], [['lower_case_table_names' => 0]], $columns, [], $this->defaults,
+                completeTriggerVisibility: true);
+            $servers['server-' . $index] = new ServerMetadata(true, [], [], [], [], [], []);
+        }
+        if ($staging) {
+            $this->expectException(RestoreFailedException::class);
+            $this->expectExceptionMessage('connection 2: Object target.hilos_database_marker: existing bootstrap staging column');
+        }
+        $this->assertSame([], FullRestorePlanner::prove($evidence, $track, new FullRestoreSchemaSnapshot($schemas, $servers)));
+    }
+
+    /** @return list<array{bool}> A same-named table on the primary never supplies another server's column evidence */
+    public static function destinationStaging(): array
+    {
+        return [[false], [true]];
+    }
+
+    /** @param bool $automaticUpdate Whether the pending destination has its own auto-writer */
+    #[DataProvider('destinationAutomaticUpdates')]
+    public function testBootstrapAutomaticUpdateUsesItsOwnConnectionSnapshot(bool $automaticUpdate): void
+    {
+        $path = $this->root . '/002_marker.sql';
+        FsPath::write($path, "ALTER TABLE hilos_database_marker ADD own_column INT;\n");
+        $file = MigrationUpFile::read(2, $path);
+        $track = new MigrationUpTrack($this->root, 'Schema', ['002_marker.sql'], [$file]);
+        $evidence = [];
+        $schemas = [];
+        $servers = [];
+        foreach ([DatabaseConnectionDefaults::PRIMARY_INDEX => 2, 2 => 1] as $index => $level) {
+            Database::configure($index, 'unused', 'unused', '', 'target');
+            $dump = new Dump([], new MigrationHistory(MigrationHistoryState::RECORDED, [new MigrationRow($level, false)]));
+            $target = new PreparedTarget(new BackupConnectionMeta($index, 'source', null), Database::getConnectionConfig($index),
+                json_encode(['server-' . $index, DatabaseConnectionDefaults::PORT, 1, 'target']), 'source', 'digest', 'staged', 'digest', $dump);
+            $facts = MigrationFacts::read($dump->migrationHistory,
+                new DatabaseMigrationHistory([new MigrationRecord($level, false)]), $track, null);
+            $pending = $level === 1 ? [new MigrationStep($file, 0, MigrationOperationReader::read($file->statements[0], 'target')[0])] : [];
+            $evidence[$index] = new MigrationTargetEvidence(MigrationBinding::resolve($target, [$target]), $facts, $pending);
+            $columns = $level === 2 || $automaticUpdate
+                ? [['TABLE_SCHEMA' => 'target', 'TABLE_NAME' => 'hilos_database_marker', 'COLUMN_NAME' => 'audit_stamp',
+                    'EXTRA' => 'on update current_timestamp()']]
+                : [];
+            $schemas[$index] = new SchemaMetadata('server-' . $index, [], [['lower_case_table_names' => 0]], $columns, [], $this->defaults,
+                completeTriggerVisibility: true);
+            $servers['server-' . $index] = new ServerMetadata(true, [], [], [], [], [], []);
+        }
+        if ($automaticUpdate) {
+            $this->expectException(RestoreFailedException::class);
+            $this->expectExceptionMessage('connection 2: Object target.hilos_database_marker: bootstrap column audit_stamp');
+        }
+        $this->assertSame([], FullRestorePlanner::prove($evidence, $track, new FullRestoreSchemaSnapshot($schemas, $servers)));
+    }
+
+    /** @return list<array{bool}> The same schema/table on a separate server cannot lend its column evidence */
+    public static function destinationAutomaticUpdates(): array
+    {
+        return [[false], [true]];
+    }
+
+    /** A filtered empty schema catalog cannot establish safety, even without cleanup or visible triggers. */
+    public function testRetainedBootstrapAlterationRequiresCompleteTriggerVisibility(): void
+    {
+        $this->expectException(RestoreFailedException::class);
+        $this->expectExceptionMessage('bootstrap trigger visibility');
+        $this->plan([2 => 'ALTER TABLE hilos_database_marker ADD own_column INT'],
+            ['hilos_database_marker' => 'CREATE TABLE hilos_database_marker(id INT)'], visible: false);
+    }
+
+    /** Local schema visibility suffices; an unrelated trigger gives no automatic effects on this owner. */
+    public function testRetainedBootstrapAlterationNeedsNoGlobalCatalogGrant(): void
+    {
+        $this->assertSame([], $this->plan([2 => 'ALTER TABLE hilos_database_marker ADD own_column INT'],
+            ['hilos_database_marker' => 'CREATE TABLE hilos_database_marker(id INT)'], visible: false, triggerVisible: true,
+            triggers: [['TRIGGER_SCHEMA' => 'target', 'TRIGGER_NAME' => 'unrelated',
+                'EVENT_OBJECT_SCHEMA' => 'target', 'EVENT_OBJECT_TABLE' => 'independent']]));
+    }
+
+    /** Non-marker bootstrap tables present in the archive lose their old triggers during import. */
+    public function testImportedBootstrapOwnersDoNotRetainTheirTriggers(): void
+    {
+        foreach (['hilos_migration_claim', 'hilos_admin_view_mode_latch'] as $table) {
+            $create = 'CREATE TABLE ' . $table . '(id INT)';
+            $this->assertSame([], $this->plan([2 => 'ALTER TABLE ' . $table . ' ADD own_column INT'], [$table => $create],
+                archive: [$table => $create], visible: false, triggerVisible: false,
+                triggers: [['TRIGGER_SCHEMA' => 'target', 'TRIGGER_NAME' => 'old_trigger',
+                    'EVENT_OBJECT_SCHEMA' => 'target', 'EVENT_OBJECT_TABLE' => $table]]));
+        }
+    }
+
+    /** @param string $table Bootstrap owner that a conditional CREATE can leave in place */
+    #[DataProvider('conditionalBootstrapOwners')]
+    public function testConditionalBootstrapCreateDoesNotProveTriggerRemoval(string $table): void
+    {
+        $this->expectException(RestoreFailedException::class);
+        $this->expectExceptionMessage('bootstrap UPDATE effects');
+        $this->plan([2 => 'ALTER TABLE ' . $table . ' ADD own_column INT'], [$table => 'CREATE TABLE ' . $table . '(id INT)'],
+            archive: [$table => 'CREATE TABLE IF NOT EXISTS ' . $table . '(id INT)'], visible: false, triggerVisible: true,
+            triggers: [['TRIGGER_SCHEMA' => 'target', 'TRIGGER_NAME' => 'surviving_trigger',
+                'EVENT_OBJECT_SCHEMA' => 'target', 'EVENT_OBJECT_TABLE' => $table]]);
+    }
+
+    /** @return list<array{string}> Non-marker owners whose import must establish replacement before ignoring old triggers */
+    public static function conditionalBootstrapOwners(): array
+    {
+        return [['hilos_migration_claim'], ['hilos_admin_view_mode_latch']];
+    }
+
     /** A trigger belonging to archive data is already removed by its table import. */
     public function testConditionalTriggerDropOnArchiveOwnerIsAdmitted(): void
     {
@@ -1033,6 +1353,7 @@ SQL;
      * @param list<array<string, mixed>> $functions Opaque native UDF catalog
      * @param ?bool $triggerVisible Schema trigger visibility; defaults to the fixture's global verdict
      * @param bool $mariaDbJsonAlias Explicit destination evidence for alias-specific cases only
+     * @param list<array<string, mixed>> $columns Schema-local physical column snapshot
      * @return array Proven cleanup
      */
     private function plan(
@@ -1054,6 +1375,7 @@ SQL;
         array $functions = [],
         ?bool $triggerVisible = null,
         bool $mariaDbJsonAlias = false,
+        array $columns = [],
     ): array {
         $index = DatabaseConnectionDefaults::PRIMARY_INDEX;
         Database::configure($index, 'unused', 'unused', '', 'target');
@@ -1086,7 +1408,7 @@ SQL;
         $facts = MigrationFacts::read($dump->migrationHistory, new DatabaseMigrationHistory($rows), $track, $sidecar);
         $pending = array_values(array_filter($pending,
             static fn (MigrationStep $step): bool => $level === null || $step->file->index > $level));
-        $evidence = [$index => new MigrationTargetEvidence(MigrationBinding::resolve($target, [$target]), $facts, $level === null ? null : $pending)];
+        $evidence = [$index => new MigrationTargetEvidence(MigrationBinding::resolve($target, [$target]), $facts, $pending)];
         $metadata = [];
         foreach ($live as $name => $create) {
             $metadata[$name] = new LiveObject('BASE TABLE', $create, $rowFormat);
@@ -1099,7 +1421,7 @@ SQL;
             ['utf8mb4' => 'utf8mb4_general_ci', 'ascii' => 'ascii_general_ci'], $sqlMode,
             charsetByCollation: ['utf8mb4_bin' => 'utf8mb4', 'utf8mb4_0900_ai_ci' => 'utf8mb4'], mariaDbJsonAlias: $mariaDbJsonAlias);
         $snapshot = new FullRestoreSchemaSnapshot([$index => new SchemaMetadata('server', $metadata,
-            $caseMode === null ? [] : [['lower_case_table_names' => $caseMode]], [], [], $defaults,
+            $caseMode === null ? [] : [['lower_case_table_names' => $caseMode]], $columns, [], $defaults,
             completeTriggerVisibility: $triggerVisible ?? $visible, triggers: $triggers)],
             ['server' => new ServerMetadata($visible, [], $foreignKeys, $views, $triggers, $routines, [], $functions)]);
         return FullRestorePlanner::prove($evidence, $track, $snapshot);

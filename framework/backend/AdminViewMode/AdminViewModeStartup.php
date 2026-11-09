@@ -10,6 +10,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Environment\NonProductionGate;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use JsonException;
 
@@ -95,7 +96,7 @@ final class AdminViewModeStartup
         $record = $fileLatch ?? $rowLatch ?? [
             AdminViewModeLatchFile::KEY_ENVIRONMENT => $environment,
             AdminViewModeLatchFile::KEY_NODE => $node,
-            AdminViewModeLatchFile::KEY_CLOSED_AT => time(),
+            AdminViewModeLatchFile::KEY_CLOSED_AT => TimeHelper::nowMs(),
         ];
 
         if ($decision->writeFile) {
