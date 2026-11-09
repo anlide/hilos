@@ -296,142 +296,151 @@ test(
   },
 )
 
-test('links, tabs, Back and Forward stay on one document and socket, and Components searches and filters without writing', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
-  const status = watchStatusFrames(page)
-  const wire = watchDeliveryFrames(page)
-  try {
-    await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
-    await expectAnswerShown(page, wire, status, OVERVIEW_PAGE, {
-      packets: 0,
-      overviews: 0,
-    })
-    expect(wire.connections).toHaveLength(1)
-    const [{ socket: opened }] = wire.connections
-    await markDocument(page)
-    const sentBefore = wire.sent.length
-    const tab = (pageKey: string) =>
-      page.getByTestId(`hilos-page-tab-${pageKey}`)
-    const visit = async (
-      move: () => Promise<unknown>,
-      path: string,
-      pageKey: string,
-    ) => {
-      const since = mark(wire, status)
-      await move()
-      await expectPageReady(expect, page)
-      await expect(page).toHaveURL(new RegExp(`${path}$`))
-      return expectAnswerShown(page, wire, status, pageKey, since)
-    }
+// FIXME(F-081, 2026-11-08): строка сервиса не появилась после смены фильтра · чужой · указание владельца 08.11 · HIL-2080
+test(
+  'links, tabs, Back and Forward stay on one document and socket, and Components searches and filters without writing',
+  { tag: '@quarantine:F-081' },
+  async ({ page }) => {
+    await grantAdminToSelf(expect, page)
+    const status = watchStatusFrames(page)
+    const wire = watchDeliveryFrames(page)
+    try {
+      await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
+      await expectAnswerShown(page, wire, status, OVERVIEW_PAGE, {
+        packets: 0,
+        overviews: 0,
+      })
+      expect(wire.connections).toHaveLength(1)
+      const [{ socket: opened }] = wire.connections
+      await markDocument(page)
+      const sentBefore = wire.sent.length
+      const tab = (pageKey: string) =>
+        page.getByTestId(`hilos-page-tab-${pageKey}`)
+      const visit = async (
+        move: () => Promise<unknown>,
+        path: string,
+        pageKey: string,
+      ) => {
+        const since = mark(wire, status)
+        await move()
+        await expectPageReady(expect, page)
+        await expect(page).toHaveURL(new RegExp(`${path}$`))
+        return expectAnswerShown(page, wire, status, pageKey, since)
+      }
 
-    const components = await visit(
-      () => page.getByTestId('hilos-status-components-link').click(),
-      STATUS_COMPONENTS_PATH,
-      COMPONENTS_PAGE,
-    )
-    await test.step('Components searches and filters by state, read only', async () => {
-      const [row] = firstWindow(components, 'hilosStatusComponents').rows
-      const state = String(
-        deliveryObject(deliveryObject(row.slots).component).state,
-      ) as (typeof STATES)[number]
-      const table = page.getByTestId('hilos-status-components-table')
-      const service = shownByTestId(
-        table,
-        `hilos-status-component-${SERVICE.componentKey}`,
-      )
-      const noMatches = shownByTestId(table, 'hilos-table-no-matches')
-      // A read-only surface: no creation, bulk action or row selection.
-      await expect(
-        table.getByTestId(/^hilos-table-(main-action|actions|action-|select-)/),
-      ).toHaveCount(0)
-
-      const search = page.getByTestId('hilos-table-search')
-      await typeInto(search, 'no-such-status-component')
-      await expect(noMatches).toBeVisible()
-      await expect(service).toHaveCount(0)
-      await typeInto(search, SERVICE.agentType)
-      await expect(service).toBeVisible()
-      await page.getByTestId('hilos-table-search-clear').click()
-      await expect(search).toHaveValue('')
-      await expect(service).toBeVisible()
-
-      const filter = page.getByTestId('hilos-table-filter-state')
-      const current = STATES.indexOf(state)
-      const other = STATES.indexOf(
-        state === 'major_outage' ? 'operational' : 'major_outage',
-      )
-      await filter.getByTestId('hilos-dropdown-toggle').click()
-      await filter.getByTestId(`hilos-dropdown-option-${other}`).click()
-      await expect(noMatches).toBeVisible()
-      await expect(service).toHaveCount(0)
-      await filter.getByTestId('hilos-dropdown-toggle').click()
-      await filter.getByTestId(`hilos-dropdown-option-${current}`).click()
-      await expect(service).toBeVisible()
-      await expect(
-        shownByTestId(
-          table,
-          `hilos-status-component-state-${SERVICE.componentKey}`,
-        ),
-      ).toHaveText(STATE_LABELS[state])
-    })
-
-    await visit(
-      () => tab(SUBSCRIBERS_PAGE).click(),
-      STATUS_SUBSCRIBERS_PATH,
-      SUBSCRIBERS_PAGE,
-    )
-    await visit(
-      () => tab(STATUS_HISTORY_PAGE).click(),
-      STATUS_HISTORY_PATH,
-      STATUS_HISTORY_PAGE,
-    )
-    await visit(() => tab(WORKS_PAGE).click(), STATUS_WORKS_PATH, WORKS_PAGE)
-    await visit(() => page.goBack(), STATUS_HISTORY_PATH, STATUS_HISTORY_PAGE)
-    await visit(() => page.goBack(), STATUS_SUBSCRIBERS_PATH, SUBSCRIBERS_PAGE)
-    await visit(
-      () => page.goForward(),
-      STATUS_HISTORY_PATH,
-      STATUS_HISTORY_PAGE,
-    )
-    await visit(() => tab(OVERVIEW_PAGE).click(), STATUS_PATH, OVERVIEW_PAGE)
-
-    await expectDocumentUnchanged(expect, page)
-    expect(wire.connections.map((connection) => connection.socket)).toEqual([
-      opened,
-    ])
-    expect(
-      wire.sent
-        .slice(sentBefore)
-        .map(({ socket, wire: frame }) => ({
-          socket,
-          frame: deliveryObject(frame),
-        }))
-        .filter(({ frame }) => frame.type === 'page_subscribe')
-        .map(({ socket, frame }) => ({ socket, page: frame.page })),
-    ).toEqual(
-      [
+      const components = await visit(
+        () => page.getByTestId('hilos-status-components-link').click(),
+        STATUS_COMPONENTS_PATH,
         COMPONENTS_PAGE,
+      )
+      await test.step('Components searches and filters by state, read only', async () => {
+        const [row] = firstWindow(components, 'hilosStatusComponents').rows
+        const state = String(
+          deliveryObject(deliveryObject(row.slots).component).state,
+        ) as (typeof STATES)[number]
+        const table = page.getByTestId('hilos-status-components-table')
+        const service = shownByTestId(
+          table,
+          `hilos-status-component-${SERVICE.componentKey}`,
+        )
+        const noMatches = shownByTestId(table, 'hilos-table-no-matches')
+        // A read-only surface: no creation, bulk action or row selection.
+        await expect(
+          table.getByTestId(
+            /^hilos-table-(main-action|actions|action-|select-)/,
+          ),
+        ).toHaveCount(0)
+
+        const search = page.getByTestId('hilos-table-search')
+        await typeInto(search, 'no-such-status-component')
+        await expect(noMatches).toBeVisible()
+        await expect(service).toHaveCount(0)
+        await typeInto(search, SERVICE.agentType)
+        await expect(service).toBeVisible()
+        await page.getByTestId('hilos-table-search-clear').click()
+        await expect(search).toHaveValue('')
+        await expect(service).toBeVisible()
+
+        const filter = page.getByTestId('hilos-table-filter-state')
+        const current = STATES.indexOf(state)
+        const other = STATES.indexOf(
+          state === 'major_outage' ? 'operational' : 'major_outage',
+        )
+        await filter.getByTestId('hilos-dropdown-toggle').click()
+        await filter.getByTestId(`hilos-dropdown-option-${other}`).click()
+        await expect(noMatches).toBeVisible()
+        await expect(service).toHaveCount(0)
+        await filter.getByTestId('hilos-dropdown-toggle').click()
+        await filter.getByTestId(`hilos-dropdown-option-${current}`).click()
+        await expect(service).toBeVisible()
+        await expect(
+          shownByTestId(
+            table,
+            `hilos-status-component-state-${SERVICE.componentKey}`,
+          ),
+        ).toHaveText(STATE_LABELS[state])
+      })
+
+      await visit(
+        () => tab(SUBSCRIBERS_PAGE).click(),
+        STATUS_SUBSCRIBERS_PATH,
         SUBSCRIBERS_PAGE,
+      )
+      await visit(
+        () => tab(STATUS_HISTORY_PAGE).click(),
+        STATUS_HISTORY_PATH,
         STATUS_HISTORY_PAGE,
-        WORKS_PAGE,
-        STATUS_HISTORY_PAGE,
+      )
+      await visit(() => tab(WORKS_PAGE).click(), STATUS_WORKS_PATH, WORKS_PAGE)
+      await visit(() => page.goBack(), STATUS_HISTORY_PATH, STATUS_HISTORY_PAGE)
+      await visit(
+        () => page.goBack(),
+        STATUS_SUBSCRIBERS_PATH,
         SUBSCRIBERS_PAGE,
+      )
+      await visit(
+        () => page.goForward(),
+        STATUS_HISTORY_PATH,
         STATUS_HISTORY_PAGE,
-        OVERVIEW_PAGE,
-      ].map((pageKey) => ({ socket: opened, page: pageKey })),
-    )
-    expectNoActions(wire)
-  } finally {
-    await test.info().attach('status-navigation-wire', {
-      body: JSON.stringify(wire),
-      contentType: 'application/json',
-    })
-    status.stop()
-    wire.stop()
-  }
-})
+      )
+      await visit(() => tab(OVERVIEW_PAGE).click(), STATUS_PATH, OVERVIEW_PAGE)
+
+      await expectDocumentUnchanged(expect, page)
+      expect(wire.connections.map((connection) => connection.socket)).toEqual([
+        opened,
+      ])
+      expect(
+        wire.sent
+          .slice(sentBefore)
+          .map(({ socket, wire: frame }) => ({
+            socket,
+            frame: deliveryObject(frame),
+          }))
+          .filter(({ frame }) => frame.type === 'page_subscribe')
+          .map(({ socket, frame }) => ({ socket, page: frame.page })),
+      ).toEqual(
+        [
+          COMPONENTS_PAGE,
+          SUBSCRIBERS_PAGE,
+          STATUS_HISTORY_PAGE,
+          WORKS_PAGE,
+          STATUS_HISTORY_PAGE,
+          SUBSCRIBERS_PAGE,
+          STATUS_HISTORY_PAGE,
+          OVERVIEW_PAGE,
+        ].map((pageKey) => ({ socket: opened, page: pageKey })),
+      )
+      expectNoActions(wire)
+    } finally {
+      await test.info().attach('status-navigation-wire', {
+        body: JSON.stringify(wire),
+        contentType: 'application/json',
+      })
+      status.stop()
+      wire.stop()
+    }
+  },
+)
 
 test('public /status reads its two files with no subscription and keeps reading through a dropped socket and its recovery', async ({
   page,

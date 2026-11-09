@@ -321,16 +321,16 @@ export class HilosProfilePhoto {
     )
   }
   protected drag(event: PointerEvent): void {
-    if (this.busy() || this.checking()) return
     const previous = this.dragging
     if (!previous || previous.id !== event.pointerId) return
     const side = this.canvas()?.nativeElement.getBoundingClientRect().width ?? 0
-    if (side > 0)
+    if (side > 0 && !this.busy() && !this.checking())
       this.flow().move(
         event.clientX - previous.x,
         event.clientY - previous.y,
         side,
       )
+    // Follow a held pointer without moving the crop or accumulating a jump.
     this.dragging = { id: event.pointerId, x: event.clientX, y: event.clientY }
   }
   protected stopDrag(): void {

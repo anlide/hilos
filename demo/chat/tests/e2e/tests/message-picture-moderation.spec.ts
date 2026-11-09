@@ -1341,394 +1341,410 @@ test.describe('an active picture loses its submitting connection or person', () 
   test.describe.configure({ retries: 0 })
 
   for (const transition of ['close', 'sign-out'] as const) {
-    test(`${transition} discards the old attempt before a new person's picture publishes`, async ({
-      browser,
-    }, info) => {
-      const keys = {
-        message: modelKey(),
-        first: modelKey(),
-        last: modelKey(),
-        witness: modelKey(),
-        witnessImage: modelKey(),
-      }
-      const events: Record<string, unknown>[] = []
-      const record = (event: Record<string, unknown>) => {
-        events.push({ at: Date.now(), ...event })
-      }
-      const authorContext = await browser.newContext()
-      const observerContext = await browser.newContext()
-      const author = await authorContext.newPage()
-      const observer = await observerContext.newPage()
-      const authorFrames = watchDeliveryFrames(author)
-      const observerFrames = watchDeliveryFrames(observer)
-      const trace = await pictureControls(author, record)
-      const witnessTrace = await pictureControls(observer, record)
-      let closeControl: SocketReconnectControl | undefined
-      const failures: unknown[] = []
-      try {
-        if (transition === 'close') await armSocketDrop(author)
-        const oldPerson = await createTestUserJoined(expect, author)
-        const newPerson = await createTestUserJoined(expect, observer)
-        expect(newPerson.userId).not.toBe(oldPerson.userId)
-        const originalFiles = [
-          { name: `${keys.first}.png`, buffer: PICTURE_PNG },
-          { name: `${keys.last}.png`, buffer: OTHER_PNG },
-        ]
-        await dictateModerationVerdict(keys.message, true, 'ok')
-        await dictateModerationVerdict(keys.first, true, 'ok')
-        await dictateModerationVerdict(keys.last, true, 'ok')
-        await dictateGatewayBehavior('/model/api/generate', keys.last, {
-          awaitRelease: true,
-        })
-        await attachPngs(author, originalFiles)
-        const originals = structuredClone(trace.observer.summary())
-        expect(originals).toHaveLength(2)
-        expect(new Set(originals.map(({ socket }) => socket)).size).toBe(1)
-        const submitSocket = originals[0]!.socket
-        const acceptKey = trace.self.acceptKey
-        if (typeof acceptKey !== 'string')
-          throw new Error('No author accept key')
-        for (const [index, upload] of originals.entries()) {
-          expect(upload.accepted).toBe(true)
-          expect(upload.sentBytes).toBe(originalFiles[index]!.buffer.length)
-          expect(upload.sentSha256).toBe(
-            createHash('sha256')
-              .update(originalFiles[index]!.buffer)
-              .digest('hex'),
-          )
-          expect(upload.states).toContainEqual(
-            expect.objectContaining({ phase: 'complete' }),
-          )
+    // FIXME(F-080, 2026-11-08): после sign-out composer уже пуст, а acceptKey ещё прежний · чужой · указание владельца 08.11 · HIL-2080
+    test(
+      `${transition} discards the old attempt before a new person's picture publishes`,
+      transition === 'sign-out' ? { tag: '@quarantine:F-080' } : {},
+      async ({ browser }, info) => {
+        const keys = {
+          message: modelKey(),
+          first: modelKey(),
+          last: modelKey(),
+          witness: modelKey(),
+          witnessImage: modelKey(),
         }
-        expect(
-          authorFrames.connections[submitSocket - 1]!.closed,
-        ).toBeUndefined()
-        await typeInto(author.getByTestId('message-input'), keys.message)
-        await clickSubmit(expect, author.getByTestId('message-send'))
-        await expect
-          .poll(async () => (await readModelRequests(keys.last)).length)
-          .toBe(1)
-        const arrivals = await readModelRequests(keys.last)
-        const oldArrivalObservedAt = Date.now()
-        expect(arrivals[0]!.imageHashes).toHaveLength(1)
-        const active = await observeModeration(
-          acceptKey,
-          'chat_message_picture',
-        )
-        expect(active.checkRequestId).toEqual(expect.any(String))
-        expect(active.activeRequestId).toEqual(expect.any(String))
-        expect(active.waitingForUploadHold).toBe(false)
-        const admitted = await observeChatSubmission(acceptKey)
-        expect(admitted).toEqual({
-          phase: 'checking',
-          activeCheckRequestIds: [active.checkRequestId],
-        })
-        await expect(author.getByTestId('moderation-text')).toBeVisible()
-        await expect(author.getByTestId('message-input')).toHaveValue(
-          keys.message,
-        )
-        record({
-          kind: 'lifecycle-active-image',
-          transition,
-          acceptKey,
-          submitSocket,
-          oldPerson,
-          newPerson,
-          originals,
-          active,
-          admitted,
-          arrivals,
-          oldArrivalObservedAt,
-        })
-
-        await test.step('end the original attempt through the real lifecycle door', async () => {
-          if (transition === 'close') {
-            // Keep original binary sends native and observable. Routing only
-            // future reconnects avoids Playwright's proxy hiding those bytes.
-            closeControl = await controlSocketReconnect(author)
-            await closeControl.hold()
-            await dropSocket(author)
-          } else {
-            // Chat first binds this live socket to null, then hands over its
-            // rotation ticket. The reconnect is part of the real sign-out.
-            await logout(expect, author)
-            const identities = authorFrames.packets.flatMap(({ frames }) =>
-              frames.filter(
-                ({ socket, wire }) =>
-                  socket === submitSocket &&
-                  deliveryObject(wire).type === 'handshake_response',
-              ),
+        const events: Record<string, unknown>[] = []
+        const record = (event: Record<string, unknown>) => {
+          events.push({ at: Date.now(), ...event })
+        }
+        const authorContext = await browser.newContext()
+        const observerContext = await browser.newContext()
+        const author = await authorContext.newPage()
+        const observer = await observerContext.newPage()
+        const authorFrames = watchDeliveryFrames(author)
+        const observerFrames = watchDeliveryFrames(observer)
+        const trace = await pictureControls(author, record)
+        const witnessTrace = await pictureControls(observer, record)
+        let closeControl: SocketReconnectControl | undefined
+        const failures: unknown[] = []
+        try {
+          if (transition === 'close') await armSocketDrop(author)
+          const oldPerson = await createTestUserJoined(expect, author)
+          const newPerson = await createTestUserJoined(expect, observer)
+          expect(newPerson.userId).not.toBe(oldPerson.userId)
+          const originalFiles = [
+            { name: `${keys.first}.png`, buffer: PICTURE_PNG },
+            { name: `${keys.last}.png`, buffer: OTHER_PNG },
+          ]
+          await dictateModerationVerdict(keys.message, true, 'ok')
+          await dictateModerationVerdict(keys.first, true, 'ok')
+          await dictateModerationVerdict(keys.last, true, 'ok')
+          await dictateGatewayBehavior('/model/api/generate', keys.last, {
+            awaitRelease: true,
+          })
+          await attachPngs(author, originalFiles)
+          const originals = structuredClone(trace.observer.summary())
+          expect(originals).toHaveLength(2)
+          expect(new Set(originals.map(({ socket }) => socket)).size).toBe(1)
+          const submitSocket = originals[0]!.socket
+          const acceptKey = trace.self.acceptKey
+          if (typeof acceptKey !== 'string')
+            throw new Error('No author accept key')
+          for (const [index, upload] of originals.entries()) {
+            expect(upload.accepted).toBe(true)
+            expect(upload.sentBytes).toBe(originalFiles[index]!.buffer.length)
+            expect(upload.sentSha256).toBe(
+              createHash('sha256')
+                .update(originalFiles[index]!.buffer)
+                .digest('hex'),
             )
-            const identity = deliveryObject(identities.at(-1)?.wire)
-            const data = deliveryObject(identity.data)
-            expect(
-              deliveryObject(
-                deliveryObject(deliveryObject(identities[0]?.wire).data)
-                  .entities,
-              ).currentUser,
-            ).toMatchObject({ id: oldPerson.userId })
-            expect(deliveryObject(data.entities).currentUser).toBeNull()
-            record({ kind: 'old-socket-became-guest', submitSocket, identity })
-            await expect(author.getByTestId('self-user')).toHaveCount(0)
+            expect(upload.states).toContainEqual(
+              expect.objectContaining({ phase: 'complete' }),
+            )
+          }
+          expect(
+            authorFrames.connections[submitSocket - 1]!.closed,
+          ).toBeUndefined()
+          await typeInto(author.getByTestId('message-input'), keys.message)
+          await clickSubmit(expect, author.getByTestId('message-send'))
+          await expect
+            .poll(async () => (await readModelRequests(keys.last)).length)
+            .toBe(1)
+          const arrivals = await readModelRequests(keys.last)
+          const oldArrivalObservedAt = Date.now()
+          expect(arrivals[0]!.imageHashes).toHaveLength(1)
+          const active = await observeModeration(
+            acceptKey,
+            'chat_message_picture',
+          )
+          expect(active.checkRequestId).toEqual(expect.any(String))
+          expect(active.activeRequestId).toEqual(expect.any(String))
+          expect(active.waitingForUploadHold).toBe(false)
+          const admitted = await observeChatSubmission(acceptKey)
+          expect(admitted).toEqual({
+            phase: 'checking',
+            activeCheckRequestIds: [active.checkRequestId],
+          })
+          await expect(author.getByTestId('moderation-text')).toBeVisible()
+          await expect(author.getByTestId('message-input')).toHaveValue(
+            keys.message,
+          )
+          record({
+            kind: 'lifecycle-active-image',
+            transition,
+            acceptKey,
+            submitSocket,
+            oldPerson,
+            newPerson,
+            originals,
+            active,
+            admitted,
+            arrivals,
+            oldArrivalObservedAt,
+          })
+
+          await test.step('end the original attempt through the real lifecycle door', async () => {
+            if (transition === 'close') {
+              // Keep original binary sends native and observable. Routing only
+              // future reconnects avoids Playwright's proxy hiding those bytes.
+              closeControl = await controlSocketReconnect(author)
+              await closeControl.hold()
+              await dropSocket(author)
+            } else {
+              // Chat first binds this live socket to null, then hands over its
+              // rotation ticket. The reconnect is part of the real sign-out.
+              await logout(expect, author)
+              const identities = authorFrames.packets.flatMap(({ frames }) =>
+                frames.filter(
+                  ({ socket, wire }) =>
+                    socket === submitSocket &&
+                    deliveryObject(wire).type === 'handshake_response',
+                ),
+              )
+              const identity = deliveryObject(identities.at(-1)?.wire)
+              const data = deliveryObject(identity.data)
+              expect(
+                deliveryObject(
+                  deliveryObject(deliveryObject(identities[0]?.wire).data)
+                    .entities,
+                ).currentUser,
+              ).toMatchObject({ id: oldPerson.userId })
+              expect(deliveryObject(data.entities).currentUser).toBeNull()
+              record({
+                kind: 'old-socket-became-guest',
+                submitSocket,
+                identity,
+              })
+              await expect(author.getByTestId('self-user')).toHaveCount(0)
+              await expect(author.getByTestId('message-input')).toHaveValue('')
+              await expect(author.getByTestId('attachments-file')).toHaveCount(
+                0,
+              )
+            }
+            await expect
+              .poll(() => authorFrames.connections[submitSocket - 1]!.closed)
+              .toEqual(expect.any(Number))
+            await expect
+              .poll(async () => {
+                try {
+                  return await observeChatSubmission(acceptKey)
+                } catch (error) {
+                  // Missing connection is a checked refusal, never an empty
+                  // observation. Transport and schema failures escape unchanged.
+                  if (
+                    !(error instanceof Error) ||
+                    error.message !==
+                      'test:chat:submission-observe failed: No such Chat connection'
+                  )
+                    throw error
+                  record({
+                    kind: 'closed-connection-refused',
+                    reason: error.message,
+                  })
+                  return 'closed'
+                }
+              })
+              .toBe('closed')
+            for (const kind of ['chat_message', 'chat_message_picture']) {
+              const terminal = await observeModeration(acceptKey, kind)
+              expect(terminal).toEqual({
+                checkRequestId: null,
+                activeRequestId: null,
+                waitingForUploadHold: false,
+              })
+              record({
+                kind: 'lifecycle-cleanup-observed',
+                moderationKind: kind,
+                terminal,
+              })
+            }
+          })
+
+          if (transition === 'sign-out') {
+            await openSignIn(expect, author, 'message-signin')
+            await expectSessionRotation(expect, author, () =>
+              login(expect, author, newPerson.email),
+            )
+            await expect(author.getByTestId('self-user-id')).toHaveText(
+              String(newPerson.userId),
+            )
             await expect(author.getByTestId('message-input')).toHaveValue('')
             await expect(author.getByTestId('attachments-file')).toHaveCount(0)
-          }
-          await expect
-            .poll(() => authorFrames.connections[submitSocket - 1]!.closed)
-            .toEqual(expect.any(Number))
-          await expect
-            .poll(async () => {
-              try {
-                return await observeChatSubmission(acceptKey)
-              } catch (error) {
-                // Missing connection is a checked refusal, never an empty
-                // observation. Transport and schema failures escape unchanged.
-                if (
-                  !(error instanceof Error) ||
-                  error.message !==
-                    'test:chat:submission-observe failed: No such Chat connection'
-                )
-                  throw error
-                record({
-                  kind: 'closed-connection-refused',
-                  reason: error.message,
-                })
-                return 'closed'
-              }
+            await expect(author.getByTestId('moderation-text')).toHaveCount(0)
+            expect(trace.self.acceptKey).not.toBe(acceptKey)
+            record({
+              kind: 'new-person-composer',
+              self: structuredClone(trace.self),
             })
-            .toBe('closed')
-          for (const kind of ['chat_message', 'chat_message_picture']) {
-            const terminal = await observeModeration(acceptKey, kind)
-            expect(terminal).toEqual({
+          }
+
+          await test.step('a fresh SDK picture crosses the old response window and publishes once', async () => {
+            // The old IMAGE answer leaves only AFTER cleanup, and this successful
+            // provider round trip starts after it. Its completion, rather than a
+            // sleep or instantaneous DOM read, fences the old response window.
+            await releaseGatewayAnswer('/model/api/generate', keys.last)
+            const witness = transition === 'close' ? observer : author
+            const witnessControl = transition === 'close' ? witnessTrace : trace
+            const witnessFile = {
+              name: `${keys.witnessImage}.png`,
+              buffer: PICTURE_PNG,
+            }
+            await dictateModerationVerdict(keys.witness, true, 'ok')
+            await dictateModerationVerdict(keys.witnessImage, true, 'ok')
+            await dictateGatewayBehavior(
+              '/model/api/generate',
+              keys.witnessImage,
+              {
+                awaitRelease: true,
+              },
+            )
+            await attachPngs(witness, [witnessFile])
+            const fresh = structuredClone(
+              witnessControl.observer.summary().at(-1)!,
+            )
+            expect(
+              originals.map(({ clientUploadId }) => clientUploadId),
+            ).not.toContain(fresh.clientUploadId)
+            expect(fresh.accepted).toBe(true)
+            expect(fresh.sentSha256).toBe(
+              createHash('sha256').update(PICTURE_PNG).digest('hex'),
+            )
+            expect(fresh.states).toContainEqual(
+              expect.objectContaining({ phase: 'complete' }),
+            )
+            await typeInto(witness.getByTestId('message-input'), keys.witness)
+            await clickSubmit(expect, witness.getByTestId('message-send'))
+            await expect
+              .poll(
+                async () => (await readModelRequests(keys.witnessImage)).length,
+              )
+              .toBe(1)
+            const witnessAcceptKey = witnessControl.self.acceptKey
+            if (typeof witnessAcceptKey !== 'string')
+              throw new Error('No witness accept key')
+            const witnessActive = await observeModeration(
+              witnessAcceptKey,
+              'chat_message_picture',
+            )
+            expect(witnessActive.activeRequestId).toEqual(expect.any(String))
+            expect(witnessActive.activeRequestId).not.toBe(
+              active.activeRequestId,
+            )
+            record({ kind: 'witness-image-active', witnessActive, fresh })
+            await releaseGatewayAnswer('/model/api/generate', keys.witnessImage)
+            const messages = observer
+              .getByTestId('event-text')
+              .filter({ hasText: keys.witness })
+            await expect(messages).toHaveCount(1)
+            await expect(messages).toHaveText(keys.witness)
+            expect(await observeChatSubmission(witnessAcceptKey)).toEqual({
+              phase: '',
+              activeCheckRequestIds: [],
+            })
+            expect(
+              await observeModeration(acceptKey, 'chat_message_picture'),
+            ).toEqual({
               checkRequestId: null,
               activeRequestId: null,
               waitingForUploadHold: false,
             })
-            record({
-              kind: 'lifecycle-cleanup-observed',
-              moderationKind: kind,
-              terminal,
-            })
-          }
-        })
-
-        if (transition === 'sign-out') {
-          await openSignIn(expect, author, 'message-signin')
-          await expectSessionRotation(expect, author, () =>
-            login(expect, author, newPerson.email),
-          )
-          await expect(author.getByTestId('self-user-id')).toHaveText(
-            String(newPerson.userId),
-          )
-          await expect(author.getByTestId('message-input')).toHaveValue('')
-          await expect(author.getByTestId('attachments-file')).toHaveCount(0)
-          await expect(author.getByTestId('moderation-text')).toHaveCount(0)
-          expect(trace.self.acceptKey).not.toBe(acceptKey)
-          record({
-            kind: 'new-person-composer',
-            self: structuredClone(trace.self),
-          })
-        }
-
-        await test.step('a fresh SDK picture crosses the old response window and publishes once', async () => {
-          // The old IMAGE answer leaves only AFTER cleanup, and this successful
-          // provider round trip starts after it. Its completion, rather than a
-          // sleep or instantaneous DOM read, fences the old response window.
-          await releaseGatewayAnswer('/model/api/generate', keys.last)
-          const witness = transition === 'close' ? observer : author
-          const witnessControl = transition === 'close' ? witnessTrace : trace
-          const witnessFile = {
-            name: `${keys.witnessImage}.png`,
-            buffer: PICTURE_PNG,
-          }
-          await dictateModerationVerdict(keys.witness, true, 'ok')
-          await dictateModerationVerdict(keys.witnessImage, true, 'ok')
-          await dictateGatewayBehavior(
-            '/model/api/generate',
-            keys.witnessImage,
-            {
-              awaitRelease: true,
-            },
-          )
-          await attachPngs(witness, [witnessFile])
-          const fresh = structuredClone(
-            witnessControl.observer.summary().at(-1)!,
-          )
-          expect(
-            originals.map(({ clientUploadId }) => clientUploadId),
-          ).not.toContain(fresh.clientUploadId)
-          expect(fresh.accepted).toBe(true)
-          expect(fresh.sentSha256).toBe(
-            createHash('sha256').update(PICTURE_PNG).digest('hex'),
-          )
-          expect(fresh.states).toContainEqual(
-            expect.objectContaining({ phase: 'complete' }),
-          )
-          await typeInto(witness.getByTestId('message-input'), keys.witness)
-          await clickSubmit(expect, witness.getByTestId('message-send'))
-          await expect
-            .poll(
-              async () => (await readModelRequests(keys.witnessImage)).length,
-            )
-            .toBe(1)
-          const witnessAcceptKey = witnessControl.self.acceptKey
-          if (typeof witnessAcceptKey !== 'string')
-            throw new Error('No witness accept key')
-          const witnessActive = await observeModeration(
-            witnessAcceptKey,
-            'chat_message_picture',
-          )
-          expect(witnessActive.activeRequestId).toEqual(expect.any(String))
-          expect(witnessActive.activeRequestId).not.toBe(active.activeRequestId)
-          record({ kind: 'witness-image-active', witnessActive, fresh })
-          await releaseGatewayAnswer('/model/api/generate', keys.witnessImage)
-          const messages = observer
-            .getByTestId('event-text')
-            .filter({ hasText: keys.witness })
-          await expect(messages).toHaveCount(1)
-          await expect(messages).toHaveText(keys.witness)
-          expect(await observeChatSubmission(witnessAcceptKey)).toEqual({
-            phase: '',
-            activeCheckRequestIds: [],
-          })
-          expect(
-            await observeModeration(acceptKey, 'chat_message_picture'),
-          ).toEqual({
-            checkRequestId: null,
-            activeRequestId: null,
-            waitingForUploadHold: false,
-          })
-          const attachment = observer
-            .getByTestId('event')
-            .filter({ has: messages })
-            .getByTestId('event-attachment')
-          await expect(attachment).toHaveCount(1)
-          await expect(
-            attachment.getByTestId('event-attachment-image'),
-          ).toHaveAttribute('alt', witnessFile.name)
-          const href = await attachment.getAttribute('href')
-          if (!href || href.includes('variant='))
-            throw new Error('No original download path')
-          const response = await observer.request.get(href)
-          expect(response.status()).toBe(200)
-          const bytes = await response.body()
-          expect(bytes).toEqual(PICTURE_PNG)
-          const eventDeliveries = observerFrames.packets.flatMap(({ frames }) =>
-            frames.flatMap(({ wire }) => {
-              const data = deliveryObject(deliveryObject(wire).data)
-              const lists = deliveryObject(deliveryObject(data.payload).lists)
-              return lists.mainEvents === undefined ? [] : [lists.mainEvents]
-            }),
-          )
-          expect(eventDeliveries.length).toBeGreaterThan(0)
-          const delivered = JSON.stringify(observerFrames.packets)
-          for (const oldKey of [keys.message, keys.first, keys.last]) {
-            expect(delivered).not.toContain(oldKey)
+            const attachment = observer
+              .getByTestId('event')
+              .filter({ has: messages })
+              .getByTestId('event-attachment')
+            await expect(attachment).toHaveCount(1)
             await expect(
-              observer.getByTestId('event-text').filter({ hasText: oldKey }),
-            ).toHaveCount(0)
-          }
-          expect(delivered).toContain(keys.witness)
-          for (const page of transition === 'close'
-            ? [observer]
-            : [author, observer]) {
-            await expect(page.getByTestId('message-input')).toHaveValue('')
-            await expect(page.getByTestId('attachments-file')).toHaveCount(0)
-            await expect(page.getByTestId('moderation-text')).toHaveCount(0)
-            await openBell(page)
-            if (transition === 'close') {
+              attachment.getByTestId('event-attachment-image'),
+            ).toHaveAttribute('alt', witnessFile.name)
+            const href = await attachment.getAttribute('href')
+            if (!href || href.includes('variant='))
+              throw new Error('No original download path')
+            const response = await observer.request.get(href)
+            expect(response.status()).toBe(200)
+            const bytes = await response.body()
+            expect(bytes).toEqual(PICTURE_PNG)
+            const eventDeliveries = observerFrames.packets.flatMap(
+              ({ frames }) =>
+                frames.flatMap(({ wire }) => {
+                  const data = deliveryObject(deliveryObject(wire).data)
+                  const lists = deliveryObject(
+                    deliveryObject(data.payload).lists,
+                  )
+                  return lists.mainEvents === undefined
+                    ? []
+                    : [lists.mainEvents]
+                }),
+            )
+            expect(eventDeliveries.length).toBeGreaterThan(0)
+            const delivered = JSON.stringify(observerFrames.packets)
+            for (const oldKey of [keys.message, keys.first, keys.last]) {
+              expect(delivered).not.toContain(oldKey)
               await expect(
-                page.getByTestId('hilos-notification-empty'),
-              ).toBeVisible()
-              await expect(
-                page.getByTestId(/^hilos-notification-item-/),
+                observer.getByTestId('event-text').filter({ hasText: oldKey }),
               ).toHaveCount(0)
-              await expect(unreadBadge(page)).toBeHidden()
-            } else {
-              // A real password login creates exactly this security notice.
-              // No moderation outcome may be inherited from the old person.
-              const items = page.getByTestId(/^hilos-notification-item-/)
-              await expect(items).toHaveCount(1)
-              await expect(items).toContainText('New sign-in to your account')
-              await expect(items).not.toContainText(
-                'Your message was not published',
-              )
-              await expect(unreadBadge(page)).toHaveText(/^1\b/)
             }
-          }
-          record({
-            kind: 'only-witness-published-after-old-response-window',
-            keys,
-            eventDeliveries,
-            href,
-            sha256: createHash('sha256').update(bytes).digest('hex'),
-            arrivals: await Promise.all(
-              Object.values(keys).map(readModelRequests),
-            ),
+            expect(delivered).toContain(keys.witness)
+            for (const page of transition === 'close'
+              ? [observer]
+              : [author, observer]) {
+              await expect(page.getByTestId('message-input')).toHaveValue('')
+              await expect(page.getByTestId('attachments-file')).toHaveCount(0)
+              await expect(page.getByTestId('moderation-text')).toHaveCount(0)
+              await openBell(page)
+              if (transition === 'close') {
+                await expect(
+                  page.getByTestId('hilos-notification-empty'),
+                ).toBeVisible()
+                await expect(
+                  page.getByTestId(/^hilos-notification-item-/),
+                ).toHaveCount(0)
+                await expect(unreadBadge(page)).toBeHidden()
+              } else {
+                // A real password login creates exactly this security notice.
+                // No moderation outcome may be inherited from the old person.
+                const items = page.getByTestId(/^hilos-notification-item-/)
+                await expect(items).toHaveCount(1)
+                await expect(items).toContainText('New sign-in to your account')
+                await expect(items).not.toContainText(
+                  'Your message was not published',
+                )
+                await expect(unreadBadge(page)).toHaveText(/^1\b/)
+              }
+            }
+            record({
+              kind: 'only-witness-published-after-old-response-window',
+              keys,
+              eventDeliveries,
+              href,
+              sha256: createHash('sha256').update(bytes).digest('hex'),
+              arrivals: await Promise.all(
+                Object.values(keys).map(readModelRequests),
+              ),
+            })
           })
-        })
-        expect(trace.observer.errors).toEqual([])
-        expect(witnessTrace.observer.errors).toEqual([])
-        expect(
-          [...authorFrames.packets, ...observerFrames.packets]
-            .flatMap(({ frames }) => frames)
-            .filter(({ failure }) => failure !== undefined),
-        ).toEqual([])
-      } catch (error) {
-        record({ kind: 'scenario-error', error: String(error) })
-        failures.push(error)
-      } finally {
-        const cleanupStart = failures.length
-        const cleaned = await Promise.allSettled([
-          ...Object.values(keys).map(forgetModelKey),
-          authorContext.close(),
-          observerContext.close(),
-        ])
-        for (const result of cleaned)
-          if (result.status === 'rejected') failures.push(result.reason)
-        try {
-          await closeControl?.dispose()
+          expect(trace.observer.errors).toEqual([])
+          expect(witnessTrace.observer.errors).toEqual([])
+          expect(
+            [...authorFrames.packets, ...observerFrames.packets]
+              .flatMap(({ frames }) => frames)
+              .filter(({ failure }) => failure !== undefined),
+          ).toEqual([])
         } catch (error) {
+          record({ kind: 'scenario-error', error: String(error) })
           failures.push(error)
+        } finally {
+          const cleanupStart = failures.length
+          const cleaned = await Promise.allSettled([
+            ...Object.values(keys).map(forgetModelKey),
+            authorContext.close(),
+            observerContext.close(),
+          ])
+          for (const result of cleaned)
+            if (result.status === 'rejected') failures.push(result.reason)
+          try {
+            await closeControl?.dispose()
+          } catch (error) {
+            failures.push(error)
+          }
+          trace.observer.stop()
+          witnessTrace.observer.stop()
+          authorFrames.stop()
+          observerFrames.stop()
+          record({
+            kind: 'cleanup',
+            errors: failures.slice(cleanupStart).map(String),
+          })
+          const path = info.outputPath(`picture-${transition}-proof.json`)
+          await writeFile(
+            path,
+            JSON.stringify(
+              {
+                events,
+                authorFrames,
+                observerFrames,
+                errors: [
+                  ...trace.observer.errors,
+                  ...witnessTrace.observer.errors,
+                ],
+                uploads: trace.observer.summary(),
+                witnessUploads: witnessTrace.observer.summary(),
+              },
+              null,
+              2,
+            ),
+          )
+          await info.attach(`picture-${transition}-proof`, {
+            path,
+            contentType: 'application/json',
+          })
         }
-        trace.observer.stop()
-        witnessTrace.observer.stop()
-        authorFrames.stop()
-        observerFrames.stop()
-        record({
-          kind: 'cleanup',
-          errors: failures.slice(cleanupStart).map(String),
-        })
-        const path = info.outputPath(`picture-${transition}-proof.json`)
-        await writeFile(
-          path,
-          JSON.stringify(
-            {
-              events,
-              authorFrames,
-              observerFrames,
-              errors: [
-                ...trace.observer.errors,
-                ...witnessTrace.observer.errors,
-              ],
-              uploads: trace.observer.summary(),
-              witnessUploads: witnessTrace.observer.summary(),
-            },
-            null,
-            2,
-          ),
-        )
-        await info.attach(`picture-${transition}-proof`, {
-          path,
-          contentType: 'application/json',
-        })
-      }
-      if (failures.length === 1) throw failures[0]
-      if (failures.length)
-        throw new AggregateError(
-          failures,
-          'Picture lifecycle scenario or cleanup failed',
-        )
-    })
+        if (failures.length === 1) throw failures[0]
+        if (failures.length)
+          throw new AggregateError(
+            failures,
+            'Picture lifecycle scenario or cleanup failed',
+          )
+      },
+    )
   }
 })

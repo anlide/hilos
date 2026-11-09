@@ -419,6 +419,60 @@ it.each(['busy', 'checking'] as const)(
   },
 )
 
+it.each(['busy', 'checking'] as const)(
+  'tracks a drag paused by %s without accumulating a jump once freed',
+  async (lock) => {
+    const step = createSignal<HilosProfilePhotoStep>('crop')
+    const flow = {
+      step,
+      photo: createSignal<string | null>('/photo.webp'),
+      name: createSignal('Ada'),
+      initials: createSignal('A'),
+      preview: createSignal(null),
+      crop: createSignal({ zoom: 2, centerX: 80, centerY: 70 }),
+      zoom: createSignal(2),
+      busy: createSignal(false),
+      checking: createSignal(false),
+      refusal: createSignal<string | null>('Photo was rejected'),
+      voice: createSignal(''),
+      open: () => step.set('pick'),
+      pick: vi.fn(async () => {}),
+      setZoom: vi.fn(),
+      move: vi.fn(),
+      save: vi.fn(async () => {}),
+      remove: vi.fn(async () => {}),
+      close: vi.fn(() => step.set('closed')),
+      dispose: vi.fn(),
+    } satisfies HilosProfilePhotoFlow
+    const fixture = TestBed.createComponent(HilosProfilePhoto)
+    fixture.componentRef.setInput('flow', flow)
+    await settle(fixture)
+
+    const canvas = node('profile-photo-preview') as HTMLCanvasElement
+    canvas.setPointerCapture = vi.fn()
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(0, 0, 128, 128),
+    )
+    const pointer = (type: string, x: number, y: number): void => {
+      const event = new MouseEvent(type, { clientX: x, clientY: y })
+      Object.defineProperty(event, 'pointerId', { value: 1 })
+      canvas.dispatchEvent(event)
+    }
+
+    pointer('pointerdown', 10, 10)
+    flow[lock].set(true)
+    await settle(fixture)
+    pointer('pointermove', 30, 20)
+    expect(flow.move).not.toHaveBeenCalled()
+    flow[lock].set(false)
+    await settle(fixture)
+    pointer('pointermove', 33, 24)
+    expect(flow.move).toHaveBeenCalledOnce()
+    expect(flow.move).toHaveBeenLastCalledWith(3, 4, 128)
+    fixture.destroy()
+  },
+)
+
 it('holds a real removal request, unlocks on refusal and closes on the session echo', async () => {
   let resolve!: (value: object) => void
   let reject!: (error: unknown) => void
