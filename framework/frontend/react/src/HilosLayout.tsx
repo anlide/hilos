@@ -23,7 +23,7 @@
 // framework pages (HILOS_FOOTER_LINKS). The
 // shell is a fixed-height viewport column (vh-100): the nav, banner, and footer
 // never scroll (flex-shrink-0) and the main region grows and scrolls its own
-// overflow (min-h-0 + overflow-auto), so a page either scrolls inside main or —
+// overflow (overflow-auto), so a page either scrolls inside main or —
 // like the chat page — fills it and scrolls an inner region rather than the
 // whole document. The brand, the gear, and the footer links are HilosLinks —
 // no-refresh navigation that leaves the socket alive — so the shell alone moves
@@ -635,14 +635,14 @@ export function HilosLayout({
               {!underMaintenance ? (
                 <HilosLink
                   to="/"
-                  className="navbar-brand mb-0 h1 min-w-0 me-2 me-md-3"
+                  className="navbar-brand mb-0 h1 text-truncate me-2 me-md-3"
                   data-id="nav-brand"
                 >
                   {brand}
                 </HilosLink>
               ) : publicStatus ? (
                 <span
-                  className="navbar-brand mb-0 h1 min-w-0 me-2 me-md-3"
+                  className="navbar-brand mb-0 h1 text-truncate me-2 me-md-3"
                   data-id="nav-brand"
                 >
                   {brand}
@@ -895,7 +895,7 @@ export function HilosLayout({
             id="hilos-main-content"
             ref={pageRoot}
             tabIndex={-1}
-            className={`container flex-grow-1 min-h-0 overflow-auto py-4${
+            className={`container flex-grow-1 overflow-auto py-4${
               maintenanceShown ? ' d-flex flex-column' : ''
             }`}
           >
@@ -908,7 +908,7 @@ export function HilosLayout({
             ) : (
               <fieldset
                 ref={pageFieldset}
-                className="border-0 m-0 p-0 min-w-0 h-100"
+                className="border-0 m-0 p-0 h-100"
                 data-id="page-interaction-scope"
               >
                 {accountBlocked !== null && !publicStatus ? (

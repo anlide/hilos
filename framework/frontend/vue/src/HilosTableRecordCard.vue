@@ -218,7 +218,7 @@ function onSelectRow(rowKey: string, event: Event): void {
           />
           <div
             v-if="hasCell(card.title)"
-            class="fw-medium flex-grow-1 min-w-0 text-break"
+            class="fw-medium flex-grow-1 text-break"
           >
             <HilosTableValue
               :key="`${card.title!.key}:${card.title!.heightContent}`"

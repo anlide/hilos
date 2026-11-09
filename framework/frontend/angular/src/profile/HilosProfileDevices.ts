@@ -57,7 +57,7 @@ const DEVICE_KIND_ICONS: Record<HilosProfileDeviceKind, string> = {
             "
             aria-hidden="true"
           ></i>
-          <div class="flex-grow-1 min-w-0 text-break">
+          <div class="flex-grow-1 text-break">
             <h3 class="fw-semibold small mb-0">
               {{ device.deviceName ?? 'Unknown device' }}
               @if (device.current) {

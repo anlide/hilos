@@ -22,7 +22,7 @@
 // public framework pages
 // (HILOS_FOOTER_LINKS). The shell is a fixed-height viewport column (vh-100):
 // the nav, banner, and footer never scroll (flex-shrink-0) and the main region
-// grows and scrolls its own overflow (min-h-0 + overflow-auto), so a page
+// grows and scrolls its own overflow (overflow-auto), so a page
 // either scrolls inside main or — like the chat page — fills it and scrolls an
 // inner region rather than the whole document. The brand, the gear, and the
 // footer links are HilosLinks — no-refresh navigation that leaves the socket
@@ -227,14 +227,14 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
             >
             @if (publicStatus()) {
               <span
-                class="navbar-brand mb-0 h1 min-w-0 me-2 me-md-3"
+                class="navbar-brand mb-0 h1 text-truncate me-2 me-md-3"
                 data-id="nav-brand"
                 ><ng-container [ngTemplateOutlet]="brand"
               /></span>
             } @else if (!underMaintenance()) {
               <a
                 hilosLink="/"
-                class="navbar-brand mb-0 h1 min-w-0 me-2 me-md-3"
+                class="navbar-brand mb-0 h1 text-truncate me-2 me-md-3"
                 data-id="nav-brand"
               >
                 <ng-container [ngTemplateOutlet]="brand" />
@@ -485,7 +485,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
           id="hilos-main-content"
           #pageRoot
           tabindex="-1"
-          class="container flex-grow-1 min-h-0 overflow-auto py-4"
+          class="container flex-grow-1 overflow-auto py-4"
           [class.d-flex]="underMaintenance()"
           [class.flex-column]="underMaintenance()"
         >
@@ -498,7 +498,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
           } @else {
             <fieldset
               #pageFieldset
-              class="border-0 m-0 p-0 min-w-0 h-100"
+              class="border-0 m-0 p-0 h-100"
               data-id="page-interaction-scope"
             >
               @if (!publicStatus() && accountBlocked(); as notice) {

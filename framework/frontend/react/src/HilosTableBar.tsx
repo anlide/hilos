@@ -408,7 +408,7 @@ export function HilosTableBar<R>({
       {selectionEnabled ? (
         <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
           <div
-            className="hilos-stack align-items-center flex-grow-1 min-w-0"
+            className="hilos-stack align-items-center flex-grow-1 text-break"
             data-id="hilos-table-bar-slot"
           >
             {hasControls ? renderControls(true) : null}

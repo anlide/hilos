@@ -106,7 +106,7 @@ export function HilosProfileDevices({
             className={`${DEVICE_KIND_ICONS[hilosProfileDeviceKind(device.deviceName)]} fs-5 text-body-secondary flex-shrink-0`}
             aria-hidden="true"
           />
-          <div className="flex-grow-1 min-w-0 text-break">
+          <div className="flex-grow-1 text-break">
             <h3 className="fw-semibold small mb-0">
               {device.deviceName ?? 'Unknown device'}
               {device.current ? (

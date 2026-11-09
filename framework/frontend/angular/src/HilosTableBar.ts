@@ -114,7 +114,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
       @if (selectionEnabled()) {
         <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
           <div
-            class="hilos-stack align-items-center flex-grow-1 min-w-0"
+            class="hilos-stack align-items-center flex-grow-1 text-break"
             data-id="hilos-table-bar-slot"
           >
             @if (

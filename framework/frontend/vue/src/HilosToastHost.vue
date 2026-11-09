@@ -448,7 +448,7 @@ function dismissIfNavigated(event: MouseEvent, id: number): void {
           ]"
           aria-hidden="true"
         ></i>
-        <div class="flex-grow-1 min-w-0">
+        <div class="flex-grow-1 overflow-hidden">
           <div
             v-if="toast.source !== null"
             class="small text-uppercase lh-sm text-body-secondary mb-1"
@@ -457,7 +457,7 @@ function dismissIfNavigated(event: MouseEvent, id: number): void {
             {{ toast.source }}
           </div>
           <div class="d-flex align-items-start gap-2">
-            <div class="hilos-toast-clamp flex-grow-1 min-w-0">
+            <div class="hilos-toast-clamp flex-grow-1">
               <HilosLink
                 v-if="toast.destination !== null"
                 :to="toast.destination"

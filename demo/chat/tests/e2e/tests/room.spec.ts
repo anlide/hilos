@@ -119,8 +119,8 @@ test('chat.message-publish', async ({ page, cleanup }) => {
 
 // The chat message list owns its own scroll: the shell is a fixed-height
 // viewport (vh-100 + overflow-hidden) and the event stream is an overflow-auto
-// region (the min-h-0 flex chain), so messages scroll inside the card rather
-// than growing the document.
+// region (from lg the row does not wrap, and the card clips its content), so
+// messages scroll inside the card rather than growing the document.
 test('the event stream is its own scroll region', async ({ page }) => {
   await gotoPage(expect, page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')

@@ -335,9 +335,9 @@ async function submitReset(): Promise<void> {
       @cancel="closeEdit"
     >
       <template #header>
-        <div class="d-flex align-items-center gap-2 flex-grow-1 min-w-0">
+        <div class="d-flex align-items-center gap-2 flex-grow-1">
           <ConflictHeader
-            class="text-break min-w-0"
+            class="text-break"
             :title="editTitle"
             :conflict="live.conflict"
           />

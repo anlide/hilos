@@ -26,9 +26,9 @@ const isAuthenticated = computed(() => selfId.value !== null)
       <span class="placeholder col-3 rounded"></span>
     </p>
 
-    <div class="row g-3 flex-grow-1 min-h-0">
-      <div class="col-lg-8 d-flex flex-column min-h-0">
-        <div class="card flex-grow-1 min-h-0 d-flex flex-column">
+    <div class="row g-3 flex-grow-1 flex-lg-nowrap overflow-auto">
+      <div class="col-lg-8 d-flex flex-column">
+        <div class="card flex-grow-1 overflow-hidden d-flex flex-column">
           <div class="card-header flex-shrink-0 placeholder-glow">
             <span class="placeholder col-3 rounded"></span>
           </div>
@@ -38,7 +38,7 @@ const isAuthenticated = computed(() => selfId.value !== null)
         </div>
       </div>
 
-      <div class="col-lg-4 d-flex flex-column gap-3 min-h-0">
+      <div class="col-lg-4 d-flex flex-column gap-3">
         <div v-for="card in 2" :key="card" class="card">
           <div class="card-header placeholder-glow">
             <span class="placeholder col-4 rounded"></span>

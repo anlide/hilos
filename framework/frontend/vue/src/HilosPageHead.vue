@@ -159,7 +159,7 @@ watch(row, (container, _previous, onCleanup) => {
 </script>
 
 <template>
-  <div class="min-w-0" data-id="hilos-page-head">
+  <div data-id="hilos-page-head">
     <template v-if="owner">
       <HilosBreadcrumb
         v-if="crumbs.length > 1"
@@ -182,9 +182,9 @@ watch(row, (container, _previous, onCleanup) => {
           </span>
         </slot>
         <div
-          class="d-flex flex-wrap align-items-start column-gap-3 row-gap-2 flex-grow-1 min-w-0"
+          class="d-flex flex-wrap align-items-start column-gap-3 row-gap-2 flex-grow-1 text-break"
         >
-          <div class="flex-grow-1 min-w-0">
+          <div class="flex-grow-1">
             <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
               <h1
                 :id="titleId"
@@ -218,7 +218,7 @@ watch(row, (container, _previous, onCleanup) => {
       <nav
         v-if="tabs.length > 1"
         :aria-label="tabsLabel"
-        class="mb-4 min-w-0"
+        class="mb-4"
         data-id="hilos-page-tabs"
       >
         <ul
@@ -254,7 +254,7 @@ watch(row, (container, _previous, onCleanup) => {
           :class="kind === 'entity' ? 'rounded-3' : 'rounded-circle'"
         ></span>
       </slot>
-      <div class="flex-grow-1 min-w-0">
+      <div class="flex-grow-1">
         <span
           class="placeholder placeholder-lg col-4 d-block mb-2 rounded"
         ></span>

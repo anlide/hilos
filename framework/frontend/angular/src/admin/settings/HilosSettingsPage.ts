@@ -166,13 +166,10 @@ function inputStep(type: string | undefined): 'any' | undefined {
         [confirmOnClose]="editDirty()"
         [busy]="editSaving()"
       >
-        <div
-          modalHeader
-          class="d-flex align-items-center gap-2 flex-grow-1 min-w-0"
-        >
+        <div modalHeader class="d-flex align-items-center gap-2 flex-grow-1">
           <h5
             hilosConflictHeader
-            class="text-break min-w-0"
+            class="text-break"
             [title]="editTitle()"
             [conflict]="live().conflict"
           ></h5>

@@ -143,7 +143,7 @@ export function HilosPageHead({
 
   if (owner === undefined) {
     return (
-      <div className="min-w-0" data-id="hilos-page-head">
+      <div data-id="hilos-page-head">
         <div
           className="d-flex align-items-start gap-3 mb-4 placeholder-glow"
           aria-hidden="true"
@@ -158,7 +158,7 @@ export function HilosPageHead({
           ) : (
             skeletonVisual
           )}
-          <div className="flex-grow-1 min-w-0">
+          <div className="flex-grow-1">
             <span className="placeholder placeholder-lg col-4 d-block mb-2 rounded" />
             <span className="placeholder col-9 d-block rounded" />
           </div>
@@ -182,7 +182,7 @@ export function HilosPageHead({
     ) : null
 
   return (
-    <div className="min-w-0" data-id="hilos-page-head">
+    <div data-id="hilos-page-head">
       {crumbs.length > 1 ? (
         <HilosBreadcrumb
           crumbs={crumbs}
@@ -195,8 +195,8 @@ export function HilosPageHead({
         data-id="hilos-page-head-block"
       >
         {visual === undefined ? defaultVisual : visual}
-        <div className="d-flex flex-wrap align-items-start column-gap-3 row-gap-2 flex-grow-1 min-w-0">
-          <div className="flex-grow-1 min-w-0">
+        <div className="d-flex flex-wrap align-items-start column-gap-3 row-gap-2 flex-grow-1 text-break">
+          <div className="flex-grow-1">
             <div className="d-flex flex-wrap align-items-center gap-2 mb-1">
               <h1
                 id={headingId ?? localHeadingId}
@@ -226,11 +226,7 @@ export function HilosPageHead({
         </div>
       </div>
       {rowShown ? (
-        <nav
-          aria-label={tabsLabel}
-          className="mb-4 min-w-0"
-          data-id="hilos-page-tabs"
-        >
+        <nav aria-label={tabsLabel} className="mb-4" data-id="hilos-page-tabs">
           <ul
             ref={row}
             className="nav nav-underline flex-nowrap overflow-x-auto border-bottom"

@@ -74,7 +74,7 @@ type LegalHistory = ReturnType<
                   class="bi bi-file-earmark-text fs-5 text-body-secondary flex-shrink-0"
                   aria-hidden="true"
                 ></i>
-                <div class="flex-grow-1 min-w-0 text-break">
+                <div class="flex-grow-1 text-break">
                   <div class="fw-semibold small">
                     {{ date(revision.publishedOn) }}
                     @if (current(document.document) === revision.revisionId) {

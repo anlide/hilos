@@ -444,8 +444,6 @@ describe('HilosPageHead', () => {
       'hilos-page-head-block',
       'hilos-page-tabs',
     ])
-    const outer = get(head, '[data-id="hilos-page-head"]')
-    expect(outer.classList).toContain('min-w-0')
     expect(get(head, '[data-id="hilos-page-head-block"]').classList).toContain(
       'mb-3',
     )
@@ -527,7 +525,6 @@ describe('HilosPageHead', () => {
     const row = get(head, '[data-id="hilos-page-tabs"]')
     expect(row.tagName).toBe('NAV')
     expect(row.getAttribute('aria-label')).toBe('Page sections')
-    expect(row.classList).toContain('min-w-0')
     expect(row.querySelectorAll('ul > li > a')).toHaveLength(4)
     expect(
       [...row.querySelectorAll('a')].map((link) => link.getAttribute('href')),

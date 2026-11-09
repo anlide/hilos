@@ -315,8 +315,8 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
         confirmOnClose={editDirty}
         onClose={closeEdit}
         header={
-          <div className="d-flex align-items-center gap-2 flex-grow-1 min-w-0">
-            <div className="text-break min-w-0">
+          <div className="d-flex align-items-center gap-2 flex-grow-1">
+            <div className="text-break">
               <ConflictHeader title={editTitle} conflict={live.conflict} />
             </div>
             {editRow?.type ? (

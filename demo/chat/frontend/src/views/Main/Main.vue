@@ -279,9 +279,9 @@ onUnmounted(() => {
       </template>
     </p>
 
-    <div class="row g-3 flex-grow-1 min-h-0">
-      <div class="col-lg-8 d-flex flex-column min-h-0">
-        <div class="card flex-grow-1 min-h-0 d-flex flex-column">
+    <div class="row g-3 flex-grow-1 flex-lg-nowrap overflow-auto">
+      <div class="col-lg-8 d-flex flex-column">
+        <div class="card flex-grow-1 overflow-hidden d-flex flex-column">
           <div
             class="card-header d-flex justify-content-between align-items-center flex-shrink-0"
             data-id="events-header"
@@ -293,7 +293,7 @@ onUnmounted(() => {
           </div>
           <div
             ref="eventsScroll"
-            class="list-group list-group-flush flex-grow-1 overflow-auto min-h-0"
+            class="list-group list-group-flush flex-grow-1 overflow-auto"
             data-id="events-scroll"
           >
             <div
@@ -322,7 +322,7 @@ onUnmounted(() => {
                   size="sm"
                   :class="{ invisible: !event.seriesHead }"
                 />
-                <div class="flex-grow-1 min-w-0">
+                <div class="flex-grow-1 text-break">
                   <span
                     :class="
                       event.seriesHead ? 'fw-semibold' : 'visually-hidden'
@@ -406,7 +406,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="col-lg-4 d-flex flex-column gap-3 min-h-0 overflow-auto">
+      <div class="col-lg-4 d-flex flex-column gap-3 overflow-auto">
         <div class="card">
           <div
             class="card-header d-flex justify-content-between align-items-center"

@@ -92,7 +92,7 @@ export function HilosProfileAgreementsHistoryPage({
                         className="bi bi-file-earmark-text fs-5 text-body-secondary flex-shrink-0"
                         aria-hidden="true"
                       />
-                      <div className="flex-grow-1 min-w-0 text-break">
+                      <div className="flex-grow-1 text-break">
                         <div className="fw-semibold small">
                           {formatHilosLegalDate(revision.publishedOn)}
                           {agreement?.current.revisionId ===

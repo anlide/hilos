@@ -177,7 +177,7 @@ async function confirmRemove(): Promise<void> {
         ]"
         aria-hidden="true"
       />
-      <div class="flex-grow-1 min-w-0 text-break">
+      <div class="flex-grow-1 text-break">
         <h3 class="fw-semibold small mb-0">
           {{ device.deviceName ?? 'Unknown device'
           }}<span

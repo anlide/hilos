@@ -19,7 +19,7 @@ HilosTakeoverScope, so in a takeover that only looks the page's controls stand
 disabled and the shell's do not), and a footer of the public framework pages
 (HILOS_FOOTER_LINKS). The shell is a fixed-height viewport column (vh-100): the
 nav, banner, and footer never scroll (flex-shrink-0) and the main region grows and
-scrolls its own overflow (min-h-0 + overflow-auto), so a page either scrolls
+scrolls its own overflow (overflow-auto), so a page either scrolls
 inside main or — like the chat page — fills it and scrolls an inner region rather
 than the whole document. The brand, the gear, and the footer links are
 HilosLinks — no-refresh navigation that leaves the socket alive — so the shell
@@ -641,14 +641,14 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
         <HilosLink
           v-if="!underMaintenance"
           to="/"
-          class="navbar-brand mb-0 h1 min-w-0 me-2 me-md-3"
+          class="navbar-brand mb-0 h1 text-truncate me-2 me-md-3"
           data-id="nav-brand"
         >
           <slot name="brand">Hilos</slot>
         </HilosLink>
         <span
           v-else-if="publicStatus"
-          class="navbar-brand mb-0 h1 min-w-0 me-2 me-md-3"
+          class="navbar-brand mb-0 h1 text-truncate me-2 me-md-3"
           data-id="nav-brand"
         >
           <slot name="brand">Hilos</slot>
@@ -876,7 +876,7 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
       id="hilos-main-content"
       ref="pageRoot"
       tabindex="-1"
-      class="container flex-grow-1 min-h-0 overflow-auto py-4"
+      class="container flex-grow-1 overflow-auto py-4"
       :class="{ 'd-flex flex-column': underMaintenance && !publicStatus }"
     >
       <HilosMaintenance
@@ -888,7 +888,7 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
       <fieldset
         v-else
         ref="pageFieldset"
-        class="border-0 m-0 p-0 min-w-0 h-100"
+        class="border-0 m-0 p-0 h-100"
         data-id="page-interaction-scope"
       >
         <HilosAccountBlocked

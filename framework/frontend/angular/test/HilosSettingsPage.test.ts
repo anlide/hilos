@@ -817,10 +817,8 @@ describe('HilosSettingsPage typed editor', () => {
       )
       const header = badge.parentElement!
       expect(header.classList.contains('flex-grow-1')).toBe(true)
-      expect(header.classList.contains('min-w-0')).toBe(true)
       const title = header.querySelector('h5')!
       expect(title.textContent?.trim()).toBe(`Edit · ${key}`)
-      expect(title.matches('.text-break.min-w-0')).toBe(true)
       expect(
         header.parentElement?.querySelector('[data-id="modal-close"]'),
       ).not.toBeNull()

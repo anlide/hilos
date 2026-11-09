@@ -169,24 +169,6 @@
   min-block-size: 12rem;
 }
 
-// WHY: Bootstrap ships no min-height:0 utility, yet a flex child that owns its
-// own scroll — the app-shell main region — needs min-height:0 so it shrinks
-// below its content instead of growing the page, letting an inner overflow-auto
-// region scroll rather than the whole document.
-// WHAT: applied down a flex column to localize scrolling to one inner region.
-.min-h-0 {
-  min-height: 0;
-}
-
-// WHY: Bootstrap ships no min-width:0 utility either, and a flex child keeps
-// the intrinsic width of its content without one — so a long word or an
-// unbroken line grows the row instead of being clipped, and any text clamp
-// inside it never engages at all.
-// WHAT: applied to the flex children of a toast card whose text must clip.
-.min-w-0 {
-  min-width: 0;
-}
-
 // WHY: stock .text-truncate clips at one line; Bootstrap has no multi-line
 // clamp utility at all.
 // WHAT: the toast card's message, three lines at most — the rest of the story
@@ -529,11 +511,12 @@ body.modal-open .toast-container > * {
 }
 
 // WHY: Bootstrap has no utility that puts several children into one grid cell, and
-// a surface that steps through screens holds the room of its tallest step by
-// stacking invisible twins of its steps under the live one (styling-rules.md, "The
-// room a step takes").
+// a surface that swaps one content for another in place holds the room of the
+// tallest by stacking them all there: the steps of a form behind invisible twins
+// (styling-rules.md, "The room a step takes"), or the table bar's controls and
+// its selection panel.
 // WHAT: a grid whose every child sits in the one cell, so the cell is as tall as
-// its tallest child.
+// its tallest child and no child holds it wider than its parent.
 .hilos-stack {
   display: grid;
 }

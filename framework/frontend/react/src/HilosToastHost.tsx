@@ -445,7 +445,7 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
                 className={`bi ms-1 ${TOAST_VISUAL[toast.severity].icon} ${TOAST_VISUAL[toast.severity].accent}`}
                 aria-hidden="true"
               ></i>
-              <div className="flex-grow-1 min-w-0">
+              <div className="flex-grow-1 overflow-hidden">
                 {toast.source !== null && (
                   <div
                     className="small text-uppercase lh-sm text-body-secondary mb-1"
@@ -455,7 +455,7 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
                   </div>
                 )}
                 <div className="d-flex align-items-start gap-2">
-                  <div className="hilos-toast-clamp flex-grow-1 min-w-0">
+                  <div className="hilos-toast-clamp flex-grow-1">
                     {toast.destination === null ? (
                       toast.message
                     ) : (

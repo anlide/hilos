@@ -70,7 +70,7 @@ let pageHeadHeadingSeq = 0
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosBreadcrumb, HilosLink, NgTemplateOutlet],
   template: `
-    <div class="min-w-0" data-id="hilos-page-head">
+    <div data-id="hilos-page-head">
       @if (owner(); as headOwner) {
         @if (crumbs().length > 1) {
           <hilos-breadcrumb [crumbs]="crumbs()" [label]="breadcrumbLabel()" />
@@ -92,9 +92,9 @@ let pageHeadHeadingSeq = 0
             </span>
           }
           <div
-            class="d-flex flex-wrap align-items-start column-gap-3 row-gap-2 flex-grow-1 min-w-0"
+            class="d-flex flex-wrap align-items-start column-gap-3 row-gap-2 flex-grow-1 text-break"
           >
-            <div class="flex-grow-1 min-w-0">
+            <div class="flex-grow-1">
               <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
                 <h1
                   [id]="titleId()"
@@ -132,7 +132,7 @@ let pageHeadHeadingSeq = 0
         @if (rowShown()) {
           <nav
             [attr.aria-label]="tabsLabel()"
-            class="mb-4 min-w-0"
+            class="mb-4"
             data-id="hilos-page-tabs"
           >
             <ul
@@ -169,7 +169,7 @@ let pageHeadHeadingSeq = 0
               [class.rounded-circle]="kind() !== 'entity'"
             ></span>
           }
-          <div class="flex-grow-1 min-w-0">
+          <div class="flex-grow-1">
             <span
               class="placeholder placeholder-lg col-4 d-block mb-2 rounded"
             ></span>

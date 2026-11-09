@@ -182,7 +182,7 @@ function occupiedHeight(element: HTMLElement): number {
             (click)="dismissIfNavigated($event, toast.id)"
           >
             <i [class]="iconClass(toast.severity)" aria-hidden="true"></i>
-            <div class="flex-grow-1 min-w-0">
+            <div class="flex-grow-1 overflow-hidden">
               @if (toast.source !== null) {
                 <div
                   class="small text-uppercase lh-sm text-body-secondary mb-1"
@@ -192,7 +192,7 @@ function occupiedHeight(element: HTMLElement): number {
                 </div>
               }
               <div class="d-flex align-items-start gap-2">
-                <div class="hilos-toast-clamp flex-grow-1 min-w-0">
+                <div class="hilos-toast-clamp flex-grow-1">
                   @if (toast.destination !== null) {
                     <a
                       [hilosLink]="toast.destination"
