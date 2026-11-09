@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\CodeStyle;
 
+use DirectoryIterator;
 use RuntimeException;
+use UnexpectedValueException;
 
 /**
  * The roots the code-style guard reads, each with the kind that decides its rules.
@@ -47,6 +49,12 @@ final class ScannedRoots
         $demoDirectory = $repositoryRoot . '/demo';
         if (!file_exists($demoDirectory) && !is_link($demoDirectory)) {
             return $roots;
+        }
+        try {
+            // PHP 8.5's bundled glob can ignore GLOB_ERR when the directory cannot be opened.
+            new DirectoryIterator($demoDirectory);
+        } catch (UnexpectedValueException $exception) {
+            throw new RuntimeException('Cannot enumerate code-style demo roots: ' . $demoDirectory, previous: $exception);
         }
         $demos = glob($demoDirectory . '/*', GLOB_ONLYDIR | GLOB_ERR);
         if ($demos === false) {

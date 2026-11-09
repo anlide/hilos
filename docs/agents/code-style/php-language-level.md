@@ -5,11 +5,11 @@ wondering whether an 8.4-only construct is allowed.
 
 ## Core Rule
 
-The minimum language level is **PHP 8.4**. It is already declared by
-`"php": ">=8.4"` in the root `composer.json` and in every demo `composer.json`,
-so a project running Hilos always has 8.4 available. Therefore 8.4-only syntax is
-**allowed and preferred** where it reads more clearly — it is not something to
-work around for the sake of an older runtime.
+The minimum language level is **PHP 8.5**. It is already declared by
+`"php": ">=8.5"` in the root `composer.json` and in every demo `composer.json`,
+so a project running Hilos always has PHP 8.5 available. Therefore PHP 8.4-only
+syntax remains **allowed and preferred** where it reads more clearly — it is not
+something to work around for the sake of an older runtime.
 
 ## Preferred Shape
 
@@ -36,7 +36,7 @@ one whose parentheses belong to an enclosing call (`foo(new Bar())->baz` — the
 ## Exceptions
 
 None for the language floor itself: do not reintroduce compatibility shims for
-PHP versions below 8.4.
+PHP versions below 8.5.
 
 ## Validation
 

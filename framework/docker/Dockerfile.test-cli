@@ -1,7 +1,7 @@
 # PHP CLI image for Composer + PHPUnit on the Hilos monorepo (Linux; matches platform reqs).
 # Used only via docker compose — do not rely on host PHP version or OS.
 
-FROM php:8.4.27-cli@sha256:a4ae1f57e22b89a0a69c5e085b3010ee727d094e1542d249e48a01bec3c44810
+FROM php:8.5.12-cli@sha256:50956f094e90a716d43bea28087d447555ad80510e386ab8c9c10d8c70d781a9
 
 # libevent-dev and libssl-dev build ext-event with explicit OpenSSL support;
 # patch applies the checked, local change to the pinned upstream source.

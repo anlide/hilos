@@ -127,7 +127,6 @@ final class ImageMetadataStripperTest extends TestCase
         ob_start();
         imagejpeg($image);
         $jpeg = ob_get_clean();
-        imagedestroy($image);
         $input = substr($jpeg, 0, 2) . self::marker(0xe1, "Exif\0\0" . self::tiffWithGps(6)) . substr($jpeg, 2);
         $path = $this->directory . '/source';
         FsPath::write($path, $input);

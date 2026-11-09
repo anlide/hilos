@@ -45,12 +45,18 @@ final readonly class ChangeLogReadCollection implements Countable, IteratorAggre
     /** @return T|null First value in source order, or null when empty */
     public function first(): ?object
     {
+        if ($this->items === []) {
+            return null;
+        }
         return $this->items[array_key_first($this->items)] ?? null;
     }
 
     /** @return T|null Last value in source order, or null when empty */
     public function last(): ?object
     {
+        if ($this->items === []) {
+            return null;
+        }
         return $this->items[array_key_last($this->items)] ?? null;
     }
 

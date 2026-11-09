@@ -469,12 +469,13 @@ test(
       })
 
       await test.step('a publication hint over the live socket rereads the files', async () => {
+        // The receipt is a floor: a newer publication may have replaced it.
         const { aliveAt } = await beatStatusHeartbeat()
         await expectPublicStatusPair(
           expect,
           page,
           log,
-          (pair) => pair.heartbeat.aliveAt === aliveAt,
+          (pair) => pair.heartbeat.aliveAt >= aliveAt,
         )
         expect(
           log.wire.packets.some((packet) =>
@@ -529,7 +530,7 @@ test(
           expect,
           page,
           log,
-          (pair) => pair.heartbeat.aliveAt === aliveAt,
+          (pair) => pair.heartbeat.aliveAt >= aliveAt,
         )
         await expect(page.getByTestId('public-status-connection')).toHaveText(
           'Your live connection to the site is lost — the system is up',
@@ -556,7 +557,7 @@ test(
           expect,
           page,
           log,
-          (read) => read.heartbeat.aliveAt === aliveAt,
+          (read) => read.heartbeat.aliveAt >= aliveAt,
         )
         await expect(page.getByTestId('public-status-connection')).toHaveCount(
           0,

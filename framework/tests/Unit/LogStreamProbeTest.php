@@ -158,7 +158,10 @@ final class LogStreamProbeTest extends TestCase
     {
         set_error_handler(static function (int $severity, string $message): bool {
             self::assertSame(E_WARNING, $severity);
-            self::assertMatchesRegularExpression('/^Constant LOG_STREAM_PROBE_[A-Z_]+ already defined$/', $message);
+            self::assertMatchesRegularExpression(
+                '/^Constant LOG_STREAM_PROBE_[A-Z_]+ already defined, this will be an error in PHP 9$/',
+                $message,
+            );
             return true;
         });
         try {

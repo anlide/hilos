@@ -95,8 +95,8 @@ final class PlannedWrite
  * Declarative description of one artifact the installer manages.
  *
  * This script stays compatible with the host PHP (8.1+) on purpose: it is a
- * dev-machine setup tool that must run without the framework's 8.4 docker
- * toolchain, so it avoids 8.2+-only syntax while remaining valid on 8.4.
+ * dev-machine setup tool that must run without the framework's PHP 8.5.12 Docker
+ * toolchain, so it avoids 8.2+-only syntax while remaining valid on PHP 8.5.
  */
 final class ArtifactSpec
 {

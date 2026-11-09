@@ -66,7 +66,7 @@ Hilos follows a daemon-worker architecture pattern:
 
 Hilos is designed to run in Docker. If you need to run it outside Docker, you will need:
 
-- PHP 8.4 or higher
+- PHP 8.5 or higher
 - PHP Extensions:
   - `ext-posix` — Process control
   - `ext-pcntl` — Process forking

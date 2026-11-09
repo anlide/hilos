@@ -95,7 +95,7 @@ agent → Hilos::$sr->queueSignal() → daemon dispatch → WS client or other a
 
 ## Tech stack
 
-- Backend: PHP 8.4, Hilos framework, MySQL
+- Backend: PHP 8.5, Hilos framework, MySQL
 - Frontend: Vue 3 + TypeScript, Vite/vite-ssg, Pinia
 - LLM: Ollama (local) or OpenAI-compatible API
 - Docker: all services containerized

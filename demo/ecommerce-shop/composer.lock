@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a95231b72d9d8b20c054c1593f2518ae",
+    "content-hash": "3f0b6684b09d6ba2b93ff808088727f9",
     "packages": [
         {
             "name": "anlide/hilos",
@@ -12,7 +12,7 @@
             "dist": {
                 "type": "path",
                 "url": "/hilos",
-                "reference": "1a79eb158bb724f7515a5c5b8008071a3e62e17a"
+                "reference": "f8357afff10d28f052d4b847b6622ae267a9f96f"
             },
             "require": {
                 "ext-ctype": "*",
@@ -27,7 +27,7 @@
                 "ext-posix": "*",
                 "ext-sockets": "*",
                 "minishlink/web-push": "^11.0",
-                "php": ">=8.4",
+                "php": ">=8.5",
                 "spomky-labs/cbor-php": "^3.3"
             },
             "require-dev": {
@@ -80,7 +80,7 @@
                     "docker compose -f framework/docker/docker-compose.yml run --build --rm hilos-cli-test composer install --no-interaction"
                 ],
                 "test:framework:up": [
-                    "docker compose -f framework/docker/docker-compose.yml up -d --build --wait mysql-framework-test mysql-framework-remote-test sshd-framework-test"
+                    "docker compose -f framework/docker/docker-compose.yml up -d --build --wait mysql-framework-test mysql-framework-remote-test mysql-framework-catalog-test sshd-framework-test"
                 ],
                 "test:framework:databases": [
                     "@php scripts/framework-databases.php"
@@ -92,7 +92,7 @@
                     "@php scripts/down-stands.php framework"
                 ],
                 "test:framework:down-volumes": [
-                    "docker compose -f framework/docker/docker-compose.yml rm -sf mysql-framework-test mysql-framework-remote-test sshd-framework-test hilos-cli-test && docker volume rm -f hilos-framework-ship-keys${HILOS_STAND_SUFFIX:-}"
+                    "docker compose -f framework/docker/docker-compose.yml rm -sf mysql-framework-test mysql-framework-remote-test mysql-framework-catalog-test sshd-framework-test hilos-cli-test && docker volume rm -f hilos-framework-ship-keys${HILOS_STAND_SUFFIX:-}"
                 ],
                 "test:framework:unit": [
                     "docker compose -f framework/docker/docker-compose.yml run --build --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml --testsuite unit"
@@ -3132,7 +3132,7 @@
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {
-        "php": ">=8.4"
+        "php": ">=8.5"
     },
     "platform-dev": {},
     "plugin-api-version": "2.11.0"

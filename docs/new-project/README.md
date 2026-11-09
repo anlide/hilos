@@ -43,7 +43,7 @@ demo/<name>/
     .env.example       # test DB coordinates
     e2e/               # Playwright package (own package.json; own eslint and prettier configs)
   docker/
-    Dockerfile         # php:8.4.27-cli + sockets/pcntl/posix/mysqli/pdo + pinned, patched event 3.1.6
+    Dockerfile         # php:8.5.12-cli + sockets/pcntl/posix/mysqli/pdo + pinned, patched event 3.1.6
     Dockerfile.nginx   # pinned nginx:1.31.8-alpine + envsubst + self-signed TLS entrypoint
     nginx.conf.template
     docker-entrypoint-nginx.sh

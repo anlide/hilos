@@ -19,7 +19,7 @@
         }
     ],
     "require": {
-        "php": ">=8.4",
+        "php": ">=8.5",
         "anlide/hilos": "^2.0"
     },
     "require-dev": {
