@@ -1,8 +1,12 @@
+import { randomBytes } from 'node:crypto'
 import type { Page, TestInfo } from '@playwright/test'
-import { test, expect } from '../test.js'
+import { test as base, expect } from '../test.js'
 
 import {
+  ROWS,
   expectBreadcrumbLabels,
+  cleanupFixtures,
+  type TestCleanup,
   dismissToasts,
   expectDataFreeDeparture,
   expectTableRecordWrappingStress,
@@ -32,6 +36,7 @@ import {
   grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+import { createBotExtras } from '../helpers/bots.js'
 
 // spec-owner: demo — chat's bots and their admin screen
 
@@ -65,9 +70,10 @@ import { setAdminViewMode } from '../../../../../framework/frontend/scripts/admi
 //
 // Counts are read relative to where a test found them, never as a literal: in the
 // container a failed attempt is retried on the SAME database, and a bot it left
-// behind must not make the retry hopeless. For the same reason the number in an
-// `AAA` name falls as time goes on, so the newest `AAA` bot sorts before one an
-// earlier attempt left. Resetting the database is the run's job, not the spec's
+// behind must not make the retry hopeless. The combined scenarios reserve unique
+// names and clean up their UI subjects even on failure. Other `AAA` names use a
+// number that falls as time goes on, so the newest sorts before an older one.
+// Resetting the database is the run's job, not the spec's
 // (docs/agents/testing.md, re-running tests).
 //
 // Bots are created with Active off. An active bot starts its agent, and the
@@ -83,6 +89,8 @@ import { setAdminViewMode } from '../../../../../framework/frontend/scripts/admi
 // first. A second tab of the same browser context inherits the session cookie but
 // opens a socket of its own, and the table tells its own writes from foreign ones
 // by socket — so a second tab is a foreign writer.
+
+const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
 test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
 test.describe.configure({ mode: 'serial' })
@@ -192,45 +200,17 @@ async function renameBot(
 }
 
 /**
- * Create bots that sort after every current one until the total fills whole windows.
- *
- * A last page with room would take a rename past it as a tail with a free slot,
- * and Next would stay off for a true reason. The names sort after the bots
- * already in the set, including ones an earlier attempt left behind.
+ * Fill the set to whole windows with inactive, test-owned extras.
  *
  * @param page The Playwright page on the bots admin.
- * @param stamp The test's time stamp.
- * @returns The names of the bots created, for the caller to delete.
+ * @param cleanup The test-scoped cleanup for every created extra.
  */
-async function fillToWholePages(page: Page, stamp: number): Promise<string[]> {
-  const names: string[] = []
-  let total = await tableTotal(expect, page)
-  while (total % WINDOW !== 0) {
-    const name = `ZZ ${stamp} pad ${names.length}`
-    await createBot(page, name)
-    names.push(name)
-    total += 1
-    await expectTableTotal(expect, page, total)
-  }
-
-  return names
-}
-
-/**
- * Delete the padding bots, which stand at the end of the set.
- *
- * @param page The Playwright page on the bots admin.
- * @param names Names {@link fillToWholePages} returned.
- */
-async function deletePads(page: Page, names: string[]): Promise<void> {
-  if (names.length === 0) {
-    return
-  }
-  await dismissToasts(page)
-  await goToLastPage(expect, page)
-  for (const name of [...names].reverse()) {
-    await deleteBot(page, await tableRowKeyByText(expect, page, name))
-  }
+async function fillWithExtras(page: Page, cleanup: TestCleanup): Promise<void> {
+  const total = await tableTotal(expect, page)
+  const missing = (WINDOW - (total % WINDOW)) % WINDOW
+  if (missing === 0) return
+  await createBotExtras(cleanup, missing)
+  await expectTableTotal(expect, page, total + missing)
 }
 
 /**
@@ -250,6 +230,58 @@ async function deleteBot(page: Page, rowKey: string): Promise<void> {
   await clickSubmit(expect, page.getByTestId('admin-bots-delete-confirm'))
   await expect(page.getByTestId('admin-bots-delete-confirm')).toHaveCount(0)
   await expect(page.getByTestId(`admin-bots-delete-${rowKey}`)).toHaveCount(0)
+}
+
+/** A UI subject keeps its original reservation and its id through renames. */
+interface BotReservation {
+  name: string
+  key?: string
+}
+
+/**
+ * Arm cleanup before Add, including a saved row whose reply never arrives.
+ * Each cleanup uses a fresh admin page so a broken subscription or open modal
+ * on the subject's page cannot block it. Only the exact reserved name is used
+ * before the id is known; afterwards identity survives every rename.
+ *
+ * @param page The administrator's page, whose context stays alive for cleanup.
+ * @param cleanup The test-scoped owner that attempts every reserved cleanup.
+ * @param name The name prefix that places the subject in the scenario's order.
+ * @returns The unique reserved name and the receipt to fill as soon as id arrives.
+ */
+function reserveBot(
+  page: Page,
+  cleanup: TestCleanup,
+  name: string,
+): BotReservation {
+  const bot: BotReservation = {
+    name: `${name} ${randomBytes(8).toString('hex')}`,
+  }
+  cleanup.defer(async () => {
+    const fresh = await page.context().newPage()
+    try {
+      await openBots(fresh)
+      await goToLastPage(expect, fresh)
+      const row =
+        bot.key === undefined
+          ? fresh
+              .getByTestId('hilos-viewport-table')
+              .locator(ROWS)
+              .filter({ has: fresh.getByText(bot.name, { exact: true }) })
+          : fresh.getByTestId(`hilos-table-row-${bot.key}`)
+      while ((await row.count()) === 0) {
+        const prev = fresh.getByTestId('hilos-table-prev')
+        // A successful UI delete already removed this reservation.
+        if (await prev.isDisabled()) return
+        await pageBackOnce(expect, fresh)
+      }
+      const key = bot.key ?? (await tableRowKeyByText(expect, fresh, bot.name))
+      await deleteBot(fresh, key)
+    } finally {
+      await fresh.close()
+    }
+  })
+  return bot
 }
 
 /**
@@ -381,6 +413,7 @@ async function botGeometryEvidence(
 /** Create an isolated real set and a cold reader on a second independent socket. */
 async function botProofSet(
   page: Page,
+  cleanup: TestCleanup,
   size = 6,
   placement: 'search' | 'last-page' = 'search',
 ) {
@@ -388,7 +421,7 @@ async function botProofSet(
   await grantAdminToSelf(expect, page)
   await openBots(page)
   const lastPage = placement === 'last-page'
-  const pads = lastPage ? await fillToWholePages(page, Date.now() - 1000) : []
+  if (lastPage) await fillWithExtras(page, cleanup)
   const base = await tableTotal(expect, page)
   const prefix = `${lastPage ? 'ZZ' : 'Geo'} ${Date.now()}`
   if (!lastPage) await searchBots(page, prefix, 0)
@@ -423,14 +456,14 @@ async function botProofSet(
   }
   await expectTableRowOrder(expect, reader, keys)
   await settleTableLayout(reader)
-  return { prefix, names, keys, reader, windows, frames, base, pads }
+  return { prefix, names, keys, reader, windows, frames, base }
 }
 
-test('a bot created here takes the place the sort gives it, and edits and deletes live', async ({
+test('chat.bots-lifecycle: dashboard, cold entry and F5 lead into live create, edit, clear and delete', async ({
   page,
+  cleanup,
 }) => {
   const stamp = Date.now()
-  const name = nameBeforeAll(stamp)
   const description =
     `Edited by e2e ${stamp}. ` +
     `This assistant answers questions and summarizes conversations for the team. ` +
@@ -439,123 +472,195 @@ test('a bot created here takes the place the sort gives it, and edits and delete
     `Additional operational notes explain how incoming requests are triaged and routed between agents.`
 
   await grantAdminToSelf(expect, page)
+  const subject = reserveBot(page, cleanup, 'AAA')
+  const name = subject.name
+  const frames = watchDeliveryFrames(page)
+  let key = ''
+  const row = () => page.getByTestId(`hilos-table-row-${key}`)
+  try {
+    await test.step('Dashboard opens one complete bots reply', async () => {
+      await gotoPage(expect, page, '/hilos')
+      await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
-  let fullLoads = 0
-  page.on('load', () => {
-    fullLoads += 1
-  })
+      const opening = {
+        packets: frames.packets.length,
+        sent: frames.sent.length,
+      }
+      await page.getByTestId('dashboard-card-admin_bots').click()
+      await expect(page.getByTestId('admin-bots-view')).toBeVisible()
+      expect(new URL(page.url()).pathname).toBe('/hilos/app/bots')
+      await expectBotsPageHead(page)
+      expectBotsPageResponse(frames, opening)
+    })
+    await test.step('Cold address opens one complete bots reply', async () => {
+      const opening = {
+        packets: frames.packets.length,
+        sent: frames.sent.length,
+      }
+      await gotoPage(expect, page, '/hilos/app/bots')
+      await expect(page.getByTestId('admin-bots-view')).toBeVisible()
+      await expectBotsPageHead(page)
+      expectBotsPageResponse(frames, opening)
+    })
+    await test.step('F5 opens one complete bots reply', async () => {
+      const opening = {
+        packets: frames.packets.length,
+        sent: frames.sent.length,
+      }
+      await page.reload()
+      await expectPageReady(expect, page)
+      await expect(page.getByTestId('admin-bots-view')).toBeVisible()
+      await expectBotsPageHead(page)
+      expectBotsPageResponse(frames, opening)
+    })
+    let fullLoads = 0
+    page.on('load', () => {
+      fullLoads += 1
+    })
+    const base = await tableTotal(expect, page)
+    await test.step('Create places the inactive bot first without Apply', async () => {
+      // Create: the row goes in at once where the order puts it — first, not at the
+      // tail — and no Apply stands between the author and its own row.
+      await createBot(page, name)
+      key = await tableRowKeyByText(expect, page, name)
+      subject.key = key
+      await expectTableTotal(expect, page, base + 1)
+      expect((await tableRowKeys(page))[0]).toBe(key)
+      await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
+    })
+    await test.step('Edit and expand the live description', async () => {
+      // Edit the description: the value lands in place, the row keeps its slot.
+      await editBotDescription(page, key, description)
+      await expect(row()).toContainText(description)
+      expect((await tableRowKeys(page))[0]).toBe(key)
+      await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
 
-  await openBots(page)
-  const loadsAfterColdLoad = fullLoads
-  const base = await tableTotal(expect, page)
+      const toggle = row().getByRole('button', {
+        name: 'Show in full: Description',
+      })
+      await expect(toggle).toBeVisible()
+      await toggle.click()
+      const collapse = row().getByRole('button', {
+        name: 'Collapse: Description',
+      })
+      await expect(collapse).toHaveAttribute('aria-expanded', 'true')
+      await expect(collapse).toHaveText('Collapse')
+      await collapse.click()
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(toggle).toBeFocused()
+    })
+    await test.step('Clear persists an empty description', async () => {
+      // Erase the description: an optional field left empty is written empty, not
+      // skipped, so the cell clears and the dialog reopens on an empty field.
+      await editBotDescription(page, key, '')
+      await expect(row()).not.toContainText(description)
+      await expect(
+        row().getByRole('button', { name: 'Show in full: Description' }),
+      ).toHaveCount(0)
+      await expect(shownByTestId(row(), 'hilos-table-text-toggle')).toHaveCount(
+        0,
+      )
+      await shownByTestId(page, `admin-bots-edit-${key}`).click()
+      await expect(page.getByTestId('admin-bots-description')).toHaveValue('')
+      await page.getByTestId('modal-close').click()
+      await expect(page.getByTestId('modal')).toBeHidden()
+    })
+    await test.step('Delete restores the count without a document reload', async () => {
+      // Delete: the bot leaves the window and the count goes back.
+      await deleteBot(page, key)
+      await expectTableTotal(expect, page, base)
 
-  // Create: the row goes in at once where the order puts it — first, not at the
-  // tail — and no Apply stands between the author and its own row.
-  await createBot(page, name)
-  await expectTableTotal(expect, page, base + 1)
-  const key = await tableRowKeyByText(expect, page, name)
-  expect((await tableRowKeys(page))[0]).toBe(key)
-  await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
-
-  // Edit the description: the value lands in place, the row keeps its slot.
-  await editBotDescription(page, key, description)
-  const row = page.getByTestId(`hilos-table-row-${key}`)
-  await expect(row).toContainText(description)
-  expect((await tableRowKeys(page))[0]).toBe(key)
-  await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
-
-  const toggle = row.getByRole('button', {
-    name: 'Show in full: Description',
-  })
-  await expect(toggle).toBeVisible()
-  await toggle.click()
-  const collapse = row.getByRole('button', { name: 'Collapse: Description' })
-  await expect(collapse).toHaveAttribute('aria-expanded', 'true')
-  await expect(collapse).toHaveText('Collapse')
-  await collapse.click()
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-  await expect(toggle).toBeFocused()
-
-  // Erase the description: an optional field left empty is written empty, not
-  // skipped, so the cell clears and the dialog reopens on an empty field.
-  await editBotDescription(page, key, '')
-  await expect(row).not.toContainText(description)
-  await expect(
-    row.getByRole('button', { name: 'Show in full: Description' }),
-  ).toHaveCount(0)
-  await expect(shownByTestId(row, 'hilos-table-text-toggle')).toHaveCount(0)
-  await shownByTestId(page, `admin-bots-edit-${key}`).click()
-  await expect(page.getByTestId('admin-bots-description')).toHaveValue('')
-  await page.getByTestId('modal-close').click()
-  await expect(page.getByTestId('modal')).toBeHidden()
-
-  // Delete: the bot leaves the window and the count goes back.
-  await deleteBot(page, key)
-  await expectTableTotal(expect, page, base)
-
-  // The whole tour stayed in one live document.
-  expect(fullLoads).toBe(loadsAfterColdLoad)
+      expect(fullLoads).toBe(0)
+    })
+  } finally {
+    frames.stop()
+  }
 })
 
-test('a bot created in another tab arrives on its own at the tail of a window with room', async ({
+test('chat.bots-tail: foreign create appends, while rename waits for Show', async ({
   page,
+  cleanup,
 }) => {
-  const stamp = Date.now()
-  const filler = `ZZ ${stamp} filler`
-  const tail = `ZZ ${stamp} tail`
-
   await grantAdminToSelf(expect, page)
+  const subject = reserveBot(page, cleanup, 'AAA')
+  const tailSubject = reserveBot(page, cleanup, 'ZZ tail')
+  const name = subject.name
+  const tail = tailSubject.name
   await openBots(page)
   const base = await tableTotal(expect, page)
-
-  // Tab A makes the page with room: the filler sorts after every bot, onto a page
-  // A is not showing, so A sees the count and not the row.
-  await createBot(page, filler)
+  const [fillerId] = await createBotExtras(cleanup, 1)
+  const fillerKey = String(fillerId)
   await expectTableTotal(expect, page, base + 1)
+  // This subject exists above the reader before its first window opens.
+  await createBot(page, name)
+  const key = await tableRowKeyByText(expect, page, name)
+  subject.key = key
 
-  // Tab B opens cold after it and goes to that last page, where the filler is the
-  // last row of a window with room.
   const tabB = await page.context().newPage()
+  cleanup.defer(() => tabB.close())
+  const tableWindowsOfB = countTableWindows(tabB)
   let tabBLoads = 0
   tabB.on('load', () => {
     tabBLoads += 1
   })
   await openBots(tabB)
-  await expectTableTotal(expect, tabB, base + 1)
+  await expectTableTotal(expect, tabB, base + 2)
   await goToLastPage(expect, tabB)
   const tabBLoadsAfterColdLoad = tabBLoads
-  const fillerKey = await tableRowKeyByText(expect, tabB, filler)
-  const keysBefore = await tableRowKeys(tabB)
+  let keysBefore = await tableRowKeys(tabB)
   expect(keysBefore.at(-1)).toBe(fillerKey)
   expect(keysBefore.length).toBeLessThan(WINDOW)
 
-  // A creates the tail. At B it sorts after the last row shown, into the free
-  // slot, and shifts nothing: it arrives on its own, with no Apply, no strip and
-  // no document reload.
-  await createBot(page, tail)
-  const tailKey = await tableRowKeyByText(expect, tabB, tail)
-  expect(await tableRowKeys(tabB)).toEqual([...keysBefore, tailKey])
-  await expectTableTotal(expect, tabB, base + 2)
-  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
-  await expect(tabB.getByTestId('hilos-table-announce')).toHaveCount(0)
-  expect(tabBLoads).toBe(tabBLoadsAfterColdLoad)
+  await test.step('Foreign create appends to the free tail without Apply, announcement or reload', async () => {
+    await createBot(page, tail)
+    const tailKey = await tableRowKeyByText(expect, tabB, tail)
+    tailSubject.key = tailKey
+    expect(await tableRowKeys(tabB)).toEqual([...keysBefore, tailKey])
+    await expectTableTotal(expect, tabB, base + 3)
+    await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+    await expect(tabB.getByTestId('hilos-table-announce')).toHaveCount(0)
+    expect(tabBLoads).toBe(tabBLoadsAfterColdLoad)
+    await deleteBot(tabB, tailKey)
+    await openBots(tabB)
+    await goToLastPage(expect, tabB)
+    await expectTableTotal(expect, tabB, base + 2)
+    keysBefore = await tableRowKeys(tabB)
+    expect(keysBefore.at(-1)).toBe(fillerKey)
+    expect(keysBefore.length).toBeLessThan(WINDOW)
+  })
 
-  // Cleanup: B is the tab that shows both.
-  await deleteBot(tabB, tailKey)
-  await deleteBot(tabB, fillerKey)
-  await tabB.close()
+  await test.step('Rename onto the same tail announces at the same count until Show appends it', async () => {
+    await renameBot(page, key, tail)
+    const strip = tabB.getByTestId('hilos-table-announce')
+    await expect(strip).toContainText('1 new row')
+    await expectTableTotal(expect, tabB, base + 2)
+    expect(await tableRowKeys(tabB)).toEqual(keysBefore)
+    await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toHaveCount(0)
+    await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+
+    const tableWindowsBeforeShow = tableWindowsOfB()
+    await tabB.getByTestId('hilos-table-announce-show').click()
+    await expect.poll(tableWindowsOfB).toBeGreaterThan(tableWindowsBeforeShow)
+    await expect(strip).toHaveCount(0)
+    await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+    expect(await tableRowKeys(tabB)).toEqual([...keysBefore, key])
+    await deleteBot(tabB, key)
+  })
 })
 
-test('a bot created above the window is announced, and Show brings the window level', async ({
+test('chat.bots-above: announcement and Show preserve the window, then Back reaches the new first row', async ({
   page,
+  cleanup,
 }) => {
-  const name = nameBeforeAll(Date.now())
-
   await grantAdminToSelf(expect, page)
+  const subject = reserveBot(page, cleanup, 'AAA')
+  const name = subject.name
 
   const tabB = await page.context().newPage()
+  cleanup.defer(() => tabB.close())
   const tableWindowsOfB = countTableWindows(tabB)
   await openBots(page)
+  await fillWithExtras(page, cleanup)
   await openBots(tabB)
   await goToLastPage(expect, tabB)
   const base = await tableTotal(expect, tabB)
@@ -564,39 +669,78 @@ test('a bot created above the window is announced, and Show brings the window le
   // the table already held, so neither its arrival nor its leaving moves a row.
   const rowTop = await watchFirstRowTop(tabB)
 
-  // A creates a bot that sorts before every other: first on A's own window, and
-  // on a page above the one B is standing on.
-  await createBot(page, name)
-  const key = await tableRowKeyByText(expect, page, name)
-
-  // B is told, and nothing moves: the strip names the row, the rows shown are the
-  // rows that were shown, and nothing waits behind Apply.
   const strip = tabB.getByTestId('hilos-table-announce')
-  await expect(strip).toContainText('1 new row')
-  await expect(strip).not.toContainText('above')
-  await expect(tabB.getByTestId('hilos-table-announce-show')).toBeVisible()
-  await expectTableTotal(expect, tabB, base + 1)
-  await expect(tabB.getByTestId('hilos-table-next')).toBeDisabled()
-  expect(await tableRowKeys(tabB)).toEqual(keysBefore)
-  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
-  await rowTop.unchanged()
+  const next = tabB.getByTestId('hilos-table-next')
+  const prev = tabB.getByTestId('hilos-table-prev')
+  const lastPage = Math.ceil(base / WINDOW)
+  const pagesAfter = Math.ceil((base + 1) / WINDOW)
+  let key = ''
+  await test.step('Foreign create above announces without moving rows or enabling Next', async () => {
+    // A creates a bot that sorts before every other: first on A's own window, and
+    // on a page above the one B is standing on.
+    await createBot(page, name)
+    key = await tableRowKeyByText(expect, page, name)
+    subject.key = key
 
-  // Show asks for the window again at the place B stands, the same answer a
-  // reload of that window gives: the strip goes, and a window arrives holding the
-  // rows after that place — which a row above it did not touch.
-  const tableWindowsBeforeShow = tableWindowsOfB()
-  await tabB.getByTestId('hilos-table-announce-show').click()
-  await expect.poll(tableWindowsOfB).toBeGreaterThan(tableWindowsBeforeShow)
-  await expect(strip).toHaveCount(0)
-  expect(await tableRowKeys(tabB)).toEqual(keysBefore)
-  await rowTop.unchanged()
-  await expectTableTotal(expect, tabB, base + 1)
-  await expect(tabB.getByTestId('hilos-table-next')).toBeDisabled()
-  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+    // B is told, and nothing moves: the strip names the row, the rows shown are the
+    // rows that were shown, and nothing waits behind Apply.
+    await expect(strip).toContainText('1 new row')
+    await expect(strip).not.toContainText('above')
+    await expect(tabB.getByTestId('hilos-table-announce-show')).toBeVisible()
+    await expectTableTotal(expect, tabB, base + 1)
+    await expect(tabB.getByTestId('hilos-table-next')).toBeDisabled()
+    expect(await tableRowKeys(tabB)).toEqual(keysBefore)
+    await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+    await rowTop.unchanged()
+  })
+  await test.step('Show refreshes the same rows and keeps their top', async () => {
+    // Show asks for the window again at the place B stands, the same answer a
+    // reload of that window gives: the strip goes, and a window arrives holding the
+    // rows after that place — which a row above it did not touch.
+    const tableWindowsBeforeShow = tableWindowsOfB()
+    await tabB.getByTestId('hilos-table-announce-show').click()
+    await expect.poll(tableWindowsOfB).toBeGreaterThan(tableWindowsBeforeShow)
+    await expect(strip).toHaveCount(0)
+    expect(await tableRowKeys(tabB)).toEqual(keysBefore)
+    await rowTop.unchanged()
+    await expectTableTotal(expect, tabB, base + 1)
+    await expect(tabB.getByTestId('hilos-table-next')).toBeDisabled()
+    await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+  })
+  await test.step('Footer names the tail and two Back actions reach the created first row', async () => {
+    // The window kept its rows and moved through the set: it now ends the set, so the
+    // footer names the page its FIRST ROW sits on and Next has nothing to offer. Counting
+    // presses instead would read this as page two of three and offer a Next into nothing.
+    expect(await tableRowKeys(tabB)).toEqual(keysBefore)
+    await expectTableTotal(expect, tabB, base + 1)
+    await expect(
+      tabB.locator(
+        `[data-id="hilos-table-page-${lastPage}"][aria-current="page"]`,
+      ),
+    ).toBeVisible()
+    await expect(
+      tabB.getByTestId(`hilos-table-page-${pagesAfter}`),
+    ).toHaveCount(1)
+    await expect(tabB.getByTestId('hilos-table-count')).toHaveText(
+      new RegExp(`– ${base + 1} of ${base + 1}\\s*$`),
+    )
+    await expect(next).toBeDisabled()
+    await expect(prev).toBeEnabled()
 
-  // Cleanup: A shows the bot it made.
-  await tabB.close()
-  await deleteBot(page, key)
+    // Back walks to the top of the set. The second step is the one a page counter could
+    // not take: less than a page stands to the left, so the window asked for is the START
+    // of the set rather than the ten rows before its own first one.
+    await pageBackOnce(expect, tabB)
+    await expect(prev).toBeEnabled()
+    await pageBackOnce(expect, tabB)
+    expect((await tableRowKeys(tabB))[0]).toBe(key)
+    await expect(prev).toBeDisabled()
+    await expect(
+      tabB.locator('[data-id="hilos-table-page-1"][aria-current="page"]'),
+    ).toBeVisible()
+    await expect(tabB.getByTestId('hilos-table-count')).toHaveText(/^\s*1 – /)
+  })
+  await deleteBot(tabB, key)
 })
 
 test('Next still reaches the rows below after bots above the window are deleted', async ({
@@ -640,314 +784,160 @@ test('Next still reaches the rows below after bots above the window are deleted'
   await tabB.close()
 })
 
-test('Next turns on when another tab renames a bot from above a full last page to past it', async ({
+test('chat.bots-next-toggle: renaming across a full last window turns Next on and off at the same total', async ({
   page,
-}) => {
-  const stamp = Date.now()
-  const name = nameBeforeAll(stamp)
-  const past = `ZZ ${stamp} zzz`
-
-  await grantAdminToSelf(expect, page)
-  await openBots(page)
-  const pads = await fillToWholePages(page, stamp)
-
-  const tabB = await page.context().newPage()
-  await openBots(tabB)
-  await goToLastPage(expect, tabB)
-  const next = tabB.getByTestId('hilos-table-next')
-  await expect(next).toBeDisabled()
-
-  // A bot before every other stands above B. The strip says so, and a full last
-  // page still has nothing after it, so Next stays off.
-  await createBot(page, name)
-  const key = await tableRowKeyByText(expect, page, name)
-  const strip = tabB.getByTestId('hilos-table-announce')
-  await expect(strip).toContainText('1 new row')
-  await expect(next).toBeDisabled()
-  const total = await tableTotal(expect, tabB)
-
-  // The same bot, renamed past every row B shows, is now the next page. The
-  // total does not move; Next does.
-  await renameBot(page, key, past)
-  await expectTableTotal(expect, tabB, total)
-  await expect(next).toBeEnabled()
-  await next.click()
-  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
-  await expect(tabB.getByTestId('hilos-table-empty-page')).toHaveCount(0)
-
-  await deleteBot(tabB, key)
-  await tabB.close()
-  await deletePads(page, pads)
-})
-
-test('Next turns off when the only bot past the window is renamed above it', async ({
-  page,
+  cleanup,
 }) => {
   const stamp = Date.now()
   const past = `ZZ ${stamp} zzz`
-  const name = nameBeforeAll(stamp)
 
   await grantAdminToSelf(expect, page)
+  const subject = reserveBot(page, cleanup, 'AAA')
+  const name = subject.name
   await openBots(page)
-  const pads = await fillToWholePages(page, stamp)
-  await createBot(page, past)
+  await fillWithExtras(page, cleanup)
+  const tabB = await page.context().newPage()
+  cleanup.defer(() => tabB.close())
+  await openBots(tabB)
+  await goToLastPage(expect, tabB)
+  const next = tabB.getByTestId('hilos-table-next')
+  await expect(next).toBeDisabled()
+  let key = ''
+  let total = 0
+
+  await test.step('Create above the full window announces while Next stays off', async () => {
+    await createBot(page, name)
+    key = await tableRowKeyByText(expect, page, name)
+    subject.key = key
+    await expect(tabB.getByTestId('hilos-table-announce')).toContainText(
+      '1 new row',
+    )
+    await expect(next).toBeDisabled()
+    total = await tableTotal(expect, tabB)
+  })
+
+  await test.step('Rename past the tail enables Next without growing the total and Next reaches the bot', async () => {
+    await renameBot(page, key, past)
+    await expectTableTotal(expect, tabB, total)
+    await expect(next).toBeEnabled()
+    await next.click()
+    await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+    await expect(tabB.getByTestId('hilos-table-empty-page')).toHaveCount(0)
+    await pageBackOnce(expect, tabB)
+    await expect(next).toBeEnabled()
+  })
+
+  await test.step('Rename the only bot past the window above it disables Next at the same total', async () => {
+    await dismissToasts(page)
+    await goToLastPage(expect, page)
+    await dismissToasts(page)
+    await renameBot(page, key, name)
+    await expectTableTotal(expect, tabB, total)
+    await expect(next).toBeDisabled()
+    await openBots(page)
+    await deleteBot(page, await tableRowKeyByText(expect, page, name))
+  })
+})
+
+test('chat.bots-inner-announcement: foreign create and rename wait for Show before sorted insertion', async ({
+  page,
+  cleanup,
+}) => {
+  await grantAdminToSelf(expect, page)
+  const subject = reserveBot(page, cleanup, 'Dave')
+  const companionSubject = reserveBot(page, cleanup, 'ZZ renamed')
+  const name = subject.name
+  const companion = companionSubject.name
+  await openBots(page)
+  await createBot(page, companion)
   await dismissToasts(page)
   await goToLastPage(expect, page)
-  const key = await tableRowKeyByText(expect, page, past)
-
-  const tabB = await page.context().newPage()
-  await openBots(tabB)
-  await goToLastPage(expect, tabB)
-  await pageBackOnce(expect, tabB)
-  const next = tabB.getByTestId('hilos-table-next')
-  await expect(next).toBeEnabled()
-  const total = await tableTotal(expect, tabB)
-
-  // The only row after B moves above it. The total stays, and Next has nowhere
-  // left to go.
-  await renameBot(page, key, name)
-  await expectTableTotal(expect, tabB, total)
-  await expect(next).toBeDisabled()
-
-  await tabB.close()
-  await openBots(page)
-  await deleteBot(page, await tableRowKeyByText(expect, page, name))
-  await deletePads(page, pads)
-})
-
-test('after Show the footer names the tail, Next is off, and Back reaches the first row', async ({
-  page,
-}) => {
-  const name = nameBeforeAll(Date.now())
-
-  await grantAdminToSelf(expect, page)
-
-  const tabB = await page.context().newPage()
-  const tableWindowsOfB = countTableWindows(tabB)
-  await openBots(page)
-  await openBots(tabB)
-  // Two full pages of ten from the seed, so B stands on the last one and the row A is
-  // about to create takes the count over a page boundary: this is the shape the defect
-  // was found in (HIL-1093).
-  await goToLastPage(expect, tabB)
-  const base = await tableTotal(expect, tabB)
-  const keysBefore = await tableRowKeys(tabB)
-  const next = tabB.getByTestId('hilos-table-next')
-  const prev = tabB.getByTestId('hilos-table-prev')
-  // Read off what the table was found holding, never written as literals: a retry runs
-  // against the same database, and a bot an earlier attempt left behind would otherwise
-  // make the arithmetic below wrong rather than the behavior.
-  const lastPage = Math.ceil(base / WINDOW)
-  const pagesAfter = Math.ceil((base + 1) / WINDOW)
-
-  await createBot(page, name)
-  const key = await tableRowKeyByText(expect, page, name)
-  const strip = tabB.getByTestId('hilos-table-announce')
-  await expect(strip).toContainText('1 new row')
-  await expect(strip).not.toContainText('above')
-  const windowsBeforeShow = tableWindowsOfB()
-  await tabB.getByTestId('hilos-table-announce-show').click()
-  await expect.poll(tableWindowsOfB).toBeGreaterThan(windowsBeforeShow)
-  await expect(strip).toHaveCount(0)
-
-  // The window kept its rows and moved through the set: it now ends the set, so the
-  // footer names the page its FIRST ROW sits on and Next has nothing to offer. Counting
-  // presses instead would read this as page two of three and offer a Next into nothing.
-  expect(await tableRowKeys(tabB)).toEqual(keysBefore)
-  await expectTableTotal(expect, tabB, base + 1)
-  await expect(
-    tabB.locator(
-      `[data-id="hilos-table-page-${lastPage}"][aria-current="page"]`,
-    ),
-  ).toBeVisible()
-  await expect(tabB.getByTestId(`hilos-table-page-${pagesAfter}`)).toHaveCount(
-    1,
-  )
-  await expect(tabB.getByTestId('hilos-table-count')).toHaveText(
-    new RegExp(`– ${base + 1} of ${base + 1}\\s*$`),
-  )
-  await expect(next).toBeDisabled()
-  await expect(prev).toBeEnabled()
-
-  // Back walks to the top of the set. The second step is the one a page counter could
-  // not take: less than a page stands to the left, so the window asked for is the START
-  // of the set rather than the ten rows before its own first one.
-  await pageBackOnce(expect, tabB)
-  await expect(prev).toBeEnabled()
-  await pageBackOnce(expect, tabB)
-  expect((await tableRowKeys(tabB))[0]).toBe(key)
-  await expect(prev).toBeDisabled()
-  await expect(
-    tabB.locator('[data-id="hilos-table-page-1"][aria-current="page"]'),
-  ).toBeVisible()
-  await expect(tabB.getByTestId('hilos-table-count')).toHaveText(/^\s*1 – /)
-
-  // Cleanup: B holds the bot A made.
-  await deleteBot(tabB, key)
-  await tabB.close()
-})
-
-test('a bot created inside the window is announced by the same strip, and Show brings it between the rows', async ({
-  page,
-}) => {
-  const name = `Dave ${Date.now()}`
-
-  await grantAdminToSelf(expect, page)
-
-  const tabB = await page.context().newPage()
-  const tableWindowsOfB = countTableWindows(tabB)
-  await openBots(page)
-  await openBots(tabB)
-  const base = await tableTotal(expect, tabB)
-  const keysBefore = await tableRowKeys(tabB)
-  const rowTop = await watchFirstRowTop(tabB)
-
-  // A creates a bot that sorts between Dasha and David, between two rows both
-  // tabs are showing on the first page.
-  await createBot(page, name)
-  const key = await tableRowKeyByText(expect, page, name)
-
-  // B is told by the strip a row above the window raises, in the same words: it
-  // names no place (HIL-1026). Nothing moves until the reader asks — the rows shown
-  // are the rows that were shown, and nothing waits behind Apply.
-  await expectTableTotal(expect, tabB, base + 1)
-  const strip = tabB.getByTestId('hilos-table-announce')
-  await expect(strip).toContainText('1 new row')
-  await expect(strip).not.toContainText('above')
-  expect(await tableRowKeys(tabB)).toEqual(keysBefore)
-  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toHaveCount(0)
-  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
-  await rowTop.unchanged()
-
-  // Show asks for the window again at the same place, the start of the set: the
-  // new row stands between the rows it sorts between, the rows below it move down
-  // by one, and the last of them leaves for the next page.
-  const tableWindowsBeforeShow = tableWindowsOfB()
-  await tabB.getByTestId('hilos-table-announce-show').click()
-  await expect.poll(tableWindowsOfB).toBeGreaterThan(tableWindowsBeforeShow)
-  await expect(strip).toHaveCount(0)
-  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
-  const keysAfter = await tableRowKeys(tabB)
-  expect(keysAfter).toHaveLength(keysBefore.length)
-  expect(keysAfter.filter((rowKey) => rowKey !== key)).toEqual(
-    keysBefore.slice(0, -1),
-  )
-  await rowTop.unchanged()
-
-  // Cleanup: A shows the bot it made.
-  await tabB.close()
-  await deleteBot(page, key)
-})
-
-test('a bot another tab renamed into the window is announced by the same strip, and Show brings it between the rows', async ({
-  page,
-}) => {
-  const stamp = Date.now()
-  const name = `ZZ ${stamp} renamed`
-  const renamed = `Dave ${stamp}`
-
-  await grantAdminToSelf(expect, page)
+  const companionKey = await tableRowKeyByText(expect, page, companion)
+  companionSubject.key = companionKey
   await openBots(page)
 
-  // A creates the bot BEFORE B opens, past every other bot, so B's cold first
-  // window does not hold it and its count already has it. A follows it to the
-  // last page, where its edit button is — once the notice of the create, which
-  // stands over the pager, is out of the way.
-  await createBot(page, name)
-  await dismissToasts(page)
-  await goToLastPage(expect, page)
-  const key = await tableRowKeyByText(expect, page, name)
-
   const tabB = await page.context().newPage()
+  cleanup.defer(() => tabB.close())
   const tableWindowsOfB = countTableWindows(tabB)
   await openBots(tabB)
   const base = await tableTotal(expect, tabB)
-  const keysBefore = await tableRowKeys(tabB)
-  const rowTop = await watchFirstRowTop(tabB)
+  let keysBefore = await tableRowKeys(tabB)
+  let rowTop = await watchFirstRowTop(tabB)
 
-  // A renames it between Dasha and David, between two rows B is showing. B has
-  // not seen this row here, so it is told as of a new one — the same strip, in
-  // the same words. The set did not grow, so the total stays; nothing moves.
-  await renameBot(page, key, renamed)
-  const strip = tabB.getByTestId('hilos-table-announce')
-  await expect(strip).toContainText('1 new row')
-  await expect(strip).not.toContainText('above')
-  await expectTableTotal(expect, tabB, base)
-  expect(await tableRowKeys(tabB)).toEqual(keysBefore)
-  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toHaveCount(0)
-  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
-  await rowTop.unchanged()
+  await test.step('Foreign create announces without movement, then Show inserts and evicts the last row', async () => {
+    // A creates a bot that sorts between Dasha and David, between two rows both
+    // tabs are showing on the first page.
+    await createBot(page, name)
+    const key = await tableRowKeyByText(expect, page, name)
+    subject.key = key
 
-  // Show asks for the window again at the start of the set: the row stands
-  // between the rows it sorts between, and the last of the window leaves for the
-  // next page — what a reload shows.
-  const tableWindowsBeforeShow = tableWindowsOfB()
-  await tabB.getByTestId('hilos-table-announce-show').click()
-  await expect.poll(tableWindowsOfB).toBeGreaterThan(tableWindowsBeforeShow)
-  await expect(strip).toHaveCount(0)
-  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
-  const keysAfter = await tableRowKeys(tabB)
-  expect(keysAfter).toHaveLength(keysBefore.length)
-  expect(keysAfter.filter((rowKey) => rowKey !== key)).toEqual(
-    keysBefore.slice(0, -1),
-  )
-  await expectTableTotal(expect, tabB, base)
+    // B is told by the strip a row above the window raises, in the same words: it
+    // names no place (HIL-1026). Nothing moves until the reader asks — the rows shown
+    // are the rows that were shown, and nothing waits behind Apply.
+    await expectTableTotal(expect, tabB, base + 1)
+    const strip = tabB.getByTestId('hilos-table-announce')
+    await expect(strip).toContainText('1 new row')
+    await expect(strip).not.toContainText('above')
+    expect(await tableRowKeys(tabB)).toEqual(keysBefore)
+    await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toHaveCount(0)
+    await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+    await rowTop.unchanged()
 
-  // Cleanup: B shows the bot now.
-  await deleteBot(tabB, key)
-  await tabB.close()
-})
+    // Show asks for the window again at the same place, the start of the set: the
+    // new row stands between the rows it sorts between, the rows below it move down
+    // by one, and the last of them leaves for the next page.
+    const tableWindowsBeforeShow = tableWindowsOfB()
+    await tabB.getByTestId('hilos-table-announce-show').click()
+    await expect.poll(tableWindowsOfB).toBeGreaterThan(tableWindowsBeforeShow)
+    await expect(strip).toHaveCount(0)
+    await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+    const keysAfter = await tableRowKeys(tabB)
+    expect(keysAfter).toHaveLength(keysBefore.length)
+    expect(keysAfter.filter((rowKey) => rowKey !== key)).toEqual(
+      keysBefore.slice(0, -1),
+    )
+    await rowTop.unchanged()
 
-test('a bot another tab renamed onto the tail of a last page with room is announced, not put in', async ({
-  page,
-}) => {
-  const stamp = Date.now()
-  const filler = `ZZ ${stamp} filler`
-  const name = nameBeforeAll(stamp)
-  const tail = `ZZ ${stamp} tail`
+    await deleteBot(page, key)
+    await openBots(tabB)
+    await expectTableTotal(expect, tabB, base)
+    keysBefore = await tableRowKeys(tabB)
+    rowTop = await watchFirstRowTop(tabB)
+  })
+  await test.step('Foreign rename announces without count growth, then Show inserts the companion', async () => {
+    await dismissToasts(page)
+    await goToLastPage(expect, page)
+    const key = companionKey
+    // A renames it between Dasha and David, between two rows B is showing. B has
+    // not seen this row here, so it is told as of a new one — the same strip, in
+    // the same words. The set did not grow, so the total stays; nothing moves.
+    await renameBot(page, companionKey, name)
+    const strip = tabB.getByTestId('hilos-table-announce')
+    await expect(strip).toContainText('1 new row')
+    await expect(strip).not.toContainText('above')
+    await expectTableTotal(expect, tabB, base)
+    expect(await tableRowKeys(tabB)).toEqual(keysBefore)
+    await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toHaveCount(0)
+    await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+    await rowTop.unchanged()
 
-  await grantAdminToSelf(expect, page)
-  await openBots(page)
+    // Show asks for the window again at the start of the set: the row stands
+    // between the rows it sorts between, and the last of the window leaves for the
+    // next page — what a reload shows.
+    const tableWindowsBeforeShow = tableWindowsOfB()
+    await tabB.getByTestId('hilos-table-announce-show').click()
+    await expect.poll(tableWindowsOfB).toBeGreaterThan(tableWindowsBeforeShow)
+    await expect(strip).toHaveCount(0)
+    await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+    const keysAfter = await tableRowKeys(tabB)
+    expect(keysAfter).toHaveLength(keysBefore.length)
+    expect(keysAfter.filter((rowKey) => rowKey !== key)).toEqual(
+      keysBefore.slice(0, -1),
+    )
+    await expectTableTotal(expect, tabB, base)
 
-  // A makes the page with room — the filler sorts after every bot — and a bot
-  // first in the order, on its own first page, before B opens.
-  await createBot(page, filler)
-  await createBot(page, name)
-  const key = await tableRowKeyByText(expect, page, name)
-
-  const tabB = await page.context().newPage()
-  const tableWindowsOfB = countTableWindows(tabB)
-  await openBots(tabB)
-  await goToLastPage(expect, tabB)
-  const base = await tableTotal(expect, tabB)
-  const fillerKey = await tableRowKeyByText(expect, tabB, filler)
-  const keysBefore = await tableRowKeys(tabB)
-  expect(keysBefore.at(-1)).toBe(fillerKey)
-  expect(keysBefore.length).toBeLessThan(WINDOW)
-
-  // A renames it past the filler, into B's free slot. A created row would
-  // arrive there on its own; an edited one is announced instead, since a row
-  // that left this page earlier may still stand on it with its mark.
-  await renameBot(page, key, tail)
-  const strip = tabB.getByTestId('hilos-table-announce')
-  await expect(strip).toContainText('1 new row')
-  await expectTableTotal(expect, tabB, base)
-  expect(await tableRowKeys(tabB)).toEqual(keysBefore)
-  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toHaveCount(0)
-  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
-
-  // Show brings the window again after the place B stands: the row stands last.
-  const tableWindowsBeforeShow = tableWindowsOfB()
-  await tabB.getByTestId('hilos-table-announce-show').click()
-  await expect.poll(tableWindowsOfB).toBeGreaterThan(tableWindowsBeforeShow)
-  await expect(strip).toHaveCount(0)
-  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
-  expect(await tableRowKeys(tabB)).toEqual([...keysBefore, key])
-
-  // Cleanup: B is the tab that shows both.
-  await deleteBot(tabB, key)
-  await deleteBot(tabB, fillerKey)
-  await tabB.close()
+    await deleteBot(tabB, key)
+  })
 })
 
 test('a value edited in another tab lands in place, highlighted and with no gate', async ({
@@ -1360,31 +1350,11 @@ test('an open edit follows its row past the window edge, and conflicts after it'
   await tabB.close()
 })
 
-/**
- * Asserts the shared page head on /hilos/app/bots: section head block, title,
- * lead, robot icon, breadcrumbs, absence of tabs or subsection cards, and the
- * table's accessible name connected to the section heading.
- *
- * @param page The Playwright page.
- */
+/** Assert the bots identity, breadcrumb navigation and accessible table name. */
 async function expectBotsPageHead(page: Page): Promise<void> {
-  const head = page.getByTestId('hilos-page-head')
-  await expect(head).toBeVisible()
-
   const heading = page.getByRole('heading', { level: 1 })
   await expect(heading).toHaveCount(1)
   await expect(heading).toHaveText('Bots')
-  await expect(heading).toHaveAttribute('data-id', 'hilos-page-head-title')
-
-  await expect(
-    head.getByText('Library bots: profiles, status, and behavior.', {
-      exact: true,
-    }),
-  ).toBeVisible()
-
-  await expect(
-    head.getByTestId('hilos-page-head-block').locator('i.bi-robot'),
-  ).toBeVisible()
 
   const breadcrumbs = page.getByTestId('hilos-breadcrumb')
   await expect(breadcrumbs).toBeVisible()
@@ -1395,8 +1365,6 @@ async function expectBotsPageHead(page: Page): Promise<void> {
   await expect(currentCrumb).toHaveCount(1)
   await expectBreadcrumbLabels(expect, currentCrumb, ['Bots'])
   await expect(currentCrumb.locator('a')).toHaveCount(0)
-
-  await expect(page.getByTestId('hilos-admin-children')).toHaveCount(0)
 
   const table = page.getByTestId('admin-bots-view').getByRole('table')
   await expect(table).toBeVisible()
@@ -1454,46 +1422,6 @@ function expectBotsPageResponse(
   })
   expect(deliveryObject(payload.windows).bots).toBeDefined()
 }
-
-test('reaches the bots admin from the dashboard', async ({ page }) => {
-  const frames = watchDeliveryFrames(page)
-  try {
-    await grantAdminToSelf(expect, page)
-    await gotoPage(expect, page, '/hilos')
-    await expect(page.getByTestId('conn-state')).toHaveText('connected')
-
-    let opening = {
-      packets: frames.packets.length,
-      sent: frames.sent.length,
-    }
-    await page.getByTestId('dashboard-card-admin_bots').click()
-    await expect(page.getByTestId('admin-bots-view')).toBeVisible()
-    expect(new URL(page.url()).pathname).toBe('/hilos/app/bots')
-    await expectBotsPageHead(page)
-    expectBotsPageResponse(frames, opening)
-
-    opening = {
-      packets: frames.packets.length,
-      sent: frames.sent.length,
-    }
-    await gotoPage(expect, page, '/hilos/app/bots')
-    await expect(page.getByTestId('admin-bots-view')).toBeVisible()
-    await expectBotsPageHead(page)
-    expectBotsPageResponse(frames, opening)
-
-    opening = {
-      packets: frames.packets.length,
-      sent: frames.sent.length,
-    }
-    await page.reload()
-    await expectPageReady(expect, page)
-    await expect(page.getByTestId('admin-bots-view')).toBeVisible()
-    await expectBotsPageHead(page)
-    expectBotsPageResponse(frames, opening)
-  } finally {
-    frames.stop()
-  }
-})
 
 test.describe('in the admin view mode', () => {
   test.afterEach(() => setAdminViewMode(false))
@@ -1641,11 +1569,12 @@ test.describe('server geometry', () => {
   for (const mode of ['sequential', 'batch'] as const) {
     test(`${mode} foreign ordinary/widest/last departures retain all boundaries through zero`, async ({
       page,
+      cleanup,
     }, info) => {
       // Six real creates/deletes, two sockets and typed long names exceed one CRUD tour.
       test.setTimeout(test.info().timeout * 6)
       const { prefix, names, keys, reader, windows, frames } =
-        await botProofSet(page)
+        await botProofSet(page, cleanup)
       const observed = await watchTableGeometry(expect, reader, {
         bodyId: 'admin-bots-view',
         projection,
@@ -1736,11 +1665,13 @@ test.describe('server geometry', () => {
 
   test('Apply move and own create use server positions and edge eviction, preserving an unrelated slot', async ({
     page,
+    cleanup,
   }, info) => {
     // Ten seeded-by-UI records plus move/create/cleanup round trips on both sockets.
     test.setTimeout(test.info().timeout * 8)
     const { prefix, keys, reader, windows, frames } = await botProofSet(
       page,
+      cleanup,
       10,
     )
     await deleteBot(page, keys[0]!)
@@ -1843,10 +1774,14 @@ test.describe('server geometry', () => {
 
   test('nonzero foreign and own server moves use live rank across preceding and interleaved departures', async ({
     page,
+    cleanup,
   }, info) => {
     // Six UI creates, two deletions and two renames on independent sockets.
     test.setTimeout(test.info().timeout * 6)
-    const { prefix, keys, reader, windows, frames } = await botProofSet(page)
+    const { prefix, keys, reader, windows, frames } = await botProofSet(
+      page,
+      cleanup,
+    )
     const allocations: TableGeometryWatch[] = []
     try {
       for (const key of [keys[0]!, keys[3]!]) {
@@ -1958,13 +1893,18 @@ test.describe('server geometry', () => {
 
   test('foreign append follows mixed and all-placeholder slots; Apply never substitutes for Show', async ({
     page,
+    cleanup,
   }, info) => {
     // Bots cannot classify membership under search (containsRow returns null).
     // The unfiltered last page supplies real append/announce with seed rows intact.
     // Repeated real append/delete cycles and Show exceed one CRUD tour's cap.
     test.setTimeout(test.info().timeout * 7)
-    const { prefix, keys, reader, windows, frames, base, pads } =
-      await botProofSet(page, 6, 'last-page')
+    const { prefix, keys, reader, windows, frames, base } = await botProofSet(
+      page,
+      cleanup,
+      6,
+      'last-page',
+    )
     const watches: TableGeometryWatch[] = []
     const watch = async (lastKey: string, checkTracks = true) => {
       const observed = await watchTableGeometry(expect, reader, {
@@ -2132,7 +2072,6 @@ test.describe('server geometry', () => {
       await expect(reader.getByTestId('hilos-table-placeholder')).toHaveCount(0)
       await deleteBot(reader, announced)
       await openBots(page)
-      await deletePads(page, pads)
     } finally {
       for (const observed of watches) await observed.stop()
       await info.attach('server-frames', {

@@ -1,6 +1,8 @@
 import type { Page } from '@playwright/test'
-import { test, expect } from '../test.js'
+import { test as base, expect } from '../test.js'
 import {
+  cleanupFixtures,
+  type TestCleanup,
   nameFromEmail,
   register,
   uniqueEmail,
@@ -11,12 +13,14 @@ import {
   tableRowKeyByText,
   createTestAdmin,
   createTestUser,
+  watchOpenedSockets,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-import { openBotEdit, watchBotSearch } from '../helpers/bots'
+import { openBotEdit, watchBotSearch } from '../helpers/bots.js'
 import { logout, signUp } from '../helpers/session.js'
 import {
   dictateModerationVerdict,
+  forgetModelKey,
   modelKey,
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
 
@@ -25,45 +29,34 @@ import {
 // Chat's main screen: the participant roster, bot list, message composer and
 // event stream over the live socket.
 
-// Step-7.3.4 list render e2e: the main page answers with a `page_response`
-// carrying the `mainUsers` list; the normalizer folds it into the page scope
-// and the roster renders the connected self user as a participant — the first
-// list rendered end-to-end.
-test('renders the connected user in the participant roster', async ({
-  page,
-}) => {
-  const user = await createTestUser(expect, page)
+const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
-  await expect(
-    page.getByTestId('participant').filter({ hasText: user.name }),
-  ).toBeVisible()
+// Real registration through the composer creates the service event and places
+// the same person in the participant roster over the live socket.
+test('chat.registration-roster', async ({ page }) => {
+  const user =
+    await test.step('Register through the composer and see the own registration notice', async () => {
+      const user = await signUp(expect, page)
+
+      await expect(
+        page
+          .getByTestId('event')
+          .filter({ hasText: user.name })
+          .filter({ hasText: 'registered in chat' }),
+      ).toBeVisible()
+      return user
+    })
+
+  await test.step('Read the registered person in the participant roster', async () => {
+    await expect(
+      page.getByTestId('participant').filter({ hasText: user.name }),
+    ).toBeVisible()
+  })
 })
 
-// Main page event stream e2e: registering appends a `user_registered` event to
-// the `mainEvents` list; the stream resolves the target user's name against the
-// entity store and renders the service notice for the self user. Registration is
-// now explicit (the auth surface), so the notice fires from the register action.
-test('renders the own registration notice in the event stream', async ({
-  page,
-}) => {
-  const user = await signUp(expect, page)
-
-  await expect(
-    page
-      .getByTestId('event')
-      .filter({ hasText: user.name })
-      .filter({ hasText: 'registered in chat' }),
-  ).toBeVisible()
-})
-
-// Message composer e2e: submitting the bottom-pinned form sends the `message`
-// action frame over the live socket and starts the re-send lockout — the first
-// client-to-server action wired end-to-end. The publish itself rides backend
-// moderation, so the deterministic assertion is the sent frame plus the gated
-// button, not the message appearing in the stream.
-test('sends a message action and starts the re-send lockout', async ({
-  page,
-}) => {
+// One permitted send proves both the outgoing action and the moderated
+// publication, including the composer's cleared draft and re-send lockout.
+test('chat.message-publish', async ({ page, cleanup }) => {
   const sentFrames: string[] = []
   page.on('websocket', (ws) => {
     ws.on('framesent', (frame) => {
@@ -82,58 +75,46 @@ test('sends a message action and starts the re-send lockout', async ({
   // would come back into the field as "Moderation is unavailable right now"
   // and the input never empty.
   const key = modelKey()
+  cleanup.defer(() => forgetModelKey(key))
   const text = `hello hilos ${key}`
   await dictateModerationVerdict(key, true, 'ok')
 
-  await typeInto(page.getByTestId('message-input'), text)
-  await clickSubmit(expect, page.getByTestId('message-send'))
+  await test.step('Send one message action and lock the cleared composer', async () => {
+    await typeInto(page.getByTestId('message-input'), text)
+    await clickSubmit(expect, page.getByTestId('message-send'))
 
-  await expect
-    .poll(() =>
-      sentFrames.some((payload) => {
-        try {
-          const message = JSON.parse(payload) as {
-            type?: string
-            action?: string
-            data?: { content?: string }
+    await expect
+      .poll(() =>
+        sentFrames.some((payload) => {
+          try {
+            const message = JSON.parse(payload) as {
+              type?: string
+              action?: string
+              data?: { content?: string }
+            }
+
+            return (
+              message.type === 'action' &&
+              message.action === 'message' &&
+              message.data?.content === text
+            )
+          } catch {
+            return false
           }
+        }),
+      )
+      .toBe(true)
 
-          return (
-            message.type === 'action' &&
-            message.action === 'message' &&
-            message.data?.content === text
-          )
-        } catch {
-          return false
-        }
-      }),
-    )
-    .toBe(true)
+    await expect(page.getByTestId('message-input')).toHaveValue('')
+    await expect(page.getByTestId('message-cooldown')).toBeVisible()
+    await expect(page.getByTestId('message-send')).toBeDisabled()
+  })
 
-  await expect(page.getByTestId('message-input')).toHaveValue('')
-  await expect(page.getByTestId('message-cooldown')).toBeVisible()
-  await expect(page.getByTestId('message-send')).toBeDisabled()
-})
-
-// Composer round-trip e2e: a submitted message rides the `message` action; the
-// backend moderates and publishes it, the moderation state flows back through
-// the `selfConnection` data slot, and the published message renders in the
-// event stream — the composer driven by self-connection state end to end.
-test('renders a sent message in the event stream after moderation', async ({
-  page,
-}) => {
-  await createTestUser(expect, page)
-
-  const key = modelKey()
-  const text = `hello from e2e ${key}`
-  await dictateModerationVerdict(key, true, 'ok')
-
-  await typeInto(page.getByTestId('message-input'), text)
-  await clickSubmit(expect, page.getByTestId('message-send'))
-
-  await expect(
-    page.getByTestId('event-text').filter({ hasText: text }),
-  ).toBeVisible()
+  await test.step('See the same moderated message in the event stream', async () => {
+    await expect(
+      page.getByTestId('event-text').filter({ hasText: text }),
+    ).toBeVisible()
+  })
 })
 
 // The chat message list owns its own scroll: the shell is a fixed-height
@@ -211,6 +192,9 @@ test('gates sending behind the surface, and returns the identity line to anonymo
  * own (food), and no test of this demo dictates that topic to the analyzer.
  */
 const QUIET_BOT = 'Quinn'
+
+/** The initials of {@link QUIET_BOT}. */
+const QUIET_BOT_INITIALS = 'Q'
 
 /**
  * Switch a seeded bot on or off in the bots admin table.
@@ -315,15 +299,13 @@ async function followHomeLinks(
 test.describe('home links', () => {
   test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
 
-  test('opens a person and a bot from the home links without a reload', async ({
-    browser,
-    page,
-  }) => {
+  test('chat.home-links', async ({ browser, page }) => {
     // Two bot edits, a second window, and both walks outlive the
     // single-client cap.
     test.slow()
 
     const windows = await watchBotSearch(page)
+    const adminSockets = watchOpenedSockets(page)
     const { baseURL, ignoreHTTPSErrors } = test.info().project.use
     const guestContext = await browser.newContext({
       baseURL,
@@ -334,20 +316,42 @@ test.describe('home links', () => {
     try {
       const userId = await createTestAdmin(expect, page)
       const name = (await page.getByTestId('self-user').innerText()).trim()
-      await setBotActive(page, QUIET_BOT, true, windows)
-      quinnActive = true
-      const rowKey = await tableRowKeyByText(expect, page, QUIET_BOT)
-
       const guestPage = await guestContext.newPage()
-      await gotoPage(expect, page, '/')
-      await expectPageReady(expect, page)
-      const adminLoads = countLaterLoads(page)
-      await gotoPage(expect, guestPage, '/')
-      await expectPageReady(expect, guestPage)
-      const guestLoads = countLaterLoads(guestPage)
+      const guestSockets = watchOpenedSockets(guestPage)
+      const rowKey =
+        await test.step('Activate Quinn and show the guest its name and initials', async () => {
+          quinnActive = true
+          await setBotActive(page, QUIET_BOT, true, windows)
+          const rowKey = await tableRowKeyByText(expect, page, QUIET_BOT)
 
-      await followHomeLinks(page, userId, name, rowKey, adminLoads)
-      await followHomeLinks(guestPage, userId, name, rowKey, guestLoads)
+          await gotoPage(expect, page, '/')
+          await expectPageReady(expect, page)
+          await gotoPage(expect, guestPage, '/')
+          await expectPageReady(expect, guestPage)
+          const bot = guestPage.getByTestId('bot').filter({
+            has: guestPage
+              .getByTestId('bot-name')
+              .filter({ hasText: QUIET_BOT }),
+          })
+          await expect(bot.getByTestId('bot-name')).toHaveText(QUIET_BOT)
+          await expect(bot.getByTestId('hilos-avatar')).toHaveText(
+            QUIET_BOT_INITIALS,
+          )
+          return rowKey
+        })
+      const adminLoads = countLaterLoads(page)
+      const guestLoads = countLaterLoads(guestPage)
+      const adminSocketCount = adminSockets.length
+      const guestSocketCount = guestSockets.length
+
+      await test.step('The administrator follows participant and bot links without reload or reconnect', async () => {
+        await followHomeLinks(page, userId, name, rowKey, adminLoads)
+        expect(adminSockets).toHaveLength(adminSocketCount)
+      })
+      await test.step('The guest follows participant and bot links without reload or reconnect', async () => {
+        await followHomeLinks(guestPage, userId, name, rowKey, guestLoads)
+        expect(guestSockets).toHaveLength(guestSocketCount)
+      })
     } finally {
       try {
         await guestContext.close()

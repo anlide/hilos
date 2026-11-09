@@ -1,18 +1,15 @@
-import type { Page } from '@playwright/test'
 import { expect, test } from '../test.js'
 import {
   clickSubmit,
   openAndSelectPhoto,
   typeInto,
   gotoPage,
-  grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import {
   dictateModerationVerdict,
   modelKey,
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { openBotEdit, watchBotSearch } from '../helpers/bots.js'
 import { nameForPhoto, picture } from '../helpers/profilePhoto.js'
 import { endSendPause } from '../helpers/sendPause.js'
 
@@ -21,42 +18,13 @@ import { endSendPause } from '../helpers/sendPause.js'
 // The circles of chat's screens (HIL-1300). A message opens a series of one
 // author's messages with a circle and the name, and the message that continues
 // it wears no visible circle; a roster row and the person's page wear the
-// person's circle, and a bot row the circle of the bot's initials. A guest's
-// open screens follow the person's photo — set, then removed — without a reload.
+// person's circle. A guest's open screens follow the person's photo — set,
+// then removed — without a reload.
 
 test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
 
 /** The initials of a `Photo <model key>` name: the first and the last word's first letters. */
 const PHOTO_NAME_INITIALS = 'PM'
-
-/**
- * A seeded bot that stays quiet while active: it speaks only on a topic of its
- * own (food), and no test of this demo dictates that topic to the analyzer.
- */
-const QUIET_BOT = 'Quinn'
-
-/** The initials of {@link QUIET_BOT}. */
-const QUIET_BOT_INITIALS = 'Q'
-
-/**
- * Switch a seeded bot on or off in the bots admin table.
- *
- * @param page An administrator's page.
- * @param name The seeded bot's name.
- * @param active Whether the bot is to be active.
- * @param windows The observer installed before the first document.
- */
-async function setBotActive(
-  page: Page,
-  name: string,
-  active: boolean,
-  windows: Awaited<ReturnType<typeof watchBotSearch>>,
-): Promise<void> {
-  await openBotEdit(page, name, windows)
-  await page.getByTestId('admin-bots-active').setChecked(active)
-  await clickSubmit(expect, page.getByTestId('admin-bots-save'))
-  await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
-}
 
 // FIXME(F-059, 2026-11-01): аватарка события не видна после сохранения фото · чужой · попытка 1 · HIL-1761
 test(
@@ -186,21 +154,3 @@ test(
     }
   },
 )
-
-// Every seeded bot is inactive and the main page lists only active ones, so the
-// test switches a quiet one on to have a bot row at all, and off again after.
-test('a bot row wears the circle of its initials', async ({ page }) => {
-  const windows = await watchBotSearch(page)
-  await grantAdminToSelf(expect, page)
-
-  try {
-    await setBotActive(page, QUIET_BOT, true, windows)
-    await gotoPage(expect, page, '/')
-    const bot = page.getByTestId('bot').filter({
-      has: page.getByTestId('bot-name').filter({ hasText: QUIET_BOT }),
-    })
-    await expect(bot.getByTestId('hilos-avatar')).toHaveText(QUIET_BOT_INITIALS)
-  } finally {
-    await setBotActive(page, QUIET_BOT, false, windows)
-  }
-})

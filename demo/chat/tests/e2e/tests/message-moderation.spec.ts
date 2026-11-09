@@ -1,6 +1,8 @@
-import { test, expect } from '../test.js'
+import { test as base, expect } from '../test.js'
 
 import {
+  cleanupFixtures,
+  type TestCleanup,
   openBell,
   unreadBadge,
   clickSubmit,
@@ -9,6 +11,7 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   dictateModerationVerdict,
+  forgetModelKey,
   modelKey,
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { endSendPause } from '../helpers/sendPause.js'
@@ -28,14 +31,18 @@ import { endSendPause } from '../helpers/sendPause.js'
 // Recovery ends the original re-send lockout by command and then waits for the
 // control's state; room.spec.ts holds the lockout itself.
 
+const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
+
 test('a rejected message stays out of the room and its author is told', async ({
   page,
+  cleanup,
 }) => {
   // A cold load after binding joins the author's notification group before
   // the verdict raises the notification (see createTestUserJoined).
   await createTestUserJoined(expect, page)
 
   const key = modelKey()
+  cleanup.defer(() => forgetModelKey(key))
   const text = `a message the model refuses ${key}`
   await dictateModerationVerdict(key, false, 'spam')
 
@@ -63,71 +70,72 @@ test('a rejected message stays out of the room and its author is told', async ({
   await expect(menu.getByTestId(/^hilos-notification-item-/)).toHaveCount(1)
 })
 
-test('an unavailable message returns its draft and a corrected retry publishes once', async ({
-  page,
-}) => {
+test('chat.text-unavailable', async ({ page, cleanup }) => {
   const { userId } = await createTestUserJoined(expect, page)
 
-  // No verdict is dictated: the model refuses the call with a 503, which for the
-  // product is a model that is not answering.
-  const key = modelKey()
-  const text = `a message nobody moderates ${key}`
+  await test.step('An unanswered moderation returns the draft, then a corrected retry publishes once and clears the banner', async () => {
+    // No verdict is dictated: the model refuses the call with a 503, which for the
+    // product is a model that is not answering.
+    const key = modelKey()
+    cleanup.defer(() => forgetModelKey(key))
+    const text = `a message nobody moderates ${key}`
 
-  await typeInto(page.getByTestId('message-input'), text)
-  await clickSubmit(expect, page.getByTestId('message-send'))
+    await typeInto(page.getByTestId('message-input'), text)
+    await clickSubmit(expect, page.getByTestId('message-send'))
 
-  await expect(page.getByTestId('moderation-text')).toHaveText(
-    'Moderation is unavailable right now. Your message is still here.',
-  )
-  await expect(
-    page.getByTestId('event-text').filter({ hasText: key }),
-  ).toHaveCount(0)
-  await expect(page.getByTestId('message-input')).toHaveValue(text)
+    await expect(page.getByTestId('moderation-text')).toHaveText(
+      'Moderation is unavailable right now. Your message is still here.',
+    )
+    await expect(
+      page.getByTestId('event-text').filter({ hasText: key }),
+    ).toHaveCount(0)
+    await expect(page.getByTestId('message-input')).toHaveValue(text)
 
-  await openBell(page)
-  await expect(page.getByTestId('hilos-notification-empty')).toBeVisible()
-  await expect(page.getByTestId(/^hilos-notification-item-/)).toHaveCount(0)
-  await expect(unreadBadge(page)).toBeHidden()
-  await page.getByTestId('hilos-notification-toggle').click()
+    await openBell(page)
+    await expect(page.getByTestId('hilos-notification-empty')).toBeVisible()
+    await expect(page.getByTestId(/^hilos-notification-item-/)).toHaveCount(0)
+    await expect(unreadBadge(page)).toBeHidden()
+    await page.getByTestId('hilos-notification-toggle').click()
 
-  const corrected = `a corrected message ${key}`
-  await dictateModerationVerdict(key, true, 'ok')
-  await typeInto(page.getByTestId('message-input'), corrected)
-  // Unavailable does not clear the original ten-second submit lockout; a
-  // command ends it.
-  await endSendPause(userId)
-  await expect(page.getByTestId('message-send')).toBeEnabled()
-  await clickSubmit(expect, page.getByTestId('message-send'))
-  await expect(page.getByTestId('moderation-text')).toHaveCount(0)
-  await expect(page.getByTestId('message-input')).toHaveValue('')
-  const messages = page.getByTestId('event-text').filter({ hasText: key })
-  await expect(messages).toHaveCount(1)
-  await expect(messages).toHaveText(corrected)
-})
+    const corrected = `a corrected message ${key}`
+    await dictateModerationVerdict(key, true, 'ok')
+    await typeInto(page.getByTestId('message-input'), corrected)
+    // Unavailable does not clear the original ten-second submit lockout; a
+    // command ends it.
+    await endSendPause(userId)
+    await expect(page.getByTestId('message-send')).toBeEnabled()
+    await clickSubmit(expect, page.getByTestId('message-send'))
+    await expect(page.getByTestId('message-input')).toHaveValue('')
+    const messages = page.getByTestId('event-text').filter({ hasText: key })
+    await expect(messages).toHaveCount(1)
+    await expect(messages).toHaveText(corrected)
+    await expect(page.getByTestId('moderation-text')).toHaveCount(0)
+  })
 
-test('an undeclared refusal reason returns the draft as unavailable without a content notice', async ({
-  page,
-}) => {
-  await createTestUserJoined(expect, page)
+  await test.step('A new message with an undeclared refusal shows a new unavailable banner without a content notice', async () => {
+    await endSendPause(userId)
+    const key = modelKey()
+    cleanup.defer(() => forgetModelKey(key))
+    const text = `a message blocked without category ${key}`
+    await dictateModerationVerdict(key, false, 'blocked')
 
-  const key = modelKey()
-  const text = `a message blocked without category ${key}`
-  await dictateModerationVerdict(key, false, 'blocked')
+    await typeInto(page.getByTestId('message-input'), text)
+    await clickSubmit(expect, page.getByTestId('message-send'))
 
-  await typeInto(page.getByTestId('message-input'), text)
-  await clickSubmit(expect, page.getByTestId('message-send'))
+    await expect(page.getByTestId('moderation-text')).toHaveText(
+      'Moderation is unavailable right now. Your message is still here.',
+    )
+    await expect(page.getByTestId('moderation-text')).not.toContainText(
+      'blocked',
+    )
+    await expect(
+      page.getByTestId('event-text').filter({ hasText: key }),
+    ).toHaveCount(0)
+    await expect(page.getByTestId('message-input')).toHaveValue(text)
 
-  await expect(page.getByTestId('moderation-text')).toHaveText(
-    'Moderation is unavailable right now. Your message is still here.',
-  )
-  await expect(page.getByTestId('moderation-text')).not.toContainText('blocked')
-  await expect(
-    page.getByTestId('event-text').filter({ hasText: key }),
-  ).toHaveCount(0)
-  await expect(page.getByTestId('message-input')).toHaveValue(text)
-
-  await openBell(page)
-  await expect(page.getByTestId('hilos-notification-empty')).toBeVisible()
-  await expect(page.getByTestId(/^hilos-notification-item-/)).toHaveCount(0)
-  await expect(unreadBadge(page)).toBeHidden()
+    await openBell(page)
+    await expect(page.getByTestId('hilos-notification-empty')).toBeVisible()
+    await expect(page.getByTestId(/^hilos-notification-item-/)).toHaveCount(0)
+    await expect(unreadBadge(page)).toBeHidden()
+  })
 })

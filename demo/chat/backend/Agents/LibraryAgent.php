@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Demo\Chat\Agents;
 
 use Demo\Chat\CLI\DTO\BotAnswerNowCommandData;
+use Demo\Chat\CLI\DTO\BotExtrasCreateCommandData;
+use Demo\Chat\CLI\DTO\BotExtrasDeleteCommandData;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Database\ChatDbContext;
+use Demo\Chat\Database\View\Item\Bot;
 use Demo\Chat\Hilos;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -37,18 +40,22 @@ final class LibraryAgent extends AbstractAgent
 
     public const array AGENT_COMMANDS = [
         ChatCommandConstants::BOT_TEST_ANSWER_NOW => BotAnswerNowCommandData::class,
+        ChatCommandConstants::BOT_TEST_EXTRAS_CREATE => BotExtrasCreateCommandData::class,
+        ChatCommandConstants::BOT_TEST_EXTRAS_DELETE => BotExtrasDeleteCommandData::class,
     ];
 
     /** Catalog actions and commands arrive in frames; there is no periodic work. */
     protected const MAX_IDLE_SLEEP_SECONDS = 600;
 
+    private const string BOT_EXTRAS_TEST_ONLY_MESSAGE = 'Bot extras are test-only';
+
     /**
-     * Answers the test-only command that has one active bot answer now.
+     * Answers test-only bot commands; extra bots stay inactive and never receive an agent signal.
      *
      * @param CommandRequestDTO $data Topology-hydrated command
      * @param string $source Command source, unused
      * @param string $name Signal name, unused
-     * @throws HilosException When the bot cannot be read, or the signal or the reply cannot be queued
+     * @throws HilosException When bots cannot be read or changed, or the signal or reply cannot be queued
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
@@ -60,6 +67,26 @@ final class LibraryAgent extends AbstractAgent
                     return;
                 }
                 $this->answerNow($data, $data->parsedPayload);
+
+                return;
+
+            case ChatCommandConstants::BOT_TEST_EXTRAS_CREATE:
+                if (!NonProductionGate::admitted()) {
+                    $this->replyToCommand(CommandReplyDTO::error($data->correlationId, self::BOT_EXTRAS_TEST_ONLY_MESSAGE));
+
+                    return;
+                }
+                $this->createExtras($data, $data->parsedPayload);
+
+                return;
+
+            case ChatCommandConstants::BOT_TEST_EXTRAS_DELETE:
+                if (!NonProductionGate::admitted()) {
+                    $this->replyToCommand(CommandReplyDTO::error($data->correlationId, self::BOT_EXTRAS_TEST_ONLY_MESSAGE));
+
+                    return;
+                }
+                $this->deleteExtras($data, $data->parsedPayload);
 
                 return;
 
@@ -91,5 +118,40 @@ final class LibraryAgent extends AbstractAgent
         }
         $this->sendToAgent(ChatSignalConstants::BOT_ANSWER_NOW, new BotAgentSignalData(botId: $query->botId));
         $this->replyToCommand(CommandReplyDTO::ok($request->correlationId, [ChatCommandConstants::botId => $query->botId]));
+    }
+
+    /**
+     * Each row is independent; marker cleanup also removes a partially created batch.
+     *
+     * @param CommandRequestDTO $request Command to answer
+     * @param BotExtrasCreateCommandData $query Validated marker and batch size
+     * @throws HilosException When a bot cannot be created or the reply cannot be queued
+     */
+    private function createExtras(CommandRequestDTO $request, BotExtrasCreateCommandData $query): void
+    {
+        $botIds = [];
+        for ($number = 1; $number <= $query->count; $number++) {
+            $botIds[] = Hilos::$db->bots->actions->create(
+                name: ChatCommandConstants::BOT_EXTRA_NAME_PREFIX . " {$query->marker} {$number}",
+                active: false,
+            )->id;
+        }
+        $this->replyToCommand(CommandReplyDTO::ok($request->correlationId, [ChatCommandConstants::botIds => $botIds]));
+    }
+
+    /**
+     * @param CommandRequestDTO $request Command to answer
+     * @param BotExtrasDeleteCommandData $query Marker whose inactive extras may be removed
+     * @throws HilosException When bots cannot be read or deleted, or the reply cannot be queued
+     */
+    private function deleteExtras(CommandRequestDTO $request, BotExtrasDeleteCommandData $query): void
+    {
+        $prefix = ChatCommandConstants::BOT_EXTRA_NAME_PREFIX . " {$query->marker} ";
+        $deleted = 0;
+        foreach (Hilos::$db->bots->filter(static fn (Bot $bot): bool => str_starts_with($bot->name, $prefix) && $bot->active === false) as $bot) {
+            $bot->actions->delete();
+            $deleted++;
+        }
+        $this->replyToCommand(CommandReplyDTO::ok($request->correlationId, [ChatCommandConstants::deleted => $deleted]));
     }
 }

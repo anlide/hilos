@@ -19,10 +19,18 @@ final class ChatCommandConstants
     public const string SUBMISSION_TEST_OBSERVE = 'test:chat:submission-observe';
     public const string SEND_PAUSE_TEST_END = 'test:chat:end-send-pause';
     public const string BOT_TEST_ANSWER_NOW = 'test:chat:bot-answer-now';
+    public const string BOT_TEST_EXTRAS_CREATE = 'test:chat:bot-extras-create';
+    public const string BOT_TEST_EXTRAS_DELETE = 'test:chat:bot-extras-delete';
+    public const string BOT_EXTRA_NAME_PREFIX = 'ZZ 1 extra';
+    public const string BOT_EXTRA_MARKER_PATTERN = '/^[a-z0-9]{8,32}$/D';
     public const string phase = 'phase';
     public const string activeCheckRequestIds = 'activeCheckRequestIds';
     public const string userId = 'userId';
     public const string botId = 'botId';
+    public const string marker = 'marker';
+    public const string count = 'count';
+    public const string botIds = 'botIds';
+    public const string deleted = 'deleted';
 
     /** @var string Row family chat reports in an account merge: the messages it re-pointed */
     public const string ROWS_MOVED_MESSAGES = 'messages';

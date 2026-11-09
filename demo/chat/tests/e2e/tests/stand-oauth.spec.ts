@@ -388,51 +388,53 @@ test('sends a refusal back to the client when the person says no', async ({
   expect(callback.get('code')).toBeNull()
 })
 
-test('spends an authorization code exactly once', async ({ page }) => {
-  const atGitHub = await declareOAuthAccount('github')
-  const gitHubCode = await codeFor(page, atGitHub)
-  await tokenFor('github', gitHubCode)
-
-  // GitHub answers a refused exchange with a 200 and writes the refusal where the token
-  // would have been; Google answers a status of its own.
-  const gitHubAgain = await exchange('github', { code: gitHubCode })
-  expect(gitHubAgain.status).toBe(200)
-  expect(payloadOf(gitHubAgain)).toMatchObject({
-    error: 'bad_verification_code',
-  })
-
-  const atGoogle = await declareOAuthAccount('google')
-  const googleCode = await codeFor(page, atGoogle)
-  await tokenFor('google', googleCode)
-
-  const googleAgain = await exchange('google', { code: googleCode })
-  expect(googleAgain.status).toBe(400)
-  expect(payloadOf(googleAgain)).toMatchObject({ error: 'invalid_grant' })
-})
-
-test('issues an expired code once when a spec ordered one', async ({
+test('stand.oauth-code enforces one-time and ordered code use', async ({
   page,
 }) => {
-  // The code is refused by the exchange's ordinary check of its lifetime, so each provider
-  // says it in its own form — the same two forms a code spent twice gets above.
-  const refusals: [StandOAuthProfile, number, string][] = [
-    ['github', 200, 'bad_verification_code'],
-    ['google', 400, 'invalid_grant'],
-  ]
+  await test.step('Both providers refuse a code that has already been spent', async () => {
+    const atGitHub = await declareOAuthAccount('github')
+    const gitHubCode = await codeFor(page, atGitHub)
+    await tokenFor('github', gitHubCode)
 
-  for (const [profile, status, error] of refusals) {
-    const account = await declareOAuthAccount(profile)
-    await orderExpiredCode(account)
-
-    const expired = await exchange(profile, {
-      code: await codeFor(page, account),
+    // GitHub answers a refused exchange with a 200 and writes the refusal where the token
+    // would have been; Google answers a status of its own.
+    const gitHubAgain = await exchange('github', { code: gitHubCode })
+    expect(gitHubAgain.status).toBe(200)
+    expect(payloadOf(gitHubAgain)).toMatchObject({
+      error: 'bad_verification_code',
     })
-    expect(expired.status, profile).toBe(status)
-    expect(payloadOf(expired), profile).toMatchObject({ error })
 
-    // One order is one code: the next code of the same account is an ordinary one.
-    await tokenFor(profile, await codeFor(page, account))
-  }
+    const atGoogle = await declareOAuthAccount('google')
+    const googleCode = await codeFor(page, atGoogle)
+    await tokenFor('google', googleCode)
+
+    const googleAgain = await exchange('google', { code: googleCode })
+    expect(googleAgain.status).toBe(400)
+    expect(payloadOf(googleAgain)).toMatchObject({ error: 'invalid_grant' })
+  })
+
+  await test.step('Each ordered expired code is refused and the next code works', async () => {
+    // The code is refused by the exchange's ordinary check of its lifetime, so each provider
+    // says it in its own form — the same two forms a code spent twice gets above.
+    const refusals: [StandOAuthProfile, number, string][] = [
+      ['github', 200, 'bad_verification_code'],
+      ['google', 400, 'invalid_grant'],
+    ]
+
+    for (const [profile, status, error] of refusals) {
+      const account = await declareOAuthAccount(profile)
+      await orderExpiredCode(account)
+
+      const expired = await exchange(profile, {
+        code: await codeFor(page, account),
+      })
+      expect(expired.status, profile).toBe(status)
+      expect(payloadOf(expired), profile).toMatchObject({ error })
+
+      // One order is one code: the next code of the same account is an ordinary one.
+      await tokenFor(profile, await codeFor(page, account))
+    }
+  })
 })
 
 test('refuses an exchange that does not match the consent it quotes', async ({
@@ -508,59 +510,61 @@ test('carries the house levers on both provider routes, keyed by the account', a
   expect((await readUserInfo('github', token)).status).toBe(200)
 })
 
-test('refuses to be a consent screen for a request no provider would honor', async () => {
-  const refusals: [Record<string, string>, string][] = [
-    [{ client_id: '' }, 'client_id'],
-    [{ redirect_uri: 'not-an-address' }, 'redirect_uri'],
-    [{ redirect_uri: 'ftp://oauth-callback.stand/cb' }, 'redirect_uri'],
-    [{ response_type: 'token' }, 'response_type'],
-  ]
+test('stand.oauth-validation refuses invalid consent and test declarations', async () => {
+  await test.step('Invalid consent requests return 400 and name the bad parameter', async () => {
+    const refusals: [Record<string, string>, string][] = [
+      [{ client_id: '' }, 'client_id'],
+      [{ redirect_uri: 'not-an-address' }, 'redirect_uri'],
+      [{ redirect_uri: 'ftp://oauth-callback.stand/cb' }, 'redirect_uri'],
+      [{ response_type: 'token' }, 'response_type'],
+    ]
 
-  for (const [overrides, parameter] of refusals) {
-    const response = await fetch(
-      `${STAND_GATEWAY_URL}${authorizePath('github', overrides)}`,
-      { redirect: 'manual' },
-    )
+    for (const [overrides, parameter] of refusals) {
+      const response = await fetch(
+        `${STAND_GATEWAY_URL}${authorizePath('github', overrides)}`,
+        { redirect: 'manual' },
+      )
 
-    expect(response.status, JSON.stringify(overrides)).toBe(400)
-    expect(await response.text()).toContain(
-      `<p data-id="oauth-error">${parameter}</p>`,
-    )
-  }
-})
+      expect(response.status, JSON.stringify(overrides)).toBe(400)
+      expect(await response.text()).toContain(
+        `<p data-id="oauth-error">${parameter}</p>`,
+      )
+    }
+  })
 
-test('refuses an account declaration it cannot honor', async () => {
-  const subject = (await declareOAuthAccount('github')).subject
-  const refusals: [Record<string, unknown>, string][] = [
-    [{ profile: 'github', subject, nickname: 'ada' }, 'FIELD_UNKNOWN'],
-    [{ profile: 'gitlab', subject }, 'PROFILE_UNKNOWN'],
-    [{ profile: 'github', subject: 'ada' }, 'SUBJECT_REQUIRED'],
-    [{ profile: 'github', subject: '' }, 'SUBJECT_REQUIRED'],
-    [{ profile: 'github', subject, login: 42 }, 'FIELD_INVALID'],
-  ]
+  await test.step('Invalid account declarations return their exact refusal', async () => {
+    const subject = (await declareOAuthAccount('github')).subject
+    const refusals: [Record<string, unknown>, string][] = [
+      [{ profile: 'github', subject, nickname: 'ada' }, 'FIELD_UNKNOWN'],
+      [{ profile: 'gitlab', subject }, 'PROFILE_UNKNOWN'],
+      [{ profile: 'github', subject: 'ada' }, 'SUBJECT_REQUIRED'],
+      [{ profile: 'github', subject: '' }, 'SUBJECT_REQUIRED'],
+      [{ profile: 'github', subject, login: 42 }, 'FIELD_INVALID'],
+    ]
 
-  for (const [declaration, error] of refusals) {
-    expect(await declare(declaration), JSON.stringify(declaration)).toEqual({
-      status: 400,
-      error,
-    })
-  }
-})
+    for (const [declaration, error] of refusals) {
+      expect(await declare(declaration), JSON.stringify(declaration)).toEqual({
+        status: 400,
+        error,
+      })
+    }
+  })
 
-test('refuses an expired-code order it cannot honor', async () => {
-  const subject = (await declareOAuthAccount('github')).subject
-  // The order and shape of an account declaration's refusals; a login is a field of the
-  // account, not of an order.
-  const refusals: [Record<string, unknown>, string][] = [
-    [{ profile: 'github', subject, login: 'ada' }, 'FIELD_UNKNOWN'],
-    [{ profile: 'gitlab', subject }, 'PROFILE_UNKNOWN'],
-    [{ profile: 'github', subject: 'ada' }, 'SUBJECT_REQUIRED'],
-  ]
+  await test.step('Invalid expired-code orders return their exact refusal', async () => {
+    const subject = (await declareOAuthAccount('github')).subject
+    // The order and shape of an account declaration's refusals; a login is a field of the
+    // account, not of an order.
+    const refusals: [Record<string, unknown>, string][] = [
+      [{ profile: 'github', subject, login: 'ada' }, 'FIELD_UNKNOWN'],
+      [{ profile: 'gitlab', subject }, 'PROFILE_UNKNOWN'],
+      [{ profile: 'github', subject: 'ada' }, 'SUBJECT_REQUIRED'],
+    ]
 
-  for (const [order, error] of refusals) {
-    expect(await orderExpired(order), JSON.stringify(order)).toEqual({
-      status: 400,
-      error,
-    })
-  }
+    for (const [order, error] of refusals) {
+      expect(await orderExpired(order), JSON.stringify(order)).toEqual({
+        status: 400,
+        error,
+      })
+    }
+  })
 })

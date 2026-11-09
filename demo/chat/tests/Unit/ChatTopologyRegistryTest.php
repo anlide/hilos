@@ -6,6 +6,8 @@ namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\CLI\DTO\BotAnswerNowCommandData;
+use Demo\Chat\CLI\DTO\BotExtrasCreateCommandData;
+use Demo\Chat\CLI\DTO\BotExtrasDeleteCommandData;
 use Demo\Chat\CLI\DTO\SendPauseEndCommandData;
 use Demo\Chat\CLI\DTO\SubmissionObserveCommandData;
 use Hilos\Moderation\ModerationCommandConstants;
@@ -2340,6 +2342,8 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR => HilosAgentType::HILOS_I18N_LIBRARY,
             ModerationCommandConstants::TEST_OBSERVE => HilosAgentType::HILOS_MODERATOR,
             ChatCommandConstants::BOT_TEST_ANSWER_NOW => AgentType::LIBRARY,
+            ChatCommandConstants::BOT_TEST_EXTRAS_CREATE => AgentType::LIBRARY,
+            ChatCommandConstants::BOT_TEST_EXTRAS_DELETE => AgentType::LIBRARY,
             CliCommands::COMMAND_TEST_ECHO => AgentType::HILOS_INDEX,
             CliCommands::PROTECTED_MODE_TEST_ENTER => AgentType::HILOS_INDEX,
             CliCommands::PROTECTED_MODE_TEST_LEAVE => AgentType::HILOS_INDEX,
@@ -2376,6 +2380,8 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatCommandConstants::SEND_PAUSE_TEST_END => SendPauseEndCommandData::class,
             ModerationCommandConstants::TEST_OBSERVE => ModerationObserveCommandData::class,
             ChatCommandConstants::BOT_TEST_ANSWER_NOW => BotAnswerNowCommandData::class,
+            ChatCommandConstants::BOT_TEST_EXTRAS_CREATE => BotExtrasCreateCommandData::class,
+            ChatCommandConstants::BOT_TEST_EXTRAS_DELETE => BotExtrasDeleteCommandData::class,
         ], Hilos::getCommandDtoRoutes());
     }
 

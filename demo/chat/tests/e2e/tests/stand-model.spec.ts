@@ -6,6 +6,7 @@ import {
 } from '../../../../../framework/frontend/scripts/standGateway.mjs'
 import {
   dictateModelAnswer,
+  forgetModelKey,
   modelKey,
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
 
@@ -79,80 +80,150 @@ async function dictate(
   }
 }
 
-test('answers with the dictated text', async () => {
-  const key = modelKey()
-  await dictateModelAnswer(key, '{"allow": false, "reason": "dictated"}')
-
-  const answer = await generate(key)
-
-  expect(answer.status).toBe(200)
-  expect(answer.body.response).toBe('{"allow": false, "reason": "dictated"}')
-  expect(answer.body.model).toBe('stand')
-  expect(answer.body.done).toBe(true)
-})
-
-test('spends a dictation on exactly one call', async () => {
-  const key = modelKey()
-  await dictateModelAnswer(key, 'once')
-
-  expect((await generate(key)).body.response).toBe('once')
-  expect(await generate(key)).toEqual({
-    status: 503,
-    body: { ok: false, error: 'ANSWER_NOT_DICTATED' },
-  })
-})
-
-test('plays dictations for one key out in the order they were made', async () => {
-  const key = modelKey()
-  await dictateModelAnswer(key, 'first')
-  await dictateModelAnswer(key, 'second')
-
-  expect((await generate(key)).body.response).toBe('first')
-  expect((await generate(key)).body.response).toBe('second')
-  expect((await generate(key)).status).toBe(503)
-})
-
-test('leaves a call with another key alone', async () => {
-  const dictated = modelKey()
-  const other = modelKey()
-  await dictateModelAnswer(dictated, 'mine')
-
-  expect((await generate(other)).status).toBe(503)
-  expect((await generate(dictated)).body.response).toBe('mine')
-})
-
-test('refuses a call nobody dictated an answer for', async () => {
-  expect(await generate(modelKey())).toEqual({
-    status: 503,
-    body: { ok: false, error: 'ANSWER_NOT_DICTATED' },
-  })
-})
-
-test('refuses a dictation it cannot honor', async () => {
-  const key = modelKey()
-  const refusals: [Record<string, unknown>, string][] = [
-    [{ key: '', response: 'text' }, 'KEY_REQUIRED'],
-    [{ key, response: 42 }, 'RESPONSE_REQUIRED'],
-    [{ key, answer: 'text' }, 'FIELD_UNKNOWN'],
-  ]
-
-  for (const [dictation, error] of refusals) {
-    expect(await dictate(dictation), JSON.stringify(dictation)).toEqual({
-      status: 400,
-      body: { ok: false, error },
-    })
+/**
+ * Await every owned key's teardown and retain the body's thrown value unchanged
+ * when cleanup succeeds, following the fixture teardown's aggregation contract.
+ *
+ * @param keys All keys reserved before their first request.
+ * @param bodyErrors The body's thrown value, if it failed, including undefined.
+ */
+async function cleanupModelKeys(
+  keys: readonly string[],
+  bodyErrors: readonly unknown[],
+): Promise<void> {
+  const results = await Promise.allSettled(
+    keys.map((key) => forgetModelKey(key)),
+  )
+  const errors = [...bodyErrors]
+  for (const result of results) {
+    if (result.status === 'rejected') errors.push(result.reason)
   }
+  if (bodyErrors.length === 1 && errors.length === 1) throw errors[0]
+  if (errors.length > 0)
+    throw new AggregateError(errors, 'Model key cleanup failed', {
+      cause: errors[0],
+    })
+}
 
-  // A refused dictation is not kept: the key still has nothing to answer with.
-  expect((await generate(key)).status).toBe(503)
+test('stand.model-queue preserves exact answers, one-shot use, and FIFO order', async () => {
+  const keys: string[] = []
+  const bodyErrors: unknown[] = []
+
+  try {
+    await test.step('The model returns the exact dictated response', async () => {
+      const key = modelKey()
+      keys.push(key)
+      await dictateModelAnswer(key, '{"allow": false, "reason": "dictated"}')
+
+      const answer = await generate(key)
+
+      expect(answer.status).toBe(200)
+      expect(answer.body.response).toBe(
+        '{"allow": false, "reason": "dictated"}',
+      )
+      expect(answer.body.model).toBe('stand')
+      expect(answer.body.done).toBe(true)
+    })
+
+    await test.step('A consumed dictation is refused on the next call', async () => {
+      const key = modelKey()
+      keys.push(key)
+      await dictateModelAnswer(key, 'once')
+
+      expect((await generate(key)).body.response).toBe('once')
+      expect(await generate(key)).toEqual({
+        status: 503,
+        body: { ok: false, error: 'ANSWER_NOT_DICTATED' },
+      })
+    })
+
+    await test.step('Queued answers return first, second, and then 503', async () => {
+      const key = modelKey()
+      keys.push(key)
+      await dictateModelAnswer(key, 'first')
+      await dictateModelAnswer(key, 'second')
+
+      expect((await generate(key)).body.response).toBe('first')
+      expect((await generate(key)).body.response).toBe('second')
+      expect((await generate(key)).status).toBe(503)
+    })
+  } catch (error) {
+    bodyErrors.push(error)
+  } finally {
+    await cleanupModelKeys(keys, bodyErrors)
+  }
 })
 
-test("plays the house's levers on the model's route", async () => {
-  const key = modelKey()
-  await dictateGatewayBehavior(GENERATE, key, { status: 500 })
+test('stand.model-isolation keeps foreign and undictated calls refused', async () => {
+  const keys: string[] = []
+  const bodyErrors: unknown[] = []
 
-  expect(await generate(key)).toEqual({
-    status: 500,
-    body: { ok: false, error: 'STATUS_DICTATED' },
-  })
+  try {
+    await test.step('A foreign key is refused without spending the owned answer', async () => {
+      const dictated = modelKey()
+      keys.push(dictated)
+      const other = modelKey()
+      keys.push(other)
+      await dictateModelAnswer(dictated, 'mine')
+
+      expect((await generate(other)).status).toBe(503)
+      expect((await generate(dictated)).body.response).toBe('mine')
+    })
+
+    await test.step('A call without a dictation returns ANSWER_NOT_DICTATED', async () => {
+      const key = modelKey()
+      keys.push(key)
+
+      expect(await generate(key)).toEqual({
+        status: 503,
+        body: { ok: false, error: 'ANSWER_NOT_DICTATED' },
+      })
+    })
+  } catch (error) {
+    bodyErrors.push(error)
+  } finally {
+    await cleanupModelKeys(keys, bodyErrors)
+  }
+})
+
+test('stand.model-validation refuses invalid declarations and dictates status', async () => {
+  const keys: string[] = []
+  const bodyErrors: unknown[] = []
+
+  try {
+    await test.step('Invalid dictations return exact 400 reasons and leave the key empty', async () => {
+      const key = modelKey()
+      keys.push(key)
+      const refusals: [Record<string, unknown>, string][] = [
+        [{ key: '', response: 'text' }, 'KEY_REQUIRED'],
+        [{ key, response: 42 }, 'RESPONSE_REQUIRED'],
+        [{ key, answer: 'text' }, 'FIELD_UNKNOWN'],
+      ]
+
+      for (const [dictation, error] of refusals) {
+        expect(await dictate(dictation), JSON.stringify(dictation)).toEqual({
+          status: 400,
+          body: { ok: false, error },
+        })
+      }
+
+      // A refused dictation is not kept: the key still has nothing to answer with.
+      expect((await generate(key)).status).toBe(503)
+    })
+
+    await test.step('The status lever returns 500 STATUS_DICTATED', async () => {
+      const key = modelKey()
+      keys.push(key)
+      await dictateGatewayBehavior(GENERATE, key, { status: 500 })
+
+      expect(await generate(key)).toEqual({
+        status: 500,
+        body: { ok: false, error: 'STATUS_DICTATED' },
+      })
+    })
+  } catch (error) {
+    bodyErrors.push(error)
+  } finally {
+    await cleanupModelKeys(keys, bodyErrors)
+  }
 })

@@ -185,25 +185,27 @@ function splitAnswer(received: Buffer): SplitAnswer | null {
   }
 }
 
-test('answers a dictated status exactly once', async () => {
-  const phone = uniquePhone()
-  await dictateGatewayBehavior(SMS_SEND, phone, { status: 500 })
+test('stand.gateway-queue spends and orders dictated statuses', async () => {
+  await test.step('A dictated status is spent once', async () => {
+    const phone = uniquePhone()
+    await dictateGatewayBehavior(SMS_SEND, phone, { status: 500 })
 
-  expect(await sendSms(phone)).toEqual({
-    status: 500,
-    error: 'STATUS_DICTATED',
+    expect(await sendSms(phone)).toEqual({
+      status: 500,
+      error: 'STATUS_DICTATED',
+    })
+    expect(await sendSms(phone)).toEqual({ status: 200, error: undefined })
   })
-  expect(await sendSms(phone)).toEqual({ status: 200, error: undefined })
-})
 
-test('plays declarations for one key out in the order they were made', async () => {
-  const phone = uniquePhone()
-  await dictateGatewayBehavior(SMS_SEND, phone, { status: 503 })
-  await dictateGatewayBehavior(SMS_SEND, phone, { status: 500 })
+  await test.step('Queued statuses answer 503, then 500, then 200', async () => {
+    const phone = uniquePhone()
+    await dictateGatewayBehavior(SMS_SEND, phone, { status: 503 })
+    await dictateGatewayBehavior(SMS_SEND, phone, { status: 500 })
 
-  expect((await sendSms(phone)).status).toBe(503)
-  expect((await sendSms(phone)).status).toBe(500)
-  expect((await sendSms(phone)).status).toBe(200)
+    expect((await sendSms(phone)).status).toBe(503)
+    expect((await sendSms(phone)).status).toBe(500)
+    expect((await sendSms(phone)).status).toBe(200)
+  })
 })
 
 test('leaves a call with another key alone', async () => {

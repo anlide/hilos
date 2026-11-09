@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import type { Page } from '@playwright/test'
 import { expect, test } from '../test.js'
 
@@ -9,6 +10,7 @@ import {
   typeInto,
   gotoPage,
   tableRowKeyByText,
+  type TestCleanup,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 
@@ -17,6 +19,8 @@ import { createStandCommandChannel } from '../../../../../framework/frontend/scr
 // model now, and then waits for the outcome over the socket.
 
 const BOT_ANSWER_NOW_COMMAND = 'test:chat:bot-answer-now'
+const BOT_EXTRAS_CREATE_COMMAND = 'test:chat:bot-extras-create'
+const BOT_EXTRAS_DELETE_COMMAND = 'test:chat:bot-extras-delete'
 
 const command = createStandCommandChannel({ timeoutMs: 5_000 })
 
@@ -98,4 +102,35 @@ export async function answerBotNow(botId: number): Promise<void> {
     reply.botId !== botId
   )
     throw new Error(`Invalid ${BOT_ANSWER_NOW_COMMAND} reply for bot ${botId}`)
+}
+
+/**
+ * Create inactive extras and reserve their marker's cleanup before sending.
+ *
+ * @param cleanup The test-scoped, awaited cleanup owner.
+ * @param count The number of surrounding rows to prepare.
+ * @returns The ids of the created bots, in creation order.
+ * @throws {Error} When the command fails or returns an invalid id list.
+ */
+export async function createBotExtras(
+  cleanup: TestCleanup,
+  count: number,
+): Promise<number[]> {
+  const marker = randomBytes(8).toString('hex')
+  cleanup.defer(() => command(BOT_EXTRAS_DELETE_COMMAND, { marker }))
+  const reply = await command(BOT_EXTRAS_CREATE_COMMAND, { marker, count })
+  if (
+    !reply ||
+    typeof reply !== 'object' ||
+    Array.isArray(reply) ||
+    Object.keys(reply).join() !== 'botIds' ||
+    !Array.isArray(reply.botIds) ||
+    reply.botIds.length !== count ||
+    !reply.botIds.every((id) => Number.isInteger(id) && id > 0)
+  )
+    throw new Error(
+      `Invalid ${BOT_EXTRAS_CREATE_COMMAND} reply for ${count} bots`,
+    )
+
+  return reply.botIds
 }

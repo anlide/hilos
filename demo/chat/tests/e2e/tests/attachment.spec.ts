@@ -325,21 +325,6 @@ test('a ready file survives a dropped connection and is sent with the message', 
   await expect(page.getByTestId('attachments-file')).toHaveCount(0)
 })
 
-// From the acceptance of HIL-139: the client drops its list when the person
-// behind it changes, so signing out and back in starts with no chips.
-test('signing out drops the files waiting for a message', async ({ page }) => {
-  const user = await createTestUser(expect, page)
-  await attachPng(page, `${modelKey()}.png`)
-
-  await logout(expect, page)
-  await expect(page.getByTestId('attachments-file')).toHaveCount(0)
-  await page.getByTestId('message-signin').click()
-  await login(expect, page, user.email)
-
-  await expect(page.getByTestId('self-user')).toHaveText(user.name)
-  await expect(page.getByTestId('attachments-file')).toHaveCount(0)
-})
-
 test('identifier input keeps its prefix and drops only keys pressed during reconnect', async ({
   page,
 }, info) => {
@@ -459,11 +444,11 @@ test('identifier input keeps its prefix and drops only keys pressed during recon
   }
 })
 
+// From the acceptance of HIL-139: the client drops its list when the person
+// behind it changes, so signing out and back in starts with no chips.
 // The anonymous identity precedes completion of the logout's socket rotation.
 // Hold the real next connection so readiness cannot pass on the old identity.
-test('signing out waits for rotation before typing the original identifier', async ({
-  page,
-}, info) => {
+test('chat.attachment-logout', async ({ page }, info) => {
   const reconnect = await controlSocketReconnect(page)
   const sockets = watchOpenedSockets(page)
   const actions = countSentFrames(page, '"type":"action"')
@@ -482,48 +467,53 @@ test('signing out waits for rotation before typing the original identifier', asy
       const beforeLogouts = logouts()
       const beforeCancels = cancels()
       const beforeLogins = logins()
-      await reconnect.hold()
-      signingOut = logout(expect, page).then(() => {
-        settled = true
+      await test.step('Sign out with rotation held and clear the waiting file exactly once', async () => {
+        await reconnect.hold()
+        signingOut = logout(expect, page).then(() => {
+          settled = true
+        })
+        await expect(page.getByTestId('nav-profile')).toHaveCount(0)
+        await expect(page.getByTestId('conn-state')).toHaveAttribute(
+          'title',
+          /^(connecting|reconnecting)\b/,
+        )
+        await expect(
+          page.getByTestId('page-interaction-scope'),
+        ).toHaveJSProperty('disabled', true)
+        await nextClientPaint(page)
+        await info.attach('logout-rotation-held', {
+          body: JSON.stringify({
+            settled,
+            sockets: sockets.map(({ welcomed }) => welcomed),
+            state: await page.getByTestId('conn-state').textContent(),
+          }),
+          contentType: 'application/json',
+        })
+        expect(settled, 'logout must wait for its new server welcome').toBe(
+          false,
+        )
+        // Clearing the waiting file also cancels its upload once.
+        expect(actions() - beforeActions).toBe(2)
+        expect(logouts() - beforeLogouts).toBe(1)
+        expect(cancels() - beforeCancels).toBe(1)
+        expect(logins() - beforeLogins).toBe(0)
+        await expect(page.getByTestId('attachments-file')).toHaveCount(0)
       })
-      await expect(page.getByTestId('nav-profile')).toHaveCount(0)
-      await expect(page.getByTestId('conn-state')).toHaveAttribute(
-        'title',
-        /^(connecting|reconnecting)\b/,
-      )
-      await expect(page.getByTestId('page-interaction-scope')).toHaveJSProperty(
-        'disabled',
-        true,
-      )
-      await nextClientPaint(page)
-      await info.attach('logout-rotation-held', {
-        body: JSON.stringify({
-          settled,
-          sockets: sockets.map(({ welcomed }) => welcomed),
-          state: await page.getByTestId('conn-state').textContent(),
-        }),
-        contentType: 'application/json',
-      })
-      expect(settled, 'logout must wait for its new server welcome').toBe(false)
-      // Clearing the waiting file also cancels its upload once.
-      expect(actions() - beforeActions).toBe(2)
-      expect(logouts() - beforeLogouts).toBe(1)
-      expect(cancels() - beforeCancels).toBe(1)
-      expect(logins() - beforeLogins).toBe(0)
-      await expect(page.getByTestId('attachments-file')).toHaveCount(0)
 
-      await reconnect.release()
-      await signingOut
-      await expectWelcomedSockets(expect, sockets, before + 1)
-      await page.getByTestId('message-signin').click()
-      await login(expect, page, user.email)
-      await expect(page.getByTestId('self-user')).toHaveText(user.name)
-      await expect(page.getByTestId('self-user-id')).toHaveText(
-        String(user.userId),
-      )
-      await expect(page.getByTestId('attachments-file')).toHaveCount(0)
-      expect(logins() - beforeLogins).toBe(1)
-      await document.unchanged()
+      await test.step('Release the new welcome and sign into the original person with no files or reload', async () => {
+        await reconnect.release()
+        await signingOut
+        await expectWelcomedSockets(expect, sockets, before + 1)
+        await page.getByTestId('message-signin').click()
+        await login(expect, page, user.email)
+        await expect(page.getByTestId('self-user')).toHaveText(user.name)
+        await expect(page.getByTestId('self-user-id')).toHaveText(
+          String(user.userId),
+        )
+        await expect(page.getByTestId('attachments-file')).toHaveCount(0)
+        expect(logins() - beforeLogins).toBe(1)
+        await document.unchanged()
+      })
     } finally {
       await document.dispose()
     }

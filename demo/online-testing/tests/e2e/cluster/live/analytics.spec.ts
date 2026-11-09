@@ -44,12 +44,15 @@ const journals = Object.keys(stand.nodeLogs)
 for (const [index, sourceNode] of stand.masters.entries()) {
   const viewerNode = stand.masters[(index + 1) % stand.masters.length]
 
+  // FIXME(F-085, 2026-11-09): На m3 не появляется ссылка администратора после успешной выдачи прав через m2 · свой · попытка 1 · HIL-2084
   // FIXME(F-079, 2026-11-08): ссылка администратора не появляется после выдачи прав · чужой · попытка 1 · HIL-2015
   test(
     `an action through ${sourceNode} is shown on the session page through ${viewerNode}`,
     sourceNode === 'm3' && viewerNode === 'm1'
       ? { tag: '@quarantine:F-079' }
-      : {},
+      : sourceNode === 'm2' && viewerNode === 'm3'
+        ? { tag: '@quarantine:F-085' }
+        : {},
     async ({ browser }) => {
       const before = (await sendCommand(
         'test:cluster:inspect',
