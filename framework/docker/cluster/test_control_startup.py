@@ -1,4 +1,4 @@
-"""Saved freezes open through the recorded owner; unsafe identities fail before a drive."""
+"""Startup and watchdog controls refuse unsafe identities before changing a process."""
 
 import io
 import json
@@ -10,7 +10,7 @@ from unittest.mock import call, patch
 
 import control
 import scenarios
-from stand import StandRefused
+from stand import Stand, StandRefused
 
 
 class SavedFreezeStartupTest(unittest.TestCase):
@@ -137,6 +137,91 @@ class SavedFreezeStartupTest(unittest.TestCase):
         for node in self.stand.masters:
             self.assertEqual(3, sum(request.args[1:3] == (node, "protected-mode:inspect")
                                     for request in self.channel.call_args_list))
+
+
+class WatchdogFaultCommandsTest(unittest.TestCase):
+    def setUp(self):
+        self.stand = SimpleNamespace(members={"m2": SimpleNamespace(container="example-m2-s2")})
+        self.stand.member = lambda node_id: Stand.member(self.stand, node_id)
+        self.running = control.Outcome(0, "captured-container true\n", "")
+        self.watchdog = control.Outcome(0, "php\0backend/Bootstrap/docker.php\0", "")
+
+    def test_expiry_checks_pid_one_and_signals_only_the_captured_node_container(self):
+        for command, signal in [("watchdog-expire-heartbeat", "SIGUSR1"),
+                                ("watchdog-expire-stop", "SIGUSR2")]:
+            with self.subTest(command=command):
+                with patch.object(control, "_run", side_effect=[self.running, self.watchdog,
+                                                                control.Outcome(0, "captured-container\n", "")]) as run:
+                    outcome = control.execute(self.stand, command, "m2")
+                self.assertEqual(0, outcome.code)
+                self.assertIn(f"sent {signal} to watchdog pid 1 inside example-m2-s2", outcome.out)
+                self.assertEqual([
+                    call(["docker", "inspect", "-f", "{{.Id}} {{.State.Running}}", "example-m2-s2"]),
+                    call(["docker", "exec", "captured-container", "cat", "/proc/1/cmdline"]),
+                    call(["docker", "kill", "--signal", signal, "captured-container"]),
+                ], run.call_args_list)
+
+    def test_a_different_pid_one_is_refused_without_sending_either_expiry_signal(self):
+        for command in ("watchdog-expire-heartbeat", "watchdog-expire-stop"):
+            for cmdline in ("", "php\0backend/Bootstrap/daemon.php\0",
+                            "sh\0backend/Bootstrap/docker.php\0",
+                            "php\0-r\0echo 'backend/Bootstrap/docker.php';\0",
+                            "php\0backend/Bootstrap/docker.php.other\0"):
+                with self.subTest(command=command, cmdline=cmdline):
+                    with patch.object(control, "_run", side_effect=[self.running,
+                                                                    control.Outcome(0, cmdline, "")]) as run:
+                        outcome = control.execute(self.stand, command, "m2")
+                    self.assertNotEqual(0, outcome.code)
+                    self.assertEqual("", outcome.out)
+                    self.assertIn("PID 1 inside example-m2-s2 is not the stand's watchdog", outcome.err)
+                    self.assertEqual(2, run.call_count)
+
+    def test_stopped_missing_or_unreadable_container_never_receives_an_expiry_signal(self):
+        for replies in ([control.Outcome(1, "", "no such container\n")],
+                        [control.Outcome(0, "captured-container false\n", "")],
+                        [control.Outcome(0, "", "")],
+                        [self.running, control.Outcome(1, "partial", "container stopped\n")]):
+            with self.subTest(replies=replies):
+                with patch.object(control, "_run", side_effect=replies) as run:
+                    outcome = control.execute(self.stand, "watchdog-expire-heartbeat", "m2")
+                self.assertNotEqual(0, outcome.code)
+                self.assertEqual("", outcome.out)
+                self.assertTrue(outcome.err)
+                self.assertEqual(len(replies), run.call_count)
+
+    def test_failed_signal_is_reported_without_success_output(self):
+        with patch.object(control, "_run", side_effect=[self.running, self.watchdog,
+                                                        control.Outcome(1, "partial", "container stopped\n")]):
+            outcome = control.execute(self.stand, "watchdog-expire-stop", "m2")
+        self.assertEqual(control.Outcome(1, "", "container stopped\n"), outcome)
+
+    def test_absolute_watchdog_bootstrap_is_accepted(self):
+        watchdog = control.Outcome(0, "/usr/local/bin/php\0/app/backend/Bootstrap/docker.php\0", "")
+        with patch.object(control, "_run", side_effect=[self.running, watchdog, control.Outcome(0, "", "")]):
+            self.assertEqual(0, control.execute(self.stand, "watchdog-expire-heartbeat", "m2").code)
+
+    def test_freeze_runs_inside_only_the_addressed_node_and_reports_the_master_pid(self):
+        with patch.object(control, "_run", return_value=control.Outcome(0, "17\n", "")) as run:
+            outcome = control.execute(self.stand, "freeze-daemon", "m2")
+        self.assertEqual(control.Outcome(0, "cluster: SIGSTOPped daemon pid 17 inside example-m2-s2\n", ""), outcome)
+        run.assert_called_once_with(["docker", "exec", "example-m2-s2", "php", "-d", "display_errors=stderr",
+                                     "-r", control.FREEZE_DAEMON_PHP])
+
+    def test_failed_freeze_keeps_the_process_error_and_no_success_output(self):
+        with patch.object(control, "_run", return_value=control.Outcome(1, "partial", "no daemon process found\n")):
+            outcome = control.execute(self.stand, "freeze-daemon", "m2")
+        self.assertNotEqual(0, outcome.code)
+        self.assertEqual("", outcome.out)
+        self.assertIn("no daemon process found", outcome.err)
+
+    def test_all_three_commands_require_one_known_node_before_any_docker_call(self):
+        for command in ("freeze-daemon", "watchdog-expire-heartbeat", "watchdog-expire-stop"):
+            for args in ((), ("m2", "extra"), ("unknown",)):
+                with self.subTest(command=command, args=args):
+                    with patch.object(control, "_run") as run:
+                        with self.assertRaises(StandRefused):
+                            control.execute(self.stand, command, *args)
+                    run.assert_not_called()
 
 
 if __name__ == "__main__":

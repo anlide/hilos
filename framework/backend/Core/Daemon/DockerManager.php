@@ -17,6 +17,7 @@ use Hilos\Core\Exception\Process\FailedToTerminateProcessException;
 use Hilos\Core\Exception\ProcessException;
 use Hilos\Core\Process;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Environment\NonProductionGate;
 use Hilos\Fs\Exception\DirectoryCreateException;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
@@ -62,6 +63,14 @@ class DockerManager extends BaseManager
 
     /** @var bool Whether normal shutdown has already asked the current daemon to stop */
     private bool $daemonStopRequested = false;
+
+    private ?DaemonHangMonitor $hangMonitor = null;
+
+    /** EOF disables only this child's read watch; silence and Process still decide its fate. */
+    private bool $heartbeatReadEnded = false;
+
+    /** Original quote captured before the watchdog writes the hang incident into its shared log. */
+    private ?string $hangOutputTail = null;
 
     /** @var bool Flag to track if restart interval message was logged for current restart */
     private bool $restartIntervalLogged = false;
@@ -121,6 +130,7 @@ class DockerManager extends BaseManager
             try {
                 while ($this->shouldExit === false || $this->process !== null) {
                     $this->applySignals($wait);
+                    $wait->watchHeartbeat(null);
                     $this->tickDaemon();
 
                     if ($this->shouldStartDaemon()) {
@@ -132,6 +142,9 @@ class DockerManager extends BaseManager
                         break;
                     }
 
+                    if ($this->process !== null && !$this->heartbeatReadEnded) {
+                        $wait->watchHeartbeat($this->process->getPipe(MasterHeartbeat::DESCRIPTOR));
+                    }
                     $wait->wait($this->nextWaitSeconds());
                 }
             } catch (Throwable $e) {
@@ -162,17 +175,39 @@ class DockerManager extends BaseManager
      */
     private function applySignals(WatchdogWait $wait): void
     {
-        foreach ($wait->consumeSignals() as $signal) {
-            switch ($signal) {
-                case SIGTERM:
-                case SIGINT:
-                    $this->handleShutdown();
-                    break;
-                case SIGHUP:
-                    $this->handleRestart();
-                    break;
+        $signals = $wait->consumeSignals();
+        if (in_array(SIGTERM, $signals, true) || in_array(SIGINT, $signals, true)) {
+            $this->handleShutdown();
+        } elseif (in_array(SIGHUP, $signals, true)) {
+            $this->handleRestart();
+        }
+        foreach ($signals as $signal) {
+            if ($signal === SIGUSR1 || $signal === SIGUSR2) {
+                $this->applyHeartbeatTestRequest($signal);
             }
         }
+    }
+
+    /** @param int $signal One addressed test request, applied only to the current child and phase */
+    private function applyHeartbeatTestRequest(int $signal): void
+    {
+        if (!NonProductionGate::admitted()) {
+            Logger::info("Watchdog test request $signal refused: environment is not admitted.");
+            return;
+        }
+        if ($this->process === null || $this->hangMonitor === null || $this->shouldExit) {
+            Logger::info("Watchdog test request $signal ignored: no eligible child.");
+            return;
+        }
+        if ($signal === SIGUSR1 && $this->hangMonitor->staleAt() !== null) {
+            $this->hangMonitor->bringStaleToNow($this->monotonicSeconds());
+        } elseif ($signal === SIGUSR2 && $this->hangMonitor->killAt() !== null) {
+            $this->hangMonitor->bringStopToNow($this->monotonicSeconds());
+        } else {
+            Logger::info("Watchdog test request $signal ignored: inactive deadline.");
+            return;
+        }
+        Logger::info("Watchdog test request $signal applied to the current deadline.");
     }
 
     /**
@@ -182,12 +217,17 @@ class DockerManager extends BaseManager
     private function nextWaitSeconds(): float
     {
         $timeout = self::STATUS_CHECK_INTERVAL_SECONDS;
+        $now = $this->monotonicSeconds();
+        $hangDeadline = $this->hangMonitor?->killAt() ?? $this->hangMonitor?->staleAt();
+        if ($hangDeadline !== null) {
+            $timeout = min($timeout, $hangDeadline - $now);
+        }
         if ($this->lastErrorRestartTime !== null) {
             $minRestartInterval = Hilos::$env[EnvConstants::DAEMON_MIN_RESTART_INTERVAL]->int();
             if ($this->process === null && !$this->shouldExit && !$this->shouldRestart) {
-                $timeout = min($timeout, $this->lastErrorRestartTime + $minRestartInterval - $this->monotonicSeconds());
+                $timeout = min($timeout, $this->lastErrorRestartTime + $minRestartInterval - $now);
             } elseif ($this->process !== null && $this->processStartTime !== null) {
-                $timeout = min($timeout, $this->processStartTime + $minRestartInterval - $this->monotonicSeconds());
+                $timeout = min($timeout, $this->processStartTime + $minRestartInterval - $now);
             }
         }
         return max(0.0, $timeout);
@@ -250,6 +290,8 @@ class DockerManager extends BaseManager
      *
      * @throws FailedToGetStatusException If process status cannot be retrieved
      * @throws FailedToClosePipeException If pipes cannot be closed
+     * @throws FailedToTerminateProcessException If hang termination cannot be requested
+     * @throws ProcessException If the heartbeat pipe cannot be read
      * @throws EnvException If the restart interval or failed-start threshold env value is missing or invalid
      */
     private function tickDaemon(): void
@@ -258,6 +300,10 @@ class DockerManager extends BaseManager
             return;
         }
 
+        if ($this->shouldExit) {
+            $this->hangMonitor?->suspend();
+        }
+        $this->readHeartbeat();
         $status = $this->process->observe();
         if ($status[Process::STATUS_RUNNING] !== true) {
             $uptime = $this->processStartTime === null ? 0.0 : $this->monotonicSeconds() - $this->processStartTime;
@@ -266,7 +312,14 @@ class DockerManager extends BaseManager
             $this->process = null;
             $this->processStartTime = null;
 
-            if ($this->shouldExit) {
+            if ($this->hangOutputTail !== null) {
+                Logger::error('Daemon process has stopped after main-loop hang: ' . DaemonCrashReason::renderStatus($exitCode, $termSignal));
+                if (!$this->shouldExit && !$this->shouldRestart) {
+                    $this->lastErrorRestartTime = $this->monotonicSeconds();
+                    $this->restartIntervalLogged = false;
+                    $this->recordFailedStart($uptime, $this->hangOutputTail);
+                }
+            } elseif ($this->shouldExit) {
                 Logger::info("Daemon process has stopped");
             } else {
                 if ($this->shouldRestart) {
@@ -285,6 +338,10 @@ class DockerManager extends BaseManager
                     $this->recordFailedStart($uptime, $outputTail);
                 }
             }
+            $this->hangMonitor = null;
+            $this->heartbeatReadEnded = false;
+            $this->hangOutputTail = null;
+            $this->daemonStopRequested = false;
             return;
         }
 
@@ -292,6 +349,8 @@ class DockerManager extends BaseManager
             $this->daemonStopRequested = true;
             $this->initiateDaemonStop($status);
         }
+
+        $this->advanceHangStop($status, $this->monotonicSeconds());
 
         if ($this->processStartTime !== null && $this->lastErrorRestartTime !== null) {
             // Process is running successfully - check if it worked long enough to reset restart protection
@@ -304,6 +363,61 @@ class DockerManager extends BaseManager
                 $this->restartIntervalLogged = false;
                 $this->consecutiveFailedStarts = 0;
             }
+        }
+    }
+
+    /** @throws ProcessException When the current child's nonblocking heartbeat read fails */
+    private function readHeartbeat(): void
+    {
+        if ($this->heartbeatReadEnded) {
+            return;
+        }
+        $pipe = $this->process->getPipe(MasterHeartbeat::DESCRIPTOR);
+        if ($pipe === null) {
+            $this->heartbeatReadEnded = true;
+            return;
+        }
+        $marks = fread($pipe, MasterHeartbeat::READ_BYTES);
+        if ($marks === false) {
+            throw new ProcessException('Cannot read the daemon main-loop heartbeat.');
+        }
+        if ($marks !== '' && strspn($marks, MasterHeartbeat::MARK) === strlen($marks)) {
+            $wasArmed = $this->hangMonitor?->staleAt() !== null;
+            $this->hangMonitor?->markReceived($this->monotonicSeconds());
+            if (!$wasArmed && $this->hangMonitor?->staleAt() !== null) {
+                Logger::info('Daemon main-loop heartbeat received; hang detection armed');
+            }
+        }
+        if (feof($pipe)) {
+            $this->heartbeatReadEnded = true;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $status One live Process snapshot, shared with ordinary control
+     * @param float $now Monotonic observation before hang diagnostics
+     * @throws FailedToTerminateProcessException When the single TERM or KILL request fails
+     */
+    private function advanceHangStop(array $status, float $now): void
+    {
+        if ($this->hangMonitor === null) {
+            return;
+        }
+        if (!$this->shouldExit && $this->hangMonitor->isStale($now)) {
+            $this->hangOutputTail = $this->readDaemonOutputTail();
+            Logger::error(sprintf(
+                'Daemon main loop stalled: no completed pass for %.2f seconds; sending SIGTERM. Last daemon output: ',
+                $this->hangMonitor->silenceSeconds($now),
+            ) . $this->hangOutputTail);
+            $this->process->stopFromStatus($status);
+            $this->daemonStopRequested = true;
+            $this->hangMonitor->beginStop($this->monotonicSeconds());
+        }
+        $killAt = $this->hangMonitor->killAt();
+        if ($killAt !== null && $now >= $killAt) {
+            Logger::error('Daemon main loop still stalled after stop grace; sending SIGKILL.');
+            $this->process->killFromStatus($status);
+            $this->hangMonitor->markKilled();
         }
     }
 
@@ -447,7 +561,7 @@ class DockerManager extends BaseManager
         }
         $this->process = new Process(
             'php',
-            [$script],
+            [$script, MasterHeartbeat::ARGUMENT],
             getcwd(),
             [Process::DESCRIPTOR_FILE, '/dev/null', Process::PIPE_READ], // stdin
             // stdout - to the raw output file, or our own stdout when unconfigured
@@ -458,7 +572,12 @@ class DockerManager extends BaseManager
             $errorLogFile === null
                 ? [Process::DESCRIPTOR_REDIRECT, 2]
                 : [Process::DESCRIPTOR_FILE, DaemonRawStream::pathFor($errorLogFile), Process::PIPE_APPEND],
+            [MasterHeartbeat::DESCRIPTOR => [Process::DESCRIPTOR_PIPE, Process::PIPE_WRITE]],
         );
+
+        $this->hangMonitor = new DaemonHangMonitor();
+        $this->heartbeatReadEnded = false;
+        $this->hangOutputTail = null;
 
         // Log startup time
         $this->processStartTime = $this->monotonicSeconds();
@@ -582,6 +701,7 @@ class DockerManager extends BaseManager
     /** Defers the stop to tickDaemon(), which uses that pass's process snapshot. */
     protected function onShutdownSignal(): void
     {
+        $this->shouldRestart = false;
     }
 
     /** Records restart intent; tickDaemon() sends the stop from its current snapshot. */

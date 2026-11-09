@@ -19,6 +19,18 @@ final class DaemonCrashReason
         float $uptimeSeconds,
         string $outputTail,
     ): string {
+        return self::renderStatus($exitCode, $termSignal)
+            . ', survived ' . number_format($uptimeSeconds, 2) . 's. Last daemon output: '
+            . $outputTail;
+    }
+
+    /**
+     * @param ?int $exitCode Captured process exit code
+     * @param ?int $termSignal Captured terminating signal number
+     * @return string Process outcome without reading or repeating the daemon's output
+     */
+    public static function renderStatus(?int $exitCode, ?int $termSignal): string
+    {
         if ($termSignal !== null) {
             $processStatus = "killed by signal {$termSignal}";
         } elseif ($exitCode !== null) {
@@ -27,8 +39,6 @@ final class DaemonCrashReason
             $processStatus = 'exit status unknown';
         }
 
-        return $processStatus
-            . ', survived ' . number_format($uptimeSeconds, 2) . 's. Last daemon output: '
-            . $outputTail;
+        return $processStatus;
     }
 }

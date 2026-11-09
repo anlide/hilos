@@ -16,7 +16,7 @@ use Throwable;
 final class WatchdogWait
 {
     /** @var list<int> Signals owned exclusively by this event base */
-    private const array SIGNALS = [SIGCHLD, SIGTERM, SIGINT, SIGHUP];
+    private const array SIGNALS = [SIGCHLD, SIGTERM, SIGINT, SIGHUP, SIGUSR1, SIGUSR2];
 
     /** @var ?EventBase Watchdog's event base, absent after close */
     private ?EventBase $base = null;
@@ -29,6 +29,10 @@ final class WatchdogWait
 
     /** @var array<int, true> Signals delivered since the last consumption */
     private array $pendingSignals = [];
+
+    private ?Event $heartbeatEvent = null;
+
+    private bool $heartbeatReady = false;
 
     /**
      * Installs the single receiver before any child is started. The original mask
@@ -84,6 +88,30 @@ final class WatchdogWait
     }
 
     /**
+     * Replaces the one-shot READ before the owner reads or closes the pipe.
+     * A delivered readiness mark survives consumeSignals() until explicit removal.
+     *
+     * @param resource|null $pipe Current child's heartbeat reader, absent to detach and clear readiness
+     * @throws ProcessException When the read watch cannot be installed
+     */
+    public function watchHeartbeat(mixed $pipe): void
+    {
+        $this->clearHeartbeatWatch();
+        if ($pipe === null) {
+            return;
+        }
+        if ($this->base === null || !is_resource($pipe)) {
+            throw new ProcessException('Cannot watch a heartbeat without an open reader and event base.');
+        }
+        $this->heartbeatEvent = new Event($this->base, $pipe, Event::READ, function (): void {
+            $this->heartbeatReady = true;
+        });
+        if (!$this->heartbeatEvent->add()) {
+            throw new ProcessException('Cannot install the watchdog heartbeat read event.');
+        }
+    }
+
+    /**
      * Returns immediately for a delivered signal or an already due deadline.
      * Signals stay marked until consumeSignals(), including those delivered here.
      *
@@ -93,7 +121,7 @@ final class WatchdogWait
     public function wait(float $timeoutSeconds): void
     {
         $this->dispatchPending();
-        if ($this->pendingSignals !== [] || $timeoutSeconds <= 0) {
+        if ($this->pendingSignals !== [] || $this->heartbeatReady || $timeoutSeconds <= 0) {
             return;
         }
 
@@ -112,6 +140,7 @@ final class WatchdogWait
     /** Releases the timer, signal watches and base, including partial installation. */
     public function close(): void
     {
+        $this->clearHeartbeatWatch();
         $this->timer?->del();
         $this->timer?->free();
         $this->timer = null;
@@ -128,6 +157,15 @@ final class WatchdogWait
     public function __destruct()
     {
         $this->close();
+    }
+
+    /** Releases only the read event and its readiness mark, without registering a new watch. */
+    private function clearHeartbeatWatch(): void
+    {
+        $this->heartbeatEvent?->del();
+        $this->heartbeatEvent?->free();
+        $this->heartbeatEvent = null;
+        $this->heartbeatReady = false;
     }
 
     /** @throws ProcessException If the wait is closed or pending events cannot be dispatched */

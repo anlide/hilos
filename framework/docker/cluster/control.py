@@ -809,6 +809,35 @@ posix_kill($pid, SIGKILL);
 echo $pid, PHP_EOL;
 '''
 
+# Match a bootstrap argument, as the worker helpers do, and never stop PID 1.
+FREEZE_DAEMON_PHP = r'''
+$self = getmypid();
+foreach (glob("/proc/[0-9]*/cmdline") ?: [] as $file) {
+    $pid = (int)basename(dirname($file));
+    if ($pid <= 1 || $pid === $self) {
+        continue;
+    }
+    $cmdline = file_get_contents($file);
+    if ($cmdline === false) {
+        continue;
+    }
+    $arguments = explode("\0", $cmdline);
+    foreach ($arguments as $argument) {
+        if (!str_ends_with($argument, "/Bootstrap/daemon.php")) {
+            continue;
+        }
+        if (!posix_kill($pid, SIGSTOP)) {
+            fwrite(STDERR, "could not freeze daemon\n");
+            exit(1);
+        }
+        echo $pid, PHP_EOL;
+        exit(0);
+    }
+}
+fwrite(STDERR, "no daemon process found\n");
+exit(1);
+'''
+
 KILL_WORKER_PHP = r'''
 $self = getmypid();
 $workerIndex = getenv("HILOS_KILL_WORKER");
@@ -888,6 +917,45 @@ def crash_daemon(stand, node_id):
     if outcome.code != 0:
         return outcome._replace(out="", err=outcome.err + f"cluster: no daemon process to kill inside {node.container}\n")
     return Outcome(0, f"cluster: SIGKILLed daemon pid {outcome.out.strip()} inside {node.container}\n", outcome.err)
+
+
+def freeze_daemon(stand, node_id):
+    node = stand.member(node_id)
+    outcome = _run(["docker", "exec", node.container,
+                    "php", "-d", "display_errors=stderr", "-r", FREEZE_DAEMON_PHP])
+    if outcome.code != 0:
+        return outcome._replace(out="", err=outcome.err + f"cluster: no daemon to freeze inside {node.container}\n")
+    return Outcome(0, f"cluster: SIGSTOPped daemon pid {outcome.out.strip()} inside {node.container}\n", outcome.err)
+
+
+def _watchdog_expire(stand, node_id, signal_name):
+    """Check the live PID 1 bootstrap, then signal that container's watchdog only."""
+    node = stand.member(node_id)
+    current = _run(["docker", "inspect", "-f", "{{.Id}} {{.State.Running}}", node.container])
+    if current.code != 0:
+        return current._replace(out="")
+    identity = current.out.split()
+    if len(identity) != 2 or identity[1] != "true":
+        return Outcome(1, "", f"cluster: node container {node.container} is not running\n")
+    container = identity[0]
+    # Pin the same container incarnation for the identity read and the signal.
+    current = _run(["docker", "exec", container, "cat", "/proc/1/cmdline"])
+    if current.code != 0:
+        return current._replace(out="")
+    arguments = current.out.rstrip("\0").split("\0")
+    if (len(arguments) != 2 or pathlib.PurePosixPath(arguments[0]).name != "php"
+            or not arguments[1].endswith("/Bootstrap/docker.php")):
+        return Outcome(1, "", f"cluster: PID 1 inside {node.container} is not the stand's watchdog\n")
+    return _said(_run(["docker", "kill", "--signal", signal_name, container]),
+                 f"cluster: sent {signal_name} to watchdog pid 1 inside {node.container}")
+
+
+def watchdog_expire_heartbeat(stand, node_id):
+    return _watchdog_expire(stand, node_id, "SIGUSR1")
+
+
+def watchdog_expire_stop(stand, node_id):
+    return _watchdog_expire(stand, node_id, "SIGUSR2")
 
 
 def kill_worker(stand, node_id, index=None):
@@ -1299,6 +1367,9 @@ NODE_COMMANDS = {
     "start": start,
     "recreate": recreate,
     "crash-daemon": crash_daemon,
+    "freeze-daemon": freeze_daemon,
+    "watchdog-expire-heartbeat": watchdog_expire_heartbeat,
+    "watchdog-expire-stop": watchdog_expire_stop,
     "kill-worker": kill_worker,
     "freeze-worker": freeze_worker,
     "container-id": container_id,
@@ -1357,6 +1428,10 @@ def execute(stand, command, *args):
         if len(args) != 1:
             raise StandRefused("usage: cluster direct-upgrade <node>")
         return direct_upgrade(stand, *args)
+    if command in ("freeze-daemon", "watchdog-expire-heartbeat", "watchdog-expire-stop"):
+        if len(args) != 1:
+            raise StandRefused(f"usage: cluster {command} <node>")
+        return NODE_COMMANDS[command](stand, *args)
     if command == "entry-hold":
         if len(args) != 2:
             raise StandRefused("usage: cluster entry-hold <master> {up|down}")

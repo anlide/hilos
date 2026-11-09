@@ -153,6 +153,19 @@ Two rules make that supervision survive a *crash* rather than only a clean exit:
   so the process has no pipe to read. Under the PHP defaults of the image (`display_errors=1`,
   `log_errors=0`) a fatal is printed to stdout, master failures land in stderr, and deaths
   from unhandled warnings are caught by the node error log.
+- **A silent master is recovered by its container watchdog (HIL-1833).** The watchdog
+  launches `daemon.php` with an opt-in argument and a separate descriptor-3 pipe; a direct
+  daemon launch without that argument opens no heartbeat writer. The master emits a one-byte
+  mark only after a successful guarded pass, using its initially-due one-shot timer and then
+  its own 10-second monotonic interval. The watchdog arms a child-local 60-second silence
+  deadline at the first mark. If no later mark arrives, it captures the daemon's current
+  output quote before writing its ERROR line and sends one SIGTERM. Five seconds later it
+  sends SIGKILL if the same child still runs. It records the stop and its real exit status
+  only when `Process` observes that exit; the next start receives fresh heartbeat state and
+  follows the ordinary error-restart backoff. Pipe EOF alone is not an exit. A requested
+  shutdown suspends hang detection, and a normal new start does not inherit the previous
+  child's deadlines. The watchdog's event loop and timer details are in
+  [event-loop.md](event-loop.md#timing).
 - **Say one thing when you die, and nothing else (HIL-617).** The watchdog is simple, and
   there is no watchdog for the watchdog. Its own failure is *not* damped by a per-iteration
   `try/catch`, not retried, and not handed to project code through a hook: it mails one

@@ -116,8 +116,17 @@ Plus scenarios beyond that matrix:
     masters                    the owner on the leader writes and a third master reads; a missed
                                true and false are repaired once the owner is back; the close by
                                silence and the 8 MiB cap are the socket's master's (HIL-1566)
+ 48 daemon-hang self-heal       the confirmed follower master is frozen
+                               with SIGSTOP; watchdog escalates TERM to KILL, observes exit,
+                               then starts a new master in the same container after backoff;
+                               fresh inspect rejoins the roster
  31 replica keeps up with       a replica took every write the preceding scenarios made, stays
     the primary                read-only and is reached by nobody (HIL-1229)
+
+Scenario 48 is carried by online-testing's three-master stand and runs after
+scenarios 21, 24 and 40 there. It brings the watchdog's 60-second silence and
+five-second stop grace deadlines due through addressed test requests; the
+ordinary daemon restart backoff remains real.
 
 run_matrix() answers 0 when every scenario passes, 1 otherwise.
 """
@@ -125,6 +134,7 @@ run_matrix() answers 0 when every scenario passes, 1 otherwise.
 import json
 import os
 import re
+import signal
 import sys
 import threading
 import time
@@ -1791,6 +1801,219 @@ def scenario_9_daemon_crash_selfheal():
         # Replacing the container is the only way back, and after a pass it is a cheap reset.
         ctl("recreate", victim)
         wait_converge(ALL_NODES)
+
+
+# Read-only OS evidence: no commandPort request reaches the stopped master. Like the
+# controller's worker identities, start ticks distinguish process incarnations.
+_DAEMON_HANG_PROCESSES_PHP = r'''
+function processRow(int $pid): ?array {
+    $base = "/proc/" . $pid;
+    // A child can disappear between any two /proc reads during exit observation.
+    $stat = @file_get_contents($base . "/stat");
+    $cmdline = @file_get_contents($base . "/cmdline");
+    $status = @file_get_contents($base . "/status");
+    if ($stat === false || $cmdline === false || $status === false) {
+        return null;
+    }
+    $fields = explode(" ", substr($stat, strrpos($stat, ")") + 2));
+    $arguments = explode("\0", rtrim($cmdline, "\0"));
+    preg_match('/^SigPnd:\s*([0-9a-f]+)/m', $status, $pending);
+    preg_match('/^ShdPnd:\s*([0-9a-f]+)/m', $status, $shared);
+    return ["pid" => $pid, "startTicks" => $fields[19], "state" => $fields[0],
+            "arguments" => $arguments,
+            "termPending" => ((hexdec($pending[1]) | hexdec($shared[1])) & (1 << (SIGTERM - 1))) !== 0];
+}
+$masters = [];
+foreach (glob("/proc/[0-9]*/cmdline") ?: [] as $file) {
+    $pid = (int)basename(dirname($file));
+    if ($pid <= 1 || $pid === getmypid() || !is_file($file)) {
+        continue;
+    }
+    $cmdline = @file_get_contents($file);
+    if ($cmdline === false) {
+        continue;
+    }
+    foreach (explode("\0", $cmdline) as $argument) {
+        if (str_ends_with($argument, "/Bootstrap/daemon.php")) {
+            $row = processRow($pid);
+            if ($row !== null) {
+                $masters[] = $row;
+            }
+            break;
+        }
+    }
+}
+$old = getenv("HILOS_TEST_OLD_MASTER_PID");
+echo json_encode(["watchdog" => processRow(1), "masters" => $masters,
+                  "oldPresent" => $old !== false && is_dir("/proc/" . $old)]), "\n";
+'''
+
+
+def _daemon_hang_processes(container, old_pid=None):
+    """Observe PID 1, live masters and the old PID in one pinned container, without signals."""
+    flags = [] if old_pid is None else ["-e", f"HILOS_TEST_OLD_MASTER_PID={old_pid}"]
+    outcome = control._run(["docker", "exec", *flags, container, "php", "-d", "display_errors=stderr",
+                            "-r", _DAEMON_HANG_PROCESSES_PHP], timeout=10.0 * TIMEOUT_SCALE)
+    assert outcome.code == 0, f"could not observe master/watchdog processes: {outcome}"
+    row = json.loads(outcome.out)
+    watchdog = row["watchdog"]
+    args = watchdog["arguments"] if watchdog else []
+    assert (len(args) == 2 and os.path.basename(args[0]) == "php"
+            and args[1].endswith("/Bootstrap/docker.php") and watchdog["state"] not in ("T", "Z")), \
+        f"PID 1 is not a live stand watchdog: {row}"
+    return row
+
+
+def scenario_48_daemon_hang_selfheal():
+    """A stopped follower's watchdog escalates TERM to KILL and rejoins without a container restart."""
+    started = time.monotonic()
+    views = wait_converge(ALL_NODES)
+    leader = leaders(views)[0]
+
+    def follows(view, current_leader):
+        return (bool(view) and view.get("consensusRole") == "follower"
+                and view.get("lifecycleState") == "MasterFollowerOrCandidate"
+                and view.get("leaderId") == current_leader and view.get("hasQuorum") is True
+                and any(row.get("nodeId") == current_leader and row.get("online")
+                        for row in view.get("nodes", [])))
+
+    victim = next((node for node in MASTERS if node != leader and follows(views.get(node), leader)), None)
+    assert victim is not None, f"no confirmed follower of {leader}: {summarize(views)}"
+    survivors = [node for node in ALL_NODES if node != victim]
+    container = container_id(victim)
+    assert container, f"could not capture {victim}'s container"
+    before = _daemon_hang_processes(container)
+    assert len(before["masters"]) == 1, f"expected one master on {victim}: {before}"
+    master = before["masters"][0]
+    mark = node_log_mark(victim)
+    log_offset = 0
+    deadline = time.monotonic() + CONVERGE_TIMEOUT
+    phase = "first-heartbeat"
+    last = {}
+
+    def trace(event, **data):
+        print("    daemon-hang " + json.dumps(dict(event=event, phase=phase,
+                                                  elapsed=round(time.monotonic() - started, 3), **data),
+                                             sort_keys=True), flush=True)
+
+    def observe():
+        assert container_id(victim) == container, f"{victim} container changed instead of self-healing"
+        process = _daemon_hang_processes(container, master["pid"])
+        assert process["watchdog"]["startTicks"] == before["watchdog"]["startTicks"], \
+            f"{victim}'s watchdog restarted: {process}"
+        last.update(process=process, log=container_log(victim)[log_offset:])
+        return last
+
+    def await_fact(predicate, description):
+        wait_until(lambda _v: predicate(observe()), max(0.0, deadline - time.monotonic()),
+                   description, nodes=[])
+        trace("fact", description=description, processes=last["process"])
+
+    def fault(command):
+        outcome = control.execute(STAND, command, victim)
+        trace("fault", command=command, rc=outcome.code, stdout=outcome.out, stderr=outcome.err)
+        assert outcome.code == 0, f"{command} {victim} failed: {outcome}"
+        return outcome.out
+
+    def same_master(process):
+        return any(row["pid"] == master["pid"] and row["startTicks"] == master["startTicks"]
+                   for row in process["masters"])
+
+    def view_evidence(current):
+        keys = ("nodeId", "consensusRole", "lifecycleState", "leaderId", "term", "hasQuorum", "nodes")
+        return {node: {key: view.get(key) for key in keys} if view else None
+                for node, view in current.items()}
+
+    try:
+        armed = "Daemon main-loop heartbeat received; hang detection armed"
+        await_fact(lambda row: same_master(row["process"]) and armed in
+                   row["log"].rsplit("Daemon started (startup time:", 1)[-1],
+                   f"{victim}'s current child has delivered its first accepted heartbeat")
+        # Recheck immediately before STOP; do not deliberately disturb leadership or its majority.
+        current = inspect_all()
+        assert leaders(current) == [leader] and follows(current.get(victim), leader), \
+            f"{victim} no longer follows {leader} before STOP: {summarize(current)}"
+        assert all(current.get(node) and current[node].get("hasQuorum") is True for node in MASTERS), \
+            f"masters lack a live majority before STOP: {summarize(current)}"
+        log_offset = len(container_log(victim))
+        trace("before-stop", victim=victim, container=container, master=master,
+              logMark=log_offset, nodeLogMark=mark, views=view_evidence(current))
+        phase = "stop"
+        deadline = time.monotonic() + CRASH_RECOVERY_TIMEOUT
+        frozen = fault("freeze-daemon")
+        assert f"SIGSTOPped daemon pid {master['pid']} " in frozen, \
+            f"STOP targeted another child: captured {master}, result {frozen}"
+        await_fact(lambda row: same_master(row["process"]) and
+                   row["process"]["masters"][0]["state"] == "T", "captured master is SIGSTOPped; PID 1 lives")
+        current = inspect_all(survivors)
+        assert len(leaders(current)) == 1 and all(current.get(node) and current[node].get("hasQuorum") is True
+                                               for node in MASTERS if node != victim), \
+            f"survivors lost their majority: {summarize(current)}"
+        trace("surviving-majority", views=view_evidence(current))
+
+        phase = "term"
+        fault("watchdog-expire-heartbeat")
+        term = "Daemon main loop stalled: no completed pass for "
+        await_fact(lambda row: term in row["log"] and "sending SIGTERM." in row["log"]
+                   and same_master(row["process"]) and row["process"]["masters"][0]["termPending"],
+                   "watchdog recorded hang and delivered TERM to the stopped master")
+
+        phase = "kill-exit"
+        fault("watchdog-expire-stop")
+        killed = "Daemon main loop still stalled after stop grace; sending SIGKILL."
+        exited = "Daemon process has stopped after main-loop hang: killed by signal 9"
+        await_fact(lambda row: killed in row["log"] and exited in row["log"]
+                   and not row["process"]["oldPresent"], "watchdog KILLed and collected the old master")
+        exit_at = time.monotonic()
+        phase = "backoff-rejoin"
+        await_fact(lambda row: len(row["process"]["masters"]) == 1
+                   and row["process"]["masters"][0]["pid"] != master["pid"]
+                   and not row["process"]["oldPresent"] and armed in row["log"],
+                   "a new master in the same container delivered its first heartbeat after ordinary backoff")
+        replacement = last["process"]["masters"][0]
+        trace("replacement", processes=last["process"], sinceExitObserved=round(time.monotonic() - exit_at, 3))
+
+        def rejoined(fresh):
+            if not converged(ALL_NODES)(fresh):
+                return False
+            current_leader = leaders(fresh)[0]
+            return all(view and view.get("leaderId") == current_leader and view.get("hasQuorum") is True
+                       and set(ALL_NODES).issubset({row["nodeId"] for row in view.get("nodes", []) if row.get("online")})
+                       for view in fresh.values())
+
+        # Only now may commandPort reach the replacement. A leader's roster alone cannot prove it answers.
+        recovered = wait_until(rejoined, max(0.0, deadline - time.monotonic()),
+                               "fresh victim inspect and every neighbour agree on leader and online roster")
+        observe()
+        assert (len(last["process"]["masters"]) == 1 and not last["process"]["oldPresent"]
+                and all(last["process"]["masters"][0][key] == replacement[key] for key in ("pid", "startTicks"))), \
+            f"replacement changed during fresh inspect: {last['process']}"
+        trail = last["log"]
+        steps = (f"Watchdog test request {signal.SIGUSR1} applied to the current deadline.", term,
+                 f"Watchdog test request {signal.SIGUSR2} applied to the current deadline.", killed, exited,
+                 "Skipping daemon restart:", "Starting daemon process...", armed)
+        positions = [trail.find(step) for step in steps]
+        assert all(trail.count(step) == 1 for step in steps) and positions == sorted(positions), \
+            f"watchdog lifecycle was out of order or repeated: {list(zip(steps, positions))}\n{trail}"
+        trace("recovered", views=view_evidence(recovered), processes=last["process"])
+        return f"{victim}: heartbeat -> STOP -> TERM -> KILL/exit -> backoff -> fresh inspect/rejoin in {container[:12]}"
+    finally:
+        # Emit evidence before recreate rotates files, including a failure while the victim is frozen.
+        try:
+            for name, read in (
+                    ("containerLog", lambda: container_log(victim)[log_offset:]),
+                    ("activeLog", lambda: node_log_since(victim, mark)),
+                    ("processes", lambda: _daemon_hang_processes(container, master["pid"])),
+                    ("survivors", lambda: view_evidence(inspect_all(survivors)))):
+                try:
+                    trace("evidence", **{name: read()})
+                except Exception as error:
+                    trace("evidence-error", source=name, error=str(error))
+        finally:
+            outcome = control.execute(STAND, "recreate", victim)
+            assert outcome.code == 0, f"could not recreate {victim} after hang scenario: {outcome}"
+            wait_converge(ALL_NODES)
+            trace("cleanup", victim=victim)
 
 
 def sweep_finished_off(node, pid):
@@ -5728,6 +5951,8 @@ SCENARIOS = [
     # so a freeze 23 or 25 may leave behind does not touch it.
     Scenario("31 replica keeps up with the primary", scenario_31_replica_keeps_up_with_the_primary,
              Need(database_replicas=1)),
+    # After every startup/placement observer, especially online-testing's 21/24/40.
+    Scenario("48 daemon-hang self-heal", scenario_48_daemon_hang_selfheal, Need(masters=3)),
 ]
 
 # Park a scenario here (name -> reason) to skip it as known timing-flaky -- the

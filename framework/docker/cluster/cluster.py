@@ -29,6 +29,9 @@ Usage: framework/docker/cluster/run <compose-file> <command> [args]
   start <node>         (re)start a node container, reusing it as it is
   recreate <node>      replace a node with a pristine container
   crash-daemon <node>  SIGKILL the daemon inside a live node container
+  freeze-daemon <node> SIGSTOP only the master daemon inside a live node container
+  watchdog-expire-heartbeat <node>  SIGUSR1 the verified watchdog PID 1 to expire heartbeat
+  watchdog-expire-stop <node>  SIGUSR2 the verified watchdog PID 1 to expire hang stop grace
   kill-worker <node> <i>  SIGKILL worker #i inside a live node container, its daemon kept
   freeze-worker <node>  SIGSTOP one worker inside a live node container (a hung orphan, scenario 9)
   container-id <node>  print a node's docker container id
@@ -92,6 +95,7 @@ REFUSED = 2
 COMMANDS = ("up", "down", "restart", "status", "inspect", "inspect-local", "client",
             "entry-upgrade", "entry-welcome", "direct-upgrade", "entry-hold", "liveness-hold",
             "kill", "start", "recreate", "crash-daemon", "kill-worker", "freeze-worker",
+            "freeze-daemon", "watchdog-expire-heartbeat", "watchdog-expire-stop",
             "container-id", "container-log",
             "partition", "heal", "cut", "mend", "logs",
             "stranger", "own-directory", "own-env", "db-sql", "db-log", "db-kill", "db-start",

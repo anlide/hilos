@@ -57,7 +57,7 @@ class Process implements TickDrivenIo
     /** @var resource Child process resource */
     private $process;
 
-    /** @var array<int, resource> Open pipe resources for stdin, stdout and stderr */
+    /** @var array<int, resource> Open pipe resources, including caller-declared extra descriptors */
     private array $pipes = [];
 
     /** @var list<string|int> Descriptor for stdin (e.g. [pipe, r]) */
@@ -120,6 +120,7 @@ class Process implements TickDrivenIo
      * @param list<string|int> $stdIn Standard input descriptor (e.g. [pipe, r])
      * @param list<string|int> $stdOut Standard output descriptor (e.g. [pipe, w], or [redirect, 1])
      * @param list<string|int> $stdErr Standard error descriptor (e.g. [pipe, w], or [redirect, 2])
+     * @param array<int, mixed> $extraDescriptors Native proc_open descriptor specs, keyed by descriptor >= 3
      *
      * @throws CouldNotStartException If process cannot be started
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
@@ -131,6 +132,7 @@ class Process implements TickDrivenIo
         array $stdIn = [self::DESCRIPTOR_PIPE, self::PIPE_READ],
         array $stdOut = [self::DESCRIPTOR_PIPE, self::PIPE_WRITE],
         array $stdErr = [self::DESCRIPTOR_PIPE, self::PIPE_WRITE],
+        array $extraDescriptors = [],
     ) {
         $this->stdinDescriptor = $stdIn;
         $this->stdoutDescriptor = $stdOut;
@@ -141,6 +143,13 @@ class Process implements TickDrivenIo
             1 => $this->stdoutDescriptor,
             2 => $this->stderrDescriptor,
         ];
+
+        foreach ($extraDescriptors as $descriptor => $specification) {
+            if (!is_int($descriptor) || $descriptor <= 2) {
+                throw new CouldNotStartException('Extra process descriptors must have integer keys greater than 2.');
+            }
+            $descriptorSpec[$descriptor] = $specification;
+        }
 
         // proc_open receives an argv array, so no shell is involved: params are passed
         // verbatim and must not be shell-escaped. Only $command is tokenised, to keep
@@ -156,19 +165,9 @@ class Process implements TickDrivenIo
             throw new CouldNotStartException('Could not start the process.');
         }
 
-        if (isset($this->pipes[0]) && is_resource($this->pipes[0])) {
-            if (!stream_set_blocking($this->pipes[0], false)) {
-                throw new FailedToSetNonBlockingException('Failed to set non-blocking mode stdin on streams.');
-            }
-        }
-        if (isset($this->pipes[1]) && is_resource($this->pipes[1])) {
-            if (!stream_set_blocking($this->pipes[1], false)) {
-                throw new FailedToSetNonBlockingException('Failed to set non-blocking mode stdout on streams.');
-            }
-        }
-        if (isset($this->pipes[2]) && is_resource($this->pipes[2])) {
-            if (!stream_set_blocking($this->pipes[2], false)) {
-                throw new FailedToSetNonBlockingException('Failed to set non-blocking mode stderr on streams.');
+        foreach ($this->pipes as $descriptor => $pipe) {
+            if (is_resource($pipe) && !stream_set_blocking($pipe, false)) {
+                throw new FailedToSetNonBlockingException("Failed to set non-blocking mode on descriptor $descriptor.");
             }
         }
         TickDrivenIoRegistry::track($this);
@@ -434,6 +433,34 @@ class Process implements TickDrivenIo
         if (!$this->closed && $status[self::STATUS_RUNNING] && !proc_terminate($this->process)) {
             throw new FailedToTerminateProcessException('Failed to terminate the process.');
         }
+    }
+
+    /**
+     * Sends SIGKILL at most once, retaining the live handle until observe() sees exit.
+     *
+     * @param array<string, mixed> $status This child's snapshot from the current observation pass
+     * @throws FailedToTerminateProcessException If the kill request fails
+     */
+    public function killFromStatus(array $status): void
+    {
+        if ($this->closed || $this->killSent || !$status[self::STATUS_RUNNING]) {
+            return;
+        }
+        if (!proc_terminate($this->process, SIGKILL)) {
+            throw new FailedToTerminateProcessException('Failed to forcefully terminate the process.');
+        }
+        $this->killSent = true;
+    }
+
+    /**
+     * Borrows a pipe without consuming it. Extra descriptors are never read by tick().
+     *
+     * @param int $descriptor Native pipe number
+     * @return resource|null Existing open pipe, absent after close or for a non-pipe descriptor
+     */
+    public function getPipe(int $descriptor): mixed
+    {
+        return isset($this->pipes[$descriptor]) && is_resource($this->pipes[$descriptor]) ? $this->pipes[$descriptor] : null;
     }
 
     /**

@@ -329,18 +329,34 @@ its own next wake through
 [`armRoleTickAt()`](daemon-lifecycle.md#scheduling-a-role-hook).
 
 The container watchdog waits in libevent for `SIGCHLD`, `SIGTERM`, `SIGINT`,
-`SIGHUP`, or a one-shot timer. Its persistent signal watches are installed
-before the first daemon check and remain active between waits; callbacks only
-mark signals for the watchdog to apply on its ordinary pass. Each wait is
-capped at 60 seconds and shortened to the nearest monotonic
-`DAEMON_MIN_RESTART_INTERVAL` deadline, which permits a restart after failure
-or resets the early-failure series after a sufficiently long run. When a daemon
-is present, the pass takes one status snapshot through `Process::observe()`;
+`SIGHUP`, the current daemon's heartbeat pipe, or a one-shot timer. Its persistent
+signal watches are installed before the first daemon check and remain active
+between waits; callbacks only mark signals for the watchdog to apply on its
+ordinary pass. Each wait is capped at 60 seconds and shortened to the nearest
+monotonic hang or `DAEMON_MIN_RESTART_INTERVAL` deadline. When a daemon is
+present, the pass takes one status snapshot through `Process::observe()`;
 `Process` preserves the exit code or terminating signal before closing an
-exited child, and a shutdown requested on that pass uses the same snapshot to
-send SIGTERM. After an exited daemon has been observed and closed, `OrphanReaper`
+exited child, and hang termination uses that same snapshot to send SIGTERM or
+SIGKILL. After an exited daemon has been observed and closed, `OrphanReaper`
 collects leftover children before a new start; it does not collect a live
 supervised daemon.
+
+Only a daemon launched by the container watchdog with its heartbeat argument
+opens the separate descriptor-3 pipe. `SIGUSR1` and `SIGUSR2` are also watched
+as non-production harness requests; on the watchdog's ordinary pass they bring
+only an active silence or stop-grace deadline due, behind `NonProductionGate`.
+The master uses its own one-shot
+`EventLoopTimer`, initially due, to make a one-byte mark after a successful
+guarded pass, then rearms it for the next monotonic 10-second deadline. The
+watchdog's child-local silence monitor is armed by the first accepted mark; it
+does not infer a hang before then. Sixty seconds without another mark causes
+one SIGTERM, followed by SIGKILL after the five-second stop grace if the child
+still runs. The watchdog decides that the child exited only from its ordinary
+`Process` observation. Pipe EOF ends reads for that child but does not itself
+declare an exit; the last accepted mark's deadline and process observation still
+govern recovery. Each new child starts with fresh monitor state. An ordinary
+direct daemon start has no heartbeat argument, opens no writer, and is not
+covered by this watchdog monitor; a requested shutdown suspends hang detection.
 
 A worker runs its ordinary work pass, then waits on the daemon socket when no
 short work is due. Its maximum wait is the earliest of the live agents'

@@ -108,6 +108,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
+use Hilos\Core\Exception\ProcessException;
 use Hilos\Core\Http\RootInfoHandler;
 use Hilos\Core\Http\StatusHandler;
 use Hilos\Core\Page\Config\PageAgentIndexSource;
@@ -619,6 +620,10 @@ abstract class DaemonManager extends BaseManager implements
     private bool $roleTickDue = false;
     private bool $roleTickSourceChanged = false;
     private bool $roleTickDetached = false;
+
+    private ?MasterHeartbeat $masterHeartbeat = null;
+    private ?EventLoopTimer $masterHeartbeatTimer = null;
+    private bool $masterHeartbeatDue = false;
 
     private ?EventLoopTimer $analyticsFlushTimer = null;
 
@@ -1442,6 +1447,8 @@ abstract class DaemonManager extends BaseManager implements
             $cookieSource = SessionCookieName::isOverridden() ? 'override' : 'derived';
             Logger::info("Session cookie '{$sessionCookieName}' ({$cookieSource})");
 
+            $this->masterHeartbeat = MasterHeartbeat::fromArguments($_SERVER['argv'] ?? []);
+            $this->attachMasterHeartbeat();
             $this->nativeWaitEnabled = true;
             while ($this->shouldContinueRunning()) {
                 $this->runGuardedIteration(microtime(true));
@@ -1504,7 +1511,7 @@ abstract class DaemonManager extends BaseManager implements
             || $this->hasRunnableProcessRoster() || $this->hasRunnableReportFrames() || $this->hasRunnableMeasurements()
             || $this->hasRunnableRtOwnership() || $this->hasRunnableReaderInterest() || $this->hasRunnableConnectionChanges()
             || $this->hasRunnableSingletonStart() || $this->hasRunnableDeclarations()
-            || $this->cronMinuteDue || $this->analyticsFlushDue || $this->clientReadSummaryDue
+            || $this->cronMinuteDue || $this->analyticsFlushDue || $this->clientReadSummaryDue || $this->masterHeartbeatDue
             || $this->agentRestartDeadlineDue || $this->pageAgentRestartDeadlineDue || $this->ormForgetDeadlineDue
             || $this->nodeReportDeadlineDue || $this->cronFireDeadlineDue
             || $this->reHydrateRoundReady || $this->leaderPageRecoveryReady
@@ -1573,6 +1580,7 @@ abstract class DaemonManager extends BaseManager implements
         $failure = null;
         foreach ([
             $this->detachMasterProcessSignals(...),
+            $this->detachMasterHeartbeat(...),
             function (): void {
                 $this->shutdownTimer?->close();
                 $this->shutdownTimer = null;
@@ -1774,6 +1782,7 @@ abstract class DaemonManager extends BaseManager implements
             // Control callbacks record facts; lifecycle hooks run only here, under the guard.
             $this->dispatchMasterProcessSignals();
             $this->reconcileMasterWaitSources();
+            $this->runMasterDuty($this->completeMasterHeartbeatPass(...), $this->detachMasterHeartbeat(...));
         } catch (Throwable $failure) {
             // A failure that got this far is the node's own: one iteration of the loop
             // did not finish, and nothing below this frame is left to make sense of it.
@@ -1804,6 +1813,46 @@ abstract class DaemonManager extends BaseManager implements
             $this->departure = DaemonDeparture::Failed;
             $this->shouldExit = true;
         }
+    }
+
+    /** Initial due work prevents the very first native poll from waiting for unrelated I/O. */
+    private function attachMasterHeartbeat(): void
+    {
+        if ($this->masterHeartbeat === null) {
+            return;
+        }
+        $this->masterHeartbeatDue = true;
+        $this->masterHeartbeatTimer = $this->eventLoop->createTimer(function (): void {
+            $this->masterHeartbeatDue = true;
+        });
+    }
+
+    /**
+     * Called only at the successful end of the existing iteration guard.
+     *
+     * @throws ProcessException When a completed pass cannot report its heartbeat
+     * @throws EventLoopException When the next own heartbeat deadline cannot be armed
+     */
+    private function completeMasterHeartbeatPass(): void
+    {
+        if ($this->masterHeartbeat === null) {
+            return;
+        }
+        $this->masterHeartbeat->onPassCompleted(
+            hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND,
+        );
+        $this->masterHeartbeatDue = false;
+        $this->masterHeartbeatTimer?->armAt($this->masterHeartbeat->nextMarkAt());
+    }
+
+    /** Retires the native wake before closing the writer, including startup failure. */
+    private function detachMasterHeartbeat(): void
+    {
+        $this->masterHeartbeatTimer?->close();
+        $this->masterHeartbeatTimer = null;
+        $this->masterHeartbeatDue = false;
+        $this->masterHeartbeat?->close();
+        $this->masterHeartbeat = null;
     }
 
     /**

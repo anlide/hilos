@@ -669,7 +669,7 @@ carried every scenario on a single shape is retired (HIL-1218).
 |---|---|---|---|---|
 | binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere, 38 manual maintenance from any node, 41 i18n catalog taken once and skipped after holder restart, 42 a node with another default language refused on both ends, 44 replicated waiting fleet survives leader death and quorum loss, then starts when slots return without another ask, 45 upload pool across nodes: reservations, worker receipts, crossing waits and peer generations, 46 browser liveness across masters, 47 a node with another project time zone refused on both ends |
 | ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4`, each with `slots=64` | one server, primary + derived journal | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed, 19 worker death on a live node, 37 costless agents consume slots, 39 person agents across nodes, 43 waiting ballast retries after a slave returns without another ask (cleanup checked with `composer -d demo/ecommerce-shop run test:cluster:scenarios -- 43 37 18`) |
-| online-testing | Angular | three equal masters that host work themselves | one server, primary + derived journal | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 40 journal triggers installed once and unchanged on ordinary restart |
+| online-testing | Angular | three equal masters that host work themselves | one server, primary + derived journal | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 40 journal triggers installed once and unchanged on ordinary restart, 48 daemon hang self-heal |
 | roblox-game-server | Vue | three masters and one slave: `m1` without capacity — it votes and hosts no placed work; `m2`, `m3` workers with `ram=10`, `slots=64`; slave `s1` worker with `ram=4`, `slots=64` (not in the code yet — HIL-2029) | Galera of two data nodes and the `garbd` arbitrator, which votes and stores no data, behind HAProxy; the application uses both data nodes (not in the code yet — HIL-2029) | role and placement proofs below (not in the code yet — HIL-2036); Galera fault proofs below (not in the code yet — HIL-2040) |
 | file-gallery-manager | React | two masters without capacity and three slave workers with `ram=10` / `6` / `4`, each with `slots=64` (not in the code yet — HIL-2032) | primary and one read-only replica behind one address that always leads to the primary, no automatic promotion (not in the code yet — HIL-2032) | 31 (not in the code yet — HIL-2032) |
 | concert-tickets | Angular | five equal master workers with `ram=10`, `slots=64`, no slaves (not in the code yet — HIL-2033) | Galera of three data nodes behind HAProxy; the application uses all three (not in the code yet — HIL-2033) | 26/27/28 (not in the code yet — HIL-2041) |
@@ -851,6 +851,45 @@ every socket is doubted, offline when none is left. The spec keeps no clock of i
 no `test.slow()`; each step brings one browser's doubt or close to now, waits for what the
 master did to its socket, the ping it sent into the silence or the close, and then for
 what the observer was told.
+
+Scenario **48** on online-testing proves
+[container watchdog hang recovery](architecture/daemon-lifecycle.md)
+for a live follower master (`scenario_48_daemon_hang_selfheal` in
+[`scenarios.py`](../../framework/docker/cluster/scenarios.py)). Its `Need(masters=3)`
+selects a confirmed follower while the leader and surviving majority remain healthy. The
+scenario observes the first accepted heartbeat and rechecks the follower and majority before
+the fault. It pins the watchdog PID 1, its start tick, the daemon PID and its start tick, and
+the container identity, and requires the same watchdog process to remain alive. It freezes
+the daemon with SIGSTOP, uses the harness's `watchdog-expire-heartbeat` request to make its
+active 60-second silence deadline due, and checks TERM; it then uses
+`watchdog-expire-stop` to make the active five-second stop grace due and checks SIGKILL plus
+the watchdog's observation of the old process's actual exit. No command-port request is sent
+to the stopped master. Only after a new master is alive in the same container does the
+scenario inspect the victim again and require every node's fresh roster to agree that it
+rejoined.
+
+Those two harness requests send SIGUSR1 and SIGUSR2 to the addressed watchdog; they make only
+the active hang deadlines due now and do not wait out the production 60 seconds or five-second
+grace. The watchdog admits them only in a non-production environment, and the harness verifies
+the target watchdog PID before signaling it. On this stand the normal 20-second
+`DAEMON_MIN_RESTART_INTERVAL` backoff remains real. Polling for TERM, KILL, observed exit, the
+replacement process and fresh roster is bounded by the existing `CRASH_RECOVERY_TIMEOUT`.
+Its `finally` path captures evidence and ordinarily recreates the victim node so the next
+scenario starts with the stand restored.
+
+Measured on the test box on 2026-11-08, scenario 48 took 36.288 seconds when pointed and
+38.505 seconds in the matrix, including initial readiness, evidence collection and cleanup.
+The recovered-node inspection portion took 26.867 seconds pointed and 27.632 seconds in the
+matrix. These are the scenario's observed added times; the 76-second pointed invocation and
+128-second complete matrix are command totals, not scenario cost. The timing is an
+observation, not a promise for a future graph. The separate 24-hour no-browser observation
+has not been completed and is not established by these scenario runs. From the repository
+root, run the pointed scenario and, before merge, the online-testing matrix:
+
+```bash
+composer -d demo/online-testing run test:cluster:scenarios -- 48
+composer -d demo/online-testing run test:cluster:scenarios
+```
 
 The Hilos shapes keep their original purpose: quorum, network partitions and
 TLS on binance-btc-tracker; placement and failover with a stable leader on
