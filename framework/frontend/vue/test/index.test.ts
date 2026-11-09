@@ -38,6 +38,12 @@ it('exports the shared page head once, from the base entry the root re-exports',
   expect(base.HilosPageHead).toBe(HilosPageHead)
 })
 
+it('exports the date-time picker from the base entry the root re-exports', async () => {
+  const root = await import('../src/index.js')
+  expect(base.HilosDateTimePicker).toBeTypeOf('object')
+  expect(base.HilosDateTimePicker).toBe(root.HilosDateTimePicker)
+})
+
 it('exports the profile head once, from the base entry the root re-exports', () => {
   expect(base.HilosProfileHead).toBe(HilosProfileHead)
 })

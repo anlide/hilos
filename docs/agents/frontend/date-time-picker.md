@@ -826,19 +826,23 @@ stable group id; `label` is visible and accessible. For datetime, the label
 also names the actual configured zone. Render and edit the controller directly:
 no parallel SDK draft and no second `value`/`v-model` binding. Do not recreate
 the controller on every render or echoed prop update.
-(not in the code yet — HIL-1970)
 (not in the code yet — HIL-1973)
 (not in the code yet — HIL-1976)
 
 In the segmented field, Left/Right selects the neighboring part. ASCII digits
 fill a numeric part and advance when it is complete; Backspace clears the
-part. Up/Down and the step buttons invoke cyclic stepping. AM/PM and the fold
-offset are separate parts. Alt+Down opens the calendar or time controls; the
-opener also works with Enter and Space. Time-only has a time control with no
-month grid. Disabled/busy prevents user changes and opening while retaining
-the visible draft. A server refusal belongs to the form's error row, not to
-local segment validity.
-(not in the code yet — HIL-1970)
+part. Up/Down invokes cyclic stepping. AM/PM and the fold offset are separate
+parts. Disabled/busy prevents user changes while retaining the visible draft.
+A server refusal belongs to the form's error row, not to local segment
+validity.
+
+Step buttons invoke cyclic stepping. Alt+Down opens the calendar or time
+controls; the opener also works with Enter and Space. Time-only has a time
+control with no month grid. Disabled/busy prevents opening while retaining the
+visible draft.
+(not in the code yet — HIL-1971)
+(not in the code yet — HIL-1974)
+(not in the code yet — HIL-1977)
 (not in the code yet — HIL-1973)
 (not in the code yet — HIL-1976)
 
@@ -847,13 +851,17 @@ and offset. Supply `aria-valuemin`, `aria-valuemax`, `aria-valuenow` and
 `aria-valuetext` as appropriate to the part's current state. An incomplete
 part must not announce a valid numeric value; expose its placeholder or
 reason. Use full words, such as the month's full name, and the configured
-part/endpoint labels. Show invalid, gap and ambiguous reasons in text and
-connect them to the field through ARIA, preserving supplied descriptions.
-Announce changes once through a permanent live region; the visible reason
-does not repeat its live role. Color alone is insufficient. Reserve room for
-reasons so their appearance does not move neighboring content, following the
-existing [styling rules](styling-rules.md).
-(not in the code yet — HIL-1970)
+part/endpoint labels. Keep a permanent, visually hidden `aria-live="polite"`
+node for each edge, containing that edge's reason. Each part references its
+edge's node and the parent's supplied description through `aria-describedby`.
+Show one visible, `aria-hidden` reason tooltip only while the field has focus.
+It shows the focused edge's reason, or the other edge's reason when the focused
+edge has none. Overlay it beneath the field over neighboring content; do not
+reserve a row for it. Invalid and gap style the field and tooltip as errors and
+set `aria-invalid="true"` on that edge's parts. Ambiguous is a neutral
+question; leave the field and parts without invalid state. Empty and incomplete
+states have no reason. The permanent live nodes announce changes; the visible
+tooltip has no live role. Color alone is insufficient.
 (not in the code yet — HIL-1973)
 (not in the code yet — HIL-1976)
 
@@ -1008,18 +1016,17 @@ When `hasPair()` is false, Save is unavailable and Enter sends nothing. These
 functions illustrate the future form boundary, not a second value store or
 business validator. (not in the code yet — HIL-1979)
 
-## Future SDK view imports
+## SDK view imports
 
-The SDK imports below are future exports. Mount the stable controller
-with the same `picker`, `id`, `label`, optional `describedBy` and optional
-`dataId` contract in each framework. A datetime range label may read
-`Maintenance window, Europe/Warsaw`, naming the configured zone.
+The Vue import is available; the React and Angular imports below remain future
+exports. Mount the stable controller with the same `picker`, `id`, `label`,
+optional `describedBy` and optional `dataId` contract in each framework. A
+datetime range label may read `Maintenance window, Europe/Warsaw`, naming the
+configured zone.
 
 ```ts
 import { HilosDateTimePicker } from '@hilos/vue/base'
 ```
-
-(not in the code yet — HIL-1970)
 
 ```ts
 import { HilosDateTimePicker } from '@hilos/react/base'
