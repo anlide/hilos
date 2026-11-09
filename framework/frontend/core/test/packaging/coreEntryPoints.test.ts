@@ -55,6 +55,7 @@ import * as calendarDates from '../../src/calendar/calendarDate.js'
 import * as calendarMatrix from '../../src/calendar/monthMatrix.js'
 import * as textLineMerge from '../../src/conflict/textLineMerge.js'
 import * as restoreProgress from '../../src/connection/restoreProgress.js'
+import * as popupEffects from '../../src/dom/popupEffects.js'
 import * as tableFocusReturn from '../../src/dom/tableFocusReturn.js'
 import * as core from '../../src/index.js'
 import * as publicStatus from '../../src/status/index.js'
@@ -232,6 +233,7 @@ const dateTimePickerTypes = [
 ]
 /** Channel icons belong to base without extending the compatibility root. */
 const notificationChannelValues = ['notificationChannelIcon']
+const popupEffectsValues = ['bindPopupDismiss', 'revealPickerPanel']
 /** Public legal document APIs added for the Privacy page and shared SDK reader. */
 const publicLegalValues = [
   'LEGAL_PRIVACY_SECTION',
@@ -1136,6 +1138,11 @@ describe('core public entries', () => {
               name as keyof typeof notificationPreferences
             ],
           )
+        } else if (entry === './base' && popupEffectsValues.includes(name)) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(value, name).toBe(
+            popupEffects[name as keyof typeof popupEffects],
+          )
         } else if (
           entry === './status' &&
           publicStatusDerivedValues.includes(name)
@@ -1468,6 +1475,7 @@ describe('core public entries', () => {
         ...dateTimeZoneValues,
         ...dateTimePickerValues,
         ...notificationChannelValues,
+        ...popupEffectsValues,
         ...publicStatusDerivedValues,
         ...analyticsOverviewValues,
         ...analyticsPeriodValues,
@@ -2071,6 +2079,7 @@ describe('core public entries', () => {
     const notificationChannelExports = exportsOf(
       'notifications/notificationPreferences.ts',
     )
+    const popupEffectsExports = exportsOf('dom/popupEffects.ts')
     const calendarExports = new Map([
       ...exportsOf('calendar/calendarDate.ts'),
       ...exportsOf('calendar/monthMatrix.ts'),
@@ -2115,6 +2124,12 @@ describe('core public entries', () => {
           expect(symbol, `${entry}:${name}`).toBe(
             notificationChannelExports.get(name),
           )
+        } else if (
+          entry === 'base/index.ts' &&
+          popupEffectsValues.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(popupEffectsExports.get(name))
         } else if (
           entry === 'status/index.ts' &&
           publicDerivedNames.includes(name)
@@ -2354,6 +2369,7 @@ describe('core public entries', () => {
         ...dateTimeZoneNames,
         ...dateTimePickerNames,
         ...notificationChannelValues,
+        ...popupEffectsValues,
         ...publicDerivedNames,
         ...overviewNames,
         ...periodNames,

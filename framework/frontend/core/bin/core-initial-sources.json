@@ -50,6 +50,7 @@
   "src/dom/interactionBlock.ts",
   "src/dom/modalStack.ts",
   "src/dom/pageCopy.ts",
+  "src/dom/popupEffects.ts",
   "src/dom/scrollLock.ts",
   "src/dom/tableFocusReturn.ts",
   "src/format/bytes.ts",

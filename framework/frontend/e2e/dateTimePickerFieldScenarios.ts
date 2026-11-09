@@ -367,6 +367,6 @@ export function registerDateTimePickerFieldScenarios<
 }
 
 /** Send real keydowns without replacing the segmented field's native value. */
-async function pressDigits(page: Page, digits: string): Promise<void> {
+export async function pressDigits(page: Page, digits: string): Promise<void> {
   for (const digit of digits) await page.keyboard.press(digit)
 }

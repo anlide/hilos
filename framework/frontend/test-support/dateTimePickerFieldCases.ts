@@ -47,7 +47,7 @@ export type MountDateTimePickerField = (
 ) => Promise<DateTimePickerFieldView>
 
 /** Mount a fresh field, then release its view and parent-owned controller. */
-async function withView(
+export async function withView(
   mount: MountDateTimePickerField,
   picker: DateTimePickerFieldInput['picker'],
   steps: (view: DateTimePickerFieldView) => Promise<void>,
@@ -67,7 +67,10 @@ async function withView(
 }
 
 /** Find a semantic part; a missing part fails at the case that needs it. */
-function part(view: DateTimePickerFieldView, name: string): HTMLInputElement {
+export function part(
+  view: DateTimePickerFieldView,
+  name: string,
+): HTMLInputElement {
   const input = view.root.querySelector<HTMLInputElement>(
     `input[role="spinbutton"][aria-label="${name}"]`,
   )
@@ -602,7 +605,6 @@ export function registerDateTimePickerFieldCases(
         for (const [key, modifiers] of [
           ['1', { ctrlKey: true }],
           ['ArrowUp', { metaKey: true }],
-          ['ArrowDown', { altKey: true }],
           ['Tab', {}],
           ['Enter', {}],
         ] as const) {

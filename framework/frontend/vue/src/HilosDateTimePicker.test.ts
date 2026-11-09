@@ -8,6 +8,7 @@ import {
   type DateTimePickerFieldInput,
   type DateTimePickerFieldView,
 } from '../../test-support/dateTimePickerFieldCases.js'
+import { registerDateTimePickerCalendarCases } from '../../test-support/dateTimePickerCalendarCases.js'
 import HilosDateTimePicker from './HilosDateTimePicker.vue'
 
 async function mountField(
@@ -51,3 +52,4 @@ async function mountField(
 }
 
 registerDateTimePickerFieldCases('Vue', { describe, it, expect }, mountField)
+registerDateTimePickerCalendarCases('Vue', { describe, it, expect }, mountField)

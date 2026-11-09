@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onUpdated, shallowRef, watch } from 'vue'
 import {
+  bindPopupDismiss,
+  revealPickerPanel,
   subscribeSignal,
   type DateTimePickerController,
   type DateTimePickerCount,
@@ -9,6 +11,8 @@ import {
   type DateTimePickerKind,
   type DateTimePickerPart,
 } from '@hilos/core/base'
+import HilosDateTimePickerPanel from './HilosDateTimePickerPanel.vue'
+import { handleDateTimePickerPartKey } from './dateTimePickerPartKeys.js'
 
 const props = defineProps<{
   /** The parent's controller; the parent also owns its disposal. */
@@ -26,8 +30,12 @@ const props = defineProps<{
 const state = shallowRef(props.picker.state.get())
 const disabled = shallowRef(props.picker.disabled.get())
 const busy = shallowRef(props.picker.busy.get())
+const calendar = shallowRef(props.picker.calendar.state.get())
+const root = shallowRef<HTMLElement | null>(null)
+const opener = shallowRef<HTMLButtonElement | null>(null)
 const group = shallowRef<HTMLElement | null>(null)
-const owner = shallowRef({ picker: props.picker })
+const owner = shallowRef({ picker: props.picker, active: true })
+let returnFocus = true
 const focused = shallowRef<{
   edge: DateTimePickerEdge
   part: DateTimePickerPart
@@ -36,19 +44,81 @@ const focused = shallowRef<{
 
 watch(
   () => props.picker,
-  (picker, _, onCleanup) => {
-    owner.value = { picker }
+  (picker, previousPicker, onCleanup) => {
+    if (previousPicker !== undefined) picker.calendar.close()
+    const source = { picker, active: true }
+    owner.value = source
     state.value = picker.state.get()
     disabled.value = picker.disabled.get()
     busy.value = picker.busy.get()
+    calendar.value = picker.calendar.state.get()
     const stops = [
       subscribeSignal(picker.state, (value) => (state.value = value)),
       subscribeSignal(picker.disabled, (value) => (disabled.value = value)),
       subscribeSignal(picker.busy, (value) => (busy.value = value)),
+      subscribeSignal(
+        picker.calendar.state,
+        (value) => (calendar.value = value),
+      ),
     ]
-    onCleanup(() => stops.forEach((stop) => stop()))
+    onCleanup(() => {
+      source.active = false
+      stops.forEach((stop) => stop())
+      returnFocus = false
+      picker.calendar.close()
+    })
   },
   { immediate: true },
+)
+
+watch(
+  [() => calendar.value.open, root],
+  ([open, element], previous, onCleanup) => {
+    if (open) {
+      returnFocus = true
+      if (element)
+        onCleanup(
+          bindPopupDismiss(element, () => {
+            returnFocus = false
+            props.picker.calendar.close()
+          }),
+        )
+    } else if (previous?.[0] && returnFocus) opener.value?.focus()
+  },
+  { flush: 'post', immediate: true },
+)
+
+// Capture the focused control before native disabled can move focus to body.
+watch(
+  () => disabled.value || busy.value,
+  async (blocked) => {
+    if (!blocked || !calendar.value.open) return
+    const element = root.value
+    const source = owner.value
+    const target = element?.ownerDocument.activeElement
+    if (
+      element === null ||
+      !(
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLButtonElement
+      ) ||
+      !element.contains(target)
+    )
+      return
+    await nextTick()
+    const active = element.ownerDocument.activeElement
+    if (
+      root.value === element &&
+      owner.value === source &&
+      calendar.value.open &&
+      element.contains(target) &&
+      target.disabled &&
+      (active === target || active === element.ownerDocument.body)
+    )
+      element
+        .querySelector<HTMLElement>('[role="dialog"]')
+        ?.focus({ preventScroll: true })
+  },
 )
 
 const endpoints = computed(() => [
@@ -79,7 +149,7 @@ const invalid = computed(() =>
   endpoints.value.some(({ snapshot }) => isInvalid(snapshot)),
 )
 const visibleReason = computed(() => {
-  if (focused.value === null) return null
+  if (focused.value === null || calendar.value.open) return null
   const current = state.value[focused.value.edge]
   if (current?.reason) return current
   return (
@@ -104,13 +174,25 @@ function partLabel(edge: DateTimePickerEdge, label: string): string {
   return `${props.picker.labels[edge === 'start' ? 'from' : 'to']} ${label}`
 }
 
+function isCurrent(target: EventTarget | null, source = owner.value): boolean {
+  const element = root.value
+  return (
+    source.active &&
+    source === owner.value &&
+    source.picker === props.picker &&
+    element !== null &&
+    element.isConnected &&
+    element.contains(target as Node | null)
+  )
+}
+
 function focusPart(
   event: FocusEvent,
   source: typeof owner.value,
   edge: DateTimePickerEdge,
   part: DateTimePickerPart,
 ): void {
-  if (source !== owner.value) return
+  if (!isCurrent(event.target, source)) return
   focused.value = { edge, part, input: event.currentTarget as HTMLInputElement }
 }
 
@@ -120,32 +202,31 @@ function leavePart(
   edge: DateTimePickerEdge,
   part: DateTimePickerPart,
 ): void {
-  if (source !== owner.value) return
+  if (!isCurrent(event.target, source)) return
   if (focused.value?.input === event.currentTarget) focused.value = null
   source.picker.leavePart(edge, part)
 }
 
-function inputs(): HTMLInputElement[] {
-  return Array.from(
-    group.value?.querySelectorAll<HTMLInputElement>(
-      'input[role="spinbutton"]',
-    ) ?? [],
-  )
+function toggleCalendar(event: MouseEvent): void {
+  if (!isCurrent(event.target)) return
+  if (calendar.value.open) props.picker.calendar.close()
+  else props.picker.calendar.open()
 }
 
-async function moveFocus(
-  index: number,
-  source: typeof owner.value,
-  input: HTMLInputElement,
-): Promise<void> {
-  await nextTick()
-  if (
-    source !== owner.value ||
-    !group.value?.contains(input) ||
-    input.ownerDocument.activeElement !== input
-  )
+function onEscape(event: KeyboardEvent): void {
+  if (!isCurrent(event.target) || !props.picker.calendar.state.get().open)
     return
-  inputs()[index]?.focus()
+  event.preventDefault()
+  event.stopPropagation()
+  props.picker.calendar.close()
+}
+
+function openFromField(): void {
+  if (!calendar.value.open) props.picker.calendar.open()
+  else {
+    const panel = root.value?.querySelector<HTMLElement>('[role="dialog"]')
+    if (panel) revealPickerPanel(panel)
+  }
 }
 
 function onKeydown(
@@ -154,47 +235,27 @@ function onKeydown(
   edge: DateTimePickerEdge,
   part: DateTimePickerPart,
 ): void {
-  if (source !== owner.value || event.ctrlKey || event.metaKey || event.altKey)
+  const target = event.target
+  if (!isCurrent(target, source)) return
+  if (
+    event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    event.key === 'ArrowDown'
+  ) {
+    event.preventDefault()
+    openFromField()
     return
-  const input = event.currentTarget as HTMLInputElement
-  const index = inputs().indexOf(input)
-  switch (event.key) {
-    case 'ArrowLeft':
-    case 'ArrowRight':
-      event.preventDefault()
-      void moveFocus(
-        index + (event.key === 'ArrowLeft' ? -1 : 1),
-        source,
-        input,
-      )
-      break
-    case 'ArrowUp':
-    case 'ArrowDown':
-      event.preventDefault()
-      source.picker.stepPart(edge, part, event.key === 'ArrowUp' ? 1 : -1)
-      break
-    case 'Backspace':
-    case 'Delete':
-      event.preventDefault()
-      source.picker.clearPart(edge, part)
-      break
-    default:
-      if (
-        /^[0-9]$/.test(event.key) &&
-        part !== 'meridiem' &&
-        part !== 'offset'
-      ) {
-        event.preventDefault()
-        if (source.picker.inputDigit(edge, part, event.key))
-          void moveFocus(index + 1, source, input)
-      } else if (part === 'meridiem' && /^[ap]$/i.test(event.key)) {
-        event.preventDefault()
-        source.picker.setMeridiem(
-          edge,
-          event.key.toLowerCase() === 'a' ? 'am' : 'pm',
-        )
-      }
   }
+  if (event.ctrlKey || event.metaKey || event.altKey) return
+  handleDateTimePickerPartKey(
+    event,
+    source.picker,
+    edge,
+    part,
+    () => group.value,
+    () => isCurrent(target, source),
+  )
 }
 </script>
 
@@ -202,8 +263,11 @@ function onKeydown(
   <span :id="`${id}-label`" class="form-label d-block small mb-1">{{
     label
   }}</span>
-  <div class="position-relative">
-    <div class="input-group input-group-sm flex-nowrap">
+  <div ref="root" class="position-relative" @keydown.esc="onEscape">
+    <div
+      class="input-group input-group-sm flex-nowrap"
+      :class="{ 'has-validation': invalid }"
+    >
       <div
         :id="id"
         ref="group"
@@ -264,6 +328,28 @@ function onKeydown(
           </span>
         </template>
       </div>
+      <button
+        ref="opener"
+        type="button"
+        class="btn btn-outline-secondary"
+        :class="{ active: calendar.open }"
+        :disabled="disabled || busy"
+        :aria-label="
+          picker.kind === 'time'
+            ? picker.labels.chooseTime
+            : picker.labels.openCalendar
+        "
+        :aria-expanded="calendar.open"
+        aria-haspopup="dialog"
+        :aria-controls="calendar.open ? `${id}-panel` : undefined"
+        @click="toggleCalendar"
+      >
+        <i
+          class="bi"
+          :class="picker.kind === 'time' ? 'bi-clock' : 'bi-calendar3'"
+          aria-hidden="true"
+        />
+      </button>
     </div>
     <span
       v-for="{ edge, snapshot } in endpoints"
@@ -284,5 +370,14 @@ function onKeydown(
     >
       {{ visibleReason.reason }}
     </div>
+    <HilosDateTimePickerPanel
+      v-if="calendar.open"
+      :id="id"
+      :picker="picker"
+      :calendar="calendar"
+      :state="state"
+      :described-by="describedBy"
+      :blocked="disabled || busy"
+    />
   </div>
 </template>

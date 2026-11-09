@@ -74,15 +74,18 @@ const count = ref<DateTimePickerCount>('single')
 const factors = ref<keyof typeof FACTORS>('en-GB')
 const zone = ref('Europe/Warsaw')
 const today = ref('2026-10-13')
+const minDate = ref('')
 const seconds = ref(false)
 const busySignal = createSignal(false)
 const disabledSignal = createSignal(false)
 const busy = useSignal(busySignal)
 const disabled = useSignal(disabledSignal)
 const changes = ref(0)
+const mountId = ref(0)
 
 function createPicker(): FixturePicker {
   const currentToday = today.value
+  const currentMin = minDate.value
   const options = {
     count: count.value,
     value: null,
@@ -98,6 +101,7 @@ function createPicker(): FixturePicker {
         ...options,
         kind: 'date',
         today: () => currentToday,
+        ...(currentMin ? { minDate: currentMin } : {}),
       })
     case 'time':
       return createDateTimePickerController({ ...options, kind: 'time' })
@@ -107,6 +111,7 @@ function createPicker(): FixturePicker {
         kind: 'datetime',
         timeZone: zone.value,
         today: () => currentToday,
+        ...(currentMin ? { minDate: currentMin } : {}),
       })
   }
 }
@@ -132,7 +137,7 @@ watch(
   },
   { immediate: true, flush: 'sync' },
 )
-watch([kind, count, zone, today], () => {
+watch([kind, count, zone, today, minDate], () => {
   picker.value.dispose()
   picker.value = createPicker()
 })
@@ -142,6 +147,24 @@ onScopeDispose(() => picker.value.dispose())
 
 function loadValue(): void {
   if (canLoad.value) picker.value.setEndpointValue('start', 1792209600000)
+}
+
+/** Prepare initial-open time controls with their lock set before mounting. */
+function mountOpenTime(): void {
+  if (kind.value !== 'time' || count.value !== 'single') return
+  const previous = picker.value.state.get().result
+  const wasBusy = busySignal.get()
+  const wasDisabled = disabledSignal.get()
+  picker.value.dispose()
+  busySignal.set(false)
+  disabledSignal.set(false)
+  const current = createPicker()
+  if (previous.status === 'valid') current.setValue(previous.value)
+  current.calendar.open()
+  busySignal.set(wasBusy)
+  disabledSignal.set(wasDisabled)
+  picker.value = current
+  mountId.value++
 }
 </script>
 
@@ -212,6 +235,18 @@ function loadValue(): void {
           data-id="fixture-today"
         />
       </div>
+      <div class="col-sm-6 col-lg-4">
+        <label class="form-label" for="fixture-min">Minimum day</label>
+        <select
+          id="fixture-min"
+          v-model="minDate"
+          class="form-select"
+          data-id="fixture-min"
+        >
+          <option value="">none</option>
+          <option value="2026-10-13">2026-10-13</option>
+        </select>
+      </div>
     </div>
     <div class="d-flex flex-wrap gap-3 mb-4">
       <div class="form-check">
@@ -252,11 +287,21 @@ function loadValue(): void {
     <div class="mb-4">
       <HilosDateTimePicker
         id="fixture-picker"
+        :key="mountId"
         :picker="picker"
         :label="label"
         data-id="fixture-picker"
       />
     </div>
+    <button
+      type="button"
+      class="btn btn-outline-primary"
+      data-id="fixture-mount-open-time"
+      :disabled="kind !== 'time' || count !== 'single'"
+      @click="mountOpenTime"
+    >
+      Mount open time
+    </button>
     <button
       type="button"
       class="btn btn-outline-primary"

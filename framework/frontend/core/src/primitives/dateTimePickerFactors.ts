@@ -38,6 +38,12 @@ export interface DateTimePickerLabels {
   readonly chooseDate: string
   readonly chooseTime: string
   readonly chooseOffset: string
+  readonly openCalendar: string
+  readonly time: string
+  readonly increase: string
+  readonly decrease: string
+  readonly firstOccurrence: string
+  readonly secondOccurrence: string
   readonly year: string
   readonly month: string
   readonly day: string
@@ -109,6 +115,12 @@ export const DEFAULT_DATE_TIME_PICKER_LABELS: Readonly<DateTimePickerLabels> =
     chooseDate: 'Choose date',
     chooseTime: 'Choose time',
     chooseOffset: 'Choose UTC offset',
+    openCalendar: 'Open calendar',
+    time: 'Time',
+    increase: 'Increase',
+    decrease: 'Decrease',
+    firstOccurrence: 'First',
+    secondOccurrence: 'Second',
     year: 'Year',
     month: 'Month',
     day: 'Day',

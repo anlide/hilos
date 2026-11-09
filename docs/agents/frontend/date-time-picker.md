@@ -325,6 +325,12 @@ interface DateTimePickerLabels {
   readonly chooseDate: string
   readonly chooseTime: string
   readonly chooseOffset: string
+  readonly openCalendar: string
+  readonly time: string
+  readonly increase: string
+  readonly decrease: string
+  readonly firstOccurrence: string
+  readonly secondOccurrence: string
   readonly year: string
   readonly month: string
   readonly day: string
@@ -370,8 +376,11 @@ and placeholders. `DEFAULT_DATE_TIME_PICKER_LABELS` is frozen and contains
 `from: 'From'`, `to: 'To'`, `today: 'Today'`, `done: 'Done'`,
 `previousMonth: 'Previous month'`, `nextMonth: 'Next month'`,
 `chooseDate: 'Choose date'`, `chooseTime: 'Choose time'`,
-`chooseOffset: 'Choose UTC offset'`, `year: 'Year'`, `month: 'Month'`,
-`day: 'Day'`, `hour: 'Hours'`, `minute: 'Minutes'`, `second: 'Seconds'`,
+`chooseOffset: 'Choose UTC offset'`, `openCalendar: 'Open calendar'`,
+`time: 'Time'`, `increase: 'Increase'`, `decrease: 'Decrease'`,
+`firstOccurrence: 'First'`, `secondOccurrence: 'Second'`,
+`year: 'Year'`, `month: 'Month'`, `day: 'Day'`, `hour: 'Hours'`,
+`minute: 'Minutes'`, `second: 'Seconds'`,
 `meridiem: 'AM/PM'`, `offset: 'UTC offset'`,
 `invalidDate: 'This date does not exist.'`,
 `invalidTime: 'This time does not exist.'`,
@@ -840,7 +849,6 @@ Step buttons invoke cyclic stepping. Alt+Down opens the calendar or time
 controls; the opener also works with Enter and Space. Time-only has a time
 control with no month grid. Disabled/busy prevents opening while retaining the
 visible draft.
-(not in the code yet — HIL-1971)
 (not in the code yet — HIL-1974)
 (not in the code yet — HIL-1977)
 (not in the code yet — HIL-1973)
@@ -861,7 +869,8 @@ reserve a row for it. Invalid and gap style the field and tooltip as errors and
 set `aria-invalid="true"` on that edge's parts. Ambiguous is a neutral
 question; leave the field and parts without invalid state. Empty and incomplete
 states have no reason. The permanent live nodes announce changes; the visible
-tooltip has no live role. Color alone is insufficient.
+tooltip has no live role. Do not show the field tooltip while its panel is open;
+the panel states the same reason itself. Color alone is insufficient.
 (not in the code yet — HIL-1973)
 (not in the code yet — HIL-1976)
 
@@ -872,8 +881,10 @@ each day its full accessible name, selected state through `aria-selected`
 and prohibited state through `aria-disabled`. Bind the model's keyboard
 intents, and focus its selected or today's day on opening. An active range
 endpoint must be identifiable and operable independently of color. Selecting
-a day changes only that endpoint's date and preserves its time.
-(not in the code yet — HIL-1971)
+a day changes only that endpoint's date and preserves its time. On a wide view,
+name the active range endpoint in the panel's visually hidden polite live text
+with `labels.chooseDate` and `labels.from` or `labels.to`; only the narrow view
+exposes an explicit endpoint switch.
 (not in the code yet — HIL-1974)
 (not in the code yet — HIL-1977)
 
@@ -883,8 +894,11 @@ and Escape neither save the form nor undo parts already entered. Escape
 returns focus to the opener. Within a parent modal, do not create a second
 independent modal focus trap. Shared DOM focus and scroll effects belong in
 the common browser helper, not the DOM-free controller or three separate
-implementations.
-(not in the code yet — HIL-1971)
+implementations. The helper is
+`framework/frontend/core/src/dom/popupEffects.ts`; its public `/base` exports
+are `bindPopupDismiss` and `revealPickerPanel`. Keep the panel in the DOM
+inside the picker component so a parent modal's focus trap includes it. When
+the panel is open, Escape must not reach the parent modal.
 (not in the code yet — HIL-1974)
 (not in the code yet — HIL-1977)
 
