@@ -15,7 +15,8 @@ of the same file:
       optional: a cluster directory of the stand's project, which scenario 29 gives one node a
       copy of its own and scenario 30 reads
     scenarios: [<numbers of the scenarios this stand carries>]
-    e2e: {runner: <the Playwright service, under profile e2e>} (optional; needs entry)
+    e2e: {runner: <the Playwright service, under profile e2e>, capabilities: [daemon, delivery, env-mismatch]}
+      optional; needs entry; daemon: leader loss, delivery: live faults, env-mismatch: foreign env; host checks shape
 
 The database the nodes share is found the way the tooling finds it on every stand: the service
 labelled `hilos.role: database`, with the credentials its image is started with (MYSQL_USER,
@@ -69,6 +70,7 @@ REPLICA_ENV = "MARIADB_MASTER_HOST"
 DATABASE_DATA_DIR = "/var/lib/mysql"
 ROLE_MASTER = "master"
 ROLE_SLAVE = "slave"
+E2E_CAPABILITIES = ("daemon", "delivery", "env-mismatch")
 # The grace a slave keeps its work for when no node of the stand sets CLUSTER_SLAVE_WORK_GRACE_MS;
 # mirrors the framework's default for it (framework/backend/Environment/EnvCatalogStub.php).
 DEFAULT_SLAVE_WORK_GRACE_MS = 6000
@@ -137,7 +139,7 @@ class E2e:
     runner_container: str
     # Profile services to raise before Playwright; the runner is a one-shot container.
     services: tuple
-    daemon: bool = False
+    capabilities: frozenset = frozenset()
 
 
 @dataclass(frozen=True)
@@ -287,9 +289,13 @@ def _e2e(shown, project, block, services, entry):
         return None
     if not isinstance(block, dict):
         raise StandRefused(f"{shown}: {BLOCK}.e2e must name a runner")
-    daemon = block.get("daemon", False)
-    if not isinstance(daemon, bool):
-        raise StandRefused(f"{shown}: {BLOCK}.e2e.daemon must be a boolean")
+    capabilities = block.get("capabilities", [])
+    if not isinstance(capabilities, list):
+        raise StandRefused(f"{shown}: {BLOCK}.e2e.capabilities must be a list")
+    for name in capabilities:
+        if name not in E2E_CAPABILITIES:
+            raise StandRefused(f"{shown}: {BLOCK}.e2e.capabilities names {name}, "
+                               f"not one of {', '.join(E2E_CAPABILITIES)}")
     runner = block.get("runner")
     if not isinstance(runner, str) or runner not in services:
         raise StandRefused(f"{shown}: {BLOCK}.e2e.runner names {runner}, which is not a service")
@@ -300,7 +306,7 @@ def _e2e(shown, project, block, services, entry):
     profile_services = tuple(service for service, spec in services.items()
                              if service != runner and "e2e" in (spec.get("profiles") or []))
     return E2e(runner, services[runner].get("container_name") or f"{project}-{runner}-1",
-               profile_services, daemon)
+               profile_services, frozenset(capabilities))
 
 
 def _entry(shown, block, services, network_keys):

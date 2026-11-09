@@ -906,8 +906,22 @@ shared by the masters (optional); `stranger`, the node under a profile
 that a scenario raises on its own (optional); `cluster-directory`, the name and
 in-container path of a cluster directory of the stand's `$fs`, which scenario 29
 gives one node a copy of its own (optional); `scenarios`, the numbers the
-stand carries — never their order, which is the harness's. Scripts that call
-the harness enter through `framework/docker/cluster/run` with that demo's
+stand carries — never their order, which is the harness's; `e2e`, the optional
+browser declaration with `runner` (a service under profile `e2e`, requiring
+`entry`) and `capabilities` (an optional list, empty when absent). Its only
+capability names are `daemon` (leader loss; at least three masters and one
+slave), `delivery` (live fault control; at least three masters), and
+`env-mismatch` (a foreign-environment fixture; at least one slave). The host
+checks every declared capability against the stand's shape before starting
+containers, regardless of browser filters. After collecting the native plan
+and before filtering projects or starting a phase, it refuses any planned
+daemon, delivery or env-mismatch test whose capability is undeclared.
+Delivery control serves every live phase on a declaring stand because its
+spec loads before native execution filters; collection receives its directory
+on every stand without starting a controller. The env-mismatch fixture follows
+the native plan separately for main and quarantine.
+
+Scripts that call the harness enter through `framework/docker/cluster/run` with that demo's
 compose file. A scenario the stand names but cannot carry by its shape — too
 few masters or slaves, no stranger, no cluster directory — is refused before
 the stand is raised, and so is a stand that leaves out what the harness reads.
@@ -1250,8 +1264,8 @@ existing three-master stand (HIL-1423, HIL-1639). After
 source/viewer pairs, each master followed by the next in the harness's list.
 The entry serves Angular's `dist/index.csr.html`; Mailpit and the browser runner
 belong to the `e2e` profile. This stand has only a live phase: no fault request,
-no after-loss phase and no slaves. `e2e.daemon` defaults to false; binance's
-declaration opts in for the separate Daemon phase.
+no after-loss phase and no slaves. Online-testing declares no `e2e.capabilities`;
+binance-btc-tracker declares all three: `daemon`, `delivery` and `env-mismatch`.
 
 Each pair registers a person and an administrator in separate contexts, proves
 every actual WebSocket upgrade's master through CDP, waits for both Analytics

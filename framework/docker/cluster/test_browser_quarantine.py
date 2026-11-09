@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import browser
-from stand import _node
+from stand import StandRefused, _node
 
 
 def planned(project, flake=None, title=None, file=None):
@@ -56,7 +56,9 @@ class BrowserQuarantineTest(unittest.TestCase):
         stack.enter_context(redirect_stdout(self.output))
         self.root = Path(stack.enter_context(tempfile.TemporaryDirectory()))
         self.stand = SimpleNamespace(
-            demo_dir=self.root / "demo" / "binance-btc-tracker", project="stand",
+            demo_dir=self.root / "demo" / "carrier", project="stand",
+            compose=self.root / "docker-compose.cluster.yml",
+            e2e=SimpleNamespace(capabilities=frozenset(("daemon", "delivery", "env-mismatch"))),
             masters=["m1", "m2", "m3"], slaves=["s1", "s2"],
             entry=SimpleNamespace(container="entry"))
         self.stand.members = {node: SimpleNamespace(container=node, ip="127.0.0.1", name=f"Node {node}")
@@ -148,17 +150,16 @@ class BrowserQuarantineTest(unittest.TestCase):
         if phase == "plan":
             self.events.append(("plan",))
             self.assertFalse(any(arg.startswith("--repeat-each") for arg in args))
-            if stand.demo_dir.name == "binance-btc-tracker":
-                directory = self.host_path(env["CLUSTER_DELIVERY_CONTROL_DIR"])
-                self.assertTrue(directory.is_dir())
-                self.assertEqual(directory.name, env["CLUSTER_DELIVERY_RUN_ID"])
+            directory = self.host_path(env["CLUSTER_DELIVERY_CONTROL_DIR"])
+            self.assertTrue(directory.is_dir())
+            self.assertEqual(directory.name, env["CLUSTER_DELIVERY_RUN_ID"])
             projects = [arg.removeprefix("--project=") for arg in args if arg.startswith("--project=")]
             selected = [test for test in self.plan if not projects or test["project"] in projects]
             self.write_sidecar(self.host_path(env["HILOS_E2E_PLAN_FILE"]), selected)
             return self.codes.get("plan", 0)
         project = args[-1].removeprefix("--project=")
         self.assertEqual(1, sum(arg.startswith("--project") for arg in args))
-        if stand.demo_dir.name == "binance-btc-tracker" and project == "live":
+        if "delivery" in stand.e2e.capabilities and project == "live":
             self.assertIn("/cluster-delivery-e2e/", env["CLUSTER_DELIVERY_CONTROL_DIR"])
             self.assertNotIn("/cluster-quarantine/", env["CLUSTER_DELIVERY_CONTROL_DIR"])
         self.calls.append((phase, project, dict(env), args))
@@ -250,6 +251,76 @@ class BrowserQuarantineTest(unittest.TestCase):
         self.daemon_factory.assert_not_called()
         self.assertIn("browser suite skipped: phase daemon", self.output.getvalue())
         self.assertEqual([], self.lines())
+
+    def test_undeclared_daemon_argument_is_refused_before_any_runner_call(self):
+        self.stand.e2e = SimpleNamespace(capabilities=frozenset(("delivery", "env-mismatch")))
+        browser.FLAKY_SKIP["daemon"] = "F-023: switched off"
+        with self.assertRaises(StandRefused) as refused:
+            browser.run(self.stand, ["--daemon"])
+        self.assertEqual(f"{self.stand.compose}: x-hilos-cluster.e2e does not declare daemon",
+                         str(refused.exception))
+        self.gateway.assert_not_called()
+        self.assertNotIn("SKIP", self.output.getvalue())
+
+    def test_unfit_shape_is_refused_before_any_runner_call(self):
+        cases = (
+            ("daemon", ["m1", "m2"], ["s1"],
+             "e2e daemon needs at least three masters and one slave"),
+            ("daemon", ["m1", "m2", "m3"], [],
+             "e2e daemon needs at least three masters and one slave"),
+            ("delivery", ["m1", "m2"], ["s1"], "e2e delivery needs at least three masters"),
+            ("env-mismatch", ["m1", "m2", "m3"], [], "e2e env-mismatch needs at least one slave"),
+        )
+        for capability, masters, slaves, message in cases:
+            with self.subTest(capability=capability, masters=masters, slaves=slaves):
+                self.stand.e2e = SimpleNamespace(capabilities=frozenset((capability,)))
+                self.stand.masters, self.stand.slaves = masters, slaves
+                with self.assertRaises(StandRefused) as refused:
+                    browser.run(self.stand, ["--grep=unrelated"])
+                self.assertEqual(message, str(refused.exception))
+                self.gateway.assert_not_called()
+
+    def test_plan_needing_an_undeclared_capability_starts_no_phase(self):
+        self.stand.e2e = SimpleNamespace(capabilities=frozenset())
+        browser.FLAKY_SKIP["daemon"] = "F-023: switched off"
+        for test, capability in ((planned("daemon"), "daemon"),
+                                 (planned("live", file=browser.ENV_MISMATCH_SPEC), "env-mismatch"),
+                                 (planned("live", file=browser.DELIVERY_SPEC), "delivery")):
+            with self.subTest(capability=capability):
+                self.output.seek(0)
+                self.output.truncate()
+                self.events.clear()
+                self.plan = [test]
+                self.assertEqual(1, browser.run(self.stand, ["--grep=check"]))
+                self.assertEqual([("converge", tuple(self.stand.members)), ("install",), ("plan",)],
+                                 self.events)
+                self.assertEqual([], self.calls)
+                self.daemon_factory.assert_not_called()
+                self.delivery_factory.assert_not_called()
+                self.own_env.assert_not_called()
+                self.assertIn(f"{self.stand.compose}: {test['file']} ({test['project']}) needs capability "
+                              f"{capability} in x-hilos-cluster.e2e.capabilities", self.output.getvalue())
+                self.assertEqual([], self.lines())
+                self.assertEqual([], list((self.stand.demo_dir / "data" / "cluster-quarantine").iterdir()))
+
+    def test_declared_delivery_serves_a_live_phase_without_its_spec(self):
+        self.plan = [planned("live")]
+        self.assertEqual(0, browser.run(self.stand, []))
+        self.delivery_factory.assert_called_once()
+        _, directory, run_id, _, _ = self.delivery_factory.call_args.args
+        env = self.calls[0][2]
+        self.assertEqual(("main", "live"), self.calls[0][:2])
+        self.assertEqual(run_id, env["CLUSTER_DELIVERY_RUN_ID"])
+        self.assertEqual(self.host_path(env["CLUSTER_DELIVERY_CONTROL_DIR"]), directory)
+
+    def test_undeclared_delivery_starts_no_controller(self):
+        self.stand.e2e = SimpleNamespace(capabilities=frozenset(("daemon", "env-mismatch")))
+        self.plan = [planned("live")]
+        self.assertEqual(0, browser.run(self.stand, []))
+        self.delivery_factory.assert_not_called()
+        self.assertEqual(("main", "live"), self.calls[0][:2])
+        self.assertNotIn("CLUSTER_DELIVERY_RUN_ID", self.calls[0][2])
+        self.assertNotIn("CLUSTER_DELIVERY_CONTROL_DIR", self.calls[0][2])
 
     def test_main_daemon_native_rc_survives_cleanup_failure(self):
         self.plan = [planned("daemon")]
@@ -401,6 +472,7 @@ class BrowserQuarantineTest(unittest.TestCase):
     def test_online_testing_only_live_with_no_slave_or_daemon(self):
         self.stand.demo_dir = self.root / "demo" / "online-testing"
         (self.stand.demo_dir / "data").mkdir(parents=True)
+        self.stand.e2e = SimpleNamespace(capabilities=frozenset())
         self.stand.slaves = []
         self.stand.members = {key: val for key, val in self.stand.members.items() if key in self.stand.masters}
         self.plan = [planned("live"), planned("live", "F-100")]

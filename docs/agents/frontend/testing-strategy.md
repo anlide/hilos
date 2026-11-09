@@ -589,7 +589,7 @@ three source/viewer rotations.
 React has no cluster-browser corpus to transfer. Cross-node sign-in, sign-out
 and grant/revoke on the new React and Angular carriers are new proofs
 (not in the code yet — HIL-2034). Browser phases and fixtures are chosen from
-the stand declaration, not the binance name (not in the code yet — HIL-2028).
+the stand declaration and native plan.
 After the transfers each source file exists exactly once
 (not in the code yet — HIL-2035).
 

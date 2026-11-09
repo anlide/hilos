@@ -17,6 +17,7 @@ from stand import StandRefused
 PLAYWRIGHT_ENTRY = "../../../../framework/frontend/scripts/playwright-run.mjs"
 QUARANTINE_STATUSES = frozenset(("passed", "failed", "timedOut", "skipped", "interrupted", "notRun"))
 ENV_MISMATCH_SPEC = "live/daemon-env-mismatch.spec.ts"
+DELIVERY_SPEC = "live/delivery-window.spec.ts"
 
 # A phase switched off whole, the host-side twin of a static `test.fixme`: the host
 # prepares neither its main nor its quarantine run. A test that fails on its own test
@@ -53,15 +54,23 @@ class _LossState:
     ready: bool = False
 
 
-def daemon_phase_selected(stand, extra_args):
-    """Only the Binance carrier has the daemon project and its destructive scenario."""
-    carrier = stand.demo_dir.name == "binance-btc-tracker"
-    if "--daemon" in extra_args and not carrier:
-        raise StandRefused("e2e daemon is carried only by binance-btc-tracker")
-    selected = carrier and (not extra_args or "--daemon" in extra_args)
-    if selected and (len(stand.masters) < 3 or not stand.slaves):
+def _refuse_unfit_shape(stand):
+    """Every declared capability must fit the stand, even when the caller filters it out."""
+    if "daemon" in stand.e2e.capabilities and (len(stand.masters) < 3 or not stand.slaves):
         raise StandRefused("e2e daemon needs at least three masters and one slave")
-    return selected
+    if "delivery" in stand.e2e.capabilities and len(stand.masters) < 3:
+        raise StandRefused("e2e delivery needs at least three masters")
+    if "env-mismatch" in stand.e2e.capabilities and not stand.slaves:
+        raise StandRefused("e2e env-mismatch needs at least one slave")
+
+
+def daemon_phase_selected(stand, extra_args):
+    """Validate the declaration, then select its daemon phase from the caller's arguments."""
+    _refuse_unfit_shape(stand)
+    carrier = "daemon" in stand.e2e.capabilities
+    if "--daemon" in extra_args and not carrier:
+        raise StandRefused(f"{stand.compose}: x-hilos-cluster.e2e does not declare daemon")
+    return carrier and (not extra_args or "--daemon" in extra_args)
 
 
 def _environment(stand, leader, follower, phase, stopped=None):
@@ -286,10 +295,29 @@ def _daemon_phase(stand, extra_args, hilos_phase="main", run_env=None):
     return result
 
 
-def _env_mismatch_selected(stand, tests):
+def _env_mismatch_selected(tests):
     """The native plan, after filters and phase partitioning, owns fixture selection."""
-    return stand.demo_dir.name == "binance-btc-tracker" and any(
-        test["project"] == "live" and test["file"] == ENV_MISMATCH_SPEC for test in tests)
+    return any(test["project"] == "live" and test["file"] == ENV_MISMATCH_SPEC for test in tests)
+
+
+def _needed_capability(test):
+    """Only the known host-controlled projects and files need an explicit capability."""
+    if test["project"] == "daemon":
+        return "daemon"
+    if test["project"] == "live" and test["file"] == ENV_MISMATCH_SPEC:
+        return "env-mismatch"
+    if test["project"] == "live" and test["file"] == DELIVERY_SPEC:
+        return "delivery"
+    return None
+
+
+def _refuse_undeclared(stand, tests):
+    """Check the whole native plan before project filtering or any phase preparation."""
+    for test in tests:
+        needed = _needed_capability(test)
+        if needed is not None and needed not in stand.e2e.capabilities:
+            raise StandRefused(f"{stand.compose}: {test['file']} ({test['project']}) needs capability "
+                               f"{needed} in x-hilos-cluster.e2e.capabilities")
 
 
 def _live_phase(stand, env, extra_args, leader, term, hilos_phase="main", run_env=None,
@@ -312,7 +340,7 @@ def _live_phase(stand, env, extra_args, leader, term, hilos_phase="main", run_en
             scenarios.assert_no_startup_refusal(remote, mark, "after its environment mismatch fixture start")
             env.update({"CLUSTER_ENV_MISMATCH_NODE": remote, "CLUSTER_ENV_MISMATCH_KEY": env_key,
                         "CLUSTER_ENV_MISMATCH_VALUE": env_value})
-        if stand.demo_dir.name == "binance-btc-tracker":
+        if "delivery" in stand.e2e.capabilities:
             directory.mkdir(parents=True)
             directory_created = True
             run_id = directory.name
@@ -483,7 +511,7 @@ def _main(stand, tests, extra_args, run_env, fault_file, loss, hilos_phase):
     if "live" in projects:
         env, leader, term = _roles(stand, "live")
         result = _live_phase(stand, env, extra_args, leader, term, hilos_phase, run_env,
-                             env_mismatch=_env_mismatch_selected(stand, tests))
+                             env_mismatch=_env_mismatch_selected(tests))
         if result.code:
             print("cluster e2e: failed: phase live")
             return result.code
@@ -526,7 +554,7 @@ def _quarantine_tail(stand, tests, extra_args, directory, run_env, fault_file, l
                     result = _daemon_phase(stand, extra_args, "quarantine", env_files)
                 else:
                     result = _live_phase(stand, env, extra_args, leader, term, "quarantine", env_files,
-                                         env_mismatch=_env_mismatch_selected(stand, selected))
+                                         env_mismatch=_env_mismatch_selected(selected))
         except Exception as error:
             result.fail(f"cluster quarantine {project}: host preparation/invocation failed: {error}")
         observations.extend(_observations(selected, path, result))
@@ -562,11 +590,10 @@ def run(stand, extra_args):
         plan_file = directory / "plan.json"
         run_env = {"HILOS_E2E_PLAN_FILE": _child_path(stand, plan_file)}
         collection_env = {**env, **run_env}
-        if stand.demo_dir.name == "binance-btc-tracker":
-            # delivery-window declares its client while collecting and reads this
-            # directory. No request is sent by --list; start no controller here.
-            collection_env.update({"CLUSTER_DELIVERY_RUN_ID": directory.name,
-                                   "CLUSTER_DELIVERY_CONTROL_DIR": _child_path(stand, directory)})
+        # delivery-window can load while collecting on any stand and reads this
+        # directory. No request is sent by --list; start no controller here.
+        collection_env.update({"CLUSTER_DELIVERY_RUN_ID": directory.name,
+                               "CLUSTER_DELIVERY_CONTROL_DIR": _child_path(stand, directory)})
         # Repeats are execution, not selection. Collect one static identity while
         # forwarding the original repeat count to the native diagnostic phase.
         collection_args = []
@@ -583,6 +610,7 @@ def run(stand, extra_args):
         if code != 0:
             raise RuntimeError(f"test collection exited {code}")
         tests = _read_tests(plan_file, plan=True)
+        _refuse_undeclared(stand, tests)
         allowed = {"daemon"} if daemon_only else {"live", "after-loss"} | ({"daemon"} if run_daemon else set())
         for project in sorted(allowed & FLAKY_SKIP.keys()):
             print(f"cluster e2e: phase {project} SKIP ({FLAKY_SKIP[project]})")
