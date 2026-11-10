@@ -42,7 +42,7 @@ class NotificationActions extends DbActions
             return;
         }
 
-        $this->object->readAt = TimeHelper::getSqlDateTime();
+        $this->object->readAt = TimeHelper::nowMs();
         $this->object->sync();
     }
 }

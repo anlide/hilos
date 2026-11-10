@@ -68,7 +68,8 @@ final class NotificationDeliveryFreshIdentityIntegrationTest extends Notificatio
     {
         self::assertNull(Hilos::$db->notificationDeliveries->readIdentity(1893));
         Database::sql(
-            'INSERT INTO hilos_notification_delivery (id, notification_id, channel, routing_key, status) VALUES (?, ?, ?, ?, ?)',
+            'INSERT INTO hilos_notification_delivery (id, notification_id, channel, routing_key, status, `created_at`, `updated_at`) '
+            . 'VALUES (?, ?, ?, ?, ?, 1767225600123, 1767225600123)',
             [1893, 11, 'test-channel', 61, DeliveryStatus::PENDING],
         );
         $config = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);

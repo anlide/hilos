@@ -1365,11 +1365,11 @@ SQL);
         $this->assertSame(RestoredDeliveries::UNKNOWN_FATE, $rows[0][EntityNotificationDelivery::last_error]);
         $this->assertSame(2, (int)$rows[0][EntityNotificationDelivery::attempts]);
         $this->assertNull($rows[0][EntityNotificationDelivery::delivered_at]);
-        $this->assertNotSame('2026-08-08 11:59:00', $rows[0][EntityNotificationDelivery::updated_at]);
+        $this->assertNotSame('1786190340123', $rows[0][EntityNotificationDelivery::updated_at]);
         $this->assertSame(DeliveryStatus::SENT, $rows[1][EntityNotificationDelivery::status]);
         $this->assertSame(1, (int)$rows[1][EntityNotificationDelivery::attempts]);
         $this->assertNull($rows[1][EntityNotificationDelivery::last_error]);
-        $this->assertSame('2026-08-08 11:57:00', $rows[1][EntityNotificationDelivery::delivered_at]);
+        $this->assertSame('1786190220123', $rows[1][EntityNotificationDelivery::delivered_at]);
     }
 
     public function testRestoreWritesThePendingReasonAfterAnonymization(): void
@@ -2046,8 +2046,8 @@ SQL);
             . (string)file_get_contents($stub)
             . 'INSERT INTO `' . EntityNotificationDelivery::_table . '` (`id`, `notification_id`, `channel`, `status`,'
             . ' `attempts`, `last_error`, `created_at`, `updated_at`, `delivered_at`) VALUES '
-            . "(1, 101, 'email', 'pending', 2, 'possibly sent', '2026-08-08 11:58:00', '2026-08-08 11:59:00', NULL),"
-            . " (2, 102, 'email', 'sent', 1, NULL, '2026-08-08 11:56:00', '2026-08-08 11:57:00', '2026-08-08 11:57:00');\n";
+            . "(1, 101, 'email', 'pending', 2, 'possibly sent', 1786190280123, 1786190340123, NULL),"
+            . " (2, 102, 'email', 'sent', 1, NULL, 1786190160123, 1786190220123, 1786190220123);\n";
     }
 
     /**

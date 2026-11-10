@@ -122,12 +122,22 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         parent::tearDown();
     }
 
+    /** @return iterable<string, array{?int}> Optional exported notification and device moments */
+    public static function notificationMoments(): iterable
+    {
+        yield 'absent' => [null];
+        yield 'millisecond remainder' => [1767225600123];
+    }
+
     /**
      * JSON sections include this person's complete set and omit both secrets and foreign rows.
      *
+     * @param ?int $optionalMoment Optional notification and device epoch milliseconds
+     *
      * @throws HilosException When a fixture or archive write fails
      */
-    public function testBuildsOnlyPortableFieldsAndProcessesOneRequestPerTick(): void
+    #[DataProvider('notificationMoments')]
+    public function testBuildsOnlyPortableFieldsAndProcessesOneRequestPerTick(?int $optionalMoment): void
     {
         self::seedIdentity(7, 'password', 'person@example.test');
         self::seedIdentity(7, 'magic_link', 'person@example.test');
@@ -144,11 +154,14 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         Database::sqlRun("INSERT INTO hilos_second_factor (user_id, label, secret, confirmed_at) "
             . "VALUES (7, 'My app', 'TOTP_SECRET', '2026-01-02 00:00:00')");
         Database::sqlRun("INSERT INTO hilos_second_factor_backup_code (user_id, code) VALUES (7, 'BACKUP_CODE')");
-        Database::sqlRun("INSERT INTO hilos_push_subscription (user_id, endpoint, p256dh, auth, endpoint_hash, device_name, user_agent) "
-            . "VALUES (7, 'https://SECRET_ENDPOINT', 'P256DH_SECRET', 'AUTH_SECRET', REPEAT('a', 64), 'My device', 'RAW_USER_AGENT')");
-        Database::sqlRun("INSERT INTO hilos_notification (user_id, type, severity, title, body) VALUES "
-            . "(7, 'notice', 'info', 'My notification', 'My body'), (8, 'notice', 'info', 'Foreign notification', 'Foreign body')");
-        Database::sqlRun("INSERT INTO hilos_notification_preference (user_id, channel, enabled) VALUES (7, 'email', 0), (8, 'sms', 0)");
+        Database::sqlRun("INSERT INTO hilos_push_subscription (user_id, endpoint, p256dh, auth, endpoint_hash, "
+            . "device_name, user_agent, `created_at`) "
+            . "VALUES (7, 'https://SECRET_ENDPOINT', 'P256DH_SECRET', 'AUTH_SECRET', REPEAT('a', 64), 'My device', 'RAW_USER_AGENT', 1767225600123)");
+        Database::sqlRun("INSERT INTO hilos_notification (user_id, type, severity, title, body, `created_at`) VALUES "
+            . "(7, 'notice', 'info', 'My notification', 'My body', 1767225600123), "
+            . "(8, 'notice', 'info', 'Foreign notification', 'Foreign body', 1767225600123)");
+        Database::sqlRun("INSERT INTO hilos_notification_preference (user_id, channel, enabled, `created_at`, `updated_at`) "
+            . "VALUES (7, 'email', 0, 1767225600123, 1767225600123), (8, 'sms', 0, 1767225600123, 1767225600123)");
         Database::sqlRun("INSERT INTO hilos_user_merge (user_id, survivor_user_id, merged_at) VALUES "
             . "(7, 8, '2026-01-04 00:00:00'), (9, 7, NULL), (10, 8, '2026-01-04 00:00:00')");
         Database::sqlRun("INSERT INTO hilos_user_rename (user_id, renamed_by_user_id, old_name, new_name, renamed_at) VALUES "
@@ -158,6 +171,9 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             . "(7, 'terms', '2026-09-17', '2026-09-20 10:00:00'), "
             . "(7, 'privacy', '2026-09-17', '2026-09-20 10:00:01'), "
             . "(8, 'terms', '2026-09-17', '2026-09-21 00:00:00')");
+        Database::sql('UPDATE hilos_notification SET read_at = ? WHERE user_id = 7', [$optionalMoment]);
+        Database::sql('UPDATE hilos_push_subscription SET last_seen_at = ?, gone_at = ? WHERE user_id = 7',
+            [$optionalMoment, $optionalMoment]);
         $first = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
         Hilos::$db->dataExports->actions->order(8, '2026-01-02 00:00:00');
         $agent = new DataExportTestAgent();
@@ -190,8 +206,16 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertTrue(self::section($archive, 'second_factor')['connected']);
         self::assertCount(1, self::section($archive, 'notifications'));
         self::assertSame('My notification', self::section($archive, 'notifications')[0]['title']);
+        self::assertSame('2026-01-01T00:00:00.123+00:00', self::section($archive, 'notifications')[0]['createdAt']);
+        self::assertSame($optionalMoment === null ? null : '2026-01-01T00:00:00.123+00:00',
+            self::section($archive, 'notifications')[0]['readAt']);
         self::assertSame([['channel' => 'email', 'enabled' => false]], self::section($archive, 'notification_preferences'));
         self::assertSame('My device', self::section($archive, 'push_subscriptions')[0]['device']);
+        self::assertSame('2026-01-01T00:00:00.123+00:00', self::section($archive, 'push_subscriptions')[0]['createdAt']);
+        self::assertSame($optionalMoment === null ? null : '2026-01-01T00:00:00.123+00:00',
+            self::section($archive, 'push_subscriptions')[0]['lastSeenAt']);
+        self::assertSame($optionalMoment === null ? null : '2026-01-01T00:00:00.123+00:00',
+            self::section($archive, 'push_subscriptions')[0]['goneAt']);
         $acceptances = self::section($archive, 'legal_acceptances');
         self::assertCount(3, $acceptances);
         self::assertSame([

@@ -1,0 +1,43 @@
+{
+    "format": 1,
+    "id": "20261110021316313226_HIL-1923_notification_moments",
+    "parts": [
+        {
+            "unit": "notification",
+            "up": "notification.sql",
+            "down": "notification_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "6ba60e0290149a2cf23e3fbc3bca3f606f506ff34255f3685f8886992b36018b",
+            "afterStubDownSha256": "a530cd0dd754ecea0ee7cfce643de1b14e22b7e3c8db39f985033a4a6e39e956"
+        },
+        {
+            "unit": "notification_delivery",
+            "up": "notification_delivery.sql",
+            "down": "notification_delivery_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261108080825608007_HIL-1893_delivery_routing_key",
+                    "unit": "notification_delivery"
+                }
+            ],
+            "afterStubUpSha256": "539bf22379598c766309164e93210a6aa938321e24b8537a9a3fa8783af357f4",
+            "afterStubDownSha256": "20060db3a4041f04299235dde117ac4e656020570c73a687d810c8247ab18b6b"
+        },
+        {
+            "unit": "notification_preference",
+            "up": "notification_preference.sql",
+            "down": "notification_preference_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "a9c5c5d164bfc43ce857b918a5ac1679672223da4b6b6e639a995bccd8f9adab",
+            "afterStubDownSha256": "f125423331d45751b7fcccf82e41d5c9b81844313d30db78df0012472557600b"
+        },
+        {
+            "unit": "push_subscription",
+            "up": "push_subscription.sql",
+            "down": "push_subscription_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "c536ba46e83beccb57a7088f7739b308e15fcc5d97372dd96e510f8e58727658",
+            "afterStubDownSha256": "854eda7a426d1cf2cb89d4680c1642f819de5281b275d4927cce08c47613e067"
+        }
+    ]
+}

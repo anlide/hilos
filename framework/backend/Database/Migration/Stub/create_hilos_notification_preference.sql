@@ -24,8 +24,8 @@ CREATE TABLE `hilos_notification_preference` (
     `user_id` INT UNSIGNED NOT NULL,
     `channel` VARCHAR(50) NOT NULL,
     `enabled` TINYINT(1) NOT NULL DEFAULT 0,
-    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `created_at` BIGINT NOT NULL,
+    `updated_at` BIGINT NOT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_notification_preference_user_channel` (`user_id`, `channel`),
     CONSTRAINT `fk_notification_preference_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT

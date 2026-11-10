@@ -24,8 +24,8 @@ use Hilos\Database\Object\Item\Object_;
  * @property int $userId
  * @property string $channel
  * @property bool $enabled
- * @property string $createdAt
- * @property string $updatedAt
+ * @property int $createdAt
+ * @property int $updatedAt
  */
 class NotificationPreference extends Object_
 {
@@ -71,8 +71,8 @@ class NotificationPreference extends Object_
             self::userId => $this->entity->user_id = (int)$value,
             self::channel => $this->entity->channel = (string)$value,
             self::enabled => $this->entity->enabled = (bool)$value,
-            self::createdAt => $this->entity->created_at = (string)$value,
-            self::updatedAt => $this->entity->updated_at = (string)$value,
+            self::createdAt => $this->entity->created_at = (int)$value,
+            self::updatedAt => $this->entity->updated_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }

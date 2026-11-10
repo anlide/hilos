@@ -19,7 +19,6 @@ use Hilos\Notification\DTO\NotificationCreatedSignalData;
 use Hilos\Notification\DTO\NotificationsSnapshotSignalData;
 use Hilos\Notification\NotificationGroup;
 use Hilos\Notification\NotificationSignalName;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Base class for the framework notification group (HIL-721).
@@ -141,8 +140,8 @@ abstract class AbstractHilosNotificationsGroup extends AbstractGroup
             title: $notification->title,
             body: $notification->body,
             data: $notification->decodedData(),
-            readAt: $notification->readAt !== null ? TimeHelper::sqlToMs($notification->readAt) : null,
-            createdAt: $notification->createdAt !== null ? TimeHelper::sqlToMs($notification->createdAt) : null,
+            readAt: $notification->readAt,
+            createdAt: $notification->createdAt,
         );
     }
 

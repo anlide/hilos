@@ -480,10 +480,10 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
 
     /**
      * @param int $notificationId Notification to read
-     * @return ?string Stored read time, or null when the row is still unread
+     * @return ?int Stored read epoch milliseconds, or null when the row is still unread
      * @throws DatabaseException When the lookup fails
      */
-    private function readAt(int $notificationId): ?string
+    private function readAt(int $notificationId): ?int
     {
         $row = Database::sql(
             'SELECT `read_at` FROM `' . EntityNotification::_table . '` WHERE `id` = ?',
@@ -492,7 +492,7 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
         self::assertIsArray($row);
         $readAt = $row['read_at'];
 
-        return $readAt === null ? null : (string)$readAt;
+        return $readAt === null ? null : (int)$readAt;
     }
 
     /**

@@ -196,8 +196,8 @@ final class NotificationBackendTest extends TestCase
         $entity->title = 'Deploy ready';
         $entity->body = 'Deploy finished successfully';
         $entity->data = '{"version":"1.2.3"}';
-        $entity->read_at = '2026-07-27 10:15:30';
-        $entity->created_at = '2026-07-27 10:00:00';
+        $entity->read_at = 1785147330123;
+        $entity->created_at = 1785146400123;
         $notification = ObjectNotification::fromEntity($entity);
 
         $groupProducer = new class extends AbstractHilosNotificationsGroup {
@@ -227,8 +227,8 @@ final class NotificationBackendTest extends TestCase
 
         self::assertEquals($snapshotRow, $liveRow);
         self::assertSame($snapshotRow->toArray(), $liveRow->toArray());
-        self::assertSame(TimeHelper::sqlToMs('2026-07-27 10:00:00'), $snapshotRow->createdAt);
-        self::assertSame(TimeHelper::sqlToMs('2026-07-27 10:15:30'), $snapshotRow->readAt);
+        self::assertSame(1785146400123, $snapshotRow->createdAt);
+        self::assertSame(1785147330123, $snapshotRow->readAt);
         self::assertSame($snapshotRow->createdAt, $liveRow->createdAt);
         self::assertSame($snapshotRow->readAt, $liveRow->readAt);
 
@@ -242,7 +242,7 @@ final class NotificationBackendTest extends TestCase
         $entityUnread->body = null;
         $entityUnread->data = null;
         $entityUnread->read_at = null;
-        $entityUnread->created_at = '2026-07-27 10:00:00';
+        $entityUnread->created_at = 1785146400123;
         $notificationUnread = ObjectNotification::fromEntity($entityUnread);
 
         $snapshotUnread = $groupProducer->produceRow($notificationUnread);

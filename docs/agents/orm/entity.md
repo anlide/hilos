@@ -290,8 +290,8 @@ rules still apply to other fields.
   `sync()`. Hydration then fills the property on every read, so the value is available to
   the object and view layers. `hilos_session.created_at` is the moment example: a signed
   `BIGINT` with no DEFAULT at all, which its creating code stamps itself.
-  The notification tables' `created_at` / `updated_at` are also old moment examples;
-  move their storage and writers together (not in the code yet — HIL-1923).
+  The notification tables' moment columns also use signed `BIGINT` epoch milliseconds,
+  with application writers stamping their values.
 - **The database owns it.** The column is left out of `_columns` entirely, so the ORM
   neither writes nor reads it and the DEFAULT is its only writer. `hilos_identity` is the
   example: its `created_at` / `updated_at` exist in the DDL, and in the Entity only as

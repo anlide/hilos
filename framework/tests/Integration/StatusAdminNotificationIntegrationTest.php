@@ -292,7 +292,8 @@ final class StatusAdminNotificationIntegrationTest extends FrameworkIntegrationT
         Database::sqlRun("INSERT INTO hilos_user (id, name, admin, block) VALUES
             (3, 'Blocked', 1, 1), (4, 'Merged', 1, 0), (5, 'Viewer', 0, 0), (6, 'No address', 1, 0)");
         Database::sqlRun('INSERT INTO hilos_user_merge (user_id, survivor_user_id) VALUES (4, 1)');
-        Database::sqlRun("INSERT INTO hilos_notification_preference (user_id, channel) VALUES (2, 'email')");
+        Database::sqlRun("INSERT INTO hilos_notification_preference (user_id, channel, `created_at`, `updated_at`) "
+            . "VALUES (2, 'email', 1767225600123, 1767225600123)");
         $this->fresh([false, false]);
         $this->tick(self::AT);
         $this->tick(self::AT + 1);

@@ -22,7 +22,7 @@ final class DeliveryLogPrunerTest extends TestCase
     public function testZeroOrNegativeRetentionHasNoCutoff(): void
     {
         $pruner = new DeliveryLogPruner();
-        $now = new DateTimeImmutable('2026-07-28 12:00:00');
+        $now = new DateTimeImmutable('2026-07-28 12:00:00.123 UTC');
 
         self::assertNull($pruner->cutoff(0, $now));
         self::assertNull($pruner->cutoff(-5, $now));
@@ -31,15 +31,15 @@ final class DeliveryLogPrunerTest extends TestCase
     public function testPositiveRetentionSubtractsWindow(): void
     {
         $pruner = new DeliveryLogPruner();
-        $now = new DateTimeImmutable('2026-07-28 12:00:00');
+        $now = new DateTimeImmutable('2026-07-28 12:00:00.123 UTC');
 
-        self::assertSame('2026-04-29 12:00:00', $pruner->cutoff(90, $now));
-        self::assertSame('2026-07-27 12:00:00', $pruner->cutoff(1, $now));
+        self::assertSame(1777464000123, $pruner->cutoff(90, $now));
+        self::assertSame(1785153600123, $pruner->cutoff(1, $now));
     }
 
     public function testZeroRetentionPruneIsNoOp(): void
     {
         // A disabled retention must never reach the database; prune returns 0 deleted.
-        self::assertSame(0, new DeliveryLogPruner()->prune(0, new DateTimeImmutable('2026-07-28 12:00:00')));
+        self::assertSame(0, new DeliveryLogPruner()->prune(0, new DateTimeImmutable('2026-07-28 12:00:00.123 UTC')));
     }
 }

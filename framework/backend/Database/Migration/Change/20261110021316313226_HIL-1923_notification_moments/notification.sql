@@ -1,0 +1,3 @@
+ALTER TABLE `hilos_notification` ADD COLUMN `__hil1923_read_at` BIGINT NULL, ADD COLUMN `__hil1923_created_at` BIGINT NULL;
+UPDATE `hilos_notification` SET `__hil1923_read_at` = UNIX_TIMESTAMP(`read_at`) * 1000, `__hil1923_created_at` = UNIX_TIMESTAMP(`created_at`) * 1000;
+ALTER TABLE `hilos_notification` DROP INDEX `idx_notification_user_read`, DROP INDEX `idx_notification_user_created`, DROP COLUMN `read_at`, DROP COLUMN `created_at`, CHANGE COLUMN `__hil1923_read_at` `read_at` BIGINT NULL DEFAULT NULL, CHANGE COLUMN `__hil1923_created_at` `created_at` BIGINT NOT NULL, ADD INDEX `idx_notification_user_read` (`user_id`, `read_at`), ADD INDEX `idx_notification_user_created` (`user_id`, `created_at`);

@@ -66,9 +66,9 @@ class PushSubscription extends Entity
         self::user_agent => PhpType::STRING->value,
         self::device_name => PhpType::STRING->value,
         self::endpoint_hash => PhpType::STRING->value,
-        self::gone_at => PhpType::DATETIME->value,
-        self::created_at => PhpType::DATETIME->value,
-        self::last_seen_at => PhpType::DATETIME->value,
+        self::gone_at => PhpType::INTEGER->value,
+        self::created_at => PhpType::INTEGER->value,
+        self::last_seen_at => PhpType::INTEGER->value,
     ];
 
     public const array _foreign = [
@@ -98,7 +98,7 @@ class PushSubscription extends Entity
     public ?string $user_agent = null;
     public ?string $device_name = null;
     public string $endpoint_hash;
-    public ?string $gone_at = null;
-    public string $created_at;
-    public ?string $last_seen_at = null;
+    public ?int $gone_at = null;
+    public int $created_at;
+    public ?int $last_seen_at = null;
 }

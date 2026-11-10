@@ -29,16 +29,16 @@ final class DeliveryLogPrunerIntegrationTest extends FrameworkIntegrationTestCas
     private const int RETENTION_DAYS = 90;
 
     /** Fixed clock supplied to the pruner. */
-    private const string NOW = '2026-09-24 12:00:00';
+    private const string NOW = '2026-09-24 12:00:00.123 UTC';
 
-    /** SQL datetime exactly on the retention boundary. */
-    private const string CUTOFF = '2026-06-26 12:00:00';
+    /** Epoch milliseconds exactly on the retention boundary. */
+    private const int CUTOFF = 1782475200123;
 
-    /** SQL datetime one second before the retention boundary. */
-    private const string BEFORE_CUTOFF = '2026-06-26 11:59:59';
+    /** Epoch milliseconds one millisecond before the retention boundary. */
+    private const int BEFORE_CUTOFF = 1782475200122;
 
-    /** SQL datetime one day before the fixed clock. */
-    private const string RECENT = '2026-09-23 12:00:00';
+    /** Epoch milliseconds one day before the fixed clock. */
+    private const int RECENT = 1790164800123;
 
     /** Synthetic notification id; the delivery journal deliberately has no notification FK. */
     private const int NOTIFICATION_ID = 490;
@@ -84,7 +84,7 @@ final class DeliveryLogPrunerIntegrationTest extends FrameworkIntegrationTestCas
     {
         $oldSent = $this->insertDelivery(DeliveryStatus::SENT, self::BEFORE_CUTOFF);
         $oldFailed = $this->insertDelivery(DeliveryStatus::FAILED, self::BEFORE_CUTOFF);
-        $oldPending = $this->insertDelivery(DeliveryStatus::PENDING, '2026-06-25 12:00:00');
+        $oldPending = $this->insertDelivery(DeliveryStatus::PENDING, 1782388800123);
         $atCutoff = $this->insertDelivery(DeliveryStatus::SENT, self::CUTOFF);
         $recentSent = $this->insertDelivery(DeliveryStatus::SENT, self::RECENT);
 
@@ -100,7 +100,7 @@ final class DeliveryLogPrunerIntegrationTest extends FrameworkIntegrationTestCas
     public function testDeletionContinuesPastTheFirstBatch(): void
     {
         $this->insertTerminalRows();
-        $pending = $this->insertDelivery(DeliveryStatus::PENDING, '2026-06-25 12:00:00');
+        $pending = $this->insertDelivery(DeliveryStatus::PENDING, 1782388800123);
 
         self::assertSame(
             self::TERMINAL_ROWS,
@@ -113,14 +113,15 @@ final class DeliveryLogPrunerIntegrationTest extends FrameworkIntegrationTestCas
      * Writes one delivery row and returns its database-generated id.
      *
      * @param string $status Delivery lifecycle status
-     * @param string $createdAt SQL datetime when the delivery was created
+     * @param int $createdAt Epoch milliseconds when the delivery was created
      * @return int Delivery id assigned by MySQL
      * @throws DatabaseException When the row cannot be written or read back
      */
-    private function insertDelivery(string $status, string $createdAt): int
+    private function insertDelivery(string $status, int $createdAt): int
     {
         Database::sql(
-            'INSERT INTO `hilos_notification_delivery` (`notification_id`, `channel`, `status`, `created_at`) VALUES (?, ?, ?, ?)',
+            'INSERT INTO `hilos_notification_delivery` (`notification_id`, `channel`, `status`, `created_at`, `updated_at`) '
+            . 'VALUES (?, ?, ?, ?, 1767225600123)',
             [self::NOTIFICATION_ID, self::CHANNEL, $status, $createdAt],
         );
 
@@ -134,7 +135,7 @@ final class DeliveryLogPrunerIntegrationTest extends FrameworkIntegrationTestCas
      */
     private function insertTerminalRows(): void
     {
-        $values = implode(', ', array_fill(0, self::ROWS_PER_INSERT, '(?, ?, ?, ?)'));
+        $values = implode(', ', array_fill(0, self::ROWS_PER_INSERT, '(?, ?, ?, ?, 1767225600123)'));
         for ($offset = 0; $offset < self::TERMINAL_ROWS; $offset += self::ROWS_PER_INSERT) {
             $params = [];
             for ($row = 0; $row < self::ROWS_PER_INSERT; $row++) {
@@ -142,7 +143,8 @@ final class DeliveryLogPrunerIntegrationTest extends FrameworkIntegrationTestCas
                 array_push($params, self::NOTIFICATION_ID, self::CHANNEL, $status, self::BEFORE_CUTOFF);
             }
             Database::sql(
-                'INSERT INTO `hilos_notification_delivery` (`notification_id`, `channel`, `status`, `created_at`) VALUES ' . $values,
+                'INSERT INTO `hilos_notification_delivery` (`notification_id`, `channel`, `status`, `created_at`, `updated_at`) '
+                . 'VALUES ' . $values,
                 $params,
             );
         }

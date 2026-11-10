@@ -820,22 +820,24 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         // Written now rather than at CREATED_AT: a row a year old is the hourly sweep's, not the erasure's.
         Hilos::$db->accessLogEntries->actions->record($userId, AccessLogEvent::SIGN_IN, '203.0.113.7', TimeHelper::getSqlDateTime());
         Database::sqlRun(
-            'INSERT INTO `hilos_notification` (`user_id`, `type`, `title`) VALUES (?, ?, ?)',
+            'INSERT INTO `hilos_notification` (`user_id`, `type`, `title`, `created_at`) VALUES (?, ?, ?, 1767225600123)',
             [$userId, 'account.test', 'Test notification'],
         );
         Database::sql('SELECT `id` FROM `hilos_notification` WHERE `user_id` = ?', [$userId]);
         $notificationId = (int)(Database::row()['id'] ?? 0);
         Database::sqlRun(
-            'INSERT INTO `hilos_notification_delivery` (`notification_id`, `channel`) VALUES (?, ?)',
+            'INSERT INTO `hilos_notification_delivery` (`notification_id`, `channel`, `created_at`, `updated_at`) '
+            . 'VALUES (?, ?, 1767225600123, 1767225600123)',
             [$notificationId, 'email'],
         );
         Database::sqlRun(
-            'INSERT INTO `hilos_notification_preference` (`user_id`, `channel`) VALUES (?, ?)',
+            'INSERT INTO `hilos_notification_preference` (`user_id`, `channel`, `created_at`, `updated_at`) '
+            . 'VALUES (?, ?, 1767225600123, 1767225600123)',
             [$userId, 'email'],
         );
         Database::sqlRun(
-            'INSERT INTO `hilos_push_subscription` (`user_id`, `endpoint`, `p256dh`, `auth`, `endpoint_hash`) '
-            . 'VALUES (?, ?, ?, ?, ?)',
+            'INSERT INTO `hilos_push_subscription` (`user_id`, `endpoint`, `p256dh`, `auth`, `endpoint_hash`, `created_at`) '
+            . 'VALUES (?, ?, ?, ?, ?, 1767225600123)',
             [$userId, "https://push.example.test/{$userId}", 'key', 'secret', hash('sha256', (string)$userId)],
         );
         Database::sqlRun(
@@ -1241,7 +1243,7 @@ final class AccountErasureTestAgent extends AbstractSessionsLibraryAgent
         $this->seenAtHook[] = [$userId, $exists, (int)(Database::row()['count'] ?? 0)];
         if ($this->insertLateNotificationFor === $userId) {
             Database::sqlRun(
-                'INSERT INTO `hilos_notification` (`user_id`, `type`, `title`) VALUES (?, ?, ?)',
+                'INSERT INTO `hilos_notification` (`user_id`, `type`, `title`, `created_at`) VALUES (?, ?, ?, 1767225600123)',
                 [$userId, 'account.test', 'Late notification'],
             );
         }

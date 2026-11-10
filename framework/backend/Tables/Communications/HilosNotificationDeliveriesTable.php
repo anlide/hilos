@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Communications;
 
+use DateTimeImmutable;
+use DateTimeZone;
 use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
@@ -12,6 +14,7 @@ use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
@@ -47,7 +50,6 @@ use Hilos\Core\Table\TableFacetTally;
 use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\DatabaseParamsException;
 use Hilos\Database\Exception\DatabaseRuntimeException;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Framework delivery-logs table: the admin journal of channel deliveries (HIL-201).
@@ -106,10 +108,10 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     /** Filter-map key: narrow to one delivery status (pending/sent/failed). */
     public const string FILTER_STATUS = 'status';
 
-    /** Filter-map key: inclusive lower bound on created_at (SQL datetime). */
+    /** Filter-map key: inclusive UTC date or datetime lower bound on created_at. */
     public const string FILTER_FROM = 'from';
 
-    /** Filter-map key: inclusive upper bound on created_at (date or SQL datetime; a bare date covers the whole day). */
+    /** Filter-map key: inclusive UTC date or datetime upper bound, including the final millisecond. */
     public const string FILTER_TO = 'to';
 
     /** Source the journal's rows come from: the delivery collection of the framework database. */
@@ -338,6 +340,7 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
      * @throws DatabaseConnectionException When not connected or reconnect fails
      * @throws DatabaseParamsException When parameters are invalid or placeholder count mismatches
      * @throws DatabaseRuntimeException When the lookup query fails
+     * @throws ValidationException When the delivery period is invalid
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
@@ -470,9 +473,11 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
      * @return TableSnapshotDTO Window snapshot with typed rows, the count with its exactness, and the boundaries
      * @throws DatabaseException When the windowed query or count fails
      * @throws InvalidArgumentException When the query anchor moment component is invalid
+     * @throws ValidationException When the delivery period is invalid
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
+        $this->requireNumericMomentAnchor($query->anchor);
         [$where, $params] = $this->buildWhere($query);
         $limit = $query->limit === TableConstants::NO_LIMIT ? self::DEFAULT_LIMIT : $query->limit;
 
@@ -481,28 +486,15 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
         $totalExact = $counted->exact;
 
         $servedQuery = $query->withLimit($limit);
-        $sqlAnchor = $this->anchorToSql($servedQuery->anchor);
-        $sqlQuery = new TableQueryDTO(
-            search: $servedQuery->search,
-            sort: $servedQuery->sort,
-            limit: $servedQuery->limit,
-            filter: $servedQuery->filter,
-            anchor: $sqlAnchor,
-            anchorDirection: $servedQuery->anchorDirection,
-            pageIndex: $servedQuery->pageIndex,
-            searchableFields: $servedQuery->searchableFields,
-            shownFields: $servedQuery->shownFields,
-        );
-
-        $orderColumns = $this->orderColumns($sqlQuery);
-        $plan = TableWindowPlan::forQuery($sqlQuery, $orderColumns, $totalCount, $totalExact);
+        $orderColumns = $this->orderColumns($servedQuery);
+        $plan = TableWindowPlan::forQuery($servedQuery, $orderColumns, $totalCount, $totalExact);
         if ($plan === null) {
             return new TableSnapshotDTO(
                 rows: [],
                 totalCount: $totalCount,
                 totalExact: $totalExact,
                 limit: $limit,
-                rowsBefore: $totalExact ? TableWindowPlan::knownRowsBefore($sqlQuery, null, $totalCount) : null,
+                rowsBefore: $totalExact ? TableWindowPlan::knownRowsBefore($servedQuery, null, $totalCount) : null,
             );
         }
 
@@ -530,7 +522,7 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
         $firstAnchor = $rows === [] ? null : TableAnchorDTO::fromRow($rows[0], $anchorColumns);
         $rowsBefore = null;
         if ($totalExact) {
-            $rowsBefore = TableWindowPlan::knownRowsBefore($sqlQuery, $firstAnchor, $totalCount);
+            $rowsBefore = TableWindowPlan::knownRowsBefore($servedQuery, $firstAnchor, $totalCount);
             if ($rowsBefore === null) {
                 $before = new KeysetAnchorFilter($orderColumns, $firstAnchor, TableAnchorDirection::Before);
                 $condition = $before->toSql(self::DELIVERY_TABLE, self::DELIVERY_ALIAS);
@@ -562,6 +554,7 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
      * @throws DatabaseConnectionException When not connected or reconnect fails
      * @throws DatabaseParamsException When parameters are invalid or placeholder count mismatches
      * @throws DatabaseRuntimeException When the count query fails
+     * @throws ValidationException When the delivery period is invalid
      */
     protected function countSet(TableQueryDTO $query): TableFacetCountDTO
     {
@@ -642,6 +635,7 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
      *
      * @param TableQueryDTO $query Window query
      * @return array{0: string, 1: list<mixed>} The `WHERE ...` clause (empty string when no filters) and its ordered params
+     * @throws ValidationException When the delivery period is invalid
      */
     protected function buildWhere(TableQueryDTO $query): array
     {
@@ -660,16 +654,16 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
             $params[] = $status;
         }
 
-        $from = $this->filterString($query, self::FILTER_FROM);
+        $from = $this->momentBound(self::FILTER_FROM, $query, false);
         if ($from !== null) {
             $conditions[] = 'nd.' . EntityNotificationDelivery::created_at . ' >= ?';
             $params[] = $from;
         }
 
-        $to = $this->filterString($query, self::FILTER_TO);
+        $to = $this->momentBound(self::FILTER_TO, $query, true);
         if ($to !== null) {
             $conditions[] = 'nd.' . EntityNotificationDelivery::created_at . ' <= ?';
-            $params[] = $this->endOfDayBound($to);
+            $params[] = $to;
         }
 
         $search = TableSearchTerm::normalize($query->search);
@@ -787,20 +781,45 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     }
 
     /**
-     * Widens a date-only upper bound to the end of that day so the whole day is included.
-     *
-     * The frontend period picker emits a bare `YYYY-MM-DD`, which MySQL reads as that
-     * day's midnight (`00:00:00`); a raw `created_at <= '2026-07-28'` would then drop
-     * every delivery made during the selected day. A date-only bound is widened to
-     * `... 23:59:59` (the schema stores whole-second datetimes); a value that already
-     * carries a time component is passed through untouched.
-     *
-     * @param string $to Upper-bound filter value (bare date or SQL datetime)
-     * @return string Datetime upper bound safe for an inclusive `<=` comparison
+     * @param string $key Period filter key
+     * @param TableQueryDTO $query Window query
+     * @param bool $upper Include the final millisecond of the selected day or second
+     * @return ?int UTC epoch millisecond boundary, or null for an empty filter
+     * @throws ValidationException When the period value is not a valid date or datetime
      */
-    private function endOfDayBound(string $to): string
+    private function momentBound(string $key, TableQueryDTO $query, bool $upper): ?int
     {
-        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) === 1 ? $to . ' 23:59:59' : $to;
+        $value = $this->filterString($query, $key);
+        if ($value === null) {
+            return null;
+        }
+
+        if (preg_match(
+            '/\A(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})(?: (?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2}))?\z/',
+            $value,
+            $parts,
+        ) !== 1
+            || !checkdate((int)$parts['month'], (int)$parts['day'], (int)$parts['year'])
+        ) {
+            throw new ValidationException('Choose a valid date for the delivery period.');
+        }
+
+        $hasTime = isset($parts['hour']);
+        $format = $hasTime ? 'Y-m-d H:i:s' : 'Y-m-d';
+        $moment = DateTimeImmutable::createFromFormat(
+            '!' . $format,
+            $value,
+            new DateTimeZone(TimeConstants::UTC_TIME_ZONE),
+        );
+        if ($moment === false || $moment->format($format) !== $value) {
+            throw new ValidationException('Choose a valid date for the delivery period.');
+        }
+        if ($upper && !$hasTime) {
+            $moment = $moment->modify('+1 day')->modify('-1 second');
+        }
+
+        return $moment->getTimestamp() * TimeConstants::MS_PER_SECOND
+            + ($upper ? TimeConstants::MS_PER_SECOND - 1 : 0);
     }
 
     /**
@@ -823,41 +842,20 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     }
 
     /**
-     * Converts a wire or in-memory numeric anchor into the SQL representation expected by the query builder.
-     *
-     * Only the two declared moment columns (created_at and delivered_at) are translated back to
-     * UTC 'Y-m-d H:i:s'. The schema stores whole seconds, so a valid moment anchor component is an
-     * integer multiple of 1000; non-integers, strings, or fractional seconds are rejected as invalid.
-     *
-     * @param ?TableAnchorDTO $anchor Anchor with numeric moment columns, or null
-     * @return ?TableAnchorDTO Anchor with SQL datetime moment columns, or null
-     * @throws InvalidArgumentException When a moment column component is not an integer multiple of 1000
+     * @param ?TableAnchorDTO $anchor Incoming numeric moment anchor
+     * @throws InvalidArgumentException When a moment component is neither an integer nor null
      */
-    protected function anchorToSql(?TableAnchorDTO $anchor): ?TableAnchorDTO
+    private function requireNumericMomentAnchor(?TableAnchorDTO $anchor): void
     {
-        if ($anchor === null) {
-            return null;
-        }
-
-        $values = [];
-        foreach ($anchor->values as $column => $value) {
-            if ($column === EntityNotificationDelivery::created_at || $column === EntityNotificationDelivery::delivered_at) {
-                if ($value === null) {
-                    $values[$column] = null;
-                } else {
-                    if (!is_int($value) || $value % TimeConstants::MS_PER_SECOND !== 0) {
-                        throw new InvalidArgumentException(
-                            "Notification delivery anchor column '{$column}' requires an epoch ms integer multiple of 1000",
-                        );
-                    }
-                    $values[$column] = gmdate('Y-m-d H:i:s', intdiv($value, TimeConstants::MS_PER_SECOND));
-                }
-            } else {
-                $values[$column] = $value;
+        foreach ($anchor?->values ?? [] as $column => $value) {
+            if (($column === EntityNotificationDelivery::created_at || $column === EntityNotificationDelivery::delivered_at)
+                && $value !== null && !is_int($value)
+            ) {
+                throw new InvalidArgumentException(
+                    "Notification delivery anchor column '{$column}' requires an epoch ms integer",
+                );
             }
         }
-
-        return new TableAnchorDTO($values);
     }
 
     /**
@@ -878,7 +876,7 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
                 if ($value === null) {
                     $values[$column] = null;
                 } elseif (is_string($value)) {
-                    $values[$column] = TimeHelper::sqlToMs($value);
+                    $values[$column] = (int)$value;
                 } elseif (is_int($value)) {
                     $values[$column] = $value;
                 } else {
@@ -921,26 +919,16 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     protected function rowFromSql(array $row): HilosNotificationDeliveryTableRow
     {
         $userId = isset($row['user_id']) && $row['user_id'] !== null ? (int) $row['user_id'] : null;
-        $createdAt = $row['created_at'] ?? null;
-        $createdAtMs = is_int($createdAt)
-            ? $createdAt
-            : ($createdAt !== null ? TimeHelper::sqlToMs((string) $createdAt) : 0);
-        $deliveredAt = $row['delivered_at'] ?? null;
-        $deliveredAtMs = null;
-        if ($deliveredAt !== null) {
-            $deliveredAtMs = is_int($deliveredAt) ? $deliveredAt : TimeHelper::sqlToMs((string) $deliveredAt);
-        }
-
         return new HilosNotificationDeliveryTableRow(
             rowKey: (int) ($row['id'] ?? 0),
             // external-boundary: created_at is NOT NULL, so the driver always hands its stored value over
-            createdAt: $createdAtMs,
+            createdAt: (int)$row['created_at'],
             // external-boundary: channel is NOT NULL, so the driver always hands its stored value over
             channel: (string) ($row['channel'] ?? ''),
             // external-boundary: status is NOT NULL, so the driver always hands its stored value over
             status: (string) ($row['status'] ?? ''),
             attempts: (int) ($row['attempts'] ?? 0),
-            deliveredAt: $deliveredAtMs,
+            deliveredAt: $row['delivered_at'] === null ? null : (int)$row['delivered_at'],
             lastError: $row['last_error'] !== null ? (string) $row['last_error'] : null,
             userId: $userId,
             userLabel: $userId !== null ? $this->resolveUserLabel($userId) : null,

@@ -116,21 +116,22 @@ final class AdminViewModeOperationsTest extends IntegrationTestCase
         $this->memberId = (int) $member->id;
 
         Database::sql(
-            'INSERT INTO `hilos_notification` (`user_id`, `type`, `severity`, `title`, `body`) VALUES (?, ?, ?, ?, ?)',
+            'INSERT INTO `hilos_notification` (`user_id`, `type`, `severity`, `title`, `body`, `created_at`) VALUES (?, ?, ?, ?, ?, 1767225600123)',
             [$this->personId, 'notice', 'info', 'Notice for Olena Kovalenko <' . self::TEST_USER_EMAIL . '>', 'Body'],
         );
         $this->notificationId = (int) Database::sql('SELECT MAX(`id`) AS id FROM `hilos_notification`')->firstRow()['id'];
 
         Database::sql(
-            'INSERT INTO `hilos_notification_delivery` (`notification_id`, `channel`, `status`, `attempts`, `last_error`, `created_at`) '
-            . 'VALUES (?, ?, ?, ?, ?, ?)',
+            'INSERT INTO `hilos_notification_delivery` (`notification_id`, `channel`, `status`, '
+            . '`attempts`, `last_error`, `created_at`, `updated_at`) '
+            . 'VALUES (?, ?, ?, ?, ?, ?, 1767225600123)',
             [
                 $this->notificationId,
                 'email',
                 'failed',
                 3,
                 'Delivery to ' . self::TEST_USER_EMAIL . ' failed: mailbox unavailable',
-                '2026-10-01 12:00:00',
+                1790856000000,
             ],
         );
         $this->deliveryId = (int) Database::sql('SELECT MAX(`id`) AS id FROM `hilos_notification_delivery`')->firstRow()['id'];

@@ -34,8 +34,8 @@ final class NotificationDeliveryScalarTest extends TestCase
             'status' => DeliveryStatus::PENDING,
             'attempts' => 2,
             'last_error' => 'previous attempt',
-            'created_at' => '2026-11-01 10:20:30',
-            'updated_at' => '2026-11-02 11:21:31',
+            'created_at' => 1793528430123,
+            'updated_at' => 1793618491123,
             'delivered_at' => null,
         ];
         $entity = EntityNotificationDelivery::fromRow($row);
@@ -54,12 +54,29 @@ final class NotificationDeliveryScalarTest extends TestCase
             'status' => DeliveryStatus::PENDING,
             'attempts' => 2,
             'lastError' => 'previous attempt',
-            'createdAt' => '2026-11-01 10:20:30',
-            'updatedAt' => '2026-11-02 11:21:31',
+            'createdAt' => 1793528430123,
+            'updatedAt' => 1793618491123,
             'deliveredAt' => null,
         ];
         self::assertSame($expected, $object->toArray());
         self::assertSame($expected, $view->toArray());
+
+        foreach ([0, -1, 4102444800123] as $moment) {
+            $momentEntity = EntityNotificationDelivery::fromRow(array_replace($row, [
+                'created_at' => (string)$moment, 'updated_at' => (string)$moment, 'delivered_at' => (string)$moment,
+            ]));
+            $momentObject = ObjectNotificationDelivery::fromEntity($momentEntity);
+            $momentView = new ViewNotificationDelivery($momentObject);
+            foreach (['created_at', 'updated_at', 'delivered_at'] as $column) {
+                self::assertSame($moment, $momentEntity->toArray()[$column]);
+            }
+            foreach (['createdAt', 'updatedAt', 'deliveredAt'] as $field) {
+                self::assertSame($moment, $momentObject->toArray()[$field]);
+                self::assertSame($moment, $momentView->toArray()[$field]);
+            }
+            $momentObject->deliveredAt = null;
+            self::assertNull($momentView->deliveredAt);
+        }
 
         $object->routingKey = 0;
         self::assertSame(0, $entity->routing_key);

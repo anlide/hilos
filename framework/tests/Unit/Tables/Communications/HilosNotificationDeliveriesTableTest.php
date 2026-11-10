@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Tables\Communications;
 
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableFacetCountDTO;
@@ -17,7 +19,6 @@ use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveryTableRow;
-use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -58,7 +59,7 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
             ' WHERE nd.channel = ? AND nd.status = ? AND nd.created_at >= ? AND nd.created_at <= ?',
             $where,
         );
-        self::assertSame(['email', 'failed', '2026-07-01 00:00:00', '2026-07-28 23:59:59'], $params);
+        self::assertSame(['email', 'failed', 1782864000000, 1785283199999], $params);
     }
 
     public function testDateOnlyToBoundIsWidenedToEndOfDay(): void
@@ -75,17 +76,60 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
             $where,
         );
         // The bare `to` date is widened so the whole final day is included; `from` at
-        // midnight already covers its whole day, so it is left as-is.
-        self::assertSame(['2026-07-01', '2026-07-28 23:59:59'], $params);
+        // midnight supplies the lower epoch-millisecond boundary.
+        self::assertSame([1782864000000, 1785283199999], $params);
     }
 
-    public function testDatetimeToBoundIsLeftUntouched(): void
+    public function testDatetimeToBoundIncludesTheLastMillisecond(): void
     {
         [, $params] = $this->table()->exposedBuildWhere(new TableQueryDTO(
             filter: [HilosNotificationDeliveriesTable::FILTER_TO => '2026-07-28 12:30:00'],
         ));
 
-        self::assertSame(['2026-07-28 12:30:00'], $params);
+        self::assertSame([1785241800999], $params);
+    }
+
+    public function testInvalidPeriodDatesAreRefused(): void
+    {
+        foreach (['2026-02-30', '2026-07-01 24:00:00', '2026-07-01 12:60:00', '2026-07-01 12:00:60', 'tomorrow'] as $date) {
+            try {
+                $this->table()->exposedBuildWhere(new TableQueryDTO(filter: ['from' => $date]));
+                self::fail('Invalid delivery period must be refused');
+            } catch (ValidationException $exception) {
+                self::assertSame('Choose a valid date for the delivery period.', $exception->getMessage());
+            }
+        }
+    }
+
+    public function testEmptyAndNonscalarPeriodValuesDoNotFilter(): void
+    {
+        self::assertSame(['', []], $this->table()->exposedBuildWhere(new TableQueryDTO(filter: ['from' => [], 'to' => ' '])));
+    }
+
+    public function testDriverMomentTextPreservesSignedMilliseconds(): void
+    {
+        foreach (['0', '-1', '4102444800123'] as $value) {
+            $row = $this->table()->exposedRowFromSql([
+                'id' => '7', 'created_at' => $value, 'delivered_at' => $value,
+                'channel' => 'email', 'status' => 'sent', 'attempts' => '1', 'last_error' => null,
+            ]);
+            self::assertSame((int)$value, $row->createdAt);
+            self::assertSame((int)$value, $row->deliveredAt);
+        }
+    }
+
+    public function testIncomingMomentAnchorRejectsStringsAndFloats(): void
+    {
+        foreach (['created_at', 'delivered_at'] as $column) {
+            foreach (['1790157600123', 1790157600123.0] as $value) {
+                try {
+                    $this->table()->getPage(new TableQueryDTO(anchor: new TableAnchorDTO([$column => $value, 'id' => 7])));
+                    self::fail('Moment anchor must be an integer');
+                } catch (InvalidArgumentException $exception) {
+                    self::assertSame("Notification delivery anchor column '{$column}' requires an epoch ms integer", $exception->getMessage());
+                }
+            }
+        }
     }
 
     public function testInvalidStatusFilterIsIgnored(): void
@@ -186,7 +230,7 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
     {
         $row = $this->table()->exposedRowFromSql([
             'id' => 7,
-            'created_at' => '2026-08-09 10:00:00',
+            'created_at' => '1786269600123',
             'channel' => 'email',
             'status' => 'failed',
             'attempts' => 1,
@@ -259,7 +303,7 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
         self::assertSame(
             [[
                 ' WHERE nd.channel = ? AND nd.status = ? AND nd.created_at >= ? AND nd.id = ?',
-                ['email', 'failed', '2026-07-01 00:00:00', '42'],
+                ['email', 'failed', 1782864000000, '42'],
             ]],
             $table->lookedUpWheres,
         );
@@ -275,7 +319,7 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
             TableMutationType::Update->value => SourceChange::dbUpdated(HilosDbContext::notificationDeliveries, '57', ['status' => 'sent']),
         ] as $type => $change) {
             $table = $this->table();
-            $table->storedRow = self::deliveryRow(57, '2026-09-23 10:00:00');
+            $table->storedRow = self::deliveryRow(57, 1790157600000);
 
             $mutation = $table->buildMutationForSourceEvent($change);
 
@@ -327,7 +371,7 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
             SourceChange::dbUpdated(HilosDbContext::notificationDeliveries, '0', []),
         ] as $change) {
             $table = $this->table();
-            $table->storedRow = self::deliveryRow(57, '2026-09-23 10:00:00');
+            $table->storedRow = self::deliveryRow(57, 1790157600000);
 
             self::assertNull($table->buildMutationForSourceEvent($change));
             self::assertSame([], $table->readIds);
@@ -476,22 +520,20 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
      * Builds one delivery row of the journal.
      *
      * @param int $id Delivery id
-     * @param int|string $createdAt Moment the delivery was created
+     * @param int $createdAt Moment the delivery was created
      * @param string $status Delivery status
      * @param ?int $deliveredAt Moment the delivery was sent
      * @return HilosNotificationDeliveryTableRow Delivery row
      */
     private static function deliveryRow(
         int $id,
-        int|string $createdAt,
+        int $createdAt,
         string $status = 'pending',
         ?int $deliveredAt = null,
     ): HilosNotificationDeliveryTableRow {
-        $createdAtMs = is_int($createdAt) ? $createdAt : TimeHelper::sqlToMs($createdAt);
-
         return new HilosNotificationDeliveryTableRow(
             rowKey: $id,
-            createdAt: $createdAtMs,
+            createdAt: $createdAt,
             channel: 'email',
             status: $status,
             attempts: 0,

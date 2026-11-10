@@ -59,8 +59,8 @@ class Notification extends Entity
         self::title => PhpType::STRING->value,
         self::body => PhpType::TEXT->value,
         self::data => PhpType::JSON->value,
-        self::read_at => PhpType::DATETIME->value,
-        self::created_at => PhpType::DATETIME->value,
+        self::read_at => PhpType::INTEGER->value,
+        self::created_at => PhpType::INTEGER->value,
     ];
 
     public const array _foreign = [
@@ -100,6 +100,6 @@ class Notification extends Entity
     public string $title;
     public ?string $body = null;
     public ?string $data = null;
-    public ?string $read_at = null;
-    public string $created_at;
+    public ?int $read_at = null;
+    public int $created_at;
 }

@@ -95,7 +95,7 @@ final class NotificationDeliveryApiIntegrationTest extends NotificationDeliveryA
     {
         Database::sql("INSERT INTO hilos_user (id, name) VALUES (1893, 'Delivery recipient')");
         Database::sql(
-            'INSERT INTO hilos_notification (id, user_id, type, title) VALUES (?, ?, ?, ?)',
+            'INSERT INTO hilos_notification (id, user_id, type, title, `created_at`) VALUES (?, ?, ?, ?, 1767225600123)',
             [11, 1893, 'test.notification', 'Live parent'],
         );
         $first = Hilos::$db->notificationDeliveries->actions->createPending(11, 'test-channel', 55)->id;

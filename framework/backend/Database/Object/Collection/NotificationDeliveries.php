@@ -93,7 +93,7 @@ class NotificationDeliveries extends Objects
         $delivery->routingKey = $routingKey;
         $delivery->status = DeliveryStatus::PENDING;
         $delivery->attempts = 0;
-        $delivery->createdAt = TimeHelper::getSqlDateTime();
+        $delivery->createdAt = TimeHelper::nowMs();
         $delivery->updatedAt = $delivery->createdAt;
         $delivery->sync();
 
@@ -270,7 +270,7 @@ class NotificationDeliveries extends Objects
     public function beginAttempt(ObjectNotificationDelivery $delivery): void
     {
         $delivery->attempts = $delivery->attempts + 1;
-        $delivery->updatedAt = TimeHelper::getSqlDateTime();
+        $delivery->updatedAt = TimeHelper::nowMs();
         $delivery->sync();
     }
 
@@ -286,7 +286,7 @@ class NotificationDeliveries extends Objects
      */
     public function markSent(ObjectNotificationDelivery $delivery): void
     {
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
         $delivery->status = DeliveryStatus::SENT;
         $delivery->deliveredAt = $now;
         $delivery->updatedAt = $now;
@@ -343,7 +343,7 @@ class NotificationDeliveries extends Objects
         $delivery->attempts = 0;
         $delivery->lastError = null;
         $delivery->deliveredAt = null;
-        $delivery->updatedAt = TimeHelper::getSqlDateTime();
+        $delivery->updatedAt = TimeHelper::nowMs();
         $delivery->sync();
     }
 
@@ -369,7 +369,7 @@ class NotificationDeliveries extends Objects
         if ($delivery->attempts >= $maxAttempts) {
             $delivery->status = DeliveryStatus::FAILED;
         }
-        $delivery->updatedAt = TimeHelper::getSqlDateTime();
+        $delivery->updatedAt = TimeHelper::nowMs();
         $delivery->sync();
     }
 

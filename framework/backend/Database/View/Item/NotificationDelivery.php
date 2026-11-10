@@ -23,9 +23,9 @@ use Hilos\HilosException;
  * @property-read string $status
  * @property-read int $attempts
  * @property-read ?string $lastError
- * @property-read string $createdAt
- * @property-read string $updatedAt
- * @property-read ?string $deliveredAt
+ * @property-read int $createdAt
+ * @property-read int $updatedAt
+ * @property-read ?int $deliveredAt
  */
 class NotificationDelivery extends DbItem
 {

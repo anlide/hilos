@@ -19,6 +19,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
 use Hilos\Database\Schema\Schema;
 use Hilos\Hilos;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration coverage for durable push-device ownership and expiry state.
@@ -77,6 +78,10 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
             'Mozilla/5.0 (Macintosh) Chrome/120 Safari/537.36',
         );
 
+        $created = Database::sql('SELECT created_at, last_seen_at, gone_at FROM hilos_push_subscription')->firstRow();
+        self::assertSame($created['created_at'], $created['last_seen_at']);
+        self::assertNull($created['gone_at']);
+        self::assertGreaterThan(1_000_000_000_000, (int)$created['created_at']);
         $subscriptions = $this->subscriptions();
         self::assertNotNull(Database::sql(
             'SELECT `id` FROM `hilos_push_subscription` WHERE `endpoint` = ?',
@@ -90,6 +95,16 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
 
         self::assertSame(1, Hilos::$db->pushSubscriptions->actions->markGone([self::ENDPOINT]));
         self::assertSame([], $subscriptions->forUser(41));
+        $gone = Database::sql('SELECT gone_at FROM hilos_push_subscription')->firstRow()['gone_at'];
+        self::assertGreaterThanOrEqual((int)$created['created_at'], (int)$gone);
+        self::assertLessThanOrEqual(TimeHelper::nowMs(), (int)$gone);
+        self::assertSame(0, Hilos::$db->pushSubscriptions->actions->markGone([self::ENDPOINT]));
+        self::assertSame($gone, Database::sql('SELECT gone_at FROM hilos_push_subscription')->firstRow()['gone_at']);
+        // Fixed old moments make a refreshed last-seen value observable without a clock wait.
+        $id = (int)Database::sql('SELECT id FROM hilos_push_subscription')->firstRow()['id'];
+        Hilos::$db->pushSubscriptions->getObjectCollection()[$id]->createdAt = 1767225600123;
+        Hilos::$db->pushSubscriptions->getObjectCollection()[$id]->lastSeenAt = 1767225600456;
+        Hilos::$db->pushSubscriptions->getObjectCollection()[$id]->sync();
 
         Hilos::$db->pushSubscriptions->actions->subscribe(
             41,
@@ -100,6 +115,11 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
         );
         self::assertCount(1, $subscriptions->forUser(41));
         self::assertNull($subscriptions->forUser(41)[0]->goneAt);
+        $resubscribed = Database::sql('SELECT created_at, last_seen_at, gone_at FROM hilos_push_subscription')->firstRow();
+        self::assertSame('1767225600123', $resubscribed['created_at']);
+        self::assertGreaterThan(1767225600456, (int)$resubscribed['last_seen_at']);
+        self::assertLessThanOrEqual(TimeHelper::nowMs(), (int)$resubscribed['last_seen_at']);
+        self::assertNull($resubscribed['gone_at']);
     }
 
     public function testOwnedRemoveAndUnsubscribeCannotDeleteAnotherUsersRow(): void

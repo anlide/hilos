@@ -59,9 +59,9 @@ class NotificationDelivery extends Entity
         self::status => PhpType::STRING->value,
         self::attempts => PhpType::INTEGER->value,
         self::last_error => PhpType::STRING->value,
-        self::created_at => PhpType::DATETIME->value,
-        self::updated_at => PhpType::DATETIME->value,
-        self::delivered_at => PhpType::DATETIME->value,
+        self::created_at => PhpType::INTEGER->value,
+        self::updated_at => PhpType::INTEGER->value,
+        self::delivered_at => PhpType::INTEGER->value,
     ];
 
     public const array _indexes = [
@@ -100,7 +100,7 @@ class NotificationDelivery extends Entity
     public string $status = 'pending';
     public int $attempts = 0;
     public ?string $last_error = null;
-    public string $created_at;
-    public string $updated_at;
-    public ?string $delivered_at = null;
+    public int $created_at;
+    public int $updated_at;
+    public ?int $delivered_at = null;
 }

@@ -24,8 +24,8 @@ use Hilos\HilosException;
  * @property-read string $title
  * @property-read ?string $body
  * @property-read ?array<string, mixed> $data
- * @property-read ?string $readAt
- * @property-read string $createdAt
+ * @property-read ?int $readAt
+ * @property-read int $createdAt
  */
 class Notification extends DbItem
 {

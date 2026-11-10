@@ -91,7 +91,6 @@ use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Command\TestOnlyCommandRegistry;
-use Hilos\Utils\Helpers\TimeHelper;
 use Throwable;
 
 /**
@@ -558,8 +557,8 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
             title: $notification->title,
             body: $notification->body,
             data: $notification->decodedData(),
-            readAt: $notification->readAt !== null ? TimeHelper::sqlToMs($notification->readAt) : null,
-            createdAt: $notification->createdAt !== null ? TimeHelper::sqlToMs($notification->createdAt) : null,
+            readAt: $notification->readAt,
+            createdAt: $notification->createdAt,
         );
     }
 

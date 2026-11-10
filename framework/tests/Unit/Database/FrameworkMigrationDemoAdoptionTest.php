@@ -257,6 +257,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $source = $catalog->part($change->parts[0]->changeId, 'notification_delivery');
             self::assertFalse($source->introducesUnit);
             self::assertSame([], $source->requires);
+            $source = $catalog->part('20261110021316313226_HIL-1923_notification_moments', 'notification_delivery');
             self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('notification_delivery')->upPath)),
                 $source->afterStubUpSha256);
             self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('notification_delivery')->downPath)),
@@ -454,6 +455,31 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 $source = $catalog->part($change->parts[0]->changeId, $key);
                 self::assertFalse($source->introducesUnit);
                 self::assertSame($statusMomentParts[$key]['requires'], $source->requires);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
+                    $source->afterStubUpSha256);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
+                    $source->afterStubDownSha256);
+                $origins[] = $change;
+            }
+            $notificationMomentIndices = [138, 96, 96, 79, 79, 81];
+            $notificationMomentParts = [
+                'notification' => '916b7137a40990c7b497af332c39d28f312d41c85875827778de2347d918966c',
+                'notification_delivery' => 'c2d46f3172a3b8972828d647827e38c06e65d97ea8d1b96d26dcc36dc35dfb39',
+                'notification_preference' => '2c777b8c4cccc93b7320ee8854bfdc47cb9e5bcf6ee35e2d1399f6dd727f7792',
+                'push_subscription' => '28d249b2d8f88aa643ce12eb72f4c471687eee5b9df9d23470fcffcb553696fa',
+            ];
+            foreach (array_keys($notificationMomentParts) as $offset => $key) {
+                $base = $project->root . '/' . sprintf('%03d', $notificationMomentIndices[$index] + $offset)
+                    . '_framework_change_' . $notificationMomentParts[$key];
+                $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+                self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+                self::assertSame([$key], $change->units);
+                self::assertCount(1, $change->parts);
+                self::assertSame('20261110021316313226_HIL-1923_notification_moments/' . $key, $change->parts[0]->key());
+                $source = $catalog->part($change->parts[0]->changeId, $key);
+                self::assertFalse($source->introducesUnit);
+                self::assertSame($key === 'notification_delivery'
+                    ? ['20261108080825608007_HIL-1893_delivery_routing_key/notification_delivery'] : [], $source->requires);
                 self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
                     $source->afterStubUpSha256);
                 self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),

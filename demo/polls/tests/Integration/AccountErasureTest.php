@@ -86,11 +86,12 @@ final class AccountErasureTest extends IntegrationTestCase
     private static function seedNotificationRows(int $userId): void
     {
         Database::sqlRun(
-            'INSERT INTO `hilos_notification` (`user_id`, `type`, `title`) VALUES (?, ?, ?)',
+            'INSERT INTO `hilos_notification` (`user_id`, `type`, `title`, `created_at`) VALUES (?, ?, ?, 1767225600123)',
             [$userId, 'account.test', 'Test notification'],
         );
         Database::sqlRun(
-            'INSERT INTO `hilos_notification_preference` (`user_id`, `channel`) VALUES (?, ?)',
+            'INSERT INTO `hilos_notification_preference` (`user_id`, `channel`, `created_at`, `updated_at`) '
+            . 'VALUES (?, ?, 1767225600123, 1767225600123)',
             [$userId, 'email'],
         );
         Hilos::$db->pushSubscriptions->actions->subscribe(

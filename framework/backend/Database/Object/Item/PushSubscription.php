@@ -28,9 +28,9 @@ use Hilos\Database\Object\Item\Object_;
  * @property ?string $userAgent
  * @property ?string $deviceName
  * @property string $endpointHash
- * @property ?string $goneAt
- * @property string $createdAt
- * @property ?string $lastSeenAt
+ * @property ?int $goneAt
+ * @property int $createdAt
+ * @property ?int $lastSeenAt
  */
 class PushSubscription extends Object_
 {
@@ -90,9 +90,9 @@ class PushSubscription extends Object_
             self::userAgent => $this->entity->user_agent = $value === null ? null : (string)$value,
             self::deviceName => $this->entity->device_name = $value === null ? null : (string)$value,
             self::endpointHash => $this->entity->endpoint_hash = (string)$value,
-            self::goneAt => $this->entity->gone_at = $value === null ? null : (string)$value,
-            self::createdAt => $this->entity->created_at = (string)$value,
-            self::lastSeenAt => $this->entity->last_seen_at = $value === null ? null : (string)$value,
+            self::goneAt => $this->entity->gone_at = $value === null ? null : (int)$value,
+            self::createdAt => $this->entity->created_at = (int)$value,
+            self::lastSeenAt => $this->entity->last_seen_at = $value === null ? null : (int)$value,
             default => parent::__set($property, $value),
         };
     }

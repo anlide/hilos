@@ -185,8 +185,8 @@ final class ProfileSessionsListTest extends IntegrationTestCase
     {
         [$userId] = $this->createUserWithTwoSessions();
         TruthSourceRegistry::register(ChatDbContext::pushSubscriptions, TruthSourceKeys::all(), self::TEST_AGENT_ID);
-        // Test fixture boundary: the subscribe action stamps now; these rows need fixed SQL instants.
-        foreach ([null, '2026-01-01 00:30:00'] as $index => $goneAt) {
+        // Test fixture boundary: the subscribe action stamps now; these rows need fixed epoch milliseconds.
+        foreach ([null, 1767227400000] as $index => $goneAt) {
             $device = PushSubscription::create();
             $device->userId = $userId;
             $device->endpoint = 'https://push.example.test/' . $this->name() . '/' . $index;
@@ -194,7 +194,7 @@ final class ProfileSessionsListTest extends IntegrationTestCase
             $device->p256dh = 'private-p256dh';
             $device->auth = 'private-auth';
             $device->deviceName = 'Device ' . $index;
-            $device->createdAt = '2026-01-01 00:00:00';
+            $device->createdAt = 1767225600000;
             $device->goneAt = $goneAt;
             $device->sync();
         }

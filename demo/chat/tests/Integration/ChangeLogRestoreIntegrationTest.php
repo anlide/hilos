@@ -204,8 +204,8 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
     {
         $this->assertOrdinaryVisibilityBoundary();
         $this->acquireVisibility();
-        $this->assertSame(137, Migration::getCurrentIndex());
-        $this->assertSame(28, Migration::migrateDown(109));
+        $this->assertSame(141, Migration::getCurrentIndex());
+        $this->assertSame(32, Migration::migrateDown(109));
         Schema::reset();
         Database::sql('INSERT INTO `moderator_prompt_piece` (`section`, `prompt_piece`) VALUES (?, ?)',
             ['message_rule', 'Historical non-personal moderation rule']);
@@ -234,14 +234,14 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
                 file_get_contents($this->storeRoot . '/unpacked/db-1.sql'));
         }
 
-        $this->assertSame(28, Migration::migrateUp());
+        $this->assertSame(32, Migration::migrateUp());
         Database::sql('UPDATE `hilos_user` SET `name` = ? WHERE `id` = ?', ['Written after historical archive', $userId]);
         $decision = RestoreEnvGuard::decide(AppEnv::fromString($archive->env), AppEnv::TEST, false)->decision;
         $this->assertSame(RestoreEnvDecision::REQUIRE_ANONYMIZATION, $decision);
         new BackupRestorer()->restore(self::ARCHIVE_ID, BackupScope::FULL, $decision);
         Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
 
-        $this->assertSame(137, Migration::getCurrentIndex());
+        $this->assertSame(141, Migration::getCurrentIndex());
         $schema = LiveSchemaReader::read(DatabaseConnectionDefaults::PRIMARY_INDEX);
         $this->assertArrayNotHasKey('moderator_prompt_piece', $schema);
         $this->assertArrayHasKey('hilos_account_operation', $schema);

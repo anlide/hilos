@@ -55,7 +55,7 @@ final class PersonForeignKeysIntegrationTest extends FrameworkIntegrationTestCas
             ['ffffffffffffffffffffffffffffffff', 999, TimeHelper::nowMs(), TimeHelper::nowMs()],
         ];
         yield 'notification' => [
-            'INSERT INTO `hilos_notification` (`user_id`, `type`, `title`) VALUES (?, ?, ?)',
+            'INSERT INTO `hilos_notification` (`user_id`, `type`, `title`, `created_at`) VALUES (?, ?, ?, 1767225600123)',
             [999, 'account.test', 'Nobody'],
         ];
     }
@@ -79,7 +79,7 @@ final class PersonForeignKeysIntegrationTest extends FrameworkIntegrationTestCas
     {
         Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (7, 'Recipient')");
         Database::sqlRun(
-            'INSERT INTO `hilos_notification` (`user_id`, `type`, `title`) VALUES (7, ?, ?)',
+            'INSERT INTO `hilos_notification` (`user_id`, `type`, `title`, `created_at`) VALUES (7, ?, ?, 1767225600123)',
             ['account.test', 'Still here'],
         );
 

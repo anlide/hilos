@@ -87,7 +87,7 @@ signed `BIGINT` or milliseconds.
 | Identity, OAuth provider and passkey | 7 | (not in the code yet — HIL-1920) |
 | Verification, registration, step-up and auth blocks | 10 | (not in the code yet — HIL-1921) |
 | Second factor, trust, reset and backup codes | 16 | (not in the code yet — HIL-1922) |
-| Notifications, preferences, deliveries and push, including keyset anchors | 10 | (not in the code yet — HIL-1923) |
+| Notifications, preferences, deliveries and push, including keyset anchors | 10 | Implemented |
 | People, access log, deletion, photo, rename and merge | 9 | (not in the code yet — HIL-1924) |
 | Legal acceptances and both export queues; preserve the finished file's IANA-zone snapshot | 7 | (not in the code yet — HIL-1925) |
 | Files and variants | 2 | Implemented |
@@ -158,9 +158,8 @@ defaults are already explicit UTC.
 carries `createdAt` and nullable `readAt` in UTC epoch milliseconds (integers),
 while [ObjectNotification](../../../framework/backend/Database/Object/Item/Notification.php)
 and [ViewNotification](../../../framework/backend/Database/View/Item/Notification.php)
-keep scalar SQL datetime strings for server-side consumers.
-Their storage and server readers move together under
-[Transition Owners](#transition-owners) (not in the code yet — HIL-1923).
+expose `createdAt` as `int` and nullable `readAt` as `?int` to server-side
+consumers, backed by signed `BIGINT` epoch-millisecond columns.
 
 Rows of [HilosNotificationDeliveryTableRow](../../../framework/backend/Tables/Communications/HilosNotificationDeliveryTableRow.php)
 carry `createdAt` (int) and nullable `deliveredAt` (?int) in UTC epoch
@@ -169,11 +168,9 @@ milliseconds.
 Keyset pagination boundaries of
 [HilosNotificationDeliveriesTable](../../../framework/backend/Tables/Communications/HilosNotificationDeliveriesTable.php)
 (`firstAnchor` and `lastAnchor` of the `hilosNotificationDeliveries` table)
-return numeric milliseconds when the corresponding columns participate in
-sorting; the table adapts them back to SQL UTC datetime strings before executing
-the keyset window query.
-The query and both anchor directions move with the stored source
-(not in the code yet — HIL-1923).
+carry numeric epoch milliseconds when the corresponding columns participate in
+sorting. The keyset window query compares those numeric anchors directly against
+the stored integer moments, in both directions.
 
 On the client, [HilosNotificationBell](../../../framework/frontend/vue/src/HilosNotificationBell.vue)
 and the [deliveries journal](../../../framework/frontend/vue/src/admin/communications/HilosCommunicationsDeliveriesPage.vue)

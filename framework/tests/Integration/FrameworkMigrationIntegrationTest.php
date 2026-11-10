@@ -23,6 +23,7 @@ use Hilos\Database\Migration\FrameworkMigrationStartupGuard;
 use Hilos\Database\Migration\FrameworkSchemaCatalog;
 use Hilos\Database\Migration\FrameworkSchemaUnit;
 use Hilos\Database\MigrationClaim;
+use Hilos\Database\MigrationSqlReader;
 use Hilos\Database\Schema\EntitySchemaAudit;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -454,19 +455,39 @@ final class FrameworkMigrationIntegrationTest extends FrameworkIntegrationTestCa
         file_put_contents($this->project->root . '/9401_delivery_routing_key.sql', $part->upSql);
         file_put_contents($this->project->root . '/9401_delivery_routing_key_down.sql', $part->downSql);
 
-        self::assertSame(2, Migration::migrateUp());
+        $moments = new FrameworkMigrationCatalog()->part('20261110021316313226_HIL-1923_notification_moments', 'notification_delivery');
+        file_put_contents($this->project->root . '/9402_delivery_moments.sql', $moments->upSql);
+        file_put_contents($this->project->root . '/9402_delivery_moments_down.sql', $moments->downSql);
+        self::assertSame(3, Migration::migrateUp());
         self::assertSame([], EntitySchemaAudit::audit([EntityNotificationDelivery::class]));
         Database::sql('SELECT * FROM `hilos_notification_delivery` ORDER BY `id`');
         $upRows = Database::rows();
         self::assertCount(3, $upRows);
+        self::assertSame(EntityNotificationDelivery::_columns, array_keys($upRows[0]));
         foreach ($upRows as $offset => $row) {
             self::assertArrayHasKey('routing_key', $row);
             self::assertNull($row['routing_key']);
             unset($row['routing_key']);
-            self::assertSame($legacy[$offset], $row);
+            $expected = $legacy[$offset];
+            $expected['created_at'] = '1790850030000';
+            $expected['updated_at'] = '1790940091000';
+            $expected['delivered_at'] = $offset === 1 ? '1790940090000' : null;
+            self::assertSame($expected, $row);
         }
         self::assertSame(0, Migration::migrateUp());
-        self::assertSame(1, Migration::migrateDown(self::ANCHOR));
+        Database::sql('UPDATE hilos_notification_delivery SET created_at = -1 WHERE id = 17');
+        try {
+            foreach (MigrationSqlReader::statements($moments->downSql) as $statement) {
+                Database::sqlRun($statement);
+            }
+            self::fail('Legacy TIMESTAMP cannot represent a negative epoch millisecond');
+        } catch (DatabaseException $exception) {
+            self::assertStringContainsString('Moment cannot be represented by the legacy type', $exception->getMessage());
+        }
+        self::assertMatchesRegularExpression('/^bigint/', $this->column(EntityNotificationDelivery::_table, 'created_at'));
+        self::assertNull($this->column(EntityNotificationDelivery::_table, '__hil1923_created_at'));
+        Database::sql('UPDATE hilos_notification_delivery SET created_at = 1790850030000 WHERE id = 17');
+        self::assertSame(2, Migration::migrateDown(self::ANCHOR));
         self::assertNull($this->column(EntityNotificationDelivery::_table, EntityNotificationDelivery::routing_key));
         Database::sql('SELECT COLUMN_NAME FROM information_schema.STATISTICS '
             . 'WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND INDEX_NAME = ? ORDER BY SEQ_IN_INDEX',
@@ -474,7 +495,7 @@ final class FrameworkMigrationIntegrationTest extends FrameworkIntegrationTestCa
         self::assertSame(['channel', 'status'], array_column(Database::rows(), 'COLUMN_NAME'));
         Database::sql('SELECT * FROM `hilos_notification_delivery` ORDER BY `id`');
         self::assertSame($legacy, Database::rows());
-        self::assertSame(1, Migration::migrateUp());
+        self::assertSame(2, Migration::migrateUp());
         Database::sql('SELECT * FROM `hilos_notification_delivery` ORDER BY `id`');
         self::assertSame($upRows, Database::rows());
     }

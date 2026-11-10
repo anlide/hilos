@@ -81,7 +81,7 @@ class NotificationPreferences extends Objects
             return;
         }
 
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
         $preference = static::OBJECT_CLASS::create();
         $preference->userId = $userId;
         $preference->channel = $channel;

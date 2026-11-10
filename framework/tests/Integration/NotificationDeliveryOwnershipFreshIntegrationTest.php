@@ -75,7 +75,7 @@ final class NotificationDeliveryOwnershipFreshIntegrationTest extends Notificati
     {
         Database::sql("INSERT INTO hilos_user (id, name) VALUES (1893, 'Private recipient')");
         Database::sql(
-            'INSERT INTO hilos_notification (id, user_id, type, title) VALUES (?, ?, ?, ?)',
+            'INSERT INTO hilos_notification (id, user_id, type, title, `created_at`) VALUES (?, ?, ?, ?, 1767225600123)',
             [11, 1893, 'test.notification', 'Private notification text'],
         );
         $id = Hilos::$db->notificationDeliveries->actions->createPending(11, MailDeliveryChannel::NAME, 0)->id;

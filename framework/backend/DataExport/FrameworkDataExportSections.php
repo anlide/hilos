@@ -173,8 +173,8 @@ final class FrameworkDataExportSections
                     'type' => $notification->type,
                     'title' => $notification->title,
                     'body' => $notification->body,
-                    'createdAt' => DataExportTime::iso($notification->createdAt, $timeZone),
-                    'readAt' => DataExportTime::iso($notification->readAt, $timeZone),
+                    'createdAt' => DataExportTime::isoMs($notification->createdAt, $timeZone),
+                    'readAt' => $notification->readAt === null ? null : DataExportTime::isoMs($notification->readAt, $timeZone),
                 ];
             }
             $writer->section('notifications', $notifications);
@@ -192,9 +192,9 @@ final class FrameworkDataExportSections
             foreach (Hilos::$db->pushSubscriptions->whereColumnIs(ObjectPushSubscription::userId, $userId) as $subscription) {
                 $subscriptions[] = [
                     'device' => $subscription->deviceName,
-                    'createdAt' => DataExportTime::iso($subscription->createdAt, $timeZone),
-                    'lastSeenAt' => DataExportTime::iso($subscription->lastSeenAt, $timeZone),
-                    'goneAt' => DataExportTime::iso($subscription->goneAt, $timeZone),
+                    'createdAt' => DataExportTime::isoMs($subscription->createdAt, $timeZone),
+                    'lastSeenAt' => $subscription->lastSeenAt === null ? null : DataExportTime::isoMs($subscription->lastSeenAt, $timeZone),
+                    'goneAt' => $subscription->goneAt === null ? null : DataExportTime::isoMs($subscription->goneAt, $timeZone),
                 ];
             }
         }

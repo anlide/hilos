@@ -6,6 +6,7 @@ namespace Hilos\Notification;
 
 use DateInterval;
 use DateTimeImmutable;
+use Hilos\Constants\TimeConstants;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
@@ -79,18 +80,20 @@ final class DeliveryLogPruner
      * Computes the created_at cutoff for a retention window, or null when disabled.
      *
      * Pure (no I/O, no clock read): a retention of 0 or less disables cleanup and
-     * yields null; otherwise the cutoff is `$now` minus the window, as a SQL datetime.
+     * yields null; otherwise the cutoff is `$now` minus the window, in epoch milliseconds.
      *
      * @param int $retentionDays Retention window in days
      * @param DateTimeImmutable $now Reference "now"
-     * @return ?string SQL datetime cutoff (rows strictly older are pruned), or null when disabled
+     * @return ?int Epoch millisecond cutoff (rows strictly older are pruned), or null when disabled
      */
-    public function cutoff(int $retentionDays, DateTimeImmutable $now): ?string
+    public function cutoff(int $retentionDays, DateTimeImmutable $now): ?int
     {
         if ($retentionDays <= 0) {
             return null;
         }
 
-        return $now->sub(new DateInterval("P{$retentionDays}D"))->format('Y-m-d H:i:s');
+        $moment = $now->sub(new DateInterval("P{$retentionDays}D"));
+
+        return $moment->getTimestamp() * TimeConstants::MS_PER_SECOND + (int)$moment->format('v');
     }
 }

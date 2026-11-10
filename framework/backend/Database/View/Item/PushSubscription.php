@@ -24,9 +24,9 @@ use Hilos\HilosException;
  * @property-read ?string $userAgent
  * @property-read ?string $deviceName
  * @property-read string $endpointHash
- * @property-read ?string $goneAt
- * @property-read string $createdAt
- * @property-read ?string $lastSeenAt
+ * @property-read ?int $goneAt
+ * @property-read int $createdAt
+ * @property-read ?int $lastSeenAt
  */
 class PushSubscription extends DbItem
 {

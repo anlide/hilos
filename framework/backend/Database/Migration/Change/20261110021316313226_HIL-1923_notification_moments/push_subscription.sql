@@ -1,0 +1,3 @@
+ALTER TABLE `hilos_push_subscription` ADD COLUMN `__hil1923_gone_at` BIGINT NULL, ADD COLUMN `__hil1923_created_at` BIGINT NULL, ADD COLUMN `__hil1923_last_seen_at` BIGINT NULL;
+UPDATE `hilos_push_subscription` SET `__hil1923_gone_at` = UNIX_TIMESTAMP(`gone_at`) * 1000, `__hil1923_created_at` = UNIX_TIMESTAMP(`created_at`) * 1000, `__hil1923_last_seen_at` = UNIX_TIMESTAMP(`last_seen_at`) * 1000;
+ALTER TABLE `hilos_push_subscription` DROP COLUMN `gone_at`, DROP COLUMN `created_at`, DROP COLUMN `last_seen_at`, CHANGE COLUMN `__hil1923_gone_at` `gone_at` BIGINT NULL DEFAULT NULL, CHANGE COLUMN `__hil1923_created_at` `created_at` BIGINT NOT NULL, CHANGE COLUMN `__hil1923_last_seen_at` `last_seen_at` BIGINT NULL DEFAULT NULL;

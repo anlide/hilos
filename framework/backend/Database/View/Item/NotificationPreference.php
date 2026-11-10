@@ -21,8 +21,8 @@ use Hilos\HilosException;
  * @property-read int $userId
  * @property-read string $channel
  * @property-read bool $enabled
- * @property-read string $createdAt
- * @property-read string $updatedAt
+ * @property-read int $createdAt
+ * @property-read int $updatedAt
  */
 class NotificationPreference extends DbItem
 {

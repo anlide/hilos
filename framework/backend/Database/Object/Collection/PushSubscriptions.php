@@ -66,7 +66,7 @@ class PushSubscriptions extends Objects
             throw new EmptyValueException('Push subscription endpoint is required');
         }
 
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
         $subscription = $this->find($endpoint);
 
         if ($subscription === null) {
@@ -102,7 +102,7 @@ class PushSubscriptions extends Objects
     public function markGone(array $endpoints): int
     {
         $marked = 0;
-        $goneAt = TimeHelper::getSqlDateTime();
+        $goneAt = TimeHelper::nowMs();
         foreach (array_unique($endpoints) as $endpoint) {
             if ($endpoint === '') {
                 continue;

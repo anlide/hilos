@@ -40,7 +40,7 @@ final class RestoredDeliveries
                 . EntityNotificationDelivery::last_error . '` = ?, `'
                 . EntityNotificationDelivery::updated_at . '` = ? WHERE `'
                 . EntityNotificationDelivery::status . '` = ?',
-                [DeliveryStatus::FAILED, self::UNKNOWN_FATE, TimeHelper::getSqlDateTime(), DeliveryStatus::PENDING],
+                [DeliveryStatus::FAILED, self::UNKNOWN_FATE, TimeHelper::nowMs(), DeliveryStatus::PENDING],
             )->affectedRows();
         } finally {
             Database::useConnection($callerIndex);

@@ -49,8 +49,8 @@ class NotificationPreference extends Entity
         self::user_id => PhpType::INTEGER->value,
         self::channel => PhpType::STRING->value,
         self::enabled => PhpType::BOOLEAN->value,
-        self::created_at => PhpType::DATETIME->value,
-        self::updated_at => PhpType::DATETIME->value,
+        self::created_at => PhpType::INTEGER->value,
+        self::updated_at => PhpType::INTEGER->value,
     ];
 
     public const array _foreign = [
@@ -84,6 +84,6 @@ class NotificationPreference extends Entity
     public int $user_id;
     public string $channel = '';
     public bool $enabled = false;
-    public string $created_at;
-    public string $updated_at;
+    public int $created_at;
+    public int $updated_at;
 }

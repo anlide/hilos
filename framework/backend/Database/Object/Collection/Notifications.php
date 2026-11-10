@@ -92,7 +92,7 @@ class Notifications extends Objects
         $notification->title = $title;
         $notification->body = $body;
         $notification->data = $data;
-        $notification->createdAt = TimeHelper::getSqlDateTime();
+        $notification->createdAt = TimeHelper::nowMs();
         $notification->sync();
 
         $id = $notification->id;
@@ -192,7 +192,7 @@ class Notifications extends Objects
     {
         $this->requireActivatedTable();
 
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
 
         DbWriteGuard::guardSetWrite(
             static::COLLECTION_KEY,
@@ -202,7 +202,7 @@ class Notifications extends Objects
         );
 
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string($now));
+        $params->add(SqlParam::int($now));
         $params->add(SqlParam::int($userId));
         Database::sql(
             'UPDATE `' . EntityNotification::_table . '`'
@@ -276,9 +276,9 @@ class Notifications extends Objects
      * read in the same request does not see stale unread rows.
      *
      * @param int $userId Recipient user id whose loaded rows were marked read
-     * @param string $readAt Read timestamp stamped by the bulk update
+     * @param int $readAt Read epoch milliseconds stamped by the bulk update
      */
-    private function invalidateLoadedForUser(int $userId, string $readAt): void
+    private function invalidateLoadedForUser(int $userId, int $readAt): void
     {
         foreach ($this->objects as $notification) {
             if ($notification->userId === $userId && $notification->isUnread()) {

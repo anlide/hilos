@@ -233,7 +233,7 @@ HELP;
                     null,
                 );
                 if ($index <= $read) {
-                    $notification->readAt = TimeHelper::getSqlDateTime();
+                    $notification->readAt = TimeHelper::nowMs();
                     $notification->sync();
                 }
 

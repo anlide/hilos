@@ -78,7 +78,7 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
         foreach (glob(dirname(__DIR__, 3) . '/demo/chat/backend/Database/Migration/Schema/*.sql') as $file) {
             $base = basename($file);
             $index = (int)explode('_', $base, 2)[0];
-            if ($index > self::LAST_BOOTSTRAP_INDEX) {
+            if ($index > self::LAST_BOOTSTRAP_INDEX && ($index < 138 || $index > 141)) {
                 continue;
             }
             FsPath::copy($file, $this->root . '/Schema/' . $base);
@@ -114,6 +114,22 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
         $circleDefinition = FsPath::read($this->root . '/Schema/045_create_hilos_verifier_circle.sql');
         foreach (MigrationSqlReader::statements($circleDefinition) as $statement) {
             Database::sql($statement);
+        }
+        $notificationDefinitions = [];
+        foreach ([
+            'hilos_notification' => '033_create_hilos_notification',
+            'hilos_notification_delivery' => '034_create_hilos_notification_delivery',
+            'hilos_notification_preference' => '035_create_hilos_notification_preference',
+            'hilos_push_subscription' => '053_create_hilos_push_subscription',
+        ] as $table => $migration) {
+            $definition = FsPath::read($this->root . '/Schema/' . $migration . '.sql');
+            if ($table === 'hilos_notification_delivery') {
+                $definition = str_replace('`channel` VARCHAR(50) NOT NULL,',
+                    "`channel` VARCHAR(50) NOT NULL,\n    `routing_key` BIGINT UNSIGNED NULL DEFAULT NULL,", $definition);
+                $definition = str_replace('(`channel`, `status`)', '(`channel`, `status`, `id`)', $definition);
+            }
+            Database::sqlRun($definition);
+            $notificationDefinitions[] = 'DROP TABLE IF EXISTS `' . $table . "`;\n" . $definition;
         }
         Database::sql(self::HISTORICAL_SESSION);
         Database::sql('CREATE TABLE `hilos_file` (
@@ -151,7 +167,7 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
         Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
         putenv('BACKUP_DIR=' . $this->root);
         putenv('DAEMON_LOG_FILE=' . $this->root . '/daemon.log');
-        $this->publishArchive($erasureDefinitions, $circleDefinition);
+        $this->publishArchive($erasureDefinitions, $circleDefinition, $notificationDefinitions);
     }
 
     /** Removes every fixture resource and restores process configuration even after a refusal. */
@@ -185,11 +201,12 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
             DatabaseMarker::put($marker);
         }
         if ($applied) {
-            $this->assertSame(14, Migration::migrateUp());
+            $this->assertSame(18, Migration::migrateUp());
         }
         $plan = FullRestorePlanner::prepare(FullRestorePlan::prepare($this->connections(), $this->root . '/build'));
         $this->assertSame(
-            [118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 128, 128, 129, 129, 129, 129, 129, 130, 130, 130, 131, 131, 131],
+            [118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 128, 128, 129, 129, 129, 129, 129, 130, 130, 130, 131, 131, 131,
+                138, 138, 138, 139, 139, 139, 140, 140, 140, 141, 141, 141],
             array_map(static fn ($step): int => $step->file->index, $plan->migrations->targets[DatabaseConnectionDefaults::PRIMARY_INDEX]->pending),
         );
         $this->assertSame($applied ? [
@@ -223,7 +240,7 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
         ]], Database::sql('SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME'
             . ' FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?'
             . ' AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY CONSTRAINT_NAME', [AccountOperationResult::_table])->rows());
-        $this->assertSame([118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131], array_values(array_filter(
+        $this->assertSame([118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 138, 139, 140, 141], array_values(array_filter(
             Migration::readHistory(DatabaseConnectionDefaults::PRIMARY_INDEX)->successfulIndices(),
             static fn (int $index): bool => $index > self::ARCHIVE_LEVEL,
         )));
@@ -511,8 +528,9 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
      *
      * @param list<string> $erasureDefinitions Verified historical operation and assignment bodies, parent first
      * @param string $circleDefinition Historical verifier circle definition, before its moment moved to milliseconds
+     * @param list<string> $notificationDefinitions Historical notification definitions and the delivery routing delta
      */
-    private function publishArchive(array $erasureDefinitions, string $circleDefinition): void
+    private function publishArchive(array $erasureDefinitions, string $circleDefinition, array $notificationDefinitions): void
     {
         FsPath::ensureDirectory($this->root . '/build', 0700);
         FsPath::ensureDirectory($this->root . '/' . BackupScope::FULL->value, 0700);
@@ -575,6 +593,7 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
             . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;\n"
             . "INSERT INTO `hilos_file_variant` VALUES (1, 1, 'thumb', 'sig12345', 'archived_thumb_1', 'image/jpeg',"
             . " 100, '2026-11-08 12:00:00');\n"
+            . implode("\n", $notificationDefinitions) . "\n"
             . "DROP TABLE IF EXISTS restore_probe;\n"
             . "CREATE TABLE restore_probe (id INT PRIMARY KEY, label VARCHAR(32) NOT NULL);\n"
             . "INSERT INTO restore_probe VALUES(1,'archive');\n"

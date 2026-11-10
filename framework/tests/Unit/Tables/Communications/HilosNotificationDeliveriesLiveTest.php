@@ -31,7 +31,6 @@ use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveryTableRow;
-use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -58,8 +57,8 @@ final class HilosNotificationDeliveriesLiveTest extends TestCase
      */
     public function testANewDeliveryAboveTheWindowIsAnnounced(): void
     {
-        $shown = [self::delivery(12, '2026-09-23 10:00:02'), self::delivery(11, '2026-09-23 10:00:01')];
-        $viewport = $this->boot([...$shown, self::delivery(13, '2026-09-23 10:00:03')], $shown);
+        $shown = [self::delivery(12, 1790157602000), self::delivery(11, 1790157601000)];
+        $viewport = $this->boot([...$shown, self::delivery(13, 1790157603000)], $shown);
 
         $this->record(SourceChange::dbCreated(HilosDbContext::notificationDeliveries, '13', []));
 
@@ -76,8 +75,8 @@ final class HilosNotificationDeliveriesLiveTest extends TestCase
      */
     public function testANewDeliveryInTheSameSecondIsSettledByItsIdAsANumber(): void
     {
-        $shown = [self::delivery(9, '2026-09-23 10:00:00'), self::delivery(8, '2026-09-23 09:59:59')];
-        $this->boot([...$shown, self::delivery(10, '2026-09-23 10:00:00')], $shown);
+        $shown = [self::delivery(9, 1790157600000), self::delivery(8, 1790157599000)];
+        $this->boot([...$shown, self::delivery(10, 1790157600000)], $shown);
 
         $this->record(SourceChange::dbCreated(HilosDbContext::notificationDeliveries, '10', []));
 
@@ -89,8 +88,8 @@ final class HilosNotificationDeliveriesLiveTest extends TestCase
      */
     public function testAStatusChangeOfAShownDeliveryIsUpdatedInPlace(): void
     {
-        $shown = [self::delivery(12, '2026-09-23 10:00:02'), self::delivery(11, '2026-09-23 10:00:01')];
-        $this->boot([self::delivery(12, '2026-09-23 10:00:02', 'sent'), $shown[1]], $shown);
+        $shown = [self::delivery(12, 1790157602000), self::delivery(11, 1790157601000)];
+        $this->boot([self::delivery(12, 1790157602000, 'sent'), $shown[1]], $shown);
 
         $this->record(SourceChange::dbUpdated(HilosDbContext::notificationDeliveries, '12', ['status' => 'sent']));
 
@@ -106,8 +105,8 @@ final class HilosNotificationDeliveriesLiveTest extends TestCase
      */
     public function testAStatusChangeWrittenForTheViewerIsTheirOwn(): void
     {
-        $shown = [self::delivery(12, '2026-09-23 10:00:02'), self::delivery(11, '2026-09-23 10:00:01')];
-        $this->boot([self::delivery(12, '2026-09-23 10:00:02', 'sent'), $shown[1]], $shown);
+        $shown = [self::delivery(12, 1790157602000), self::delivery(11, 1790157601000)];
+        $this->boot([self::delivery(12, 1790157602000, 'sent'), $shown[1]], $shown);
 
         $this->record(SourceChange::dbUpdated(HilosDbContext::notificationDeliveries, '12', ['status' => 'sent'], 'ak-1'));
 
@@ -119,7 +118,7 @@ final class HilosNotificationDeliveriesLiveTest extends TestCase
      */
     public function testADeletedShownDeliveryIsRemoved(): void
     {
-        $shown = [self::delivery(12, '2026-09-23 10:00:02'), self::delivery(11, '2026-09-23 10:00:01')];
+        $shown = [self::delivery(12, 1790157602000), self::delivery(11, 1790157601000)];
         $viewport = $this->boot([$shown[1]], $shown);
 
         $this->record(SourceChange::dbDeleted(HilosDbContext::notificationDeliveries, '12'));
@@ -136,9 +135,9 @@ final class HilosNotificationDeliveriesLiveTest extends TestCase
      */
     public function testARetriedDeliveryLeavesAWindowOfFailedOnes(): void
     {
-        $shown = [self::delivery(12, '2026-09-23 10:00:02', 'failed'), self::delivery(11, '2026-09-23 10:00:01', 'failed')];
+        $shown = [self::delivery(12, 1790157602000, 'failed'), self::delivery(11, 1790157601000, 'failed')];
         $this->boot(
-            [self::delivery(12, '2026-09-23 10:00:02'), $shown[1]],
+            [self::delivery(12, 1790157602000), $shown[1]],
             $shown,
             [HilosNotificationDeliveriesTable::FILTER_STATUS => 'failed'],
         );
@@ -156,21 +155,19 @@ final class HilosNotificationDeliveriesLiveTest extends TestCase
      * Builds one delivery row of the journal.
      *
      * @param int $id Delivery id
-     * @param int|string $createdAt Moment the delivery was created
+     * @param int $createdAt Moment the delivery was created
      * @param string $status Delivery status
      * @return HilosNotificationDeliveryTableRow Delivery row
      */
-    private static function delivery(int $id, int|string $createdAt, string $status = 'pending'): HilosNotificationDeliveryTableRow
+    private static function delivery(int $id, int $createdAt, string $status = 'pending'): HilosNotificationDeliveryTableRow
     {
-        $createdAtMs = is_int($createdAt) ? $createdAt : TimeHelper::sqlToMs($createdAt);
-
         return new HilosNotificationDeliveryTableRow(
             rowKey: $id,
-            createdAt: $createdAtMs,
+            createdAt: $createdAt,
             channel: 'email',
             status: $status,
             attempts: 1,
-            deliveredAt: $status === 'sent' ? $createdAtMs : null,
+            deliveredAt: $status === 'sent' ? $createdAt : null,
             lastError: null,
             userId: 3,
             userLabel: null,

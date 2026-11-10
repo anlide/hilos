@@ -6,6 +6,8 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\Mutation\TableMutationType;
@@ -17,7 +19,6 @@ use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveryTableRow;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration test: the delivery journal reads a changed row again, and places it, against a live database (HIL-1049).
@@ -38,10 +39,10 @@ final class NotificationDeliveryJournalLiveIntegrationTest extends FrameworkInte
     ];
 
     /** Moment the older delivery was made. */
-    private const string EARLIER = '2026-09-23 10:00:00';
+    private const int EARLIER = 1790157600123;
 
     /** Moment the newer deliveries were made, the same second for both. */
-    private const string LATER = '2026-09-23 10:00:01';
+    private const int LATER = 1790157601123;
 
     /** Notification every delivery of these cases carries. */
     private int $notificationId = 0;
@@ -62,7 +63,7 @@ final class NotificationDeliveryJournalLiveIntegrationTest extends FrameworkInte
         self::runStubs(down: false);
         Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (3, 'Recipient')");
         Database::sql(
-            'INSERT INTO `hilos_notification` (`user_id`, `type`, `title`) VALUES (?, ?, ?)',
+            'INSERT INTO `hilos_notification` (`user_id`, `type`, `title`, `created_at`) VALUES (?, ?, ?, 1767225600123)',
             [3, 'backup.completed', 'Backup is ready'],
         );
         $this->notificationId = (int) Database::sql('SELECT MAX(`id`) AS id FROM `hilos_notification`')->firstRow()['id'];
@@ -93,7 +94,7 @@ final class NotificationDeliveryJournalLiveIntegrationTest extends FrameworkInte
         $row = $mutation->row;
         $this->assertInstanceOf(HilosNotificationDeliveryTableRow::class, $row);
         $this->assertSame($id, $row->rowKey);
-        $this->assertSame(TimeHelper::sqlToMs(self::EARLIER), $row->createdAt);
+        $this->assertSame(self::EARLIER, $row->createdAt);
         $this->assertSame('pending', $row->status);
         $this->assertSame('Backup is ready', $row->notificationTitle);
         $this->assertSame('backup.completed', $row->notificationType);
@@ -117,7 +118,31 @@ final class NotificationDeliveryJournalLiveIntegrationTest extends FrameworkInte
         $row = $mutation->row;
         $this->assertInstanceOf(HilosNotificationDeliveryTableRow::class, $row);
         $this->assertSame('sent', $row->status);
-        $this->assertSame(TimeHelper::sqlToMs(self::LATER), $row->deliveredAt);
+        $this->assertSame(self::LATER, $row->deliveredAt);
+    }
+
+    public function testDeliveredMomentWindowsKeepMillisecondsAndNulls(): void
+    {
+        $pending = $this->insertDelivery(self::EARLIER);
+        $earlier = $this->insertDelivery(self::EARLIER);
+        $later = $this->insertDelivery(self::LATER);
+        Database::sql('UPDATE hilos_notification_delivery SET delivered_at = ? WHERE id = ?', [self::EARLIER, $earlier]);
+        Database::sql('UPDATE hilos_notification_delivery SET delivered_at = ? WHERE id = ?', [self::LATER, $later]);
+        $table = new HilosNotificationDeliveriesTable();
+        $sort = TableSortOrderDTO::of(new TableSortDTO(HilosNotificationDeliveryTableRow::deliveredAt, TableConstants::ORDER_ASC));
+        $first = $table->getPage(new TableQueryDTO(sort: $sort, limit: 1));
+        self::assertSame([$pending], $this->rowKeys($first->rows));
+        self::assertSame(['delivered_at' => null, 'id' => $pending], $first->lastAnchor->values);
+        $second = $table->getPage(new TableQueryDTO(
+            sort: $sort, limit: 1, anchor: $first->lastAnchor, anchorDirection: TableAnchorDirection::After,
+        ));
+        self::assertSame([$earlier], $this->rowKeys($second->rows));
+        self::assertSame(['delivered_at' => self::EARLIER, 'id' => $earlier], $second->lastAnchor->values);
+        $third = $table->getPage(new TableQueryDTO(
+            sort: $sort, limit: 1, anchor: $second->lastAnchor, anchorDirection: TableAnchorDirection::After,
+        ));
+        self::assertSame([$later], $this->rowKeys($third->rows));
+        self::assertSame(self::LATER, $third->rows[0]->deliveredAt);
     }
 
     public function testADeliveryThatIsNotThereBuildsNoMutation(): void
@@ -146,10 +171,10 @@ final class NotificationDeliveryJournalLiveIntegrationTest extends FrameworkInte
 
         $this->assertNotNull($snapshot->firstAnchor);
         $this->assertIsInt($snapshot->firstAnchor->values['created_at']);
-        $this->assertSame(TimeHelper::sqlToMs(self::LATER), $snapshot->firstAnchor->values['created_at']);
+        $this->assertSame(self::LATER, $snapshot->firstAnchor->values['created_at']);
         $this->assertInstanceOf(HilosNotificationDeliveryTableRow::class, $row);
         $this->assertIsInt($row->createdAt);
-        $this->assertSame(TimeHelper::sqlToMs(self::LATER), $row->createdAt);
+        $this->assertSame(self::LATER, $row->createdAt);
         $place = $table->placeRowAgainst($row, $snapshot->firstAnchor, $query);
         $this->assertNotNull($place);
         $this->assertLessThan(0, $place);
@@ -300,15 +325,16 @@ final class NotificationDeliveryJournalLiveIntegrationTest extends FrameworkInte
     /**
      * Writes one pending email delivery of the seeded notification.
      *
-     * @param string $createdAt Moment the delivery was made
+     * @param int $createdAt Moment the delivery was made
      * @param string $channel Delivery channel
      * @return int Id of the new delivery
      * @throws DatabaseException When the row cannot be written
      */
-    private function insertDelivery(string $createdAt, string $channel = 'email'): int
+    private function insertDelivery(int $createdAt, string $channel = 'email'): int
     {
         Database::sql(
-            'INSERT INTO `hilos_notification_delivery` (`notification_id`, `channel`, `status`, `created_at`) VALUES (?, ?, ?, ?)',
+            'INSERT INTO `hilos_notification_delivery` (`notification_id`, `channel`, `status`, `created_at`, `updated_at`) '
+            . 'VALUES (?, ?, ?, ?, 1767225600123)',
             [$this->notificationId, $channel, 'pending', $createdAt],
         );
 
@@ -319,18 +345,19 @@ final class NotificationDeliveryJournalLiveIntegrationTest extends FrameworkInte
      * Writes several deliveries in one SQL statement to test the count ceiling.
      *
      * @param int $count Deliveries to write
-     * @param string $createdAt Moment every delivery was made
+     * @param int $createdAt Moment every delivery was made
      * @throws DatabaseException When the rows cannot be written
      */
-    private function insertDeliveries(int $count, string $createdAt): void
+    private function insertDeliveries(int $count, int $createdAt): void
     {
-        $values = implode(', ', array_fill(0, $count, '(?, ?, ?, ?)'));
+        $values = implode(', ', array_fill(0, $count, '(?, ?, ?, ?, 1767225600123)'));
         $params = [];
         for ($index = 0; $index < $count; $index++) {
             array_push($params, $this->notificationId, 'email', 'pending', $createdAt);
         }
         Database::sql(
-            'INSERT INTO `hilos_notification_delivery` (`notification_id`, `channel`, `status`, `created_at`) VALUES ' . $values,
+            'INSERT INTO `hilos_notification_delivery` (`notification_id`, `channel`, `status`, `created_at`, `updated_at`) '
+            . 'VALUES ' . $values,
             $params,
         );
     }
