@@ -379,8 +379,8 @@ rule and the scenario's behavioral preconditions; changing a spec does not
 require drawing its suitable zones again.
 
 Draw a new or replacement browser zone **once, while writing the test**, with
-the demo's `test:e2e-time-zone` Composer command. The six currently active
-ordinary demos provide it; each planned carrier must supply the same interface
+the demo's `test:e2e-time-zone` Composer command. Active ordinary demos provide
+it; each planned carrier must supply the same interface
 under its activation marker in the
 [ordinary carrier table](../testing.md#ordinary-demo-carriers).
 `binance-btc-tracker` and `online-testing` also provide
@@ -526,7 +526,7 @@ additions before execution, rather than freezing their file list today.
 | `roblox-game-server` / Vue | **Change Log/Moderation/Communications:** `chat/{change-log,change-log-table,change-log-tables,moderation,communications}`. **Theme:** `chat/{theme-account,theme-guest}`. **Daemon/Backup/Logs/maintenance:** `binance-btc-tracker/{daemon,backup,backup-reopen,logs,logs-rotation,maintenance-restore,maintenance-words}`. | (not in the code yet — HIL-2017) |
 | `solar-system-model` / React | **Account/profile:** `tasks/{profile,profile-data,profile-time-zone,profile-photo,account-deletion}`. **Theme/Analytics:** `tasks/{theme-account,theme-guest,analytics,analytics-browser-session}`. **Table geometry:** the entire independent Geometry area in `ecommerce-shop/users`, with its frontend fixture; excludes Users scenarios. | (not in the code yet — HIL-2018) |
 | `file-gallery-manager` / React | **i18n lifecycle:** `tasks/{i18n-country-names,i18n-country,i18n-language-names,i18n-language,i18n-locale,i18n-overview}`. **Daemon/Change Log/Communications:** `tasks/{daemon,change-log,change-log-table,change-log-tables,communications}`. **Users:** the entire Users remainder of `ecommerce-shop/users` after Geometry is separated, including F-001. | (not in the code yet — HIL-2019) |
-| `preferans` / Angular | **i18n lifecycle:** `polls/{i18n-country-names,i18n-country,i18n-language-names,i18n-language,i18n-locale,i18n-overview}`. **Theme/Appearance:** `polls/{theme-account,theme-guest,appearance}`. **Analytics:** `polls/{analytics,analytics-browser-session}`. | (not in the code yet — HIL-2020) |
+| `preferans` / Angular | **i18n lifecycle:** `preferans/{i18n-country-names,i18n-country,i18n-language-names,i18n-language,i18n-locale,i18n-overview}`. **Theme/Appearance:** `preferans/{theme-account,theme-guest,appearance}`. **Analytics:** `preferans/{analytics,analytics-browser-session}`. | Active; transferred from polls (HIL-2020) |
 | `concert-tickets` / Angular | **Daemon/Change Log:** `polls/{daemon,change-log,change-log-table,change-log-tables}`. **Profile/account deletion:** `polls/{profile,profile-data,profile-time-zone,profile-photo,account-deletion}`. | (not in the code yet — HIL-2021) |
 
 **Move a whole area within its view framework, leaving no second proof behind.**
@@ -622,7 +622,7 @@ polls (Angular) → online-testing (Angular).
 | Second factor | polls: second-factor | polls | HIL-1325 |
 | Legal | polls: legal-admin, legal-reconsent, legal-terms, legal-consent, legal-agreements | polls | HIL-1325 |
 | Data and privacy | polls: data-export, privacy-erase, impersonation-settings | polls | HIL-1325 |
-| Languages and countries — each kit | binance-btc-tracker, tasks, polls: the 25 i18n-* specs | binance-btc-tracker (Vue), tasks (React), polls (Angular) | HIL-1504 |
+| Languages and countries — each kit | the 25 i18n-* areas across binance-btc-tracker, tasks, polls and preferans; Preferans carries the six transferred lifecycle specs | binance-btc-tracker (Vue), tasks (React), polls and preferans (Angular) | HIL-1504 |
 
 tasks switched on Ways to sign in (`/profile/sign-in`) to carry them (HIL-1324);
 polls switched on Ways to sign in, Sessions and Agreements of the profile, and its
@@ -690,13 +690,14 @@ after a refusal — is one test of the same title in `profile.spec.ts` of tasks
 and polls. None of these files carries a `spec-owner` line; chat's message and
 message picture moderation specs do (HIL-1638).
 
-The current Analytics section proofs are in chat (Vue), tasks (React) and polls
-(Angular): each carries `analytics.spec.ts` and `analytics-browser-session.spec.ts`.
-Their next owners are the targets above, once their activation leaves land.
+The current Analytics section proofs are in chat (Vue), tasks (React) and
+preferans (Angular): each carries `analytics.spec.ts` and
+`analytics-browser-session.spec.ts`. The Angular pair moved from polls; the
+remaining Vue and React transfers are still planned in the targets above.
 The three session specs share one test title, while the titles in
 `analytics.spec.ts` follow the pages each kit serves. The actions the specs look
 at are the registration of the person and of the administrator, because tasks
-and polls declare no actions of their own; no demo's product takes part in them,
+and preferans declare no actions of their own; no demo's product takes part in them,
 and they carry no `spec-owner` line (HIL-1422).
 
 online-testing additionally carries cluster browser proofs for Analytics and
@@ -715,16 +716,16 @@ probes, product shell smoke and cluster proofs keep the owners below:
 
 | Proof | Specs | Lives in |
 |---|---|---|
-| Guest storage, choices, System media, reset and reload/new tabs; account header/profile delivery between independent sessions, another person's isolation, an open receiving modal, keyboard/focus | theme-guest, theme-account | chat (Vue), tasks (React), polls (Angular) |
+| Guest storage, choices, System media, reset and reload/new tabs; account header/profile delivery between independent sessions, another person's isolation, an open receiving modal, keyboard/focus | theme-guest, theme-account | chat (Vue), tasks (React), preferans (Angular) |
 | Stale Dark reconnect after explicit reset without adoption; first login adoption by a never-chosen account; synchronized account's cached first frame | theme-account | chat only |
-| Both Appearance editors, live viewer rows, Save/Enter refusal, default and Off/On delivery, discard, keyboard/focus | appearance | binance-btc-tracker (Vue), tasks (React), polls (Angular) |
+| Both Appearance editors, live viewer rows, Save/Enter refusal, default and Off/On delivery, discard, keyboard/focus | appearance | binance-btc-tracker (Vue), tasks (React), preferans (Angular) |
 | Built head: remembered Dark and fresh System dark on `/` and `/about`, HTML attribute and painted background with application JS blocked | theme-first-frame | chat (Vue/Vite), ecommerce-shop (React/Vite), online-testing (Angular build/SSG) |
 | Product shell account header/reload/reset; also guest choices and the Appearance card with its two live rows in the React and Angular shells | theme-smoke | binance-btc-tracker, ecommerce-shop, online-testing |
 | Three masters: live settings, independent account choices and reset, new tabs and stale Dark reconnect without adoption | cluster/live/theme | binance-btc-tracker |
 
 Only the shell smoke carries `spec-owner: demo`. The guest/account, Appearance
 and first-frame specs are framework proofs. Profile Off/On stays within each
-installation: chat changes its existing settings page; tasks and polls use
+installation: chat changes its existing settings page; tasks and preferans use
 their own Appearance. The build probes cover a cached pick or a fresh browser's
 System fallback, not a server account choice that browser has never received.
 The full production build/head sweep already checks every emitted entrypoint.
@@ -748,10 +749,10 @@ binance-btc-tracker additionally carries the separate cluster proof in
 `tests/e2e/cluster/live/change-log.spec.ts`: one remote writer's block receipt
 reads identically through every master (HIL-1465).
 
-The current languages and countries section is proved on every kit by the same 25
-`i18n-*.spec.ts` files: binance-btc-tracker (Vue), tasks (React) and polls
-(Angular). The matrix moves only the six named lifecycle specs as one area in
-React and Angular; the other i18n areas stay with their current owners, and
+The current languages and countries coverage spans the same 25
+`i18n-*.spec.ts` areas across binance-btc-tracker (Vue), tasks (React), polls
+(Angular) and preferans (Angular). Preferans carries the six lifecycle specs
+transferred from polls; the other i18n areas stay with their current owners, and
 Vue's i18n stays in binance-btc-tracker. Their test titles match but for the
 country head scenarios of `i18n-country-card` and `i18n-country-name-write`,
 which each kit splits its own way. The Vue kit moved from chat to
@@ -1677,17 +1678,18 @@ list/People/Person/session outlet, including keyboard navigation and table
 semantics; its keyboard path starts at the list, with the table name and the
 Last seen sort, then People and Person, the session by Enter and the return by
 its crumb.
-Polls' Angular `analytics.spec.ts` uses the shared helpers with the `'angular'`
+Preferans' Angular `analytics.spec.ts` uses the shared helpers with the `'angular'`
 kit. It checks that each overview count opens Browser sessions on its period,
 and that Period, Reset, F5, Back, Forward and an unknown route tail preserve the
 addressed period; it also covers a real session from the list and
 People-to-Person navigation with the captured Today context. Its separate
 `analytics-browser-session.spec.ts` checks the real sign-in session's privacy
 and action order, the shared session head, F5 and return to the list by its
-crumb. The Analytics accessibility group in `a11y.spec.ts` checks count-link
-names and Enter on a period, the Browser sessions table name and sort, keyboard
-navigation to a session and return by its crumb, plus `aria-current` and focus
-on the People return. These are the Tasks React and Polls Angular carriers;
+crumb. Polls retains the Angular Analytics accessibility group in
+`demo/polls/tests/e2e/tests/a11y.spec.ts`, which checks count-link names and
+Enter on a period, the Browser sessions table name and sort, keyboard navigation
+to a session and return by its crumb, plus `aria-current` and focus on the People
+return. These are the Tasks React and Preferans Angular carriers;
 other demo carriers keep their own existing scenario coverage.
 
 The cluster proof also uses `cluster.ts`: `readClusterBrowserStand` validates
@@ -1732,10 +1734,10 @@ socket opens.
 live in `framework/frontend/e2e/i18nOverview.ts` and are exported from
 `framework/frontend/e2e/index.ts`. The first compares both tiles with one
 wire summary; the second collects summaries from the `page_response` of the
-`hilos_i18n` root. Binance's, Tasks' and Polls' overview specs call them:
+`hilos_i18n` root. Binance's, Tasks' and Preferans' overview specs call them:
 `demo/binance-btc-tracker/tests/e2e/tests/i18n-overview.spec.ts`,
 `demo/tasks/tests/e2e/tests/i18n-overview.spec.ts` and
-`demo/polls/tests/e2e/tests/i18n-overview.spec.ts`.
+`demo/preferans/tests/e2e/tests/i18n-overview.spec.ts`.
 
 ### The Change Log section — names and checks
 

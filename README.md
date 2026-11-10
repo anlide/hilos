@@ -130,6 +130,7 @@ The list below describes what each project is for. Some of these catalogs are st
 - [personal-homepage](demo/personal-homepage/README.md) — a personal site with published content pages
 - [pmd](demo/pmd/README.md) — a MySQL web administration interface
 - [polls](demo/polls/README.md) — polls, responses and results
+- [preferans](demo/preferans/README.md) — Sochi preferans card game
 - [private-clinic](demo/private-clinic/README.md) — a clinic site, doctor appointments, insurance and video visits
 - [research-lab](demo/research-lab/README.md) — samples, protocols, experiments and AI-assisted pattern discovery
 - [roblox-game-server](demo/roblox-game-server/README.md) — ratings, leagues and cross-server events for Roblox games

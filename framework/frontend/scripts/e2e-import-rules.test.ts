@@ -17,6 +17,7 @@ const demos = [
   'ecommerce-shop',
   'online-testing',
   'polls',
+  'preferans',
   'tasks',
 ]
 const ruleId = '@typescript-eslint/no-restricted-imports'
@@ -50,7 +51,7 @@ describe.each(demos)('%s e2e import guard', (demo) => {
   const eslint = new ESLint({
     cwd,
     overrideConfigFile: join(cwd, 'eslint.config.mjs'),
-    // All six configs share one parser in this process, so its inferred root
+    // All demo configs share one parser in this process, so its inferred root
     // would be ambiguous. Production lint starts in one demo at a time.
     overrideConfig: {
       languageOptions: { parserOptions: { tsconfigRootDir: cwd } },

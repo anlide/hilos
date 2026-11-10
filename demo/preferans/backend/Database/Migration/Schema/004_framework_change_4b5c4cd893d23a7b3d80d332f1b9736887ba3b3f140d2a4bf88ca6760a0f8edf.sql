@@ -1,0 +1,4 @@
+-- hilos-framework: {"format":1,"kind":"change","units":["user"],"parts":[{"changeId":"20261110024242374685_HIL-1924_people_moments","unit":"user","upSha256":"7ae00a3b4fa3d9d136d4c7785bb0ba3fcbed7b1b39dc8c82c7930b3b3a47c51f","downSha256":"2703ac0fb347a90eeabc665e55ca4768dbcf8fa54a6723f0974af4317cefa419"}],"upSha256":"7ae00a3b4fa3d9d136d4c7785bb0ba3fcbed7b1b39dc8c82c7930b3b3a47c51f","downSha256":"2703ac0fb347a90eeabc665e55ca4768dbcf8fa54a6723f0974af4317cefa419"}
+ALTER TABLE `hilos_user` ADD COLUMN `__hil1924_last_activity` BIGINT NULL AFTER `last_activity`;
+UPDATE `hilos_user` SET `__hil1924_last_activity` = UNIX_TIMESTAMP(`last_activity`) * 1000;
+ALTER TABLE `hilos_user` DROP INDEX `idx_user_last_activity`, DROP COLUMN `last_activity`, CHANGE COLUMN `__hil1924_last_activity` `last_activity` BIGINT NULL DEFAULT NULL, ADD KEY `idx_user_last_activity` (`last_activity`);

@@ -112,6 +112,7 @@ $demos = [
     'binance-btc-tracker' => ['check' => 10, 'php' => 15, 'build' => 13, 'e2e' => 755],
     'ecommerce-shop' => ['check' => 9, 'php' => 15, 'e2e' => 102],
     'online-testing' => ['check' => 15, 'php' => 15, 'e2e' => 111],
+    'preferans' => ['check' => 15, 'php' => 15, 'e2e' => 360],
 ];
 
 $steps = [

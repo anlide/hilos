@@ -1,0 +1,12 @@
+# Build artifacts and the npm-managed lockfile are not formatted by Prettier.
+# .angular/ is the Angular CLI cache; the test stand mounts a volume there.
+dist/
+out-tsc/
+.angular/
+package-lock.json
+
+# The license inventory snapshot is written by a generator, not by hand.
+src/generated/
+
+# Markdown docs are hand-authored to the repo's documentation style, not Prettier's.
+**/*.md

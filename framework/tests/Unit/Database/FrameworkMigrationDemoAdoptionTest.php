@@ -26,13 +26,15 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         'session', 'setting', 'step_up', 'user', 'user_merge', 'user_photo', 'user_rename', 'user_verification', 'verifier_circle',
     ];
 
-    public function testSixReviewedAdoptionsAndCurrentInstallsHaveExactCoverageAndRepeatWithoutNewFiles(): void
+    /** Keep historical origins fixed while requiring exact current coverage across each complete track. */
+    public function testReviewedAdoptionsAndBaselineHaveExactCoverageAndRepeatWithoutNewFiles(): void
     {
         $root = dirname(__DIR__, 4);
         $projects = FrameworkMigrationProjectRegistry::load($root . '/framework-projects.json');
         self::assertSame([
             'Demo\\Chat\\Hilos', 'Demo\\Tasks\\Hilos', 'Demo\\Polls\\Hilos',
             'Demo\\BinanceBtcTracker\\Hilos', 'Demo\\EcommerceShop\\Hilos', 'Demo\\OnlineTesting\\Hilos',
+            'Demo\\Preferans\\Hilos',
         ], array_column($projects, 'facade'));
         $indices = [97, 53, 53, 43, 42, 42];
         $browserTimeZoneIndices = [99, 59, 59, 45, 45, 45];
@@ -62,6 +64,144 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             'legal_acceptance_export' => 'ee22a8b08ebfa4d74799509ddb26680c80f2ac2c21e8aa15c9a2abf77183a922',
         ];
         foreach ($projects as $index => $project) {
+            if ($index === 6) {
+                $base = $project->root . '/001_framework_baseline';
+                $origin = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+                self::assertSame(FrameworkMigrationOrigin::BASELINE, $origin->kind);
+                self::assertSame([
+                    'access_log', 'account_deletion', 'account_erasure_assignment', 'account_erasure_operation',
+                    'account_erasure_result', 'admin_view_mode_latch', 'analytics', 'country', 'country_name',
+                    'data_export', 'database_marker', 'i18n_reflow', 'identity', 'language', 'language_name',
+                    'legal_acceptance', 'legal_acceptance_export', 'locale', 'migration', 'migration_claim',
+                    'notification', 'notification_delivery', 'notification_preference', 'oauth_provider',
+                    'passkey_credential', 'push_subscription', 'registration_reservation', 'second_factor',
+                    'second_factor_backup_code', 'second_factor_reset', 'second_factor_setting', 'second_factor_trust',
+                    'session', 'setting', 'step_up', 'user', 'user_merge', 'user_rename', 'user_verification', 'verifier_circle',
+                ], $origin->units);
+                self::assertSame('521ea376d5905558e1bc9f1243c9b9ab47950670d828662f05282e649f6d9c0f', $origin->upSha256);
+                self::assertSame('248362e38b91114315d084158e8cad7c1159e4a3e40147b2c917969547968fd6', $origin->downSha256);
+                $baselinePartKeys = [
+                    '20261021021039718057_HIL-1580_add_user_time_zone/user',
+                    '20261022124515804554_HIL-1582_browser_time_zones/session',
+                    '20261022124515804554_HIL-1582_browser_time_zones/user',
+                    '20261023065022000000_HIL-1653_identity_display_fields/identity',
+                    '20261101093551800031_HIL-1579_export_time_zones/data_export',
+                    '20261101093551800031_HIL-1579_export_time_zones/legal_acceptance_export',
+                    '20261108074007375591_HIL-1936_account_erasure_storage/account_erasure_assignment',
+                    '20261108074007375591_HIL-1936_account_erasure_storage/account_erasure_operation',
+                    '20261108080825608007_HIL-1893_delivery_routing_key/notification_delivery',
+                    '20261108210743046351_HIL-1937_account_erasure_results/account_erasure_result',
+                    '20261109000848893922_HIL-1918_bootstrap_moments/admin_view_mode_latch',
+                    '20261109000848893922_HIL-1918_bootstrap_moments/database_marker',
+                    '20261109000848893922_HIL-1918_bootstrap_moments/migration_claim',
+                    '20261109072435317521_HIL-1987_account_operation_tables/account_erasure_assignment',
+                    '20261109072435317521_HIL-1987_account_operation_tables/account_erasure_operation',
+                    '20261109072435317521_HIL-1987_account_operation_tables/account_erasure_result',
+                    '20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_assignment',
+                    '20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_operation',
+                    '20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_result',
+                    '20261109120150360881_HIL-1919_session_moments/session',
+                    '20261109120150360881_HIL-1919_session_moments/verifier_circle',
+                    '20261109185924000000_HIL-1927_analytics_signed_moments/analytics',
+                    '20261110021316313226_HIL-1923_notification_moments/notification',
+                    '20261110021316313226_HIL-1923_notification_moments/notification_delivery',
+                    '20261110021316313226_HIL-1923_notification_moments/notification_preference',
+                    '20261110021316313226_HIL-1923_notification_moments/push_subscription',
+                ];
+                $baselineParts = array_map(static function (string $key) use ($catalog): FrameworkMigrationPart {
+                    [$changeId, $unit] = explode('/', $key);
+
+                    return $catalog->part($changeId, $unit);
+                }, $baselinePartKeys);
+                self::assertSame($this->partRecords($baselineParts), $this->partRecords($origin->parts));
+                $laterParts = [
+                    'access_log' => [
+                        'changeId' => '20261110024242374685_HIL-1924_people_moments',
+                        'file' => '002_framework_change_c7ff605f8c01200ff32f0076a3fda33da471236004443ec9eabf0cc20c482a17',
+                        'upSha256' => '985119b2b3087d2a79507f6488053d92f4ef5bca0b93ea44559ffc152fa2f739',
+                        'downSha256' => '97c6dc54aa24641cc4261656213525dde52fd3e43bbf0ba7c1905717b992df8f',
+                        'requires' => [],
+                    ],
+                    'account_deletion' => [
+                        'changeId' => '20261110024242374685_HIL-1924_people_moments',
+                        'file' => '003_framework_change_2c19121389061e61ddbe804fb2d8d64869cf13b5a44fc40c6eff8d698a870920',
+                        'upSha256' => '5474c8b99adbcff899089e668bf7f4d36f3d1ca9b7a762bcdfe8f22fab944f2d',
+                        'downSha256' => '4199b444b0f6156749e13becb8345a24c429fa18cbad48a0866b177fede49168',
+                        'requires' => [],
+                    ],
+                    'user' => [
+                        'changeId' => '20261110024242374685_HIL-1924_people_moments',
+                        'file' => '004_framework_change_4b5c4cd893d23a7b3d80d332f1b9736887ba3b3f140d2a4bf88ca6760a0f8edf',
+                        'upSha256' => '7ae00a3b4fa3d9d136d4c7785bb0ba3fcbed7b1b39dc8c82c7930b3b3a47c51f',
+                        'downSha256' => '2703ac0fb347a90eeabc665e55ca4768dbcf8fa54a6723f0974af4317cefa419',
+                        'requires' => ['20261022124515804554_HIL-1582_browser_time_zones/user'],
+                    ],
+                    'user_merge' => [
+                        'changeId' => '20261110024242374685_HIL-1924_people_moments',
+                        'file' => '005_framework_change_0901c07b990c53069c79ba8694c6da343bd217cfe51beb92f1ba1a004535100c',
+                        'upSha256' => '3c8759e3317adb6b134393b5ee7e5e53c915d8c0f8ba0eed78712bdf6c0f7aa4',
+                        'downSha256' => '798a3786c4ac7e5da18e8ded7ac5730fd4f405b14b753011cc81e2f754fdaf96',
+                        'requires' => [],
+                    ],
+                    'user_rename' => [
+                        'changeId' => '20261110024242374685_HIL-1924_people_moments',
+                        'file' => '006_framework_change_c929a65b572002203b2611d8cb0bddcfe66a08df04cd8a6298ea9b50ef54cb8c',
+                        'upSha256' => '9c9dbed3f3eb27fb01f4184eb9ba36b0bec2021157c617d81bd7238e0086c234',
+                        'downSha256' => '41ae942462cb133e422a04f20dad34e71b8547464fc83151238b454bcd8be53b',
+                        'requires' => [],
+                    ],
+                    'identity' => [
+                        'changeId' => '20261110014712983573_HIL-1920_sign_in_moments',
+                        'file' => '007_framework_change_23ffd88b4e80df8cab33c4058276195ed1510da449aaaade6637237219830a47',
+                        'upSha256' => '8734c4b591797b213be5ad64cd6f39c0bf0ecd6d303ed0ef3aa4f17954d830ab',
+                        'downSha256' => '4f9034b57aff3dd5ea6cbc19fc9675ff67ce7dab81ce5286d458cff1be4cbbbe',
+                        'requires' => ['20261023065022000000_HIL-1653_identity_display_fields/identity'],
+                    ],
+                    'oauth_provider' => [
+                        'changeId' => '20261110014712983573_HIL-1920_sign_in_moments',
+                        'file' => '008_framework_change_459b21cbd9183b9fa308440ab4ea0165ccbf1f9fa80825f1042831270e957f12',
+                        'upSha256' => '00101162d077a303ff19fcf63dfc46cf939c8c46456cc116fc363db053ad55f7',
+                        'downSha256' => '89e0850764c106553b179088237d5ffb88b4c39de912b018e059dbf306a52b2d',
+                        'requires' => [],
+                    ],
+                    'passkey_credential' => [
+                        'changeId' => '20261110014712983573_HIL-1920_sign_in_moments',
+                        'file' => '009_framework_change_f94e7f65cc568746bc4d64c19144c308b5b6699773dd6f3a80738c6486dc0825',
+                        'upSha256' => '69e8005e59e892f37dffd790a24c23e5068941486f2bd609a0dfe2e7e80a7337',
+                        'downSha256' => 'b3f2b3468ce4417b40ab4076ee981f2445f0d40c44b81671e26dc2ad78a58ee7',
+                        'requires' => [],
+                    ],
+                ];
+                $origins = [$origin];
+                $coveredParts = $origin->parts;
+                foreach ($laterParts as $unit => $expected) {
+                    $base = $project->root . '/' . $expected['file'];
+                    $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+                    $changeId = $expected['changeId'];
+                    self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+                    self::assertSame([$unit], $change->units);
+                    self::assertCount(1, $change->parts);
+                    self::assertSame($changeId, $change->parts[0]->changeId);
+                    self::assertSame($changeId . '/' . $unit, $change->parts[0]->key());
+                    $source = $catalog->part($changeId, $unit);
+                    self::assertSame([$source->toArray()], $this->partRecords($change->parts));
+                    self::assertSame($expected['upSha256'], $source->upSha256);
+                    self::assertSame($expected['downSha256'], $source->downSha256);
+                    self::assertSame($expected['upSha256'], $change->upSha256);
+                    self::assertSame($expected['downSha256'], $change->downSha256);
+                    self::assertFalse($source->introducesUnit);
+                    self::assertSame($expected['requires'], $source->requires);
+                    $origins[] = $change;
+                    $coveredParts[] = $change->parts[0];
+                }
+                $selectedUnits = array_column($schema->selectedUnits($project->facade), 'key');
+                self::assertSame(
+                    $this->partRecords($catalog->partsForUnits($selectedUnits)),
+                    $this->partRecords($coveredParts),
+                );
+                self::assertSame([], $catalog->missingParts($selectedUnits, $origins));
+                continue;
+            }
             $base = $project->root . '/' . sprintf('%03d', $indices[$index]) . '_adopt_framework_catalog';
             $up = FsPath::read($base . '.sql');
             $down = FsPath::read($base . '_down.sql');
@@ -548,6 +688,17 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);
-        self::assertSame([[], [], [], [], [], []], array_column($plans, 'publications'));
+        self::assertSame([[], [], [], [], [], [], []], array_column($plans, 'publications'));
+    }
+
+    /**
+     * @param list<FrameworkMigrationPart> $parts Exact source or origin parts
+     * @return list<array{changeId: string, unit: string, upSha256: string, downSha256: string}> Full records sorted by identity
+     */
+    private function partRecords(array $parts): array
+    {
+        usort($parts, static fn (FrameworkMigrationPart $left, FrameworkMigrationPart $right): int => $left->key() <=> $right->key());
+
+        return array_map(static fn (FrameworkMigrationPart $part): array => $part->toArray(), $parts);
     }
 }

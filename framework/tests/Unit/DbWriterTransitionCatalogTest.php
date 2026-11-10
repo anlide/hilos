@@ -42,13 +42,13 @@ final class DbWriterTransitionCatalogTest extends TestCase
     /** Test-local loader handle, released with this suite; no application state is retained. */
     private static ClassLoader $demoLoader;
 
-    /** Loads the real six facades without booting any application or its DB. */
+    /** Loads the real demo facades without booting any application or its DB. */
     public static function setUpBeforeClass(): void
     {
         self::$demoLoader = new ClassLoader();
         foreach (['Chat' => 'chat', 'Tasks' => 'tasks', 'Polls' => 'polls',
             'BinanceBtcTracker' => 'binance-btc-tracker', 'EcommerceShop' => 'ecommerce-shop',
-            'OnlineTesting' => 'online-testing'] as $namespace => $directory) {
+            'OnlineTesting' => 'online-testing', 'Preferans' => 'preferans'] as $namespace => $directory) {
             self::$demoLoader->addPsr4('Demo\\' . $namespace . '\\', __DIR__ . '/../../../demo/' . $directory . '/backend');
         }
         self::$demoLoader->register();
@@ -69,6 +69,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
         yield 'binance' => ['Demo\\BinanceBtcTracker', false, true, false, false, true];
         yield 'shop' => ['Demo\\EcommerceShop', false, false, false, false, false];
         yield 'testing' => ['Demo\\OnlineTesting', false, false, false, false, false];
+        yield 'preferans' => ['Demo\\Preferans', false, false, false, false, false];
     }
 
     /**

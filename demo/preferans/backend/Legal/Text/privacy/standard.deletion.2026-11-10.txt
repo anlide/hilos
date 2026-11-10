@@ -1,0 +1,5 @@
+You may request deletion of your account. Analytics is an exception to full erasure: after deletion, the numeric account number, events attributed to it, and recorded network addresses remain. Those addresses may allow a person to be recognized again.
+
+Analytics records when the service is used and from which network address, browser and language details, visited pages and their route parameters, and the names of actions and internal signals. It does not store action contents or arbitrary API request bodies.
+
+The raw analytics currently has no automatic deletion period. It remains until a retention and deletion mechanism is introduced. Your data copy includes events attributed to your account, including accounts folded into it; events of a different person using the same browser are not treated as yours.

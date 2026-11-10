@@ -1,0 +1,9 @@
+{
+  "/_hilos/data-export": {
+    "target": "http://preferans-daemon-local:8090"
+  },
+  "/ws": {
+    "target": "http://preferans-daemon-local:8092",
+    "ws": true
+  }
+}

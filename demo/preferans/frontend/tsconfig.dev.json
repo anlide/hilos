@@ -1,0 +1,172 @@
+/* Dev + check config: consume the SDK from source for a live edit loop, the way
+   the Vite demos do. The `paths` below redirect @hilos/angular and @hilos/core
+   to their `src`, so `ng serve` (the development build) and `npm run check` pick
+   up an SDK edit immediately, with no ng-packagr rebuild. The production build
+   keeps tsconfig.app.json, where the SDK resolves to its ng-packagr dist (the
+   package `main`/`types`), so e2e and prod test the shipped FESM.
+
+   Why `paths` and not the package `development` export condition (the mechanism
+   the Vite demos use): @hilos/angular is built by ng-packagr, which owns the
+   `exports` of its dist package.json and warns when the source package.json
+   declares conflicting `types`/`default` conditions — so the source package
+   stays plain (`main`/`module`/`types`) and the dev-source redirect lives here.
+   The @angular/* pins collapse the duplicate copies the SDK reaches through its
+   real path (NG0203/NG3004); they are restated here because a child tsconfig
+   replaces `paths` wholesale instead of merging it.
+
+   Resolve every public SDK entry to its real source root OUTSIDE node_modules.
+   esbuild ignores tsconfig paths for importers inside node_modules; resolving
+   there mixes nested public imports from dist with source and duplicates shared
+   tokens. Explicit public maps preserve names such as change-log and mcp-skills.
+
+   Angular's AOT compiler only emits declarables it owns as program inputs.
+   Include both real SDK source roots and explicitly exclude their tests because
+   the demo-relative ** exclusions do not cover roots outside this directory.
+   A dist consumer needs none of this: the FESM ships pre-compiled components. */
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    // TypeScript 6 defaults rootDir to this config's directory; own SDK sources too.
+    "rootDir": "../../..",
+    "paths": {
+      "@angular/core": ["./node_modules/@angular/core"],
+      "@angular/common": ["./node_modules/@angular/common"],
+      "@hilos/angular": ["../../../framework/frontend/angular/src/index.ts"],
+      "@hilos/angular/base": [
+        "../../../framework/frontend/angular/src/base/index.ts"
+      ],
+      "@hilos/angular/admin-views": [
+        "../../../framework/frontend/angular/src/admin/hilosAdminViews.ts"
+      ],
+      "@hilos/angular/admin/analytics": [
+        "../../../framework/frontend/angular/src/admin/analytics/index.ts"
+      ],
+      "@hilos/angular/admin/appearance": [
+        "../../../framework/frontend/angular/src/admin/appearance/index.ts"
+      ],
+      "@hilos/angular/admin/backup": [
+        "../../../framework/frontend/angular/src/admin/backup/index.ts"
+      ],
+      "@hilos/angular/admin/billing": [
+        "../../../framework/frontend/angular/src/admin/billing/index.ts"
+      ],
+      "@hilos/angular/admin/change-log": [
+        "../../../framework/frontend/angular/src/admin/changeLog/index.ts"
+      ],
+      "@hilos/angular/admin/communications": [
+        "../../../framework/frontend/angular/src/admin/communications/index.ts"
+      ],
+      "@hilos/angular/admin/daemon": [
+        "../../../framework/frontend/angular/src/admin/daemon/index.ts"
+      ],
+      "@hilos/angular/admin/dashboard": [
+        "../../../framework/frontend/angular/src/admin/dashboard/index.ts"
+      ],
+      "@hilos/angular/admin/i18n": [
+        "../../../framework/frontend/angular/src/admin/i18n/index.ts"
+      ],
+      "@hilos/angular/admin/legal": [
+        "../../../framework/frontend/angular/src/admin/legal/index.ts"
+      ],
+      "@hilos/angular/admin/logs": [
+        "../../../framework/frontend/angular/src/admin/logs/index.ts"
+      ],
+      "@hilos/angular/admin/maintenance": [
+        "../../../framework/frontend/angular/src/admin/maintenance/index.ts"
+      ],
+      "@hilos/angular/admin/moderation": [
+        "../../../framework/frontend/angular/src/admin/moderation/index.ts"
+      ],
+      "@hilos/angular/admin/mcp-skills": [
+        "../../../framework/frontend/angular/src/admin/mcpSkills/index.ts"
+      ],
+      "@hilos/angular/admin/roles": [
+        "../../../framework/frontend/angular/src/admin/roles/index.ts"
+      ],
+      "@hilos/angular/admin/security": [
+        "../../../framework/frontend/angular/src/admin/security/index.ts"
+      ],
+      "@hilos/angular/admin/settings": [
+        "../../../framework/frontend/angular/src/admin/settings/index.ts"
+      ],
+      "@hilos/angular/admin/sil": [
+        "../../../framework/frontend/angular/src/admin/sil/index.ts"
+      ],
+      "@hilos/angular/admin/status": [
+        "../../../framework/frontend/angular/src/admin/status/index.ts"
+      ],
+      "@hilos/angular/admin/users": [
+        "../../../framework/frontend/angular/src/admin/users/index.ts"
+      ],
+      "@hilos/angular/status": [
+        "../../../framework/frontend/angular/src/status/index.ts"
+      ],
+      "@hilos/core/status": [
+        "../../../framework/frontend/core/src/status/index.ts"
+      ],
+      "@hilos/core": ["../../../framework/frontend/core/src/index.ts"],
+      "@hilos/core/base": [
+        "../../../framework/frontend/core/src/base/index.ts"
+      ],
+      "@hilos/core/admin/i18n": [
+        "../../../framework/frontend/core/src/admin/i18n/index.ts"
+      ],
+      "@hilos/core/admin/users": [
+        "../../../framework/frontend/core/src/admin/users/index.ts"
+      ],
+      "@hilos/core/admin/settings": [
+        "../../../framework/frontend/core/src/admin/settings/index.ts"
+      ],
+      "@hilos/core/admin/appearance": [
+        "../../../framework/frontend/core/src/admin/appearance/index.ts"
+      ],
+      "@hilos/core/admin/backup": [
+        "../../../framework/frontend/core/src/admin/backup/index.ts"
+      ],
+      "@hilos/core/admin/maintenance": [
+        "../../../framework/frontend/core/src/admin/maintenance/index.ts"
+      ],
+      "@hilos/core/admin/communications": [
+        "../../../framework/frontend/core/src/admin/communications/index.ts"
+      ],
+      "@hilos/core/admin/security": [
+        "../../../framework/frontend/core/src/admin/security/index.ts"
+      ],
+      "@hilos/core/admin/logs": [
+        "../../../framework/frontend/core/src/admin/logs/index.ts"
+      ],
+      "@hilos/core/admin/daemon": [
+        "../../../framework/frontend/core/src/admin/daemon/index.ts"
+      ],
+      "@hilos/core/admin/change-log": [
+        "../../../framework/frontend/core/src/admin/changeLog/index.ts"
+      ],
+      "@hilos/core/admin/analytics": [
+        "../../../framework/frontend/core/src/admin/analytics/index.ts"
+      ],
+      "@hilos/core/admin/legal": [
+        "../../../framework/frontend/core/src/admin/legal/index.ts"
+      ],
+      "@hilos/core/admin/moderation": [
+        "../../../framework/frontend/core/src/admin/moderation/index.ts"
+      ],
+      "@hilos/core/admin/status": [
+        "../../../framework/frontend/core/src/admin/status/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "../../../framework/frontend/angular/src/**/*.ts",
+    "../../../framework/frontend/core/src/**/*.ts"
+  ],
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "src/prerender/**",
+    "../../../framework/frontend/angular/src/**/*.test.ts",
+    "../../../framework/frontend/angular/src/**/*.spec.ts",
+    "../../../framework/frontend/core/src/**/*.test.ts",
+    "../../../framework/frontend/core/src/**/*.spec.ts"
+  ]
+}

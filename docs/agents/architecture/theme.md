@@ -364,20 +364,20 @@ its names into this file in the same commit that clears its marker.
   [styling-rules.md](../frontend/styling-rules.md) for the guard's scope and landing
   markers.
 - Run `theme-guest.spec.ts` and `theme-account.spec.ts` in chat (Vue), tasks
-  (React) and polls (Angular). Each kit proves guest storage synchronization,
+  (React) and preferans (Angular). Each kit proves guest storage synchronization,
   System media, explicit choices, reload/new tabs and reset; account choices
   reach independent sessions in both directions, update an open profile window
   and leave another person's session alone. Header and profile controls retain
   keyboard and focus checks. Profile Off/On is proved
-  within the same installation: chat uses its settings page, tasks and polls
+  within the same installation: chat uses its settings page, tasks and preferans
   their Appearance page.
 - Chat alone keeps the two server regressions: stale Dark reconnect after an
   explicit account reset sends no adoption, and a never-chosen account adopts
   the guest choice on first login. It also checks the synchronized account's
   cached first frame; a browser that never received that account choice cannot
   know it before the handshake.
-- Run `appearance.spec.ts` in binance-btc-tracker (Vue), tasks (React) and polls
-  (Angular) for both editors, live settings delivery, viewer refusal through
+- Run `appearance.spec.ts` in binance-btc-tracker (Vue), tasks (React) and
+  preferans (Angular) for both editors, live settings delivery, viewer refusal through
   Save and Enter, default changes and Off/On, discard and keyboard/focus. Every
   changed setting returns to its catalog default.
 - `theme-smoke.spec.ts` in binance-btc-tracker checks its account header,

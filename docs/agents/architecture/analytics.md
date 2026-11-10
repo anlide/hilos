@@ -101,9 +101,10 @@ collects, how long it keeps it, and what remains after account deletion.
 The admin analytics section comes with this same case, with no case of its own;
 see [The Admin Section](#the-admin-section). The section opens in Vue, React and
 Angular.
-All six demos with accounts — chat, binance-btc-tracker, ecommerce-shop, tasks,
-online-testing and polls — declare it. The owner, 04.10.2026: «Аналитику включить
-во всех 6 demo» — "Turn analytics on in all six demos".
+The demos with accounts that declare it are chat, binance-btc-tracker,
+ecommerce-shop, tasks, online-testing, polls and preferans. The owner,
+04.10.2026: «Аналитику включить во всех 6 demo» — "Turn analytics on in all
+six demos".
 
 ## The Directory
 
@@ -660,8 +661,9 @@ positive integer `userId`, it returns `browserSessionId` (null until loaded)
 and `actionNames`: at most 50 names from that user's latest browser session,
 through the same bounded reader. It writes nothing and exposes no browser
 endpoint; e2e polls it to observe journal rotation and writer loading before
-opening the page. The browser-session E2E remains mirrored in chat, tasks and
-polls; its shared checks live in `framework/frontend/e2e/analytics.ts`
+opening the page. The browser-session E2E currently lives in chat, tasks and
+preferans; the Angular accessibility proof remains in polls. Shared checks
+live in `framework/frontend/e2e/analytics.ts`
 (HIL-1422). The shared `expectAnalyticsBrowserSessionHead(expect, page,
 label)` checks one `h1` with the exact label and an id, one current breadcrumb
 entry that is not a link and whose own words are that label, the Browser
@@ -689,13 +691,13 @@ checks the session head, F5 and the crumb back to the list. The Analytics
 accessibility group in `demo/tasks/tests/e2e/tests/a11y.spec.ts` checks the
 count links' names and Enter, and the keyboard path through the list, People,
 Person and session and back to the list.
-Polls carries the Angular People-to-Person and Period/Reset journey, including
+Preferans carries the Angular People-to-Person and Period/Reset journey, including
 one opening Today viewport without an extra Any time request, reuse of the
 captured context, the first name/photo reply, direct entry, F5, and Back/Forward
-in `demo/polls/tests/e2e/tests/analytics.spec.ts`; its separate
+in `demo/preferans/tests/e2e/tests/analytics.spec.ts`; its separate
 `analytics-browser-session.spec.ts` keeps the User-to-Person-to-session
-regression, including session ownership, action order and viewer privacy; the
-Analytics accessibility group in `a11y.spec.ts` checks
+regression, including session ownership, action order and viewer privacy. Polls'
+Analytics accessibility group in `demo/polls/tests/e2e/tests/a11y.spec.ts` checks
 keyboard links, sort direction, current-page state, one heading and table name,
 return/focus behavior, and the People/Person table semantics. These People
 navigation and accessibility checks are not implied for other demos.

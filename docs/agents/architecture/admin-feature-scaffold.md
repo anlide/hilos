@@ -536,7 +536,9 @@ name and an indeterminate bar — and a run that outlives its estimate is told i
 
 ### i18n — the languages and countries section
 
-Configure-only: the framework owns the five reference tables, their library and the section's pages. The languages browser table is registered in all six demos (HIL-1474), and so is the countries table (HIL-1475).
+Configure-only: the framework owns the five reference tables, their library and
+the section's pages. The languages and countries browser tables are registered
+in the active I18N carriers, including Preferans (HIL-1474, HIL-1475, HIL-2020).
 The project lists the feature in `Hilos::FEATURES` and registers the library's agent pair in `Hilos::AGENTS`.
 It registers three thin section pages in the server topology (HIL-1470).
 Run `db:framework:pull` and apply the generated project migrations for the required

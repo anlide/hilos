@@ -693,8 +693,9 @@ the modal; the card then navigates to the languages list, and the list keeps
 its address and the table's normal removal/Apply model. An admin-view reader
 may open a free language's modal, with confirmation disabled.
 The Vue locales page adds a locale from a pair without one, edits a switched-off
-locale, and shows a switched-on locale in the same window (HIL-1491). The server
-actions serve all six demos. Each existing locale also has a trash button,
+locale, and shows a switched-on locale in the same window (HIL-1491). Server
+actions serve the active demos that declare I18N, including Preferans. Each
+existing locale also has a trash button,
 including a switched-on or country-default locale. Its separate confirmation
 focuses the fresh row, freezes the parent IDs, locale ID, codes and labels, and releases focus on close
 or unmount. A late switch or default selection leaves Delete available for the
@@ -733,8 +734,8 @@ Angular exports the same seven pages, each taking its `context` input
 (HIL-1503), and draws the same windows over the same core sessions: a language's
 add, view/edit, switch on and off, delete, name and locale windows, and a
 country's add with the own-country confirmation, view/edit, switch on and off,
-delete and name windows. The polls and online-testing demos mount seven thin
-OnPush wrappers over their own `hilosI18nLanguageContext` and
+delete and name windows. The polls, online-testing and preferans demos mount
+seven thin OnPush wrappers over their own `hilosI18nLanguageContext` and
 `hilosI18nCountryContext`, each bound to that demo's connection, actions and
 scopes. These pages too stay outside `hilosAdminViews()`; the section root
 remains its default shell.
@@ -742,9 +743,9 @@ remains its default shell.
 Startup refuses a missing page or agent; the topology tests check that the
 six migration files are present after registration.
 The section's e2e are organized into five family specs in binance-btc-tracker
-(Vue), tasks (React) and polls (Angular): language, country, locale,
-language-names and country-names. The separate `i18n-overview.spec.ts` remains
-in binance-btc-tracker. Shared browser checks live in
+(Vue), tasks (React) and preferans (Angular): language, country, locale,
+language-names and country-names. `i18n-overview.spec.ts` also lives in
+binance-btc-tracker, tasks and preferans. Shared browser checks live in
 `framework/frontend/e2e/i18n.ts`; test-scoped fixtures and command wrappers live
 in `framework/frontend/scripts/i18nFixtures.mjs` and
 `framework/frontend/scripts/i18n.mjs`. Setup and cleanup call the `test:i18n:*`

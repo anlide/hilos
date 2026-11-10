@@ -297,7 +297,7 @@ copies keep their fixed body hashes when the current stub changes.
 ```bash
 php cli.php db:framework:pull  # current project's configured Schema track and facade
 php cli.php db:framework:pull --projects=/path/to/framework-projects.json
-composer db:framework:pull    # repository root: all six demos
+composer db:framework:pull    # repository root: all demos listed in framework-projects.json
 ```
 
 `FrameworkMigrationPullCommand` is a database-free `CLI_SOURCE_WRITE` command. It writes

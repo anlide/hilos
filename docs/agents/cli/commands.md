@@ -30,7 +30,8 @@ reason in its `execution()` declaration. See
 its Composer `autoload.psr-4` paths load the facade without installing dependencies,
 reading `.env`, initializing a database, or switching the active facade. The repository's
 `composer db:framework:pull` uses `scripts/framework-migrations.php`, the same CLI manager
-and command, and `framework-projects.json` to address all six demos.
+and command, and `framework-projects.json` to address all demos listed in
+`framework-projects.json`.
 
 `db:framework:baseline` takes no options or positional arguments. It uses only the current
 project's configured Schema track and facade, and writes its single initial

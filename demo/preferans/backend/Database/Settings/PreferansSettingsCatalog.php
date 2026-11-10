@@ -1,0 +1,54 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Demo\Preferans\Database\Settings;
+
+use Demo\Preferans\Notification\PreferansDeliveryChannelRegistry;
+use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
+use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Notification\Delivery\ChannelSettingsCatalog;
+use Hilos\Notification\Delivery\DeliveryChannelSettings;
+use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
+use Hilos\Theme\ThemeSettingsCatalog;
+
+/** Project examples, theme, Analytics and mail delivery settings. */
+final class PreferansSettingsCatalog implements CatalogProviderInterface
+{
+    /**
+     * Returns the settings catalog for this demo.
+     *
+     * @return array<string, array<string, mixed>> Catalog keyed by setting name
+     */
+    public static function getCatalog(): array
+    {
+        return array_replace([
+            SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => '',
+            ],
+            SettingsCatalogConstants::STUB_KEY_EXAMPLE_INTEGER => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 0,
+            ],
+            SettingsCatalogConstants::STUB_KEY_EXAMPLE_BOOLEAN => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => false,
+            ],
+        ],
+            ChannelSettingsCatalog::entriesFor(PreferansDeliveryChannelRegistry::all()),
+            [
+                DeliveryChannelSettings::enabledKey(MailDeliveryChannel::NAME) => [
+                    SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                    SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+                    SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => true,
+                ],
+            ],
+            DeliveryLogSettingsCatalog::getCatalog(),
+            ThemeSettingsCatalog::getCatalog(),
+            AnalyticsSettingsCatalog::getCatalog(),
+        );
+    }
+}

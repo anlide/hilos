@@ -131,9 +131,9 @@ Live schema checks are an opt-in integration door, separate from the unit
 source scan. `composer run test:framework:integration` includes
 `MomentStorageSchemaIntegrationTest`; run it after
 `composer run test:framework:up` and `composer run test:framework:databases` as
-in the framework setup above. Each of the six existing demo suites — chat,
-polls, tasks, binance-btc-tracker, online-testing and ecommerce-shop — runs its
-existing live moment audit through `EntitySchemaConsistencyTest` with that demo's usual
+in the framework setup above. The existing demo suites — chat, polls, tasks,
+binance-btc-tracker, online-testing, ecommerce-shop and preferans — run their
+live moment audit through `EntitySchemaConsistencyTest` with that demo's usual
 `composer run test:integration` command from its root after the documented
 `test:up` and `test:db-reset` setup. These runs cover the physical axes
 `moment_column_missing`, `moment_type` and `moment_auto_write`; the framework
@@ -447,7 +447,7 @@ See [frontend/testing-strategy.md](frontend/testing-strategy.md#a-retried-test-m
 
 ### Playwright quarantine
 
-The six currently active ordinary demos' `test:e2e` composer commands and
+The currently active ordinary demos' `test:e2e` composer commands and
 e2e package `test` scripts use
 `framework/frontend/scripts/playwright-run.mjs`. It collects the original
 Playwright selection, partitions static `@quarantine:F-NNN` tags from main,
@@ -528,9 +528,10 @@ does not authorize removing a quarantine tag or closing its F record.
 ## Ordinary demo carriers
 
 HIL-1984 approves twelve **ordinary demos**, four per view framework. This
-count excludes the framework stands and the existing cluster fleets. The
-current runner still lists six ordinary demos; the other six are activation
-targets, not working applications merely because a directory or README exists.
+count excludes the framework stands and the existing cluster fleets. Active
+ordinary demos are registered in `framework-projects.json` and the test runner;
+the remaining planned rows are activation targets, not working applications
+merely because a directory or README exists.
 
 | View | Ordinary demo | Current state / activation owner |
 |---|---|---|
@@ -544,7 +545,7 @@ targets, not working applications merely because a directory or README exists.
 | React | `file-gallery-manager` | Planned (not in the code yet — HIL-2019) |
 | Angular | `polls` | Active |
 | Angular | `online-testing` | Active |
-| Angular | `preferans` | Planned (not in the code yet — HIL-2020) |
+| Angular | `preferans` | Active |
 | Angular | `concert-tickets` | Planned (not in the code yet — HIL-2021) |
 
 The planned rows' markers cover each activation's complete obligation: an
@@ -565,10 +566,10 @@ this activation phase.
 
 Today `pmd`, `roblox-game-server`, `solar-system-model` and
 `file-gallery-manager` have `composer.json` stubs without scripts;
-`demo/preferans` and `demo/concert-tickets` do not exist.
-[`scripts/test-suite.php`](../../scripts/test-suite.php) names the six active
-ordinary demos; [`scripts/test-stands.php`](../../scripts/test-stands.php)
-registers those six, the existing cluster stands and the framework
+`demo/concert-tickets` does not exist. [`framework-projects.json`](../../framework-projects.json)
+lists the active projects; [`scripts/test-suite.php`](../../scripts/test-suite.php)
+and [`scripts/test-stands.php`](../../scripts/test-stands.php) register their
+ordinary test suites and stands alongside the existing cluster and framework
 stands. An activation updates these facts and documents its actual commands
 when its code lands, clearing its markers in that same commit under
 [the rule-authoring contract](rule-authoring.md#a-rule-written-ahead-of-its-code).
@@ -599,10 +600,10 @@ is the existing `composer run test:stands:down`, backed by
 [`scripts/down-stands.php`](../../scripts/down-stands.php); it selects the
 registered stands of the current instance, including any raised by hand.
 
-For each planned demo, `test:e2e-full`, its pointed form, `test:down` and
-`test:e2e-time-zone` are the **required activation interface**, owned by that
-demo's marker in the table above. They are not currently runnable commands in
-those six directories. Each activation supplies the same argument isolation
+For each remaining planned demo, `test:e2e-full`, its pointed form, `test:down`
+and `test:e2e-time-zone` are the **required activation interface**, owned by
+that demo's marker in the table above. These commands are not yet available in
+those planned projects. Each activation supplies the same argument isolation
 and shared Playwright entry; the existing
 [quarantine](#playwright-quarantine) and
 [browser time-zone](frontend/testing-strategy.md#explicit-browser-time-zones)
@@ -622,9 +623,11 @@ The suffix, network/address, host-port and CPU-share isolation described under
 [the full run](#the-full-run--one-graph-a-bounded-number-of-lanes) still applies.
 The address map in
 [`scripts/stand-instance.php`](../../scripts/stand-instance.php) is two blocks.
-The first holds the ten stands that exist today. The second holds six planned
-ordinary demos, `HILOS_STAND_NET_PMD` through `HILOS_STAND_NET_CONCERT_TICKETS`,
-on default octets 214 to 219. The test compose of each activation reads its own
+The first holds its ten assigned stands. The second holds six reserved ordinary
+demo addresses, `HILOS_STAND_NET_PMD` through
+`HILOS_STAND_NET_CONCERT_TICKETS`, on default octets 214 to 219; Preferans uses
+one of these addresses, while the other planned carriers retain theirs. The
+test compose of each activation reads its own
 variable, and its ports and local subnet are reserved in the registry
 ([../new-project/README.md](../new-project/README.md)).
 Room for the cluster stands of HIL-1985 is left but not introduced.
@@ -650,8 +653,9 @@ The three existing stands retain their proofs except for cluster-browser areas
 that move within their view framework under the
 [approved target](frontend/testing-strategy.md#approved-cluster-browser-target--hil-1985).
 
-The six demos' products, PMD without a service database or with managed external
-databases, CLI/MCP/3D/MCP Apps, and Software Factory are outside this phase.
+The remaining ordinary carrier activations do not build their products. PMD
+without a service database or with managed external databases, CLI/MCP/3D/MCP
+Apps, and Software Factory are outside this phase.
 Solar's Model product belongs to HIL-193/HIL-132; Software Factory waits for
 the Tasks product. Analytics here means activating the existing section, not
 the future Visits/cubes/rebuild work of HIL-1402.
