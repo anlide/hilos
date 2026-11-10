@@ -30,6 +30,13 @@ use PHPUnit\Framework\TestCase;
  * the first start without it would take the mode away from the demo forever, and a new demo
  * with a production stack cannot land without saying it.
  *
+ * A production file names no container and keeps no default for its network. Two
+ * environments of one demo stand on one host: a container named in the file can
+ * exist only once, and an address published as a default is an address another
+ * stack of this host may already hold. Compose names every container from the
+ * project (`docker compose -p <environment>`), and the subnet and the three
+ * service addresses come from the installation or the stack refuses to start.
+ *
  * Stacks serving registry files through X-Accel mount the published files directory into every
  * web server of that stack and keep dev servers from reaching the daemon's HTTP port directly
  * (HIL-456): otherwise files larger than 4 MiB fail with 500 only on local setups, which remains
@@ -61,6 +68,9 @@ final class DemoStackComposeGuardTest extends TestCase
 
     /** Path ending of a demo's production compose file. */
     private const string PRODUCTION_COMPOSE = '/docker/docker-compose.prod.yml';
+
+    /** Network values a production stack takes from the installation, with no default. */
+    private const array INSTALLATION_NETWORK_VALUES = ['DOCKER_NETWORK_SUBNET', 'DOCKER_MYSQL_IP', 'DOCKER_DAEMON_IP', 'DOCKER_NGINX_IP'];
 
     /** Name of the value holding the internal X-Accel location for registry files. */
     private const string FILES_XACCEL = 'HILOS_FILES_XACCEL_LOCATION';
@@ -229,6 +239,114 @@ final class DemoStackComposeGuardTest extends TestCase
     }
 
     /**
+     * A production stack leaves container names to the project compose is given.
+     *
+     * Two environments of one demo stand on one host, and a container named in the file
+     * can exist only once. `docker compose -p <environment>` names every container, so
+     * the file itself names none.
+     *
+     * @return void
+     */
+    public function testProductionStacksLeaveContainerNamesToTheProject(): void
+    {
+        $stacks = 0;
+
+        foreach ($this->composeFiles() as $relativePath => $path) {
+            if (!str_ends_with($relativePath, self::PRODUCTION_COMPOSE)) {
+                continue;
+            }
+
+            $stacks++;
+            foreach ($this->servicesOf($path) as $service => $lines) {
+                foreach ($lines as $line) {
+                    $trimmed = trim($line);
+                    if ($trimmed === '' || str_starts_with($trimmed, '#')) {
+                        continue;
+                    }
+
+                    $this->assertFalse(
+                        str_starts_with($trimmed, 'container_name:'),
+                        "{$relativePath}: the service {$service} names its container"
+                    );
+                }
+            }
+        }
+
+        $this->assertGreaterThan(0, $stacks, 'no production stack was found at all - the reader stopped seeing them');
+    }
+
+    /**
+     * A production stack requires its network from the installation and keeps no default.
+     *
+     * A default address published in the file is an address another stack of this host may
+     * already hold. The subnet and the three service addresses have to be set, or the stack
+     * refuses to start. The subnet lives in the top-level networks block, so the whole file
+     * is read, not one service.
+     *
+     * @return void
+     */
+    public function testProductionStacksRequireTheirNetworkFromTheInstallation(): void
+    {
+        $stacks = 0;
+
+        foreach ($this->composeFiles() as $relativePath => $path) {
+            if (!str_ends_with($relativePath, self::PRODUCTION_COMPOSE)) {
+                continue;
+            }
+
+            $stacks++;
+            $text = $this->textWithoutComments($path);
+            foreach (self::INSTALLATION_NETWORK_VALUES as $name) {
+                $this->assertMatchesRegularExpression(
+                    '/\$\{' . $name . ':\?/',
+                    $text,
+                    "{$relativePath}: {$name} is not required from the installation"
+                );
+                $this->assertDoesNotMatchRegularExpression(
+                    '/\$\{' . $name . '(?!:\?)/',
+                    $text,
+                    "{$relativePath}: {$name} still carries a default"
+                );
+            }
+        }
+
+        $this->assertGreaterThan(0, $stacks, 'no production stack was found at all - the reader stopped seeing them');
+    }
+
+    /**
+     * Every value a production stack requires is shown in that stack's example file.
+     *
+     * @return void
+     */
+    public function testEveryRequiredProductionValueIsListedInExamples(): void
+    {
+        $stacks = 0;
+
+        foreach ($this->composeFiles() as $relativePath => $path) {
+            if (!str_ends_with($relativePath, self::PRODUCTION_COMPOSE)) {
+                continue;
+            }
+
+            $stacks++;
+            $examplePath = dirname($path) . '/.env.example';
+            $this->assertFileExists($examplePath, "{$relativePath}: docker/.env.example is missing");
+            $example = file_get_contents($examplePath);
+            $this->assertIsString($example, "{$relativePath}: docker/.env.example is unreadable");
+
+            preg_match_all('/\$\{([A-Z0-9_]+):\?/', $this->textWithoutComments($path), $matches);
+            foreach (array_unique($matches[1]) as $name) {
+                $this->assertMatchesRegularExpression(
+                    '/^#\s*' . preg_quote($name, '/') . '=/m',
+                    $example,
+                    "{$relativePath}: {$name} is required but absent from docker/.env.example"
+                );
+            }
+        }
+
+        $this->assertGreaterThan(0, $stacks, 'no production stack was found at all - the reader stopped seeing them');
+    }
+
+    /**
      * Every web server of a stack that serves files by X-Accel mounts the published directory.
      *
      * @return void
@@ -339,6 +457,31 @@ final class DemoStackComposeGuardTest extends TestCase
         }
 
         return $files;
+    }
+
+    /**
+     * The text of one file with its comment lines left out.
+     *
+     * A line whose first character after trim is `#` says nothing, the same way a
+     * commented-out value declares nothing to the rest of this guard.
+     *
+     * @param string $path Absolute path of the file
+     * @return string File text without comment lines
+     */
+    private function textWithoutComments(string $path): string
+    {
+        // external-boundary: a file the glob just listed, read as the empty document when unreadable
+        $lines = explode("\n", (string)file_get_contents($path));
+        $kept = [];
+        foreach ($lines as $line) {
+            if (str_starts_with(trim($line), '#')) {
+                continue;
+            }
+
+            $kept[] = $line;
+        }
+
+        return implode("\n", $kept);
     }
 
     /**

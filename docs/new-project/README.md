@@ -165,10 +165,29 @@ migration that dropped a table would otherwise crash the start (HIL-2086).
 
 ## Docker stacks
 
-Two compose files per project; every `container_name` is prefixed with the
-app key (`chat-…`, `polls-…`, `tasks-…`) so it stays globally unique
-(`container_name` and explicitly named volumes are docker-GLOBAL, not
-project-scoped — never reuse another project's).
+Two compose files per project for development (local and test); every
+`container_name` in them is prefixed with the app key (`chat-…`, `polls-…`,
+`tasks-…`) so it stays globally unique (`container_name` and explicitly named
+volumes are docker-GLOBAL, not project-scoped — never reuse another project's).
+
+**Production stack.** A project that goes to production adds a third file,
+`docker/docker-compose.prod.yml`, and leaves the installation's identity to
+the installation. No service sets `container_name`: `docker compose -p
+<environment>` names everything, so two environments of one project can stand
+on one host. Keep the file's `name:` line: `-p` overrides it, and a manual
+start without `-p` would otherwise take its project name from the `docker`
+directory, the same for every project. The subnet and the three fixed
+addresses have no default:
+
+```yaml
+- subnet: ${DOCKER_NETWORK_SUBNET:?set DOCKER_NETWORK_SUBNET in docker/.env}
+ipv4_address: ${DOCKER_DAEMON_IP:?set DOCKER_DAEMON_IP in docker/.env}
+```
+
+An installation takes one `/24` per environment on its host from
+`10.240.0.0/16` (`10.240.N.0/24`: database `.10`, daemon `.11`, nginx `.12`),
+plus its own `HILOS_DATA_ROOT` and published ports. `DemoStackComposeGuardTest`
+holds this for every demo.
 
 **PHP build context.** When copying a minimal demo's Dockerfile, preserve
 `COPY --from=hilos-event . /tmp/hilos-event/` and the following installer run.
@@ -302,8 +321,8 @@ claimed inside a pool Docker also hands out loses the race against whichever
 network came up first, and the stand then fails to start with `Pool overlaps
 with other one on this address space`. `10.0.0.0/8` is never auto-assigned, so
 the ranges live there. The first three demos sit in the `10.18x` row for test
-and in the `10.19x` row for local+prod+dev; from the second generation on a
-demo takes one column across three rows — `10.20x` local+prod+dev, `10.21x`
+and in the `10.19x` row for local+dev; from the second generation on a
+demo takes one column across three rows — `10.20x` local+dev, `10.21x`
 test, `10.22x` the cluster stand — and the column is the demo: 1
 binance-btc-tracker, 2 ecommerce-shop, 3 online-testing, 4 pmd, 5
 roblox-game-server, 6 solar-system-model, 7 file-gallery-manager, 8 preferans,
@@ -313,6 +332,8 @@ the tenth project needs a new rule for the rows. Column 10 (`10.210` /
 `10.22x` notation. A stand instance moves its test network off its default
 onto the octet of its own block
 ([Stand instances](../agents/testing.md#the-full-run--one-graph-a-bounded-number-of-lanes)).
+Production installations sit outside these rows, in `10.240.0.0/16` (see
+**Production stack** above).
 
 **Project time zone.** Copy the approved
 [warning and full consequences](../agents/architecture/calculated-results.md#warning-at-the-configuration-source)

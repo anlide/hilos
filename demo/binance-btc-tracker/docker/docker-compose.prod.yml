@@ -3,10 +3,13 @@
 # nginx that serves the built frontend.
 #
 # Every ${...} below is compose interpolation, read from the shell or from
-# docker/.env (see docker/.env.example), never from ../.env. Two of them belong to
-# the installation and have no default: MYSQL_ROOT_PASSWORD and MYSQL_PASSWORD.
-# Without them the stack refuses to start rather than run production on a
-# password published in this repository.
+# docker/.env (see docker/.env.example), never from ../.env. Six of them belong to
+# the installation and have no default: MYSQL_ROOT_PASSWORD, MYSQL_PASSWORD,
+# DOCKER_NETWORK_SUBNET, DOCKER_MYSQL_IP, DOCKER_DAEMON_IP and DOCKER_NGINX_IP.
+# Without them the stack refuses to start rather than run production on a password
+# published in this repository or on an address another stack of this host holds.
+# No service names its container: `docker compose -p <environment>` names them all,
+# so two environments of one demo can stand on one host.
 #
 # HILOS_DATA_ROOT is where the installation keeps everything that must outlive
 # its code: the database, uploads, exports, Status files and logs. It defaults to
@@ -22,7 +25,6 @@ services:
   # mysql/init.sql grants.
   binance-btc-tracker-mysql-prod:
     image: mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620
-    container_name: binance-btc-tracker-mysql-prod
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in docker/.env}
       - MYSQL_DATABASE=${MYSQL_DATABASE:-hilos-demo-binance-btc-tracker}
@@ -41,7 +43,7 @@ services:
     restart: unless-stopped
     networks:
       hilos-binance-btc-tracker-prod-network:
-        ipv4_address: ${DOCKER_MYSQL_IP:-10.201.0.10}
+        ipv4_address: ${DOCKER_MYSQL_IP:?set DOCKER_MYSQL_IP in docker/.env}
 
   binance-btc-tracker-prod:
     build:
@@ -51,7 +53,6 @@ services:
     env_file:
       - path: ../.env
         required: false
-    container_name: binance-btc-tracker-daemon-prod
     volumes:
       - ..:/app
       # Mount framework package to /hilos for composer path repository
@@ -76,7 +77,7 @@ services:
       # (HIL-680). One address and not a pool: every other peer on this network,
       # the CLI and monitor containers and the docker gateway among them, must
       # never be trusted to name anyone.
-      - HILOS_TRUSTED_PROXIES=${DOCKER_NGINX_IP:-10.201.0.12}/32
+      - HILOS_TRUSTED_PROXIES=${DOCKER_NGINX_IP:?set DOCKER_NGINX_IP in docker/.env}/32
       # The CLI command channel, the socket admin:create / admin:grant /
       # admin:revoke / protected-mode:open speak.
       - COMMAND_HOST=0.0.0.0
@@ -107,7 +108,7 @@ services:
     restart: unless-stopped
     networks:
       hilos-binance-btc-tracker-prod-network:
-        ipv4_address: ${DOCKER_DAEMON_IP:-10.201.0.11}
+        ipv4_address: ${DOCKER_DAEMON_IP:?set DOCKER_DAEMON_IP in docker/.env}
 
   # Builds the production frontend artifact into ../frontend/dist, which
   # binance-btc-tracker-frontend-prod serves. Mounts the whole repo at /hilos so the
@@ -118,7 +119,6 @@ services:
   # binance-btc-tracker-frontend-prod.
   binance-btc-tracker-frontend-builder:
     image: node:26.13.0-bookworm-slim@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9
-    container_name: binance-btc-tracker-frontend-builder-prod
     volumes:
       - ../../..:/hilos
     working_dir: /hilos/demo/binance-btc-tracker/frontend
@@ -136,7 +136,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.nginx
-    container_name: binance-btc-tracker-frontend-prod
     volumes:
       - ../frontend/dist:/usr/share/nginx/html:ro
       - ${HILOS_DATA_ROOT:-../data}/data_export:/data_export:ro
@@ -159,7 +158,7 @@ services:
     restart: unless-stopped
     networks:
       hilos-binance-btc-tracker-prod-network:
-        ipv4_address: ${DOCKER_NGINX_IP:-10.201.0.12}
+        ipv4_address: ${DOCKER_NGINX_IP:?set DOCKER_NGINX_IP in docker/.env}
 
   binance-btc-tracker-cli-prod:
     build:
@@ -169,7 +168,6 @@ services:
     env_file:
       - path: ../.env
         required: false
-    container_name: binance-btc-tracker-cli-prod
     volumes:
       - ..:/app
       - ../../../composer.json:/hilos/composer.json:ro
@@ -180,7 +178,7 @@ services:
     environment:
       - APP_ENV=prod
       - TERM=xterm-256color
-      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-10.201.0.11}
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:?set DOCKER_DAEMON_IP in docker/.env}
       - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
       - COMMAND_PORT=8094
@@ -202,7 +200,6 @@ services:
     env_file:
       - path: ../.env
         required: false
-    container_name: binance-btc-tracker-monitor-prod
     volumes:
       - ..:/app
       - ../../../composer.json:/hilos/composer.json:ro
@@ -211,7 +208,7 @@ services:
     working_dir: /app
     environment:
       - APP_ENV=prod
-      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-10.201.0.11}
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:?set DOCKER_DAEMON_IP in docker/.env}
       - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
       - COMMAND_PORT=8094
@@ -235,4 +232,4 @@ networks:
         # up first may already hold the range, and then the stand fails to start with
         # "Pool overlaps with other one on this address space". 10.0.0.0/8 is never
         # auto-assigned (docs/new-project/README.md).
-        - subnet: ${DOCKER_NETWORK_SUBNET:-10.201.0.0/16}
+        - subnet: ${DOCKER_NETWORK_SUBNET:?set DOCKER_NETWORK_SUBNET in docker/.env}

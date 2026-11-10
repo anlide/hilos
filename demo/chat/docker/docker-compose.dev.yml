@@ -8,8 +8,8 @@
 # the cli and monitor behind profiles. There is no database and no frontend: the
 # daemon connects to the database ../.env names, and until one answers the container
 # retries, gives up and restarts, so without it this stack runs no daemon at all. The
-# subnet is the demo's own, shared with its local and prod stacks: this stack runs
-# instead of them, not beside them.
+# subnet is the demo's own, shared with its local stack: this stack runs instead of
+# it, not beside it.
 
 name: hilos-chat-dev
 
