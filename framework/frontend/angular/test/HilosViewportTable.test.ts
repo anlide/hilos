@@ -1776,7 +1776,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
       ),
     ).toEqual(['Kind'])
     expect(card.querySelector('dd .kind')).not.toBeNull()
-    expect(card.querySelector('.hilos-button-row .restore')).not.toBeNull()
+    expect(card.querySelector('.restore')).not.toBeNull()
     // A column the page kept out of the card is nowhere in it, though it still
     // stands in the row.
     expect(card.querySelector('.secret')).toBeNull()
@@ -1805,7 +1805,6 @@ describe('HilosViewportTable drawing a row as a card', () => {
       root(fixture).querySelectorAll('[data-id="hilos-table-row-a"] td'),
     ).toHaveLength(CARD_COLUMNS.length + 1)
     expect(cardOf(fixture, 'a').querySelectorAll('dt')).toHaveLength(0)
-    expect(cardOf(fixture, 'a').querySelector('.hilos-button-row')).toBeNull()
   })
 
   it('draws the card line of a template the page marks after the table opened', () => {
@@ -3084,7 +3083,7 @@ describe('HilosViewportTable expanding a card', () => {
     )
     expect(blocks[1]?.tagName).toBe('DL')
     expect(blocks[2]?.getAttribute('data-id')).toBe('hilos-table-row-detail-a')
-    expect(blocks[3]?.classList.contains('hilos-button-row')).toBe(true)
+    expect(blocks[3]?.querySelector('.restore')).not.toBeNull()
   })
 
   it('gives the card panel an id of its own, apart from the row panel', () => {

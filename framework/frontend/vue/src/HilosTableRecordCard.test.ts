@@ -184,7 +184,12 @@ function numericDOM() {
           400,
           Number(this.style.getPropertyValue('--hilos-table-work-px')),
         )
-      if (this.classList.contains('hilos-button-row'))
+      if (
+        this.tagName !== 'TD' &&
+        [...this.children].some(
+          (child) => child.getAttribute('data-id') === 'record-action',
+        )
+      )
         return new DOMRect(0, 400, 400, 30)
       return new DOMRect(0, 0, 400, 40)
     },
@@ -528,10 +533,7 @@ describe('HilosTableRecordCard inside the real viewport table', () => {
           .attributes('aria-hidden'),
       ).toBe('true')
       expect(
-        f
-          .card()
-          .get('.hilos-button-row [data-id="record-action"]')
-          .attributes(),
+        f.card().get('[data-id="record-action"]').attributes(),
       ).toHaveProperty('disabled')
       expect(
         f

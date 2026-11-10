@@ -569,7 +569,7 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
                 <dd className="col-sm-9">{stateCard.circle}</dd>
               </dl>
               {stateCard.position === 'manual' ? (
-                <div className="hilos-button-row mt-3">
+                <div className="mt-3">
                   <LoadingButton
                     className="btn-outline-primary btn-sm"
                     loading={passAction.busy}

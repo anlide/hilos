@@ -322,7 +322,7 @@ function LanguageLocales({
                 const mode = hilosI18nLocaleWindowMode(row),
                   label = HILOS_I18N_LOCALE_COPY.open[mode]
                 return (
-                  <div className="hilos-button-row">
+                  <div>
                     {mode === 'add' ? (
                       <button
                         type="button"

@@ -530,9 +530,6 @@ describe('HilosI18nLanguageLocalesPage', () => {
       expect(button.attributes('aria-label')).toBe(`Delete locale ${key}`)
       expect(button.attributes('title')).toBe(`Delete locale ${key}`)
       expect(button.classes()).toContain('btn-outline-danger')
-      expect(
-        button.element.parentElement?.classList.contains('hilos-button-row'),
-      ).toBe(true)
     }
     expect(wrapper.find('[data-id="i18n-locales-delete-ru-AD"]').exists()).toBe(
       false,

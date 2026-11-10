@@ -521,12 +521,13 @@ as an empty field. A column may carry `cellClass` for the classes its `<td>`
 needs, e.g. `text-end` under a numeric header; the card does not read it, a line
 of a description list not being a cell of a table. The actions row is laid out by
 the framework in both projections: in the row, buttons of their own width with a
-.25rem gap according to the column's `cellClass`; in the card, one row shared
-equally (Sass `hilos-button-row`, owner decision on HIL-1092, debt D-120).
+.25rem gap according to the column's `cellClass`; in the card, a full-width
+column in the page's own order, with stock Bootstrap classes (owner decision,
+HIL-1801 audit review, 08.11.2026).
 Therefore, the actions cell content is only the buttons and links themselves,
-without a wrapper and without spacing utilities (`me-*`, `ms-*`): a wrapper in
-the card becomes a single row item, and an outer margin eats away the width share
-of every button but the last.
+without a wrapper and without spacing utilities (`me-*`, `ms-*`): a wrapper
+becomes one element the full width of the column, and the buttons inside it
+keep their own width; an outer margin knocks a button out of the column.
 
 The contract is one across the three view kits — one piece of content per column, keyed
 by the column, content only — and only the way a view takes a piece of content

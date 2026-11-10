@@ -20,7 +20,7 @@ const reasonId = useId()
 </script>
 
 <template>
-  <span class="hilos-button-group d-md-inline-flex gap-1">
+  <span class="d-inline-flex gap-1">
     <button
       v-if="row.enabled"
       type="button"

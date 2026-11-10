@@ -63,13 +63,10 @@ describe('ConflictActions', () => {
     expect(wrapper.find('[data-id="conflict-merge"]').exists()).toBe(true)
   })
 
-  it('shapes the root as a button group and renders resolution buttons without btn-sm', () => {
+  it('renders resolution buttons without btn-sm', () => {
     const wrapper = mount(ConflictActions, {
       props: { conflict: true, mergeable: true },
     })
-    const root = wrapper.element as HTMLElement
-    expect(root.classList.contains('hilos-button-group')).toBe(true)
-    expect(root.classList.contains('d-md-flex')).toBe(true)
 
     const mine = wrapper.find('[data-id="conflict-accept-mine"]')
     const theirs = wrapper.find('[data-id="conflict-accept-theirs"]')
@@ -103,7 +100,6 @@ describe('ConflictActions', () => {
     })
     const twin = wrapper.get('[data-id="conflict-choices-idle"]')
 
-    expect(twin.classes()).toContain('hilos-conflict-choices')
     expect(twin.classes()).toContain('invisible')
     expect(twin.attributes('aria-hidden')).toBe('true')
     expect(twin.findAll('button')).toHaveLength(0)

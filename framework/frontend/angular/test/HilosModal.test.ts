@@ -128,20 +128,6 @@ class SizeHost {
   readonly size = signal<'' | 'wide'>('')
 }
 
-/** A guarded modal with actions declared in its footer. */
-@Component({
-  selector: 'test-modal-footers-host',
-  imports: [HilosModal],
-  template: `
-    <hilos-modal [open]="true" [confirmOnClose]="true">
-      <ng-template #modalActions>
-        <button type="button">Save</button>
-      </ng-template>
-    </hilos-modal>
-  `,
-})
-class FootersHost {}
-
 /**
  * A modal whose busy flag, open flag and Escape/backdrop options the test
  * flips in place on the mounted component, with a footer that takes the issued
@@ -673,23 +659,6 @@ describe('HilosModal', () => {
     expect(document.activeElement).not.toBe(
       document.querySelector('[data-id="modal-confirm-discard"]'),
     )
-  })
-
-  it('shapes both footers with hilos-button-row and no column reverse', () => {
-    const fixture = TestBed.createComponent(FootersHost)
-    fixture.detectChanges()
-
-    document
-      .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
-      ?.click()
-    fixture.detectChanges()
-
-    const footers = document.querySelectorAll('.modal-footer')
-    expect(footers).toHaveLength(2)
-    footers.forEach((footer) => {
-      expect(footer.classList.contains('hilos-button-row')).toBe(true)
-      expect(footer.classList.contains('flex-column-reverse')).toBe(false)
-    })
   })
 
   it('is not busy without the input: the close button is enabled', () => {

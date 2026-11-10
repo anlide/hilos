@@ -29,7 +29,7 @@ let languageRowActionsSeq = 0
   selector: 'hilos-i18n-language-row-actions',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosActionReason],
-  host: { class: 'hilos-button-group d-md-inline-flex gap-1' },
+  host: { class: 'd-inline-flex gap-1' },
   template: `
     @if (row().enabled) {
       <button

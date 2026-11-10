@@ -484,10 +484,7 @@ onUnmounted(() => {
             <dt class="col-sm-3">{{ HILOS_MAINTENANCE_STATE_COPY.circle }}</dt>
             <dd class="col-sm-9">{{ stateCard.circle }}</dd>
           </dl>
-          <div
-            v-if="stateCard.position === 'manual'"
-            class="hilos-button-row mt-3"
-          >
+          <div v-if="stateCard.position === 'manual'" class="mt-3">
             <LoadingButton
               class="btn-outline-primary btn-sm"
               :loading="passBusy"

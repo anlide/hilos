@@ -180,7 +180,7 @@ const PLATE = 'badge bg-body-tertiary text-body-secondary border fw-normal'
               }
             </ng-template>
             <ng-template [hilosTableCell]="actionsKey" let-row>
-              <div class="hilos-button-row">
+              <div>
                 @switch (modeOf(row)) {
                   @case ('add') {
                     <button

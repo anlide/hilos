@@ -203,17 +203,11 @@ describe('ConflictActions', () => {
     expect(document.querySelector('[data-id="conflict-merge"]')).not.toBeNull()
   })
 
-  it('shapes the root as a button group and renders resolution buttons without btn-sm', () => {
+  it('renders resolution buttons without btn-sm', () => {
     const fixture = mountHost()
     fixture.componentInstance.conflict.set(true)
     fixture.componentInstance.mergeable.set(true)
     fixture.detectChanges()
-
-    const root = document.querySelector(
-      '[data-id="conflict-save"]',
-    )?.parentElement
-    expect(root?.classList.contains('hilos-button-group')).toBe(true)
-    expect(root?.classList.contains('d-md-flex')).toBe(true)
 
     const buttons = [
       document.querySelector('[data-id="conflict-accept-mine"]'),
@@ -248,7 +242,6 @@ describe('ConflictActions', () => {
       '[data-id="conflict-choices-idle"]',
     ) as HTMLElement
 
-    expect(twin.classList.contains('hilos-conflict-choices')).toBe(true)
     expect(twin.classList.contains('invisible')).toBe(true)
     expect(twin.getAttribute('aria-hidden')).toBe('true')
     expect(twin.querySelectorAll('button')).toHaveLength(0)
@@ -472,7 +465,7 @@ describe('ConflictActions in the admin view mode', () => {
 
 /** Document order of every data-id under the mounted action group. */
 function dataIds(): string[] {
-  const root = document.querySelector('.hilos-button-group')
+  const root = document.querySelector('[hilosConflictActions]')
   return [...(root?.querySelectorAll('[data-id]') ?? [])].map(
     (el) => el.getAttribute('data-id') ?? '',
   )

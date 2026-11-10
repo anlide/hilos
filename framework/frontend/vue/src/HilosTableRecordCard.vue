@@ -446,11 +446,11 @@ function onSelectRow(rowKey: string, event: Event): void {
           </dl>
         </div>
 
-        <!-- The controls of the row, one row at the foot of the card,
-      sharing it equally. Which of them comes first is the markup the page
+        <!-- The controls of the row, a column at the foot of the card.
+      Which of them comes first is the markup the page
       hands over, and the framework neither reorders them nor takes one
       away (Flow F2). -->
-        <div v-if="hasCell(card.actions)" class="d-flex gap-2 hilos-button-row">
+        <div v-if="hasCell(card.actions)" class="d-flex flex-column gap-2">
           <slot
             :name="`cell-${card.actions!.key}`"
             :row="view.row"

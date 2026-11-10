@@ -503,13 +503,11 @@ describe('HilosI18nCountriesPage', () => {
       // The ? stands left of the bin in the card's one button group, beside
       // the row's edit control, as it does in a language row.
       const card = view.get('[data-id="hilos-table-card-141"]')
-      const actionRow = card.get('.hilos-button-row')
-      const groups = actionRow.findAll('.hilos-button-group')
-      expect(groups).toHaveLength(1)
-      const group = groups[0]!
-      expect([...actionRow.element.children]).toEqual([group.element])
+      const viewButton = card.get('[data-id="i18n-countries-view-qx"]')
+      const group = viewButton.element.parentElement!
+      expect([...group.parentElement!.children]).toEqual([group])
       expect(
-        [...group.element.children].map((child) => [
+        [...group.children].map((child) => [
           child.tagName,
           child.getAttribute('data-id'),
         ]),
@@ -520,7 +518,9 @@ describe('HilosI18nCountriesPage', () => {
         ['SPAN', 'i18n-countries-delete-reason-qx'],
       ])
       expect(
-        group.get('button[data-id="hilos-action-reason"]').attributes('title'),
+        group
+          .querySelector('button[data-id="hilos-action-reason"]')
+          ?.getAttribute('title'),
       ).toBe(SERVER_REASONS[deleteReason])
       expect(c.focused).toEqual([])
       expect(dispatch).not.toHaveBeenCalled()

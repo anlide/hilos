@@ -48,7 +48,8 @@ const FIELDS = [
   'collation',
 ] as const
 const copy = HILOS_I18N_LOCALE_COPY
-const FOOTER = 'modal-footer hilos-button-row p-0 m-0 border-0 align-self-end'
+const FOOTER =
+  'modal-footer flex-column flex-md-row align-items-stretch align-items-md-center p-0 m-0 border-0 align-self-end'
 
 /** Each opening owns its factories and runners until close or route teardown. */
 export function HilosI18nLocaleWindow(props: LocaleWindowProps) {
@@ -387,13 +388,13 @@ function LocaleWindow({
           {mode !== 'add' && (
             <div className="hilos-stack invisible" aria-hidden="true" inert>
               <div className={FOOTER}>
-                <div className="hilos-button-group d-md-flex align-items-center gap-2 flex-wrap">
+                <div className="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-2 flex-wrap">
                   {mode === 'edit' && (
-                    <div className="hilos-conflict-choices d-flex gap-2">
-                      <span className="btn btn-outline-secondary">
+                    <div className="d-flex gap-2">
+                      <span className="btn btn-outline-secondary flex-fill">
                         Keep mine
                       </span>
-                      <span className="btn btn-outline-secondary">
+                      <span className="btn btn-outline-secondary flex-fill">
                         Take theirs
                       </span>
                     </div>

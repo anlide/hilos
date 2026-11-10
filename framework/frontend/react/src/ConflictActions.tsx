@@ -1,7 +1,8 @@
 // ConflictActions — the action group for an edit modal with 3-way-merge
 // conflict resolution. The group draws, left to right, the conflict choices, the
 // window's Cancel (`cancelButton`) and Save, in that same markup order, so Tab
-// runs left to right. While no conflict stands, an invisible twin of the same
+// runs left to right. Below md the group runs top to bottom in that same
+// markup order. While no conflict stands, an invisible twin of the same
 // markup holds the choices' room, so neither the arrival nor the leaving of a
 // conflict moves Cancel or Save (styling-rules.md, "The room a live message
 // takes"; the owner's decision on the acceptance of HIL-1050). Renders a Save
@@ -57,7 +58,7 @@ export interface ConflictActionsProps {
  * The choice buttons and the inert spans of their twin, to the character —
  * the room equals the true width of the choices only while the classes match.
  */
-const CHOICE_CLASS = 'btn btn-outline-secondary'
+const CHOICE_CLASS = 'btn btn-outline-secondary flex-fill'
 
 /**
  * The Save-plus-resolutions action group for a conflict-aware edit modal.
@@ -109,7 +110,7 @@ export function ConflictActions({
   return (
     <div
       ref={root}
-      className="hilos-button-group d-md-flex align-items-center gap-2 flex-wrap"
+      className="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-2 flex-wrap"
     >
       {/* Keyed apart, so the choices leave whole and their ref lets go first;
           unkeyed, React would turn them into the twin and drop the buttons. */}
@@ -117,7 +118,7 @@ export function ConflictActions({
         <div
           key="choices"
           ref={choices}
-          className="hilos-conflict-choices d-flex gap-2"
+          className="d-flex gap-2"
           data-id="conflict-choices"
         >
           <button
@@ -150,7 +151,7 @@ export function ConflictActions({
       ) : (
         <div
           key="idle"
-          className="hilos-conflict-choices d-flex gap-2 invisible"
+          className="d-flex gap-2 invisible"
           aria-hidden="true"
           data-id="conflict-choices-idle"
         >

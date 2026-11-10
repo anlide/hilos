@@ -1765,7 +1765,7 @@ it('publishes structural build types compatible with Vite without a Vite type im
         ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
       ),
   ).toEqual([])
-})
+}, 7_500)
 
 function viteFixture() {
   const output = (

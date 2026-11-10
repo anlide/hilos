@@ -226,7 +226,7 @@ function describeActionError(
                 <dd class="col-sm-9">{{ card.circle }}</dd>
               </dl>
               @if (card.position === 'manual') {
-                <div class="hilos-button-row mt-3">
+                <div class="mt-3">
                   <button
                     hilosLoadingButton
                     class="btn-outline-primary btn-sm"

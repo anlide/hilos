@@ -110,11 +110,8 @@ describe('ConflictActions', () => {
     expect(container.querySelector('[data-id="conflict-merge"]')).not.toBeNull()
   })
 
-  it('shapes the root as a button group and renders resolution buttons without btn-sm', () => {
+  it('renders resolution buttons without btn-sm', () => {
     const { container } = render(<ConflictActions conflict mergeable />)
-    const root = container.firstElementChild as HTMLElement
-    expect(root.classList.contains('hilos-button-group')).toBe(true)
-    expect(root.classList.contains('d-md-flex')).toBe(true)
 
     const buttons = [
       container.querySelector('[data-id="conflict-accept-mine"]'),
@@ -164,7 +161,6 @@ describe('ConflictActions', () => {
     const twin = container.querySelector(
       '[data-id="conflict-choices-idle"]',
     ) as HTMLElement
-    expect(twin.classList.contains('hilos-conflict-choices')).toBe(true)
     expect(twin.classList.contains('invisible')).toBe(true)
     expect(twin.getAttribute('aria-hidden')).toBe('true')
     expect(twin.querySelectorAll('button')).toHaveLength(0)

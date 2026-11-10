@@ -720,12 +720,11 @@ export function HilosViewportTable<R>({
           </div>
         ) : null}
 
-        {/* The controls of the row, one row at the foot of the card, sharing
-            it equally. Which of them comes first is the markup the page hands
-            over, and the framework neither reorders them nor takes one away
-            (Flow F2). */}
+        {/* The controls of the row, a column at the foot of the card.
+            Which of them comes first is the markup the page hands over, and
+            the framework neither reorders them nor takes one away (Flow F2). */}
         {hasCell(layout.actions) ? (
-          <div className="d-flex gap-2 hilos-button-row">
+          <div className="d-flex flex-column gap-2">
             {cells?.[layout.actions.key]?.(record, rowKey)}
           </div>
         ) : null}

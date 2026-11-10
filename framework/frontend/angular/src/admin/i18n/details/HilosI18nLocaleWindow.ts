@@ -106,7 +106,8 @@ const NOTHING_CHOSEN: HilosI18nLocaleAddForm = {
 }
 
 /** The footer row of one step, as the modal draws its own. */
-const FOOTER = 'modal-footer hilos-button-row p-0 m-0 border-0 align-self-end'
+const FOOTER =
+  'modal-footer flex-column flex-md-row align-items-stretch align-items-md-center p-0 m-0 border-0 align-self-end'
 
 /** The add/edit/view window of one locale with its switch-on and switch-off steps. */
 @Component({
@@ -446,11 +447,15 @@ const FOOTER = 'modal-footer hilos-button-row p-0 m-0 border-0 align-self-end'
               <div class="hilos-stack invisible" aria-hidden="true" inert>
                 <div [class]="footer">
                   <div
-                    class="hilos-button-group d-md-flex align-items-center gap-2 flex-wrap"
+                    class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-2 flex-wrap"
                   >
-                    <div class="hilos-conflict-choices d-flex gap-2">
-                      <span class="btn btn-outline-secondary">Keep mine</span>
-                      <span class="btn btn-outline-secondary">Take theirs</span>
+                    <div class="d-flex gap-2">
+                      <span class="btn btn-outline-secondary flex-fill"
+                        >Keep mine</span
+                      >
+                      <span class="btn btn-outline-secondary flex-fill"
+                        >Take theirs</span
+                      >
                     </div>
                     <span class="btn btn-secondary">{{ copy.cancel }}</span>
                     <span class="btn btn-outline-primary">{{

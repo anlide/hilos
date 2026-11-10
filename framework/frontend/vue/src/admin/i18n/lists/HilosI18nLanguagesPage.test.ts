@@ -292,17 +292,11 @@ describe('HilosI18nLanguagesPage', () => {
       }
       expect(new Set(reasonIds).size).toBe(2)
 
-      // The real page/table mount proves the card's DOM contract only.
-      // Equal widths and no overflow at 375px require manual acceptance
-      // under testing-strategy.md's E2E-LIGHT-DESKTOP rule.
-      expect(card.findAll('.hilos-button-row')).toHaveLength(1)
-      const actionRow = card.get('.hilos-button-row')
-      const groups = actionRow.findAll('.hilos-button-group')
-      expect(groups).toHaveLength(1)
-      const group = groups[0]!
-      expect([...actionRow.element.children]).toEqual([group.element])
+      const edit = card.get('[data-id="i18n-languages-edit-qx"]')
+      const group = edit.element.parentElement!
+      expect([...group.parentElement!.children]).toEqual([group])
       expect(
-        [...group.element.children].map((child) => [
+        [...group.children].map((child) => [
           child.tagName,
           child.getAttribute('data-id'),
         ]),
@@ -312,9 +306,11 @@ describe('HilosI18nLanguagesPage', () => {
         ['BUTTON', 'i18n-languages-delete-qx'],
         ['SPAN', 'i18n-languages-delete-reason-qx'],
       ])
-      const why = group.get('button[data-id="hilos-action-reason"]')
-      expect((why.element as HTMLButtonElement).disabled).toBe(false)
-      expect(why.attributes('title')).toBe(SERVER_REASONS[deleteReason])
+      const why = group.querySelector(
+        'button[data-id="hilos-action-reason"]',
+      ) as HTMLButtonElement
+      expect(why.disabled).toBe(false)
+      expect(why.getAttribute('title')).toBe(SERVER_REASONS[deleteReason])
       expect(c.focused).toEqual([])
       expect(
         document.querySelector('[data-id="i18n-language-delete-confirm"]'),

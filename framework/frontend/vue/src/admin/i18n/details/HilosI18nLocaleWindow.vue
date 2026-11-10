@@ -651,14 +651,18 @@ async function submit(): Promise<void> {
       <div v-if="mode === 'edit'" class="hilos-stack w-100 m-0">
         <div class="hilos-stack invisible" aria-hidden="true" inert>
           <div
-            class="modal-footer hilos-button-row p-0 m-0 border-0 align-self-end"
+            class="modal-footer flex-column flex-md-row align-items-stretch align-items-md-center p-0 m-0 border-0 align-self-end"
           >
             <div
-              class="hilos-button-group d-md-flex align-items-center gap-2 flex-wrap"
+              class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-2 flex-wrap"
             >
-              <div class="hilos-conflict-choices d-flex gap-2">
-                <span class="btn btn-outline-secondary">Keep mine</span>
-                <span class="btn btn-outline-secondary">Take theirs</span>
+              <div class="d-flex gap-2">
+                <span class="btn btn-outline-secondary flex-fill"
+                  >Keep mine</span
+                >
+                <span class="btn btn-outline-secondary flex-fill"
+                  >Take theirs</span
+                >
               </div>
               <span class="btn btn-secondary">{{ copy.cancel }}</span>
               <span class="btn btn-outline-primary">{{
@@ -668,7 +672,7 @@ async function submit(): Promise<void> {
             </div>
           </div>
           <div
-            class="modal-footer hilos-button-row p-0 m-0 border-0 align-self-end"
+            class="modal-footer flex-column flex-md-row align-items-stretch align-items-md-center p-0 m-0 border-0 align-self-end"
           >
             <span class="btn btn-secondary">{{ copy.switchOn.back }}</span>
             <span class="btn btn-primary">{{
@@ -677,7 +681,7 @@ async function submit(): Promise<void> {
           </div>
         </div>
         <div
-          class="modal-footer hilos-button-row p-0 m-0 border-0 align-self-end"
+          class="modal-footer flex-column flex-md-row align-items-stretch align-items-md-center p-0 m-0 border-0 align-self-end"
         >
           <template v-if="step === 'switchOn'">
             <button
@@ -782,7 +786,7 @@ async function submit(): Promise<void> {
       <div v-else class="hilos-stack w-100 m-0">
         <div class="hilos-stack invisible" aria-hidden="true" inert>
           <div
-            class="modal-footer hilos-button-row p-0 m-0 border-0 align-self-end"
+            class="modal-footer flex-column flex-md-row align-items-stretch align-items-md-center p-0 m-0 border-0 align-self-end"
           >
             <span class="btn btn-secondary">{{ copy.close }}</span>
             <span class="btn btn-outline-danger">{{
@@ -790,14 +794,14 @@ async function submit(): Promise<void> {
             }}</span>
           </div>
           <div
-            class="modal-footer hilos-button-row p-0 m-0 border-0 align-self-end"
+            class="modal-footer flex-column flex-md-row align-items-stretch align-items-md-center p-0 m-0 border-0 align-self-end"
           >
             <span class="btn btn-secondary">{{ copy.switchOff.back }}</span>
             <span class="btn btn-danger">{{ copy.switchOff.confirm }}</span>
           </div>
         </div>
         <div
-          class="modal-footer hilos-button-row p-0 m-0 border-0 align-self-end"
+          class="modal-footer flex-column flex-md-row align-items-stretch align-items-md-center p-0 m-0 border-0 align-self-end"
         >
           <template v-if="step === 'switchOff'">
             <button

@@ -1,7 +1,8 @@
 // ConflictActions — the action group for an edit modal with 3-way-merge
 // conflict resolution. The group draws, left to right, the conflict choices, the
 // window's Cancel (`<ng-template #cancelButton>`) and Save, in that same markup
-// order, so Tab runs left to right. While no conflict stands, an invisible twin
+// order, so Tab runs left to right. Below md the group runs top to bottom in
+// that same markup order. While no conflict stands, an invisible twin
 // of the same markup holds the choices' room, so neither the arrival nor the
 // leaving of a conflict moves Cancel or Save (styling-rules.md, "The room a
 // live message takes"; the owner's decision on the acceptance of HIL-1050). The
@@ -52,7 +53,7 @@ export interface ConflictSaveButtonContext {
  * The choice buttons and the inert spans of their twin, to the character —
  * the room equals the true width of the choices only while the classes match.
  */
-const CHOICE_CLASS = 'btn btn-outline-secondary'
+const CHOICE_CLASS = 'btn btn-outline-secondary flex-fill'
 
 /** The Save-plus-resolutions action group for a conflict-aware edit modal. */
 @Component({
@@ -60,15 +61,12 @@ const CHOICE_CLASS = 'btn btn-outline-secondary'
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NgTemplateOutlet],
   host: {
-    class: 'hilos-button-group d-md-flex align-items-center gap-2 flex-wrap',
+    class:
+      'd-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-2 flex-wrap',
   },
   template: `
     @if (conflict()) {
-      <div
-        #choices
-        class="hilos-conflict-choices d-flex gap-2"
-        data-id="conflict-choices"
-      >
+      <div #choices class="d-flex gap-2" data-id="conflict-choices">
         <button
           type="button"
           [class]="choiceClass"
@@ -98,7 +96,7 @@ const CHOICE_CLASS = 'btn btn-outline-secondary'
       </div>
     } @else {
       <div
-        class="hilos-conflict-choices d-flex gap-2 invisible"
+        class="d-flex gap-2 invisible"
         aria-hidden="true"
         data-id="conflict-choices-idle"
       >

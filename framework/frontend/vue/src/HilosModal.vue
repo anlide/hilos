@@ -25,9 +25,9 @@ the real roots without restarting the focus trap or scroll lock.
 The body is what scrolls, always: the dialog is never taller than the window
 (modal-dialog-scrollable), the header and the footer stay put, and a short
 dialog is not changed by it at all. On a narrow screen the dialog becomes a
-sheet at the bottom edge and its buttons one row sharing it equally, the main
-action last, on the right — inside the modal, so no surface that opens one is
-touched.
+sheet at the bottom edge and its buttons a full-width column in markup order,
+the main action last, at the bottom — inside the modal, so no surface that opens
+one is touched.
 The dialog stays narrow by default; `size='wide'` applies Bootstrap's modal-lg
 when the opening surface knows its content is a table or an analysis
 (mockups/components/modal, the Sizes node).
@@ -418,10 +418,11 @@ function onTab(event: KeyboardEvent): void {
             </div>
             <div
               v-if="$slots.actions || showCopy"
-              class="modal-footer hilos-button-row"
+              class="modal-footer flex-column flex-md-row align-items-stretch align-items-md-center"
             >
-              <!-- Copy comes first in the markup so the main action stands on
-              the right, last in the row. -->
+              <!-- Copy comes first in the markup; the main action stays last
+              in it — at the bottom of the column below md, and on the right
+              from md. -->
               <button
                 v-if="showCopy"
                 type="button"
@@ -476,7 +477,9 @@ function onTab(event: KeyboardEvent): void {
               <div class="modal-body">
                 <p class="mb-0">{{ confirmMessage }}</p>
               </div>
-              <div class="modal-footer hilos-button-row">
+              <div
+                class="modal-footer flex-column flex-md-row align-items-stretch align-items-md-center"
+              >
                 <button
                   type="button"
                   class="btn btn-secondary"

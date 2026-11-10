@@ -23,7 +23,7 @@ export function HilosI18nLanguageRowActions({
   const reason = verdict.disabled ? verdict.reason : null
   const reasonId = useId()
   return (
-    <span className="hilos-button-group d-md-inline-flex gap-1">
+    <span className="d-inline-flex gap-1">
       {row.enabled ? (
         <button
           type="button"

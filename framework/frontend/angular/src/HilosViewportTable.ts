@@ -1293,12 +1293,12 @@ class HilosViewportTableRecord {
                 </div>
               }
 
-              <!-- The controls of the row, one row at the foot of the
-              card, sharing it equally. Which of them comes first is the
-              markup the page hands over, and the framework neither
-              reorders them nor takes one away (Flow F2). -->
+              <!-- The controls of the row, a column at the foot of the
+              card. Which of them comes first is the markup the page
+              hands over, and the framework neither reorders them nor
+              takes one away (Flow F2). -->
               @if (cellFor(layout.actions); as actions) {
-                <div class="d-flex gap-2 hilos-button-row">
+                <div class="d-flex flex-column gap-2">
                   <ng-container
                     [ngTemplateOutlet]="actions"
                     [ngTemplateOutletContext]="{

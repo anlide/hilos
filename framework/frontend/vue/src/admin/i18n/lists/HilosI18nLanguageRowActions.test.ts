@@ -72,17 +72,12 @@ describe('HilosI18nLanguageRowActions', () => {
       )
       expect((buttons[index]!.element as HTMLButtonElement).disabled).toBe(true)
     })
-    const groups = view.findAll('.hilos-button-group')
-    expect(groups).toHaveLength(2)
-    for (const group of groups) {
-      expect(group.classes()).toEqual([
-        'hilos-button-group',
-        'd-md-inline-flex',
-        'gap-1',
-      ])
-      expect(group.find('.hilos-button-group').exists()).toBe(false)
+    const edits = view.findAll('[data-id="i18n-languages-edit-es"]')
+    expect(edits).toHaveLength(2)
+    for (const edit of edits) {
+      const group = edit.element.parentElement!
       expect(
-        [...group.element.children].map((child) => [
+        [...group.children].map((child) => [
           child.tagName,
           child.getAttribute('data-id'),
         ]),
@@ -93,7 +88,9 @@ describe('HilosI18nLanguageRowActions', () => {
         ['SPAN', 'i18n-languages-delete-reason-es'],
       ])
       expect(
-        group.get('[data-id="hilos-action-reason"]').attributes('title'),
+        group
+          .querySelector('[data-id="hilos-action-reason"]')
+          ?.getAttribute('title'),
       ).toBe(LOCALES)
     }
     view.unmount()

@@ -526,7 +526,7 @@ function IncidentCard({
             ))}
           </ol>
         )}
-        <div className="hilos-button-row">
+        <div>
           {card.canCancelPublication && (
             <LoadingButton
               className="btn-outline-danger btn-sm"

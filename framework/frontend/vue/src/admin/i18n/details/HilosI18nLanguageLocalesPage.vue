@@ -292,7 +292,7 @@ function closeDelete(open: boolean): void {
           />
         </template>
         <template #cell-actions="{ row }">
-          <div class="hilos-button-row">
+          <div>
             <button
               v-if="row.localeCode === null"
               type="button"

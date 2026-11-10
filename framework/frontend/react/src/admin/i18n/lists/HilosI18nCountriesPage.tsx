@@ -211,7 +211,7 @@ function CountriesList({ context }: HilosI18nCountriesPageProps) {
             />
           ),
           [HILOS_TABLE_ACTIONS_KEY]: (row) => (
-            <span className="hilos-button-group d-md-inline-flex gap-1">
+            <span className="d-inline-flex gap-1">
               <button
                 type="button"
                 className={`btn btn-sm ${row.enabled ? 'btn-outline-secondary' : 'btn-outline-primary'}`}

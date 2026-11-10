@@ -1114,7 +1114,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
       Array.from(card.querySelectorAll('dt')).map((label) => label.textContent),
     ).toEqual(['Kind'])
     expect(card.querySelector('dd .kind')).not.toBeNull()
-    expect(card.querySelector('.hilos-button-row .restore')).not.toBeNull()
+    expect(card.querySelector('.restore')).not.toBeNull()
     // A column the page kept out of the card is nowhere in it, though it still
     // stands in the row.
     expect(card.querySelector('.secret')).toBeNull()
@@ -1150,7 +1150,6 @@ describe('HilosViewportTable drawing a row as a card', () => {
       container.querySelectorAll('[data-id="hilos-table-row-a"] td'),
     ).toHaveLength(CARD_COLUMNS.length + 1)
     expect(cardOf(container, 'a').querySelectorAll('dt')).toHaveLength(0)
-    expect(cardOf(container, 'a').querySelector('.hilos-button-row')).toBeNull()
   })
 
   it('puts the declared cell class on the row cell and not on the card line', () => {
@@ -2597,7 +2596,7 @@ describe('HilosViewportTable expanding a card', () => {
     )
     expect(blocks[1]?.tagName).toBe('DL')
     expect(blocks[2]?.getAttribute('data-id')).toBe('hilos-table-row-detail-a')
-    expect(blocks[3]?.classList.contains('hilos-button-row')).toBe(true)
+    expect(blocks[3]?.querySelector('.restore')).not.toBeNull()
   })
 
   it('gives the card panel an id of its own, apart from the row panel', () => {
@@ -4215,7 +4214,16 @@ function tableGeometryDOM() {
         return rect(card ? 450 : 40 + layout.main, card ? 24.5 : 18.5)
       if (id.startsWith('hilos-table-row-detail-'))
         return rect(card ? 380 : 58.5 + layout.main, 60.25)
-      if (this.matches('.hilos-button-row')) return rect(400, 46)
+      if (
+        this.tagName === 'DIV' &&
+        (card || tiles) &&
+        [...this.children].some(
+          (child) =>
+            child instanceof HTMLElement &&
+            (child.dataset.id ?? '').startsWith('project-action-'),
+        )
+      )
+        return rect(400, 46)
       if (this.matches('.hilos-table-replacement-row'))
         return rect(0, layout.reason + 1)
       if (
@@ -4538,8 +4546,11 @@ describe('HilosViewportTable connected geometry', () => {
       expect(detail.querySelector('button')?.textContent).toBe('Detail action')
       expect(wide.getAttribute('aria-controls')).not.toBe(detail.id)
       expect(container.querySelector('.ms-auto .hilos-table-text')).toBeNull()
+      const cardAct = [
+        ...container.querySelectorAll('[data-id^="hilos-table-card-"] button'),
+      ].find((button) => button.textContent === 'Act')
       expect(
-        container.querySelector('.hilos-button-row .hilos-table-text'),
+        cardAct?.parentElement?.querySelector('.hilos-table-text'),
       ).toBeNull()
     },
   )

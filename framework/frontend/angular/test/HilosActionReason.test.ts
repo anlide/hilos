@@ -18,8 +18,8 @@ const reason = 'Cannot delete: the language has locales.'
   selector: 'test-action-reason',
   imports: [HilosActionReason],
   template: `
-    <div class="hilos-button-row" tabindex="-1" data-id="fallback">
-      <div class="hilos-button-group d-md-inline-flex gap-1" data-id="actions">
+    <div tabindex="-1" data-id="fallback">
+      <div data-id="actions">
         @if (present()) {
           <button
             hilosActionReason

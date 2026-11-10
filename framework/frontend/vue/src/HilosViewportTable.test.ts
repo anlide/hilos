@@ -1339,7 +1339,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
     expect(card.text()).not.toContain('State')
     expect(card.findAll('dt').map((label) => label.text())).toEqual(['Kind'])
     expect(card.find('dd .kind').exists()).toBe(true)
-    expect(card.find('.hilos-button-row .restore').exists()).toBe(true)
+    expect(card.find('.restore').exists()).toBe(true)
     // A column the page kept out of the card is nowhere in it, though it still
     // stands in the row.
     expect(card.find('.secret').exists()).toBe(false)
@@ -1377,9 +1377,6 @@ describe('HilosViewportTable drawing a row as a card', () => {
       CARD_COLUMNS.length + 1,
     )
     expect(wrapper.findAll('[data-id="hilos-table-card-a"] dt')).toHaveLength(0)
-    expect(
-      wrapper.find('[data-id="hilos-table-card-a"] .hilos-button-row').exists(),
-    ).toBe(false)
   })
 
   it('puts the declared cell class on the row cell and not on the card line', () => {
@@ -2093,7 +2090,7 @@ describe('HilosViewportTable expanding a card', () => {
     )
     expect(blocks[1]?.element.tagName).toBe('DL')
     expect(blocks[2]?.attributes('data-id')).toBe('hilos-table-row-detail-a')
-    expect(blocks[3]?.classes()).toContain('hilos-button-row')
+    expect(blocks[3]?.find('.restore').exists()).toBe(true)
   })
 
   it('gives the card panel an id of its own, apart from the row panel', async () => {

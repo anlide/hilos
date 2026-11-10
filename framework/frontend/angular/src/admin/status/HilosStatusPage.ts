@@ -253,7 +253,7 @@ import { HilosStatusIncidentModal } from './HilosStatusIncidentModal.js'
                     }
                   </ol>
                 }
-                <div class="hilos-button-row">
+                <div>
                   @if (card.canCancelPublication) {
                     <button
                       hilosLoadingButton

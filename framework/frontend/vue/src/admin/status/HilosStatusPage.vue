@@ -249,7 +249,7 @@ onUnmounted(() => {
               </div>
             </li>
           </ol>
-          <div class="hilos-button-row">
+          <div>
             <LoadingButton
               v-if="card.canCancelPublication"
               class="btn-outline-danger btn-sm"
