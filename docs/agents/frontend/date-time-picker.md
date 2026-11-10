@@ -892,24 +892,88 @@ Date-only closes after a complete choice: one date, or both range dates.
 Datetime and time controls close explicitly, including Done or Escape; Done
 and Escape neither save the form nor undo parts already entered. Escape
 returns focus to the opener. Within a parent modal, do not create a second
-independent modal focus trap. Shared DOM focus and scroll effects belong in
-the common browser helper, not the DOM-free controller or three separate
-implementations. The helper is
-`framework/frontend/core/src/dom/popupEffects.ts`; its public `/base` exports
-are `bindPopupDismiss` and `revealPickerPanel`. Keep the panel in the DOM
-inside the picker component so a parent modal's focus trap includes it. When
-the panel is open, Escape must not reach the parent modal.
+independent modal focus trap. Shared DOM focus, scroll and dismissal effects
+live in browser-only core DOM helpers; the controller stays DOM-free and views
+use the shared helpers. The `@hilos/core/base` entry exports
+`bindPopupDismiss`, `revealPickerPanel`, `bindNarrowScreen` and
+`revealNarrowPickerPanel`. Keep the panel in the DOM
+inside the picker component so a parent modal's focus trap includes it. In a
+modal the wide panel stays inside the modal's scrolling body, so the whole
+panel is visible at once only when that body is at least as tall as the panel;
+a shorter form reaches the rest by scrolling the body. When the panel is open,
+Escape must not reach the parent modal.
 (not in the code yet — HIL-1974)
 (not in the code yet — HIL-1977)
 
-On a narrow screen, expand the calendar under the field inside the parent
-sheet's body, using its width. Keep the sheet header and footer in place and
-bring the field into view within the body. Do not stack another popup layer
-over the sheet. Wrap a range's second endpoint as a whole, expose the active
-endpoint and Done, use touch targets of at least 44 px and numeric keyboard
-input for the numeric parts. This is the narrow view's behavior, not merely
-the desktop popup squeezed smaller.
-(not in the code yet — HIL-1972)
+The narrow layout applies at `(max-width: 767.98px)`. `bindNarrowScreen()`
+synchronously reports the initial media-query result so the first render uses
+the matching layout, including when the calendar is already open. It reports
+later `change` events and returns an unsubscribe function. Without a browser
+media query, including when querying it is unavailable or throws, it reports
+`false`. A picker component owns one width subscription independently of its
+controller and releases it when unmounted.
+
+When the narrow panel opens, `revealNarrowPickerPanel` scrolls the field label
+to the start of the sheet body, then focuses the active day with scrolling
+prevented. With no month grid, as in a time-only picker, it focuses the dialog
+itself rather than a time input. After calendar-key navigation, the existing
+`revealPickerPanel` effect continues to reveal the active day. Keep the panel
+in normal flow directly under the field, at the available width, without
+absolute positioning or a shadow. Keep the sheet header and footer in place;
+keep its `role="dialog"` and accessible name the same in both layouts. The
+panel remains inside the picker component, so the parent modal's focus trap
+includes it.
+
+Give each endpoint its own full-width outer item. Its parts may wrap within
+that item; keep each part's prefix with its input, and keep the range dash
+with the second endpoint's first part. Expose range endpoint buttons only
+when a range calendar grid is present. Label them with `labels.from` and
+`labels.to`, expose the active edge with `aria-pressed`, and show each edge's
+parts as the concatenation of its prefixes and text or placeholder, including
+an offset. Activating an edge keeps focus on its button and lets the calendar
+model update the month and focused day. Keep the polite announcement of the
+active date edge. When a month grid is present, show only the active edge's
+time row, even if that edge has no complete date. Without a month grid, retain
+the existing time-row behavior. Keep the reason and offset choice available
+for either edge. Use touch targets of at least 44 px.
+
+Put Done after the other panel controls as its final visible control, using
+`type="button"` and `labels.done`. It closes the panel without saving the form
+or changing the draft, and focus returns to the calendar opener through the
+existing close path. The narrow panel closes
+through Done, a field click, the calendar button, Escape, or the calendar's
+existing date-selection behavior. Do not close it on an outside press or when
+focus leaves it. Escape still stops before the parent modal. Disabled or busy
+state continues to block day and time editing; range-edge controls and Done
+remain usable.
+
+On narrow view, a press in the segmented field is resolved at `mousedown`;
+the calendar button is outside this behavior:
+
+- With the panel closed and no field part focused, cancel `mousedown` so no
+  part takes focus or opens the screen keyboard; the following click opens
+  the panel.
+- With the panel open, a clicked part takes its normal focus and the click
+  closes the panel, leaving focus on that part. Clicking the empty field group
+  closes the panel and returns focus to the calendar button.
+- With the panel closed and a part already focused for typing, the press moves
+  focus normally and does not open the panel.
+
+Field presses on a wide screen retain their existing behavior. Tab,
+Alt+Down and Escape behave the same at either width. On every width, set
+`inputmode="numeric"` for numeric parts and `inputmode="none"` for AM/PM and
+offset. Always cancel `beforeinput`: a single digit follows the same
+`inputDigit()` path and auto-advance as a keyboard digit, deletion calls
+`clearPart()`, and other input is ignored. Desktop keydown cancels handled
+input before `beforeinput` can duplicate it; Android may report an
+`Unidentified` keydown, so the `beforeinput` path is needed there.
+
+If width changes while the panel is open, keep it open and leave the value and
+draft untouched. Add or remove the outside-dismiss listeners as the layout
+changes. If the responsive render removes the focused control and focus falls
+to the document body, move focus to the dialog after rendering without
+scrolling. Leave focus alone when it is still on a connected target. The
+existing picker replacement and unmount rules continue to apply.
 (not in the code yet — HIL-1975)
 (not in the code yet — HIL-1978)
 

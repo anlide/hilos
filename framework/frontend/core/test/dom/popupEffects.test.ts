@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   bindPopupDismiss,
   revealPickerPanel,
+  revealNarrowPickerPanel,
 } from '../../src/dom/popupEffects.js'
 
 let unbind: (() => void) | undefined
@@ -180,5 +181,73 @@ describe('revealPickerPanel', () => {
 
     expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: 'nearest' })
     expect(document.activeElement).toBe(outside)
+  })
+})
+
+describe('revealNarrowPickerPanel', () => {
+  it('scrolls the anchor to the start before focusing the active grid day', () => {
+    const anchor = document.createElement('label')
+    const panel = document.createElement('div')
+    panel.setAttribute('role', 'dialog')
+    panel.tabIndex = -1
+    const time = document.createElement('input')
+    time.setAttribute('role', 'spinbutton')
+    const inactive = document.createElement('button')
+    inactive.setAttribute('role', 'gridcell')
+    inactive.tabIndex = -1
+    const active = document.createElement('button')
+    active.setAttribute('role', 'gridcell')
+    active.tabIndex = 0
+    panel.append(time, inactive, active)
+    document.body.append(anchor, panel)
+    const scroll = vi.spyOn(anchor, 'scrollIntoView')
+    const panelScroll = vi.spyOn(panel, 'scrollIntoView')
+    const focus = vi.spyOn(active, 'focus')
+    const panelFocus = vi.spyOn(panel, 'focus')
+    const inactiveFocus = vi.spyOn(inactive, 'focus')
+    const timeFocus = vi.spyOn(time, 'focus')
+
+    revealNarrowPickerPanel(panel, anchor)
+
+    expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: 'start' })
+    expect(focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true })
+    expect(scroll.mock.invocationCallOrder[0]).toBeLessThan(
+      focus.mock.invocationCallOrder[0],
+    )
+    expect(document.activeElement).toBe(active)
+    expect(panelScroll).not.toHaveBeenCalled()
+    expect(panelFocus).not.toHaveBeenCalled()
+    expect(inactiveFocus).not.toHaveBeenCalled()
+    expect(timeFocus).not.toHaveBeenCalled()
+  })
+
+  it('focuses the dialog instead of time parts when there is no grid', () => {
+    const anchor = document.createElement('label')
+    const panel = document.createElement('div')
+    panel.setAttribute('role', 'dialog')
+    panel.tabIndex = -1
+    const hour = document.createElement('input')
+    hour.setAttribute('role', 'spinbutton')
+    const minute = document.createElement('input')
+    minute.setAttribute('role', 'spinbutton')
+    panel.append(hour, minute)
+    document.body.append(anchor, panel)
+    const scroll = vi.spyOn(anchor, 'scrollIntoView')
+    const panelScroll = vi.spyOn(panel, 'scrollIntoView')
+    const focus = vi.spyOn(panel, 'focus')
+    const hourFocus = vi.spyOn(hour, 'focus')
+    const minuteFocus = vi.spyOn(minute, 'focus')
+
+    revealNarrowPickerPanel(panel, anchor)
+
+    expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: 'start' })
+    expect(focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true })
+    expect(scroll.mock.invocationCallOrder[0]).toBeLessThan(
+      focus.mock.invocationCallOrder[0],
+    )
+    expect(document.activeElement).toBe(panel)
+    expect(panelScroll).not.toHaveBeenCalled()
+    expect(hourFocus).not.toHaveBeenCalled()
+    expect(minuteFocus).not.toHaveBeenCalled()
   })
 })

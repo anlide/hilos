@@ -325,7 +325,12 @@ export {
   type ScrollLockOwner,
 } from '../dom/scrollLock.js'
 export { copyPageInto } from '../dom/pageCopy.js'
-export { bindPopupDismiss, revealPickerPanel } from '../dom/popupEffects.js'
+export {
+  bindPopupDismiss,
+  revealPickerPanel,
+  revealNarrowPickerPanel,
+} from '../dom/popupEffects.js'
+export { bindNarrowScreen } from '../dom/narrowScreen.js'
 export {
   enterModalLayer,
   leaveModalLayer,

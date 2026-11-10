@@ -14,7 +14,7 @@ import {
 } from './dateTimePickerFieldCases.js'
 
 /** Find a named native control or ARIA role inside the supplied surface. */
-function named<T extends HTMLElement = HTMLElement>(
+export function named<T extends HTMLElement = HTMLElement>(
   root: ParentNode,
   role: string,
   name: string,
@@ -26,14 +26,14 @@ function named<T extends HTMLElement = HTMLElement>(
   return element
 }
 
-function panel(
+export function panel(
   view: DateTimePickerFieldView,
   name = 'Choose date',
 ): HTMLElement {
   return named(view.root, 'dialog', name)
 }
 
-function opener(
+export function opener(
   view: DateTimePickerFieldView,
   name = 'Open calendar',
 ): HTMLButtonElement {
@@ -41,7 +41,7 @@ function opener(
 }
 
 /** Click through the native DOM and settle the view's signal rendering. */
-async function click(
+export async function click(
   view: DateTimePickerFieldView,
   element: HTMLElement,
 ): Promise<void> {
@@ -49,7 +49,10 @@ async function click(
   await view.flush()
 }
 
-function day(view: DateTimePickerFieldView, name: string): HTMLButtonElement {
+export function day(
+  view: DateTimePickerFieldView,
+  name: string,
+): HTMLButtonElement {
   return named(panel(view), 'gridcell', name)
 }
 
@@ -521,7 +524,7 @@ export function registerDateTimePickerCalendarCases(
           bubbles: true,
           cancelable: true,
           inputType: 'insertText',
-          data: '9',
+          data: 'x',
         })
         seconds.dispatchEvent(nativeInput)
         expect(nativeInput.defaultPrevented).toBe(true)

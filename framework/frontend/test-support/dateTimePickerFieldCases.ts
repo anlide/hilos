@@ -615,7 +615,7 @@ export function registerDateTimePickerFieldCases(
         expect(picker.state.get()).toBe(before)
         const event = new InputEvent('beforeinput', {
           inputType: 'insertText',
-          data: '9',
+          data: 'x',
           bubbles: true,
           cancelable: true,
         })

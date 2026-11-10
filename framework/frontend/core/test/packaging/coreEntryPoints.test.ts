@@ -55,6 +55,7 @@ import * as calendarDates from '../../src/calendar/calendarDate.js'
 import * as calendarMatrix from '../../src/calendar/monthMatrix.js'
 import * as textLineMerge from '../../src/conflict/textLineMerge.js'
 import * as restoreProgress from '../../src/connection/restoreProgress.js'
+import * as narrowScreen from '../../src/dom/narrowScreen.js'
 import * as popupEffects from '../../src/dom/popupEffects.js'
 import * as tableFocusReturn from '../../src/dom/tableFocusReturn.js'
 import * as core from '../../src/index.js'
@@ -233,7 +234,12 @@ const dateTimePickerTypes = [
 ]
 /** Channel icons belong to base without extending the compatibility root. */
 const notificationChannelValues = ['notificationChannelIcon']
-const popupEffectsValues = ['bindPopupDismiss', 'revealPickerPanel']
+const popupEffectsValues = [
+  'bindPopupDismiss',
+  'revealPickerPanel',
+  'revealNarrowPickerPanel',
+]
+const narrowScreenValues = ['bindNarrowScreen']
 /** Public legal document APIs added for the Privacy page and shared SDK reader. */
 const publicLegalValues = [
   'LEGAL_PRIVACY_SECTION',
@@ -1144,6 +1150,11 @@ describe('core public entries', () => {
           expect(value, name).toBe(
             popupEffects[name as keyof typeof popupEffects],
           )
+        } else if (entry === './base' && narrowScreenValues.includes(name)) {
+          expect(root, name).not.toHaveProperty(name)
+          expect(value, name).toBe(
+            narrowScreen[name as keyof typeof narrowScreen],
+          )
         } else if (
           entry === './status' &&
           publicStatusDerivedValues.includes(name)
@@ -1477,6 +1488,7 @@ describe('core public entries', () => {
         ...dateTimePickerValues,
         ...notificationChannelValues,
         ...popupEffectsValues,
+        ...narrowScreenValues,
         ...publicStatusDerivedValues,
         ...analyticsOverviewValues,
         ...analyticsPeriodValues,
@@ -2081,6 +2093,7 @@ describe('core public entries', () => {
       'notifications/notificationPreferences.ts',
     )
     const popupEffectsExports = exportsOf('dom/popupEffects.ts')
+    const narrowScreenExports = exportsOf('dom/narrowScreen.ts')
     const calendarExports = new Map([
       ...exportsOf('calendar/calendarDate.ts'),
       ...exportsOf('calendar/monthMatrix.ts'),
@@ -2131,6 +2144,12 @@ describe('core public entries', () => {
         ) {
           expect(root.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(popupEffectsExports.get(name))
+        } else if (
+          entry === 'base/index.ts' &&
+          narrowScreenValues.includes(name)
+        ) {
+          expect(root.has(name), name).toBe(false)
+          expect(symbol, `${entry}:${name}`).toBe(narrowScreenExports.get(name))
         } else if (
           entry === 'status/index.ts' &&
           publicDerivedNames.includes(name)
@@ -2371,6 +2390,7 @@ describe('core public entries', () => {
         ...dateTimePickerNames,
         ...notificationChannelValues,
         ...popupEffectsValues,
+        ...narrowScreenValues,
         ...publicDerivedNames,
         ...overviewNames,
         ...periodNames,

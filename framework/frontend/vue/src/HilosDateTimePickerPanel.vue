@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, shallowRef } from 'vue'
 import {
+  revealNarrowPickerPanel,
   revealPickerPanel,
   type DateTimePickerCalendarSnapshot,
   type DateTimePickerController,
@@ -11,13 +12,18 @@ import {
   type DateTimePickerPart,
   type DateTimePickerSnapshot,
 } from '@hilos/core/base'
-import { handleDateTimePickerPartKey } from './dateTimePickerPartKeys.js'
+import {
+  dateTimePickerPartInputMode,
+  handleDateTimePickerPartInput,
+  handleDateTimePickerPartKey,
+} from './dateTimePickerPartKeys.js'
 
 const props = defineProps<{
   picker: DateTimePickerController<DateTimePickerKind, DateTimePickerCount>
   id: string
   calendar: DateTimePickerCalendarSnapshot
   state: DateTimePickerSnapshot<DateTimePickerKind, DateTimePickerCount>
+  narrow: boolean
   describedBy?: string
   blocked: boolean
 }>()
@@ -38,11 +44,12 @@ const timeRows = computed(() =>
   props.picker.kind === 'date'
     ? []
     : endpoints.value
-        .filter(
-          ({ edge, snapshot }) =>
-            edge === 'start' ||
-            props.picker.kind === 'time' ||
-            hasDate(snapshot),
+        .filter(({ edge, snapshot }) =>
+          props.narrow && props.calendar.grid !== null
+            ? edge === props.calendar.activeEdge
+            : edge === 'start' ||
+              props.picker.kind === 'time' ||
+              hasDate(snapshot),
         )
         .map(({ edge, snapshot }) => ({
           edge,
@@ -85,6 +92,14 @@ function partLabel(edge: DateTimePickerEdge, label: string): string {
   return `${props.picker.labels[edge === 'start' ? 'from' : 'to']} ${label}`
 }
 
+function endpointText(
+  snapshot: DateTimePickerEndpointSnapshot<DateTimePickerKind>,
+): string {
+  return snapshot.parts
+    .map((part) => part.prefix + (part.text || part.placeholder))
+    .join('')
+}
+
 function isCurrent(target: EventTarget | null): boolean {
   const element = panel.value
   return (
@@ -98,6 +113,22 @@ function isCurrent(target: EventTarget | null): boolean {
 
 function onGesture(event: Event, gesture: () => void): void {
   if (isCurrent(event.currentTarget)) gesture()
+}
+
+function onBeforeInput(
+  event: InputEvent,
+  edge: DateTimePickerEdge,
+  part: DateTimePickerPart,
+): void {
+  const target = event.target
+  handleDateTimePickerPartInput(
+    event,
+    props.picker,
+    edge,
+    part,
+    () => panel.value,
+    () => isCurrent(target),
+  )
 }
 
 async function onDayKeydown(event: KeyboardEvent): Promise<void> {
@@ -168,7 +199,14 @@ function offsetText(index: number, text: string): string {
 
 onMounted(() => {
   const element = panel.value
-  if (element !== null && isCurrent(element)) revealPickerPanel(element)
+  if (element !== null && isCurrent(element)) {
+    if (props.narrow)
+      revealNarrowPickerPanel(
+        element,
+        element.ownerDocument.getElementById(`${props.id}-label`) ?? element,
+      )
+    else revealPickerPanel(element)
+  }
 })
 </script>
 
@@ -183,13 +221,43 @@ onMounted(() => {
         ? picker.labels.chooseTime
         : picker.labels.chooseDate
     "
-    class="position-absolute top-100 start-0 z-3 mt-1 border rounded-3 shadow bg-body p-2"
+    :class="
+      narrow
+        ? 'mt-2 border rounded-3 bg-body p-2'
+        : 'position-absolute top-100 start-0 z-3 mt-1 border rounded-3 shadow bg-body p-2'
+    "
   >
     <template v-if="calendar.grid !== null">
+      <div v-if="narrow && picker.count === 'range'" class="row g-2 mb-2">
+        <div v-for="{ edge, snapshot } in endpoints" :key="edge" class="col-6">
+          <button
+            type="button"
+            class="btn btn-sm w-100 text-start"
+            :class="
+              calendar.activeEdge === edge
+                ? 'btn-outline-primary active'
+                : 'btn-outline-secondary'
+            "
+            :aria-pressed="calendar.activeEdge === edge"
+            @click="
+              onGesture($event, () => picker.calendar.setActiveEdge(edge))
+            "
+          >
+            <span class="d-block small opacity-75">{{
+              picker.labels[edge === 'start' ? 'from' : 'to']
+            }}</span>
+            <span class="small">{{ endpointText(snapshot) }}</span>
+          </button>
+        </div>
+      </div>
       <div class="d-flex align-items-center gap-1 mb-1">
         <button
           type="button"
-          class="btn btn-sm btn-link text-body-secondary"
+          :class="
+            narrow
+              ? 'btn btn-lg btn-outline-secondary'
+              : 'btn btn-sm btn-link text-body-secondary'
+          "
           :aria-label="picker.labels.previousMonth"
           :disabled="!calendar.grid.canPreviousMonth"
           @click="onGesture($event, () => picker.calendar.showPreviousMonth())"
@@ -205,7 +273,11 @@ onMounted(() => {
         </div>
         <button
           type="button"
-          class="btn btn-sm btn-link text-body-secondary"
+          :class="
+            narrow
+              ? 'btn btn-lg btn-outline-secondary'
+              : 'btn btn-sm btn-link text-body-secondary'
+          "
           :aria-label="picker.labels.nextMonth"
           :disabled="!calendar.grid.canNextMonth"
           @click="onGesture($event, () => picker.calendar.showNextMonth())"
@@ -260,14 +332,17 @@ onMounted(() => {
                 <button
                   type="button"
                   role="gridcell"
-                  class="btn btn-sm w-100 px-2"
-                  :class="{
-                    'btn-primary': day.selected,
-                    'text-body-tertiary': !day.selected && day.disabled,
-                    'border-primary':
-                      !day.selected &&
-                      (day.today || day.span === 'preview-end'),
-                  }"
+                  class="btn w-100"
+                  :class="[
+                    narrow ? 'btn-lg px-0' : 'btn-sm px-2',
+                    {
+                      'btn-primary': day.selected,
+                      'text-body-tertiary': !day.selected && day.disabled,
+                      'border-primary':
+                        !day.selected &&
+                        (day.today || day.span === 'preview-end'),
+                    },
+                  ]"
                   :tabindex="day.focusTarget ? 0 : -1"
                   :aria-label="day.label"
                   :aria-selected="day.selected || undefined"
@@ -310,11 +385,18 @@ onMounted(() => {
             aria-hidden="true"
             >:</span
           >
-          <div class="d-flex flex-column align-items-center">
+          <div
+            class="d-flex flex-column align-items-center"
+            :class="{ 'gap-1': narrow }"
+          >
             <button
               type="button"
               tabindex="-1"
-              class="btn btn-link btn-sm p-0 lh-1 text-body-secondary"
+              :class="
+                narrow
+                  ? 'btn btn-lg btn-outline-secondary'
+                  : 'btn btn-link btn-sm p-0 lh-1 text-body-secondary'
+              "
               :aria-label="`${picker.labels.increase} ${partLabel(edge, part.label)}`"
               :disabled="blocked"
               @click="stepPart($event, edge, part.part, 1)"
@@ -325,17 +407,21 @@ onMounted(() => {
               type="text"
               role="spinbutton"
               autocomplete="off"
+              :inputmode="dateTimePickerPartInputMode(part.part)"
               :spellcheck="false"
               :size="Math.max(part.text.length, part.placeholder.length)"
               :value="part.text || part.placeholder"
-              class="border-0 p-0 text-center"
-              :class="
+              class="border-0 text-center"
+              :class="[
+                narrow
+                  ? 'form-control form-control-lg w-auto px-2 py-2'
+                  : 'p-0',
                 focused?.edge === edge && focused.part === part.part
                   ? 'text-bg-primary'
                   : part.text === ''
                     ? 'bg-transparent text-body-tertiary'
-                    : 'bg-transparent text-body'
-              "
+                    : 'bg-transparent text-body',
+              ]"
               :aria-label="partLabel(edge, part.label)"
               :aria-valuemin="part.valueMin"
               :aria-valuemax="part.valueMax"
@@ -344,7 +430,7 @@ onMounted(() => {
               :aria-invalid="invalid || undefined"
               :aria-describedby="description(edge)"
               :disabled="blocked"
-              @beforeinput.prevent
+              @beforeinput="onBeforeInput($event, edge, part.part)"
               @focus="
                 onGesture($event, () => (focused = { edge, part: part.part }))
               "
@@ -354,7 +440,11 @@ onMounted(() => {
             <button
               type="button"
               tabindex="-1"
-              class="btn btn-link btn-sm p-0 lh-1 text-body-secondary"
+              :class="
+                narrow
+                  ? 'btn btn-lg btn-outline-secondary'
+                  : 'btn btn-link btn-sm p-0 lh-1 text-body-secondary'
+              "
               :aria-label="`${picker.labels.decrease} ${partLabel(edge, part.label)}`"
               :disabled="blocked"
               @click="stepPart($event, edge, part.part, -1)"
@@ -375,7 +465,8 @@ onMounted(() => {
       </div>
       <div
         v-if="snapshot.offsetChoices.length > 0"
-        class="mb-2 btn-group-vertical btn-group-sm w-100"
+        class="mb-2 btn-group-vertical w-100"
+        :class="narrow ? 'btn-group-lg' : 'btn-group-sm'"
         role="radiogroup"
         :aria-label="partLabel(edge, picker.labels.chooseOffset)"
       >
@@ -403,6 +494,14 @@ onMounted(() => {
         </template>
       </div>
     </template>
+    <button
+      v-if="narrow"
+      type="button"
+      class="btn btn-lg btn-outline-secondary w-100 mt-2"
+      @click="onGesture($event, () => picker.calendar.close())"
+    >
+      {{ picker.labels.done }}
+    </button>
     <span
       v-if="picker.count === 'range'"
       class="visually-hidden"

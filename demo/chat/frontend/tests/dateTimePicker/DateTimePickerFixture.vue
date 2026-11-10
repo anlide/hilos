@@ -10,7 +10,7 @@ import {
   type DateTimePickerFactors,
   type DateTimePickerKind,
 } from '@hilos/core/base'
-import { HilosDateTimePicker, useSignal } from '@hilos/vue/base'
+import { HilosDateTimePicker, HilosModal, useSignal } from '@hilos/vue/base'
 
 // Explicit examples of presentation factors; the browser locale supplies none.
 const FACTORS = {
@@ -82,6 +82,8 @@ const busy = useSignal(busySignal)
 const disabled = useSignal(disabledSignal)
 const changes = ref(0)
 const mountId = ref(0)
+const inModal = ref(false)
+const dark = ref(false)
 
 function createPicker(): FixturePicker {
   const currentToday = today.value
@@ -143,6 +145,12 @@ watch([kind, count, zone, today, minDate], () => {
 })
 watch(factors, (value) => picker.value.setFactors(FACTORS[value]))
 watch(seconds, (value) => picker.value.setShowSeconds(value))
+watch(dark, (value) =>
+  document.documentElement.setAttribute(
+    'data-bs-theme',
+    value ? 'dark' : 'light',
+  ),
+)
 onScopeDispose(() => picker.value.dispose())
 
 function loadValue(): void {
@@ -283,9 +291,22 @@ function mountOpenTime(): void {
         />
         <label class="form-check-label" for="fixture-disabled">Disabled</label>
       </div>
+      <div>
+        <input
+          id="fixture-dark"
+          v-model="dark"
+          type="checkbox"
+          class="btn-check"
+          data-id="fixture-dark"
+        />
+        <label class="btn btn-lg btn-outline-secondary" for="fixture-dark"
+          >Dark theme</label
+        >
+      </div>
     </div>
     <div class="mb-4">
       <HilosDateTimePicker
+        v-if="!inModal"
         id="fixture-picker"
         :key="mountId"
         :picker="picker"
@@ -293,6 +314,14 @@ function mountOpenTime(): void {
         data-id="fixture-picker"
       />
     </div>
+    <button
+      type="button"
+      class="btn btn-lg btn-outline-primary"
+      data-id="fixture-open-modal"
+      @click="inModal = true"
+    >
+      Open in modal
+    </button>
     <button
       type="button"
       class="btn btn-outline-primary"
@@ -330,5 +359,57 @@ function mountOpenTime(): void {
         changes
       }}</output>
     </div>
+    <HilosModal v-model="inModal" title="Schedule maintenance">
+      <div class="mb-3">
+        <label class="form-label" for="fixture-modal-title">Title</label>
+        <input
+          id="fixture-modal-title"
+          type="text"
+          class="form-control form-control-lg"
+          value="Database upgrade"
+          data-id="fixture-modal-title"
+          data-autofocus
+        />
+      </div>
+      <HilosDateTimePicker
+        id="fixture-modal-picker"
+        :key="mountId"
+        :picker="picker"
+        :label="label"
+        data-id="fixture-modal-picker"
+      />
+      <p class="form-text mt-2 mb-0">Choose when maintenance starts.</p>
+      <div class="mt-3">
+        <label class="form-label" for="fixture-modal-description"
+          >What visitors read</label
+        >
+        <textarea
+          id="fixture-modal-description"
+          class="form-control form-control-lg"
+          rows="3"
+          data-id="fixture-modal-description"
+        ></textarea>
+      </div>
+      <p class="small text-body-secondary mt-2 mb-0">
+        This is an advance announcement. It does not close the service; the
+        freeze in Maintenance starts the actual work.
+      </p>
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-lg btn-secondary"
+          @click="requestClose"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-lg btn-primary"
+          @click="requestClose"
+        >
+          Schedule
+        </button>
+      </template>
+    </HilosModal>
   </main>
 </template>

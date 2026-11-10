@@ -1,6 +1,14 @@
 <script setup lang="ts">
-import { computed, nextTick, onUpdated, shallowRef, watch } from 'vue'
 import {
+  computed,
+  nextTick,
+  onScopeDispose,
+  onUpdated,
+  shallowRef,
+  watch,
+} from 'vue'
+import {
+  bindNarrowScreen,
   bindPopupDismiss,
   revealPickerPanel,
   subscribeSignal,
@@ -12,7 +20,11 @@ import {
   type DateTimePickerPart,
 } from '@hilos/core/base'
 import HilosDateTimePickerPanel from './HilosDateTimePickerPanel.vue'
-import { handleDateTimePickerPartKey } from './dateTimePickerPartKeys.js'
+import {
+  dateTimePickerPartInputMode,
+  handleDateTimePickerPartInput,
+  handleDateTimePickerPartKey,
+} from './dateTimePickerPartKeys.js'
 
 const props = defineProps<{
   /** The parent's controller; the parent also owns its disposal. */
@@ -31,11 +43,17 @@ const state = shallowRef(props.picker.state.get())
 const disabled = shallowRef(props.picker.disabled.get())
 const busy = shallowRef(props.picker.busy.get())
 const calendar = shallowRef(props.picker.calendar.state.get())
+const narrow = shallowRef(false)
+onScopeDispose(bindNarrowScreen((value) => (narrow.value = value)))
 const root = shallowRef<HTMLElement | null>(null)
 const opener = shallowRef<HTMLButtonElement | null>(null)
 const group = shallowRef<HTMLElement | null>(null)
 const owner = shallowRef({ picker: props.picker, active: true })
 let returnFocus = true
+let fieldPress: {
+  source: typeof owner.value
+  opens: boolean
+} | null = null
 const focused = shallowRef<{
   edge: DateTimePickerEdge
   part: DateTimePickerPart
@@ -72,11 +90,11 @@ watch(
 )
 
 watch(
-  [() => calendar.value.open, root],
-  ([open, element], previous, onCleanup) => {
+  [() => calendar.value.open, root, narrow],
+  ([open, element, isNarrow], previous, onCleanup) => {
     if (open) {
       returnFocus = true
-      if (element)
+      if (element && !isNarrow)
         onCleanup(
           bindPopupDismiss(element, () => {
             returnFocus = false
@@ -87,6 +105,31 @@ watch(
   },
   { flush: 'post', immediate: true },
 )
+
+// Capture focus before a width change removes a narrow-only control.
+watch(narrow, async () => {
+  if (!calendar.value.open) return
+  const element = root.value
+  const source = owner.value
+  const target = element?.ownerDocument.activeElement
+  if (
+    element === null ||
+    !(target instanceof HTMLElement) ||
+    !element.contains(target)
+  )
+    return
+  await nextTick()
+  if (
+    root.value === element &&
+    owner.value === source &&
+    calendar.value.open &&
+    !target.isConnected &&
+    element.ownerDocument.activeElement === element.ownerDocument.body
+  )
+    element
+      .querySelector<HTMLElement>('[role="dialog"]')
+      ?.focus({ preventScroll: true })
+})
 
 // Capture the focused control before native disabled can move focus to body.
 watch(
@@ -229,6 +272,48 @@ function openFromField(): void {
   }
 }
 
+function onFieldMousedown(event: MouseEvent): void {
+  const source = owner.value
+  fieldPress = {
+    source,
+    opens:
+      narrow.value &&
+      !calendar.value.open &&
+      focused.value === null &&
+      isCurrent(event.target, source),
+  }
+  if (fieldPress.opens) event.preventDefault()
+}
+
+function onFieldClick(event: MouseEvent): void {
+  const press = fieldPress
+  fieldPress = null
+  if (press === null || !narrow.value || !isCurrent(event.target, press.source))
+    return
+  if (press.opens) press.source.picker.calendar.open()
+  else if (calendar.value.open) {
+    returnFocus = !(event.target instanceof HTMLInputElement)
+    press.source.picker.calendar.close()
+  }
+}
+
+function onBeforeInput(
+  event: InputEvent,
+  source: typeof owner.value,
+  edge: DateTimePickerEdge,
+  part: DateTimePickerPart,
+): void {
+  const target = event.target
+  handleDateTimePickerPartInput(
+    event,
+    source.picker,
+    edge,
+    part,
+    () => group.value,
+    () => isCurrent(target, source),
+  )
+}
+
 function onKeydown(
   event: KeyboardEvent,
   source: typeof owner.value,
@@ -265,8 +350,11 @@ function onKeydown(
   }}</span>
   <div ref="root" class="position-relative" @keydown.esc="onEscape">
     <div
-      class="input-group input-group-sm flex-nowrap"
-      :class="{ 'has-validation': invalid }"
+      class="input-group flex-nowrap"
+      :class="[
+        narrow ? 'input-group-lg' : 'input-group-sm',
+        { 'has-validation': invalid },
+      ]"
     >
       <div
         :id="id"
@@ -280,37 +368,50 @@ function onKeydown(
         role="group"
         :aria-labelledby="`${id}-label`"
         :data-id="dataId"
+        @mousedown="onFieldMousedown"
+        @click="onFieldClick"
       >
         <template
           v-for="{ edge, snapshot, owner: source } in endpoints"
           :key="edge"
         >
-          <span
-            v-if="edge === 'end'"
-            class="mx-1 text-body-secondary"
-            aria-hidden="true"
-            >–</span
+          <div
+            class="d-inline-flex align-items-center"
+            :class="
+              narrow ? 'w-100 mw-100 flex-wrap' : 'flex-nowrap text-nowrap'
+            "
           >
-          <span
-            class="d-inline-flex flex-nowrap align-items-center text-nowrap"
-          >
-            <template v-for="part in snapshot.parts" :key="part.part">
+            <div
+              v-for="(part, index) in snapshot.parts"
+              :key="part.part"
+              class="d-inline-flex align-items-center flex-shrink-0"
+            >
+              <span
+                v-if="edge === 'end' && index === 0"
+                class="mx-1 text-body-secondary"
+                aria-hidden="true"
+                >–</span
+              >
               <span aria-hidden="true">{{ part.prefix }}</span>
               <input
                 type="text"
                 role="spinbutton"
                 autocomplete="off"
+                :inputmode="dateTimePickerPartInputMode(part.part)"
                 :spellcheck="false"
                 :size="Math.max(part.text.length, part.placeholder.length)"
                 :value="part.text || part.placeholder"
-                class="border-0 p-0 text-center"
-                :class="
+                class="border-0 text-center"
+                :class="[
+                  narrow
+                    ? 'form-control form-control-lg w-auto px-2 py-2'
+                    : 'p-0',
                   focused?.edge === edge && focused.part === part.part
                     ? 'text-bg-primary'
                     : part.text === ''
                       ? 'bg-transparent text-body-tertiary'
-                      : 'bg-transparent text-body'
-                "
+                      : 'bg-transparent text-body',
+                ]"
                 :aria-label="partLabel(edge, part.label)"
                 :aria-valuemin="part.valueMin"
                 :aria-valuemax="part.valueMax"
@@ -320,12 +421,12 @@ function onKeydown(
                 :aria-describedby="description(edge)"
                 :disabled="disabled || busy"
                 @keydown="onKeydown($event, source, edge, part.part)"
-                @beforeinput.prevent
+                @beforeinput="onBeforeInput($event, source, edge, part.part)"
                 @focus="focusPart($event, source, edge, part.part)"
                 @blur="leavePart($event, source, edge, part.part)"
               />
-            </template>
-          </span>
+            </div>
+          </div>
         </template>
       </div>
       <button
@@ -376,6 +477,7 @@ function onKeydown(
       :picker="picker"
       :calendar="calendar"
       :state="state"
+      :narrow="narrow"
       :described-by="describedBy"
       :blocked="disabled || busy"
     />

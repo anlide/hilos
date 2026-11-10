@@ -43,3 +43,20 @@ export function revealPickerPanel(panel: HTMLElement): void {
   const available = target?.matches(':disabled') ? panel : target
   available?.focus({ preventScroll: true })
 }
+
+/**
+ * Reveal the field at the start of its sheet body and focus the active day.
+ * Focus the dialog itself when there is no calendar grid.
+ *
+ * @param panel The mounted calendar or time panel to focus.
+ * @param anchor The field anchor to bring into view above the panel.
+ */
+export function revealNarrowPickerPanel(
+  panel: HTMLElement,
+  anchor: HTMLElement,
+): void {
+  anchor.scrollIntoView({ block: 'start' })
+  const target =
+    panel.querySelector<HTMLElement>('[role="gridcell"][tabindex="0"]') ?? panel
+  target.focus({ preventScroll: true })
+}
