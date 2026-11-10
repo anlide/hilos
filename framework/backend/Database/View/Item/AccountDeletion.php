@@ -10,7 +10,6 @@ use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Item\AccountDeletion as ObjectAccountDeletion;
 use Hilos\HilosException;
 use Hilos\Constants\TimeConstants;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * AccountDeletion Db item - read-facing wrapper around ObjectAccountDeletion (HIL-302).
@@ -20,11 +19,11 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @extends DbItem<ObjectAccountDeletion>
  * @property-read ?int $id
  * @property-read int $userId
- * @property-read string $requestedAt
- * @property-read string $effectiveAt
+ * @property-read int $requestedAt
+ * @property-read int $effectiveAt
  * @property-read int $deletionGraceDays Whole-day duration fixed by this request's stored moments
- * @property-read ?string $canceledAt
- * @property-read ?string $completedAt
+ * @property-read ?int $canceledAt
+ * @property-read ?int $completedAt
  * @property-read AccountDeletionActions $actions
  */
 class AccountDeletion extends DbItem
@@ -51,7 +50,7 @@ class AccountDeletion extends DbItem
             ObjectAccountDeletion::requestedAt => $this->_object->requestedAt,
             ObjectAccountDeletion::effectiveAt => $this->_object->effectiveAt,
             self::deletionGraceDays => max(1, (int) ceil(
-                (TimeHelper::sqlToMs($this->_object->effectiveAt) - TimeHelper::sqlToMs($this->_object->requestedAt)) / self::DAY_MS,
+                ($this->_object->effectiveAt - $this->_object->requestedAt) / self::DAY_MS,
             )),
             ObjectAccountDeletion::canceledAt => $this->_object->canceledAt,
             ObjectAccountDeletion::completedAt => $this->_object->completedAt,

@@ -2896,7 +2896,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $userId,
             AccessLogEvent::SIGN_IN,
             $session->ipAddress,
-            TimeHelper::getSqlDateTime(),
+            TimeHelper::nowMs(),
         );
     }
 
@@ -3042,7 +3042,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $session->userId,
             AccessLogEvent::NEW_ADDRESS,
             $clientIp,
-            TimeHelper::getSqlDateTime(),
+            TimeHelper::nowMs(),
         );
     }
 
@@ -6850,7 +6850,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         JournalReceiptScope::run(
             JournalReceiptData::cron(self::ACCOUNT_DELETION_SWEEP_RULE, $this->accountDeletionSweepRule->expression, $this->getId()),
             function (): void {
-                foreach (Hilos::$db->accountDeletions->dueBy(TimeHelper::getSqlDateTime()) as $deletion) {
+                foreach (Hilos::$db->accountDeletions->dueBy(TimeHelper::nowMs()) as $deletion) {
                     try {
                         $this->eraseAccount($deletion);
                     } catch (HilosException | RandomException $e) {
@@ -6904,7 +6904,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
         try {
             JournalReceiptScope::runPart($this->accessLogSweepReceiptId, $this->getId(), function (): void {
-                $before = AccessLogPolicy::keepsLog() ? AccessLogPolicy::cutoff(time()) : TimeHelper::getSqlDateTime();
+                $before = AccessLogPolicy::keepsLog() ? AccessLogPolicy::cutoff(TimeHelper::nowMs()) : TimeHelper::nowMs();
                 $removed = Hilos::$db->accessLogEntries->actions->deleteOlderThan($before, self::ACCESS_LOG_SWEEP_BATCH);
                 $this->accessLogSweepBacklog = $removed === self::ACCESS_LOG_SWEEP_BATCH;
                 if ($removed > 0) {

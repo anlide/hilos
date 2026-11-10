@@ -18,10 +18,10 @@
 CREATE TABLE `hilos_account_deletion` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `user_id` INT UNSIGNED NOT NULL,
-    `requested_at` TIMESTAMP NOT NULL,
-    `effective_at` TIMESTAMP NOT NULL,
-    `canceled_at` TIMESTAMP NULL DEFAULT NULL,
-    `completed_at` TIMESTAMP NULL DEFAULT NULL,
+    `requested_at` BIGINT NOT NULL,
+    `effective_at` BIGINT NOT NULL,
+    `canceled_at` BIGINT NULL DEFAULT NULL,
+    `completed_at` BIGINT NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_account_deletion_effective` (`effective_at`),
     KEY `idx_account_deletion_user` (`user_id`)

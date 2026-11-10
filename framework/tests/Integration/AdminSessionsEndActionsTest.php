@@ -49,6 +49,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
+use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
@@ -494,8 +495,8 @@ final class AdminSessionsEndActionsTest extends HilosSessionIntegrationTestCase
         $this->signInAdministrator();
         $session = $this->session(self::PERSON_TOKEN, self::PERSON_ACCEPT_KEY, self::PERSON_ID);
         Database::sqlRun(
-            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, NOW())',
-            [self::PERSON_ID, self::STRANGER_ID],
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, ?)',
+            [self::PERSON_ID, self::STRANGER_ID, TimeHelper::nowMs()],
         );
 
         $signals = $this->ask(self::PERSON_ID, null);
@@ -584,8 +585,8 @@ final class AdminSessionsEndActionsTest extends HilosSessionIntegrationTestCase
         $this->signInAdministrator();
         $session = $this->session(self::PERSON_TOKEN, self::PERSON_ACCEPT_KEY, self::PERSON_ID);
         Database::sqlRun(
-            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, NOW())',
-            [self::PERSON_ID, self::STRANGER_ID],
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, ?)',
+            [self::PERSON_ID, self::STRANGER_ID, TimeHelper::nowMs()],
         );
         $router = self::pageRouter();
 

@@ -427,6 +427,15 @@ final class FrameworkMigrationStartupGuardTest extends TestCase
             $part->downSql,
             [$part],
         ));
+        $part = new FrameworkMigrationCatalog()->part('20261110024242374685_HIL-1924_people_moments', 'user');
+        $this->writePair('011_user_moments.sql', $this->pair(
+            'user_moments',
+            FrameworkMigrationOrigin::CHANGE,
+            ['user'],
+            $part->upSql,
+            $part->downSql,
+            [$part],
+        ));
         $persistenceCalled = false;
         EntrypointPrelude::run(StartupCoreHilos::class, $this->root, static function () use (&$persistenceCalled): void {
             $persistenceCalled = true;

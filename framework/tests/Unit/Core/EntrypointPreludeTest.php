@@ -430,6 +430,19 @@ final class EntrypointPreludeTest extends TestCase
         if (file_put_contents($track . '/008_' . $change->name . '_down.sql', $change->downSql) === false) {
             $this->fail('Cannot write session moment down source');
         }
+        $part = new FrameworkMigrationCatalog()->part('20261110024242374685_HIL-1924_people_moments', 'user');
+        $change = new FrameworkMigrationPair(
+            'user_moments',
+            FrameworkMigrationOrigin::forBodies(FrameworkMigrationOrigin::CHANGE, ['user'], [$part], $part->upSql, $part->downSql),
+            $part->upSql,
+            $part->downSql,
+        );
+        if (file_put_contents($track . '/009_' . $change->name . '.sql', $change->upSql) === false) {
+            $this->fail('Cannot write user moment up source');
+        }
+        if (file_put_contents($track . '/009_' . $change->name . '_down.sql', $change->downSql) === false) {
+            $this->fail('Cannot write user moment down source');
+        }
     }
 
     private function root(): string

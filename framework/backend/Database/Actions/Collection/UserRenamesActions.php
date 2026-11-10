@@ -46,7 +46,7 @@ class UserRenamesActions extends DbActions
         $rename->renamedByUserId = $renamedByUserId;
         $rename->oldName = $oldName;
         $rename->newName = $newName;
-        $rename->renamedAt = TimeHelper::getSqlDateTime();
+        $rename->renamedAt = TimeHelper::nowMs();
         $rename->sync();
 
         $this->addObjectToCollection($rename);

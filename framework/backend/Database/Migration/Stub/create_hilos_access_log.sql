@@ -24,7 +24,7 @@ CREATE TABLE `hilos_access_log` (
     `user_id` INT UNSIGNED NOT NULL,
     `event` ENUM('sign_in','new_address') NOT NULL,
     `ip_address` VARCHAR(45) NULL DEFAULT NULL,
-    `occurred_at` TIMESTAMP NOT NULL,
+    `occurred_at` BIGINT NOT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_access_log_user` (`user_id`, `occurred_at`),
     KEY `idx_access_log_occurred` (`occurred_at`),

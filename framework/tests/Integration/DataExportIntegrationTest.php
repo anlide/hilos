@@ -149,8 +149,8 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         Database::sqlRun("UPDATE hilos_session SET ip_address = '192.0.2.7' WHERE token = 'PERSON_SESSION_TOKEN'");
         Database::sqlRun("UPDATE hilos_session SET ip_address = '192.0.2.8' WHERE token <> 'PERSON_SESSION_TOKEN'");
         Database::sqlRun("INSERT INTO hilos_access_log (user_id, event, ip_address, occurred_at) VALUES "
-            . "(7, 'new_address', '2001:db8::7', '2026-01-02 00:00:00'), (7, 'sign_in', '192.0.2.7', '2026-01-01 00:00:00'), "
-            . "(8, 'sign_in', '192.0.2.8', '2026-01-01 00:00:00')");
+            . "(7, 'new_address', '2001:db8::7', 1767312000456), (7, 'sign_in', '192.0.2.7', 1767225600123), "
+            . "(8, 'sign_in', '192.0.2.8', 1767225600123)");
         Database::sqlRun("INSERT INTO hilos_second_factor (user_id, label, secret, confirmed_at) "
             . "VALUES (7, 'My app', 'TOTP_SECRET', '2026-01-02 00:00:00')");
         Database::sqlRun("INSERT INTO hilos_second_factor_backup_code (user_id, code) VALUES (7, 'BACKUP_CODE')");
@@ -163,9 +163,9 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         Database::sqlRun("INSERT INTO hilos_notification_preference (user_id, channel, enabled, `created_at`, `updated_at`) "
             . "VALUES (7, 'email', 0, 1767225600123, 1767225600123), (8, 'sms', 0, 1767225600123, 1767225600123)");
         Database::sqlRun("INSERT INTO hilos_user_merge (user_id, survivor_user_id, merged_at) VALUES "
-            . "(7, 8, '2026-01-04 00:00:00'), (9, 7, NULL), (10, 8, '2026-01-04 00:00:00')");
+            . "(7, 8, 1767484800123), (9, 7, NULL), (10, 8, 1767484800123)");
         Database::sqlRun("INSERT INTO hilos_user_rename (user_id, renamed_by_user_id, old_name, new_name, renamed_at) VALUES "
-            . "(7, 8, 'Old me', 'New me', '2026-01-03 00:00:00'), (8, 7, 'Foreign old', 'Foreign new', '2026-01-03 00:00:00')");
+            . "(7, 8, 'Old me', 'New me', 1767398400123), (8, 7, 'Foreign old', 'Foreign new', 1767398400123)");
         Database::sqlRun("INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES "
             . "(7, 'terms', '2026-01-05', '2026-01-05 00:00:00'), "
             . "(7, 'terms', '2026-09-17', '2026-09-20 10:00:00'), "
@@ -186,9 +186,9 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         $archive = new PharData($this->directory . '/' . $first->storedName);
         self::assertFalse(isset($archive['analytics_person.json']));
         self::assertSame(['id' => 7, 'since' => '2025-01-01T00:00:00+00:00'], self::section($archive, 'account'));
-        self::assertSame([['from' => 'Old me', 'to' => 'New me', 'at' => '2026-01-03T00:00:00+00:00']], self::section($archive, 'renames'));
+        self::assertSame([['from' => 'Old me', 'to' => 'New me', 'at' => '2026-01-03T00:00:00.123+00:00']], self::section($archive, 'renames'));
         self::assertSame(
-            [['account' => 7, 'into' => 8, 'at' => '2026-01-04T00:00:00+00:00'], ['account' => 9, 'into' => 7, 'at' => null]],
+            [['account' => 7, 'into' => 8, 'at' => '2026-01-04T00:00:00.123+00:00'], ['account' => 9, 'into' => 7, 'at' => null]],
             self::section($archive, 'merges'),
         );
         self::assertCount(2, self::section($archive, 'sign_in_methods'));
@@ -197,8 +197,8 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame('192.0.2.7', self::section($archive, 'sessions')[0]['address']);
         self::assertSame(
             [
-                ['at' => '2026-01-01T00:00:00+00:00', 'address' => '192.0.2.7', 'event' => 'sign_in'],
-                ['at' => '2026-01-02T00:00:00+00:00', 'address' => '2001:db8::7', 'event' => 'new_address'],
+                ['at' => '2026-01-01T00:00:00.123+00:00', 'address' => '192.0.2.7', 'event' => 'sign_in'],
+                ['at' => '2026-01-02T00:00:00.456+00:00', 'address' => '2001:db8::7', 'event' => 'new_address'],
             ],
             self::section($archive, 'access_log'),
         );
@@ -286,9 +286,9 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
     /** @return iterable<string, array{string, string, string}> Mode, the zone it gives person 7, and 23:30 UTC in that zone */
     public static function exportZones(): iterable
     {
-        yield 'recipient' => ['recipient', 'Europe/Warsaw', '2026-10-23T01:30:00+02:00'];
-        yield 'project' => ['project', 'Pacific/Auckland', '2026-10-23T12:30:00+13:00'];
-        yield 'utc' => ['utc', 'UTC', '2026-10-22T23:30:00+00:00'];
+        yield 'recipient' => ['recipient', 'Europe/Warsaw', '2026-10-23T01:30:00.123+02:00'];
+        yield 'project' => ['project', 'Pacific/Auckland', '2026-10-23T12:30:00.123+13:00'];
+        yield 'utc' => ['utc', 'UTC', '2026-10-22T23:30:00.123+00:00'];
     }
 
     /**
@@ -305,7 +305,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
     {
         Database::sqlRun("UPDATE hilos_user SET time_zone = 'Europe/Warsaw', last_browser_time_zone = 'Asia/Tokyo' WHERE id = 7");
         Database::sqlRun("INSERT INTO hilos_user_rename (user_id, renamed_by_user_id, old_name, new_name, renamed_at) VALUES "
-            . "(7, 8, 'Old me', 'New me', '2026-10-22 23:30:00')");
+            . "(7, 8, 'Old me', 'New me', 1792711800123)");
         $this->withZoneEnvironment($mode, 'Pacific/Auckland', function () use ($zone, $renamedAt): void {
             $export = Hilos::$db->dataExports->actions->order(7, '2026-10-22 23:00:00');
             $agent = new DataExportTestAgent();
@@ -327,6 +327,28 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             $preparedAt = DateTimeImmutable::createFromFormat('Y-m-d\TH:i:sP', $prepared[1]);
             self::assertNotFalse($preparedAt);
             self::assertSame($preparedAt->setTimezone(new DateTimeZone($zone))->format('Y-m-d\TH:i:sP'), $prepared[1]);
+        });
+    }
+
+    /** A live deletion exports its exact milliseconds and preserves the absent cancellation. */
+    public function testAccountDeletionExportsMillisecondsAndNullCancellation(): void
+    {
+        Database::sqlRun(
+            'INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (?, ?, ?)',
+            [7, 1792711800123, 1792798200456],
+        );
+        $this->withZoneEnvironment('utc', 'UTC', function (): void {
+            $order = Hilos::$db->dataExports->actions->order(7, '2026-10-22 23:00:00');
+            $agent = new DataExportTestAgent();
+            $agent->onStart();
+            $agent->onTick();
+            $archive = new PharData($this->directory . '/' . $order->storedName);
+
+            self::assertSame([
+                'requestedAt' => '2026-10-22T23:30:00.123+00:00',
+                'effectiveAt' => '2026-10-23T23:30:00.456+00:00',
+                'canceledAt' => null,
+            ], self::section($archive, 'account_deletion'));
         });
     }
 
@@ -393,7 +415,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             );
             Database::sqlRun(
                 'INSERT INTO `hilos_user_photo` (`user_id`, `file_id`, `set_at`) VALUES (?, ?, ?)',
-                [7, self::PHOTO_FILE_ID, '2026-01-03 00:00:00'],
+                [7, self::PHOTO_FILE_ID, 1767398400123],
             );
             $order = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
             $agent = new DataExportTestAgent();
@@ -403,7 +425,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             self::assertSame(DataExportState::READY, $order->state);
             $archive = new PharData($this->directory . '/' . $order->storedName);
             self::assertSame(
-                ['file' => 'files/photo.jpg', 'setAt' => '2026-01-03T00:00:00+00:00'],
+                ['file' => 'files/photo.jpg', 'setAt' => '2026-01-03T00:00:00.123+00:00'],
                 self::section($archive, 'profile_photo'),
             );
             self::assertSame('JPEG', $archive['files/photo.jpg']->getContent());
@@ -444,7 +466,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             );
             Database::sqlRun(
                 'INSERT INTO `hilos_user_photo` (`user_id`, `file_id`, `set_at`) VALUES (?, ?, ?)',
-                [7, self::PHOTO_FILE_ID, '2026-01-03 00:00:00'],
+                [7, self::PHOTO_FILE_ID, 1767398400123],
             );
             $order = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
             $agent = new DataExportTestAgent();
@@ -626,7 +648,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         $agent = new DataExportTestAgent();
         $agent->duringExport = static function (): void {
             Database::sqlRun("INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at, completed_at) "
-                . "VALUES (7, '2026-01-01 00:00:00', '2026-01-02 00:00:00', '2026-01-02 00:01:00')");
+                . "VALUES (7, 1767225600000, 1767312000000, 1767312060000)");
         };
         $agent->onStart();
         $agent->onTick();

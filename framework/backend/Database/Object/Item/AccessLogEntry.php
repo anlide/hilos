@@ -17,7 +17,7 @@ use Hilos\Database\Object\Collection\AccessLogEntries as ObjectAccessLogEntries;
  * @property int $userId
  * @property string $event
  * @property ?string $ipAddress
- * @property string $occurredAt
+ * @property int $occurredAt
  */
 class AccessLogEntry extends Object_
 {
@@ -57,7 +57,7 @@ class AccessLogEntry extends Object_
             self::userId => $this->entity->user_id = (int)$value,
             self::event => $this->entity->event = (string)$value,
             self::ipAddress => $this->entity->ip_address = is_scalar($value) ? (string)$value : null,
-            self::occurredAt => $this->entity->occurred_at = (string)$value,
+            self::occurredAt => $this->entity->occurred_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }

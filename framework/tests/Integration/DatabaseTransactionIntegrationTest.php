@@ -55,10 +55,10 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
     private const int SECOND_USER_ID = 1165;
     private const int THIRD_USER_ID = 1166;
 
-    private const string EFFECTIVE_AT = '2026-01-01 00:00:00';
+    private const int EFFECTIVE_AT = 1767225600000;
 
     /** Moment a write inside a transaction moves a request to, which a rollback has to take back. */
-    private const string LATER_EFFECTIVE_AT = '2027-01-01 00:00:00';
+    private const int LATER_EFFECTIVE_AT = 1798761600000;
 
     /** Connection index a second session is opened on, to kill the first one from outside. */
     private const int KILLER_INDEX = 2;

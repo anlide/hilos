@@ -96,7 +96,7 @@ final class PersonDeletionPhotoEditsIntegrationTest extends HilosSessionIntegrat
     public function testTheUsersLibraryCancelingOrWritingAPhotoItselfIsRefused(): void
     {
         $userId = $this->seedPerson();
-        $at = date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY);
+        $at = TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         $request = $this->inLibrary(
             fn () => Hilos::$db->accountDeletions->actions->request($userId, $at),
         );
@@ -136,7 +136,7 @@ final class PersonDeletionPhotoEditsIntegrationTest extends HilosSessionIntegrat
     {
         $userId = $this->seedPerson();
         $this->seedFile($userId);
-        $at = date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY);
+        $at = TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         $this->inLibrary(fn () => Hilos::$db->accountDeletions->actions->request($userId, $at));
 
         $canceled = $this->carry(
@@ -184,7 +184,7 @@ final class PersonDeletionPhotoEditsIntegrationTest extends HilosSessionIntegrat
     {
         $userId = $this->seedPerson();
         $otherId = $this->seedPerson();
-        $at = date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY);
+        $at = TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         $this->inLibrary(fn () => Hilos::$db->accountDeletions->actions->request($otherId, $at));
 
         $this->expectException(AgentException::class);

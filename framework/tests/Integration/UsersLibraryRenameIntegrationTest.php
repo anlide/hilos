@@ -223,7 +223,7 @@ final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTes
         $userId = self::seedPerson('Ada', admin: false);
         Database::sqlRun(
             'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, ?)',
-            [$userId, $survivorId, '2026-10-08 12:00:00'],
+            [$userId, $survivorId, 1791460800000],
         );
 
         $answer = $this->askRename($userId, 'Grace', $adminId);

@@ -36,6 +36,7 @@ final class FrameworkMigrationBaselineTest extends TestCase
     private const string BROWSER_TIME_ZONES = '20261022124515804554_HIL-1582_browser_time_zones';
     private const string BOOTSTRAP_MOMENTS = '20261109000848893922_HIL-1918_bootstrap_moments';
     private const string SESSION_MOMENTS = '20261109120150360881_HIL-1919_session_moments';
+    private const string PERSON_MOMENTS = '20261110024242374685_HIL-1924_people_moments';
     private const string EARLY = '20261019120000000000_HIL-1519_early';
     private const string LATE = '20261022120000000000_HIL-1519_late';
 
@@ -112,7 +113,7 @@ final class FrameworkMigrationBaselineTest extends TestCase
         $this->assertSame(
             [self::TIME_ZONE . '/user', self::BROWSER_TIME_ZONES . '/session', self::BROWSER_TIME_ZONES . '/user',
                 self::BOOTSTRAP_MOMENTS . '/admin_view_mode_latch', self::BOOTSTRAP_MOMENTS . '/database_marker',
-                self::BOOTSTRAP_MOMENTS . '/migration_claim', self::SESSION_MOMENTS . '/session'],
+                self::BOOTSTRAP_MOMENTS . '/migration_claim', self::SESSION_MOMENTS . '/session', self::PERSON_MOMENTS . '/user'],
             array_map(static fn (FrameworkMigrationPart $part): string => $part->key(), $pair->origin->parts),
         );
         $up = $this->stub('user') . "\n" . $this->stub('session');
@@ -247,7 +248,7 @@ final class FrameworkMigrationBaselineTest extends TestCase
         $project = $this->project('late-feature');
         $this->assertFalse($this->installer()->executeBaseline($project)->hasFailures());
         $baseline = $this->sqlSnapshot($project);
-        $this->change(self::LATE, 'user', [[self::BROWSER_TIME_ZONES, 'user']]);
+        $this->change(self::LATE, 'user', [[self::PERSON_MOMENTS, 'user']]);
         $expanded = new FrameworkMigrationProject($project->root, BaselineSettingsHilos::class);
         $installer = $this->installer();
         $this->assertSame([], $installer->planBaseline($expanded)[0]->publications);
@@ -279,11 +280,11 @@ final class FrameworkMigrationBaselineTest extends TestCase
         $origin = $this->installer()->readTrack($project)[0]->origin;
         $this->assertSame(
             [self::TIME_ZONE, self::LATE, self::BROWSER_TIME_ZONES, self::BROWSER_TIME_ZONES,
-                self::BOOTSTRAP_MOMENTS, self::BOOTSTRAP_MOMENTS, self::BOOTSTRAP_MOMENTS, self::SESSION_MOMENTS],
+                self::BOOTSTRAP_MOMENTS, self::BOOTSTRAP_MOMENTS, self::BOOTSTRAP_MOMENTS, self::SESSION_MOMENTS, self::PERSON_MOMENTS],
             array_column($origin->parts, 'changeId'),
         );
         $this->assertStringNotContainsString('ALTER session', $this->body($baseline['001_framework_baseline.sql']));
-        $this->change(self::EARLY, 'user', [[self::BROWSER_TIME_ZONES, 'user']]);
+        $this->change(self::EARLY, 'user', [[self::PERSON_MOMENTS, 'user']]);
         $installer = $this->installer();
         $this->assertSame([], $installer->planBaseline($project)[0]->publications);
         $plan = $installer->plan($project)[0];
@@ -438,7 +439,7 @@ final class FrameworkMigrationBaselineTest extends TestCase
             case 'body': $sql .= 'changed'; break;
             case 'origin': $sql = str_replace('"kind":"baseline"', '"kind":"install"', $sql); break;
             case 'foreign': $sql = 'foreign SQL'; break;
-            case 'new-part': $this->change(self::LATE, 'user', [[self::BROWSER_TIME_ZONES, 'user']]); break;
+            case 'new-part': $this->change(self::LATE, 'user', [[self::PERSON_MOMENTS, 'user']]); break;
             case 'features': $project = new FrameworkMigrationProject($project->root, BaselineSettingsHilos::class); break;
         }
         file_put_contents($project->root . '/001_framework_baseline_down.sql', $sql);

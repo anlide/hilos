@@ -46,7 +46,7 @@ final class FrameworkDataExportSections
             $renames[] = [
                 'from' => $rename->oldName,
                 'to' => $rename->newName,
-                'at' => DataExportTime::iso($rename->renamedAt, $timeZone),
+                'at' => DataExportTime::isoMs($rename->renamedAt, $timeZone),
             ];
         }
         $writer->section('renames', $renames);
@@ -88,7 +88,7 @@ final class FrameworkDataExportSections
             $stored = $file === null ? null : Hilos::$fs->files[$file->storedName];
             $writer->section(self::PROFILE_PHOTO_SECTION, $stored === null || !$stored->exists() ? null : [
                 'file' => $writer->file($file->storedName, $stored->getPath()),
-                'setAt' => DataExportTime::iso($photo->setAt, $timeZone),
+                'setAt' => DataExportTime::isoMs($photo->setAt, $timeZone),
             ]);
         }
 
@@ -135,7 +135,7 @@ final class FrameworkDataExportSections
         if (AccessLogPolicy::keepsLog()) {
             foreach (Hilos::$db->accessLogEntries->ofUser($userId) as $entry) {
                 $accessLog[] = [
-                    'at' => DataExportTime::iso($entry->occurredAt, $timeZone),
+                    'at' => DataExportTime::isoMs($entry->occurredAt, $timeZone),
                     'address' => $entry->ipAddress,
                     'event' => $entry->event,
                 ];
@@ -205,9 +205,9 @@ final class FrameworkDataExportSections
 
         $deletion = Hilos::$db->accountDeletions->liveOf($userId);
         $writer->section('account_deletion', $deletion === null ? null : [
-            'requestedAt' => DataExportTime::iso($deletion->requestedAt, $timeZone),
-            'effectiveAt' => DataExportTime::iso($deletion->effectiveAt, $timeZone),
-            'canceledAt' => DataExportTime::iso($deletion->canceledAt, $timeZone),
+            'requestedAt' => DataExportTime::isoMs($deletion->requestedAt, $timeZone),
+            'effectiveAt' => DataExportTime::isoMs($deletion->effectiveAt, $timeZone),
+            'canceledAt' => $deletion->canceledAt === null ? null : DataExportTime::isoMs($deletion->canceledAt, $timeZone),
         ]);
     }
 
@@ -257,7 +257,7 @@ final class FrameworkDataExportSections
         return [
             'account' => $merge->userId,
             'into' => $merge->survivorUserId,
-            'at' => DataExportTime::iso($merge->mergedAt, $timeZone),
+            'at' => $merge->mergedAt === null ? null : DataExportTime::isoMs($merge->mergedAt, $timeZone),
         ];
     }
 }

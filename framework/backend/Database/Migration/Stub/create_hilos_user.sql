@@ -8,7 +8,7 @@ CREATE TABLE `hilos_user` (
     `name` VARCHAR(255) NOT NULL,
     `admin` TINYINT(1) NOT NULL DEFAULT 0,
     `block` TINYINT(1) NOT NULL DEFAULT 0,
-    `last_activity` TIMESTAMP NULL DEFAULT NULL,
+    `last_activity` BIGINT NULL DEFAULT NULL,
     `theme_pick` ENUM('light', 'dark', 'system') NULL DEFAULT NULL,
     `theme_pick_initialized` BOOLEAN NOT NULL DEFAULT 0,
     `time_zone` VARCHAR(64) NULL DEFAULT NULL,

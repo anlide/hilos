@@ -32,6 +32,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosProfileFlow;
 use Hilos\Users\AddressablePerson;
 use Hilos\Users\DTO\UserAccountDeletionCancelSignalData;
+use Hilos\Utils\Helpers\TimeHelper;
 use Random\RandomException;
 
 /**
@@ -190,7 +191,7 @@ final class AccountDeletionCommands extends AbstractLibraryCommands
         $this->refuseScheduled($userId);
         Hilos::$db->accountDeletions->actions->request(
             $userId,
-            date('Y-m-d H:i:s', time() + AccountDeletionSettings::graceDays() * TimeConstants::SECONDS_PER_DAY),
+            TimeHelper::nowMs() + AccountDeletionSettings::graceDays() * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
         );
         $this->publishState($userId);
     }

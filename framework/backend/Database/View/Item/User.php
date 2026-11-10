@@ -12,7 +12,6 @@ use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\HilosException;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * User - Db item with high-level abstraction and lazy loading.
@@ -55,9 +54,7 @@ class User extends DbItem
             ObjectUser::name => $this->_object->name,
             ObjectUser::admin => $this->_object->admin,
             ObjectUser::block => $this->_object->block,
-            ObjectUser::lastActivity => $this->_object->lastActivity === null
-                ? null
-                : TimeHelper::sqlToMs($this->_object->lastActivity),
+            ObjectUser::lastActivity => $this->_object->lastActivity,
             ObjectUser::themePick => $this->_object->themePick,
             ObjectUser::themePickInitialized => $this->_object->themePickInitialized,
             ObjectUser::timeZone => $this->_object->timeZone,

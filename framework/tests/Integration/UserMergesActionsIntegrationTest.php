@@ -13,6 +13,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\UserMerge as EntityUserMerge;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * The framework merge table against the live table (HIL-1199).
@@ -53,16 +54,20 @@ final class UserMergesActionsIntegrationTest extends HilosSessionIntegrationTest
         $survivor = self::seedPerson('Survivor');
         $loser = self::seedPerson('Loser');
 
+        $before = TimeHelper::nowMs();
         $merge = Hilos::$db->userMerges->actions->add($loser, $survivor);
 
         $this->assertSame($loser, $merge->userId);
         $this->assertSame($survivor, $merge->survivorUserId);
         $this->assertNotNull($merge->mergedAt);
+        $this->assertGreaterThanOrEqual($before, $merge->mergedAt);
+        $this->assertLessThanOrEqual(TimeHelper::nowMs(), $merge->mergedAt);
         Database::sql('SELECT `survivor_user_id`, `merged_at` FROM `hilos_user_merge` WHERE `user_id` = ?', [$loser]);
         $row = Database::row();
         $this->assertNotNull($row);
         $this->assertSame($survivor, (int)$row['survivor_user_id']);
         $this->assertNotNull($row['merged_at']);
+        $this->assertSame($merge->mergedAt, (int)$row['merged_at']);
 
         $this->assertSame($survivor, Hilos::$db->userMerges[$loser]->survivorUserId);
         $this->assertArrayNotHasKey($survivor, Hilos::$db->userMerges);

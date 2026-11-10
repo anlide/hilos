@@ -54,6 +54,7 @@ use Hilos\Users\DTO\UserThemePickWriteSignalData;
 use Hilos\Users\DTO\UserSessionsRestateSignalData;
 use Hilos\Users\DTO\UserTimeZoneWriteDoneSignalData;
 use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * The ordinary edits of one person are written by that person's agent and by nobody else (HIL-1404).
@@ -329,7 +330,7 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
     public function testTheOwnerWritesExactTimeZonesAndResetAndRestatesIdempotentRepeats(): void
     {
         $userId = self::seedPerson('Ada', admin: false);
-        $activity = '2026-10-01 12:34:56';
+        $activity = 1790858096000;
         Database::sqlRun('UPDATE `hilos_user` SET `last_activity` = ? WHERE `id` = ?', [$activity, $userId]);
 
         foreach (['UTC', 'Europe/Warsaw', 'US/Eastern', null] as $timeZone) {
@@ -371,7 +372,7 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
     public function testInvalidTimeZonesReturnPublicRefusalsWithoutRestatingOrChangingThePerson(): void
     {
         $userId = self::seedPerson('Ada', admin: false);
-        $activity = '2026-10-01 12:34:56';
+        $activity = 1790858096000;
         Database::sqlRun(
             'UPDATE `hilos_user` SET `time_zone` = ?, `last_activity` = ? WHERE `id` = ?',
             ['Europe/Warsaw', $activity, $userId],
@@ -470,7 +471,7 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
     public function testATimeZoneOfAFoldedAccountIsRefusedBeforeTheWriteAndTheRestate(): void
     {
         $userId = self::seedFoldedPerson('Folded');
-        $activity = '2026-10-01 12:34:56';
+        $activity = 1790858096000;
         Database::sqlRun(
             'UPDATE `hilos_user` SET `time_zone` = ?, `last_activity` = ? WHERE `id` = ?',
             ['Europe/Warsaw', $activity, $userId],
@@ -1065,8 +1066,8 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
         $survivorId = self::seedPerson('Survivor', admin: false);
         $userId = self::seedPerson($name, admin: false);
         Database::sqlRun(
-            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, NOW())',
-            [$userId, $survivorId],
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, ?)',
+            [$userId, $survivorId, TimeHelper::nowMs()],
         );
 
         return $userId;
@@ -1085,6 +1086,7 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
         );
         $row = Database::row();
         self::assertNotNull($row);
+        $row['last_activity'] = $row['last_activity'] === null ? null : (int)$row['last_activity'];
 
         return $row;
     }

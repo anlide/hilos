@@ -51,7 +51,7 @@ class UserRename extends Entity
         self::renamed_by_user_id => PhpType::INTEGER->value,
         self::old_name => PhpType::STRING->value,
         self::new_name => PhpType::STRING->value,
-        self::renamed_at => PhpType::DATETIME->value,
+        self::renamed_at => PhpType::INTEGER->value,
     ];
 
     // Foreign keys
@@ -89,5 +89,5 @@ class UserRename extends Entity
     public ?int $renamed_by_user_id = null;
     public string $old_name = '';
     public string $new_name = '';
-    public string $renamed_at;
+    public int $renamed_at;
 }

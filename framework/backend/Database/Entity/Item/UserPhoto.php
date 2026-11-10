@@ -28,7 +28,7 @@ class UserPhoto extends Entity
     public const array _types = [
         self::user_id => PhpType::INTEGER->value,
         self::file_id => PhpType::INTEGER->value,
-        self::set_at => PhpType::DATETIME->value,
+        self::set_at => PhpType::INTEGER->value,
     ];
     public const array _foreign = [
         self::user_id => User::_table,
@@ -45,5 +45,5 @@ class UserPhoto extends Entity
 
     public int $user_id;
     public int $file_id;
-    public string $set_at;
+    public int $set_at;
 }

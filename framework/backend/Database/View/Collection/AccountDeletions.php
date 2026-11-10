@@ -58,16 +58,16 @@ class AccountDeletions extends DbCollection
     /**
      * The standing requests whose erasure time has come.
      *
-     * @param string $now Current moment (SQL datetime)
+     * @param int $nowMs Current moment (epoch milliseconds)
      * @return list<AccountDeletion> Requests due, oldest first
      * @throws DatabaseException When the lookup fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction or an object type does not match
      * @throws LogicException When collection class constants are not configured
      */
-    public function dueBy(string $now): array
+    public function dueBy(int $nowMs): array
     {
         $result = [];
-        foreach ($this->objectCollection->dueBy($now) as $object) {
+        foreach ($this->objectCollection->dueBy($nowMs) as $object) {
             $item = $this->itemFor($object);
             if ($item !== null) {
                 $result[] = $item;

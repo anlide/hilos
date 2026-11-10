@@ -26,7 +26,6 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration coverage for the framework card of one person in a project that is not chat (HIL-1254).
@@ -72,7 +71,7 @@ final class HilosUserDetailTableTest extends IntegrationTestCase
 
             $storedActivity = Database::sql('SELECT `last_activity` FROM `hilos_user` WHERE `id` = ?', [$userId])->rows()[0]['last_activity'];
             $this->assertIsString($storedActivity);
-            $this->assertSame(TimeHelper::sqlToMs($storedActivity), $slots[HilosDbContext::users]['lastActivity']);
+            $this->assertSame((int)$storedActivity, $slots[HilosDbContext::users]['lastActivity']);
             $this->assertIsInt($slots[HilosDbContext::users]['lastActivity']);
             $this->assertSame('Pacific/Honolulu', $slots[HilosDbContext::users][ObjectUser::timeZone]);
 

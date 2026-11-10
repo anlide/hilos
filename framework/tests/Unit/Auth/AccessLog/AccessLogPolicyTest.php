@@ -89,9 +89,13 @@ final class AccessLogPolicyTest extends TestCase
 
     public function testTheCutoffIsTwelveMonthsBeforeTheMoment(): void
     {
-        $now = (int)mktime(12, 30, 15, 10, 3, 2026);
+        self::assertSame(1759494615000, AccessLogPolicy::cutoff(1791030615000));
+    }
 
-        self::assertSame('2025-10-03 12:30:15', AccessLogPolicy::cutoff($now));
+    /** Calendar retention preserves the input's fractional second. */
+    public function testTheCutoffKeepsTheMillisecondTailAcrossCalendarMonths(): void
+    {
+        self::assertSame(1740745815123, AccessLogPolicy::cutoff(1772281815123));
     }
 }
 

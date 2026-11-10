@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\AccessLog;
 
+use Hilos\Constants\TimeConstants;
 use Hilos\Hilos;
 use Hilos\Legal\Exception\LegalException;
 use Hilos\Legal\LegalCatalogResolver;
@@ -66,12 +67,13 @@ final class AccessLogPolicy
     /**
      * Returns the moment before which a row of the access log is past its life.
      *
-     * @param int $now Current moment as a Unix timestamp
-     * @return string SQL datetime RETENTION_MONTHS months before the given moment
+     * @param int $nowMs Current moment in epoch milliseconds
+     * @return int Epoch milliseconds RETENTION_MONTHS calendar months before the given moment
      */
-    public static function cutoff(int $now): string
+    public static function cutoff(int $nowMs): int
     {
-        return date('Y-m-d H:i:s', (int)strtotime('-' . self::RETENTION_MONTHS . ' months', $now));
+        return (int)strtotime('-' . self::RETENTION_MONTHS . ' months', intdiv($nowMs, TimeConstants::MS_PER_SECOND))
+            * TimeConstants::MS_PER_SECOND + $nowMs % TimeConstants::MS_PER_SECOND;
     }
 
     /**

@@ -146,9 +146,11 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
         self::assertSame(['u1'], $published[0]->data->data->clientUploadIds);
 
         $this->seedFile(self::FIRST_FILE_ID);
+        $before = TimeHelper::nowMs();
         $this->deliverPublished('u1', self::FIRST_FILE_ID);
         $this->settleProfileFlows();
         self::assertSame(self::FIRST_FILE_ID, Hilos::$db->userPhotos[self::USER_ID]->fileId);
+        $this->assertPhotoMoment($before);
         self::assertCount(1, $this->signalsNamed(HilosSignalConstants::HILOS_FILE_BIND));
         $restate = $this->signalsNamed(HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE);
         self::assertCount(1, $restate);
@@ -157,9 +159,11 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
         self::assertCount(2, $this->signalsNamed(HilosSignalConstants::HILOS_SESSION_STATE));
 
         $this->seedFile(self::SECOND_FILE_ID);
+        $before = TimeHelper::nowMs();
         $this->deliverPublished('u2', self::SECOND_FILE_ID);
         $this->settleProfileFlows();
         self::assertSame(self::SECOND_FILE_ID, Hilos::$db->userPhotos[self::USER_ID]->fileId);
+        $this->assertPhotoMoment($before);
         self::assertCount(1, $this->signalsNamed(HilosSignalConstants::HILOS_FILE_REMOVE));
         self::assertCount(1, $this->signalsNamed(HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE));
 
@@ -577,6 +581,16 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
         }
 
         return new IntegrationUserAgent($userId);
+    }
+
+    /** @param int $before Earliest possible publication moment in epoch milliseconds */
+    private function assertPhotoMoment(int $before): void
+    {
+        self::assertGreaterThanOrEqual($before, Hilos::$db->userPhotos[self::USER_ID]->setAt);
+        self::assertLessThanOrEqual(TimeHelper::nowMs(), Hilos::$db->userPhotos[self::USER_ID]->setAt);
+        self::assertSame(Hilos::$db->userPhotos[self::USER_ID]->setAt, (int)Database::sql(
+            'SELECT set_at FROM hilos_user_photo WHERE user_id = ?', [self::USER_ID],
+        )->field('set_at'));
     }
 
     /**

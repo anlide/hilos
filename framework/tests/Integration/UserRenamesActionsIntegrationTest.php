@@ -15,6 +15,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\UserRename as EntityUserRename;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * The framework rename journal against the live table (HIL-1195).
@@ -54,11 +55,17 @@ final class UserRenamesActionsIntegrationTest extends HilosSessionIntegrationTes
         TruthSourceRegistry::register(HilosDbContext::userRenames, TruthSourceKeys::set((string)$own), self::SET_OWNER_AGENT_ID);
         ExecutionContext::setCurrentAgentId(self::SET_OWNER_AGENT_ID);
 
+        $before = TimeHelper::nowMs();
         $rename = Hilos::$db->userRenames->actions->add($own, $other, 'Old name', 'New name');
         $this->assertSame($own, $rename->userId);
         $this->assertSame($other, $rename->renamedByUserId);
         $this->assertSame('Old name', $rename->oldName);
         $this->assertSame('New name', $rename->newName);
+        $this->assertGreaterThanOrEqual($before, $rename->renamedAt);
+        $this->assertLessThanOrEqual(TimeHelper::nowMs(), $rename->renamedAt);
+        $this->assertSame($rename->renamedAt, (int)Database::sql(
+            'SELECT renamed_at FROM hilos_user_rename WHERE id = ?', [$rename->id],
+        )->field('renamed_at'));
 
         try {
             Hilos::$db->userRenames->actions->add($other, $own, 'Old name', 'New name');
@@ -104,7 +111,7 @@ final class UserRenamesActionsIntegrationTest extends HilosSessionIntegrationTes
         Hilos::$db->userRenames->actions->add($person, $other, 'First', 'Second');
         Database::sqlRun(
             'INSERT INTO `hilos_user_rename` (`user_id`, `renamed_by_user_id`, `old_name`, `new_name`, `renamed_at`) '
-            . "VALUES (?, NULL, 'Second', 'Third', '2026-01-01 00:00:00'), (?, ?, 'Other', 'Another', '2026-01-01 00:00:00')",
+            . "VALUES (?, NULL, 'Second', 'Third', 1767225600000), (?, ?, 'Other', 'Another', 1767225600000)",
             [$person, $other, $person],
         );
 

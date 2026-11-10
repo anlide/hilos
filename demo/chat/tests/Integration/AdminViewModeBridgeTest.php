@@ -53,6 +53,7 @@ use Hilos\Users\AccountStanding;
 use Hilos\Users\AccountStandingKind;
 use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\DTO\AccountStandingStateSignalData;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * The bridge of the admin view mode on the chat demo's real pages and real verdicts (HIL-1250).
@@ -99,7 +100,10 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         Hilos::$rt->connections->actions->register(self::PERSON_ACCEPT_KEY, $this->personId);
         $this->personAddress = "olena-{$this->personId}@example.test";
         Hilos::$db->identities->createPasswordIdentity($this->personId, $this->personAddress, 'correct horse battery');
-        Hilos::$db->accountDeletions->actions->request($this->personId, date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY));
+        Hilos::$db->accountDeletions->actions->request(
+            $this->personId,
+            TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
     }
 
     protected function tearDown(): void

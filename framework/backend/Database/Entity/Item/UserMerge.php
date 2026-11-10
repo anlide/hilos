@@ -42,7 +42,7 @@ class UserMerge extends Entity
     public const array _types = [
         self::user_id => PhpType::INTEGER->value,
         self::survivor_user_id => PhpType::INTEGER->value,
-        self::merged_at => PhpType::DATETIME->value,
+        self::merged_at => PhpType::INTEGER->value,
     ];
 
     // Foreign keys
@@ -72,5 +72,5 @@ class UserMerge extends Entity
     // Properties
     public int $user_id;
     public ?int $survivor_user_id = null;
-    public ?string $merged_at = null;
+    public ?int $merged_at = null;
 }

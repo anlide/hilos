@@ -92,12 +92,12 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
         self::assertSame(30, $deletion->deletionGraceDays);
         self::assertEqualsWithDelta(
             self::GRACE_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
-            TimeHelper::sqlToMs($deletion->effectiveAt) - TimeHelper::sqlToMs($deletion->requestedAt),
+            $deletion->effectiveAt - $deletion->requestedAt,
             self::CLOCK_SLACK_SEC * TimeConstants::MS_PER_SECOND,
         );
         $frames = $this->stateFrames();
         self::assertCount(1, $frames);
-        self::assertSame(TimeHelper::sqlToMs($deletion->effectiveAt), $frames[0]->deletion['effectiveAt']);
+        self::assertSame($deletion->effectiveAt, $frames[0]->deletion['effectiveAt']);
         self::assertSame(
             'account_deletion_scheduled ' . json_encode(['event' => 'account_deletion_scheduled',
                 'user' => self::USER_ID, 'by' => self::ADMIN_USER_ID]),
@@ -105,12 +105,16 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
         );
     }
 
+    /**
+     * @param int $effectiveAt Stored deadline in milliseconds
+     * @param int $expected Whole-day duration implied by the request
+     */
     #[DataProvider('storedRequestDurations')]
-    public function testDurationComesFromTheStoredMoments(string $effectiveAt, int $expected): void
+    public function testDurationComesFromTheStoredMoments(int $effectiveAt, int $expected): void
     {
         Database::sqlRun(
             'INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (?, ?, ?)',
-            [self::USER_ID, '2026-01-01 12:00:00', $effectiveAt],
+            [self::USER_ID, 1767268800000, $effectiveAt],
         );
         $deletion = Hilos::$db->accountDeletions->liveOf(self::USER_ID);
 
@@ -118,15 +122,32 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
         self::assertSame($expected, $deletion->deletionGraceDays);
     }
 
-    /** @return array<string, array{string, int}> Whole days, rounded-up partial days and the one-day floor */
+    /** A due request includes the exact millisecond and excludes the next one. */
+    public function testDueByIncludesTheBoundaryAndExcludesOneMillisecondLater(): void
+    {
+        $now = 1790762400123;
+        Database::sqlRun(
+            'INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (?, ?, ?), (?, ?, ?)',
+            [self::USER_ID, $now - 1000, $now, self::ADMIN_USER_ID, $now - 1000, $now + 1],
+        );
+
+        $due = Hilos::$db->accountDeletions->dueBy($now);
+
+        self::assertCount(1, $due);
+        self::assertSame(self::USER_ID, $due[0]->userId);
+        self::assertSame($now, $due[0]->effectiveAt);
+    }
+
+    /** @return array<string, array{int, int}> Whole days, rounded-up partial days and the one-day floor */
     public static function storedRequestDurations(): array
     {
         return [
-            'thirty days' => ['2026-01-31 12:00:00', 30],
-            'partial day' => ['2026-01-02 12:00:01', 2],
-            'short request' => ['2026-01-01 12:00:01', 1],
-            'same moment' => ['2026-01-01 12:00:00', 1],
-            'deadline moved earlier' => ['2025-12-31 12:00:00', 1],
+            'thirty days' => [1769860800000, 30],
+            'thirty days minus one millisecond' => [1769860799999, 30],
+            'partial day' => [1767355201000, 2],
+            'short request' => [1767268801000, 1],
+            'same moment' => [1767268800000, 1],
+            'deadline moved earlier' => [1767182400000, 1],
         ];
     }
 
@@ -165,7 +186,10 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
     public function testAdministratorCancellationWithoutARequestIsRefusedButCancelingSelfIsAllowed(): void
     {
         self::assertSame(AccountDeletionMessages::NOTHING_SCHEDULED, $this->adminDeletion(self::USER_ID, false)->error);
-        Hilos::$db->accountDeletions->actions->request(self::ADMIN_USER_ID, date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY));
+        Hilos::$db->accountDeletions->actions->request(
+            self::ADMIN_USER_ID,
+            TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
         self::assertNull($this->adminDeletion(self::ADMIN_USER_ID, false)->error);
         self::assertNull(Hilos::$db->accountDeletions->liveOf(self::ADMIN_USER_ID));
     }
@@ -214,7 +238,10 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
      */
     public function testAdministratorCancelsWithoutAConfirmation(): void
     {
-        Hilos::$db->accountDeletions->actions->request(self::USER_ID, date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY));
+        Hilos::$db->accountDeletions->actions->request(
+            self::USER_ID,
+            TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
 
         self::assertNull($this->adminDeletion(self::USER_ID, false)->error);
         self::assertNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
@@ -451,8 +478,8 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
 
         $deletion = Hilos::$db->accountDeletions->liveOf(self::USER_ID);
         self::assertNotNull($deletion);
-        $requestedAt = TimeHelper::sqlToMs($deletion->requestedAt);
-        $effectiveAt = TimeHelper::sqlToMs($deletion->effectiveAt);
+        $requestedAt = $deletion->requestedAt;
+        $effectiveAt = $deletion->effectiveAt;
         self::assertEqualsWithDelta(
             self::GRACE_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
             $effectiveAt - $requestedAt,
@@ -499,7 +526,10 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
         $this->seedCode(VerificationType::ACCOUNT_DELETION, self::EMAIL, self::USER_ID, self::CODE);
         $this->seedFlow(StepUpOperationKey::DELETE_ACCOUNT, HilosProfileFlow::STEP_CODE_SENT,
             VerificationType::ACCOUNT_DELETION, self::EMAIL);
-        Hilos::$db->accountDeletions->actions->request(self::USER_ID, date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY));
+        Hilos::$db->accountDeletions->actions->request(
+            self::USER_ID,
+            TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
 
         $this->assertOpeningRefused(AccountDeletionMessages::ALREADY_SCHEDULED);
         $this->assertRefused(
@@ -527,7 +557,7 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
         $this->seedPasswordAccount();
         $request = Hilos::$db->accountDeletions->actions->request(
             self::USER_ID,
-            date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY),
+            TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
         );
 
         $this->submit(HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL, new AccountDeletionCancelActionDTO());
@@ -560,7 +590,10 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
      */
     public function testCallingItOffIsRefusedUnderImpersonation(): void
     {
-        Hilos::$db->accountDeletions->actions->request(self::USER_ID, date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY));
+        Hilos::$db->accountDeletions->actions->request(
+            self::USER_ID,
+            TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
         Database::sqlRun(
             'UPDATE `hilos_session` SET `impersonator_user_id` = ? WHERE `token` = ?',
             [self::OTHER_USER_ID, self::SESSION_TOKEN],
@@ -597,7 +630,7 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
         $this->cancelWriteFails = true;
         Hilos::$db->accountDeletions->actions->request(
             self::USER_ID,
-            date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY),
+            TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
         );
 
         $this->submit(HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL, new AccountDeletionCancelActionDTO());

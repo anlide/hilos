@@ -237,7 +237,7 @@ final class BrowserContextAdminViewModeWireIntegrationTest extends BrowserContex
     {
         Database::sqlRun(
             'INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (?, ?, ?)',
-            [self::USER_ID, '2026-01-01 12:00:00', '2026-01-31 12:00:00'],
+            [self::USER_ID, 1767268800000, 1769860800000],
         );
         Hilos::$setting = new SettingsAccessor(DeletionCardHiddenSettingsCatalog::class);
         Hilos::$sr = new SignalRouter();
@@ -277,7 +277,7 @@ final class BrowserContextAdminViewModeWireIntegrationTest extends BrowserContex
             $browser->hideForViewer($liveStanding->toArray(), AccountStandingStateSignalData::wireFields())['accountStanding'],
         );
 
-        $browser->record(SourceChange::dbUpdated(HilosDbContext::accountDeletions, '1', ['effective_at' => '2026-01-31 12:00:00']));
+        $browser->record(SourceChange::dbUpdated(HilosDbContext::accountDeletions, '1', ['effective_at' => 1769860800000]));
         $browser->flushToSignalRouter();
         $live = Hilos::$sr->getNextQueuedSignal();
         self::assertNotNull($live);

@@ -81,13 +81,14 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     private const int PHOTO_FILE_ID = 9001;
 
     private const string CREATED_AT = '2026-09-26 10:00:00';
-    private const string PAST = '2026-01-01 00:00:00';
+    private const int PAST = 1767225600000;
 
     /** The session rows keep epoch milliseconds, unlike the datetime columns the other fixtures fill. */
     private const int SESSION_CREATED_AT = 1790416800000;
 
     private const int SECOND_FACTOR_WAIT_UNTIL = 2082758400000;
     private const string FUTURE = '2036-01-01 00:00:00';
+    private const int DELETION_FUTURE = 2082758400000;
 
     /** Session signed in as the person. */
     private const string SIGNED_IN_TOKEN = 'aa0000000000000000000000000000302';
@@ -352,8 +353,8 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         Database::sqlRun(
             'INSERT INTO `hilos_user_rename` '
             . '(`user_id`, `renamed_by_user_id`, `old_name`, `new_name`, `renamed_at`) VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)',
-            [self::USER_ID, self::USER_ID, 'Before', 'After', self::CREATED_AT,
-                self::NEIGHBOUR_ID, self::USER_ID, 'Old', 'New', self::CREATED_AT],
+            [self::USER_ID, self::USER_ID, 'Before', 'After', 1790416800000,
+                self::NEIGHBOUR_ID, self::USER_ID, 'Old', 'New', 1790416800000],
         );
         Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
 
@@ -382,7 +383,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         self::seedMerge(self::FOLDED_ID, self::USER_ID);
         self::seedMerge(self::DEEPEST_ID, self::FOLDED_ID);
         Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
-        $foldedRequest = Hilos::$db->accountDeletions->actions->request(self::FOLDED_ID, self::FUTURE);
+        $foldedRequest = Hilos::$db->accountDeletions->actions->request(self::FOLDED_ID, self::DELETION_FUTURE);
 
         $agent = $this->runSweep();
 
@@ -529,7 +530,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             $fileId = self::PHOTO_FILE_ID;
             Database::sqlRun(
                 'INSERT INTO `hilos_user_photo` (`user_id`, `file_id`, `set_at`) VALUES (?, ?, ?)',
-                [self::USER_ID, $fileId, self::CREATED_AT],
+                [self::USER_ID, $fileId, 1790416800000],
             );
             Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
 
@@ -628,7 +629,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
         $this->seedPerson(self::NEIGHBOUR_ID, self::NEIGHBOUR_TOKEN);
         Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST)->actions->cancel();
-        Hilos::$db->accountDeletions->actions->request(self::NEIGHBOUR_ID, self::FUTURE);
+        Hilos::$db->accountDeletions->actions->request(self::NEIGHBOUR_ID, self::DELETION_FUTURE);
 
         $agent = $this->runSweep();
 
@@ -653,7 +654,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         self::seedSession(self::TAKEOVER_TOKEN, self::NEIGHBOUR_ID, self::SESSION_CREATED_AT, null, self::USER_ID);
         $signedInId = Hilos::$db->sessions->findByToken(self::SIGNED_IN_TOKEN)->id;
         $takeoverId = Hilos::$db->sessions->findByToken(self::TAKEOVER_TOKEN)->id;
-        $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::FUTURE);
+        $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::DELETION_FUTURE);
         $requestId = (int)$request->id;
         $agent = new AccountErasureTestAgent();
         $agent->onStart();
@@ -723,7 +724,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     public function testForcePurgeRefusesACanceledRequest(): void
     {
         $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
-        $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::FUTURE);
+        $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::DELETION_FUTURE);
         $requestId = (int)$request->id;
         $request->actions->cancel();
         $agent = new AccountErasureTestAgent();
@@ -745,7 +746,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     public function testForcePurgeFailureLeavesTheRequestDueForTheSweep(): void
     {
         $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
-        $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::FUTURE);
+        $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::DELETION_FUTURE);
         $requestId = (int)$request->id;
         $agent = new AccountErasureTestAgent();
         $agent->failingFor = self::USER_ID;
@@ -756,7 +757,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         $outcome = $this->consumeForcePurgeOutcome();
         self::assertSame('The project refused the erasure', self::refusalMessage($outcome->reply));
         $row = self::requestRow($requestId);
-        self::assertLessThanOrEqual(TimeHelper::getSqlDateTime(), $row['effective_at']);
+        self::assertLessThanOrEqual(TimeHelper::nowMs(), (int)$row['effective_at']);
         self::assertNull($row['completed_at']);
         self::assertNull($row['canceled_at']);
         foreach (self::ERASED_TABLES as $table) {
@@ -818,7 +819,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             self::FUTURE,
         );
         // Written now rather than at CREATED_AT: a row a year old is the hourly sweep's, not the erasure's.
-        Hilos::$db->accessLogEntries->actions->record($userId, AccessLogEvent::SIGN_IN, '203.0.113.7', TimeHelper::getSqlDateTime());
+        Hilos::$db->accessLogEntries->actions->record($userId, AccessLogEvent::SIGN_IN, '203.0.113.7', TimeHelper::nowMs());
         Database::sqlRun(
             'INSERT INTO `hilos_notification` (`user_id`, `type`, `title`, `created_at`) VALUES (?, ?, ?, 1767225600123)',
             [$userId, 'account.test', 'Test notification'],
@@ -1060,7 +1061,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     {
         Database::sqlRun(
             'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, ?)',
-            [$userId, $survivorUserId, self::CREATED_AT],
+            [$userId, $survivorUserId, 1790416800000],
         );
     }
 

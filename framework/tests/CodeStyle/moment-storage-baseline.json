@@ -3,13 +3,6 @@
     "records": [
         {
             "rule": "MOMENT-WRITE",
-            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/AccountDeletions.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\AccountDeletions::request\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\AccountDeletion\\\",\\\"hilos_account_deletion\\\",\\\"requested_at\\\"]\"]",
-            "actual": "bce955fc37958d58d05706caf19f29c41745ecd3c05dc68302dae53c5056937f",
-            "count": 1,
-            "owner": "HIL-1924"
-        },
-        {
-            "rule": "MOMENT-WRITE",
             "subject": "[\"source\",\"framework/backend/Database/Object/Collection/PasskeyCredentials.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\PasskeyCredentials::createFromRegistration\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\PasskeyCredential\\\",\\\"hilos_passkey_credential\\\",\\\"created_at\\\"]\"]",
             "actual": "999c3d408540c00a31cfbe5a1c78c8546748442ae4fef1269fd0d1509f9ef619",
             "count": 1,
@@ -171,52 +164,10 @@
         },
         {
             "rule": "MOMENT-AUTO-WRITE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\UserPhoto\",\"hilos_user_photo\",\"set_at\"]",
-            "actual": "DEFAULT current_timestamp()",
-            "count": 1,
-            "owner": "HIL-1924"
-        },
-        {
-            "rule": "MOMENT-AUTO-WRITE",
             "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\UserVerification\",\"hilos_user_verification\",\"created_at\"]",
             "actual": "DEFAULT current_timestamp()",
             "count": 1,
             "owner": "HIL-1921"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\AccessLogEntry\",\"hilos_access_log\",\"occurred_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1924"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\AccountDeletion\",\"hilos_account_deletion\",\"canceled_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1924"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\AccountDeletion\",\"hilos_account_deletion\",\"completed_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1924"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\AccountDeletion\",\"hilos_account_deletion\",\"effective_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1924"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\AccountDeletion\",\"hilos_account_deletion\",\"requested_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1924"
         },
         {
             "rule": "MOMENT-TYPE",
@@ -507,27 +458,6 @@
         },
         {
             "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\UserMerge\",\"hilos_user_merge\",\"merged_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1924"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\UserPhoto\",\"hilos_user_photo\",\"set_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1924"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\UserRename\",\"hilos_user_rename\",\"renamed_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1924"
-        },
-        {
-            "rule": "MOMENT-TYPE",
             "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\UserVerification\",\"hilos_user_verification\",\"consumed_at\"]",
             "actual": "timestamp",
             "count": 1,
@@ -546,13 +476,6 @@
             "actual": "timestamp",
             "count": 1,
             "owner": "HIL-1921"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\User\",\"hilos_user\",\"last_activity\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1924"
         }
     ]
 }

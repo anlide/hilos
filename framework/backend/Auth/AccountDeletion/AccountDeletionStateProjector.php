@@ -7,7 +7,6 @@ namespace Hilos\Auth\AccountDeletion;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionStateSignalData;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Builds one person's account deletion state (HIL-302).
@@ -33,8 +32,8 @@ final class AccountDeletionStateProjector
         $deletion = Hilos::$db->accountDeletions->liveOf($userId);
 
         return new AccountDeletionStateSignalData($deletion === null ? null : [
-            AccountDeletionStateSignalData::requestedAt => TimeHelper::sqlToMs($deletion->requestedAt),
-            AccountDeletionStateSignalData::effectiveAt => TimeHelper::sqlToMs($deletion->effectiveAt),
+            AccountDeletionStateSignalData::requestedAt => $deletion->requestedAt,
+            AccountDeletionStateSignalData::effectiveAt => $deletion->effectiveAt,
         ]);
     }
 }

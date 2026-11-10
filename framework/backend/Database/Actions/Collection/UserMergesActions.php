@@ -42,7 +42,7 @@ class UserMergesActions extends DbActions
         $merge = $objectClass::create();
         $merge->userId = $userId;
         $merge->survivorUserId = $survivorUserId;
-        $merge->mergedAt = TimeHelper::getSqlDateTime();
+        $merge->mergedAt = TimeHelper::nowMs();
         $merge->sync();
 
         $this->addObjectToCollection($merge);

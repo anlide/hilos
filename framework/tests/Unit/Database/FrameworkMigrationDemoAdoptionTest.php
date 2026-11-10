@@ -486,6 +486,45 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                     $source->afterStubDownSha256);
                 $origins[] = $change;
             }
+            $personMomentIndices = [
+                [148, 143, 144, 145, 146, 147],
+                [106, 101, 102, 103, 104, 105],
+                [106, 101, 102, 103, 104, 105],
+                [83, 84, 85, 86, 87],
+                [83, 84, 85, 86, 87],
+                [85, 86, 87, 88, 89],
+            ];
+            $personMomentParts = [
+                'access_log' => 'c7ff605f8c01200ff32f0076a3fda33da471236004443ec9eabf0cc20c482a17',
+                'account_deletion' => '2c19121389061e61ddbe804fb2d8d64869cf13b5a44fc40c6eff8d698a870920',
+                'user' => '4b5c4cd893d23a7b3d80d332f1b9736887ba3b3f140d2a4bf88ca6760a0f8edf',
+                'user_merge' => '0901c07b990c53069c79ba8694c6da343bd217cfe51beb92f1ba1a004535100c',
+                'user_photo' => '23327e24babac176be21c35f01af1dbf9af0206375fb8855cbffbdcd5c2ec67c',
+                'user_rename' => 'c929a65b572002203b2611d8cb0bddcfe66a08df04cd8a6298ea9b50ef54cb8c',
+            ];
+            $offset = 0;
+            foreach ($personMomentParts as $key => $sha) {
+                if ($key === 'user_photo' && $index >= 3) {
+                    self::assertNotContains($key, array_column($schema->selectedUnits($project->facade), 'key'));
+                    continue;
+                }
+                $base = $project->root . '/' . sprintf('%03d', $personMomentIndices[$index][$offset++])
+                    . '_framework_change_' . $sha;
+                $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+                self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+                self::assertSame([$key], $change->units);
+                self::assertCount(1, $change->parts);
+                self::assertSame('20261110024242374685_HIL-1924_people_moments/' . $key, $change->parts[0]->key());
+                $source = $catalog->part($change->parts[0]->changeId, $key);
+                self::assertFalse($source->introducesUnit);
+                self::assertSame($key === 'user'
+                    ? ['20261022124515804554_HIL-1582_browser_time_zones/user'] : [], $source->requires);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
+                    $source->afterStubUpSha256);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
+                    $source->afterStubDownSha256);
+                $origins[] = $change;
+            }
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);

@@ -88,7 +88,7 @@ signed `BIGINT` or milliseconds.
 | Verification, registration, step-up and auth blocks | 10 | (not in the code yet — HIL-1921) |
 | Second factor, trust, reset and backup codes | 16 | (not in the code yet — HIL-1922) |
 | Notifications, preferences, deliveries and push, including keyset anchors | 10 | Implemented |
-| People, access log, deletion, photo, rename and merge | 9 | (not in the code yet — HIL-1924) |
+| People, access log, deletion, photo, rename and merge | 9 | Implemented |
 | Legal acceptances and both export queues; preserve the finished file's IANA-zone snapshot | 7 | (not in the code yet — HIL-1925) |
 | Files and variants | 2 | Implemented |
 | Analytics: already milliseconds, change the sign; leave IDs, foreign keys and counters alone | 35 | Implemented |
@@ -865,16 +865,15 @@ review work, and the lists are in the document linked above.
 
 ## People: Activity And Account-Zone Reads
 
-The SQL `last_activity` column and its Entity/Object value remain date-time
-storage. The read-facing [User View](../../../framework/backend/Database/View/Item/User.php)
-converts it with `TimeHelper::sqlToMs()` and returns nullable UTC epoch
-milliseconds as `lastActivity`; [HilosUserTableRow](../../../framework/backend/Tables/Users/HilosUserTableRow.php)
+The SQL `last_activity` column stores signed `BIGINT` Unix epoch milliseconds,
+and its Entity/Object value is nullable `?int`. The read-facing
+[User View](../../../framework/backend/Database/View/Item/User.php) passes the
+value through directly as `lastActivity`. [HilosUserTableRow](../../../framework/backend/Tables/Users/HilosUserTableRow.php)
 keeps the same `?int` wire value. The Hilos users list sorts and pages by the
 numeric moment, with the user id as the tie-breaker for equal timestamps; detail
 and merge-candidate rows carry the same moment, and missing activity remains
-null.
-The stored source and its SQL bridge move under
-[Transition Owners](#transition-owners) (not in the code yet — HIL-1924).
+null. The migration is listed as complete under
+[Transition Owners](#transition-owners).
 
 Core's typed [User](../../../framework/frontend/core/src/state/entity.ts) has
 `lastActivity: number | null` and `timeZone: string | null`. The list, detail

@@ -1516,8 +1516,8 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     private static function seedAccessLogRow(int $userId, string $ipAddress): void
     {
         Database::sqlRun(
-            'INSERT INTO `hilos_access_log` (`user_id`, `event`, `ip_address`, `occurred_at`) VALUES (?, ?, ?, NOW())',
-            [$userId, 'sign_in', $ipAddress],
+            'INSERT INTO `hilos_access_log` (`user_id`, `event`, `ip_address`, `occurred_at`) VALUES (?, ?, ?, ?)',
+            [$userId, 'sign_in', $ipAddress, TimeHelper::nowMs()],
         );
     }
 
@@ -1644,8 +1644,8 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     private static function seedMerge(int $userId, int $survivorUserId): void
     {
         Database::sqlRun(
-            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, NOW())',
-            [$userId, $survivorUserId],
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, ?)',
+            [$userId, $survivorUserId, TimeHelper::nowMs()],
         );
     }
 

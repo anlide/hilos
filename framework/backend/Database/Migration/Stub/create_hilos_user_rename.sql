@@ -15,7 +15,7 @@ CREATE TABLE `hilos_user_rename` (
     `renamed_by_user_id` INT UNSIGNED DEFAULT NULL,
     `old_name` VARCHAR(255) NOT NULL,
     `new_name` VARCHAR(255) NOT NULL,
-    `renamed_at` TIMESTAMP NOT NULL,
+    `renamed_at` BIGINT NOT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_user_rename_user` (`user_id`),
     KEY `idx_user_rename_renamed_by` (`renamed_by_user_id`),

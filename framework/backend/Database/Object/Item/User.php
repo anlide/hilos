@@ -19,7 +19,7 @@ use Hilos\Database\Object\Collection\Users as ObjectUsers;
  * @property string $name
  * @property bool $admin
  * @property bool $block
- * @property ?string $lastActivity
+ * @property ?int $lastActivity Epoch milliseconds; null when never recorded
  * @property ?string $themePick
  * @property bool $themePickInitialized
  * @property ?string $timeZone Exact IANA time zone; null for Automatic
@@ -76,7 +76,7 @@ class User extends Object_
             self::name => $this->entity->name = (string)$value,
             self::admin => $this->entity->admin = (bool)$value,
             self::block => $this->entity->block = (bool)$value,
-            self::lastActivity => $this->entity->last_activity = is_scalar($value) ? (string)$value : null,
+            self::lastActivity => $this->entity->last_activity = $value === null ? null : (int)$value,
             self::themePick => $this->entity->theme_pick = $value === null ? null : (string)$value,
             self::themePickInitialized => $this->entity->theme_pick_initialized = (bool)$value,
             self::timeZone => $this->entity->time_zone = $value === null ? null : (string)$value,

@@ -39,7 +39,7 @@ class AccessLogEntry extends Entity
         self::user_id => PhpType::INTEGER->value,
         self::event => PhpType::STRING->value,
         self::ip_address => PhpType::STRING->value,
-        self::occurred_at => PhpType::DATETIME->value,
+        self::occurred_at => PhpType::INTEGER->value,
     ];
 
     public const array _foreign = [
@@ -61,5 +61,5 @@ class AccessLogEntry extends Entity
     public int $user_id;
     public string $event;
     public ?string $ip_address = null;
-    public string $occurred_at;
+    public int $occurred_at;
 }

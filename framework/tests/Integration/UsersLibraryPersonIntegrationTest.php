@@ -18,6 +18,7 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\HilosException;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * The person as the framework's users library creates, names and guards it (HIL-1194, HIL-1199).
@@ -60,6 +61,7 @@ final class UsersLibraryPersonIntegrationTest extends HilosSessionIntegrationTes
      */
     public function testCreatesThePersonInTheFrameworkTableAndNamesThem(): void
     {
+        $before = TimeHelper::nowMs();
         $userId = $this->inLibrary(fn (): int => $this->library->createUser('  Ada  ', null));
 
         self::assertGreaterThan(0, $userId);
@@ -70,6 +72,8 @@ final class UsersLibraryPersonIntegrationTest extends HilosSessionIntegrationTes
         self::assertSame(0, (int)$row['admin']);
         self::assertSame(0, (int)$row['block']);
         self::assertNotNull($row['last_activity']);
+        self::assertGreaterThanOrEqual($before, (int)$row['last_activity']);
+        self::assertLessThanOrEqual(TimeHelper::nowMs(), (int)$row['last_activity']);
         self::assertSame('Ada', $this->library->displayNameOf($userId));
     }
 
@@ -137,8 +141,8 @@ final class UsersLibraryPersonIntegrationTest extends HilosSessionIntegrationTes
         $foldedAdminId = self::seedPerson('Folded root', admin: true);
         foreach ([$foldedId, $foldedAdminId] as $userId) {
             Database::sqlRun(
-                'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, NOW())',
-                [$userId, $survivorId],
+                'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, ?)',
+                [$userId, $survivorId, TimeHelper::nowMs()],
             );
         }
 

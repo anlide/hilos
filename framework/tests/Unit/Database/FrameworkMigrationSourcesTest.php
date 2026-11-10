@@ -83,6 +83,7 @@ final class FrameworkMigrationSourcesTest extends TestCase
                 '20261109000848893922_HIL-1918_bootstrap_moments/database_marker',
                 '20261109000848893922_HIL-1918_bootstrap_moments/migration_claim',
                 '20261109120150360881_HIL-1919_session_moments/session',
+                '20261110024242374685_HIL-1924_people_moments/user',
             ],
             array_map(
                 static fn (FrameworkMigrationPart $part): string => $part->key(),
@@ -127,6 +128,37 @@ final class FrameworkMigrationSourcesTest extends TestCase
             $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->downPath)), $part->afterStubDownSha256);
         }
         $catalog->verifyCurrentStubs(['session', 'verifier_circle']);
+    }
+
+    /** Guards source identities and stub snapshots independently of project provenance. */
+    public function testRealPersonMomentsCarrySixPartsWithCurrentStubHashesAndUserChain(): void
+    {
+        $schema = new FrameworkSchemaCatalog();
+        $catalog = new FrameworkMigrationCatalog($schema);
+        $units = ['access_log', 'account_deletion', 'user', 'user_merge', 'user_photo', 'user_rename'];
+        $parts = $catalog->partsForUnits($units);
+        $this->assertSame([
+            '20261021021039718057_HIL-1580_add_user_time_zone/user',
+            '20261022124515804554_HIL-1582_browser_time_zones/user',
+            '20261110024242374685_HIL-1924_people_moments/access_log',
+            '20261110024242374685_HIL-1924_people_moments/account_deletion',
+            '20261110024242374685_HIL-1924_people_moments/user',
+            '20261110024242374685_HIL-1924_people_moments/user_merge',
+            '20261110024242374685_HIL-1924_people_moments/user_photo',
+            '20261110024242374685_HIL-1924_people_moments/user_rename',
+        ], array_map(static fn (FrameworkMigrationPart $part): string => $part->key(), $parts));
+        $parts = array_slice($parts, 2);
+        $this->assertSame($units, array_column($parts, 'unit'));
+        foreach ($parts as $part) {
+            $this->assertSame('20261110024242374685_HIL-1924_people_moments', $part->changeId);
+            $this->assertSame($part->unit === 'user'
+                ? ['20261022124515804554_HIL-1582_browser_time_zones/user'] : [], $part->requires);
+            $this->assertFalse($part->introducesUnit);
+            $unit = $schema->unit($part->unit);
+            $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->upPath)), $part->afterStubUpSha256);
+            $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->downPath)), $part->afterStubDownSha256);
+        }
+        $catalog->verifyCurrentStubs($units);
     }
 
     public function testErasureStorageUnitsAreIntroducedOnceInDependencyOrder(): void

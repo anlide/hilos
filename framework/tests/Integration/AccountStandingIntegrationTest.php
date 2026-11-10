@@ -269,11 +269,11 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
 
         $request = Hilos::$db->accountDeletions->actions->request(
             self::USER_ID,
-            date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY),
+            TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
         );
         $scheduled = AccountStandingResolver::of(self::USER_ID);
         self::assertSame(AccountStandingKind::DELETION_SCHEDULED, $scheduled->shown);
-        self::assertSame(TimeHelper::sqlToMs($request->effectiveAt), $scheduled->deletionEffectiveAt);
+        self::assertSame($request->effectiveAt, $scheduled->deletionEffectiveAt);
         self::assertSame(1, $scheduled->deletionGraceDays);
 
         // The cancel updates columns that do not name the person, so every verdict is dropped.
@@ -287,19 +287,19 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
         TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::TEST_OWNER);
         $request = Hilos::$db->accountDeletions->actions->request(
             self::USER_ID,
-            date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY),
+            TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
         );
         self::assertSame(30, AccountStandingResolver::of(self::USER_ID)->deletionGraceDays);
         Hilos::$db->settings->actions->add(AccountDeletionSettings::GRACE_DAYS_KEY, 7, StandingIntegrationSettingsCatalog::getCatalog());
         self::assertSame(7, AccountDeletionSettings::graceDays());
         AccountStandingResolver::forgetAll();
         self::assertSame(30, AccountStandingResolver::of(self::USER_ID)->deletionGraceDays);
-        self::assertSame(TimeHelper::sqlToMs($request->effectiveAt), AccountStandingResolver::of(self::USER_ID)->deletionEffectiveAt);
+        self::assertSame($request->effectiveAt, AccountStandingResolver::of(self::USER_ID)->deletionEffectiveAt);
         $request->actions->cancel();
         self::assertNull(AccountStandingResolver::of(self::USER_ID)->deletionGraceDays);
         Hilos::$db->accountDeletions->actions->request(
             self::USER_ID,
-            date('Y-m-d H:i:s', time() + 7 * TimeConstants::SECONDS_PER_DAY),
+            TimeHelper::nowMs() + 7 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
         );
         self::assertSame(7, AccountStandingResolver::of(self::USER_ID)->deletionGraceDays);
     }
@@ -311,7 +311,7 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
         SourceChangeBus::publish(SourceChange::dbUpdated(
             HilosDbContext::users,
             (string)self::USER_ID,
-            ['last_activity' => '2026-09-29 10:00:00'],
+            ['last_activity' => 1790676000000],
         ));
         self::assertSame($remembered, AccountStandingResolver::of(self::USER_ID));
 
@@ -391,7 +391,10 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
     {
         self::accept(self::USER_ID, 'terms', 'first');
         Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->actions->setImpersonator(self::ADMIN_USER_ID);
-        Hilos::$db->accountDeletions->actions->request(self::USER_ID, date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY));
+        Hilos::$db->accountDeletions->actions->request(
+            self::USER_ID,
+            TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
         $router = $this->pageRouter(new StandingTestPageFactory($this->library));
 
         $router->dispatchAction(
@@ -480,7 +483,10 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
     public function testTheLibraryClosesItsCommandsToAFrozenPersonButTheCancelOfTheirDeletion(): void
     {
         self::accept(self::USER_ID, 'terms', 'first');
-        Hilos::$db->accountDeletions->actions->request(self::USER_ID, date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY));
+        Hilos::$db->accountDeletions->actions->request(
+            self::USER_ID,
+            TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
         $router = $this->pageRouter(new StandingTestPageFactory($this->library));
 
         $router->dispatchAction(
@@ -680,7 +686,10 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
         $sessions = new StandingSessionsLibrary();
         $sessions->onTick();
 
-        Hilos::$db->accountDeletions->actions->request(self::USER_ID, date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY));
+        Hilos::$db->accountDeletions->actions->request(
+            self::USER_ID,
+            TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
         $sessions->onTick();
 
         $drained = $this->drained();

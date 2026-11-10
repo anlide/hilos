@@ -13,7 +13,7 @@
 CREATE TABLE `hilos_user_merge` (
     `user_id` INT UNSIGNED NOT NULL,
     `survivor_user_id` INT UNSIGNED DEFAULT NULL,
-    `merged_at` TIMESTAMP NULL DEFAULT NULL,
+    `merged_at` BIGINT NULL DEFAULT NULL,
     PRIMARY KEY (`user_id`),
     KEY `idx_user_merge_survivor` (`survivor_user_id`),
     CONSTRAINT `fk_user_merge_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT,

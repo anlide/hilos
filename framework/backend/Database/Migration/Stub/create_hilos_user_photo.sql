@@ -5,7 +5,7 @@
 CREATE TABLE `hilos_user_photo` (
     `user_id` INT UNSIGNED NOT NULL,
     `file_id` INT UNSIGNED NOT NULL,
-    `set_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `set_at` BIGINT NOT NULL,
     PRIMARY KEY (`user_id`),
     UNIQUE KEY `uk_user_photo_file` (`file_id`),
     CONSTRAINT `fk_user_photo_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT,

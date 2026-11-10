@@ -31,7 +31,7 @@ class AccountDeletionsActions extends DbActions
      * Opens a request to delete a person's account.
      *
      * @param int $userId Person whose account is to be deleted
-     * @param string $effectiveAt Moment the account is erased (SQL datetime)
+     * @param int $effectiveAt Moment the account is erased (epoch milliseconds)
      * @return AccountDeletion The request
      * @throws CreateNotAllowedException When the truth source rejects the insert
      * @throws WriteNotAllowedException Never for a new row; declared by the storing sync
@@ -41,7 +41,7 @@ class AccountDeletionsActions extends DbActions
      * @throws ObjectGetIdStringNotImplementedException If the inserted row has no primary key
      * @throws CallbackNotSetException When the collection cannot wrap the created object as a DB item
      */
-    public function request(int $userId, string $effectiveAt): AccountDeletion
+    public function request(int $userId, int $effectiveAt): AccountDeletion
     {
         $this->ensureCanCreateInSet((string)$userId);
 

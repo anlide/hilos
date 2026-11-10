@@ -38,6 +38,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\AccountStanding;
 use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\DTO\AccountStandingStateSignalData;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * The admin card of a person reads the person's standing as one verdict, and follows it (HIL-945).
@@ -107,7 +108,10 @@ final class AccountStandingCardTest extends IntegrationTestCase
         self::assertSame($this->personId, $frames[0]->userId);
         self::assertSame('blocked', $frames[0]->accountStanding[AccountStanding::shown]);
 
-        $request = Hilos::$db->accountDeletions->actions->request($this->personId, date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY));
+        $request = Hilos::$db->accountDeletions->actions->request(
+            $this->personId,
+            TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
         AccountStandingAudience::onAgentTick($agent);
         $frames = $this->standingFrames();
         self::assertCount(1, $frames);

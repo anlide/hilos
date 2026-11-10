@@ -508,7 +508,7 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
                 . ' VALUES (?, ?, ?, ?, ?)', ['1456ffffffffffffffffffffffffffff', $neighborId, $now, $now, $now - 2 * $dayMs]);
             $neighborSessionId = Database::lastInsertId();
             Database::sql('INSERT INTO `hilos_access_log` (`user_id`, `event`, `occurred_at`)'
-                . ' VALUES (?, ?, DATE_SUB(NOW(), INTERVAL 3 YEAR))', [$neighborId, 'sign_in']);
+                . ' VALUES (?, ?, ?)', [$neighborId, 'sign_in', $now - 3 * 366 * $dayMs]);
             $neighborAccessId = Database::lastInsertId();
         }
         $userId = (int)Hilos::$db->users->actions->createWithName('Cron sessions target')->id;
@@ -520,7 +520,7 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
                 . ' VALUES (?, ?, ?, ?, ?)', ['14560000' . sprintf('%024x', $index), $userId, $now, $now, $now - $dayMs]);
             $sessionIds[] = Database::lastInsertId();
             Database::sql('INSERT INTO `hilos_access_log` (`user_id`, `event`, `occurred_at`)'
-                . ' VALUES (?, ?, DATE_SUB(NOW(), INTERVAL 2 YEAR))', [$userId, 'sign_in']);
+                . ' VALUES (?, ?, ?)', [$userId, 'sign_in', $now - 2 * 366 * $dayMs]);
             $accessIds[] = Database::lastInsertId();
         }
         $worker = $this->worker();

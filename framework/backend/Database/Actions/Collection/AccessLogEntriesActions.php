@@ -34,7 +34,7 @@ class AccessLogEntriesActions extends DbActions
      * @param int $userId Person whose account was used
      * @param AccessLogEvent $event What the use was
      * @param ?string $ipAddress Network address of the use, or null when the transport gave none
-     * @param string $occurredAtSql Moment of the use (SQL datetime)
+     * @param int $occurredAtMs Moment of the use in epoch milliseconds
      * @throws CreateNotAllowedException When the truth source rejects the insert
      * @throws WriteNotAllowedException When the truth source rejects the row write
      * @throws DatabaseException When the write fails
@@ -42,11 +42,11 @@ class AccessLogEntriesActions extends DbActions
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws ObjectGetIdStringNotImplementedException If the inserted row has no primary key
      */
-    public function record(int $userId, AccessLogEvent $event, ?string $ipAddress, string $occurredAtSql): void
+    public function record(int $userId, AccessLogEvent $event, ?string $ipAddress, int $occurredAtMs): void
     {
         $this->ensureCanCreateInSet((string)$userId);
 
-        $this->objectCollection->record($userId, $event, $ipAddress, $occurredAtSql);
+        $this->objectCollection->record($userId, $event, $ipAddress, $occurredAtMs);
     }
 
     /**
@@ -70,7 +70,7 @@ class AccessLogEntriesActions extends DbActions
      *
      * The rows belong to many people, so the right asked is the one over the whole table.
      *
-     * @param string $beforeSql Rows that occurred strictly before this moment go (SQL datetime)
+     * @param int $beforeMs Rows that occurred strictly before this epoch-millisecond moment go
      * @param int $limit Maximum rows to delete
      * @return int Number of rows deleted
      * @throws WriteNotAllowedException When the truth source rejects the delete
@@ -78,11 +78,11 @@ class AccessLogEntriesActions extends DbActions
      * @throws InvalidArgumentException When a query or the queued DB-sync signal is invalid
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
-    public function deleteOlderThan(string $beforeSql, int $limit): int
+    public function deleteOlderThan(int $beforeMs, int $limit): int
     {
         $this->ensureCanWrite(TruthSourceOperation::Remove);
 
-        return $this->objectCollection->deleteOlderThan($beforeSql, $limit);
+        return $this->objectCollection->deleteOlderThan($beforeMs, $limit);
     }
 
     /**

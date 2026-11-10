@@ -9,6 +9,7 @@ use Hilos\Auth\AccessLog\AccessLogPolicy;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
@@ -38,6 +39,7 @@ use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\TimeHelper;
 use ReflectionProperty;
 
 /**
@@ -215,8 +217,8 @@ final class AccessLogIntegrationTest extends HilosSessionIntegrationTestCase
      */
     public function testTheSweepRemovesRowsPastTheirLifeBatchByBatch(): void
     {
-        $old = date('Y-m-d H:i:s', (int)strtotime('-13 months'));
-        $young = date('Y-m-d H:i:s', (int)strtotime('-11 months'));
+        $old = (int)strtotime('-13 months') * TimeConstants::MS_PER_SECOND;
+        $young = (int)strtotime('-11 months') * TimeConstants::MS_PER_SECOND;
         for ($index = 0; $index < self::BATCH_PLUS_ONE; $index++) {
             self::seedRow(self::USER_ID, $old);
         }
@@ -231,6 +233,18 @@ final class AccessLogIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame([$young], self::moments());
     }
 
+    /** The cutoff is exclusive, down to the millisecond the calendar calculation kept. */
+    public function testTheCutoffKeepsTheExactMillisecondAndDeletesOneMillisecondEarlier(): void
+    {
+        $cutoff = AccessLogPolicy::cutoff(1791030615123);
+        self::seedRow(self::USER_ID, $cutoff - 1);
+        self::seedRow(self::USER_ID, $cutoff);
+        self::seedRow(self::USER_ID, $cutoff + 1);
+
+        self::assertSame(1, Hilos::$db->accessLogEntries->actions->deleteOlderThan($cutoff, self::BATCH_PLUS_ONE));
+        self::assertSame([1759494615123, 1759494615124], self::moments());
+    }
+
     /**
      * A privacy text deviating from standard.access_log keeps no log: a sign-in and a new address
      * write nothing, the session still keeps its address, and the sweep removes every row already
@@ -242,7 +256,7 @@ final class AccessLogIntegrationTest extends HilosSessionIntegrationTestCase
     {
         self::bindAppClass(AccessLogWithoutLogTestHilos::class);
         self::assertFalse(AccessLogPolicy::keepsLog());
-        self::seedRow(self::USER_ID, date('Y-m-d H:i:s', (int)strtotime('-1 day')));
+        self::seedRow(self::USER_ID, TimeHelper::nowMs() - TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND);
         self::seedSession(self::SESSION_TOKEN, null, self::CREATED_AT, null);
         $holder = new AccessLogTestHolder();
         $this->handshake($holder, self::FIRST_ADDRESS);
@@ -343,10 +357,10 @@ final class AccessLogIntegrationTest extends HilosSessionIntegrationTestCase
 
     /**
      * @param int $userId Person whose account was used
-     * @param string $occurredAt Moment of the use
+     * @param int $occurredAt Moment of the use in epoch milliseconds
      * @throws DatabaseException When the insert fails
      */
-    private static function seedRow(int $userId, string $occurredAt): void
+    private static function seedRow(int $userId, int $occurredAt): void
     {
         Database::sqlRun(
             'INSERT INTO `hilos_access_log` (`user_id`, `event`, `ip_address`, `occurred_at`) VALUES (?, ?, ?, ?)',
@@ -373,14 +387,14 @@ final class AccessLogIntegrationTest extends HilosSessionIntegrationTestCase
     }
 
     /**
-     * @return list<string> Moment of every row, in the order written
+     * @return list<int> Epoch-millisecond moment of every row, in the order written
      * @throws DatabaseException When the query fails
      */
     private static function moments(): array
     {
         Database::sql('SELECT `occurred_at` FROM `hilos_access_log` ORDER BY `id`');
 
-        return array_map(static fn (array $row): string => (string)$row['occurred_at'], Database::rows());
+        return array_map(static fn (array $row): int => (int)$row['occurred_at'], Database::rows());
     }
 
     /**

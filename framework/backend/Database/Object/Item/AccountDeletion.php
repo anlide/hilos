@@ -33,10 +33,10 @@ use Hilos\Utils\Helpers\TimeHelper;
  *
  * @property-read ?int $id
  * @property int $userId
- * @property string $requestedAt
- * @property string $effectiveAt
- * @property-read ?string $canceledAt
- * @property-read ?string $completedAt
+ * @property int $requestedAt
+ * @property int $effectiveAt
+ * @property-read ?int $canceledAt
+ * @property-read ?int $completedAt
  */
 class AccountDeletion extends Object_
 {
@@ -83,8 +83,8 @@ class AccountDeletion extends Object_
     {
         match ($property) {
             self::userId => $this->entity->user_id = (int)$value,
-            self::requestedAt => $this->entity->requested_at = (string)$value,
-            self::effectiveAt => $this->entity->effective_at = (string)$value,
+            self::requestedAt => $this->entity->requested_at = (int)$value,
+            self::effectiveAt => $this->entity->effective_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -158,9 +158,9 @@ class AccountDeletion extends Object_
             TruthSourceOperation::Update,
         );
 
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string($now));
+        $params->add(SqlParam::int($now));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
             'UPDATE `' . EntityAccountDeletion::_table . '` SET `' . EntityAccountDeletion::effective_at . '` = ? WHERE `'
@@ -207,9 +207,9 @@ class AccountDeletion extends Object_
             TruthSourceOperation::Update,
         );
 
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string($now));
+        $params->add(SqlParam::int($now));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
             'UPDATE `' . EntityAccountDeletion::_table . '` SET `' . $column . '` = ? WHERE `'

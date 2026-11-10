@@ -11,9 +11,9 @@ use PHPUnit\Framework\TestCase;
 
 final class UserTest extends TestCase
 {
-    public function testViewConvertsActivityAndPreservesObjectStorageAndSerializationFlags(): void
+    public function testViewKeepsActivityMillisecondsAndPreservesObjectStorageAndSerializationFlags(): void
     {
-        foreach ([[null, null], ['1970-01-01 00:00:00', 0], ['2026-09-30 10:00:00', 1790762400000]] as [$stored, $moment]) {
+        foreach ([[null, null], [0, 0], [1790762400123, 1790762400123], [-1234, -1234]] as [$stored, $moment]) {
             $object = ObjectUser::fromEntity(EntityUser::fromRow([
                 'id' => 7,
                 'name' => 'Ann',
@@ -22,6 +22,7 @@ final class UserTest extends TestCase
                 'theme_pick_initialized' => false,
             ]));
             $user = new User($object);
+            $object->lastActivity = $stored;
 
             $this->assertSame($stored, $object->lastActivity);
             $this->assertSame($stored, $object->toArray()[ObjectUser::lastActivity]);

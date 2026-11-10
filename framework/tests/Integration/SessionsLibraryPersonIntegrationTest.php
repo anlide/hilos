@@ -32,6 +32,7 @@ use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * The person as the framework's sessions library judges it (HIL-1197) and as the
@@ -529,8 +530,8 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
     private static function seedMerge(int $userId, int $survivorUserId): void
     {
         Database::sqlRun(
-            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, NOW())',
-            [$userId, $survivorUserId],
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, ?)',
+            [$userId, $survivorUserId, TimeHelper::nowMs()],
         );
     }
 

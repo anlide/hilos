@@ -17,7 +17,7 @@ use Hilos\HilosException;
  * @method __construct(ObjectUserPhoto $objectUserPhoto)
  * @property-read int $userId Person whose photo this is
  * @property-read int $fileId Registry file key
- * @property-read string $setAt When the photo was set
+ * @property-read int $setAt When the photo was set
  * @property-read ?File $file Registry row, if still available
  * @property-read string $photo Public address of the displayed variant
  */

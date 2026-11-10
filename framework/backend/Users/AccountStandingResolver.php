@@ -22,7 +22,6 @@ use Hilos\Legal\LegalSettings;
 use Hilos\Legal\LegalStanding;
 use Hilos\Legal\LegalStandingResolver;
 use Hilos\Legal\LegalTally;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * The one place the standing of an account is composed (HIL-945).
@@ -245,7 +244,7 @@ final class AccountStandingResolver
             $mergedInto,
             $mergedInto !== null && isset($db->users[$mergedInto]) ? $db->users[$mergedInto]->name : null,
             ($db->users[$userId] ?? null)?->block === true,
-            $deletion === null ? null : TimeHelper::sqlToMs($deletion->effectiveAt),
+            $deletion === null ? null : $deletion->effectiveAt,
             self::inStanding($documents, LegalStanding::LAPSED),
             self::inStanding($documents, LegalStanding::WINDOW),
             $refusal,

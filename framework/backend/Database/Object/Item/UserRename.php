@@ -20,7 +20,7 @@ use Hilos\Database\Object\Collection\UserRenames as ObjectUserRenames;
  * @property ?int $renamedByUserId
  * @property string $oldName
  * @property string $newName
- * @property string $renamedAt
+ * @property int $renamedAt
  */
 class UserRename extends Object_
 {
@@ -68,7 +68,7 @@ class UserRename extends Object_
             self::renamedByUserId => $this->entity->renamed_by_user_id = $value === null ? null : (int)$value,
             self::oldName => $this->entity->old_name = (string)$value,
             self::newName => $this->entity->new_name = (string)$value,
-            self::renamedAt => $this->entity->renamed_at = (string)$value,
+            self::renamedAt => $this->entity->renamed_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }

@@ -53,7 +53,7 @@ class UsersActions extends DbActions
         $user = $objectClass::create();
         $user->name = 'Admin' . RandomHelper::integer(self::NAME_SUFFIX_MIN, self::NAME_SUFFIX_MAX);
         $user->admin = true;
-        $user->lastActivity = TimeHelper::getSqlDateTime();
+        $user->lastActivity = TimeHelper::nowMs();
         $user->themePickInitialized = false;
         $user->sync();
 
@@ -103,7 +103,7 @@ class UsersActions extends DbActions
         $objectClass = $this->objectCollection::OBJECT_CLASS;
         $user = $objectClass::create();
         $user->name = $displayName;
-        $user->lastActivity = TimeHelper::getSqlDateTime();
+        $user->lastActivity = TimeHelper::nowMs();
         $user->themePick = $themePick;
         $user->themePickInitialized = $themePick !== null;
         $user->sync();

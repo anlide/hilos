@@ -35,7 +35,7 @@ class UserPhotosActions extends DbActions
             $photo = $objectClass::create();
             $photo->userId = $userId;
             $photo->fileId = $fileId;
-            $photo->setAt = TimeHelper::getSqlDateTime();
+            $photo->setAt = TimeHelper::nowMs();
             $photo->sync();
             $this->addObjectToCollection($photo);
 
@@ -45,7 +45,7 @@ class UserPhotosActions extends DbActions
         $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Update);
         $previousFileId = $photo->fileId;
         $photo->fileId = $fileId;
-        $photo->setAt = TimeHelper::getSqlDateTime();
+        $photo->setAt = TimeHelper::nowMs();
         $photo->sync();
 
         return $previousFileId;

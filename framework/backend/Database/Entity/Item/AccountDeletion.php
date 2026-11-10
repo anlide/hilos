@@ -46,10 +46,10 @@ class AccountDeletion extends Entity
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::user_id => PhpType::INTEGER->value,
-        self::requested_at => PhpType::DATETIME->value,
-        self::effective_at => PhpType::DATETIME->value,
-        self::canceled_at => PhpType::DATETIME->value,
-        self::completed_at => PhpType::DATETIME->value,
+        self::requested_at => PhpType::INTEGER->value,
+        self::effective_at => PhpType::INTEGER->value,
+        self::canceled_at => PhpType::INTEGER->value,
+        self::completed_at => PhpType::INTEGER->value,
     ];
 
     public const array _indexes = [
@@ -66,8 +66,8 @@ class AccountDeletion extends Entity
 
     public ?int $id = null;
     public int $user_id;
-    public string $requested_at;
-    public string $effective_at;
-    public ?string $canceled_at = null;
-    public ?string $completed_at = null;
+    public int $requested_at;
+    public int $effective_at;
+    public ?int $canceled_at = null;
+    public ?int $completed_at = null;
 }

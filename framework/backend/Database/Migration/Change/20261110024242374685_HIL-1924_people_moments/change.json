@@ -1,0 +1,59 @@
+{
+    "format": 1,
+    "id": "20261110024242374685_HIL-1924_people_moments",
+    "parts": [
+        {
+            "unit": "user_rename",
+            "up": "user_rename.sql",
+            "down": "user_rename_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "6e6ef259ac90d29b49753a09539e5383edc7d842367ae0e58778dcd007c0e5cc",
+            "afterStubDownSha256": "e3ce6e122f15a16880fbfa92fb4e7b2113b539c61ff9a06760def5033bb72ac4"
+        },
+        {
+            "unit": "user_merge",
+            "up": "user_merge.sql",
+            "down": "user_merge_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "e270c95b712d6684bf3a046d53d6f97f473d68945d66e8e416ec46085b73d071",
+            "afterStubDownSha256": "5ed595cc5e9d92e6a0f0bc54958d1789379550ca5f8b5bae46c65c48468a074d"
+        },
+        {
+            "unit": "user_photo",
+            "up": "user_photo.sql",
+            "down": "user_photo_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "9d2e3856c1ac90fee905a9ec44fb7210942fb20b0a1699f447b4784c76fb157e",
+            "afterStubDownSha256": "4feeb8e998677755913e57b0f676462b79c6e48c61214deecbf177daae484049"
+        },
+        {
+            "unit": "access_log",
+            "up": "access_log.sql",
+            "down": "access_log_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "d81b83a36b11c422ac7420b93be83ce1980cc7540eecbed624507d1885d7388a",
+            "afterStubDownSha256": "386c67bc69ed9721fbc5aba5a69132d35fc1b262c65316fa166a8174f39bee1f"
+        },
+        {
+            "unit": "account_deletion",
+            "up": "account_deletion.sql",
+            "down": "account_deletion_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "d9e8325f5c37e8a452bead3a59daa64eae3b17891fdb67ae78ca45ce727ca03c",
+            "afterStubDownSha256": "95ee233624f2203cf94b2814b79fab0c2e5564a5e7ac8235715e25b9342ae230"
+        },
+        {
+            "unit": "user",
+            "up": "user.sql",
+            "down": "user_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261022124515804554_HIL-1582_browser_time_zones",
+                    "unit": "user"
+                }
+            ],
+            "afterStubUpSha256": "9e248877ef4aad87445467fd804516743ebe606c1fcd4e3709b18f559bf311c1",
+            "afterStubDownSha256": "c51fdef7a88ead7047c9c14f60f39df9955251291c267b7cca94927fa318df35"
+        }
+    ]
+}

@@ -19,7 +19,7 @@ use Hilos\HilosException;
  *
  * @property-read int $userId Folded account (primary key)
  * @property-read ?int $survivorUserId Account it was folded into, or null on an older row left when its survivor was erased
- * @property-read ?string $mergedAt When the merge was recorded, or null on a row carried over from a column that never kept it
+ * @property-read ?int $mergedAt When the merge was recorded, or null on a row carried over from a column that never kept it
  */
 class UserMerge extends DbItem
 {

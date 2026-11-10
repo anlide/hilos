@@ -56,7 +56,7 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
         $this->reaction = new RollbackScopeReaction();
         SourceChangeBus::subscribe($this->reaction);
         Database::sqlRun(
-            "INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (100, '2026-01-01', '2027-01-01')",
+            "INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (100, 1767225600000, 1798761600000)",
         );
         $config = Database::getConnectionConfig(0);
         $this->observer = new mysqli($config->host, $config->user, $config->password, $config->database, $config->port);
@@ -253,7 +253,7 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
             'LOCK TABLES hilos_account_deletion WRITE', 'UNLOCK TABLES', 'CALL unsupported()', '/*! COMMIT */'] as $sql) {
             try {
                 Database::sqlRun(
-                    "INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (999, NOW(), NOW()); " . $sql,
+                    "INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (999, 1767225600000, 1767225600000); " . $sql,
                 );
                 self::fail('Unsupported statement must refuse: ' . $sql);
             } catch (TestRollbackSqlRefusedException) {
@@ -330,7 +330,7 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
         $this->scope = Database::beginRollbackScopeForTest();
         try {
             Database::sqlRun(
-                'INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (999, NOW(), NOW()); ' . $tail,
+                'INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (999, 1767225600000, 1767225600000); ' . $tail,
             );
             self::fail('The whole multi-query must refuse before its first write');
         } catch (TestRollbackSqlRefusedException) {
@@ -347,7 +347,7 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
         $this->scope = Database::beginRollbackScopeForTest();
         try {
             Database::sqlRun(
-                'INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (999, NOW(), NOW()); SELECT ?',
+                'INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (999, 1767225600000, 1767225600000); SELECT ?',
                 [new SqlParam('1; COMMIT', SqlBindType::INTEGER)],
             );
             self::fail('Rendered SQL must refuse before its first write');
@@ -396,7 +396,8 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
     {
         $this->scope = Database::beginRollbackScopeForTest();
         Database::sql(
-            "INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (1562, NOW(), NOW()); SELECT 1; SELECT 2",
+            'INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at)'
+                . ' VALUES (1562, 1767225600000, 1767225600000); SELECT 1; SELECT 2',
         );
         $this->scope->rollback();
         self::assertSame([100], $this->persistedUsers());
@@ -407,7 +408,8 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
     {
         $this->scope = Database::beginRollbackScopeForTest();
         Database::sql(
-            "INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (1562, NOW(), NOW()); SELECT missing_column",
+            'INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at)'
+                . ' VALUES (1562, 1767225600000, 1767225600000); SELECT missing_column',
         );
         try {
             $this->scope->rollback();
@@ -597,7 +599,7 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
      */
     private static function request(int $userId): AccountDeletion
     {
-        return Hilos::$db->accountDeletions->actions->request($userId, '2027-01-01 00:00:00');
+        return Hilos::$db->accountDeletions->actions->request($userId, 1798761600000);
     }
 
     /**
@@ -608,8 +610,8 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
     private static function insertSecondaryRequest(int $userId): void
     {
         Database::sqlRun(
-            'INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (?, NOW(), ?)',
-            [$userId, '2027-01-01 00:00:00'],
+            'INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (?, ?, ?)',
+            [$userId, 1767225600000, 1798761600000],
             index: 2,
         );
     }

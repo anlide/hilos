@@ -17,7 +17,7 @@ use Hilos\Database\Object\Collection\UserMerges as ObjectUserMerges;
  *
  * @property int $userId
  * @property ?int $survivorUserId
- * @property ?string $mergedAt
+ * @property ?int $mergedAt
  */
 class UserMerge extends Object_
 {
@@ -57,7 +57,7 @@ class UserMerge extends Object_
         match ($property) {
             self::userId => $this->entity->user_id = (int)$value,
             self::survivorUserId => $this->entity->survivor_user_id = $value === null ? null : (int)$value,
-            self::mergedAt => $this->entity->merged_at = $value === null ? null : (string)$value,
+            self::mergedAt => $this->entity->merged_at = $value === null ? null : (int)$value,
             default => parent::__set($property, $value),
         };
     }

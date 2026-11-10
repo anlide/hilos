@@ -12,7 +12,7 @@ use Hilos\Database\Object\Collection\UserPhotos as ObjectUserPhotos;
  * @extends Object_<EntityUserPhoto>
  * @property int $userId
  * @property int $fileId
- * @property string $setAt
+ * @property int $setAt
  */
 class UserPhoto extends Object_
 {
@@ -48,7 +48,7 @@ class UserPhoto extends Object_
         match ($property) {
             self::userId => $this->entity->user_id = (int)$value,
             self::fileId => $this->entity->file_id = (int)$value,
-            self::setAt => $this->entity->set_at = (string)$value,
+            self::setAt => $this->entity->set_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }

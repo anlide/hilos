@@ -50,7 +50,7 @@ final class HilosUsersTableIntegrationTest extends HilosSessionIntegrationTestCa
     /** Agent that holds the fixture connections, the way a project's connection holder does. */
     private const string CONNECTIONS_OWNER_AGENT_ID = 'test-agent:connections-owner';
 
-    private const string LAST_ACTIVITY = '2026-09-30 10:00:00';
+    private const int LAST_ACTIVITY = 1790762400000;
 
     private const string FIRST_TAB = 'accept-1';
 
@@ -174,7 +174,7 @@ final class HilosUsersTableIntegrationTest extends HilosSessionIntegrationTestCa
     public function testActivityUsesNumericSortAndAnchorsAcrossEqualAndNullMoments(): void
     {
         $never = self::seedPerson('Never');
-        $earlier = self::seedPerson('Earlier', '2026-09-29 10:00:00');
+        $earlier = self::seedPerson('Earlier', 1790676000000);
         $equalFirst = self::seedPerson('Equal first', self::LAST_ACTIVITY);
         $equalLast = self::seedPerson('Equal last', self::LAST_ACTIVITY);
         $table = $this->table();
@@ -519,11 +519,11 @@ final class HilosUsersTableIntegrationTest extends HilosSessionIntegrationTestCa
 
     /**
      * @param string $name Name the row carries
-     * @param ?string $lastActivity Last activity as an SQL datetime, or null when the person never acted
+     * @param ?int $lastActivity Last activity in epoch milliseconds, or null when the person never acted
      * @return int Id of the inserted person
      * @throws DatabaseException When the insert fails
      */
-    private static function seedPerson(string $name, ?string $lastActivity = null): int
+    private static function seedPerson(string $name, ?int $lastActivity = null): int
     {
         Database::sql('INSERT INTO `hilos_user` (`name`, `last_activity`) VALUES (?, ?)', [$name, $lastActivity]);
 

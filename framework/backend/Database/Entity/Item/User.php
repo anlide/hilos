@@ -53,7 +53,7 @@ class User extends Entity
         self::name => PhpType::STRING->value,
         self::admin => PhpType::BOOLEAN->value,
         self::block => PhpType::BOOLEAN->value,
-        self::last_activity => PhpType::DATETIME->value,
+        self::last_activity => PhpType::INTEGER->value,
         self::theme_pick => PhpType::STRING->value,
         self::theme_pick_initialized => PhpType::BOOLEAN->value,
         self::time_zone => PhpType::STRING->value,
@@ -92,7 +92,7 @@ class User extends Entity
     public string $name;
     public bool $admin = false;
     public bool $block = false;
-    public ?string $last_activity = null;
+    public ?int $last_activity = null;
     public ?string $theme_pick = null;
     public bool $theme_pick_initialized;
     public ?string $time_zone = null;

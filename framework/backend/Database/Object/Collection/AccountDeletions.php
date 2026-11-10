@@ -46,7 +46,7 @@ class AccountDeletions extends Objects
      * Opens a request to delete a person's account.
      *
      * @param int $userId Person whose account is to be deleted
-     * @param string $effectiveAt Moment the account is erased (SQL datetime)
+     * @param int $effectiveAt Moment the account is erased (epoch milliseconds)
      * @return ObjectAccountDeletion The request
      * @throws DatabaseException When the insert fails
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
@@ -55,11 +55,11 @@ class AccountDeletions extends Objects
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws ObjectGetIdStringNotImplementedException If the inserted row has no primary key
      */
-    public function request(int $userId, string $effectiveAt): ObjectAccountDeletion
+    public function request(int $userId, int $effectiveAt): ObjectAccountDeletion
     {
         $deletion = static::OBJECT_CLASS::create();
         $deletion->userId = $userId;
-        $deletion->requestedAt = TimeHelper::getSqlDateTime();
+        $deletion->requestedAt = TimeHelper::nowMs();
         $deletion->effectiveAt = $effectiveAt;
         $deletion->sync();
 
@@ -111,16 +111,16 @@ class AccountDeletions extends Objects
     /**
      * The standing requests whose erasure time has come.
      *
-     * @param string $now Current moment (SQL datetime)
+     * @param int $nowMs Current moment (epoch milliseconds)
      * @return list<ObjectAccountDeletion> Requests due, oldest first
      * @throws DatabaseException When the lookup fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
-    public function dueBy(string $now): array
+    public function dueBy(int $nowMs): array
     {
         return $this->hydrateAll(static::entityClass()::get(
             '`' . EntityAccountDeletion::effective_at . '` <= ? AND ' . self::LIVE_CONDITION,
-            [$now],
+            [$nowMs],
             [EntityAccountDeletion::effective_at => SqlSortDirection::ASC],
         ));
     }

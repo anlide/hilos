@@ -24,7 +24,7 @@ use Hilos\HilosException;
  * @property-read ?int $renamedByUserId Person who did the rename, or null when it was not a person
  * @property-read string $oldName Name before the rename
  * @property-read string $newName Name after the rename
- * @property-read string $renamedAt When the rename was recorded
+ * @property-read int $renamedAt When the rename was recorded
  * @property-read UserRenameActions $actions Actions for write operations on this row
  */
 class UserRename extends DbItem

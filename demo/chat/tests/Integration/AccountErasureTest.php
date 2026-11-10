@@ -43,7 +43,7 @@ use Hilos\Utils\Helpers\RandomHelper;
 final class AccountErasureTest extends IntegrationTestCase
 {
     /** A moment long gone, so the request is due on the first tick. */
-    private const string PAST = '2026-01-01 00:00:00';
+    private const int PAST = 1767225600000;
 
     /**
      * Gives the case a signal router, which the sign-outs and the notifications frame are queued on.

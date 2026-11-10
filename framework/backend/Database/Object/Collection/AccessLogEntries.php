@@ -41,7 +41,7 @@ class AccessLogEntries extends Objects
      * @param int $userId Person whose account was used
      * @param AccessLogEvent $event What the use was
      * @param ?string $ipAddress Network address of the use, or null when the transport gave none
-     * @param string $occurredAtSql Moment of the use (SQL datetime)
+     * @param int $occurredAtMs Moment of the use in epoch milliseconds
      * @throws DatabaseException When the write fails
      * @throws InvalidArgumentException When the queued DB-sync signal is invalid
      * @throws CreateNotAllowedException When no truth source may add an access log row
@@ -49,13 +49,13 @@ class AccessLogEntries extends Objects
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws ObjectGetIdStringNotImplementedException If the inserted row has no primary key
      */
-    public function record(int $userId, AccessLogEvent $event, ?string $ipAddress, string $occurredAtSql): void
+    public function record(int $userId, AccessLogEvent $event, ?string $ipAddress, int $occurredAtMs): void
     {
         $entry = static::OBJECT_CLASS::create();
         $entry->userId = $userId;
         $entry->event = $event->value;
         $entry->ipAddress = $ipAddress;
-        $entry->occurredAt = $occurredAtSql;
+        $entry->occurredAt = $occurredAtMs;
         $entry->sync();
 
         if ($entry->id !== null) {
@@ -115,7 +115,7 @@ class AccessLogEntries extends Objects
      *
      * Each row leaves through its object so a delete announcement reaches every reader.
      *
-     * @param string $beforeSql Rows that occurred strictly before this moment go (SQL datetime)
+     * @param int $beforeMs Rows that occurred strictly before this epoch-millisecond moment go
      * @param int $limit Maximum rows to delete
      * @return int Number of rows deleted
      * @throws DatabaseException When the lookup or a delete fails
@@ -123,11 +123,11 @@ class AccessLogEntries extends Objects
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
-    public function deleteOlderThan(string $beforeSql, int $limit): int
+    public function deleteOlderThan(int $beforeMs, int $limit): int
     {
         $entries = $this->hydrateAll(static::entityClass()::get(
             '`' . EntityAccessLogEntry::occurred_at . '` < ?',
-            [$beforeSql],
+            [$beforeMs],
             [EntityAccessLogEntry::id => SqlSortDirection::ASC],
             $limit,
         ));

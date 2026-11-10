@@ -17,7 +17,7 @@ use Hilos\HilosException;
  * @property-read int $userId Person whose account was used
  * @property-read string $event What the use was (an AccessLogEvent value)
  * @property-read ?string $ipAddress Network address of the use, or null when the transport gave none
- * @property-read string $occurredAt Moment of the use (SQL datetime)
+ * @property-read int $occurredAt Moment of the use in epoch milliseconds
  */
 class AccessLogEntry extends DbItem
 {

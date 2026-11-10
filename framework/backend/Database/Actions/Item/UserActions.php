@@ -74,7 +74,7 @@ class UserActions extends DbActions
         }
 
         $this->object->name = $name;
-        $this->object->lastActivity = TimeHelper::getSqlDateTime();
+        $this->object->lastActivity = TimeHelper::nowMs();
         $this->object->sync();
     }
 

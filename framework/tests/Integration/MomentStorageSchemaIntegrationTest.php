@@ -12,7 +12,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\AuthBlock;
 use Hilos\Database\Entity\Item\ChangeLogReceipt;
 use Hilos\Database\Entity\Item\Entity;
-use Hilos\Database\Entity\Item\UserRename;
+use Hilos\Database\Entity\Item\LegalAcceptance;
 use Hilos\Database\Migration;
 use Hilos\Database\Migration\FrameworkSchemaCatalog;
 use Hilos\Database\Schema\EntitySchemaAudit;
@@ -190,12 +190,12 @@ final class MomentStorageSchemaIntegrationTest extends FrameworkIntegrationTestC
     /** Repairing one real historical column retires precisely its record within partial coverage. */
     public function testPhysicalRepairRequiresDeletingOnlyItsHistoricalRecord(): void
     {
-        $subject = self::subject(UserRename::class, UserRename::_table, 'renamed_at');
-        self::assertSame([], EntitySchemaAudit::auditMoments([UserRename::class]));
+        $subject = self::subject(LegalAcceptance::class, LegalAcceptance::_table, 'accepted_at');
+        self::assertSame([], EntitySchemaAudit::auditMoments([LegalAcceptance::class]));
         $json = file_get_contents(self::BASELINE);
         $key = self::json(['MOMENT-TYPE', $subject, 'timestamp']);
         self::assertSame([
-            'moment storage baseline record ' . $key . ' (HIL-1924) is paid off — delete the record',
+            'moment storage baseline record ' . $key . ' (HIL-1925) is paid off — delete the record',
         ], MomentStorageBaseline::fromJson($json)->reconcile([], [$subject]));
         $registry = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
         $records = $registry['records'];
@@ -325,7 +325,7 @@ final class MomentStorageSchemaIntegrationTest extends FrameworkIntegrationTestC
         } elseif ($this->name() === 'testMissingRequiredTableFailsBeforeBaselineReconciliation') {
             Database::sqlRun('DROP TABLE hilos_analytics_loss');
         } elseif ($this->name() === 'testPhysicalRepairRequiresDeletingOnlyItsHistoricalRecord') {
-            Database::sqlRun('ALTER TABLE hilos_user_rename MODIFY renamed_at BIGINT NOT NULL');
+            Database::sqlRun('ALTER TABLE hilos_legal_acceptance MODIFY accepted_at BIGINT NOT NULL');
         } elseif (in_array($this->name(), [
             'testNamedSchemaIdentityAndProviderConnectionStayIsolated', 'testAuditErrorRestoresCurrentConnection',
         ], true)) {

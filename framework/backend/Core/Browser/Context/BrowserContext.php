@@ -3080,7 +3080,7 @@ abstract class BrowserContext
 
                 return $field === HilosUserTableRow::FIELD_DELETION_GRACE_DAYS
                     ? $deletion?->deletionGraceDays
-                    : ($deletion === null ? null : TimeHelper::sqlToMs($deletion->effectiveAt));
+                    : ($deletion === null ? null : $deletion->effectiveAt);
             } catch (DatabaseException|InvalidArgumentException|LogicException $exception) {
                 throw new PageInternalErrorException('Account deletion date could not be resolved', $exception);
             }

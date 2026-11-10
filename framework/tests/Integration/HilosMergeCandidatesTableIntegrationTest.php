@@ -169,7 +169,7 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
     {
         $this->seedPeople();
         Database::sqlRun('UPDATE `hilos_user` SET `last_activity` = ? WHERE `id` IN (?, ?)', [
-            '2026-09-30 10:00:00', self::BETA, self::GAMMA,
+            1790762400000, self::BETA, self::GAMMA,
         ]);
         $table = $this->table();
         $first = $table->getPage(new TableQueryDTO(limit: 2));
