@@ -337,6 +337,14 @@ The graph is where the safety lives, and two kinds of constraint carry it:
   `<demo>-build` (`test:e2e-build`); its `<demo>-e2e` depends on that step and runs
   `test:e2e-prebuilt`, the full chain without the build, so nothing else in the
   graph writes `frontend/dist` while its cluster browser serves it.
+- **an edge to `<demo>-deps`** — every step that runs a demo's code (its check,
+  php, build and e2e steps, its cluster scenarios, and `log-streams` on tasks)
+  depends on `<demo>-deps`, the demo's counterpart of `framework-deps`:
+  `test:install-deps` runs `composer install` of the demo's own lock in its test
+  CLI container. The run installs what it needs instead of trusting a `vendor/`
+  someone put into the working tree by hand — absent for a demo that arrived with
+  the base, stale after a lock changed. The demo's `tests/.env` is tracked for the
+  same reason, so no step has to create it.
 - **a group** — the steps of one demo share one compose project, and
   `test:e2e-full` starts by taking that project down. Group members never run at the
   same time, but a red one does not skip the others: `<demo>-php` is backend-only
@@ -1009,7 +1017,7 @@ volume, suffixed with `${HILOS_STAND_SUFFIX:-}` and shared by all its nodes and
 the entry where one exists.
 
 The CLI carrier is default-on. It uses `APP_ENV=test`, explicit cluster database
-credentials and command port, and mounts tracked `tests/.env.example` read-only
+credentials and command port, and mounts tracked `tests/.env` read-only
 at `/app/tests/.env` (selectable through `HILOS_CLUSTER_TEST_ENV_FILE`). Its
 `/app/tests` is tmpfs: Docker would otherwise create a missing nested file-mount
 target on the host project bind. This carrier runs backend commands; the test

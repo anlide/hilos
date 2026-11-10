@@ -36,13 +36,13 @@ and the repair command; the CLI stays available for repair.
 demo/<name>/
   composer.json        # path repo -> /hilos, PSR-4 Demo\<Name>\ -> backend/
   composer.lock        # committed (generated in the cli container)
-  .env.example         # committed; .env and tests/.env are gitignored
+  .env.example         # committed; .env is gitignored
   backend/             # the PHP application
   frontend/            # the SDK consumer app (see the per-framework docs)
   tests/
     phpunit.xml        # unit suite; bootstrap = backend/Bootstrap/phpunit.php
     Unit/              # at minimum: the topology registry test
-    .env.example       # test DB coordinates
+    .env               # test DB coordinates; tracked, the same on every checkout
     e2e/               # Playwright package (own package.json; own eslint and prettier configs)
   docker/
     Dockerfile         # php:8.5.12-cli + sockets/pcntl/posix/mysqli/pdo + pinned, patched event 3.1.6
@@ -244,8 +244,8 @@ stack up). The daemon/cli `env_file` uses the long form with
 
 **Test** (`docker-compose.test.yml`, the agent/CI lane): mysql (data in tmpfs,
 write durability reduced by `framework/docker/mysql/test-stand.cnf`, healthcheck),
-the daemon (`env_file: ../tests/.env` — must exist; created by
-`composer run setup-env`; `LOG_ROTATION_CRON=0 3 29 2 *` in its `environment`, so
+the daemon (`env_file: ../tests/.env` — tracked, the same on every checkout, so a
+fresh clone runs its tests with no setup step; `LOG_ROTATION_CRON=0 3 29 2 *` in its `environment`, so
 the nightly log rotation never runs under a test), a cli service, the prod-parity
 nginx serving `frontend/dist` with the `/ws` upgrade proxy (profile `e2e`), the
 Playwright runner (its image tag MUST equal the `@playwright/test` version).
@@ -407,8 +407,8 @@ paid by the pool growing, not by an env line the project has to remember.
 
 ## Composer script lifecycle
 
-Mirror the binance-btc-tracker demo's `composer.json` scripts: `setup-env` (copies BOTH
-`.env.example→.env` and `tests/.env.example→tests/.env`; runs in the node cli
+Mirror the binance-btc-tracker demo's `composer.json` scripts: `setup-env` (copies
+`.env.example→.env`; `tests/.env` is tracked and needs no copy; runs in the node cli
 container to avoid the env_file chicken-and-egg), `install-deps`,
 `daemon-start[-build]/stop/restart/status`, `cli`, `db:migration:*`,
 `db:seed:apply`, `db:schema:status`, `frontend:*`, and the test lane:

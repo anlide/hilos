@@ -1,7 +1,8 @@
 # Environment configuration
 .env
 .env.local
-tests/.env
+# tests/.env is tracked: the test stack runs with the same values on every machine
+!tests/.env
 .env.*.local
 
 # PHPUnit

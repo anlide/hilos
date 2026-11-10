@@ -262,7 +262,7 @@ $steps = array_merge($steps, [
         'command' => 'composer run test:cluster:scenarios',
         'cwd' => 'demo/binance-btc-tracker',
         'stand' => 'binance-btc-tracker-cluster',
-        'deps' => [],
+        'deps' => ['binance-btc-tracker-deps'],
         'group' => 'binance-btc-tracker-cluster',
         'tags' => ['cluster', 'backend'],
         'seconds' => 546,
@@ -310,7 +310,7 @@ $steps = array_merge($steps, [
         'command' => 'composer run test:cluster:scenarios',
         'cwd' => 'demo/ecommerce-shop',
         'stand' => 'ecommerce-shop-cluster',
-        'deps' => [],
+        'deps' => ['ecommerce-shop-deps'],
         'group' => null,
         'tags' => ['cluster', 'backend'],
         'seconds' => 131,
@@ -327,7 +327,7 @@ $steps = array_merge($steps, [
         'command' => 'composer run test:cluster:scenarios',
         'cwd' => 'demo/online-testing',
         'stand' => 'online-testing-cluster',
-        'deps' => [],
+        'deps' => ['online-testing-deps'],
         'group' => 'online-testing-cluster',
         'tags' => ['cluster', 'backend'],
         'seconds' => 165,
@@ -367,7 +367,7 @@ $steps = array_merge($steps, [
         'command' => 'composer run test:log-streams',
         'cwd' => '.',
         'stand' => 'tasks',
-        'deps' => [],
+        'deps' => ['tasks-deps'],
         'group' => 'tasks',
         'tags' => ['backend', 'demo'],
         'seconds' => 112,
@@ -376,6 +376,22 @@ $steps = array_merge($steps, [
 ]);
 
 foreach ($demos as $demo => $seconds) {
+    // The demo's counterpart of framework-deps: `composer install` of its own lock in its test
+    // CLI container. A working tree carries no vendor/ until something installs it, and a stale
+    // one runs the tests on versions the lock no longer names - each post of the line held its
+    // own, put there by hand, so a demo that arrived with the base went red on the first post
+    // that had not installed it (pmd, 2026-11-10). Every step that runs the demo's code waits
+    // for it; against an unchanged lock it is a cache hit of a few seconds.
+    $steps[] = [
+        'id' => $demo . '-deps',
+        'command' => 'composer run test:install-deps',
+        'cwd' => 'demo/' . $demo,
+        'stand' => $demo,
+        'deps' => [],
+        'group' => $demo,
+        'tags' => ['backend', 'demo'],
+        'seconds' => 5,
+    ];
     $steps[] = [
         'id' => $demo . '-check',
         'command' => 'composer run test:check',
@@ -389,7 +405,7 @@ foreach ($demos as $demo => $seconds) {
         // core builds writing the same tree. What makes concurrency safe is that
         // fe-install and fe-build leave the SDK current, after which every demo
         // prebuild prints "current — skipped" and writes nothing.
-        'deps' => ['fe-build'],
+        'deps' => ['fe-build', $demo . '-deps'],
         'group' => $demo,
         'tags' => ['frontend', 'demo'],
         'seconds' => $seconds['check'],
@@ -399,11 +415,12 @@ foreach ($demos as $demo => $seconds) {
         'command' => 'composer run test:db-reset && composer run test:phpunit && composer run test:down',
         'cwd' => 'demo/' . $demo,
         'stand' => $demo,
-        // Backend only: no SDK, no built frontend, so it depends on nothing. It is
-        // held apart from its demo's other steps by `group`, not by an edge —
-        // `test:e2e-full` starts with a `docker compose down` of the whole project,
-        // which would pull the database out from under a phpunit run next door.
-        'deps' => [],
+        // Backend only: no SDK, no built frontend, so it waits for nothing but the
+        // demo's own dependencies. It is held apart from its demo's other steps by
+        // `group`, not by an edge — `test:e2e-full` starts with a `docker compose down`
+        // of the whole project, which would pull the database out from under a phpunit
+        // run next door.
+        'deps' => [$demo . '-deps'],
         'group' => $demo,
         'tags' => ['backend', 'demo'],
         'seconds' => $seconds['php'],
@@ -417,7 +434,7 @@ foreach ($demos as $demo => $seconds) {
             'command' => 'composer run test:e2e-build',
             'cwd' => 'demo/' . $demo,
             'stand' => $demo,
-            'deps' => ['fe-build'],
+            'deps' => ['fe-build', $demo . '-deps'],
             'group' => $demo,
             'tags' => ['frontend', 'e2e', 'demo'],
             'seconds' => $seconds['build'],
@@ -428,7 +445,7 @@ foreach ($demos as $demo => $seconds) {
         'command' => $ownBuild ? 'composer run test:e2e-prebuilt' : 'composer run test:e2e-full',
         'cwd' => 'demo/' . $demo,
         'stand' => $demo,
-        'deps' => [$ownBuild ? $demo . '-build' : 'fe-build'],
+        'deps' => [$ownBuild ? $demo . '-build' : 'fe-build', $demo . '-deps'],
         'group' => $demo,
         'tags' => ['frontend', 'e2e', 'demo'],
         'seconds' => $seconds['e2e'],

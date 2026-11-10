@@ -109,7 +109,7 @@ All tooling runs in project-defined docker containers — never on the host
 (`docs/agents/frontend/build-and-docker.md`).
 
 ```bash
-composer run setup-env          # create .env and tests/.env from the examples
+composer run setup-env          # create .env from .env.example (tests/.env is tracked)
 composer run install-deps       # composer install in the PHP container
 # once per checkout, from the repo root: install the framework SDK npm workspace.
 # @hilos/* are linked via file: symlinks, so their deps (e.g. zod) resolve against
@@ -172,7 +172,7 @@ the container `env_file`.
 
 | Command | What it does |
 |---|---|
-| `composer run test:install-deps` | install PHPUnit into the test toolchain |
+| `composer run test:install-deps` | install the locked PHP dependencies in the test CLI container |
 | `composer run test:unit` | run the unit suite (topology registry guard) |
 | `composer run test:phpunit` | run the whole PHPUnit suite |
 
@@ -348,7 +348,7 @@ Compose 5.6.1 (pinned by the harness) supports the local `ports: !reset []`
 and per-node `env_file: !override`. Local nodes load tracked `.env.example`,
 `common.env` and their fixed `nodes/<id>.env`. The CLI is default-on, with
 `APP_ENV=test` and explicit cluster DB/command settings; nodes use `APP_ENV=dev`.
-The CLI mounts tracked `tests/.env.example` read-only at `/app/tests/.env`,
+The CLI mounts tracked `tests/.env` read-only at `/app/tests/.env`,
 inside `/app/tests` tmpfs so Docker cannot create a missing mount target on the
 host bind. Test suites keep their own services. No host env file is copied or
 overwritten. Only browser tooling uses `e2e`; the stranger uses `stranger`.

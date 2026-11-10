@@ -50,7 +50,7 @@ Demo projects (e.g. `chat`) define Composer scripts that run commands inside Doc
 
 ```bash
 # Setup & dependencies
-composer run setup-env           # Create .env and tests/.env from their examples if needed
+composer run setup-env           # Create .env from .env.example if needed (tests/.env is tracked)
 composer run install-deps        # Install backend Composer packages
 composer run frontend-install    # Install frontend npm packages
 

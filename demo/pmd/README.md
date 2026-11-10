@@ -22,7 +22,7 @@ checks and builds run in project containers.
 From `demo/pmd`:
 
 ```bash
-composer run setup-env       # create .env and tests/.env from their examples
+composer run setup-env       # create .env from .env.example (tests/.env is tracked)
 composer run install-deps    # install PHP dependencies in the CLI container
 ```
 
@@ -112,7 +112,7 @@ PHP commands run in the test CLI container:
 
 | Command | What it does |
 |---|---|
-| `composer run test:install-deps` | Install PHPUnit in the test toolchain |
+| `composer run test:install-deps` | Install the locked PHP dependencies in the test CLI container |
 | `composer run test:unit` | Run the unit suite and topology registry guard |
 | `composer run test:integration` | Run the integration suite against the test database |
 | `composer run test:phpunit` | Run all PHPUnit suites |

@@ -243,7 +243,7 @@ from the development environment.
 
 | Command | Description |
 |---------|-------------|
-| `composer run test:install-deps` | install PHPUnit and dev packages |
+| `composer run test:install-deps` | install the locked PHP dependencies in the test CLI container |
 | `composer run test:up` | start the MySQL test container |
 | `composer run test:db-reset` | reset the test DB (drop → migrate → seed) |
 | `composer run test:db-wait` | wait for MySQL to be ready |
