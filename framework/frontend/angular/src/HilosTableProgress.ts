@@ -23,7 +23,7 @@ import type { HilosTableProgress as HilosTableProgressState } from '@hilos/core/
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div
-      class="progress hilos-progress-track"
+      class="progress"
       role="progressbar"
       [attr.aria-label]="label()"
       aria-valuemin="0"

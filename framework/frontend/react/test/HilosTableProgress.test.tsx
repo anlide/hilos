@@ -69,7 +69,7 @@ describe('HilosTableProgress', () => {
     expect(track(container).getAttribute('aria-label')).toBe('Work on this row')
   })
 
-  it('puts the width class on the bar and the height class on the track', () => {
+  it('puts the width class on the bar', () => {
     const { container } = render(
       <HilosTableProgress
         progress={progress(0.5)}
@@ -77,11 +77,6 @@ describe('HilosTableProgress', () => {
       />,
     )
 
-    expect(
-      (container.querySelector('.progress') as HTMLElement).classList.contains(
-        'hilos-progress-track',
-      ),
-    ).toBe(true)
     expect(bar(container).classList.contains('hilos-progress')).toBe(true)
   })
 })

@@ -216,10 +216,7 @@ export function HilosDaemonNodePage({
                   data-id="hilos-daemon-cpu-percent"
                 >{`${formatDaemonPercentage(cpuPercent)} of available CPU`}</dd>
                 <dd className="mb-0">
-                  <div
-                    className="progress hilos-progress-track mt-2"
-                    aria-hidden="true"
-                  >
+                  <div className="progress mt-2" aria-hidden="true">
                     <div
                       className="progress-bar hilos-progress"
                       style={
@@ -294,10 +291,7 @@ export function HilosDaemonNodePage({
                   data-id="hilos-daemon-memory-percent"
                 >{`${formatDaemonPercentage(memoryPercent)} of ceiling`}</dd>
                 <dd className="mb-0">
-                  <div
-                    className="progress hilos-progress-track mt-2"
-                    aria-hidden="true"
-                  >
+                  <div className="progress mt-2" aria-hidden="true">
                     <div
                       className="progress-bar hilos-progress"
                       style={

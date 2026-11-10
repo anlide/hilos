@@ -273,10 +273,7 @@ export function HilosDaemonPage({ context }: HilosDaemonPageProps) {
                                 cores
                               </span>
                             </span>
-                            <span
-                              className="d-block progress hilos-progress-track"
-                              aria-hidden="true"
-                            >
+                            <span className="progress" aria-hidden="true">
                               <span
                                 className="progress-bar hilos-progress"
                                 style={
@@ -309,10 +306,7 @@ export function HilosDaemonPage({ context }: HilosDaemonPageProps) {
                                 )}
                               </span>
                             </span>
-                            <span
-                              className="d-block progress hilos-progress-track"
-                              aria-hidden="true"
-                            >
+                            <span className="progress" aria-hidden="true">
                               <span
                                 className="progress-bar hilos-progress"
                                 style={

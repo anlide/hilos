@@ -30,7 +30,7 @@ const percent = computed(() =>
 
 <template>
   <div
-    class="progress hilos-progress-track"
+    class="progress"
     role="progressbar"
     :aria-label="label"
     aria-valuemin="0"

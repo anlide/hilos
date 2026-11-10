@@ -342,9 +342,7 @@ import type {
                             cores</span
                           ></span
                         >
-                        <span
-                          class="d-block progress hilos-progress-track"
-                          aria-hidden="true"
+                        <span class="progress" aria-hidden="true"
                           ><span
                             class="progress-bar hilos-progress"
                             [style.--hilos-progress]="
@@ -379,9 +377,7 @@ import type {
                             }}</span
                           ></span
                         >
-                        <span
-                          class="d-block progress hilos-progress-track"
-                          aria-hidden="true"
+                        <span class="progress" aria-hidden="true"
                           ><span
                             class="progress-bar hilos-progress"
                             [style.--hilos-progress]="

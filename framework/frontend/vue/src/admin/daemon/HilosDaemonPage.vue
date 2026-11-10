@@ -325,9 +325,7 @@ const metricsPath = computed(() => {
                       cores</span
                     ></span
                   >
-                  <span
-                    class="d-block progress hilos-progress-track"
-                    aria-hidden="true"
+                  <span class="progress" aria-hidden="true"
                     ><span
                       class="progress-bar hilos-progress"
                       :style="{
@@ -360,9 +358,7 @@ const metricsPath = computed(() => {
                       }}</span
                     ></span
                   >
-                  <span
-                    class="d-block progress hilos-progress-track"
-                    aria-hidden="true"
+                  <span class="progress" aria-hidden="true"
                     ><span
                       class="progress-bar hilos-progress"
                       :style="{

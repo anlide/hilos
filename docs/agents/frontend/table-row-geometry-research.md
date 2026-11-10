@@ -171,10 +171,10 @@ The sanctioned style layers are
 [Vue Sass](../../../framework/frontend/vue/src/hilos-styles.scss),
 [React Sass](../../../framework/frontend/react/src/hilos-styles.scss), and
 [Angular Sass](../../../framework/frontend/angular/src/hilos-styles.scss).
-Their `.hilos-progress`, `.hilos-progress-track`,
-`.hilos-table-selection-cell` and `.hilos-stack` rules demonstrate the numeric
-custom-property channel, fixed framework chrome, and overlapping static room
-holders. None implements departed-record height or frozen column tracks.
+Their `.hilos-progress`, `.hilos-table-selection-cell` and `.hilos-stack` rules
+demonstrate the numeric custom-property channel, fixed framework chrome, and
+overlapping static room holders. None implements departed-record height or frozen
+column tracks.
 
 ### Declarations and demo seams
 

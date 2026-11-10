@@ -1863,7 +1863,7 @@ a **bar**, and there are exactly three:
    follow the sentence after “Also”. This slot is not provided by React or Angular.
 3. **The bulk-action bar** — is a live message of that same room above the table
    (`bulk`), with its own caption from the framework (`label: current of total`, or
-   `Working on the marked rows`), drawn with a thin progress line along the bottom edge
+   `Working on the marked rows`), drawn with a progress bar along the bottom edge
    of the message row. It belongs to the framework entirely and does not take the
    project's `table-progress` slots. Deleting forty records takes time, and a button
    that says nothing for that long is not acceptable. The table bar must not be borrowed

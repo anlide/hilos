@@ -212,10 +212,7 @@ const reportNotice = computed(() => {
               {{ formatDaemonPercentage(cpuPercent) }} of available CPU
             </dd>
             <dd class="mb-0">
-              <div
-                class="progress hilos-progress-track mt-2"
-                aria-hidden="true"
-              >
+              <div class="progress mt-2" aria-hidden="true">
                 <div
                   class="progress-bar hilos-progress"
                   :style="{
@@ -281,10 +278,7 @@ const reportNotice = computed(() => {
               {{ formatDaemonPercentage(memoryPercent) }} of ceiling
             </dd>
             <dd class="mb-0">
-              <div
-                class="progress hilos-progress-track mt-2"
-                aria-hidden="true"
-              >
+              <div class="progress mt-2" aria-hidden="true">
                 <div
                   class="progress-bar hilos-progress"
                   :style="{

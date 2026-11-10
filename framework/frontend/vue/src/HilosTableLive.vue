@@ -73,10 +73,12 @@ defineSlots<{
  * twin and the color and the placement on the message differ. The room equals the
  * true height of the row exactly while the markup matches. The row never wraps: the
  * text truncates and the icons and the button keep their size, so a narrow screen
- * cannot fold the button onto a second line.
+ * cannot fold the button onto a second line. The bottom padding is as tall as a
+ * stock Bootstrap progress track: the track of running work lies in it and covers
+ * nothing, and every row carries it because the room has one height.
  */
 const ROW_CLASS =
-  'alert py-2 px-3 mb-0 d-flex flex-nowrap align-items-center gap-2'
+  'alert pt-2 pb-3 px-3 mb-0 d-flex flex-nowrap align-items-center gap-2'
 
 /** The color each kind of message is drawn in (report is computed separately). */
 const VARIANT: Record<Exclude<HilosTableLiveKind, 'report'>, string> = {
@@ -356,8 +358,9 @@ function openDetails(): void {
       </button>
       <template v-else-if="live.top === 'progress' && tableProgress">
         <slot name="table-progress-action" :progress="tableProgress" />
-        <!-- The track runs along the bottom edge of the line and adds no height;
-        the line is positioned itself, so it is the box the track sits in. -->
+        <!-- The track runs along the bottom edge of the line, in the padding the
+        row keeps for it; the line is positioned itself, so it is the box the
+        track sits in. -->
         <HilosTableProgress
           class="position-absolute bottom-0 start-0 w-100 rounded-0"
           :progress="tableProgress"

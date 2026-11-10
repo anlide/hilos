@@ -55,12 +55,11 @@ describe('HilosTableProgress', () => {
     )
   })
 
-  it('puts the width class on the bar and the height class on the track', () => {
+  it('puts the width class on the bar', () => {
     const wrapper = mount(HilosTableProgressBar, {
       props: { progress: progress(0.5), label: 'Work on this table' },
     })
 
-    expect(wrapper.get('.progress').classes()).toContain('hilos-progress-track')
     expect(wrapper.get('.progress-bar').classes()).toContain('hilos-progress')
   })
 })

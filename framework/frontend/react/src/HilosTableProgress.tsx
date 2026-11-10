@@ -42,11 +42,7 @@ export function HilosTableProgress({
 
   return (
     <div
-      className={
-        className === undefined
-          ? 'progress hilos-progress-track'
-          : `progress hilos-progress-track ${className}`
-      }
+      className={className === undefined ? 'progress' : `progress ${className}`}
       role="progressbar"
       aria-label={label}
       aria-valuemin={0}

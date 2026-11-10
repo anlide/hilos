@@ -79,10 +79,9 @@ describe('HilosTableProgress', () => {
     expect(track(fixture).getAttribute('aria-label')).toBe('Work on this row')
   })
 
-  it('puts the width class on the bar and the height class on the track', () => {
+  it('puts the width class on the bar', () => {
     const fixture = mountProgress(0.5)
 
-    expect(track(fixture).classList.contains('hilos-progress-track')).toBe(true)
     expect(bar(fixture).classList.contains('hilos-progress')).toBe(true)
   })
 })
