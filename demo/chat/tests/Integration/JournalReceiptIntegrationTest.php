@@ -922,6 +922,29 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
         });
     }
 
+    public function testMigrationReceiptWaitsForTheBigintColumn(): void
+    {
+        $this->withIsolatedJournal(function (): void {
+            $this->installLegacyJournalTables();
+            $receipt = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName()) . '.`hilos_change_log_receipt`';
+            Database::sql('ALTER TABLE ' . $receipt . ' MODIFY `created_at` DATETIME(6) NOT NULL');
+            Database::sql('CREATE TABLE `' . self::EARLY_PROBE_TABLE . '` (`seen` INT NOT NULL) '
+                . DatabaseConnectionDefaults::DDL_TABLE_SUFFIX);
+            $this->writeEarlyMigration(
+                'INSERT INTO `' . self::EARLY_PROBE_TABLE . '` SELECT COUNT(*) FROM ' . $receipt . ";\n",
+                'DELETE FROM `' . self::EARLY_PROBE_TABLE . "`;\n",
+            );
+            $this->assertSame(1, Migration::migrateUp(self::EARLY_MIGRATION_INDEX));
+            $this->assertSame(0, (int)Database::sql('SELECT `seen` FROM `' . self::EARLY_PROBE_TABLE . '`')->field('seen'));
+            $this->assertSame(0, $this->receiptRowCount());
+            $this->assertSame(1, Migration::migrateDown(0));
+            Database::sql('ALTER TABLE ' . $receipt . ' MODIFY `created_at` BIGINT NOT NULL');
+            $this->assertSame(1, Migration::migrateUp(self::EARLY_MIGRATION_INDEX));
+            $this->assertSame(1, (int)Database::sql('SELECT `seen` FROM `' . self::EARLY_PROBE_TABLE . '`')->field('seen'));
+            $this->assertSame(0, $this->receiptRowCount());
+        });
+    }
+
     /**
      * A failing migration still removes the empty receipt, and the process stamp is clear afterwards.
      */
@@ -1180,10 +1203,7 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
         $this->assertNull($frame->data->row[EntityChangeLogReceipt::subject_user_id]);
         $this->assertNull($frame->data->row[EntityChangeLogReceipt::session_id]);
         $this->assertSame(0, $frame->data->row[EntityChangeLogReceipt::open_handovers]);
-        $this->assertMatchesRegularExpression(
-            '/\A\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}\z/',
-            $frame->data->row[EntityChangeLogReceipt::created_at],
-        );
+        $this->assertIsInt($frame->data->row[EntityChangeLogReceipt::created_at]);
     }
 
     /**
@@ -1454,7 +1474,7 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
         Database::sql(
             'CREATE TABLE `' . EntityChangeLogReceipt::_table . '` ('
             . '`id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, '
-            . '`created_at` DATETIME(6) NOT NULL, '
+            . '`created_at` BIGINT NOT NULL, '
             . '`actor_user_id` INT UNSIGNED NULL, '
             . '`subject_user_id` INT UNSIGNED NULL, '
             . '`session_id` INT UNSIGNED NULL, '

@@ -556,7 +556,7 @@ final class JournalReceiptSeam extends ObjectChangeLogReceipt
     public function standAsStored(): void
     {
         $this->entity->id = 41;
-        $this->entity->created_at = '2026-10-23 12:34:56.123456';
+        $this->entity->created_at = 1792758896123;
         $this->entity->channel = 'page';
         $this->entity->action = 'rename';
         $this->entity->flushRelated();

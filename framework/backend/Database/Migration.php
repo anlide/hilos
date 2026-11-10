@@ -593,7 +593,7 @@ class Migration
 
     /**
      * Runs one SQL file under a receipt after the journal schema exists. A file that creates
-     * or removes the receipt table forms the boundary of that schema and cannot receive one.
+     * or replaces the receipt table forms the boundary of that schema and cannot receive one.
      *
      * @param string $direction Migration direction
      * @param int $index Migration number
@@ -606,17 +606,18 @@ class Migration
         if (
             Database::getCurrentIndex() !== DatabaseConnectionDefaults::PRIMARY_INDEX
             || !in_array(ChangeLogDatabase::CONNECTION_INDEX, Database::getConfiguredIndices(), true)
-            || preg_match('/^\s*(?:CREATE|DROP)\s+TABLE\b[^;]*`hilos_change_log_receipt`/im', $content) === 1
+            || preg_match('/^\s*(?:CREATE|DROP|RENAME)\s+TABLE\b[^;]*`hilos_change_log_receipt`/im', $content) === 1
         ) {
             self::runSqlWithDelimiter($content);
             return;
         }
 
         Database::sql(
-            'SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? LIMIT 1',
-            [ChangeLogDatabase::configuredName(), 'hilos_change_log_receipt'],
+            'SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ?'
+            . " AND TABLE_NAME = 'hilos_change_log_receipt' AND COLUMN_NAME = 'created_at'",
+            [ChangeLogDatabase::configuredName()],
         );
-        if (Database::row() === null) {
+        if (Database::field('DATA_TYPE') !== 'bigint') {
             self::runSqlWithDelimiter($content);
             return;
         }

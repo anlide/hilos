@@ -141,7 +141,7 @@ final class DbTestResetChangeLogIntegrationTest extends TestCase
         $journal = ChangeLogDatabase::identifier($this->journalName);
         Database::sqlRun("INSERT INTO {$journal}.`hilos_change_log_table` (`name`) VALUES ('old-row')");
         Database::sqlRun("INSERT INTO {$journal}.`hilos_change_log_receipt` (`created_at`, `channel`, `action`) "
-            . "VALUES (UTC_TIMESTAMP(6), 'agent', 'old-operation')");
+            . "VALUES (TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', UTC_TIMESTAMP(6)) DIV 1000, 'agent', 'old-operation')");
         Database::sqlRun("CREATE TABLE {$journal}.`stale_fixture` (`id` INT)");
         Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
 

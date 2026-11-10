@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Database\ChangeLog\Section;
 
-use DateTimeImmutable;
-
 /** Receipt header and bounded-window summary of every table it touched. */
 final readonly class ChangeLogReceipt
 {
     /**
      * @param int $id Receipt row number
-     * @param DateTimeImmutable $createdAt UTC source moment
+     * @param int $createdAt UTC source moment
      * @param ?ChangeLogPerson $actor Person at the keyboard
      * @param ?ChangeLogPerson $subject Person acted for
      * @param ?int $sessionId Browser session number
@@ -24,7 +22,7 @@ final readonly class ChangeLogReceipt
      */
     public function __construct(
         public int $id,
-        public DateTimeImmutable $createdAt,
+        public int $createdAt,
         public ?ChangeLogPerson $actor,
         public ?ChangeLogPerson $subject,
         public ?int $sessionId,

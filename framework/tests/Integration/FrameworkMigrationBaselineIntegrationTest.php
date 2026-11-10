@@ -108,13 +108,13 @@ final class FrameworkMigrationBaselineIntegrationTest extends FrameworkIntegrati
         $this->assertSame(1, Migration::migrateUp());
         $this->assertSelectedSchema();
         Database::sql('INSERT INTO ' . ChangeLogDatabase::identifier($this->journal) . '.`hilos_change_log_receipt` '
-            . "(`created_at`, `channel`, `action`) VALUES ('2026-10-22 12:00:00', 'migration', 'baseline guard fixture')");
+            . "(`created_at`, `channel`, `action`) VALUES (1792670400000, 'migration', 'baseline guard fixture')");
         $receiptId = Database::lastInsertId();
         Database::sql('INSERT INTO ' . ChangeLogDatabase::identifier($this->journal) . '.`hilos_change_log_table` (`name`) '
             . "VALUES ('hilos_user')");
         Database::sql('INSERT INTO ' . ChangeLogDatabase::identifier($this->journal) . '.`hilos_change_log` '
             . '(`created_at`, `receipt_id`, `table_id`, `record_key`, `mutation_type`) '
-            . "VALUES ('2026-10-22 12:00:00', ?, ?, '1', 'create')", [$receiptId, Database::lastInsertId()]);
+            . "VALUES (1792670400000, ?, ?, '1', 'create')", [$receiptId, Database::lastInsertId()]);
 
         try {
             Migration::migrateDown(0);

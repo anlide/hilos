@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use Hilos\Utils\Helpers\TimeHelper;
+
 use Hilos\Backup\Anonymization\AnonymizationCompatibilityValidator;
 use Hilos\Backup\Anonymization\AnonymizationCoverageValidator;
 use Hilos\Backup\Anonymization\AnonymizationSqlBuilder;
@@ -236,36 +238,38 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
                 [$tableId],
             );
             $fieldId = Database::lastInsertId();
+            $moment = TimeHelper::nowMs();
             Database::sql(
                 "INSERT INTO `hilos_change_log_receipt` "
                 . "(`created_at`, `actor_user_id`, `subject_user_id`, `session_id`, `channel`, `action`, `agent`, `source`) "
-                . "VALUES (UTC_TIMESTAMP(6), 12, 13, 14, 'web', 'update', 'private agent', 'private source')",
+                . "VALUES (?, 12, 13, 14, 'web', 'update', 'private agent', 'private source')",
+                [$moment],
             );
             $receiptId = Database::lastInsertId();
             Database::sql(
                 "INSERT INTO `hilos_change_log` "
                 . "(`created_at`, `receipt_id`, `table_id`, `record_key`, `record_key_hash`, `mutation_type`) "
-                . "VALUES (UTC_TIMESTAMP(6), ?, ?, 'private key', UNHEX(SHA2('private key', 256)), 'update')",
-                [$receiptId, $tableId],
+                . "VALUES (?, ?, ?, 'private key', UNHEX(SHA2('private key', 256)), 'update')",
+                [$moment, $receiptId, $tableId],
             );
             $logId = Database::lastInsertId();
             Database::sql(
                 "INSERT INTO `hilos_change_log_change` "
                 . "(`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`) "
-                . "VALUES (UTC_TIMESTAMP(6), ?, ?, 'inline', 1, 1, 'old private', 'new private')",
-                [$logId, $fieldId],
+                . "VALUES (?, ?, ?, 'inline', 1, 1, 'old private', 'new private')",
+                [$moment, $logId, $fieldId],
             );
             Database::sql(
                 "INSERT INTO `hilos_change_log_change` "
                 . "(`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`) "
-                . "VALUES (UTC_TIMESTAMP(6), ?, ?, 'long', 1, 1)",
-                [$logId, $fieldId],
+                . "VALUES (?, ?, ?, 'long', 1, 1)",
+                [$moment, $logId, $fieldId],
             );
             $longChangeId = Database::lastInsertId();
             Database::sql(
                 "INSERT INTO `hilos_change_log_value` (`created_at`, `change_id`, `old_value`, `new_value`) "
-                . "VALUES (UTC_TIMESTAMP(6), ?, 'old long private', 'new long private')",
-                [$longChangeId],
+                . "VALUES (?, ?, 'old long private', 'new long private')",
+                [$moment, $longChangeId],
             );
 
             foreach ($registry->declaredTables($index) as $table) {

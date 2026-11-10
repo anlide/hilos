@@ -36,7 +36,7 @@ class ChangeLogValue extends Entity
 
     public const array _types = [
         self::id => PhpType::INTEGER->value,
-        self::created_at => PhpType::DATETIME->value,
+        self::created_at => PhpType::INTEGER->value,
         self::change_id => PhpType::INTEGER->value,
         self::old_value => PhpType::TEXT->value,
         self::new_value => PhpType::TEXT->value,
@@ -66,7 +66,7 @@ class ChangeLogValue extends Entity
     ];
 
     public ?int $id = null;
-    public string $created_at;
+    public int $created_at;
     public int $change_id;
     public ?string $old_value = null;
     public ?string $new_value = null;

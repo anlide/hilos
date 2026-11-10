@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use DateTimeImmutable;
+use DateTimeZone;
 use Demo\Chat\Hilos;
 use Demo\Chat\Moderation\ChatModerationKindKey;
 use Hilos\Backup\Anonymization\LiveSchemaReader;
+use Hilos\Constants\TimeConstants;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
-use Hilos\Database\ChangeLog\JournalReceiptData;
-use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\JournalTriggerColumnTypes;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
 use Hilos\Database\ChangeLog\JournalTriggerInstaller;
@@ -92,17 +93,7 @@ final class ChatModerationRetirementMigrationTest extends IntegrationTestCase
         $this->assertNullableLegacySettings();
         $this->installLegacyTriggers();
 
-        $legacyReceipt = JournalReceiptScope::run(JournalReceiptData::web(1627, null, 1627, 'legacy.moderation.fixture', 'library'),
-            static function (): ?int {
-                foreach (['name_rule', 'message_rule', 'photo_rule', 'message_picture_rule'] as $section) {
-                    Database::sqlRun('INSERT INTO `moderator_prompt_piece` (`section`, `prompt_piece`) VALUES (?, ?)',
-                        [$section, 'Legacy only: ' . $section]);
-                }
-                Database::sqlRun('UPDATE `moderator_prompt_piece` SET `prompt_piece` = ? WHERE `section` = ?',
-                    [str_repeat('Legacy rule after. ', 400), 'message_rule']);
-                return JournalReceiptScope::currentId();
-            });
-        self::assertNotNull($legacyReceipt);
+        $legacyReceipt = $this->seedLegacyModerationHistory();
         self::assertSame(4, (int)Database::sql('SELECT COUNT(*) AS `n` FROM `moderator_prompt_piece`')->field('n'));
         foreach (self::LEGACY_SETTINGS as $key => $type) {
             Database::sqlRun('UPDATE `hilos_setting` SET `value` = ? WHERE `key` = ?',
@@ -126,6 +117,20 @@ final class ChatModerationRetirementMigrationTest extends IntegrationTestCase
         $history = self::journalRows();
         self::assertContains(self::LEGACY_TABLE, array_column($history['hilos_change_log_table'], 'name'));
         self::assertNotEmpty($history['hilos_change_log_value'], 'The legacy update wrote a real long journal value');
+        self::assertContains(['old_value' => 'Legacy only: message_rule', 'new_value' => str_repeat('Legacy rule after. ', 400)],
+            array_map(static fn (array $row): array => [
+                'old_value' => $row['old_value'], 'new_value' => $row['new_value'],
+            ], $history['hilos_change_log_value']));
+        $receipt = array_column($history['hilos_change_log_receipt'], null, 'id')[$legacyReceipt];
+        self::assertSame('2026-01-02 03:04:05.123456', $receipt['created_at']);
+        self::assertSame(['1627', null, '1627', 'web', 'legacy.moderation.fixture', 'library', 'session #1627', '0'], [
+            $receipt['actor_user_id'], $receipt['subject_user_id'], $receipt['session_id'], $receipt['channel'],
+            $receipt['action'], $receipt['agent'], $receipt['source'], $receipt['open_handovers'],
+        ]);
+        self::assertCount(5, array_filter($history['hilos_change_log'],
+            static fn (array $row): bool => (int)$row['receipt_id'] === $legacyReceipt));
+        $milliseconds = self::convertedJournalHistory($history, milliseconds: true);
+        self::assertSame('1767323045123', array_column($milliseconds['hilos_change_log_receipt'], 'created_at', 'id')[$legacyReceipt]);
 
         self::assertSame(1, Migration::migrateUp(self::MIGRATION_INDEX));
         $this->assertRetired();
@@ -134,6 +139,7 @@ final class ChatModerationRetirementMigrationTest extends IntegrationTestCase
         $this->assertHistoryPreserved($history);
         self::assertSame($this->latestMigrationIndex - self::MIGRATION_INDEX, Migration::migrateUp($this->latestMigrationIndex));
         self::assertSame($this->latestMigrationIndex, Migration::getCurrentIndex());
+        $this->assertHistoryPreserved($milliseconds);
         JournalTriggerInstaller::apply();
 
         self::assertSame($this->latestMigrationIndex - self::BEFORE_RETIREMENT, Migration::migrateDown(self::BEFORE_RETIREMENT));
@@ -144,9 +150,10 @@ final class ChatModerationRetirementMigrationTest extends IntegrationTestCase
         $this->assertRetired();
         self::assertSame($rules, Database::sql('SELECT * FROM `hilos_moderation_rule` ORDER BY `id`')->rows());
         self::assertSame($settings, self::preservedSettingRows());
-        $this->assertHistoryPreserved($history);
+        $this->assertHistoryPreserved(self::convertedJournalHistory($history, milliseconds: false));
         self::assertSame($this->latestMigrationIndex - self::MIGRATION_INDEX, Migration::migrateUp($this->latestMigrationIndex));
         self::assertSame($this->latestMigrationIndex, Migration::getCurrentIndex());
+        $this->assertHistoryPreserved($milliseconds);
         JournalTriggerInstaller::apply();
     }
 
@@ -199,13 +206,51 @@ final class ChatModerationRetirementMigrationTest extends IntegrationTestCase
             'prompt_piece' => new JournalColumnPlacement(JournalColumnMode::VALUE),
         ], JournalTriggerColumnTypes::read(DatabaseConnectionDefaults::PRIMARY_INDEX), self::BEFORE_RETIREMENT);
         foreach ($files as $file) {
-            Database::sql($file->sql(ChangeLogDatabase::configuredName()));
+            // Retain the generated field semantics, but explicitly restore the historical DATETIME writer.
+            $sql = str_replace([
+                'DECLARE v_created_at BIGINT;',
+                "SET v_created_at = TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', UTC_TIMESTAMP(6)) DIV 1000;",
+            ], ['DECLARE v_created_at DATETIME(6);', 'SET v_created_at = UTC_TIMESTAMP(6);'],
+                $file->sql(ChangeLogDatabase::configuredName()), $replacements);
+            self::assertSame(2, $replacements, 'Both timestamp statements must be adapted to the legacy journal');
+            Database::sql($sql);
         }
         self::assertSame([
             'hilos_cl_moderator_prompt_piece_after_delete',
             'hilos_cl_moderator_prompt_piece_after_insert',
             'hilos_cl_moderator_prompt_piece_after_update',
         ], self::legacyTriggerNames());
+    }
+
+    /** @return int Populated historical receipt, with connection-local attribution restored even after a failed write */
+    private function seedLegacyModerationHistory(): int
+    {
+        $previousConnection = Database::getCurrentIndex();
+        $previousReceipt = Database::sql('SELECT @hilos_receipt AS receipt',
+            index: DatabaseConnectionDefaults::PRIMARY_INDEX)->field('receipt');
+        try {
+            Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+            // The current receipt actions require BIGINT; this fixture deliberately exercises the DATETIME schema.
+            Database::sql('INSERT INTO `hilos_change_log_receipt` '
+                . '(`created_at`, `actor_user_id`, `subject_user_id`, `session_id`, `channel`, `action`, `agent`, `source`) '
+                . "VALUES ('2026-01-02 03:04:05.123456', 1627, NULL, 1627, 'web', 'legacy.moderation.fixture', 'library', 'session #1627')",
+                index: ChangeLogDatabase::CONNECTION_INDEX);
+            $receipt = Database::lastInsertId(ChangeLogDatabase::CONNECTION_INDEX);
+            Database::setJournalReceiptId($receipt);
+            foreach (['name_rule', 'message_rule', 'photo_rule', 'message_picture_rule'] as $section) {
+                Database::sqlRun('INSERT INTO `moderator_prompt_piece` (`section`, `prompt_piece`) VALUES (?, ?)',
+                    [$section, 'Legacy only: ' . $section]);
+            }
+            Database::sqlRun('UPDATE `moderator_prompt_piece` SET `prompt_piece` = ? WHERE `section` = ?',
+                [str_repeat('Legacy rule after. ', 400), 'message_rule']);
+            return $receipt;
+        } finally {
+            try {
+                Database::setJournalReceiptId($previousReceipt === null ? null : (int)$previousReceipt);
+            } finally {
+                Database::useConnection($previousConnection);
+            }
+        }
     }
 
     /** DOWN recovers only the original empty table, with its unsigned auto-increment key and four sections. */
@@ -263,6 +308,26 @@ final class ChatModerationRetirementMigrationTest extends IntegrationTestCase
         $history = [];
         foreach (self::JOURNAL_CLEANUP_ORDER as $table) {
             $history[$table] = Database::sql("SELECT * FROM {$journal}.`{$table}` ORDER BY `id`")->rows();
+        }
+        return $history;
+    }
+
+    /**
+     * @param array<string, list<array<string, mixed>>> $history Original DATETIME history, retaining every field and row
+     * @param bool $milliseconds Numeric UP representation or the millisecond-precision DATETIME after DOWN
+     * @return array<string, list<array<string, mixed>>> Exact approved conversion, independent of the migration SQL
+     */
+    private static function convertedJournalHistory(array $history, bool $milliseconds): array
+    {
+        foreach (['hilos_change_log_receipt', 'hilos_change_log', 'hilos_change_log_change', 'hilos_change_log_value'] as $table) {
+            foreach ($history[$table] as &$row) {
+                $moment = new DateTimeImmutable($row['created_at'], new DateTimeZone(TimeConstants::UTC_TIME_ZONE));
+                $microseconds = (int)$moment->format('U') * 1000000 + (int)$moment->format('u');
+                $row['created_at'] = $milliseconds
+                    ? (string)intdiv($microseconds, 1000)
+                    : $moment->modify(sprintf('%+d microseconds', -($microseconds % 1000)))->format('Y-m-d H:i:s.u');
+            }
+            unset($row);
         }
         return $history;
     }

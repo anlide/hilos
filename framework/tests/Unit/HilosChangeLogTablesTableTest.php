@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
-use DateTimeImmutable;
 use Hilos\AdminViewMode\ViewerFields;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -38,7 +37,7 @@ final class HilosChangeLogTablesTableTest extends TestCase
                 JournalColumnMode::NOISE->value => 5,
                 JournalColumnMode::RECORD_KEY->value => 1,
             ],
-            12, new DateTimeImmutable('2026-10-09T12:11:12.123456+02:00'),
+            12, 1791540672123,
         ));
 
         self::assertSame('hilos_setting', $row->getRowKey());
@@ -250,11 +249,11 @@ final class HilosChangeLogTablesTableTest extends TestCase
     {
         return [
             new ChangeLogTableSummary('z_untracked', ChangeLogTableOwner::PROJECT, false, [], null, null),
-            new ChangeLogTableSummary('d_tied', ChangeLogTableOwner::PROJECT, true, [], 2, new DateTimeImmutable('2026-10-10T12:00:00Z')),
+            new ChangeLogTableSummary('d_tied', ChangeLogTableOwner::PROJECT, true, [], 2, 1791633600000),
             new ChangeLogTableSummary('b_never', ChangeLogTableOwner::FRAMEWORK, true, [], 0, null),
-            new ChangeLogTableSummary('e_old', ChangeLogTableOwner::FRAMEWORK, true, [], 12, new DateTimeImmutable('2026-10-09T12:00:00Z')),
+            new ChangeLogTableSummary('e_old', ChangeLogTableOwner::FRAMEWORK, true, [], 12, 1791547200000),
             new ChangeLogTableSummary('a_untracked', ChangeLogTableOwner::FRAMEWORK, false, [], null, null),
-            new ChangeLogTableSummary('c_recent', ChangeLogTableOwner::PROJECT, true, [], 2, new DateTimeImmutable('2026-10-10T12:00:00Z')),
+            new ChangeLogTableSummary('c_recent', ChangeLogTableOwner::PROJECT, true, [], 2, 1791633600000),
         ];
     }
 }

@@ -136,34 +136,6 @@
         },
         {
             "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\ChangeLogChange\",\"hilos_change_log_change\",\"created_at\"]",
-            "actual": "datetime(6)",
-            "count": 1,
-            "owner": "HIL-1929"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\ChangeLogEntry\",\"hilos_change_log\",\"created_at\"]",
-            "actual": "datetime(6)",
-            "count": 1,
-            "owner": "HIL-1929"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\ChangeLogReceipt\",\"hilos_change_log_receipt\",\"created_at\"]",
-            "actual": "datetime(6)",
-            "count": 1,
-            "owner": "HIL-1929"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\ChangeLogValue\",\"hilos_change_log_value\",\"created_at\"]",
-            "actual": "datetime(6)",
-            "count": 1,
-            "owner": "HIL-1929"
-        },
-        {
-            "rule": "MOMENT-TYPE",
             "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\DataExport\",\"hilos_data_export\",\"expires_at\"]",
             "actual": "timestamp",
             "count": 1,

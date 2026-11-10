@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS {{change_log_database}}.`hilos_change_log_field` (
 
 CREATE TABLE IF NOT EXISTS {{change_log_database}}.`hilos_change_log_receipt` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `created_at` DATETIME(6) NOT NULL,
+    `created_at` BIGINT NOT NULL,
     `actor_user_id` INT UNSIGNED NULL,
     `subject_user_id` INT UNSIGNED NULL,
     `session_id` INT UNSIGNED NULL,
@@ -41,7 +41,7 @@ PARTITION BY RANGE COLUMNS (`created_at`) (
 
 CREATE TABLE IF NOT EXISTS {{change_log_database}}.`hilos_change_log` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `created_at` DATETIME(6) NOT NULL,
+    `created_at` BIGINT NOT NULL,
     `receipt_id` BIGINT UNSIGNED NULL,
     `table_id` INT UNSIGNED NOT NULL,
     `record_key` TEXT NOT NULL,
@@ -58,7 +58,7 @@ PARTITION BY RANGE COLUMNS (`created_at`) (
 
 CREATE TABLE IF NOT EXISTS {{change_log_database}}.`hilos_change_log_change` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `created_at` DATETIME(6) NOT NULL,
+    `created_at` BIGINT NOT NULL,
     `log_id` BIGINT UNSIGNED NOT NULL,
     `field_id` INT UNSIGNED NOT NULL,
     `kind` ENUM('inline', 'fact', 'long') NOT NULL,
@@ -76,7 +76,7 @@ PARTITION BY RANGE COLUMNS (`created_at`) (
 
 CREATE TABLE IF NOT EXISTS {{change_log_database}}.`hilos_change_log_value` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `created_at` DATETIME(6) NOT NULL,
+    `created_at` BIGINT NOT NULL,
     `change_id` BIGINT UNSIGNED NOT NULL,
     `old_value` LONGTEXT NULL,
     `new_value` LONGTEXT NULL,

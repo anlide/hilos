@@ -27,7 +27,7 @@ use Hilos\Hilos;
  * @extends Object_<EntityChangeLogReceipt>
  *
  * @property-read ?int $id
- * @property string $created_at
+ * @property int $created_at
  * @property ?int $actor_user_id
  * @property ?int $subject_user_id
  * @property ?int $session_id
@@ -93,7 +93,7 @@ class ChangeLogReceipt extends Object_
     public function __set(string $property, mixed $value): void
     {
         match ($property) {
-            self::created_at => $this->entity->created_at = (string)$value,
+            self::created_at => $this->entity->created_at = (int)$value,
             self::actor_user_id => $this->entity->actor_user_id = $value === null ? null : (int)$value,
             self::subject_user_id => $this->entity->subject_user_id = $value === null ? null : (int)$value,
             self::session_id => $this->entity->session_id = $value === null ? null : (int)$value,
@@ -109,7 +109,7 @@ class ChangeLogReceipt extends Object_
     /**
      * Applies a stored insert this collection already wrote, and announces the new row.
      *
-     * The snapshot is the row read back after the insert, so created_at is the database clock.
+     * The snapshot is the row read back after the insert, including its epoch-ms creation stamp.
      * No second write is issued. A later rollback cuts the tie to the row and leaves the values.
      *
      * @param array<string, mixed> $row Stored receipt columns, open_handovers included

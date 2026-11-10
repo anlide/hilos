@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Collection;
 
-use DateTimeImmutable;
-use DateTimeZone;
 use Hilos\Backup\Anonymization\LiveSchemaReader;
 use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Constants\TimeConstants;
@@ -35,6 +33,7 @@ use Hilos\Database\Schema\JournalColumnPolicy;
 use Hilos\Database\Schema\JournaledTables;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * @extends Objects<ObjectChangeLogTable>
@@ -95,7 +94,8 @@ class ChangeLogTables extends Objects
             $rows = Database::sql(
                 "SELECT t.`name`, COUNT(*) AS recent_count FROM {$entries} l"
                 . " JOIN {$tables} t ON t.`id` = l.`table_id`"
-                . ' WHERE l.`created_at` >= UTC_TIMESTAMP(6) - INTERVAL 24 HOUR GROUP BY t.`id`, t.`name`',
+                . ' WHERE l.`created_at` >= ? GROUP BY t.`id`, t.`name`',
+                [TimeHelper::nowMs() - TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND],
                 index: $binding->connectionIndex,
             )->rows();
             $recent = [];
@@ -110,7 +110,7 @@ class ChangeLogTables extends Objects
             )->rows();
             $last = [];
             foreach ($rows as $row) {
-                $last[(string)$row['name']] = self::moment($row['last_change_at']);
+                $last[(string)$row['name']] = $row['last_change_at'] === null ? null : (int)$row['last_change_at'];
             }
 
             $live = EntitySchemaAudit::liveTables(DatabaseConnectionDefaults::PRIMARY_INDEX);
@@ -275,22 +275,5 @@ class ChangeLogTables extends Objects
         } finally {
             Database::useConnection($previous);
         }
-    }
-
-    /**
-     * @param mixed $value Nullable DATETIME(6) returned by SQL
-     * @return ?DateTimeImmutable UTC moment with its microseconds intact
-     * @throws DatabaseException When SQL returned a malformed moment
-     */
-    private static function moment(mixed $value): ?DateTimeImmutable
-    {
-        if ($value === null) {
-            return null;
-        }
-        $moment = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s.u', (string)$value, new DateTimeZone(TimeConstants::UTC_TIME_ZONE));
-        if ($moment === false) {
-            throw new DatabaseException('Journal returned an invalid DATETIME(6)');
-        }
-        return $moment;
     }
 }

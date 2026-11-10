@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Collection;
 
 use DateTimeImmutable;
-use DateTimeZone;
 use Hilos\Backup\Anonymization\LiveSchemaReader;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -53,10 +52,10 @@ class ChangeLogEntries extends Objects
     private const array INTEGER_KEY_TYPES = ['tinyint', 'smallint', 'mediumint', 'int', 'bigint'];
 
     /**
-     * @return ?DateTimeImmutable UTC source time of the lowest journal id, or null for an empty journal
-     * @throws DatabaseException When the collection is not database-backed or SQL or moment decoding fails
+     * @return ?int UTC epoch-ms source time of the lowest journal id, or null for an empty journal
+     * @throws DatabaseException When the collection is not database-backed or SQL fails
      */
-    public function oldestCreatedAt(): ?DateTimeImmutable
+    public function oldestCreatedAt(): ?int
     {
         $binding = $this->getDatabase() ?? throw new DatabaseException(self::DATABASE_REQUIRED_MESSAGE);
         $table = $binding->getSqlTableName($this->getTableName());
@@ -64,7 +63,7 @@ class ChangeLogEntries extends Objects
             "SELECT `created_at` FROM {$table} ORDER BY `id` ASC LIMIT 1",
             index: $binding->connectionIndex,
         )->row();
-        return $row === null ? null : self::moment($row['created_at']);
+        return $row === null ? null : (int)$row['created_at'];
     }
 
     /**
@@ -72,7 +71,7 @@ class ChangeLogEntries extends Objects
      * @param ?int $afterEntryId Last row of the preceding portion; must belong to this receipt
      * @param int $limit Requested rows, capped at the section window limit
      * @return ChangeLogReadCollection<ChangeLogEntry> Dense full entries ordered by source time and id; empty for an invalid cursor
-     * @throws DatabaseException When journal SQL or moment decoding fails
+     * @throws DatabaseException When journal SQL fails
      */
     public function receiptEntries(int $receiptId, ?int $afterEntryId, int $limit): ChangeLogReadCollection
     {
@@ -117,7 +116,7 @@ class ChangeLogEntries extends Objects
     /**
      * @param int $entryId Journal row number
      * @return ?ChangeLogEntry Complete entry with long values, or null when absent
-     * @throws DatabaseException When journal SQL or moment decoding fails
+     * @throws DatabaseException When journal SQL fails
      */
     public function sectionEntry(int $entryId): ?ChangeLogEntry
     {
@@ -130,7 +129,7 @@ class ChangeLogEntries extends Objects
      * @param list<int> $ids Selected journal row numbers, omitting absent ids and deduplicating repeats
      * @param bool $includeLong Whether to fetch long-value bodies
      * @return ChangeLogReadCollection<ChangeLogEntry> Fresh entries keyed by journal row number
-     * @throws DatabaseException When journal SQL or moment decoding fails
+     * @throws DatabaseException When journal SQL fails
      */
     public function sectionEntriesByIds(array $ids, bool $includeLong): ChangeLogReadCollection
     {
@@ -155,7 +154,7 @@ class ChangeLogEntries extends Objects
                 $id = (int)$row['id'];
                 $entries[$id] = new ChangeLogEntry(
                     $id,
-                    self::moment($row['created_at']),
+                    (int)$row['created_at'],
                     $row['receipt_id'] === null ? null : (int)$row['receipt_id'],
                     (string)$row['name'],
                     self::recordKey($row['record_key']),
@@ -179,7 +178,7 @@ class ChangeLogEntries extends Objects
      * @param int $skip Edge offset, clamped to nonnegative and bounded by the count ceiling
      * @return ChangeLogReadCollection<ChangeLogHistoryRow> Dense rows in canonical order, omitting vanished entries
      * @throws InvalidArgumentException When the record key is invalid or a skip is used with an anchor
-     * @throws HilosException When journal, dictionary, schema or person reads or moment decoding fail
+     * @throws HilosException When journal, dictionary, schema or person reads fail
      */
     public function historyWindow(
         string $table,
@@ -408,7 +407,7 @@ class ChangeLogEntries extends Objects
         if ($anchor === null) {
             return '';
         }
-        $moment = self::sqlMoment($anchor->createdAt);
+        $moment = $anchor->createdAt;
         array_push($params, $moment, $moment, $anchor->id);
         $afterIsOlder = $newestFirst === ($direction === TableAnchorDirection::After);
         $operator = $afterIsOlder ? '<' : '>';
@@ -513,21 +512,12 @@ class ChangeLogEntries extends Objects
     ): void {
         if ($since !== null) {
             $where[] = "{$alias}.`created_at` >= ?";
-            $params[] = self::sqlMoment($since);
+            $params[] = $since->getTimestamp() * TimeConstants::MS_PER_SECOND + (int)$since->format('v');
         }
         if ($until !== null) {
             $where[] = "{$alias}.`created_at` < ?";
-            $params[] = self::sqlMoment($until);
+            $params[] = $until->getTimestamp() * TimeConstants::MS_PER_SECOND + (int)$until->format('v');
         }
-    }
-
-    /**
-     * @param DateTimeImmutable $moment Moment in any timezone
-     * @return string DATETIME(6) in UTC
-     */
-    private static function sqlMoment(DateTimeImmutable $moment): string
-    {
-        return $moment->setTimezone(new DateTimeZone(TimeConstants::UTC_TIME_ZONE))->format('Y-m-d H:i:s.u');
     }
 
     /**
@@ -551,19 +541,5 @@ class ChangeLogEntries extends Objects
         }
         unset($part);
         return $decoded;
-    }
-
-    /**
-     * @param string $value Non-null DATETIME(6) returned by the journal
-     * @return DateTimeImmutable UTC source moment with microseconds intact
-     * @throws DatabaseException When SQL returned a malformed moment
-     */
-    private static function moment(string $value): DateTimeImmutable
-    {
-        $moment = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s.u', $value, new DateTimeZone(TimeConstants::UTC_TIME_ZONE));
-        if ($moment === false) {
-            throw new DatabaseException('Journal returned an invalid DATETIME(6)');
-        }
-        return $moment;
     }
 }

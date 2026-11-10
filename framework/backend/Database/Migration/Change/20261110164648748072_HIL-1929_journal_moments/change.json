@@ -1,0 +1,14 @@
+{
+    "format": 1,
+    "id": "20261110164648748072_HIL-1929_journal_moments",
+    "parts": [
+        {
+            "unit": "change_log",
+            "up": "change_log.sql",
+            "down": "change_log_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "a224a62bd71057f1c67945e7a53ca03fefd96583f28569025a6435a1cb3af85a",
+            "afterStubDownSha256": "fb9828f509bdf71a6be348b2e837e033e2c5a82e2cc3aa1e96707f600d27f804"
+        }
+    ]
+}

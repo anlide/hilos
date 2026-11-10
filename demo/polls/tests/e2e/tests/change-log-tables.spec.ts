@@ -45,7 +45,7 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   )
   await open.click()
   await expectPageReady(expect, page)
-  await expectTrackedTableOverview(expect, page, 'hilos_user', 51)
+  await expectTrackedTableOverview(expect, page, 'hilos_user', 110)
 
   const tablePath = `/hilos/change-log/table/hilos_user`
   const tablePages = [
@@ -70,9 +70,9 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
     await expect(page).toHaveURL(route.path)
     await expectPageReady(expect, page)
     if (route.kind === 'overview') {
-      await expectTrackedTableOverview(expect, page, 'hilos_user', 51)
+      await expectTrackedTableOverview(expect, page, 'hilos_user', 110)
     } else if (route.kind === 'history') {
-      await expectTrackedTableWhole(expect, page, 'hilos_user', 51)
+      await expectTrackedTableWhole(expect, page, 'hilos_user', 110)
     } else {
       const heading = page.getByRole('heading', { level: 1 })
       await expect(heading).toHaveCount(1)

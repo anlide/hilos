@@ -351,6 +351,78 @@ final class FullRestoreTableStructureTest extends TestCase
         yield 'drop' => ['DROP COLUMN payload_json'];
     }
 
+    /** SHOW CREATE adds an engine to each partition without changing the declared structure. */
+    public function testRangeColumnsPartitionsMatchThePhysicalEngineForm(): void
+    {
+        $columns = 'created_at BIGINT NOT NULL, id BIGINT NOT NULL, PRIMARY KEY (id, created_at)';
+        $source = $this->structure($columns, 'PARTITION BY RANGE COLUMNS (`created_at`) ('
+            . 'PARTITION p202601 VALUES LESS THAN (1769904000000), PARTITION p_future VALUES LESS THAN (MAXVALUE))');
+        $physical = $this->structure($columns, 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci'
+            . ' ROW_FORMAT=Dynamic PARTITION BY RANGE COLUMNS (CREATED_AT) ('
+            . 'PARTITION `P202601` VALUES LESS THAN (1769904000000) ENGINE = InnoDB,'
+            . ' PARTITION `P_FUTURE` VALUES LESS THAN (MAXVALUE) ENGINE InnoDB)');
+        $this->assertSame($source->fingerprint(), $physical->fingerprint());
+        $this->assertSame('utf8mb4', $source->options['charset']);
+        $this->assertSame('dynamic', $source->options['row_format']);
+        $this->assertArrayHasKey('partition', $source->options);
+        $this->assertSame($this->structure($columns, "PARTITION BY RANGE COLUMNS (created_at) ("
+            . "PARTITION p202601 VALUES LESS THAN ('2026-02-01'), PARTITION p_future VALUES LESS THAN (MAXVALUE))")->fingerprint(),
+            $this->structure($columns, "PARTITION BY RANGE COLUMNS (`CREATED_AT`) ("
+                . "PARTITION p202601 VALUES LESS THAN ('2026-02-01') ENGINE=InnoDB,"
+                . ' PARTITION p_future VALUES LESS THAN (MAXVALUE) ENGINE=InnoDB)')->fingerprint());
+    }
+
+    /** @param string $partitions A material difference in the ordered partition definition */
+    #[DataProvider('differentPartitions')]
+    public function testPartitionsRemainPartOfTheStructuralFingerprint(string $partitions): void
+    {
+        $columns = 'created_at BIGINT NOT NULL, other BIGINT NOT NULL';
+        $source = $this->structure($columns, 'PARTITION BY RANGE COLUMNS (created_at) ('
+            . 'PARTITION p202601 VALUES LESS THAN (1769904000000), PARTITION p_future VALUES LESS THAN (MAXVALUE))');
+        $this->assertNotSame($source->fingerprint(), $this->structure($columns, $partitions)->fingerprint());
+    }
+
+    /** @return iterable<string, array{string}> Column, name, bound, membership and order are material */
+    public static function differentPartitions(): iterable
+    {
+        yield 'column' => ['PARTITION BY RANGE COLUMNS (other) ('
+            . 'PARTITION p202601 VALUES LESS THAN (1769904000000), PARTITION p_future VALUES LESS THAN (MAXVALUE))'];
+        yield 'name' => ['PARTITION BY RANGE COLUMNS (created_at) ('
+            . 'PARTITION renamed VALUES LESS THAN (1769904000000), PARTITION p_future VALUES LESS THAN (MAXVALUE))'];
+        yield 'bound' => ['PARTITION BY RANGE COLUMNS (created_at) ('
+            . 'PARTITION p202601 VALUES LESS THAN (1769904000001), PARTITION p_future VALUES LESS THAN (MAXVALUE))'];
+        yield 'bound kind' => ["PARTITION BY RANGE COLUMNS (created_at) ("
+            . "PARTITION p202601 VALUES LESS THAN ('1769904000000'), PARTITION p_future VALUES LESS THAN (MAXVALUE))"];
+        yield 'membership' => ['PARTITION BY RANGE COLUMNS (created_at) (PARTITION p_future VALUES LESS THAN (MAXVALUE))'];
+        yield 'order' => ['PARTITION BY RANGE COLUMNS (created_at) ('
+            . 'PARTITION p_future VALUES LESS THAN (MAXVALUE), PARTITION p202601 VALUES LESS THAN (1769904000000))'];
+        yield 'no partitions' => [''];
+    }
+
+    /** @param string $partitions Unsupported grammar or a partition column absent from the table */
+    #[DataProvider('unsupportedPartitions')]
+    public function testUnsupportedPartitionsStillRefuseStructuralProof(string $partitions): void
+    {
+        $this->expectException(RestoreFailedException::class);
+        $this->structure('created_at BIGINT NOT NULL', $partitions);
+    }
+
+    /** @return iterable<string, array{string}> The partition grammar remains RANGE COLUMNS with a matching engine */
+    public static function unsupportedPartitions(): iterable
+    {
+        yield 'hash' => ['PARTITION BY HASH (created_at) PARTITIONS 2'];
+        yield 'key' => ['PARTITION BY KEY (created_at) PARTITIONS 2'];
+        yield 'list' => ['PARTITION BY LIST COLUMNS (created_at) (PARTITION p VALUES IN (1))'];
+        yield 'subpartition' => ['PARTITION BY RANGE COLUMNS (created_at) SUBPARTITION BY HASH (created_at) ('
+            . 'PARTITION p VALUES LESS THAN (MAXVALUE))'];
+        yield 'option' => ["PARTITION BY RANGE COLUMNS (created_at) (PARTITION p VALUES LESS THAN (MAXVALUE) COMMENT 'x')"];
+        yield 'engine' => ['PARTITION BY RANGE COLUMNS (created_at) (PARTITION p VALUES LESS THAN (MAXVALUE) ENGINE=MyISAM)'];
+        yield 'absent column' => ['PARTITION BY RANGE COLUMNS (absent) (PARTITION p VALUES LESS THAN (MAXVALUE))'];
+        yield 'suffix' => ['PARTITION BY RANGE COLUMNS (created_at) (PARTITION p VALUES LESS THAN (MAXVALUE)) ROW_FORMAT=DYNAMIC'];
+        yield 'expression' => ['PARTITION BY RANGE COLUMNS (created_at) (PARTITION p VALUES LESS THAN (1 + 1))'];
+        yield 'quoted maxvalue' => ['PARTITION BY RANGE COLUMNS (created_at) (PARTITION p VALUES LESS THAN (`MAXVALUE`))'];
+    }
+
     /**
      * @param string $columns Column list
      * @param string $options Table options

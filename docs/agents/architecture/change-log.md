@@ -206,8 +206,10 @@ A web scope starts after the action guards and ends before the success or deferr
 ack. It stores the acting administrator and impersonated person separately, and
 stores only the session number as source. A migration scope covers one up, down
 or retry SQL file. Files before the receipt table exists run without one. A file
-that creates or drops that table also runs without one, including a retry of its
-partially applied creation: it cannot create a receipt in a table it is building
+that creates, drops or replaces that table also runs without one, including a retry
+of its partially applied creation. Files also run without a receipt while that
+table's `created_at` is not yet `BIGINT`: the current writer cannot stamp a legacy
+`DATETIME` row. A file cannot create a receipt in a table it is building, replacing
 or removing. The migration's failed marker stays outside the scope.
 
 The application uses `Hilos::$db->changeLogReceipts`. Before the facade is
@@ -396,7 +398,8 @@ in a database name in `GRANT` is a wildcard for one character.
 
 The journal has no foreign keys onto data rows: otherwise deleting a row would
 either be refused or erase its history. The four append-only tables have monthly
-partitions over `created_at` in UTC, with `p_future` catching writes after the
+partitions over signed `BIGINT` epoch-ms `created_at`, with numeric boundaries
+at the next month's start in UTC and `p_future` catching writes after the
 prepared window. The project migration creates `p_future`; before `Hilos::init`,
 a journal-enabled project's Docker bootstrap extends the current month and the
 following 24 under the primary database's `hilos_migration_claim`, through its

@@ -12,6 +12,7 @@ use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\TableSearchTerm;
 use Hilos\Database\ChangeLog\Section\ChangeLogPerson;
+use Hilos\Utils\Helpers\UtcMoment;
 
 /** Shared wire values and window addresses of the two journal tables. */
 final class HilosChangeLogTableParts
@@ -20,34 +21,36 @@ final class HilosChangeLogTableParts
     public const string ANCHOR_ID = 'id';
     public const string ANCHOR_KIND = 'kind';
 
-    /** @return string UTC ISO timestamp with milliseconds for browser rendering */
-    public static function displayTime(DateTimeImmutable $moment): string
+    /**
+     * @param int $moment UTC epoch milliseconds
+     * @return string UTC ISO timestamp with milliseconds for browser rendering
+     */
+    public static function displayTime(int $moment): string
     {
-        return $moment->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s.v\Z');
+        return substr(UtcMoment::fromMs($moment), 0, 23) . 'Z';
     }
 
-    /** @return string UTC SQL timestamp with microseconds for a lossless window anchor */
-    public static function anchorTime(DateTimeImmutable $moment): string
+    /**
+     * @param int $moment UTC epoch milliseconds
+     * @return int Exact source moment for a window anchor
+     */
+    public static function anchorTime(int $moment): int
     {
-        return $moment->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s.u');
+        return $moment;
     }
 
     /**
      * @param TableAnchorDTO $anchor Browser-returned boundary
-     * @return DateTimeImmutable UTC source moment
-     * @throws InvalidArgumentException When its timestamp is incomplete or invalid
+     * @return int UTC source moment in epoch milliseconds
+     * @throws InvalidArgumentException When its timestamp is missing or not an integer
      */
-    public static function readAnchorTime(TableAnchorDTO $anchor): DateTimeImmutable
+    public static function readAnchorTime(TableAnchorDTO $anchor): int
     {
         $raw = $anchor->values[self::ANCHOR_CREATED_AT] ?? null;
-        if (!is_string($raw)) {
-            throw new InvalidArgumentException('Change log anchor carries no createdAt');
-        }
-        $moment = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s.u', $raw, new DateTimeZone('UTC'));
-        if ($moment === false || $moment->format('Y-m-d H:i:s.u') !== $raw) {
+        if (!is_int($raw)) {
             throw new InvalidArgumentException('Change log anchor carries an invalid createdAt');
         }
-        return $moment;
+        return $raw;
     }
 
     /**

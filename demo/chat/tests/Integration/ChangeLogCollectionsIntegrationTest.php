@@ -249,7 +249,7 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
             $this->assertSame(55, $after->journalEntries);
             $this->assertSame(55, $fresh['hilos_user']->changesLast24h);
             $this->assertNotNull($fresh['hilos_user']->lastChangeAt);
-            $this->assertSame('UTC', $after->oldestAt->getTimezone()->getName());
+            $this->assertIsInt($after->oldestAt);
             $this->assertEquals($after->oldestAt, Hilos::$db->changeLogEntries->oldestCreatedAt());
             $this->assertSame(0, $empty->journalEntries);
             $this->assertNull($empty->oldestAt);
@@ -278,7 +278,7 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
             Database::sql("INSERT INTO {$journal}.`hilos_change_log_table` (`name`) VALUES (?)", ['hilos_user'], index: 0);
             $tableId = Database::lastInsertId(0);
         }
-        foreach (['2002-02-02 02:02:02.123456', '2001-01-01 01:01:01.654321'] as $moment) {
+        foreach ([1012615322123, 978310861654] as $moment) {
             Database::sql("INSERT INTO {$journal}.`hilos_change_log`"
                 . ' (`created_at`, `table_id`, `record_key`, `mutation_type`) VALUES (?, ?, ?, ?)',
                 [$moment, $tableId, '[1]', 'create'], index: 0);
@@ -286,8 +286,8 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
         Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
         try {
             $oldest = Hilos::$db->changeLogEntries->oldestCreatedAt();
-            $this->assertSame('2002-02-02 02:02:02.123456', $oldest->format('Y-m-d H:i:s.u'));
-            $this->assertSame('UTC', $oldest->getTimezone()->getName());
+            $this->assertSame(1012615322123, $oldest);
+            $this->assertIsInt($oldest);
             $tables = array_column(Hilos::$db->changeLogTables->sectionTables()->toArray(), null, 'name');
             $this->assertEquals($oldest, $tables['hilos_user']->lastChangeAt);
             $this->assertSame(0, $tables['hilos_user']->changesLast24h);
@@ -527,11 +527,11 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
         Hilos::$db->changeLogReceipts[$receiptId];
     }
 
-    /** All six mounted chains preserve exact bytes, nulls, booleans and DATETIME(6), without row/page retention or N+1. */
+    /** All six mounted chains preserve exact bytes, nulls, booleans and epoch milliseconds, without row/page retention or N+1. */
     public function testRoundTripAndManyWindowsDoNotCacheOrReloadEachRow(): void
     {
         $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
-        $at = '2026-10-20 12:34:56.123456';
+        $at = 1792499696123;
         $hash = "\0\xff" . str_repeat("\x80a", 15);
         Database::sql("INSERT INTO {$journal}.`hilos_change_log_table` (`name`) VALUES ('facade_fixture')");
         $tableId = Database::lastInsertId();
@@ -781,11 +781,11 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
                     $this->assertSame([$personId], $entry->recordKey);
                     $this->assertSame('create', $entry->mutation);
                     $this->assertSame([], $entry->changes);
-                    $this->assertSame('UTC', $entry->createdAt->getTimezone()->getName());
+                    $this->assertIsInt($entry->createdAt);
                     $row = Database::sql('SELECT `created_at` FROM '
                         . ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName()) . '.`hilos_change_log` WHERE `id` = ?',
                         [$nextId], index: 0)->row();
-                    $this->assertSame($row['created_at'], $entry->createdAt->format('Y-m-d H:i:s.u'));
+                    $this->assertSame((int)$row['created_at'], $entry->createdAt);
                     $first = Hilos::$db->changeLogEntries->receiptEntries($receiptId, null, 50);
                     $this->assertSame([0], array_keys($first->toArray()));
                     $this->assertEquals($entry, $first->first());
@@ -823,9 +823,9 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
             "SELECT `id` FROM {$journal}.`hilos_change_log` WHERE `receipt_id` = ? ORDER BY `id`", [$receiptId], index: 0,
         )->rows());
         $this->assertCount(55, $ids);
-        Database::sql("UPDATE {$journal}.`hilos_change_log` SET `created_at` = '2026-10-20 12:34:56.123456' WHERE `receipt_id` = ?",
+        Database::sql("UPDATE {$journal}.`hilos_change_log` SET `created_at` = 1792499696123 WHERE `receipt_id` = ?",
             [$receiptId], index: 0);
-        Database::sql("UPDATE {$journal}.`hilos_change_log` SET `created_at` = '2026-10-20 12:34:55.999999' WHERE `id` = ?",
+        Database::sql("UPDATE {$journal}.`hilos_change_log` SET `created_at` = 1792499695999 WHERE `id` = ?",
             [$ids[54]], index: 0);
         $expectedOrder = [$ids[54], ...array_slice($ids, 0, 54)];
 
@@ -833,8 +833,8 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
         $this->assertCount(50, $first);
         $this->assertSame(range(0, 49), array_keys($first->toArray()));
         $this->assertSame(array_slice($expectedOrder, 0, 50), array_column($first->toArray(), 'id'));
-        $this->assertSame('2026-10-20 12:34:55.999999', $first->first()->createdAt->format('Y-m-d H:i:s.u'));
-        $this->assertSame('2026-10-20 12:34:56.123456', $first->last()->createdAt->format('Y-m-d H:i:s.u'));
+        $this->assertSame(1792499695999, $first->first()->createdAt);
+        $this->assertSame(1792499696123, $first->last()->createdAt);
         $next = Hilos::$db->changeLogEntries->receiptEntries($receiptId, $first->last()->id, 50);
         $this->assertCount(5, $next);
         $this->assertSame(range(0, 4), array_keys($next->toArray()));
@@ -917,12 +917,12 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
                 Database::sql("INSERT INTO {$journal}.`hilos_change_log_value` (`created_at`, `change_id`, `old_value`, `new_value`)"
                     . ' VALUES (?, ?, ?, ?)', [$at, $changeId, $oldValue, $newValue], index: 0);
                 Database::sql("INSERT INTO {$journal}.`hilos_change_log_value` (`created_at`, `change_id`, `old_value`, `new_value`)"
-                    . " VALUES ('2026-10-19 01:00:00.000001', ?, 'wrong old time', 'wrong new time')", [$changeId], index: 0);
+                    . " VALUES (1792371600000, ?, 'wrong old time', 'wrong new time')", [$changeId], index: 0);
             }
         }
         Database::sql("INSERT INTO {$journal}.`hilos_change_log_change`"
             . ' (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)'
-            . " VALUES ('2026-10-19 01:00:00.000001', ?, ?, 'inline', 1, 1, 'wrong old entry time', 'wrong new entry time')",
+            . " VALUES (1792371600000, ?, ?, 'inline', 1, 1, 'wrong old entry time', 'wrong new entry time')",
             [$entryId, $fieldId], index: 0);
 
         Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
@@ -931,7 +931,7 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
             $this->assertNotNull($detail);
             $this->assertSame($receiptId, $detail->receiptId);
             $this->assertSame('hilos_user', $detail->table);
-            $this->assertSame($at, $detail->createdAt->format('Y-m-d H:i:s.u'));
+            $this->assertSame((int)$at, $detail->createdAt);
             $this->assertCount(67, $detail->changes);
             $summary = Hilos::$db->changeLogReceipts->sectionReceipt($receiptId);
             $this->assertSame(1, $summary->entryCount);
@@ -1038,7 +1038,7 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
                 static fn (): ChangeLogReadCollection => Hilos::$db->changeLogEntries->sectionEntriesByIds([1], true),
                 static fn (): ChangeLogReadCollection => Hilos::$db->changeLogEntries->receiptEntries(1, null, 50),
                 static fn (): ChangeLogReadCollection => Hilos::$db->changeLogEntries->receiptEntries(1, 1, 50),
-                static fn (): ?DateTimeImmutable => Hilos::$db->changeLogEntries->oldestCreatedAt(),
+                static fn (): ?int => Hilos::$db->changeLogEntries->oldestCreatedAt(),
                 static fn (): ChangeLogOverview => Hilos::$db->changeLogTables->sectionOverview(),
             ] as $read) {
                 try {
@@ -1087,7 +1087,7 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
                     $this->assertSame(ChangeLogFeedItemKind::RECEIPT, $window->first()->kind);
                     $this->assertNull($window->first()->entry);
                     $this->assertEquals($receipt->createdAt, $window->first()->createdAt);
-                    $this->assertSame('UTC', $window->first()->createdAt->getTimezone()->getName());
+                    $this->assertIsInt($window->first()->createdAt);
                     $this->assertSame('Deleted user #940001', $receipt->actor->label);
                     $this->assertSame(940001, $receipt->actor->userId);
                     $this->assertTrue($receipt->actor->deleted);
@@ -1151,7 +1151,7 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
         $this->assertEquals($single->firstAnchor, $single->lastAnchor);
         $this->assertSame($firstId, $single->firstAnchor->values['id']);
         $this->assertSame('receipt', $single->firstAnchor->values['kind']);
-        $this->assertMatchesRegularExpression('/\.\d{6}$/D', $single->firstAnchor->values['createdAt']);
+        $this->assertIsInt($single->firstAnchor->values['createdAt']);
         $this->assertSame('Deleted user #950001', $single->rows[0]->actorLabel);
         $this->assertSame('hilos_user', $single->rows[0]->touched[0]['table']);
         $this->assertSame(1, $single->rows[0]->touched[0]['records']);
@@ -1185,7 +1185,7 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
         $this->assertSame(['receipt:' . $firstId], array_map(static fn($row): string => $row->rowKey, $single->rows));
     }
 
-    /** Equal microsecond timestamps and equal ids across kinds remain distinct in both directions and counts. */
+    /** Equal millisecond timestamps and equal ids across kinds remain distinct in both directions and counts. */
     public function testSectionFeedFullAnchorsEdgesAndSkip(): void
     {
         $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
@@ -1199,24 +1199,24 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
         }
         $sharedId = max($receipt, $otherReceipt, ...$bareIds) + 1000;
         foreach ([[$receipt, $sharedId], [$otherReceipt, $sharedId + 1]] as [$old, $new]) {
-            Database::sql("UPDATE {$journal}.`hilos_change_log_receipt` SET `id` = ?, `created_at` = '2030-01-01 12:34:56.123456'"
+            Database::sql("UPDATE {$journal}.`hilos_change_log_receipt` SET `id` = ?, `created_at` = 1893501296123"
                 . ' WHERE `id` = ?', [$new, $old], index: 0);
             Database::sql("UPDATE {$journal}.`hilos_change_log` SET `receipt_id` = ? WHERE `receipt_id` = ?", [$new, $old], index: 0);
         }
         Database::sql("UPDATE {$journal}.`hilos_change_log` SET `id` = ? WHERE `id` = ?", [$sharedId, $bareIds[0]], index: 0);
-        Database::sql("UPDATE {$journal}.`hilos_change_log` SET `created_at` = '2030-01-01 12:34:56.123456' WHERE `id` IN (?, ?, ?)",
+        Database::sql("UPDATE {$journal}.`hilos_change_log` SET `created_at` = 1893501296123 WHERE `id` IN (?, ?, ?)",
             [$sharedId, $bareIds[1], $bareIds[2]], index: 0);
-        Database::sql("UPDATE {$journal}.`hilos_change_log` SET `created_at` = '2030-01-01 12:34:56.123457' WHERE `id` = ?",
+        Database::sql("UPDATE {$journal}.`hilos_change_log` SET `created_at` = 1893501296124 WHERE `id` = ?",
             [$bareIds[2]], index: 0);
         $filter = new ChangeLogFeedFilter(
-            since: new DateTimeImmutable('2030-01-01T14:34:56.123456+02:00'),
+            since: new DateTimeImmutable('2030-01-01T14:34:56.123+02:00'),
             until: new DateTimeImmutable('2030-01-01T12:34:57Z'),
         );
         $expected = ['entry:' . $bareIds[2], 'entry:' . $sharedId, 'entry:' . $bareIds[1],
             'receipt:' . ($sharedId + 1), 'receipt:' . $sharedId];
         $all = Hilos::$db->changeLogReceipts->feedWindow($filter, null, TableAnchorDirection::After, 50);
         $this->assertSame($expected, self::feedKeys($all));
-        $this->assertSame('2030-01-01 12:34:56.123457', $all->first()->createdAt->format('Y-m-d H:i:s.u'));
+        $this->assertSame(1893501296124, $all->first()->createdAt);
         $this->assertSame(array_slice($expected, -2), self::feedKeys(
             Hilos::$db->changeLogReceipts->feedWindow($filter, null, TableAnchorDirection::Before, 2),
         ));
@@ -1249,6 +1249,43 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
         $this->expectException(InvalidArgumentException::class);
         Hilos::$db->changeLogReceipts->feedWindow($filter,
             new ChangeLogFeedAnchor($last->createdAt, $last->kind, $sharedId), TableAnchorDirection::After, 1, -1);
+    }
+
+    /** Signed millisecond bounds select both receipt and bare-entry sources, including the exact -1 ms boundary. */
+    public function testFeedPeriodBoundsPreserveNegativeFractionalSeconds(): void
+    {
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        $receipts = [];
+        $bareIds = [];
+        foreach ([-1500, -1, 0] as $time) {
+            $receipt = self::receiptWithPeople(1);
+            $receipts[] = $receipt;
+            Database::sql("UPDATE {$journal}.`hilos_change_log_receipt` SET `created_at` = ? WHERE `id` = ?",
+                [$time, $receipt], index: 0);
+            $person = Hilos::$db->users->actions->createWithName('Signed period bare ' . $time);
+            $bareId = (int)Database::sql(
+                "SELECT `id` FROM {$journal}.`hilos_change_log` WHERE `receipt_id` IS NULL AND `record_key` = ?",
+                ['[' . $person->id . ']'], index: 0,
+            )->field('id');
+            $bareIds[] = $bareId;
+            Database::sql("UPDATE {$journal}.`hilos_change_log` SET `created_at` = ? WHERE `id` = ?", [$time, $bareId], index: 0);
+        }
+        foreach ([
+            ['1969-12-31T23:59:59.999Z', '1970-01-01T00:00:00Z',
+                ['entry:' . $bareIds[1], 'receipt:' . $receipts[1]], 2],
+            ['1969-12-31T23:59:58Z', '1969-12-31T23:59:59.999Z',
+                ['entry:' . $bareIds[0], 'receipt:' . $receipts[0]], 2],
+            ['1969-12-31T23:59:58.500Z', '1970-01-01T00:00:00.001Z',
+                ['entry:' . $bareIds[2], 'receipt:' . $receipts[2], 'entry:' . $bareIds[1], 'receipt:' . $receipts[1],
+                    'entry:' . $bareIds[0], 'receipt:' . $receipts[0]], 6],
+        ] as [$since, $until, $expected, $count]) {
+            $filter = new ChangeLogFeedFilter(table: 'hilos_user',
+                since: new DateTimeImmutable($since), until: new DateTimeImmutable($until));
+            $this->assertSame($expected, self::feedKeys(
+                Hilos::$db->changeLogReceipts->feedWindow($filter, null, TableAnchorDirection::After, 50),
+            ), $since . ' / ' . $until);
+            $this->assertSame($count, Hilos::$db->changeLogReceipts->feedCount($filter), $since . ' / ' . $until);
+        }
     }
 
     /** Table filtering retains full summaries; names refresh after a raw rename without changing warmed user items. */
@@ -1356,10 +1393,10 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
         }
         $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
         $placeholders = implode(', ', array_fill(0, count($ids), '?'));
-        Database::sql("UPDATE {$journal}.`hilos_change_log_receipt` SET `created_at` = '2030-02-01 00:00:00.000001'"
+        Database::sql("UPDATE {$journal}.`hilos_change_log_receipt` SET `created_at` = 1896134400001"
             . " WHERE `id` IN ({$placeholders})", $ids, index: 0);
         $filter = new ChangeLogFeedFilter(channel: 'cli', table: 'hilos_user',
-            since: new DateTimeImmutable('2030-02-01T00:00:00.000001Z'), until: new DateTimeImmutable('2030-02-01T00:00:00.000002Z'));
+            since: new DateTimeImmutable('2030-02-01T00:00:00.001Z'), until: new DateTimeImmutable('2030-02-01T00:00:00.002Z'));
         foreach ([[500, 501], [999, 501], [2, 3], [0, 1], [-5, 1]] as [$ceiling, $expected]) {
             $beforeCount = self::selectCount();
             $this->assertSame($expected, Hilos::$db->changeLogReceipts->feedCount($filter, $ceiling));
@@ -1466,7 +1503,7 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
         Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
         try {
             $filter = new ChangeLogFeedFilter();
-            $anchor = new ChangeLogFeedAnchor(new DateTimeImmutable('2030-01-01T00:00:00Z'), ChangeLogFeedItemKind::RECEIPT, 1);
+            $anchor = new ChangeLogFeedAnchor(1893456000000, ChangeLogFeedItemKind::RECEIPT, 1);
             foreach ([
                 static fn (): ChangeLogReadCollection => Hilos::$db->changeLogReceipts->feedWindow($filter, null, TableAnchorDirection::After, 1),
                 static fn (): int => Hilos::$db->changeLogReceipts->feedCount($filter),
@@ -1497,7 +1534,7 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
             Database::sql("DELETE FROM {$journal}.`{$table}`", index: 0);
         }
         $filter = new ChangeLogHistoryFilter();
-        $anchor = new ChangeLogHistoryAnchor(new DateTimeImmutable('2030-01-01T00:00:00.123456Z'), 1);
+        $anchor = new ChangeLogHistoryAnchor(1893456000123, 1);
         Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
         try {
             $empty = Hilos::$db->changeLogEntries->historyWindow('hilos_user', $filter, true, null, TableAnchorDirection::After, 50);
@@ -1564,7 +1601,7 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
         }
     }
 
-    /** Tied microsecond moments retain every id in both directions, both orders and numbered edge pages. */
+    /** Tied millisecond moments retain every id in both directions, both orders and numbered edge pages. */
     public function testHistoryFullAnchorsBoundedCountsAndNumberedPages(): void
     {
         $receipt = self::receiptWithPeople(505);
@@ -1573,13 +1610,13 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
             "SELECT `id` FROM {$journal}.`hilos_change_log` WHERE `receipt_id` = ? ORDER BY `id`", [$receipt], index: 0,
         )->rows());
         $this->assertCount(505, $ids);
-        Database::sql("UPDATE {$journal}.`hilos_change_log` SET `created_at` = '2030-02-01 00:00:00.123456' WHERE `receipt_id` = ?",
+        Database::sql("UPDATE {$journal}.`hilos_change_log` SET `created_at` = 1896134400123 WHERE `receipt_id` = ?",
             [$receipt], index: 0);
-        foreach ([[$ids[0], '2030-02-01 00:00:00.123455'], [$ids[504], '2030-02-01 00:00:00.123457']] as [$id, $time]) {
+        foreach ([[$ids[0], 1896134400122], [$ids[504], 1896134400124]] as [$id, $time]) {
             Database::sql("UPDATE {$journal}.`hilos_change_log` SET `created_at` = ? WHERE `id` = ?", [$time, $id], index: 0);
         }
-        $filter = new ChangeLogHistoryFilter(since: new DateTimeImmutable('2030-02-01T02:00:00.123455+02:00'),
-            until: new DateTimeImmutable('2030-02-01T00:00:00.123458Z'));
+        $filter = new ChangeLogHistoryFilter(since: new DateTimeImmutable('2030-02-01T02:00:00.122+02:00'),
+            until: new DateTimeImmutable('2030-02-01T00:00:00.125Z'));
         Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
         try {
             foreach ([[500, 501], [999, 501], [2, 3], [0, 1], [-5, 1]] as [$ceiling, $expected]) {
@@ -1646,16 +1683,16 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
                     $this->assertSame('Change log skip requires an edge', $failure->getMessage());
                 }
             }
-            $middle = new ChangeLogHistoryFilter(since: new DateTimeImmutable('2030-02-01T00:00:00.123456Z'),
-                until: new DateTimeImmutable('2030-02-01T00:00:00.123457Z'));
+            $middle = new ChangeLogHistoryFilter(since: new DateTimeImmutable('2030-02-01T00:00:00.123Z'),
+                until: new DateTimeImmutable('2030-02-01T00:00:00.124Z'));
             $this->assertSame(array_reverse(array_slice($ids, 1, 50)), self::historyIds(Hilos::$db->changeLogEntries->historyWindow(
                 'hilos_user', $middle, true, null, TableAnchorDirection::Before, 50,
             )));
             $this->assertSame(501, Hilos::$db->changeLogEntries->historyCount('hilos_user', $middle, 5000),
                 'The 503 matching rows produce the capped 501 count');
             foreach ([
-                [$ids[0], '2030-02-01T00:00:00.123455Z', '2030-02-01T00:00:00.123456Z'],
-                [$ids[504], '2030-02-01T00:00:00.123457Z', '2030-02-01T00:00:00.123458Z'],
+                [$ids[0], '2030-02-01T00:00:00.122Z', '2030-02-01T00:00:00.123Z'],
+                [$ids[504], '2030-02-01T00:00:00.124Z', '2030-02-01T00:00:00.125Z'],
             ] as [$id, $since, $until]) {
                 $period = new ChangeLogHistoryFilter(since: new DateTimeImmutable($since), until: new DateTimeImmutable($until));
                 $this->assertSame([$id], self::historyIds(Hilos::$db->changeLogEntries->historyWindow(
@@ -1669,6 +1706,30 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
             $this->assertSame([], new ReflectionProperty(Objects::class, 'objects')->getValue(Hilos::$db->changeLogEntries->getObjectCollection()));
         } finally {
             Database::useConnection(0);
+        }
+    }
+
+    /** Negative fractional-second bounds keep since inclusive and until exclusive across the Unix epoch. */
+    public function testHistoryPeriodBoundsPreserveNegativeFractionalSeconds(): void
+    {
+        $receipt = self::receiptWithPeople(3);
+        $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        $ids = array_map(static fn(array $row): int => (int)$row['id'], Database::sql(
+            "SELECT `id` FROM {$journal}.`hilos_change_log` WHERE `receipt_id` = ? ORDER BY `id`", [$receipt], index: 0,
+        )->rows());
+        foreach ([[$ids[0], -1500], [$ids[1], -1], [$ids[2], 0]] as [$id, $time]) {
+            Database::sql("UPDATE {$journal}.`hilos_change_log` SET `created_at` = ? WHERE `id` = ?", [$time, $id], index: 0);
+        }
+        foreach ([
+            ['1969-12-31T23:59:59.999Z', '1970-01-01T00:00:00Z', [$ids[1]], 1],
+            ['1969-12-31T23:59:58Z', '1969-12-31T23:59:59.999Z', [$ids[0]], 1],
+            ['1969-12-31T23:59:58.500Z', '1970-01-01T00:00:00.001Z', [$ids[2], $ids[1], $ids[0]], 3],
+        ] as [$since, $until, $expected, $count]) {
+            $filter = new ChangeLogHistoryFilter(since: new DateTimeImmutable($since), until: new DateTimeImmutable($until));
+            $this->assertSame($expected, self::historyIds(Hilos::$db->changeLogEntries->historyWindow(
+                'hilos_user', $filter, true, null, TableAnchorDirection::After, 50,
+            )), $since . ' / ' . $until);
+            $this->assertSame($count, Hilos::$db->changeLogEntries->historyCount('hilos_user', $filter), $since . ' / ' . $until);
         }
     }
 
@@ -1687,7 +1748,7 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
             $placeholders = implode(', ', array_fill(0, count($key), '?'));
             Database::sql("INSERT INTO {$journal}.`hilos_change_log`"
                 . ' (`created_at`, `table_id`, `record_key`, `record_key_hash`, `mutation_type`)'
-                . " VALUES ('2030-02-02 00:00:00.123456', ?, ?, UNHEX(SHA2(JSON_ARRAY({$placeholders}), 256)), 'delete')",
+                . " VALUES (1896220800123, ?, ?, UNHEX(SHA2(JSON_ARRAY({$placeholders}), 256)), 'delete')",
                 [$tableId, json_encode($key), ...$key], index: 0);
             $entryId = Database::lastInsertId(0);
             Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
@@ -1699,7 +1760,7 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
                     )));
                     $this->assertSame(1, Hilos::$db->changeLogEntries->historyCount($table, $filter));
                     $this->assertSame(1, Hilos::$db->changeLogEntries->historyCountBefore($table, $filter, true,
-                        new ChangeLogHistoryAnchor(new DateTimeImmutable('2030-02-02T00:00:00.123455Z'), $entryId)));
+                        new ChangeLogHistoryAnchor(1896220800122, $entryId)));
                     $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
                 }
                 $differentString = $normalized;
@@ -1748,7 +1809,7 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
         $ids = [];
         foreach (['create', 'update', 'delete', 'update'] as $mutation) {
             Database::sql("INSERT INTO {$journal}.`hilos_change_log` (`created_at`, `table_id`, `record_key`, `mutation_type`)"
-                . " VALUES ('2030-02-03 00:00:00.123456', ?, '[7]', ?)", [$tableId, $mutation], index: 0);
+                . " VALUES (1896307200123, ?, '[7]', ?)", [$tableId, $mutation], index: 0);
             $ids[] = Database::lastInsertId(0);
         }
         $field = "literal !%_ ' OR 1=1 --";
@@ -1758,7 +1819,7 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
             Database::sql("INSERT INTO {$journal}.`hilos_change_log_change`"
                 . ' (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)'
                 . " VALUES (?, ?, ?, 'inline', 1, 1, NULL, '')",
-                [$i === 3 ? '2030-02-03 00:00:00.123455' : '2030-02-03 00:00:00.123456', $id, $fieldId], index: 0);
+                [$i === 3 ? 1896307200122 : 1896307200123, $id, $fieldId], index: 0);
         }
         $expected = [
             [$field, 'inline', true, true, null, '', false],
@@ -1772,12 +1833,12 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
             $nextField = Database::lastInsertId(0);
             Database::sql("INSERT INTO {$journal}.`hilos_change_log_change`"
                 . ' (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)'
-                . " VALUES ('2030-02-03 00:00:00.123456', ?, ?, ?, ?, ?, ?, ?)",
+                . " VALUES (1896307200123, ?, ?, ?, ?, ?, ?, ?)",
                 [$ids[1], $nextField, $kind, (int)$oldPresent, (int)$newPresent, $old, $new], index: 0);
             if ($kind === 'long') {
                 $change = Database::lastInsertId(0);
                 Database::sql("INSERT INTO {$journal}.`hilos_change_log_value` (`created_at`, `change_id`, `old_value`, `new_value`)"
-                    . " VALUES ('2030-02-03 00:00:00.123456', ?, ?, ?)", [$change, str_repeat('Old ', 3000), str_repeat('New ', 3000)], index: 0);
+                    . " VALUES (1896307200123, ?, ?, ?)", [$change, str_repeat('Old ', 3000), str_repeat('New ', 3000)], index: 0);
             }
         }
         $filter = new ChangeLogHistoryFilter(field: $field);
@@ -1945,7 +2006,7 @@ final class ChangeLogCollectionsIntegrationTest extends ChangeLogCollectionsMeta
     {
         $person = Hilos::$db->users->actions->createWithName('History SQL failure person')->id;
         self::attributedReceipt(JournalReceiptData::web($person, null, null, 'history.failure', null));
-        $anchor = new ChangeLogHistoryAnchor(new DateTimeImmutable('2030-01-01T00:00:00.123456Z'), 1);
+        $anchor = new ChangeLogHistoryAnchor(1893456000123, 1);
         foreach ([
             [HilosDbContext::changeLogEntries, MissingSectionEntryObjects::class, 'hilos_missing_section_entry', null],
             [HilosDbContext::changeLogTables, MissingSectionTableObjects::class, 'hilos_missing_section_table', null],

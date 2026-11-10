@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
-use DateTimeImmutable;
-use DateTimeZone;
 use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -23,6 +21,7 @@ use Hilos\Database\ChangeLog\Section\ChangeLogTouchedRecord;
 use Hilos\Database\ChangeLog\Section\ChangeLogTouchedTable;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\User as ObjectUser;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /** The feed keeps receipt and bare-entry identities distinct on the browser wire. */
@@ -108,9 +107,51 @@ final class HilosChangeLogFeedTableTest extends TestCase
         ));
     }
 
-    /** @return DateTimeImmutable A UTC moment with a subsecond component */
-    private static function time(): DateTimeImmutable
+    /**
+     * @param int $moment Source epoch milliseconds
+     * @param string $expected Canonical browser UTC-Z text
+     */
+    #[DataProvider('displayMoments')]
+    public function testDisplayAndAnchorKeepExactMilliseconds(int $moment, string $expected): void
     {
-        return new DateTimeImmutable('2026-10-09 10:11:12.123456', new DateTimeZone('UTC'));
+        self::assertSame($expected, HilosChangeLogTableParts::displayTime($moment));
+        self::assertSame($moment, HilosChangeLogTableParts::anchorTime($moment));
+        self::assertSame($moment, HilosChangeLogTableParts::readAnchorTime(new TableAnchorDTO([
+            HilosChangeLogTableParts::ANCHOR_CREATED_AT => $moment,
+        ])));
+    }
+
+    /** @return array<string, array{int, string}> Epoch, negative and future instants */
+    public static function displayMoments(): array
+    {
+        return [
+            'milliseconds' => [1791540672123, '2026-10-09T10:11:12.123Z'],
+            'epoch' => [0, '1970-01-01T00:00:00.000Z'],
+            'before epoch' => [-1, '1969-12-31T23:59:59.999Z'],
+            'after 2038' => [2208988800456, '2040-01-01T00:00:00.456Z'],
+        ];
+    }
+
+    /** @param mixed $value A non-integer anchor value */
+    #[DataProvider('invalidAnchorMoments')]
+    public function testNonIntegerAnchorIsRefused(mixed $value): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Change log anchor carries an invalid createdAt');
+        HilosChangeLogTableParts::readAnchorTime(new TableAnchorDTO([
+            HilosChangeLogTableParts::ANCHOR_CREATED_AT => $value,
+        ]));
+    }
+
+    /** @return array<string, array{mixed}> Former SQL strings and fractional numbers */
+    public static function invalidAnchorMoments(): array
+    {
+        return ['SQL text' => ['2026-10-09 10:11:12.123456'], 'numeric text' => ['1791540672123'], 'fraction' => [1.5]];
+    }
+
+    /** @return int A UTC epoch-ms moment with a subsecond component */
+    private static function time(): int
+    {
+        return 1791540672123;
     }
 }

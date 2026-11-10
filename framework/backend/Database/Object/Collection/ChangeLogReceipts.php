@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Collection;
 
 use DateTimeImmutable;
-use DateTimeZone;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -46,6 +45,7 @@ use Hilos\Database\Object\Item\ChangeLogReceipt as ObjectChangeLogReceipt;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\ChangeLogEntries as ViewChangeLogEntries;
 use Hilos\Hilos;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * @extends Objects<ObjectChangeLogReceipt>
@@ -75,7 +75,7 @@ class ChangeLogReceipts extends Objects
      * @param int $skip Nonnegative edge offset, at most the table count ceiling
      * @return ChangeLogReadCollection<ChangeLogFeedItem> Dense rows in canonical newest-first order
      * @throws InvalidArgumentException When a skip is used with an anchor
-     * @throws DatabaseException When journal or person SQL or moment decoding fails
+     * @throws DatabaseException When journal or person SQL fails
      */
     public function feedWindow(
         ChangeLogFeedFilter $filter,
@@ -124,7 +124,7 @@ class ChangeLogReceipts extends Objects
             $id = (int)$row['id'];
             $items[] = new ChangeLogFeedItem(
                 $kind,
-                self::moment($row['created_at']),
+                (int)$row['created_at'],
                 $kind === ChangeLogFeedItemKind::RECEIPT ? $receipts->get($id) : null,
                 $kind === ChangeLogFeedItemKind::ENTRY ? $entries->get($id) : null,
             );
@@ -161,7 +161,7 @@ class ChangeLogReceipts extends Objects
     /**
      * @param int $id Receipt row number
      * @return ?ChangeLogReceipt Full summary, or null for a missing or empty receipt
-     * @throws DatabaseException When journal or person SQL or moment decoding fails
+     * @throws DatabaseException When journal or person SQL fails
      */
     public function sectionReceipt(int $id): ?ChangeLogReceipt
     {
@@ -175,7 +175,7 @@ class ChangeLogReceipts extends Objects
      *
      * @param list<int> $ids Selected receipt ids, read in bounded batches and deduplicated
      * @return ChangeLogReadCollection<ChangeLogReceipt> Full summaries keyed by receipt id, omitting missing ids
-     * @throws DatabaseException When journal or person SQL or moment decoding fails
+     * @throws DatabaseException When journal or person SQL fails
      */
     public function sectionReceiptsByIds(array $ids): ChangeLogReadCollection
     {
@@ -239,7 +239,7 @@ class ChangeLogReceipts extends Objects
     /**
      * @param list<int> $ids Selected receipt ids, read in bounded batches and deduplicated
      * @return ChangeLogReadCollection<ChangeLogReceiptHeader> Attribution keyed by receipt id without entry summaries
-     * @throws DatabaseException When journal or person SQL or moment decoding fails
+     * @throws DatabaseException When journal or person SQL fails
      */
     public function sectionHeadersByIds(array $ids): ChangeLogReadCollection
     {
@@ -272,7 +272,7 @@ class ChangeLogReceipts extends Objects
                 $subjectId = $row['subject_user_id'] === null ? null : (int)$row['subject_user_id'];
                 $headers[$id] = new ChangeLogReceiptHeader(
                     $id,
-                    self::moment($row['created_at']),
+                    (int)$row['created_at'],
                     $actorId === null ? null : $people->get($actorId),
                     $subjectId === null ? null : $people->get($subjectId),
                     $row['session_id'] === null ? null : (int)$row['session_id'],
@@ -319,7 +319,7 @@ class ChangeLogReceipts extends Objects
         $columns = '`' . $entityClass::actor_user_id . '`, `' . $entityClass::subject_user_id . '`, `'
             . $entityClass::session_id . '`, `' . $entityClass::channel . '`, `' . $entityClass::action . '`, `'
             . $entityClass::agent . '`, `' . $entityClass::source . '`, `' . $entityClass::created_at . '`';
-        $values = '?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(6)';
+        $values = '?, ?, ?, ?, ?, ?, ?, ?';
         if ($retainLocal) {
             $columns .= ', `' . $entityClass::open_handovers . '`';
             $values .= ', 1';
@@ -336,6 +336,7 @@ class ChangeLogReceipts extends Objects
                     $data->action,
                     $data->agent,
                     $data->source,
+                    TimeHelper::nowMs(),
                 ],
                 tryReconnect: false,
                 index: $binding->connectionIndex,
@@ -526,7 +527,7 @@ class ChangeLogReceipts extends Objects
         if ($anchor === null) {
             return '';
         }
-        $moment = self::sqlMoment($anchor->createdAt);
+        $moment = $anchor->createdAt;
         array_push($params, $moment, $moment, $anchor->kind->value, $anchor->kind->value, $anchor->id);
         $timeOp = $direction === TableAnchorDirection::After ? '<' : '>';
         $kindOp = $direction === TableAnchorDirection::After ? '>' : '<';
@@ -649,35 +650,12 @@ class ChangeLogReceipts extends Objects
     ): void {
         if ($since !== null) {
             $where[] = "{$alias}.`created_at` >= ?";
-            $params[] = self::sqlMoment($since);
+            $params[] = $since->getTimestamp() * TimeConstants::MS_PER_SECOND + (int)$since->format('v');
         }
         if ($until !== null) {
             $where[] = "{$alias}.`created_at` < ?";
-            $params[] = self::sqlMoment($until);
+            $params[] = $until->getTimestamp() * TimeConstants::MS_PER_SECOND + (int)$until->format('v');
         }
-    }
-
-    /**
-     * @param DateTimeImmutable $moment Moment in any time zone
-     * @return string UTC DATETIME(6)
-     */
-    private static function sqlMoment(DateTimeImmutable $moment): string
-    {
-        return $moment->setTimezone(new DateTimeZone(TimeConstants::UTC_TIME_ZONE))->format('Y-m-d H:i:s.u');
-    }
-
-    /**
-     * @param string $value Non-null journal DATETIME(6)
-     * @return DateTimeImmutable UTC source moment with microseconds intact
-     * @throws DatabaseException When SQL returned a malformed moment
-     */
-    private static function moment(string $value): DateTimeImmutable
-    {
-        $moment = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s.u', $value, new DateTimeZone(TimeConstants::UTC_TIME_ZONE));
-        if ($moment === false) {
-            throw new DatabaseException('Journal returned an invalid DATETIME(6)');
-        }
-        return $moment;
     }
 
     /**

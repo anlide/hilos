@@ -6,6 +6,7 @@ namespace Hilos\Database\ChangeLog;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Hilos\Constants\TimeConstants;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
@@ -126,8 +127,8 @@ final class ChangeLogPartitions
             if ($lastMonth !== null && $partitionMonth->format('Ym') !== $lastMonth->modify('+1 month')->format('Ym')) {
                 throw new DatabaseException("Change log database {$database}: table {$table} has a gap before {$name}");
             }
-            $expectedBoundary = $partitionMonth->modify('+1 month')->format('Y-m-d');
-            if (!str_contains((string)$partition['boundary'], $expectedBoundary)) {
+            $expectedBoundary = (string)($partitionMonth->modify('+1 month')->getTimestamp() * TimeConstants::MS_PER_SECOND);
+            if ((string)$partition['boundary'] !== $expectedBoundary) {
                 throw new DatabaseException("Change log database {$database}: table {$table} partition {$name} has a wrong boundary");
             }
             $firstMonth ??= $partitionMonth;
@@ -149,7 +150,7 @@ final class ChangeLogPartitions
         $definitions = [];
         for ($cursor = $nextMonth; $cursor <= $lastNeededMonth; $cursor = $cursor->modify('+1 month')) {
             $definitions[] = 'PARTITION `p' . $cursor->format('Ym') . '` VALUES LESS THAN ('
-                . "'" . $cursor->modify('+1 month')->format('Y-m-d') . "')";
+                . ($cursor->modify('+1 month')->getTimestamp() * TimeConstants::MS_PER_SECOND) . ')';
         }
         $definitions[] = 'PARTITION `p_future` VALUES LESS THAN (MAXVALUE)';
         Database::sql(

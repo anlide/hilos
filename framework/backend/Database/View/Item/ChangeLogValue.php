@@ -12,7 +12,7 @@ use Hilos\HilosException;
  * @method __construct(ObjectChangeLogValue $object)
  *
  * @property-read ?int $id
- * @property-read string $created_at
+ * @property-read int $created_at
  * @property-read int $change_id
  * @property-read ?string $old_value
  * @property-read ?string $new_value

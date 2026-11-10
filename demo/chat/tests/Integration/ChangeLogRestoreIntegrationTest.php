@@ -204,14 +204,14 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
     {
         $this->assertOrdinaryVisibilityBoundary();
         $this->acquireVisibility();
-        $this->assertSame(151, Migration::getCurrentIndex());
-        $this->assertSame(42, Migration::migrateDown(109));
+        $this->assertSame(153, Migration::getCurrentIndex());
+        $this->assertSame(44, Migration::migrateDown(109));
         Schema::reset();
         Database::sql('INSERT INTO `moderator_prompt_piece` (`section`, `prompt_piece`) VALUES (?, ?)',
             ['message_rule', 'Historical non-personal moderation rule']);
         Database::sql('INSERT INTO `hilos_user` (`name`) VALUES (?)', ['Historical archive person']);
         $userId = Database::lastInsertId();
-        $this->seedEveryJournalField();
+        $this->seedEveryJournalField(legacy: true);
         $archivedCounts = $this->journalCounts();
 
         // Label only this test-data dump as production, then return to the test environment.
@@ -234,14 +234,14 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
                 file_get_contents($this->storeRoot . '/unpacked/db-1.sql'));
         }
 
-        $this->assertSame(42, Migration::migrateUp());
+        $this->assertSame(44, Migration::migrateUp());
         Database::sql('UPDATE `hilos_user` SET `name` = ? WHERE `id` = ?', ['Written after historical archive', $userId]);
         $decision = RestoreEnvGuard::decide(AppEnv::fromString($archive->env), AppEnv::TEST, false)->decision;
         $this->assertSame(RestoreEnvDecision::REQUIRE_ANONYMIZATION, $decision);
         new BackupRestorer()->restore(self::ARCHIVE_ID, BackupScope::FULL, $decision);
         Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
 
-        $this->assertSame(151, Migration::getCurrentIndex());
+        $this->assertSame(153, Migration::getCurrentIndex());
         $schema = LiveSchemaReader::read(DatabaseConnectionDefaults::PRIMARY_INDEX);
         $this->assertArrayNotHasKey('moderator_prompt_piece', $schema);
         $this->assertArrayHasKey('hilos_account_operation', $schema);
@@ -722,11 +722,15 @@ final class ChangeLogRestoreIntegrationTest extends IntegrationTestCase
         }
     }
 
-    /** Fixture SQL supplies historical personal values that today's privacy-aware triggers never capture. */
-    private function seedEveryJournalField(): void
+    /**
+     * Fixture SQL supplies historical personal values that today's privacy-aware triggers never capture.
+     *
+     * @param bool $legacy Whether the archived track predates journal milliseconds
+     */
+    private function seedEveryJournalField(bool $legacy = false): void
     {
         $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
-        $at = '2026-10-20 12:34:56.654321';
+        $at = $legacy ? '2026-10-20 12:34:56.654321' : 1792499696654;
         Database::sql("INSERT INTO {$journal}.`hilos_change_log_table` (`name`) VALUES ('restore_fixture')");
         $tableId = Database::lastInsertId();
         Database::sql("INSERT INTO {$journal}.`hilos_change_log_field` (`table_id`, `name`) VALUES (?, 'historical_field')", [$tableId]);

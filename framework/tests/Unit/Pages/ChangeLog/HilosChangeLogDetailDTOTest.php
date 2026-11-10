@@ -65,7 +65,7 @@ final class HilosChangeLogDetailDTOTest extends TestCase
     public function testFullEntryRoundtripPreservesNullPresenceAndAllFieldKinds(): void
     {
         $entry = HilosChangeLogDetailWire::entry(new ChangeLogEntry(
-            51, new DateTimeImmutable('2026-10-14 12:13:14.123456+02:00'), 12, 'bot', [3, 'key', null], 'update', [
+            51, 1791972794123, 12, 'bot', [3, 'key', null], 'update', [
                 new ChangeLogFieldChange('style', 'inline', true, true, null, 'friendly', false),
                 new ChangeLogFieldChange('name', 'fact', true, true, null, null, false),
                 new ChangeLogFieldChange('description', 'long', true, true, str_repeat('before', 500), str_repeat('after', 500), false),
@@ -88,7 +88,7 @@ final class HilosChangeLogDetailDTOTest extends TestCase
     public function testReceiptHeaderAndHiddenLabelsRoundtrip(): void
     {
         $header = HilosChangeLogDetailWire::receipt(new ChangeLogReceipt(
-            12, new DateTimeImmutable('2026-10-14T10:13:14.123456Z'),
+            12, 1791972794123,
             new ChangeLogPerson(7, 'Current actor', false), new ChangeLogPerson(8, 'Deleted user #8', true),
             9, 'web', 'bot.update', 'library', 'session #9', 2, [],
         ));
@@ -100,7 +100,7 @@ final class HilosChangeLogDetailDTOTest extends TestCase
             'source' => 'session #9', 'entryCount' => 2,
         ], $header);
         $entry = HilosChangeLogDetailWire::entry(new ChangeLogEntry(
-            51, new DateTimeImmutable('2026-10-14T10:13:14Z'), 12, 'bot', null, 'delete', [],
+            51, 1791972794000, 12, 'bot', null, 'delete', [],
         ));
         foreach ([false, true] as $hidden) {
             if ($hidden) {
@@ -118,13 +118,13 @@ final class HilosChangeLogDetailDTOTest extends TestCase
     {
         foreach ([null, [null], [1, null]] as $key) {
             $entry = HilosChangeLogDetailWire::entry(new ChangeLogEntry(
-                51, new DateTimeImmutable('2026-10-14T10:13:14Z'), null, 'hilos_user', $key, 'create', [],
+                51, 1791972794000, null, 'hilos_user', $key, 'create', [],
             ));
             $reply = new HilosChangeLogEntryReadReplyDTO($entry);
             self::assertSame($reply->toArray(), HilosChangeLogEntryReadReplyDTO::fromArray($reply->toArray())->toArray());
         }
         $header = HilosChangeLogDetailWire::receipt(new ChangeLogReceipt(
-            12, new DateTimeImmutable('2026-10-14T10:13:14Z'), null, null, null, 'migration', 'migration.up.95', null, '95.sql', 1, [],
+            12, 1791972794000, null, null, null, 'migration', 'migration.up.95', null, '95.sql', 1, [],
         ));
         $reply = new HilosChangeLogReceiptReadReplyDTO($header, [], null);
         self::assertSame($reply->toArray(), HilosChangeLogReceiptReadReplyDTO::fromArray($reply->toArray())->toArray());

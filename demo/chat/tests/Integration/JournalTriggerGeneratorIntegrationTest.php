@@ -35,6 +35,7 @@ final class JournalTriggerGeneratorIntegrationTest extends IntegrationTestCase
     public function testGeneratedTriggersJournalValuesAndRollBackWithSourceWrites(): void
     {
         $files = [];
+        $userId = null;
         $projectPath = dirname(__DIR__, 2) . '/backend/Database/Migration/Triggers';
         Migration::setMigrationListPath(dirname(__DIR__, 2) . '/backend/Database/Migration');
         Migration::setMigrationName('Schema');
@@ -67,12 +68,17 @@ final class JournalTriggerGeneratorIntegrationTest extends IntegrationTestCase
             }
 
             $this->assertFixtureJournal();
-            $this->assertFrameworkJournal();
+            Database::sql('INSERT INTO `hilos_user` (`name`) VALUES (?)', ['Journal trigger fixture person']);
+            $userId = Database::lastInsertId();
+            $this->assertFrameworkJournal($userId);
         } finally {
             Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
             Database::sqlRun('SET @hilos_receipt = NULL');
             Database::sqlRun('DELETE FROM `hilos_identity` WHERE `identifier` = ?', ['journal-fixture@example.test']);
             Database::sqlRun('DELETE FROM `hilos_setting` WHERE `key` = ?', ['journal.fixture']);
+            if ($userId !== null) {
+                Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = ?', [$userId]);
+            }
             foreach ($files as $file) {
                 Database::sqlRun('DROP TRIGGER IF EXISTS `' . $file->name . '`');
             }
@@ -148,7 +154,7 @@ final class JournalTriggerGeneratorIntegrationTest extends IntegrationTestCase
         $longValues = self::journalRows('SELECT `old_value`, `new_value` FROM `hilos_change_log_value` WHERE `change_id` = ?',
             [(int)$changes['long_text']['id']]);
         $this->assertSame([['old_value' => 'old text', 'new_value' => 'new text']], $longValues);
-        $this->assertSame($logs[1]['created_at'], $changes['long_text']['created_at']);
+        $this->assertSame((int)$logs[1]['created_at'], (int)$changes['long_text']['created_at']);
         $this->assertSame('long', $changes['json_value']['kind']);
         $jsonValues = self::journalRows('SELECT `old_value`, `new_value` FROM `hilos_change_log_value` WHERE `change_id` = ?',
             [(int)$changes['json_value']['id']]);
@@ -157,7 +163,7 @@ final class JournalTriggerGeneratorIntegrationTest extends IntegrationTestCase
         Database::sqlRun("UPDATE `" . self::FIXTURE_TABLE . "` SET `part` = 'Beta' WHERE `id` = 1");
         $logs = self::fixtureLogs();
         $this->assertSame(['create', 'update', 'delete', 'create'], array_column($logs, 'mutation_type'));
-        $this->assertSame($logs[2]['created_at'], $logs[3]['created_at']);
+        $this->assertSame((int)$logs[2]['created_at'], (int)$logs[3]['created_at']);
         $this->assertSame('[1, "Alpha"]', $logs[2]['record_key']);
         $this->assertSame('[1, "Beta"]', $logs[3]['record_key']);
 
@@ -183,11 +189,10 @@ final class JournalTriggerGeneratorIntegrationTest extends IntegrationTestCase
             ['not_a_table']));
     }
 
-    private function assertFrameworkJournal(): void
+    /** @param int $userId Person created by this case for the identity fixture */
+    private function assertFrameworkJournal(int $userId): void
     {
         Database::sqlRun('SET @hilos_receipt = NULL');
-        Database::sql('SELECT MIN(`id`) AS `id` FROM `hilos_user`');
-        $userId = (int)Database::field('id');
         $this->assertGreaterThan(0, $userId);
         Database::sql("INSERT INTO `hilos_identity` (`created_at`, `updated_at`, `user_id`, `type`, `identifier`, `secret`)"
             . " VALUES (1735689600000, 1735689600000, ?, 'password', 'journal-fixture@example.test', 'hash-one')", [$userId]);

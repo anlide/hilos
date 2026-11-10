@@ -122,7 +122,7 @@ final class ChangeLogCollectionsTest extends TestCase
         ]];
         yield 'Receipt values' => [ChangeLogReceipts::class, [
             'id' => 73,
-            'created_at' => '2026-10-23 12:34:56.123456',
+            'created_at' => 1792758896123,
             'actor_user_id' => 19,
             'subject_user_id' => 23,
             'session_id' => 29,
@@ -134,7 +134,7 @@ final class ChangeLogCollectionsTest extends TestCase
         ]];
         yield 'Receipt nulls' => [ChangeLogReceipts::class, [
             'id' => 73,
-            'created_at' => '2026-10-23 12:34:56.123456',
+            'created_at' => 1792758896123,
             'actor_user_id' => null,
             'subject_user_id' => null,
             'session_id' => null,
@@ -146,7 +146,7 @@ final class ChangeLogCollectionsTest extends TestCase
         ]];
         yield 'Entry values' => [ChangeLogEntries::class, [
             'id' => 73,
-            'created_at' => '2026-10-23 12:34:56.123456',
+            'created_at' => 1792758896123,
             'receipt_id' => 31,
             'table_id' => 11,
             'record_key' => '["☃", ""]',
@@ -155,7 +155,7 @@ final class ChangeLogCollectionsTest extends TestCase
         ]];
         yield 'Entry nulls' => [ChangeLogEntries::class, [
             'id' => 73,
-            'created_at' => '2026-10-23 12:34:56.123456',
+            'created_at' => 1792758896123,
             'receipt_id' => null,
             'table_id' => 11,
             'record_key' => '["☃", ""]',
@@ -164,7 +164,7 @@ final class ChangeLogCollectionsTest extends TestCase
         ]];
         yield 'Change values' => [ChangeLogChanges::class, [
             'id' => 73,
-            'created_at' => '2026-10-23 12:34:56.123456',
+            'created_at' => 1792758896123,
             'log_id' => 37,
             'field_id' => 41,
             'kind' => 'inline',
@@ -175,7 +175,7 @@ final class ChangeLogCollectionsTest extends TestCase
         ]];
         yield 'Change nulls' => [ChangeLogChanges::class, [
             'id' => 73,
-            'created_at' => '2026-10-23 12:34:56.123456',
+            'created_at' => 1792758896123,
             'log_id' => 37,
             'field_id' => 41,
             'kind' => 'inline',
@@ -186,14 +186,14 @@ final class ChangeLogCollectionsTest extends TestCase
         ]];
         yield 'Value values' => [ChangeLogValues::class, [
             'id' => 73,
-            'created_at' => '2026-10-23 12:34:56.123456',
+            'created_at' => 1792758896123,
             'change_id' => 43,
             'old_value' => '',
             'new_value' => 'changed ☃',
         ]];
         yield 'Value nulls' => [ChangeLogValues::class, [
             'id' => 73,
-            'created_at' => '2026-10-23 12:34:56.123456',
+            'created_at' => 1792758896123,
             'change_id' => 43,
             'old_value' => null,
             'new_value' => null,

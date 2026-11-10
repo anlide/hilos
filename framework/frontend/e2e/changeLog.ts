@@ -719,8 +719,8 @@ async function expectTrackedTableOwnerHead(
   if ((await heading.getAttribute('data-id')) === 'hilos-page-head-title') {
     // These two schema fixtures are used by the shared table reading scenarios.
     const declarations = {
-      hilos_user: { owner: 'Framework', since: 85 },
-      bot: { owner: 'Project', since: 95 },
+      hilos_user: { owner: 'Framework', since: 153 },
+      bot: { owner: 'Project', since: 153 },
     } as const
     const declaration = declarations[table as keyof typeof declarations]
     if (!declaration) throw new Error(`No table head fixture for ${table}.`)

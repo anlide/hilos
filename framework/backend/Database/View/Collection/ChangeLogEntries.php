@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Collection;
 
-use DateTimeImmutable;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
@@ -35,10 +34,10 @@ class ChangeLogEntries extends DbCollection
     public const string OBJECT_COLLECTION_CLASS = ObjectChangeLogEntries::class;
 
     /**
-     * @return ?DateTimeImmutable UTC source time of the lowest journal id, or null for an empty journal
-     * @throws DatabaseException When the collection is not database-backed or SQL or moment decoding fails
+     * @return ?int UTC epoch-ms source time of the lowest journal id, or null for an empty journal
+     * @throws DatabaseException When the collection is not database-backed or SQL fails
      */
-    public function oldestCreatedAt(): ?DateTimeImmutable
+    public function oldestCreatedAt(): ?int
     {
         return ($this->getObjectCollection()
             ?? throw new DatabaseException('Journal section reads require an Object collection'))
@@ -55,7 +54,7 @@ class ChangeLogEntries extends DbCollection
      * @param int $skip Edge offset, clamped to nonnegative and bounded by the count ceiling
      * @return ChangeLogReadCollection<ChangeLogHistoryRow> Dense rows in canonical order, omitting vanished entries
      * @throws InvalidArgumentException When the record key is invalid or a skip is used with an anchor
-     * @throws HilosException When journal, dictionary, schema or person reads or moment decoding fail
+     * @throws HilosException When journal, dictionary, schema or person reads fail
      */
     public function historyWindow(
         string $table,
@@ -111,7 +110,7 @@ class ChangeLogEntries extends DbCollection
      * @param ?int $afterEntryId Last entry of the preceding portion; an invalid cursor yields an empty snapshot
      * @param int $limit Requested rows, capped at MAX_WINDOW_ROWS
      * @return ChangeLogReadCollection<SectionChangeLogEntry> Dense full entries ordered by source time and id
-     * @throws DatabaseException When journal SQL or moment decoding fails
+     * @throws DatabaseException When journal SQL fails
      */
     public function receiptEntries(int $receiptId, ?int $afterEntryId, int $limit): ChangeLogReadCollection
     {
@@ -122,7 +121,7 @@ class ChangeLogEntries extends DbCollection
     /**
      * @param int $entryId Journal row number
      * @return ?SectionChangeLogEntry Complete entry with long values, or null when absent
-     * @throws DatabaseException When journal SQL or moment decoding fails
+     * @throws DatabaseException When journal SQL fails
      */
     public function sectionEntry(int $entryId): ?SectionChangeLogEntry
     {
@@ -133,7 +132,7 @@ class ChangeLogEntries extends DbCollection
      * @param list<int> $ids Finite selected entry ids, read in batches of at most MAX_WINDOW_ROWS
      * @param bool $includeLong Whether to fetch long-value bodies
      * @return ChangeLogReadCollection<SectionChangeLogEntry> Fresh entries keyed by id, omitting absent ids
-     * @throws DatabaseException When journal SQL or moment decoding fails
+     * @throws DatabaseException When journal SQL fails
      */
     public function sectionEntriesByIds(array $ids, bool $includeLong): ChangeLogReadCollection
     {

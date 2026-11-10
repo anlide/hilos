@@ -26,7 +26,7 @@ final class HilosChangeLogHistoryTableTest extends TestCase
 {
     public function testHistoryRowRoundTripsItsChangesAndAttribution(): void
     {
-        $time = new DateTimeImmutable('2026-10-09 10:11:12.123456', new DateTimeZone('UTC'));
+        $time = 1791540672123;
         $entry = new ChangeLogEntry(9, $time, 7, 'bot', [3], 'update', [
             new ChangeLogFieldChange('name', 'inline', true, true, 'old', 'new', false),
             new ChangeLogFieldChange('body', 'long', true, true, null, null, true),
@@ -48,7 +48,7 @@ final class HilosChangeLogHistoryTableTest extends TestCase
 
     public function testMalformedChangeItemIsRefused(): void
     {
-        $time = new DateTimeImmutable('2026-10-09', new DateTimeZone('UTC'));
+        $time = 1791504000000;
         $row = HilosChangeLogHistoryTableRow::fromItem(new ChangeLogHistoryRow(
             new ChangeLogEntry(9, $time, null, 'bot', [3], 'delete', []), null,
         ));

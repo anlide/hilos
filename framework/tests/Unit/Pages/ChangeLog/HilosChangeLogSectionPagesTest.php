@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Pages\ChangeLog;
 
-use DateTimeImmutable;
 use Hilos\AdminViewMode\ViewerFields;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -68,7 +67,7 @@ final class HilosChangeLogSectionPagesTest extends TestCase
         $previous = Hilos::$db;
         $tables = $this->createMock(ChangeLogTables::class);
         $tables->expects(self::once())->method('sectionOverview')->willReturn(new ChangeLogOverview(
-            12, 2048, new DateTimeImmutable('2026-10-09T10:11:12.123Z'), ['bot'], 32,
+            12, 2048, 1791540672123, ['bot'], 32,
         ));
         $tables->expects(self::once())->method('sectionNoisyColumns')->willReturn(ChangeLogReadCollection::fromArray([
             new ChangeLogNoisyColumn('bot', 'heartbeat', 'Updated automatically'),

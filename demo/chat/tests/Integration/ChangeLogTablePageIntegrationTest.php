@@ -178,9 +178,9 @@ final class ChangeLogTablePageIntegrationTest extends IntegrationTestCase
                 self::column('priority', 'int', 'value', 'inline'),
             ],
             'triggers' => [
-                ['name' => 'hilos_cl_bot_after_insert', 'event' => 'INSERT', 'table' => 'bot', 'validFromMigration' => 95],
-                ['name' => 'hilos_cl_bot_after_update', 'event' => 'UPDATE', 'table' => 'bot', 'validFromMigration' => 95],
-                ['name' => 'hilos_cl_bot_after_delete', 'event' => 'DELETE', 'table' => 'bot', 'validFromMigration' => 95],
+                ['name' => 'hilos_cl_bot_after_insert', 'event' => 'INSERT', 'table' => 'bot', 'validFromMigration' => 153],
+                ['name' => 'hilos_cl_bot_after_update', 'event' => 'UPDATE', 'table' => 'bot', 'validFromMigration' => 153],
+                ['name' => 'hilos_cl_bot_after_delete', 'event' => 'DELETE', 'table' => 'bot', 'validFromMigration' => 153],
             ],
         ], $section);
     }

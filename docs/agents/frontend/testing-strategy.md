@@ -1769,8 +1769,8 @@ When and Source, for comparison across masters.
 `expectTrackedTableRecord(expect, page, table, recordKey, since?)` and
 `expectTrackedTableWhole(expect, page, table, since?)` accept optional final
 `since?: number` values and forward them to the table-owner head check. Tasks
-and Polls pass fixture value `51`; the defaults remain `hilos_user: 85` and
-`bot: 95`. The table-head helper keeps its legacy heading fallback for consumers
+and Polls pass fixture value `110`; the defaults remain `hilos_user: 153` and
+`bot: 153`. The table-head helper keeps its legacy heading fallback for consumers
 without the shared head and retains its existing legacy layout checks.
 The shared row reader is `tableRowKeyByText(expect, page, text)` in `table.ts`;
 chat keeps a wrapper. The shared receipt checks remain common across kits.

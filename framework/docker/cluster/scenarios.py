@@ -3739,11 +3739,13 @@ def scenario_40_journal_triggers_are_installed_once():
     """Fresh concurrent startup installs the filed journal triggers once (HIL-1465).
 
     The catalog proves the exact set and its journal address; global DDL counters prove
-    one CREATE per active source file and no DROP, including after an ordinary kill/start.
+    one CREATE per active source file and exactly 15 migration DROP statements from the
+    historical online-testing track. An ordinary kill/start must run no new trigger DDL.
     This proves the outcome, not a forced scheduler race or a replicated database rollout.
     Claim-through-install is covered by MigrationClaimIntegrationTest together with
     JournalTriggerStartupIntegrationTest. Snapshots belong to this invocation alone.
     """
+    migration_drop_count = 15
     wait_converge(ALL_NODES)
     wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet started before journal trigger checks")
     expected = journal_trigger_sources()
@@ -3757,7 +3759,7 @@ def scenario_40_journal_triggers_are_installed_once():
         assert f"{journal}.`hilos_change_log`" in before[name][3], \
             f"{name} does not address the derived journal {journal}: {before[name][3]}"
     counters = journal_trigger_ddl_status()
-    assert counters == {"Com_create_trigger": len(expected), "Com_drop_trigger": 0}, \
+    assert counters == {"Com_create_trigger": len(expected), "Com_drop_trigger": migration_drop_count}, \
         f"fresh startup did not install each trigger exactly once: {counters}, {len(expected)} source files"
     assert db_sql("SELECT COUNT(*) FROM hilos_migration_claim") == "0", "startup left a schema rollout claim"
 
@@ -3798,8 +3800,10 @@ def scenario_40_journal_triggers_are_installed_once():
             if not failed:
                 raise
 
-    return (f"{len(expected)} journal triggers installed once, no DROP; {victim} kill/start kept the full "
-            "catalog and global DDL counters unchanged, rollout claim empty, full mesh and fleet restored")
+    return (f"{len(expected)} journal triggers installed once; {migration_drop_count} migration DROP statements "
+            f"from the historical online-testing track; {victim} kill/start ran no new DDL, "
+            "kept the full catalog and global DDL counters unchanged, rollout claim empty, "
+            "full mesh and fleet restored")
 
 
 # The row that names the database every node of the stand reads (HIL-1206); a marker is 32 hex.

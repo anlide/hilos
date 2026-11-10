@@ -39,6 +39,9 @@ final class TableStructure
     /** @var array<string, string> Effective table properties, excluding the next row id */
     public array $options = [];
 
+    /** @var list<string> Partition columns checked after all column definitions have been read */
+    private array $partitionColumns = [];
+
     /**
      * @param string $database Selected physical schema
      * @param StructureDefaults $defaults Execution defaults and server character catalog
@@ -196,6 +199,10 @@ final class TableStructure
         $collation = null;
         $this->options['engine'] = strtolower($this->defaults->engine);
         while (!$cursor->ended()) {
+            if ($cursor->is('PARTITION')) {
+                $this->partitions($cursor);
+                break;
+            }
             $cursor->takeIf('DEFAULT');
             $option = strtoupper($cursor->name());
             if ($option === 'CHARACTER') {
@@ -230,6 +237,51 @@ final class TableStructure
             $this->options['row_format'] = strtolower($this->defaults->rowFormat);
         }
         ksort($this->options);
+    }
+
+    /**
+     * @param SqlTokens $cursor Final RANGE COLUMNS clause
+     * @throws RestoreFailedException When partition syntax or its engine cannot be modeled exactly
+     */
+    private function partitions(SqlTokens $cursor): void
+    {
+        $cursor->expect('PARTITION');
+        $cursor->expect('BY');
+        $cursor->expect('RANGE');
+        $cursor->expect('COLUMNS');
+        $columns = $cursor->group();
+        $names = new SqlTokens($columns);
+        $this->partitionColumns[] = strtolower($names->name());
+        while ($names->takeIf(',')) {
+            $this->partitionColumns[] = strtolower($names->name());
+        }
+        self::end($names);
+        $canonical = $columns;
+        foreach (SqlTokens::split($cursor->group()) as $definition) {
+            $part = new SqlTokens($definition);
+            $part->expect('PARTITION');
+            $part->name();
+            $part->expect('VALUES');
+            $part->expect('LESS');
+            $part->expect('THAN');
+            foreach (SqlTokens::split($part->group()) as $bound) {
+                if (count($bound) !== 1 || ($bound[0]->kind !== SqlToken::STRING && !$bound[0]->is('MAXVALUE')
+                    && preg_match('/^\d+$/D', $bound[0]->value) !== 1)) {
+                    throw new RestoreFailedException('Unsupported structural partition bound');
+                }
+            }
+            if ($part->takeIf('ENGINE')) {
+                $engineTokens = $part->takeIf('=') ? 3 : 2;
+                if (strtolower($part->name()) !== $this->options['engine']) {
+                    throw new RestoreFailedException('Partition engine differs from the table engine');
+                }
+                $definition = array_slice($definition, 0, -$engineTokens);
+            }
+            self::end($part);
+            array_push($canonical, ...$definition);
+        }
+        self::end($cursor);
+        $this->options['partition'] = self::signature($canonical);
     }
 
     /**
@@ -577,6 +629,11 @@ final class TableStructure
      */
     private function finish(): void
     {
+        foreach ($this->partitionColumns as $name) {
+            if (!isset($this->columns[$name])) {
+                throw new RestoreFailedException("Partition names absent column {$name}");
+            }
+        }
         foreach ($this->keys as $key) {
             foreach ($key->columns as $name => $part) {
                 if (!isset($this->columns[$name])) {

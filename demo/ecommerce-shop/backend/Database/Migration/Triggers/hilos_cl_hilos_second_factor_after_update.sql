@@ -1,13 +1,13 @@
--- valid from migration #38
+-- valid from migration #91
 CREATE TRIGGER `hilos_cl_hilos_second_factor_after_update` AFTER UPDATE ON `hilos_second_factor`
 FOR EACH ROW BEGIN
-    DECLARE v_created_at DATETIME(6);
+    DECLARE v_created_at BIGINT;
     DECLARE v_table_id INT UNSIGNED;
     DECLARE v_log_id BIGINT UNSIGNED;
     DECLARE v_field_id INT UNSIGNED;
     DECLARE v_change_id BIGINT UNSIGNED;
     DECLARE v_record_key TEXT;
-    SET v_created_at = UTC_TIMESTAMP(6);
+    SET v_created_at = TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', UTC_TIMESTAMP(6)) DIV 1000;
     IF NOT (OLD.`id` <=> NEW.`id`) THEN
         INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_table` (`name`) VALUES ('hilos_second_factor');
         SELECT `id` INTO v_table_id FROM {{change_log_database}}.`hilos_change_log_table` WHERE `name` = 'hilos_second_factor';

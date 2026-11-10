@@ -59,6 +59,7 @@ final class SignInMomentsMigrationTest extends IntegrationTestCase
         $legacy = $this->fixtureRows();
         $beforeJournal = $this->identityJournal();
         self::assertCount(2, $beforeJournal);
+        self::assertSame(['create', 'create'], array_column($beforeJournal, 'mutation_type'));
         $triggers = $this->identityTriggers();
         self::assertCount(3, $triggers);
 
@@ -214,11 +215,13 @@ final class SignInMomentsMigrationTest extends IntegrationTestCase
         });
     }
 
-    /** Rewinds just these three parts and writes old TIMESTAMP rows, including absent moments. */
+    /** Rewinds to the historical schema, restores its DATETIME journal writers and seeds old TIMESTAMP rows. */
     private function seedLegacyRows(): void
     {
+        $triggers = $this->identityTriggers();
         self::assertSame($this->latestMigrationIndex - self::MIGRATION_BEFORE, Migration::migrateDown(self::MIGRATION_BEFORE));
         Schema::reset();
+        $this->installLegacyIdentityTriggers($triggers);
         Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('Sign-in moment fixture')");
         $this->userId = Database::lastInsertId();
         foreach ([IdentityType::PASSWORD, IdentityType::PASSKEY] as $type) {
@@ -242,6 +245,23 @@ final class SignInMomentsMigrationTest extends IntegrationTestCase
                 . "VALUES (?, ?, ?, 'PUBLIC_KEY', ?, 'user-handle', '2026-01-02 03:04:05', ?)",
                 [$anchorId, $this->userId, 'moment-key-' . $index, PasskeyAlgorithm::Es256->value, $lastUsedAt],
             );
+        }
+    }
+
+    /** @param list<array<string, mixed>> $triggers Canonical definitions captured before journal DOWN removes them */
+    private function installLegacyIdentityTriggers(array $triggers): void
+    {
+        self::assertCount(3, $triggers);
+        foreach ($triggers as $trigger) {
+            // The field policies work on both identity schemas; only the journal's historical stamp differs.
+            $body = str_replace([
+                'DECLARE v_created_at BIGINT;',
+                "SET v_created_at = TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', UTC_TIMESTAMP(6)) DIV 1000;",
+            ], ['DECLARE v_created_at DATETIME(6);', 'SET v_created_at = UTC_TIMESTAMP(6);'],
+                $trigger['ACTION_STATEMENT'], $replacements);
+            self::assertSame(2, $replacements, 'Both timestamp statements must be adapted to the legacy journal');
+            Database::sql('CREATE TRIGGER `' . $trigger['TRIGGER_NAME'] . '` ' . $trigger['ACTION_TIMING']
+                . ' ' . $trigger['EVENT_MANIPULATION'] . ' ON `hilos_identity` FOR EACH ROW ' . $body);
         }
     }
 

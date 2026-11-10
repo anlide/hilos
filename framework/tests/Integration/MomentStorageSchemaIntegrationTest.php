@@ -161,6 +161,7 @@ final class MomentStorageSchemaIntegrationTest extends FrameworkIntegrationTestC
         self::assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
 
         $journal = EntitySchemaAudit::auditMoments([ChangeLogReceipt::class]);
+        self::assertCount(1, $journal);
         self::assertSame('datetime(6)', $journal[0]->actual);
         self::assertStringContainsString('schema connection 1', $journal[0]->describe());
     }
@@ -338,6 +339,17 @@ final class MomentStorageSchemaIntegrationTest extends FrameworkIntegrationTestC
                 Database::configure($index, $config->host, $config->user, $config->password, $config->database, $config->port, $config->charset);
             }
             Database::registerDatabase(MomentNamedSchemaEntity::_database, self::NAMED_SCHEMA, DatabaseConnectionDefaults::PRIMARY_INDEX);
+            if ($this->name() === 'testNamedSchemaIdentityAndProviderConnectionStayIsolated') {
+                // Recreate the empty disposable receipt: MariaDB refuses an in-place type change of its partition key.
+                $receipt = Database::sql('SHOW CREATE TABLE `hilos_change_log_receipt`',
+                    index: ChangeLogDatabase::CONNECTION_INDEX)->field('Create Table');
+                $legacyReceipt = preg_replace('/(`created_at`\s+)bigint(?:\([0-9]+\))?(\s+NOT NULL)/i',
+                    '$1DATETIME(6)$2', $receipt, count: $replacements);
+                self::assertSame(1, $replacements, 'Only this case installs an explicit wrong moment type');
+                self::assertIsString($legacyReceipt);
+                Database::sqlRun('DROP TABLE `hilos_change_log_receipt`', index: ChangeLogDatabase::CONNECTION_INDEX);
+                Database::sqlRun($legacyReceipt, index: ChangeLogDatabase::CONNECTION_INDEX);
+            }
         }
     }
 

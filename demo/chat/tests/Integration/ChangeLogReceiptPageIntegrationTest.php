@@ -45,6 +45,7 @@ use Hilos\Pages\ChangeLog\DTO\HilosChangeLogReceiptReadActionDTO;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 /** Real journal triggers, reader and routed tracked acknowledgements for both detail actions. */
@@ -303,7 +304,8 @@ final class ChangeLogReceiptPageIntegrationTest extends IntegrationTestCase
         self::assertNotNull($receiptId);
         $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
         // Create facts have no field rows: equal timestamps exercise the id tie-break without altering field history.
-        Database::sqlRun("UPDATE {$database}.`hilos_change_log` SET `created_at` = UTC_TIMESTAMP(6) WHERE `receipt_id` = ?", [$receiptId]);
+        Database::sqlRun("UPDATE {$database}.`hilos_change_log` SET `created_at` = ? WHERE `receipt_id` = ?",
+            [TimeHelper::nowMs(), $receiptId]);
         Database::sql("SELECT `id` FROM {$database}.`hilos_change_log` WHERE `receipt_id` = ? ORDER BY `created_at`, `id`", [$receiptId]);
         $expectedIds = array_map(static fn(array $row): int => (int)$row['id'], Database::rows());
         Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
@@ -388,7 +390,7 @@ final class ChangeLogReceiptPageIntegrationTest extends IntegrationTestCase
         $foreignEntryId = Hilos::$db->changeLogEntries->receiptEntries($other, null, 1)->get(0)->id;
         $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
         Database::sql("INSERT INTO {$database}.`hilos_change_log_receipt` (`created_at`, `channel`, `action`)"
-            . " VALUES (UTC_TIMESTAMP(6), 'web', 'empty-detail-test')");
+            . " VALUES (TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', UTC_TIMESTAMP(6)) DIV 1000, 'web', 'empty-detail-test')");
         $emptyId = Database::lastInsertId();
         foreach ([
             [HilosSignalConstants::HILOS_CHANGE_LOG_RECEIPT_READ, ['receiptId' => 999999999], 'Receipt not found'],

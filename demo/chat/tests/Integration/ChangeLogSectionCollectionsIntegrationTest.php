@@ -6,6 +6,7 @@ namespace Demo\Chat\Tests\Integration;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Hilos\Utils\Helpers\TimeHelper;
 use Demo\Chat\Database\Database;
 use Hilos\Backup\Anonymization\LiveSchemaReader;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -256,7 +257,7 @@ final class ChangeLogSectionCollectionsIntegrationTest extends IntegrationTestCa
             $this->assertGreaterThan(0, $trigger->validFromMigration);
         }
 
-        foreach (['bot' => 95, 'hilos_moderation_rule' => 101] as $table => $validFrom) {
+        foreach (['bot' => 153, 'hilos_moderation_rule' => 153] as $table => $validFrom) {
             $project = Hilos::$db->changeLogTables->sectionTable($table);
             $this->assertNotNull($project);
             $this->assertCount(3, $project->triggers);
@@ -333,7 +334,7 @@ final class ChangeLogSectionCollectionsIntegrationTest extends IntegrationTestCa
 
         $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
         Database::sql("INSERT INTO {$database}.`hilos_change_log_receipt` (`created_at`, `channel`, `action`)"
-            . " VALUES (UTC_TIMESTAMP(6), 'web', 'empty')");
+            . " VALUES (TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', UTC_TIMESTAMP(6)) DIV 1000, 'web', 'empty')");
         $emptyId = Database::lastInsertId();
         $this->assertNull(Hilos::$db->changeLogReceipts->sectionReceipt($emptyId));
         $this->assertSame(2, Hilos::$db->changeLogReceipts->feedCount($filter));
@@ -458,7 +459,7 @@ final class ChangeLogSectionCollectionsIntegrationTest extends IntegrationTestCa
         Database::sql("SELECT `id` FROM {$database}.`hilos_change_log_field`"
             . " WHERE `table_id` = ? AND `name` = 'synthetic_long'", [$tableId]);
         $fieldId = (int)Database::field('id');
-        $createdAt = $entries->get(0)->createdAt->format('Y-m-d H:i:s.u');
+        $createdAt = $entries->get(0)->createdAt;
         Database::sql("INSERT INTO {$database}.`hilos_change_log_field` (`table_id`, `name`)"
             . " VALUES (?, 'synthetic_nullable')", [$tableId]);
         Database::sql("SELECT `id` FROM {$database}.`hilos_change_log_field`"
@@ -498,7 +499,7 @@ final class ChangeLogSectionCollectionsIntegrationTest extends IntegrationTestCa
         Database::sql("SELECT `id` FROM {$database}.`hilos_change_log_table` WHERE `name` = 'hilos_setting'");
         $tableId = (int)Database::field('id');
         $at = new DateTimeImmutable('now', new DateTimeZone('UTC'));
-        $moment = $at->format('Y-m-d H:i:s.u');
+        $moment = (int)$at->format('Uv');
         for ($number = 1; $number <= 52; $number++) {
             $key = json_encode([$number]);
             Database::sql("INSERT INTO {$database}.`hilos_change_log`"
@@ -682,7 +683,7 @@ final class ChangeLogSectionCollectionsIntegrationTest extends IntegrationTestCa
         $this->expectException(InvalidArgumentException::class);
         Hilos::$db->changeLogReceipts->feedWindow(
             new ChangeLogFeedFilter(),
-            new ChangeLogFeedAnchor(new DateTimeImmutable('now', new DateTimeZone('UTC')), ChangeLogFeedItemKind::ENTRY, 1),
+            new ChangeLogFeedAnchor(TimeHelper::nowMs(), ChangeLogFeedItemKind::ENTRY, 1),
             TableAnchorDirection::After,
             1,
             1,
@@ -696,7 +697,7 @@ final class ChangeLogSectionCollectionsIntegrationTest extends IntegrationTestCa
             'hilos_setting',
             new ChangeLogHistoryFilter(),
             true,
-            new ChangeLogHistoryAnchor(new DateTimeImmutable('now', new DateTimeZone('UTC')), 1),
+            new ChangeLogHistoryAnchor(TimeHelper::nowMs(), 1),
             TableAnchorDirection::After,
             1,
             1,

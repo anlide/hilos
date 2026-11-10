@@ -44,7 +44,7 @@ class ChangeLogChange extends Entity
 
     public const array _types = [
         self::id => PhpType::INTEGER->value,
-        self::created_at => PhpType::DATETIME->value,
+        self::created_at => PhpType::INTEGER->value,
         self::log_id => PhpType::INTEGER->value,
         self::field_id => PhpType::INTEGER->value,
         self::kind => PhpType::STRING->value,
@@ -84,7 +84,7 @@ class ChangeLogChange extends Entity
     ];
 
     public ?int $id = null;
-    public string $created_at;
+    public int $created_at;
     public int $log_id;
     public int $field_id;
     public string $kind;

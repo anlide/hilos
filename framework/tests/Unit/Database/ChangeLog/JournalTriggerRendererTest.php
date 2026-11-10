@@ -31,6 +31,17 @@ final class JournalTriggerRendererTest extends TestCase
         }
     }
 
+    public function testTriggerWritesSignedEpochMilliseconds(): void
+    {
+        foreach (self::render() as $file) {
+            $this->assertStringContainsString('DECLARE v_created_at BIGINT;', $file->body);
+            $this->assertStringContainsString(
+                "SET v_created_at = TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', UTC_TIMESTAMP(6)) DIV 1000;",
+                $file->body,
+            );
+        }
+    }
+
     public function testUpdateComparesTextByBytesAndOmitsSecretAndNoise(): void
     {
         $update = self::render()[1]->body;

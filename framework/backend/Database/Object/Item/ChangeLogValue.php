@@ -13,7 +13,7 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
  * @extends Object_<EntityChangeLogValue>
  *
  * @property-read ?int $id
- * @property string $created_at
+ * @property int $created_at
  * @property int $change_id
  * @property ?string $old_value
  * @property ?string $new_value
@@ -64,7 +64,7 @@ class ChangeLogValue extends Object_
     public function __set(string $property, mixed $value): void
     {
         match ($property) {
-            self::created_at => $this->entity->created_at = (string)$value,
+            self::created_at => $this->entity->created_at = (int)$value,
             self::change_id => $this->entity->change_id = (int)$value,
             self::old_value => $this->entity->old_value = $value === null ? null : (string)$value,
             self::new_value => $this->entity->new_value = $value === null ? null : (string)$value,

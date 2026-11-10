@@ -1338,7 +1338,7 @@ test('Change Log table owner names its navigation and viewport for tracked and u
     page,
     'hilos_user',
     'hilos_change_log_table',
-    { owner: 'Framework', since: 85 },
+    { owner: 'Framework', since: 153 },
   )
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
   await expect(page.getByRole('tablist')).toHaveCount(0)
@@ -1356,7 +1356,7 @@ test('Change Log table owner names its navigation and viewport for tracked and u
     page,
     'hilos_user',
     'hilos_change_log_table_columns',
-    { owner: 'Framework', since: 85 },
+    { owner: 'Framework', since: 153 },
   )
   await expect(
     page.getByRole('table', { name: 'hilos_user', exact: true }),
@@ -1385,7 +1385,7 @@ test('Change Log table owner names its navigation and viewport for tracked and u
     page,
     'hilos_user',
     'hilos_change_log_table_triggers',
-    { owner: 'Framework', since: 85 },
+    { owner: 'Framework', since: 153 },
   )
   await expect(
     page.getByRole('table', { name: 'hilos_user', exact: true }),

@@ -105,13 +105,13 @@ final class JournalTriggerRenderer
         $lines = [
             "CREATE TRIGGER `{$name}` AFTER " . strtoupper($event) . ' ON ' . self::identifier($schema->table),
             'FOR EACH ROW BEGIN',
-            '    DECLARE v_created_at DATETIME(6);',
+            '    DECLARE v_created_at BIGINT;',
             '    DECLARE v_table_id INT UNSIGNED;',
             '    DECLARE v_log_id BIGINT UNSIGNED;',
             '    DECLARE v_field_id INT UNSIGNED;',
             '    DECLARE v_change_id BIGINT UNSIGNED;',
             '    DECLARE v_record_key TEXT;',
-            '    SET v_created_at = UTC_TIMESTAMP(6);',
+            "    SET v_created_at = TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', UTC_TIMESTAMP(6)) DIV 1000;",
         ];
 
         if ($event === 'insert') {

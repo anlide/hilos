@@ -129,9 +129,9 @@ final class ChangeLogSectionPagesIntegrationTest extends ChangeLogSectionPagesEn
         $journal = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
         Database::sqlRun("INSERT INTO {$journal}.hilos_change_log_table (id, name) VALUES (1, 'hilos_user')");
         Database::sqlRun("INSERT INTO {$journal}.hilos_change_log_receipt"
-            . " (id, created_at, actor_user_id, subject_user_id, channel, action) VALUES (1, '2026-10-27 10:00:00', 7, 8, 'web', 'user.update')");
+            . " (id, created_at, actor_user_id, subject_user_id, channel, action) VALUES (1, 1793095200000, 7, 8, 'web', 'user.update')");
         Database::sqlRun("INSERT INTO {$journal}.hilos_change_log"
-            . " (id, created_at, receipt_id, table_id, record_key, mutation_type) VALUES (1, '2026-10-27 10:00:00', 1, 1, '[8]', 'update')");
+            . " (id, created_at, receipt_id, table_id, record_key, mutation_type) VALUES (1, 1793095200000, 1, 1, '[8]', 'update')");
     }
 
     /**

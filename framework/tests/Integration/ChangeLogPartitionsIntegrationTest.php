@@ -20,7 +20,7 @@ use mysqli;
 final class ChangeLogPartitionsIntegrationTest extends FrameworkIntegrationTestCase
 {
     /** The row staged beyond the initial monthly window. */
-    private const string FUTURE_ROW_AT = '2030-01-15 12:00:00';
+    private const int FUTURE_ROW_AT = 1894708800000;
 
     /** A table only this case creates, so no neighbor piece ever carries it legitimately. */
     private const string ISOLATION_PROBE_TABLE = 'probe_change_log_piece_isolation';
@@ -50,7 +50,7 @@ final class ChangeLogPartitionsIntegrationTest extends FrameworkIntegrationTestC
                 Database::sql(
                     'CREATE TABLE `' . $table . '` ('
                     . '`id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, '
-                    . '`created_at` DATETIME(6) NOT NULL, PRIMARY KEY (`id`, `created_at`)) '
+                    . '`created_at` BIGINT NOT NULL, PRIMARY KEY (`id`, `created_at`)) '
                     . 'PARTITION BY RANGE COLUMNS (`created_at`) ('
                     . 'PARTITION `p_future` VALUES LESS THAN (MAXVALUE))',
                 );
@@ -102,6 +102,23 @@ final class ChangeLogPartitionsIntegrationTest extends FrameworkIntegrationTestC
         $this->assertSame(DatabaseConnectionDefaults::PRIMARY_INDEX, Database::getCurrentIndex());
     }
 
+    public function testMonthlyBoundariesAreExactNumericMillisecondsAndRepeatDoesNoDdl(): void
+    {
+        ChangeLogPartitions::ensure(self::month('2026-01-01'));
+        $sql = 'SELECT TABLE_NAME, PARTITION_NAME, PARTITION_DESCRIPTION FROM INFORMATION_SCHEMA.PARTITIONS'
+            . ' WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME, PARTITION_ORDINAL_POSITION';
+        $before = Database::sql($sql, [ChangeLogDatabase::configuredName()])->rows();
+        foreach ($before as $partition) {
+            if ($partition['PARTITION_NAME'] === 'p202601') {
+                $this->assertSame('1769904000000', $partition['PARTITION_DESCRIPTION']);
+            }
+        }
+        $alterCount = Database::sql("SHOW SESSION STATUS LIKE 'Com_alter_table'")->field('Value');
+        ChangeLogPartitions::ensure(self::month('2026-01-31'));
+        $this->assertSame($before, Database::sql($sql, [ChangeLogDatabase::configuredName()])->rows());
+        $this->assertSame($alterCount, Database::sql("SHOW SESSION STATUS LIKE 'Com_alter_table'")->field('Value'));
+    }
+
     /**
      * A row written after a very long uptime lands in p_future, then moves to its month.
      *
@@ -144,7 +161,7 @@ final class ChangeLogPartitionsIntegrationTest extends FrameworkIntegrationTestC
         try {
             Database::sql(
                 "ALTER TABLE `hilos_change_log_receipt` REORGANIZE PARTITION `p_future` INTO ("
-                . "PARTITION `p202601` VALUES LESS THAN ('2026-03-01'), "
+                . "PARTITION `p202601` VALUES LESS THAN (1772323200000), "
                 . 'PARTITION `p_future` VALUES LESS THAN (MAXVALUE))',
             );
         } finally {
