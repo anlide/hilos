@@ -283,540 +283,513 @@ test('a minted code lets a tab on a follower master in, it stays in after a relo
   }
 })
 
-// FIXME(F-078, 2026-11-08): после снятия обслуживания страница гостя остаётся loading при connected · чужой · попытка 1 · HIL-1898
-test(
-  'cluster manual maintenance: every master closes, another admitted admin opens, and every page reloads',
-  { tag: '@quarantine:F-078' },
-  async ({ browser }) => {
-    // Six independent sessions, real codes through two masters and six self-reloads.
-    test.slow()
-    const stand = readClusterBrowserStand()
-    const before = await clusterInspect(CLUSTER_FOLLOWER)
-    await expectLeaderUnmoved(before)
-    const otherMaster = CLUSTER_MASTERS.find(
-      (node) => node !== CLUSTER_LEADER && node !== CLUSTER_FOLLOWER,
-    )
-    if (!otherMaster)
-      throw new Error('The cluster browser stand needs a third master')
+test('cluster manual maintenance: every master closes, another admitted admin opens, and every page reloads', async ({
+  browser,
+}) => {
+  // Six independent sessions, real codes through two masters and six self-reloads.
+  test.slow()
+  const stand = readClusterBrowserStand()
+  const before = await clusterInspect(CLUSTER_FOLLOWER)
+  await expectLeaderUnmoved(before)
+  const otherMaster = CLUSTER_MASTERS.find(
+    (node) => node !== CLUSTER_LEADER && node !== CLUSTER_FOLLOWER,
+  )
+  if (!otherMaster)
+    throw new Error('The cluster browser stand needs a third master')
 
-    const pages: Page[] = []
-    const upgrades: Awaited<ReturnType<typeof watchClusterMasterUpgrades>>[] =
-      []
-    const sessionUsers = new Map<Page, number | null>()
-    const frameErrors: unknown[] = []
-    const frames: Array<{ page: number; nodeId: string; frame: SocketFrame }> =
-      []
-    const deliveries: DeliveryFrameLog[] = []
-    let nodesObserver: Page | undefined
-    let nodesLog: DeliveryFrameLog | undefined
-    const nodesEvidence: Record<string, unknown> = {}
-    const watchdogEvidence: Record<string, unknown> = {}
-    const restartPolicyKey =
-      'protected_mode.manual_maintenance.restart_is_normal'
-    let originalRestartPolicy: { custom: boolean; value: boolean } | undefined
-    let restartPolicyChanged = false
-    let circlePrepared = false
-    const restoreRestartPolicy = async (): Promise<void> => {
-      if (!restartPolicyChanged || !originalRestartPolicy) return
-      const actor = pages[1]
-      await gotoPage(expect, actor, '/hilos/settings')
-      await typeInto(
-        shownByTestId(actor, 'hilos-table-search'),
+  const pages: Page[] = []
+  const upgrades: Awaited<ReturnType<typeof watchClusterMasterUpgrades>>[] = []
+  const sessionUsers = new Map<Page, number | null>()
+  const frameErrors: unknown[] = []
+  const frames: Array<{ page: number; nodeId: string; frame: SocketFrame }> = []
+  const deliveries: DeliveryFrameLog[] = []
+  let nodesObserver: Page | undefined
+  let nodesLog: DeliveryFrameLog | undefined
+  const nodesEvidence: Record<string, unknown> = {}
+  const watchdogEvidence: Record<string, unknown> = {}
+  const restartPolicyKey = 'protected_mode.manual_maintenance.restart_is_normal'
+  let originalRestartPolicy: { custom: boolean; value: boolean } | undefined
+  let restartPolicyChanged = false
+  let circlePrepared = false
+  const restoreRestartPolicy = async (): Promise<void> => {
+    if (!restartPolicyChanged || !originalRestartPolicy) return
+    const actor = pages[1]
+    await gotoPage(expect, actor, '/hilos/settings')
+    await typeInto(shownByTestId(actor, 'hilos-table-search'), restartPolicyKey)
+    await expect(
+      shownByTestId(actor, `hilos-table-row-${restartPolicyKey}`),
+    ).toBeVisible()
+    if (originalRestartPolicy.custom) {
+      await setCustomSetting(
+        actor,
         restartPolicyKey,
+        originalRestartPolicy.value,
       )
-      await expect(
-        shownByTestId(actor, `hilos-table-row-${restartPolicyKey}`),
-      ).toBeVisible()
-      if (originalRestartPolicy.custom) {
-        await setCustomSetting(
-          actor,
-          restartPolicyKey,
-          originalRestartPolicy.value,
-        )
-      } else {
-        await clearCustomSetting(actor, restartPolicyKey)
-      }
-      await expect(
-        shownByTestId(actor, `hilos-table-row-${restartPolicyKey}`),
-      ).toContainText(originalRestartPolicy.custom ? 'custom' : 'default')
-      restartPolicyChanged = false
+    } else {
+      await clearCustomSetting(actor, restartPolicyKey)
     }
-    try {
-      for (const node of [
-        CLUSTER_FOLLOWER,
-        otherMaster,
-        CLUSTER_LEADER,
-        ...CLUSTER_MASTERS,
-      ]) {
-        const page = await newMasterPage(browser, node)
-        pages.push(page)
-        deliveries.push(watchDeliveryFrames(page))
-        upgrades.push(
-          await watchClusterMasterUpgrades(expect, page, stand, node),
-        )
-        // The admin section has no self-user-id element: read its actual session
-        // identity from the handshake, including the one after the final reload.
-        watchSocketFrames(page, (observation) => {
-          frames.push({
-            page: pages.indexOf(page),
-            nodeId: node,
-            frame: observation,
-          })
-          if (observation.failure) frameErrors.push(observation)
-          const frame = observation.wire as
-            | {
-                type?: string
-                data?: { entities?: { currentUser?: { id: number } | null } }
-              }
-            | null
-            | undefined
-          if (frame?.type === 'handshake_response') {
-            sessionUsers.set(
-              page,
-              frame.data?.entities?.currentUser?.id ?? null,
-            )
-          }
+    await expect(
+      shownByTestId(actor, `hilos-table-row-${restartPolicyKey}`),
+    ).toContainText(originalRestartPolicy.custom ? 'custom' : 'default')
+    restartPolicyChanged = false
+  }
+  try {
+    for (const node of [
+      CLUSTER_FOLLOWER,
+      otherMaster,
+      CLUSTER_LEADER,
+      ...CLUSTER_MASTERS,
+    ]) {
+      const page = await newMasterPage(browser, node)
+      pages.push(page)
+      deliveries.push(watchDeliveryFrames(page))
+      upgrades.push(await watchClusterMasterUpgrades(expect, page, stand, node))
+      // The admin section has no self-user-id element: read its actual session
+      // identity from the handshake, including the one after the final reload.
+      watchSocketFrames(page, (observation) => {
+        frames.push({
+          page: pages.indexOf(page),
+          nodeId: node,
+          frame: observation,
         })
-      }
-      const [operator, otherAdmin, member, ...visitors] = pages
-      const operatorId = await grantAdminToSelf(expect, operator)
-      const otherAdminId = await grantAdminToSelf(expect, otherAdmin)
-      expect(otherAdminId).not.toBe(operatorId)
-      for (const admin of [operator, otherAdmin]) {
-        await gotoPage(expect, admin, MAINTENANCE_PATH)
-        await expectMaintenanceOpen(expect, admin)
-      }
-      const [operatorLog, otherAdminLog] = deliveries
-      const initialThresholds = await expectMaintenanceWatchdogThresholds(
-        expect,
-        operator,
-        operatorLog,
-      )
-      const maintenanceFrames = () =>
-        operatorLog.packets
-          .flatMap((packet) => packet.frames)
-          .filter(
+        if (observation.failure) frameErrors.push(observation)
+        const frame = observation.wire as
+          | {
+              type?: string
+              data?: { entities?: { currentUser?: { id: number } | null } }
+            }
+          | null
+          | undefined
+        if (frame?.type === 'handshake_response') {
+          sessionUsers.set(page, frame.data?.entities?.currentUser?.id ?? null)
+        }
+      })
+    }
+    const [operator, otherAdmin, member, ...visitors] = pages
+    const operatorId = await grantAdminToSelf(expect, operator)
+    const otherAdminId = await grantAdminToSelf(expect, otherAdmin)
+    expect(otherAdminId).not.toBe(operatorId)
+    for (const admin of [operator, otherAdmin]) {
+      await gotoPage(expect, admin, MAINTENANCE_PATH)
+      await expectMaintenanceOpen(expect, admin)
+    }
+    const [operatorLog, otherAdminLog] = deliveries
+    const initialThresholds = await expectMaintenanceWatchdogThresholds(
+      expect,
+      operator,
+      operatorLog,
+    )
+    const maintenanceFrames = () =>
+      operatorLog.packets
+        .flatMap((packet) => packet.frames)
+        .filter(
+          ({ wire }) =>
+            deliveryObject(wire).type === 'subscription_page_hilos_maintenance',
+        )
+    const initialPolicy = deliveryObject(
+      deliveryObject(maintenanceFrames().at(-1)?.wire).data,
+    ).watchdogManualRestartIsNormal as boolean
+    await gotoPage(expect, otherAdmin, '/hilos/settings')
+    await typeInto(
+      shownByTestId(otherAdmin, 'hilos-table-search'),
+      restartPolicyKey,
+    )
+    await openSettingEdit(otherAdmin, restartPolicyKey)
+    const custom = otherAdmin.getByTestId('hilos-settings-edit-custom')
+    await expect(custom).toBeVisible()
+    await expect(
+      otherAdmin.getByTestId('hilos-settings-edit-value'),
+    ).toBeChecked({
+      checked: initialPolicy,
+    })
+    originalRestartPolicy = {
+      custom: await custom.isChecked(),
+      value: initialPolicy,
+    }
+    await clickSubmit(
+      expect,
+      otherAdmin.getByTestId('hilos-settings-edit-cancel'),
+    )
+    await expect(custom).toHaveCount(0)
+    await markDocument(operator)
+    const sockets = operatorLog.sockets()
+    expect(sockets).toBeGreaterThan(0)
+    const changedPolicy = !initialPolicy
+    const changedAfter = maintenanceFrames().length
+    restartPolicyChanged = true
+    await setCustomSetting(otherAdmin, restartPolicyKey, changedPolicy)
+    await expect
+      .poll(() =>
+        maintenanceFrames()
+          .slice(changedAfter)
+          .map(
             ({ wire }) =>
-              deliveryObject(wire).type ===
-              'subscription_page_hilos_maintenance',
-          )
-      const initialPolicy = deliveryObject(
-        deliveryObject(maintenanceFrames().at(-1)?.wire).data,
-      ).watchdogManualRestartIsNormal as boolean
-      await gotoPage(expect, otherAdmin, '/hilos/settings')
-      await typeInto(
-        shownByTestId(otherAdmin, 'hilos-table-search'),
-        restartPolicyKey,
-      )
-      await openSettingEdit(otherAdmin, restartPolicyKey)
-      const custom = otherAdmin.getByTestId('hilos-settings-edit-custom')
-      await expect(custom).toBeVisible()
-      await expect(
-        otherAdmin.getByTestId('hilos-settings-edit-value'),
-      ).toBeChecked({
-        checked: initialPolicy,
-      })
-      originalRestartPolicy = {
-        custom: await custom.isChecked(),
-        value: initialPolicy,
-      }
-      await clickSubmit(
-        expect,
-        otherAdmin.getByTestId('hilos-settings-edit-cancel'),
-      )
-      await expect(custom).toHaveCount(0)
-      await markDocument(operator)
-      const sockets = operatorLog.sockets()
-      expect(sockets).toBeGreaterThan(0)
-      const changedPolicy = !initialPolicy
-      const changedAfter = maintenanceFrames().length
-      restartPolicyChanged = true
-      await setCustomSetting(otherAdmin, restartPolicyKey, changedPolicy)
-      await expect
-        .poll(() =>
-          maintenanceFrames()
-            .slice(changedAfter)
-            .map(
-              ({ wire }) =>
-                deliveryObject(deliveryObject(wire).data)
-                  .watchdogManualRestartIsNormal,
-            ),
-        )
-        .toContain(changedPolicy)
-      const changedThresholds = await expectMaintenanceWatchdogThresholds(
-        expect,
-        operator,
-        operatorLog,
-      )
-      expect(changedThresholds).toEqual([
-        ...initialThresholds.slice(0, 4),
-        changedPolicy ? 'No mail — a log entry' : 'Send an alert',
-      ])
-      await expectDocumentUnchanged(expect, operator)
-      expect(operatorLog.sockets()).toBe(sockets)
-      await upgrades[0].assert()
-      await expectLeaderUnmoved(before)
-      const restoredAfter = maintenanceFrames().length
-      await restoreRestartPolicy()
-      await expect
-        .poll(() =>
-          maintenanceFrames()
-            .slice(restoredAfter)
-            .map(
-              ({ wire }) =>
-                deliveryObject(deliveryObject(wire).data)
-                  .watchdogManualRestartIsNormal,
-            ),
-        )
-        .toContain(initialPolicy)
-      expect(
-        await expectMaintenanceWatchdogThresholds(
-          expect,
-          operator,
-          operatorLog,
-        ),
-      ).toEqual(initialThresholds)
-      await expectDocumentUnchanged(expect, operator)
-      expect(operatorLog.sockets()).toBe(sockets)
-      await upgrades[0].assert()
-      await expectLeaderUnmoved(before)
-      Object.assign(watchdogEvidence, {
-        originalRestartPolicy,
-        changedPolicy,
-        changedAfter,
-        restoredAfter,
-        sockets,
-        initialThresholds,
-        changedThresholds,
-      })
-      await gotoPage(expect, otherAdmin, MAINTENANCE_PATH)
-      await expectMaintenanceOpen(expect, otherAdmin)
-      await gotoPage(expect, operator, MAINTENANCE_CIRCLE_PATH)
-      await clearMaintenanceCircle(operator)
-      circlePrepared = true
-      const memberEmail = (await createTestUser(expect, member)).email
-      await gotoPage(expect, member, '/')
-      const memberName = await member.getByTestId('self-user').innerText()
-      const memberId = await member.getByTestId('self-user-id').innerText()
-      await addToMaintenanceCircle(operator, memberEmail)
-      await expect(maintenanceCircleRow(operator, memberEmail)).toBeVisible()
-      await expect(maintenanceCircleOnline(operator, memberEmail)).toHaveText(
-        CIRCLE_ONLINE,
-      )
-      for (const visitor of visitors) await gotoPage(expect, visitor, '/')
-      for (const page of pages) {
-        await expect(page.getByTestId('conn-state')).toHaveText('connected')
-      }
-      await expect.poll(() => sessionUsers.get(operator)).toBe(operatorId)
-      await expect.poll(() => sessionUsers.get(otherAdmin)).toBe(otherAdminId)
-      for (const watcher of upgrades) await watcher.assert()
-
-      await gotoPage(expect, operator, MAINTENANCE_PATH)
-      // One more tab of the operator's existing session keeps Nodes on the follower
-      // while Overview drives the window. It adds no person or circle member.
-      const observer = await operator.context().newPage()
-      nodesObserver = observer
-      const observerLog = watchDeliveryFrames(observer)
-      nodesLog = observerLog
-      deliveries.push(observerLog)
-      upgrades.push(
-        await watchClusterMasterUpgrades(
-          expect,
-          observer,
-          stand,
-          CLUSTER_FOLLOWER,
-        ),
-      )
-      const nodeIds = [...CLUSTER_MASTERS, ...CLUSTER_SLAVES]
-      await test.step('Nodes initially reports every real master and slave on the follower', async () => {
-        await gotoPage(expect, observer, MAINTENANCE_NODES_PATH)
-        await expectMaintenanceNodesInitial(
-          expect,
-          observer,
-          observerLog,
-          nodeIds,
-          CLUSTER_LEADER,
-          CLUSTER_NODE_NAMES,
-        )
-      })
-      const nodesSockets = observerLog.sockets()
-      expect(nodesSockets).toBeGreaterThan(0)
-      const nodesLiveAfter = observerLog.packets.length
-      const navigations = new Map<Page, number>()
-      for (const page of [operator, member, observer]) {
-        await markDocument(page)
-        navigations.set(page, 0)
-        page.on('framenavigated', (frame) => {
-          if (frame === page.mainFrame()) {
-            navigations.set(page, (navigations.get(page) ?? 0) + 1)
-          }
-        })
-      }
-      const marks = markClusterNodeLogs(stand, CLUSTER_MASTERS)
-      await turnOnMaintenance(operator)
-      await expectManualMaintenanceOn(expect, operator)
-      expect(
-        await expectMaintenanceWatchdogThresholds(
-          expect,
-          operator,
-          operatorLog,
-        ),
-      ).toEqual(initialThresholds)
-      await expect(
-        operator.getByTestId('hilos-maintenance-watchdog-alert'),
-      ).toHaveCount(0)
-      await expectPageReady(expect, member)
-      await expect(member.getByTestId('self-user')).toHaveText(memberName)
-      await expect(member.getByTestId('self-user-id')).toHaveText(memberId)
-      await expect(member.getByTestId('conn-state')).toHaveText('connected')
-      await expect(member.getByTestId('maintenance')).toHaveCount(0)
-      await expect(member.getByTestId('protected-mode-banner')).toHaveText(
-        'Manual maintenance is on: the system is closed to visitors.' +
-          ' Turn it off in the Maintenance section.',
-      )
-      for (const outsider of [otherAdmin, ...visitors]) {
-        await expectHeldByManualMaintenance(expect, outsider)
-      }
-
-      const expectWindow = async (passCount: number): Promise<void> => {
-        for (const node of CLUSTER_MASTERS) {
-          await expect
-            .poll(() => inspectProtectedMode(undefined, nodeHost(node)), {
-              message: `Manual window with ${passCount} codes on ${node}`,
-            })
-            .toMatchObject({
-              phase: 'verifying',
-              operation: MANUAL_MAINTENANCE_OPERATION,
-              stoppedAgents: [],
-              agentStartGateClosed: false,
-              passCount,
-              circleSize: 1,
-              circleAdmitted: 1,
-            })
-        }
-      }
-      await expectWindow(0)
-      await test.step('Nodes receives foreign master reports live without a document or socket replacement', async () => {
-        const initiatorNodeId = deliveryObject(
-          deliveryObject(maintenanceFrames().at(-1)?.wire).data,
-        ).initiatorNodeId
-        expect(nodeIds).toContain(initiatorNodeId)
-        for (const node of nodeIds) {
-          // The direct window includes every selected online node without stopping
-          // its roster or closing the agent start gate.
-          const role =
-            [
-              ...(node === CLUSTER_LEADER ? ['Leader'] : []),
-              ...(node === initiatorNodeId ? ['Initiator here'] : []),
-            ].join(' · ') || '—'
-          await expectMaintenanceNode(
-            expect,
-            observer,
-            node,
-            'verifying',
-            'Yes',
-            role,
-            new RegExp(
-              `^${[CLUSTER_NODE_NAMES[node], node].map((text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*')}$`,
-            ),
-          )
-        }
-        await expectDocumentUnchanged(expect, observer)
-        expect(observerLog.sockets()).toBe(nodesSockets)
-        expect(
-          observerLog.connections.every(({ closed }) => closed === undefined),
-        ).toBe(true)
-        Object.assign(nodesEvidence, {
-          nodeIds,
-          initiatorNodeId,
-          nodesSockets,
-          nodesLiveAfter,
-        })
-      })
-      for (const watcher of upgrades) await watcher.assert()
-      await dismissToasts(operator)
-      const firstCode = await issueMaintenanceCode(operator)
-      await expectMaintenanceCodeIssued(expect, operator, firstCode, 1)
-      await expectWindow(1)
-      await presentMaintenanceCode(otherAdmin, firstCode)
-      await expectAdmittedToManualMaintenance(expect, otherAdmin, 1)
-      expect(
-        await expectMaintenanceWatchdogThresholds(
-          expect,
-          otherAdmin,
-          otherAdminLog,
-        ),
-      ).toEqual(initialThresholds)
-      await expect(
-        otherAdmin.getByTestId('hilos-maintenance-watchdog-alert'),
-      ).toHaveCount(0)
-      await expect(otherAdmin.getByTestId('conn-state')).toHaveText('connected')
-      await expect.poll(() => sessionUsers.get(otherAdmin)).toBe(otherAdminId)
-      await expect(
-        otherAdmin.getByTestId('hilos-maintenance-pass'),
-      ).toBeEnabled()
-      await expect(
-        otherAdmin.getByTestId('hilos-maintenance-disable'),
-      ).toBeEnabled()
-      await dismissToasts(otherAdmin)
-      const secondCode = await issueMaintenanceCode(otherAdmin)
-      await expectMaintenanceCodeIssued(expect, otherAdmin, secondCode, 2)
-      await expectWindow(2)
-      await expectAdmittedToManualMaintenance(expect, operator, 2)
-      for (const visitor of visitors) {
-        await expectHeldByManualMaintenance(expect, visitor)
-      }
-      for (const watcher of upgrades) await watcher.assert()
-      for (const page of [operator, member, observer]) {
-        expect(
-          navigations.get(page),
-          'The admitted document never navigated',
-        ).toBe(0)
-      }
-      const nodesReloadAfter = observerLog.packets.length
-      for (const page of [...pages, observer]) await markDocument(page)
-      sessionUsers.clear()
-      await dismissToasts(otherAdmin)
-      await turnOffMaintenance(otherAdmin)
-      for (const page of [...pages, observer]) {
-        await expectSelfReload(page, test.info().project.use.navigationTimeout)
-        await expectPageReady(expect, page)
-        await expect(page.getByTestId('conn-state')).toHaveText('connected')
-        await expect(page.getByTestId('maintenance')).toHaveCount(0)
-        await expect(page.getByTestId('protected-mode-banner')).toHaveCount(0)
-      }
-      for (const admin of [operator, otherAdmin]) {
-        await expect(admin).toHaveURL(
-          new URL(MAINTENANCE_PATH, stand.baseURL).href,
-        )
-        await expectMaintenanceOpen(expect, admin)
-        expect(
-          await expectMaintenanceWatchdogThresholds(
-            expect,
-            admin,
-            deliveries[pages.indexOf(admin)],
+              deliveryObject(deliveryObject(wire).data)
+                .watchdogManualRestartIsNormal,
           ),
-        ).toEqual(initialThresholds)
-        await expect(
-          admin.getByTestId('hilos-maintenance-watchdog-alert'),
-        ).toHaveCount(0)
-      }
-      await expect.poll(() => sessionUsers.get(operator)).toBe(operatorId)
-      await expect.poll(() => sessionUsers.get(otherAdmin)).toBe(otherAdminId)
-      expect(frameErrors).toEqual([])
-      await expect(member.getByTestId('self-user')).toHaveText(memberName)
-      await expect(member.getByTestId('self-user-id')).toHaveText(memberId)
+      )
+      .toContain(changedPolicy)
+    const changedThresholds = await expectMaintenanceWatchdogThresholds(
+      expect,
+      operator,
+      operatorLog,
+    )
+    expect(changedThresholds).toEqual([
+      ...initialThresholds.slice(0, 4),
+      changedPolicy ? 'No mail — a log entry' : 'Send an alert',
+    ])
+    await expectDocumentUnchanged(expect, operator)
+    expect(operatorLog.sockets()).toBe(sockets)
+    await upgrades[0].assert()
+    await expectLeaderUnmoved(before)
+    const restoredAfter = maintenanceFrames().length
+    await restoreRestartPolicy()
+    await expect
+      .poll(() =>
+        maintenanceFrames()
+          .slice(restoredAfter)
+          .map(
+            ({ wire }) =>
+              deliveryObject(deliveryObject(wire).data)
+                .watchdogManualRestartIsNormal,
+          ),
+      )
+      .toContain(initialPolicy)
+    expect(
+      await expectMaintenanceWatchdogThresholds(expect, operator, operatorLog),
+    ).toEqual(initialThresholds)
+    await expectDocumentUnchanged(expect, operator)
+    expect(operatorLog.sockets()).toBe(sockets)
+    await upgrades[0].assert()
+    await expectLeaderUnmoved(before)
+    Object.assign(watchdogEvidence, {
+      originalRestartPolicy,
+      changedPolicy,
+      changedAfter,
+      restoredAfter,
+      sockets,
+      initialThresholds,
+      changedThresholds,
+    })
+    await gotoPage(expect, otherAdmin, MAINTENANCE_PATH)
+    await expectMaintenanceOpen(expect, otherAdmin)
+    await gotoPage(expect, operator, MAINTENANCE_CIRCLE_PATH)
+    await clearMaintenanceCircle(operator)
+    circlePrepared = true
+    const memberEmail = (await createTestUser(expect, member)).email
+    await gotoPage(expect, member, '/')
+    const memberName = await member.getByTestId('self-user').innerText()
+    const memberId = await member.getByTestId('self-user-id').innerText()
+    await addToMaintenanceCircle(operator, memberEmail)
+    await expect(maintenanceCircleRow(operator, memberEmail)).toBeVisible()
+    await expect(maintenanceCircleOnline(operator, memberEmail)).toHaveText(
+      CIRCLE_ONLINE,
+    )
+    for (const visitor of visitors) await gotoPage(expect, visitor, '/')
+    for (const page of pages) {
+      await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    }
+    await expect.poll(() => sessionUsers.get(operator)).toBe(operatorId)
+    await expect.poll(() => sessionUsers.get(otherAdmin)).toBe(otherAdminId)
+    for (const watcher of upgrades) await watcher.assert()
+
+    await gotoPage(expect, operator, MAINTENANCE_PATH)
+    // One more tab of the operator's existing session keeps Nodes on the follower
+    // while Overview drives the window. It adds no person or circle member.
+    const observer = await operator.context().newPage()
+    nodesObserver = observer
+    const observerLog = watchDeliveryFrames(observer)
+    nodesLog = observerLog
+    deliveries.push(observerLog)
+    upgrades.push(
+      await watchClusterMasterUpgrades(
+        expect,
+        observer,
+        stand,
+        CLUSTER_FOLLOWER,
+      ),
+    )
+    const nodeIds = [...CLUSTER_MASTERS, ...CLUSTER_SLAVES]
+    await test.step('Nodes initially reports every real master and slave on the follower', async () => {
+      await gotoPage(expect, observer, MAINTENANCE_NODES_PATH)
+      await expectMaintenanceNodesInitial(
+        expect,
+        observer,
+        observerLog,
+        nodeIds,
+        CLUSTER_LEADER,
+        CLUSTER_NODE_NAMES,
+      )
+    })
+    const nodesSockets = observerLog.sockets()
+    expect(nodesSockets).toBeGreaterThan(0)
+    const nodesLiveAfter = observerLog.packets.length
+    const navigations = new Map<Page, number>()
+    for (const page of [operator, member, observer]) {
+      await markDocument(page)
+      navigations.set(page, 0)
+      page.on('framenavigated', (frame) => {
+        if (frame === page.mainFrame()) {
+          navigations.set(page, (navigations.get(page) ?? 0) + 1)
+        }
+      })
+    }
+    const marks = markClusterNodeLogs(stand, CLUSTER_MASTERS)
+    await turnOnMaintenance(operator)
+    await expectManualMaintenanceOn(expect, operator)
+    expect(
+      await expectMaintenanceWatchdogThresholds(expect, operator, operatorLog),
+    ).toEqual(initialThresholds)
+    await expect(
+      operator.getByTestId('hilos-maintenance-watchdog-alert'),
+    ).toHaveCount(0)
+    await expectPageReady(expect, member)
+    await expect(member.getByTestId('self-user')).toHaveText(memberName)
+    await expect(member.getByTestId('self-user-id')).toHaveText(memberId)
+    await expect(member.getByTestId('conn-state')).toHaveText('connected')
+    await expect(member.getByTestId('maintenance')).toHaveCount(0)
+    await expect(member.getByTestId('protected-mode-banner')).toHaveText(
+      'Manual maintenance is on: the system is closed to visitors.' +
+        ' Turn it off in the Maintenance section.',
+    )
+    for (const outsider of [otherAdmin, ...visitors]) {
+      await expectHeldByManualMaintenance(expect, outsider)
+    }
+
+    const expectWindow = async (passCount: number): Promise<void> => {
       for (const node of CLUSTER_MASTERS) {
         await expect
           .poll(() => inspectProtectedMode(undefined, nodeHost(node)), {
-            message: `Manual window lifted on ${node}`,
+            message: `Manual window with ${passCount} codes on ${node}`,
           })
           .toMatchObject({
-            phase: 'inactive',
-            passCount: 0,
+            phase: 'verifying',
+            operation: MANUAL_MAINTENANCE_OPERATION,
             stoppedAgents: [],
             agentStartGateClosed: false,
+            passCount,
+            circleSize: 1,
+            circleAdmitted: 1,
           })
       }
-      expectNoProtectedModeAgentStops(expect, marks)
-      await test.step('Nodes receives fresh initial rows after the normal lift reload and F5', async () => {
-        await expect(observer).toHaveURL(
-          new URL(MAINTENANCE_NODES_PATH, stand.baseURL).href,
-        )
-        await expectMaintenanceNodesInitial(
-          expect,
-          observer,
-          observerLog,
-          nodeIds,
-          CLUSTER_LEADER,
-          CLUSTER_NODE_NAMES,
-          nodesReloadAfter,
-        )
-        const nodesF5After = observerLog.packets.length
-        await observer.reload()
-        await expectPageReady(expect, observer)
-        await expectMaintenanceNodesInitial(
-          expect,
-          observer,
-          observerLog,
-          nodeIds,
-          CLUSTER_LEADER,
-          CLUSTER_NODE_NAMES,
-          nodesF5After,
-        )
-        Object.assign(nodesEvidence, { nodesReloadAfter, nodesF5After })
-      })
-      for (const watcher of upgrades) await watcher.assert()
-      await expectLeaderUnmoved(before)
-    } finally {
-      // Soft cleanup failures remain visible alongside the original assertion.
-      // Every resource is closed even when opening or clearing the circle fails.
-      const cleanup = await Promise.allSettled([
-        (async () => {
-          await openProtectedModeIfAny()
-          for (const node of CLUSTER_MASTERS) {
-            await expect
-              .poll(() => inspectProtectedMode(undefined, nodeHost(node)))
-              .toMatchObject({
-                phase: 'inactive',
-                passCount: 0,
-              })
-          }
-          if (circlePrepared) {
-            await gotoPage(expect, pages[0], MAINTENANCE_CIRCLE_PATH)
-            await dismissToasts(pages[0])
-            await clearMaintenanceCircle(pages[0])
-          }
-          await expectLeaderUnmoved(before)
-        })(),
-      ])
-      cleanup.push(...(await Promise.allSettled([restoreRestartPolicy()])))
-      for (const log of deliveries) log.stop()
-      const stopped = await Promise.allSettled(
-        upgrades.map((watcher) => watcher.stop()),
-      )
-      const observerClosed = await Promise.allSettled([nodesObserver?.close()])
-      const closed = await Promise.allSettled(
-        pages.map((page) => page.context().close()),
-      )
-      await test.info().attach('manual-maintenance-frames', {
-        body: JSON.stringify(frames),
-        contentType: 'application/json',
-      })
-      await test.info().attach('manual-maintenance-nodes', {
-        body: JSON.stringify({
-          ...nodesEvidence,
-          packets: nodesLog?.packets,
-          sent: nodesLog?.sent,
-          connections: nodesLog?.connections,
-        }),
-        contentType: 'application/json',
-      })
-      await test.info().attach('manual-maintenance-watchdog', {
-        body: JSON.stringify({
-          ...watchdogEvidence,
-          deliveries: deliveries
-            .slice(0, 2)
-            .map(({ packets, connections }) => ({
-              packets,
-              connections,
-            })),
-        }),
-        contentType: 'application/json',
-      })
-      for (const result of [
-        ...cleanup,
-        ...stopped,
-        ...observerClosed,
-        ...closed,
-      ]) {
-        expect
-          .soft(
-            result.status === 'fulfilled' ? null : String(result.reason),
-            'Manual maintenance cleanup',
-          )
-          .toBeNull()
-      }
     }
-  },
-)
+    await expectWindow(0)
+    await test.step('Nodes receives foreign master reports live without a document or socket replacement', async () => {
+      const initiatorNodeId = deliveryObject(
+        deliveryObject(maintenanceFrames().at(-1)?.wire).data,
+      ).initiatorNodeId
+      expect(nodeIds).toContain(initiatorNodeId)
+      for (const node of nodeIds) {
+        // The direct window includes every selected online node without stopping
+        // its roster or closing the agent start gate.
+        const role =
+          [
+            ...(node === CLUSTER_LEADER ? ['Leader'] : []),
+            ...(node === initiatorNodeId ? ['Initiator here'] : []),
+          ].join(' · ') || '—'
+        await expectMaintenanceNode(
+          expect,
+          observer,
+          node,
+          'verifying',
+          'Yes',
+          role,
+          new RegExp(
+            `^${[CLUSTER_NODE_NAMES[node], node].map((text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*')}$`,
+          ),
+        )
+      }
+      await expectDocumentUnchanged(expect, observer)
+      expect(observerLog.sockets()).toBe(nodesSockets)
+      expect(
+        observerLog.connections.every(({ closed }) => closed === undefined),
+      ).toBe(true)
+      Object.assign(nodesEvidence, {
+        nodeIds,
+        initiatorNodeId,
+        nodesSockets,
+        nodesLiveAfter,
+      })
+    })
+    for (const watcher of upgrades) await watcher.assert()
+    await dismissToasts(operator)
+    const firstCode = await issueMaintenanceCode(operator)
+    await expectMaintenanceCodeIssued(expect, operator, firstCode, 1)
+    await expectWindow(1)
+    await presentMaintenanceCode(otherAdmin, firstCode)
+    await expectAdmittedToManualMaintenance(expect, otherAdmin, 1)
+    expect(
+      await expectMaintenanceWatchdogThresholds(
+        expect,
+        otherAdmin,
+        otherAdminLog,
+      ),
+    ).toEqual(initialThresholds)
+    await expect(
+      otherAdmin.getByTestId('hilos-maintenance-watchdog-alert'),
+    ).toHaveCount(0)
+    await expect(otherAdmin.getByTestId('conn-state')).toHaveText('connected')
+    await expect.poll(() => sessionUsers.get(otherAdmin)).toBe(otherAdminId)
+    await expect(otherAdmin.getByTestId('hilos-maintenance-pass')).toBeEnabled()
+    await expect(
+      otherAdmin.getByTestId('hilos-maintenance-disable'),
+    ).toBeEnabled()
+    await dismissToasts(otherAdmin)
+    const secondCode = await issueMaintenanceCode(otherAdmin)
+    await expectMaintenanceCodeIssued(expect, otherAdmin, secondCode, 2)
+    await expectWindow(2)
+    await expectAdmittedToManualMaintenance(expect, operator, 2)
+    for (const visitor of visitors) {
+      await expectHeldByManualMaintenance(expect, visitor)
+    }
+    for (const watcher of upgrades) await watcher.assert()
+    for (const page of [operator, member, observer]) {
+      expect(
+        navigations.get(page),
+        'The admitted document never navigated',
+      ).toBe(0)
+    }
+    const nodesReloadAfter = observerLog.packets.length
+    for (const page of [...pages, observer]) await markDocument(page)
+    sessionUsers.clear()
+    await dismissToasts(otherAdmin)
+    await turnOffMaintenance(otherAdmin)
+    for (const page of [...pages, observer]) {
+      await expectSelfReload(page, test.info().project.use.navigationTimeout)
+      await expectPageReady(expect, page)
+      await expect(page.getByTestId('conn-state')).toHaveText('connected')
+      await expect(page.getByTestId('maintenance')).toHaveCount(0)
+      await expect(page.getByTestId('protected-mode-banner')).toHaveCount(0)
+    }
+    for (const admin of [operator, otherAdmin]) {
+      await expect(admin).toHaveURL(
+        new URL(MAINTENANCE_PATH, stand.baseURL).href,
+      )
+      await expectMaintenanceOpen(expect, admin)
+      expect(
+        await expectMaintenanceWatchdogThresholds(
+          expect,
+          admin,
+          deliveries[pages.indexOf(admin)],
+        ),
+      ).toEqual(initialThresholds)
+      await expect(
+        admin.getByTestId('hilos-maintenance-watchdog-alert'),
+      ).toHaveCount(0)
+    }
+    await expect.poll(() => sessionUsers.get(operator)).toBe(operatorId)
+    await expect.poll(() => sessionUsers.get(otherAdmin)).toBe(otherAdminId)
+    expect(frameErrors).toEqual([])
+    await expect(member.getByTestId('self-user')).toHaveText(memberName)
+    await expect(member.getByTestId('self-user-id')).toHaveText(memberId)
+    for (const node of CLUSTER_MASTERS) {
+      await expect
+        .poll(() => inspectProtectedMode(undefined, nodeHost(node)), {
+          message: `Manual window lifted on ${node}`,
+        })
+        .toMatchObject({
+          phase: 'inactive',
+          passCount: 0,
+          stoppedAgents: [],
+          agentStartGateClosed: false,
+        })
+    }
+    expectNoProtectedModeAgentStops(expect, marks)
+    await test.step('Nodes receives fresh initial rows after the normal lift reload and F5', async () => {
+      await expect(observer).toHaveURL(
+        new URL(MAINTENANCE_NODES_PATH, stand.baseURL).href,
+      )
+      await expectMaintenanceNodesInitial(
+        expect,
+        observer,
+        observerLog,
+        nodeIds,
+        CLUSTER_LEADER,
+        CLUSTER_NODE_NAMES,
+        nodesReloadAfter,
+      )
+      const nodesF5After = observerLog.packets.length
+      await observer.reload()
+      await expectPageReady(expect, observer)
+      await expectMaintenanceNodesInitial(
+        expect,
+        observer,
+        observerLog,
+        nodeIds,
+        CLUSTER_LEADER,
+        CLUSTER_NODE_NAMES,
+        nodesF5After,
+      )
+      Object.assign(nodesEvidence, { nodesReloadAfter, nodesF5After })
+    })
+    for (const watcher of upgrades) await watcher.assert()
+    await expectLeaderUnmoved(before)
+  } finally {
+    // Soft cleanup failures remain visible alongside the original assertion.
+    // Every resource is closed even when opening or clearing the circle fails.
+    const cleanup = await Promise.allSettled([
+      (async () => {
+        await openProtectedModeIfAny()
+        for (const node of CLUSTER_MASTERS) {
+          await expect
+            .poll(() => inspectProtectedMode(undefined, nodeHost(node)))
+            .toMatchObject({
+              phase: 'inactive',
+              passCount: 0,
+            })
+        }
+        if (circlePrepared) {
+          await gotoPage(expect, pages[0], MAINTENANCE_CIRCLE_PATH)
+          await dismissToasts(pages[0])
+          await clearMaintenanceCircle(pages[0])
+        }
+        await expectLeaderUnmoved(before)
+      })(),
+    ])
+    cleanup.push(...(await Promise.allSettled([restoreRestartPolicy()])))
+    for (const log of deliveries) log.stop()
+    const stopped = await Promise.allSettled(
+      upgrades.map((watcher) => watcher.stop()),
+    )
+    const observerClosed = await Promise.allSettled([nodesObserver?.close()])
+    const closed = await Promise.allSettled(
+      pages.map((page) => page.context().close()),
+    )
+    await test.info().attach('manual-maintenance-frames', {
+      body: JSON.stringify(frames),
+      contentType: 'application/json',
+    })
+    await test.info().attach('manual-maintenance-nodes', {
+      body: JSON.stringify({
+        ...nodesEvidence,
+        packets: nodesLog?.packets,
+        sent: nodesLog?.sent,
+        connections: nodesLog?.connections,
+      }),
+      contentType: 'application/json',
+    })
+    await test.info().attach('manual-maintenance-watchdog', {
+      body: JSON.stringify({
+        ...watchdogEvidence,
+        deliveries: deliveries.slice(0, 2).map(({ packets, connections }) => ({
+          packets,
+          connections,
+        })),
+      }),
+      contentType: 'application/json',
+    })
+    for (const result of [
+      ...cleanup,
+      ...stopped,
+      ...observerClosed,
+      ...closed,
+    ]) {
+      expect
+        .soft(
+          result.status === 'fulfilled' ? null : String(result.reason),
+          'Manual maintenance cleanup',
+        )
+        .toBeNull()
+    }
+  }
+})

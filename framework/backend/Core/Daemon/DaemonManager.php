@@ -1425,7 +1425,7 @@ abstract class DaemonManager extends BaseManager implements
             // clustered node - off-cluster there is nowhere for a connection to be but here, so
             // leaving both slots empty is what keeps the router's post-pass inert.
             if (Hilos::$cluster !== null && Hilos::$cluster->isEnabled()) {
-                $clientConnections = new ClusterClientLocation();
+                $clientConnections = new ClusterClientLocation(Hilos::$cluster->localNodeId());
                 Hilos::$cluster->registerClientConnections($clientConnections);
                 // The index doubles as the router's read-only connection lookup, so a signal to a
                 // browser can ask which node holds it.

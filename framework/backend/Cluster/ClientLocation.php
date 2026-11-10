@@ -21,9 +21,9 @@ use Hilos\Core\Router\Destination\WebSocketDestination;
  * and from what its peers announce. A test supplies a fake so the routing post-pass can be
  * exercised without a live cluster.
  *
- * The local short-circuit lives behind this contract: a key attached to this node (or one
- * nobody has announced) returns null, so the router keeps delivering it locally exactly as
- * before. Off-cluster nothing registers a lookup and the post-pass is inert.
+ * Minted cluster keys name their node directly, without waiting for announcements. Other
+ * key forms use the announcement index. A local key or an unknown key of another form
+ * returns null for local delivery. Off-cluster nothing registers a lookup and the post-pass is inert.
  */
 interface ClientLocation
 {
@@ -31,11 +31,9 @@ interface ClientLocation
      * Returns the id of the node holding a browser connection when it is a node other than
      * this one; null when the connection is local or unknown to the mesh.
      *
-     * Local and unknown answer alike on purpose. An accept key is minted by the node that
-     * accepted the socket and belongs to exactly one node for its whole life, so a key this
-     * node cannot place is a key that either is its own or is gone — and both are served by
-     * the local path, which drops what it cannot find. Guessing a node for it would be an
-     * address invented rather than known.
+     * A minted cluster key identifies its node even when it has not been announced. A key
+     * naming this node returns null regardless of the index. Other key forms are placed by
+     * announcements; an unknown one follows the local path, which drops what it cannot find.
      *
      * @param string $acceptKey Browser connection to look up
      * @return ?string Holding node id when remote, or null for local / unknown

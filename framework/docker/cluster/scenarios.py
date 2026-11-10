@@ -2372,6 +2372,21 @@ def scenario_10_cross_node_browser():
             assert client_test_deliveries(quiet, node) == before[node], \
                 f"an addressed signal reached {node}, which holds no such browser"
 
+        unannounced = f"{holder}.{'A' * 22}"  # The minted form, never attached or announced.
+        views = inspect_all()
+        unannounced_before = client_test_deliveries(views, holder)
+        assert client(sender, "test:cluster:client:send", unannounced, "hello"), \
+            f"could not raise an unannounced addressed signal on {sender}"
+
+        def unannounced_arrived(views):
+            view = views.get(holder)
+            return (bool(view)
+                    and client_test_deliveries(views, holder) == unannounced_before + 1
+                    and view.get("lastClientAcceptKey") == unannounced)
+
+        wait_until(unannounced_arrived, CONVERGE_TIMEOUT,
+                   f"{holder} takes in the signal {sender} addressed to an unannounced browser")
+
         views = inspect_all()
         before = {n: client_test_deliveries(views, n) for n in ALL_NODES}
         assert client(sender, "test:cluster:client:fanout", "everyone"), \

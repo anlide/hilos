@@ -494,7 +494,7 @@ final class PeerServerClientDeliveryTest extends TestCase
                 $this->handedOverTo[] = $nodeId;
             }
         };
-        Hilos::$cluster->registerClientConnections(new ClusterClientLocation());
+        Hilos::$cluster->registerClientConnections(new ClusterClientLocation('node-a'));
         Hilos::$cluster->registerClientSignalSink($sink);
 
         return $sink;
@@ -507,7 +507,7 @@ final class PeerServerClientDeliveryTest extends TestCase
      */
     private function registerIndex(): ClusterClientLocation
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation('node-a');
         Hilos::$cluster->registerClientConnections($index);
 
         return $index;

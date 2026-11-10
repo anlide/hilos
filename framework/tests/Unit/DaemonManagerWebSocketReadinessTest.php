@@ -171,7 +171,7 @@ final class DaemonManagerWebSocketReadinessTest extends TestCase
     public function testAgentStartRosterIncludesKeysOnOtherNodes(): void
     {
         $context = new ClusterContext();
-        $connections = new ClusterClientLocation();
+        $connections = new ClusterClientLocation('m2');
         $connections->applySnapshot('m1', ['remote-key']);
         $context->registerClientConnections($connections);
         Hilos::$cluster = $context;

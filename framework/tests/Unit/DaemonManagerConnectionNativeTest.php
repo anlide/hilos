@@ -351,7 +351,7 @@ final class DaemonManagerConnectionNativeTest extends TestCase
             new PeerConnectionsDeltaDTO('local', [], ['b']),
             new PeerConnectionsDeltaDTO('local', ['b'], []),
         ], $this->peer->frames);
-        Hilos::$cluster->registerClientConnections(new ClusterClientLocation());
+        Hilos::$cluster->registerClientConnections(new ClusterClientLocation('local'));
         $this->pass();
         self::assertEquals(new PeerConnectionsDeltaDTO('local', ['b'], []), $this->peer->frames[5]);
         self::assertCount(6, $this->peer->frames);
@@ -458,7 +458,7 @@ final class DaemonManagerConnectionNativeTest extends TestCase
         $oldIndex = WeakReference::create($this->index);
         $this->server = new ConnectionNativeServer('127.0.0.1', 0);
         $this->transport = $this->newTransport();
-        $this->index = new ClusterClientLocation();
+        $this->index = new ClusterClientLocation('local');
         Hilos::$cluster = new ClusterContext();
         Hilos::$cluster->registerClientConnections($this->index);
         $this->set('servers', [$this->server, $this->transport]);
@@ -485,7 +485,7 @@ final class DaemonManagerConnectionNativeTest extends TestCase
         $this->open('a');
         $this->peer->afterDelta = function (): void {
             Hilos::$cluster = new ClusterContext();
-            $this->index = new ClusterClientLocation();
+            $this->index = new ClusterClientLocation('local');
             Hilos::$cluster->registerClientConnections($this->index);
             $this->index->attachLocal('7');
             $this->transport = $this->newTransport();
@@ -564,7 +564,7 @@ final class DaemonManagerConnectionNativeTest extends TestCase
         Hilos::$sr = new SignalRouter();
         Hilos::$rt = null;
         Hilos::$cluster = new ClusterContext();
-        $this->index = new ClusterClientLocation();
+        $this->index = new ClusterClientLocation('local');
         Hilos::$cluster->registerClientConnections($this->index);
         $this->loop = new EventLoop();
         $this->manager = new ConnectionNativeManager();

@@ -14,9 +14,10 @@ use Hilos\Core\Router\SignalNameInterface;
  *
  * One of these lives on every clustered master. It holds two things: what the peers have
  * announced about their own sockets ({@see applySnapshot()}, {@see applyDelta()}), and what
- * this node last announced about its own ({@see diffLocal()}). The first half answers
- * {@see nodeFor()}, which is how a signal resolved on one node finds the node the browser
- * hangs on; the second is what keeps every other node's first half true.
+ * this node last announced about its own ({@see diffLocal()}). Minted keys name their node
+ * directly; {@see nodeFor()} consults the remote index only for other key forms. The index
+ * also supplies roster reconciliation and inspection, while the local half keeps peers
+ * informed about this node's connections.
  *
  * The local half is a DIFF rather than a pair of hooks, and that is the load-bearing decision.
  * A connection closes in the master from three different places — the orderly close, the
@@ -26,10 +27,10 @@ use Hilos\Core\Router\SignalNameInterface;
  * never looks at the paths — only at what the socket set is now versus what it was when this
  * node last spoke. It batches for free too, which is what a restart's reconnect storm needs.
  *
- * Nothing here is durable and nothing here is authoritative: an accept key belongs to the node
- * that minted it, and every other node holds a copy that is only as fresh as the last frame it
- * received. That is enough, because a stale entry resolves to a node that will simply not find
- * the socket, which is the same outcome as the local path already has for a client that left.
+ * Nothing here is durable. A minted key always names its node, even before an announcement;
+ * the index for other key forms is only as fresh as the last frame received. A stale address
+ * reaches a node that will simply not find the socket, just as the local path drops a signal
+ * for a client that left.
  */
 final class ClusterClientLocation implements ClientLocation
 {
@@ -58,13 +59,25 @@ final class ClusterClientLocation implements ClientLocation
     private ?string $lastAcceptKey = null;
 
     /**
-     * Returns the id of the node holding a browser connection when it is another node.
+     * @param string $localNodeId This index's node identity for local delivery
+     */
+    public function __construct(private readonly string $localNodeId)
+    {
+    }
+
+    /**
+     * Resolves minted keys directly and other key forms through peer announcements.
      *
      * @param string $acceptKey Browser connection to look up
      * @return ?string Holding node id when remote, or null for local / unknown
      */
     public function nodeFor(string $acceptKey): ?string
     {
+        $minted = ClusterAcceptKey::nodeOf($acceptKey);
+        if ($minted !== null) {
+            return $minted === $this->localNodeId ? null : $minted;
+        }
+
         return $this->nodeByAcceptKey[$acceptKey] ?? null;
     }
 

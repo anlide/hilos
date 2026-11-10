@@ -24,18 +24,37 @@ use PHPUnit\Framework\TestCase;
  */
 final class ClusterClientLocationTest extends TestCase
 {
+    /** @var string Node holding this index */
+    private const string NODE_A = 'node-a';
+
     /** @var string Node most of these cases announce from */
     private const string NODE_B = 'node-b';
 
     /** @var string The other announcing node */
     private const string NODE_C = 'node-c';
 
+    public function testAMintedRemoteKeyNamesItsNodeWithoutAnAnnouncement(): void
+    {
+        $index = new ClusterClientLocation(self::NODE_A);
+
+        $this->assertSame(self::NODE_B, $index->nodeFor('node-b.AbCdEfGhIjKlMnOpQrSt_-'));
+    }
+
+    public function testAMintedLocalKeyStaysLocalRegardlessOfTheIndex(): void
+    {
+        $index = new ClusterClientLocation(self::NODE_A);
+
+        $this->assertNull($index->nodeFor('node-a.AbCdEfGhIjKlMnOpQrSt_-'));
+        $index->applySnapshot(self::NODE_B, ['node-a.AbCdEfGhIjKlMnOpQrSt_-']);
+        $this->assertNull($index->nodeFor('node-a.AbCdEfGhIjKlMnOpQrSt_-'));
+    }
+
     /**
      * The plain case the whole feature rests on.
      */
     public function testASnapshotPlacesEveryKeyItCarriesOnItsNode(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
 
         $index->applySnapshot(self::NODE_B, ['ak-1', 'ak-2']);
 
@@ -49,7 +68,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testAnUnknownKeyIsNotPlacedAnywhere(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
         $index->applySnapshot(self::NODE_B, ['ak-1']);
 
         $this->assertNull($index->nodeFor('ak-never-announced'));
@@ -61,7 +80,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testASnapshotReplacesEverythingHeldForThatNode(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
         $index->applySnapshot(self::NODE_B, ['ak-1', 'ak-2']);
 
         $index->applySnapshot(self::NODE_B, ['ak-2']);
@@ -76,7 +95,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testASnapshotLeavesTheOtherNodesConnectionsAlone(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
         $index->applySnapshot(self::NODE_B, ['ak-1']);
         $index->applySnapshot(self::NODE_C, ['ak-2']);
 
@@ -91,7 +110,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testADeltaAddsWhatOpenedAndForgetsWhatClosed(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
         $index->applySnapshot(self::NODE_B, ['ak-1']);
 
         $index->applyDelta(self::NODE_B, ['ak-2'], ['ak-1']);
@@ -108,7 +127,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testACloseFromANodeThatNoLongerHoldsTheKeyIsIgnored(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
         $index->applySnapshot(self::NODE_B, ['ak-1']);
         $index->applyDelta(self::NODE_C, ['ak-1'], []);
 
@@ -125,7 +144,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testAKeyClaimedByASecondNodeLeavesTheFirstNodesSet(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
         $index->applySnapshot(self::NODE_B, ['ak-1']);
 
         $index->applyDelta(self::NODE_C, ['ak-1'], []);
@@ -138,7 +157,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testANodeThatLeftTakesItsConnectionsWithIt(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
         $index->applySnapshot(self::NODE_B, ['ak-1', 'ak-2']);
         $index->applySnapshot(self::NODE_C, ['ak-3']);
 
@@ -151,7 +170,7 @@ final class ClusterClientLocationTest extends TestCase
 
     public function testRemoteAcceptKeysTrackSnapshotsDeltasAndNodeDeparture(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
         $index->applySnapshot(self::NODE_B, ['ak-1', 'ak-2']);
         $index->applyDelta(self::NODE_B, ['ak-3'], ['ak-1']);
         $index->applySnapshot(self::NODE_C, ['ak-4']);
@@ -169,7 +188,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testForgettingAnUnknownNodeChangesNothing(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
         $index->applySnapshot(self::NODE_B, ['ak-1']);
 
         $index->forgetNode('node-that-never-spoke');
@@ -183,7 +202,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testTheFirstDiffReportsEveryConnectionAsOpened(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
 
         $this->assertSame(['opened' => ['ak-1', 'ak-2'], 'closed' => []], $index->diffLocal(['ak-1', 'ak-2']));
     }
@@ -194,7 +213,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testASecondDiffOfTheSameSetIsSilent(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
         $index->diffLocal(['ak-1']);
 
         $this->assertSame(['opened' => [], 'closed' => []], $index->diffLocal(['ak-1']));
@@ -206,7 +225,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testADisappearedConnectionIsReportedClosedExactlyOnce(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
         $index->diffLocal(['ak-1', 'ak-2']);
 
         $this->assertSame(['opened' => [], 'closed' => ['ak-1']], $index->diffLocal(['ak-2']));
@@ -219,7 +238,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testTheAnnouncedSetIsWhatTheLastDiffSettledOn(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
         $index->diffLocal(['ak-1', 'ak-2']);
         $index->diffLocal(['ak-2', 'ak-3']);
 
@@ -232,7 +251,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testAnAttachedKeyIsAnnouncedLikeAConnectedOne(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
 
         $index->attachLocal('ak-attached');
 
@@ -245,7 +264,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testAnAttachedKeyStaysAnnouncedAcrossTicks(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
         $index->attachLocal('ak-attached');
         $index->diffLocal([]);
 
@@ -261,7 +280,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testANumericAttachedKeyIsAnnouncedAsAString(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
 
         $index->attachLocal('12345');
 
@@ -274,7 +293,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testDetachingAnAttachedKeyReportsItClosed(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
         $index->attachLocal('ak-attached');
         $index->diffLocal([]);
 
@@ -289,7 +308,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testThisNodesOwnConnectionsAreNotPlacedOnAnyNode(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
         $index->attachLocal('ak-mine');
         $index->diffLocal(['ak-socket']);
 
@@ -304,7 +323,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testAFreshIndexHasTakenInNothing(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
 
         $this->assertSame(0, $index->deliveries());
         $this->assertNull($index->lastAcceptKey());
@@ -317,7 +336,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testAnAddressedDeliveryIsCountedAndNamed(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
 
         $index->noteAddressedDelivery('ak-1');
 
@@ -331,7 +350,7 @@ final class ClusterClientLocationTest extends TestCase
      */
     public function testAFanoutIsCountedWithoutTouchingTheLastKey(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
         $index->noteAddressedDelivery('ak-1');
 
         $index->noteFanoutDelivery();
@@ -343,7 +362,7 @@ final class ClusterClientLocationTest extends TestCase
     /** A real Status fan-out must remain visible in the total without impersonating the CLI probe. */
     public function testBackgroundSignalsCannotBecomeClientTestEvidence(): void
     {
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation(self::NODE_A);
         $index->noteAddressedDelivery('ak-1');
         $index->noteTestDelivery(new SignalName(ClusterCommandConstants::SIGNAL_CLIENT_TEST));
         $index->noteFanoutDelivery();

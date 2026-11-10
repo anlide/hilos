@@ -10,6 +10,9 @@ use Hilos\Auth\Session\SessionCookieName;
 use Hilos\Auth\Session\SessionRotationTicket;
 use Hilos\Auth\Session\SessionToken;
 use Hilos\Auth\Throttle\ThrottleIdentity;
+use Hilos\Cluster\Connections\ClusterAcceptKey;
+use Hilos\Cluster\Exception\ClusterConfigurationException;
+use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
@@ -398,7 +401,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws InvalidFrameException If frame payload is invalid
      * @throws AgentUnknownActionException When action name is not allowed
      * @throws UnsupportedOperationException When an internal signal branch is unreachable
-     * @throws EnvException When the build timestamp or liveness env values cannot be read, or the liveness spans are out of order
+     * @throws EnvException When handshake or cluster env values cannot be read, or the liveness spans are out of order
+     * @throws ClusterConfigurationException When the enabled cluster's node configuration is invalid
+     * @throws ClusterDisabledException When the cluster reports itself enabled and then refuses its identity
      * @throws RandomException When the secure random source refuses a handshake secret
      * @throws InvalidFormatException When the upgrade request's query string carries a non-string value
      * @throws InvalidArgumentException When a signal the frame turns into cannot be named
@@ -554,7 +559,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws SocketException When socket error occurs
      * @throws UnsupportedProtocolVersionException When protocol version is not 13
      * @throws EnvException When the build timestamp, cookie, environment or liveness env values cannot be read,
-     *                      or the liveness spans are out of order
+     *                      the liveness spans are out of order, or cluster env values cannot be read
+     * @throws ClusterConfigurationException When the enabled cluster's node configuration is invalid
+     * @throws ClusterDisabledException When the cluster reports itself enabled and then refuses its identity
      * @throws RandomException When the secure random source refuses this connection's secrets
      * @throws EventLoopException When the next protocol deadline cannot be armed
      */
@@ -1029,7 +1036,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
-     * Mint a connection identifier: 128-bit random, base64url without padding.
+     * Mint a connection identifier: 128-bit random, base64url without padding, prefixed by the cluster node id when enabled.
      *
      * The RFC 6455 Sec-WebSocket-Accept value is derivable by the client from
      * its own Sec-WebSocket-Key, so it cannot serve as a trusted identity.
@@ -1038,14 +1045,21 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * OAuth login, the protected-mode initiator, the connection-drop command - so it
      * is a secret and is drawn from the secure axis of RandomHelper (HIL-568).
      *
-     * @return string Minted accept key (22 base64url characters)
+     * @return string Minted accept key, with a node prefix in cluster mode
      * @throws RandomException When the platform's secure random source refuses
+     * @throws EnvException When cluster env values cannot be read
+     * @throws ClusterConfigurationException When the enabled cluster's node configuration is invalid
+     * @throws ClusterDisabledException When the cluster reports itself enabled and then refuses its identity
      */
     private static function mintAcceptKey(): string
     {
-        $random = RandomHelper::secureBytes(self::ACCEPT_KEY_RANDOM_BYTES);
+        $random = rtrim(strtr(base64_encode(RandomHelper::secureBytes(self::ACCEPT_KEY_RANDOM_BYTES)), '+/', '-_'), '=');
 
-        return rtrim(strtr(base64_encode($random), '+/', '-_'), '=');
+        if (Hilos::$cluster?->isEnabled() === true) {
+            return ClusterAcceptKey::compose(Hilos::$cluster->localNodeId(), $random);
+        }
+
+        return $random;
     }
 
     /**

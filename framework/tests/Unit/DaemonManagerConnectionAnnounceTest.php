@@ -43,7 +43,7 @@ final class DaemonManagerConnectionAnnounceTest extends TestCase
     {
         $this->previousCluster = Hilos::$cluster;
         Hilos::$cluster = new ClusterContext();
-        Hilos::$cluster->registerClientConnections(new ClusterClientLocation());
+        Hilos::$cluster->registerClientConnections(new ClusterClientLocation('local'));
     }
 
     protected function tearDown(): void

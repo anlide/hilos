@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Auth\Session\SessionCookieName;
+use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\NodeIdentity;
+use Hilos\Cluster\NodeRole;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Constants\WebSocketConstants;
@@ -12,6 +15,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 
 /**
  * Unit tests for the framework handshake welcome frame and the minted accept key.
@@ -29,6 +33,9 @@ final class WebSocketClientHandshakeWelcomeTest extends TestCase
 
     private ?EnvAccessor $previousEnv = null;
 
+    private ?ClusterContext $previousCluster = null;
+
+    /** Preserve the facade and isolate standalone handshakes from cluster state. */
     protected function setUp(): void
     {
         $this->previousSignalRouter = Hilos::$sr;
@@ -36,12 +43,16 @@ final class WebSocketClientHandshakeWelcomeTest extends TestCase
         $this->previousEnv = Hilos::$env;
         Hilos::$env = new EnvAccessor();
         putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name);
+        $this->previousCluster = Hilos::$cluster;
+        Hilos::$cluster = null;
     }
 
+    /** Restore the facade after either standalone or clustered handshakes. */
     protected function tearDown(): void
     {
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$env = $this->previousEnv;
+        Hilos::$cluster = $this->previousCluster;
         putenv('HILOS_BUILD_TIMESTAMP');
         putenv('HILOS_SESSION_COOKIE_NAME');
         putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name);
@@ -122,6 +133,26 @@ final class WebSocketClientHandshakeWelcomeTest extends TestCase
         $this->assertNotSame($rfcAccept, $probe->acceptKey);
         $this->assertMatchesRegularExpression('/^[A-Za-z0-9_-]{22}$/', $probe->acceptKey);
         $this->assertSame($probe->acceptKey, $probe->capturedAcceptKey);
+    }
+
+    public function testClusterAcceptKeyCarriesTheCachedLocalNodeId(): void
+    {
+        $previousEnabled = getenv(EnvConstants::CLUSTER_ENABLED->name);
+        putenv(EnvConstants::CLUSTER_ENABLED->name . '=true');
+        Hilos::$cluster = new ClusterContext();
+        new ReflectionProperty(ClusterContext::class, 'identity')->setValue(
+            Hilos::$cluster,
+            NodeIdentity::of('node.a', 'Node A', NodeRole::Master, []),
+        );
+
+        try {
+            $probe = $this->handshakenProbe();
+
+            $this->assertMatchesRegularExpression('/^node\.a\.[A-Za-z0-9_-]{22}$/', $probe->acceptKey);
+            $this->assertSame($probe->acceptKey, $probe->capturedAcceptKey);
+        } finally {
+            putenv(EnvConstants::CLUSTER_ENABLED->name . ($previousEnabled === false ? '' : '=' . $previousEnabled));
+        }
     }
 
     public function testEachHandshakeMintsAUniqueAcceptKey(): void

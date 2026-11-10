@@ -125,7 +125,7 @@ final class SignalRouterClientLocationTest extends TestCase
     public function testTheRealIndexDrivesThePostPass(): void
     {
         $context = new ClusterContext();
-        $index = new ClusterClientLocation();
+        $index = new ClusterClientLocation('node-A');
         $index->applySnapshot('node-B', ['ws-key']);
         $context->registerClientConnections($index);
         $context->registerClientLocation($index);
@@ -134,6 +134,25 @@ final class SignalRouterClientLocationTest extends TestCase
         $destinations = new ClientLocationTestRouter()->getDestinations($this->noopSignal());
 
         $this->assertEquals(new RemoteClientDestination('node-B', 'ws-key'), $destinations[1]);
+    }
+
+    public function testAMintedRemoteKeyRoutesWithoutAnAnnouncement(): void
+    {
+        $context = new ClusterContext();
+        $context->registerClientLocation(new ClusterClientLocation('node-A'));
+        Hilos::$cluster = $context;
+
+        $signal = new SignalDTO(
+            new SignalSource(SignalSource::AGENT),
+            new SignalType(SignalTypeConstants::WS_USER),
+            new SignalName('user_signal'),
+            new WebSocketSignalData(data: new SignalData(), targetAcceptKey: 'node-B.AbCdEfGhIjKlMnOpQrSt_-'),
+        );
+
+        $this->assertEquals(
+            [new RemoteClientDestination('node-B', 'node-B.AbCdEfGhIjKlMnOpQrSt_-')],
+            new SignalRouter()->getDestinations($signal),
+        );
     }
 
     /**

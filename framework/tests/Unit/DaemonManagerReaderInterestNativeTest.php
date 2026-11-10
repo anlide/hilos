@@ -69,7 +69,7 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
         self::assertTrue($this->invoke('hasRunnableReaderInterest'), 'Completion itself requires the next nonblocking pass');
         self::assertTrue($this->manager->getAgentManagerDaemon()->hasChangedReaderInterest(), 'Peek is nonconsuming');
         Hilos::$cluster = new ClusterContext();
-        Hilos::$cluster->registerClientConnections(new ClusterClientLocation());
+        Hilos::$cluster->registerClientConnections(new ClusterClientLocation('local'));
         Hilos::$cluster->clientConnections()->attachLocal('phase-order');
         $this->invoke('attachConnectionChangesEventLoop');
         $this->invoke('runGuardedIteration', microtime(true));

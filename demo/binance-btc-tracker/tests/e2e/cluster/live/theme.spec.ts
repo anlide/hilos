@@ -559,137 +559,86 @@ async function expectAccountTabs(
   }
 }
 
-// FIXME(F-075, 2026-11-08): новая account-вкладка после reset остаётся loading · чужой · попытка 3 · HIL-1969
-test(
-  'cluster theme account choices and reset reach independent sessions on every master',
-  { tag: '@quarantine:F-075' },
-  async ({ browser }) => {
-    // Two accounts, two independent logins, five broadcasts, six new tabs
-    // and an Appearance save exceed the single-client cap on an idle stand.
-    test.slow()
-    await withThemeProof(browser, async (proof) => {
-      const { fresh, clients, third } = proof
-      const settings: ThemeSettings = {
-        switchingEnabled: true,
-        defaultTheme: 'system',
-      }
-      const first = await fresh(CLUSTER_FOLLOWER, 'light')
-      clients.push(first)
-      const person = await createTestUser(expect, first.page)
-      first.userId = person.userId
-      first.initialized = false
-      const accounts = [first]
-      for (const [node, system] of [
-        [CLUSTER_LEADER, 'dark'],
-        [third, 'light'],
-      ] as const) {
-        const account = await fresh(node, system)
-        clients.push(account)
-        accounts.push(account)
-        await gotoPage(expect, account.page, '/', PAGE_READY)
-        await openSignIn(expect, account.page)
-        await login(expect, account.page, person.email)
-        await expect(account.page.getByTestId('self-user')).toHaveText(
-          person.name,
-        )
-        account.userId = person.userId
-        account.initialized = false
-      }
-      const stranger = await fresh(third, 'dark')
-      clients.push(stranger)
-      stranger.userId = (await createTestUser(expect, stranger.page)).userId
-      expect(stranger.userId).not.toBe(person.userId)
+test('cluster theme account choices and reset reach independent sessions on every master', async ({
+  browser,
+}) => {
+  // Two accounts, two independent logins, five broadcasts, six new tabs
+  // and an Appearance save exceed the single-client cap on an idle stand.
+  test.slow()
+  await withThemeProof(browser, async (proof) => {
+    const { fresh, clients, third } = proof
+    const settings: ThemeSettings = {
+      switchingEnabled: true,
+      defaultTheme: 'system',
+    }
+    const first = await fresh(CLUSTER_FOLLOWER, 'light')
+    clients.push(first)
+    const person = await createTestUser(expect, first.page)
+    first.userId = person.userId
+    first.initialized = false
+    const accounts = [first]
+    for (const [node, system] of [
+      [CLUSTER_LEADER, 'dark'],
+      [third, 'light'],
+    ] as const) {
+      const account = await fresh(node, system)
+      clients.push(account)
+      accounts.push(account)
+      await gotoPage(expect, account.page, '/', PAGE_READY)
+      await openSignIn(expect, account.page)
+      await login(expect, account.page, person.email)
+      await expect(account.page.getByTestId('self-user')).toHaveText(
+        person.name,
+      )
+      account.userId = person.userId
+      account.initialized = false
+    }
+    const stranger = await fresh(third, 'dark')
+    clients.push(stranger)
+    stranger.userId = (await createTestUser(expect, stranger.page)).userId
+    expect(stranger.userId).not.toBe(person.userId)
+    await chooseHeaderTheme(expect, stranger.page, 'light')
+    stranger.pick = 'light'
+    stranger.initialized = true
+    await setAdmin(stranger.userId, true)
+    await expect(stranger.page.getByTestId('nav-admin')).toHaveAttribute(
+      'data-access',
+      'full',
+    )
+    await gotoPage(expect, stranger.page, APPEARANCE_PATH, PAGE_READY)
+    await expectAppearanceRows(expect, stranger.page)
+    proof.admin = stranger
+
+    const guest = await fresh(CLUSTER_LEADER, 'dark')
+    clients.push(guest)
+    await gotoPage(expect, guest.page, '/', PAGE_READY)
+    const tokens = await Promise.all(
+      clients.map((client) => sessionToken(client.page)),
+    )
+    expect(new Set(tokens).size).toBe(clients.length)
+    for (const client of clients) {
+      const handshakes = client.frames.filter(
+        (frame) => frame.type === 'handshake_response',
+      )
+      expect(handshakes.length).toBeGreaterThan(0)
+      expectIdentity(handshakes[handshakes.length - 1], client)
+      for (const frame of client.frames)
+        expect(frameSettings(frame), frame.raw).toEqual(settings)
+      await expectBrowserTheme(client, settings)
+    }
+    const baseline = clients.map((client) => ({ ...client.counts }))
+    let previousStarts = clients.map((client) => client.frames.length)
+    let darkTabsChecked = false
+
+    // The other person's explicit Light is a real server round trip, also when
+    // Light is already personal. Inspect all frames through that boundary.
+    async function isolationRoundTrip(
+      starts: readonly number[],
+    ): Promise<void> {
+      const strangerStart = stranger.frames.length
       await chooseHeaderTheme(expect, stranger.page, 'light')
-      stranger.pick = 'light'
-      stranger.initialized = true
-      await setAdmin(stranger.userId, true)
-      await expect(stranger.page.getByTestId('nav-admin')).toHaveAttribute(
-        'data-access',
-        'full',
-      )
-      await gotoPage(expect, stranger.page, APPEARANCE_PATH, PAGE_READY)
-      await expectAppearanceRows(expect, stranger.page)
-      proof.admin = stranger
-
-      const guest = await fresh(CLUSTER_LEADER, 'dark')
-      clients.push(guest)
-      await gotoPage(expect, guest.page, '/', PAGE_READY)
-      const tokens = await Promise.all(
-        clients.map((client) => sessionToken(client.page)),
-      )
-      expect(new Set(tokens).size).toBe(clients.length)
-      for (const client of clients) {
-        const handshakes = client.frames.filter(
-          (frame) => frame.type === 'handshake_response',
-        )
-        expect(handshakes.length).toBeGreaterThan(0)
-        expectIdentity(handshakes[handshakes.length - 1], client)
-        for (const frame of client.frames)
-          expect(frameSettings(frame), frame.raw).toEqual(settings)
-        await expectBrowserTheme(client, settings)
-      }
-      const baseline = clients.map((client) => ({ ...client.counts }))
-      let previousStarts = clients.map((client) => client.frames.length)
-      let darkTabsChecked = false
-
-      // The other person's explicit Light is a real server round trip, also when
-      // Light is already personal. Inspect all frames through that boundary.
-      async function isolationRoundTrip(
-        starts: readonly number[],
-      ): Promise<void> {
-        const strangerStart = stranger.frames.length
-        await chooseHeaderTheme(expect, stranger.page, 'light')
-        await expectAccountDelivery([stranger], [strangerStart], settings)
-        for (const client of clients) await expectBrowserTheme(client, settings)
-        expectInterval(clients, starts, settings)
-        for (const [index, client] of clients.entries()) {
-          expect(
-            client.counts,
-            `No reload or reconnect on ${client.node}`,
-          ).toEqual(baseline[index])
-        }
-      }
-
-      for (const [source, pick] of [
-        [first, 'dark'],
-        [accounts[2], 'light'],
-        [accounts[1], 'system'],
-        [first, 'dark'],
-        [accounts[1], null],
-      ] as const) {
-        expectInterval(clients, previousStarts, settings)
-        const starts = clients.map((client) => client.frames.length)
-        for (const account of accounts) {
-          account.pick = pick
-          account.initialized = true
-        }
-        await chooseHeaderTheme(expect, source.page, pick)
-        await expectAccountDelivery(
-          accounts,
-          starts.slice(0, accounts.length),
-          settings,
-        )
-        await isolationRoundTrip(starts)
-        previousStarts = starts
-        if (pick === 'dark' && !darkTabsChecked) {
-          await expectAccountTabs(proof, accounts, settings)
-          expectInterval(clients, starts, settings)
-          darkTabsChecked = true
-        }
-      }
-
-      // The reset is authoritative null/true on all three independent sessions.
-      // Its default badge must now follow the administrator's live setting.
-      expectInterval(clients, previousStarts, settings)
-      const starts = clients.map((client) => client.frames.length)
-      await openAppearanceSetting(expect, stranger.page, THEME_DEFAULT_KEY)
-      await stranger.page.getByTestId('appearance-default-theme-dark').check()
-      await saveAppearanceDefaultTheme(expect, stranger.page, 'dark')
-      settings.defaultTheme = 'dark'
-      await expectAppearanceRows(expect, stranger.page, true, 'dark')
-      await expectDelivery(clients, starts, settings)
-      await isolationRoundTrip(starts)
-      await expectAccountTabs(proof, accounts, settings)
+      await expectAccountDelivery([stranger], [strangerStart], settings)
+      for (const client of clients) await expectBrowserTheme(client, settings)
       expectInterval(clients, starts, settings)
       for (const [index, client] of clients.entries()) {
         expect(
@@ -697,9 +646,56 @@ test(
           `No reload or reconnect on ${client.node}`,
         ).toEqual(baseline[index])
       }
-    })
-  },
-)
+    }
+
+    for (const [source, pick] of [
+      [first, 'dark'],
+      [accounts[2], 'light'],
+      [accounts[1], 'system'],
+      [first, 'dark'],
+      [accounts[1], null],
+    ] as const) {
+      expectInterval(clients, previousStarts, settings)
+      const starts = clients.map((client) => client.frames.length)
+      for (const account of accounts) {
+        account.pick = pick
+        account.initialized = true
+      }
+      await chooseHeaderTheme(expect, source.page, pick)
+      await expectAccountDelivery(
+        accounts,
+        starts.slice(0, accounts.length),
+        settings,
+      )
+      await isolationRoundTrip(starts)
+      previousStarts = starts
+      if (pick === 'dark' && !darkTabsChecked) {
+        await expectAccountTabs(proof, accounts, settings)
+        expectInterval(clients, starts, settings)
+        darkTabsChecked = true
+      }
+    }
+
+    // The reset is authoritative null/true on all three independent sessions.
+    // Its default badge must now follow the administrator's live setting.
+    expectInterval(clients, previousStarts, settings)
+    const starts = clients.map((client) => client.frames.length)
+    await openAppearanceSetting(expect, stranger.page, THEME_DEFAULT_KEY)
+    await stranger.page.getByTestId('appearance-default-theme-dark').check()
+    await saveAppearanceDefaultTheme(expect, stranger.page, 'dark')
+    settings.defaultTheme = 'dark'
+    await expectAppearanceRows(expect, stranger.page, true, 'dark')
+    await expectDelivery(clients, starts, settings)
+    await isolationRoundTrip(starts)
+    await expectAccountTabs(proof, accounts, settings)
+    expectInterval(clients, starts, settings)
+    for (const [index, client] of clients.entries()) {
+      expect(client.counts, `No reload or reconnect on ${client.node}`).toEqual(
+        baseline[index],
+      )
+    }
+  })
+})
 
 // FIXME(F-069, 2026-11-08): First reconnect on m3 has no observed account handshake · свой · попытка 3 · HIL-1899
 test(

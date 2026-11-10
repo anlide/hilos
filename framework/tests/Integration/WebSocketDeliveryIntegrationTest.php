@@ -919,7 +919,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
             new ReflectionProperty(PeerServer::class, 'activeLinks')->setValue($peer, ['socket' => $link]);
             $serving->registerServer($peer);
             Hilos::$cluster = new ClusterContext();
-            $locations = new ClusterClientLocation();
+            $locations = new ClusterClientLocation('remote');
             $locations->applySnapshot('socket', [$acceptKey]);
             Hilos::$cluster->registerClientLocation($locations);
             foreach ($signals as $signal) {

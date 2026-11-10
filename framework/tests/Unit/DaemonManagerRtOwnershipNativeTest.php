@@ -306,7 +306,7 @@ final class DaemonManagerRtOwnershipNativeTest extends TestCase
         $this->invoke('attachSignalDispatchEventLoop');
         $this->invoke('attachReaderInterestEventLoop');
         Hilos::$cluster = new ClusterContext();
-        Hilos::$cluster->registerClientConnections(new ClusterClientLocation());
+        Hilos::$cluster->registerClientConnections(new ClusterClientLocation('local'));
         Hilos::$cluster->clientConnections()->attachLocal('phase-order');
         $this->invoke('attachConnectionChangesEventLoop');
         $this->manager->getAgentManagerDaemon()->handleSourceInterest(new WorkerSourceInterestDTO([OwnershipNativeRuntime::NAMED], []), 7);
