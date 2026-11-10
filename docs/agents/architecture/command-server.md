@@ -228,10 +228,15 @@ operator commands — not `TestOnlyCommand`. `admin:revoke` refuses to remove th
 active administrator, using the same guard as the admin account card.
 
 It is answered by the **sessions library**, beside `admin:create` and for the same
-reason (HIL-729): the flag changes what a browser may open, so every live session of
-that user has to be told, and the sessions are the library's. The framework does the
-telling — one `hilos_session_state` frame per live session, once the agent answered —
-and the agent writes nothing but the flag. Before that merge each demo carried its
+reason (HIL-729): the flag changes what a browser may open, so the library restates
+the user's sessions after the agent answers. It sends frames for sessions in its
+connection copy first, then adds every unexpired stored session not already named;
+a session with no sockets in that copy still gets a frame with `acceptKeys: []`.
+The project resolves that list against its own connection register, which can
+already know a replacement socket the library has not learned about. The returned
+`announcedSessions` count includes only sessions with accept keys in the library's
+copy, so it can be zero even when the frame updates a tab; `announced` can still be
+true. The agent writes nothing but the flag. Before that merge each demo carried its
 own copy of the re-greeting, and the two that were not chat had lost fields from it.
 A revoke on its way to the agent counts against the last active administrator until
 it is answered, so two revokes crossing each other cannot both pass.

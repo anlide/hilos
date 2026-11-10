@@ -2208,7 +2208,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * bought (HIL-729): a flag written in silence reaches the browser only on the next
      * reload, and until then a fresh administrator is shown no way in. Saying it out loud
      * needs the person's sockets and the session behind each of them, which is exactly what
-     * this library holds - so the flag is followed by one state frame per live session, the
+     * this library holds - so the flag is followed by one state frame per unexpired session, the
      * same frame every other ending of a session travels on. The project's own handler
      * re-sends the identity from it and re-asks its open pages the access question
      * ({@see PageAccessReassessment}), once per frame, as it already does for a sign-in.
@@ -2330,7 +2330,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Restates every live session of one user, so their open tabs learn the flag changed.
+     * Restates every unexpired session of one user, so their open tabs learn the flag changed.
      *
      * A restatement rather than a change: the frame carries the session as it is now, and
      * the project handler on the other end re-sends the identity and re-decides the pages
@@ -2338,15 +2338,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * no action is answered - what the frame does carry is the ack the session is holding,
      * because a response that left it out would clear an announcement the person has not read
      * yet (HIL-422). Since HIL-875 that ack is a field of the session row, so the row behind
-     * each token is read here, for that one field and nothing else - and a process that
-     * answers this command without a session table to read states no mark, which is the only
-     * answer it has.
+     * each token is read here for that field. A process that answers this command without
+     * a session table to read states no mark, which is the only answer it has.
      *
-     * WHICH sessions to tell is still asked of the LIVE CONNECTIONS rather than of the session
-     * table, and the two are not the same question: what has to be told is the tabs that are
-     * open, and a session row this node holds no socket for names nobody while still costing
-     * the project a page sweep. It is also the node limit the sign-out seam has - a tab held
-     * open elsewhere in a cluster learns the flag when its own node reads the row.
+     * The connection copy names the known tabs first and supplies the session and tab counts.
+     * Every unexpired session row then gets a frame too, even when that copy names no sockets:
+     * the project resolves the session's sockets through its own register, where a replacement
+     * socket may already be present before this copy learns of it. A dormant session costs one
+     * frame; a project with no sockets for it returns before identity work or a page sweep.
      *
      * The registration step is null throughout, and truthfully so: the frame reaches sockets
      * that carry a signed-in person, and signing in is what releases that step.
@@ -2359,11 +2358,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * signal router rather than of one session, so carrying on would meet it again once per
      * tab and write the log line as many times, for the same one answer to the operator.
      *
-     * A node holding no connections at all is not a failure: there was nobody to tell, the
-     * count says zero, and the reason stays null.
+     * An empty connection copy is not a failure: the counts stay zero even when a session
+     * frame reaches a socket only the project knows, and the reason stays null.
      *
      * @param int $userId User whose sessions are restated
-     * @return AdminGrantAnnouncement Sessions told, and why the pass stopped if it did
+     * @return AdminGrantAnnouncement Sessions and tabs visible in the connection copy, and any failure reason
      */
     private function announceAdminGrant(int $userId): AdminGrantAnnouncement
     {
@@ -2371,10 +2370,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Restates every open session of a person after a projected identity field changes.
+     * Restates known open sessions and all unexpired stored sessions after an identity change.
      *
-     * @param int $userId Person whose open sessions need fresh state
-     * @return AdminGrantAnnouncement Sessions told and any failure reason
+     * @param int $userId Person whose sessions need fresh state
+     * @return AdminGrantAnnouncement Sessions and tabs visible in the connection copy, and any failure reason
      */
     private function restateSessionsOf(int $userId): AdminGrantAnnouncement
     {
@@ -2395,6 +2394,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 }
             }
 
+            foreach (Hilos::$db?->sessions->findByUserId($userId) ?? [] as $session) {
+                if ($session->expiresAt === null || $session->expiresAt > TimeHelper::nowMs()) {
+                    $keysByToken[$session->token] ??= [];
+                }
+            }
+
             foreach ($keysByToken as $sessionToken => $acceptKeys) {
                 $session = Hilos::$db?->sessions->findByToken((string)$sessionToken);
                 $this->publishSessionState(new SessionStateSignalData(
@@ -2404,8 +2409,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     acceptKeys: $acceptKeys,
                     pendingAck: $session === null ? null : $this->sessionPendingAck($session),
                 ));
-                $sessions++;
-                $tabs += count($acceptKeys);
+                if ($acceptKeys !== []) {
+                    $sessions++;
+                    $tabs += count($acceptKeys);
+                }
             }
         } catch (WiringRefusal $refusal) {
             // Told apart and written down as its own thing, then reported like any other reason:

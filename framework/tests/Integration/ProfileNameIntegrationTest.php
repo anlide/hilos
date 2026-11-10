@@ -184,13 +184,15 @@ final class ProfileNameIntegrationTest extends ProfileIntegrationTestCase
         $this->assertRenamedOnce('Grace');
         $this->assertSessionIdentity('Grace', [self::ACCEPT_KEY, 'same-browser-tab', self::OTHER_ACCEPT_KEY]);
         $states = $this->take(HilosSignalConstants::HILOS_SESSION_STATE);
-        self::assertCount(2, $states);
+        self::assertCount(3, $states);
         self::assertSame([self::ACCEPT_KEY, 'same-browser-tab'], $states[0]->data->data->acceptKeys);
         self::assertSame(self::SESSION_TOKEN, $states[0]->data->data->sessionToken);
         self::assertNull($states[0]->data->data->pendingAck);
         self::assertSame([self::OTHER_ACCEPT_KEY], $states[1]->data->data->acceptKeys);
         self::assertSame(self::OTHER_SESSION_TOKEN, $states[1]->data->data->sessionToken);
         self::assertSame(SessionAck::SIGNED_IN, $states[1]->data->data->pendingAck);
+        self::assertSame(str_repeat('d', 32), $states[2]->data->data->sessionToken);
+        self::assertSame([], $states[2]->data->data->acceptKeys);
         self::assertSame('done', $this->change()->phase);
         $this->dispatchName(' Grace ');
         $this->carry();

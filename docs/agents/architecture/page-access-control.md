@@ -473,9 +473,12 @@ tells them what they may now show — the project's handler of the
 `hilos_session_state` frame, described in full below. A rights change gets there
 the way every other identity change does: `AbstractSessionsLibraryAgent` answers
 the grant command, has the person's agent write the flag (HIL-1404), and on its
-answer restates every live session of that person (`announceAdminGrant`). So a
-project mounting the framework grant gets the re-decision by inheritance and has
-no call site of its own to start (HIL-729).
+answer restates that person's sessions (`announceAdminGrant`). The connection
+copy supplies its known session tokens first, with their existing accept keys;
+then every unexpired session row for the person is added if it was not already
+named. A stored session with no sockets in that copy still gets a frame, with
+`acceptKeys: []`. So a project mounting the framework grant gets the re-decision
+by inheritance and has no call site of its own to start (HIL-729).
 
 `PageAccessReassessment::forUser($userId)` queues one `page_access_reassess_user`
 announcement naming that person and returns. Each worker of the cluster then runs
@@ -540,6 +543,14 @@ about — the shell sign-out, the session-expiry drop, the account-merge force-l
 the recovery drop of the other sessions. So all four still behave identically, but
 through one frame rather than through one method, and the announcement is made by
 the project because the rows it is judged against are the project's.
+
+Before resolving identity, the project asks its connection register for the keys
+named by the frame plus any other sockets it already knows for that session. A
+replacement socket can therefore receive the new identity even when the holder's
+connection copy has not learned its key yet. If the register returns no keys, the
+handler exits immediately: it does not resolve or send an identity, write connection
+state to RT, or reassess pages. A dormant stored session costs the project no page
+sweep.
 
 **A project writes that handler once and never announces anything again.** Inside
 it the announcement is queued ONCE after the loop over the frame's accept keys, not

@@ -74,16 +74,18 @@ final class EcommerceShopAgent extends AbstractAgent
      */
     private function applySessionState(SessionStateSignalData $frame): void
     {
+        $acceptKeys = Hilos::$rt->connections->acceptKeysForSessionFrame($frame->acceptKeys, $frame->sessionToken);
+        if ($acceptKeys === []) {
+            return;
+        }
+
         $userId = $frame->userId;
         // One identity for the whole frame: every socket it reaches belongs to the one session
         // it is about - the ones it names and the rest of the session's, which only this
         // register knows of yet.
         $identity = $this->handshakeIdentity($frame);
 
-        foreach (
-            Hilos::$rt->connections->acceptKeysForSessionFrame($frame->acceptKeys, $frame->sessionToken)
-            as $acceptKey
-        ) {
+        foreach ($acceptKeys as $acceptKey) {
             $this->settleConnection($acceptKey, $frame);
             $this->sendHandshakeResponse(EcommerceShopSignalConstants::HANDSHAKE_RESPONSE, $acceptKey, $identity, $frame);
         }

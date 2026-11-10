@@ -29,7 +29,9 @@ use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
  * per-session: signing out, marking an ack and clearing it bring every live socket of one
  * session to a single state. A handshake is the case where that list holds one, not a
  * different kind of frame. The list is built by the library from the project's own
- * connection rows, which it may read but not write.
+ * connection rows, which it may read but not write. A restatement may carry an empty list
+ * when the library's copy knows no sockets yet; the project also resolves sockets by the
+ * session token through its own register and returns immediately when it finds none.
  *
  * A frame that carries a {@see self::$rotationTicket} or an answer to an action names
  * exactly ONE socket - the one that acted. Both are addressed to it: a one-time rotation
@@ -60,7 +62,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param string $sessionToken Session cookie token the named sockets belong to now
      * @param ?int $sessionId Database session row id, or null when no session row exists
      * @param ?int $userId User the session is bound to, or null when it is anonymous
-     * @param list<string> $acceptKeys Accept keys of the live connections this state applies to
+     * @param list<string> $acceptKeys Known sockets, possibly empty on restatement; the project also resolves the session's sockets
      * @param ?string $pendingAck Ack the session owes (a {@see SessionAck} value), or null for none
      * @param ?array{identifier: ?string, kind: ?string, intent: string, step: string,
      *     channel: ?string, expiresAt: ?int, code: ?string, message: ?string, acceptedRevisions?: array<string, string>,

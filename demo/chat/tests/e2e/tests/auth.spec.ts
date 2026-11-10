@@ -4,6 +4,7 @@ import { test, expect } from '../test.js'
 import {
   enterIdentifierAndPassword,
   login,
+  openSignIn,
   PASSWORD,
   register,
   submitFirstPassword,
@@ -28,6 +29,7 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { readRegisterCode } from '../../../../../framework/frontend/scripts/mail.mjs'
+import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
 import { logout } from '../helpers/session.js'
 
 // Auth e2e for the chat demo (HIL-167). Following the test consolidation
@@ -43,6 +45,7 @@ import { logout } from '../helpers/session.js'
 //   - button position stability across steps;
 //   - password screen stability when magic link is toggled by an administrator;
 //   - re-deciding open admin and profile pages on logout in place;
+//   - receiving an admin grant while sign-in replaces the socket, without reload;
 //   - the browser's own time zone named on every socket, a guest's and a
 //     signed-in person's alike (HIL-1582).
 
@@ -395,6 +398,25 @@ test('keeps the main button at one height on ordinary registration steps', async
   page,
 }) => {
   await registerWithTheMainButtonStill(page)
+})
+
+test('receives an admin grant while sign-in replaces the socket, without reload', async ({
+  page,
+}) => {
+  const { userId, email } = await seedTestUser({ email: uniqueEmail() })
+  await gotoPage(expect, page, '/')
+  await openSignIn(expect, page, 'message-signin')
+  let grant: Promise<void> | undefined
+  page.once('websocket', () => {
+    grant = setAdmin(userId, true)
+  })
+  await login(expect, page, email, PASSWORD)
+  await expect.poll(() => grant !== undefined).toBe(true)
+  await grant
+  await expect(page.getByTestId('nav-admin')).toHaveAttribute(
+    'data-access',
+    'full',
+  )
 })
 
 test('re-decides an open admin page when the person signs out, in place', async ({

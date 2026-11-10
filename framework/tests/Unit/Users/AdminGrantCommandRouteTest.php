@@ -43,8 +43,8 @@ use PHPUnit\Framework\TestCase;
  * {@see SessionsLibraryPersonIntegrationTest}.
  *
  * A write that lands is ANNOUNCED, and the announcement is what moving the route bought: one
- * session state frame per live session of the person, ahead of the reply. The project handler
- * on the other end re-sends the identity from it and re-decides the open pages - the same
+ * session state frame per known open or unexpired stored session of the person, ahead of the
+ * reply. The project handler re-sends the identity and re-decides the open pages - the same
  * frame and the same handler a sign-in travels through. The refusing branches read their reply
  * straight off the queue, which is what pins that nothing was announced for a write that never
  * happened.
@@ -69,10 +69,13 @@ final class AdminGrantCommandRouteTest extends TestCase
 
     private ?HilosDbContext $previousDb = null;
 
+    /** Mounts the route's people, stored sessions and connection copy independently. */
     protected function setUp(): void
     {
         $this->previousDb = Hilos::$db;
         Hilos::$db = new AdminGrantRouteTestDb();
+        AdminGrantRouteRows::$sessions = [];
+        AdminGrantRouteTestRtContext::$hasConnection = true;
         AdminGrantRouteTestHilos::initBrowser();
         AdminGrantRouteTestAudience::$ids = [self::LIVE_USER_ID, 8];
         Hilos::$sr = new SignalRouter();
@@ -113,6 +116,77 @@ final class AdminGrantCommandRouteTest extends TestCase
         self::assertSame([self::LIVE_USER_ID, true], $person->applied);
         self::assertSame(self::LIVE_USER_ID, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_ADMIN]);
+        self::assertTrue($reply->payload[AdminCommandConstants::FIELD_ANNOUNCED]);
+        self::assertSame(1, $reply->payload[AdminCommandConstants::FIELD_ANNOUNCED_SESSIONS]);
+        self::assertNull($reply->payload[AdminCommandConstants::FIELD_ANNOUNCE_ERROR]);
+    }
+
+    public function testAStoredSessionIsAnnouncedBeforeItsSocketReachesTheCopy(): void
+    {
+        AdminGrantRouteRows::$sessions = [(object)['token' => self::LIVE_SESSION_TOKEN, 'expiresAt' => null]];
+        AdminGrantRouteTestRtContext::$hasConnection = false;
+        Hilos::$rt->configure();
+        $agent = new AdminGrantRouteTestAgent();
+        $person = new AdminGrantRouteTestUserAgent((string)self::LIVE_USER_ID);
+
+        $this->sendCommand($agent, CliCommands::ADMIN_GRANT, [
+            AdminCommandConstants::FIELD_USER_ID => self::LIVE_USER_ID,
+            AdminCommandConstants::FIELD_ADMIN => true,
+        ]);
+        $this->carryThroughThePersonsAgent($agent, $person);
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($signal);
+        self::assertSame(HilosSignalConstants::HILOS_SESSION_STATE, $signal->signalName->getName());
+        self::assertInstanceOf(AgentSignalData::class, $signal->data);
+        $frame = $signal->data->data;
+        self::assertInstanceOf(SessionStateSignalData::class, $frame);
+        self::assertSame(self::LIVE_USER_ID, $frame->userId);
+        self::assertSame(self::LIVE_SESSION_TOKEN, $frame->sessionToken);
+        self::assertSame([], $frame->acceptKeys);
+        $reply = $this->consumeReply();
+        self::assertTrue($reply->isOk());
+        self::assertTrue($reply->payload[AdminCommandConstants::FIELD_ANNOUNCED]);
+        self::assertSame(0, $reply->payload[AdminCommandConstants::FIELD_ANNOUNCED_SESSIONS]);
+        self::assertNull($reply->payload[AdminCommandConstants::FIELD_ANNOUNCE_ERROR]);
+    }
+
+    public function testAnExpiredStoredSessionIsNotAnnounced(): void
+    {
+        AdminGrantRouteRows::$sessions = [(object)['token' => self::LIVE_SESSION_TOKEN, 'expiresAt' => 1]];
+        AdminGrantRouteTestRtContext::$hasConnection = false;
+        Hilos::$rt->configure();
+        $agent = new AdminGrantRouteTestAgent();
+        $person = new AdminGrantRouteTestUserAgent((string)self::LIVE_USER_ID);
+
+        $this->sendCommand($agent, CliCommands::ADMIN_GRANT, [
+            AdminCommandConstants::FIELD_USER_ID => self::LIVE_USER_ID,
+            AdminCommandConstants::FIELD_ADMIN => true,
+        ]);
+        $this->carryThroughThePersonsAgent($agent, $person);
+
+        $reply = $this->consumeReply();
+        self::assertTrue($reply->isOk());
+        self::assertTrue($reply->payload[AdminCommandConstants::FIELD_ANNOUNCED]);
+        self::assertSame(0, $reply->payload[AdminCommandConstants::FIELD_ANNOUNCED_SESSIONS]);
+        self::assertNull($reply->payload[AdminCommandConstants::FIELD_ANNOUNCE_ERROR]);
+    }
+
+    public function testAStoredSessionAlreadyInTheCopyIsAnnouncedOnce(): void
+    {
+        AdminGrantRouteRows::$sessions = [(object)['token' => self::LIVE_SESSION_TOKEN, 'expiresAt' => PHP_INT_MAX]];
+        $agent = new AdminGrantRouteTestAgent();
+        $person = new AdminGrantRouteTestUserAgent((string)self::LIVE_USER_ID);
+
+        $this->sendCommand($agent, CliCommands::ADMIN_GRANT, [
+            AdminCommandConstants::FIELD_USER_ID => self::LIVE_USER_ID,
+            AdminCommandConstants::FIELD_ADMIN => true,
+        ]);
+        $this->carryThroughThePersonsAgent($agent, $person);
+
+        $this->consumeAnnouncement(self::LIVE_USER_ID);
+        $reply = $this->consumeReply();
+        self::assertTrue($reply->isOk());
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_ANNOUNCED]);
         self::assertSame(1, $reply->payload[AdminCommandConstants::FIELD_ANNOUNCED_SESSIONS]);
         self::assertNull($reply->payload[AdminCommandConstants::FIELD_ANNOUNCE_ERROR]);
@@ -289,10 +363,9 @@ final class AdminGrantCommandRouteTest extends TestCase
     /**
      * Takes the session state frame the grant queued ahead of its reply.
      *
-     * One frame per live session, and the fixture runtime holds exactly one, so the queue in
-     * front of the reply is one frame deep. It has to NAME the socket: a frame with an empty
-     * accept-key list would reach nobody while still costing the project a page sweep, and
-     * that is the difference between announcing the grant and merely queueing something.
+     * The fixture connection copy holds one socket, so this known session's frame names it.
+     * A restatement without a known socket is covered separately: the project resolves that
+     * frame through its own register, and the holder's open-session count stays zero.
      *
      * @param int $userId User the frame must name
      */
@@ -367,21 +440,27 @@ final class AdminGrantRouteTestUserAgent extends AbstractUserAgent
 }
 
 /**
- * Runtime holding one live session-stage connection, so the grant has a tab to announce to.
+ * Runtime optionally holding one live session-stage connection for the grant announcement.
  *
- * The announcement reads the CONNECTIONS rather than the session table - what has to be told
- * is the tabs that are open - so a runtime with one socket is the whole world this route needs.
+ * The stored session fixture is independent: a socket may already exist in the project while
+ * this holder's connection copy still has none.
  */
 final class AdminGrantRouteTestRtContext extends RtContext
 {
+    /** @var bool Whether the holder's copy has learned the socket yet */
+    public static bool $hasConnection = true;
+
+    /** Mounts either the known socket or the copy before its runtime sync arrives. */
     public function configure(): void
     {
         $connections = AdminGrantRouteTestConnections::init();
-        $connections->add(AdminGrantRouteTestConnection::create(
-            'accept-1',
-            7,
-            'aaaaaaaabbbbbbbbccccccccdddddddd',
-        ));
+        if (self::$hasConnection) {
+            $connections->add(AdminGrantRouteTestConnection::create(
+                'accept-1',
+                7,
+                'aaaaaaaabbbbbbbbccccccccdddddddd',
+            ));
+        }
         $this->_stateCollections[AdminGrantRouteTestConnections::RT_COLLECTION] = $connections;
     }
 }
@@ -506,6 +585,9 @@ final class AdminGrantRouteTestDb extends HilosDbContext
 /** The few reads the address check and the grant's announcement make. */
 final class AdminGrantRouteRows implements ArrayAccess
 {
+    /** @var list<object{token: string, expiresAt: ?int}> Stored sessions the holder can read */
+    public static array $sessions = [];
+
     public function __construct(private string $name)
     {
     }
@@ -532,6 +614,15 @@ final class AdminGrantRouteRows implements ArrayAccess
     public function findByToken(string $token): mixed
     {
         return null;
+    }
+
+    /**
+     * @param int $userId Person whose sessions the fixture holds
+     * @return list<object{token: string, expiresAt: ?int}> Fixture session rows
+     */
+    public function findByUserId(int $userId): array
+    {
+        return self::$sessions;
     }
 
     public function offsetSet(mixed $offset, mixed $value): void

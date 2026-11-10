@@ -462,6 +462,7 @@ final class ChatAgent extends AbstractAgent
      * whole state rather than the change it made.
      *
      * THE ORDER IS THE MECHANISM, not a sequence of chores:
+     * A frame with neither named nor locally known sockets ends before the steps below.
      * 1. the connection rows are written first, because everything below is read against
      *    them - the page re-decision judges "this connection belongs to N", and a browser
      *    told who it is before the row said so would be judged as the person it no longer is;
@@ -481,6 +482,11 @@ final class ChatAgent extends AbstractAgent
      */
     private function applySessionState(SessionStateSignalData $frame): void
     {
+        $acceptKeys = Hilos::$rt->connections->acceptKeysForSessionFrame($frame->acceptKeys, $frame->sessionToken);
+        if ($acceptKeys === []) {
+            return;
+        }
+
         $userId = $frame->userId;
         if ($userId !== null) {
             Hilos::$rt->userStates->actions->ensure($userId);
@@ -491,10 +497,7 @@ final class ChatAgent extends AbstractAgent
         // for all of them.
         $identity = $this->handshakeIdentity($frame);
 
-        foreach (
-            Hilos::$rt->connections->acceptKeysForSessionFrame($frame->acceptKeys, $frame->sessionToken)
-            as $acceptKey
-        ) {
+        foreach ($acceptKeys as $acceptKey) {
             $this->settleConnection($acceptKey, $frame);
             $this->sendHandshakeResponse(ChatSignalConstants::HANDSHAKE_RESPONSE, $acceptKey, $identity, $frame);
         }
