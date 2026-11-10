@@ -9,6 +9,8 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Core\TruthSource\DbWriterPartition;
+use Hilos\Core\TruthSource\DbWriterTransitionCatalog;
+use Hilos\Core\TruthSource\DbWriterTransitionState;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
@@ -9157,7 +9159,6 @@ abstract class TopologyLegacyDbHilos extends HilosFacade
     public const array SHARED_DB_OWNERS = [
         'secondFactorBackupCodes' => ['HIL-1904', 'HIL-1952', 'HIL-1999'],
         'secondFactors' => ['HIL-1903', 'HIL-1952', 'HIL-1999'],
-        'userRenames' => ['HIL-1896', 'HIL-1952'],
         'verifications' => ['HIL-1952'],
     ];
 }
@@ -9365,7 +9366,9 @@ abstract class TopologyDuplicateDbDebtHilos extends TopologyLegacyDbHilos
 
 abstract class TopologyUnsortedDbDebtHilos extends TopologyLegacyDbHilos
 {
-    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'userRenames' => ['HIL-1952', 'HIL-1896']];
+    public const array SHARED_DB_OWNERS = [
+        ...parent::SHARED_DB_OWNERS, 'secondFactors' => ['HIL-1952', 'HIL-1903', 'HIL-1999'],
+    ];
 }
 
 abstract class TopologyStaleActiveDbHilos extends TopologyLegacyDbHilos
@@ -9394,14 +9397,23 @@ abstract class TopologyExtraDbWriterHilos extends TopologyLegacyDbHilos
     ];
 }
 
-abstract class TopologyWrongOperationsLibrary extends AbstractUsersLibraryAgent
+abstract class TopologyWrongOperationsLibrary extends TopologyTestAgent
 {
-    public const array OWNS_DB = ['userRenames' => [TruthSourceOperation::Add]];
+    public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
+    public const array OWNS_DB = [
+        ...AbstractUsersLibraryAgent::OWNS_DB,
+        HilosDbContext::verifications => [TruthSourceOperation::Add, TruthSourceOperation::Update],
+    ];
 }
 
-abstract class TopologyWrongWidthLibrary extends AbstractUsersLibraryAgent
+abstract class TopologyWrongWidthLibrary extends TopologyTestAgent
 {
-    public const array OWNS_DB_ROWS = ['userRenames' => [TruthSourceOperation::Update]];
+    public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
+    public const array OWNS_DB = [
+        HilosDbContext::secondFactors => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+        HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+    ];
+    public const array OWNS_DB_ROWS = [HilosDbContext::verifications => TruthSourceOperation::ALL];
 }
 
 abstract class TopologyWrongDbOperationsHilos extends TopologyLegacyDbHilos
@@ -9624,15 +9636,33 @@ abstract class TopologyPublicDbRowReadHilos extends HilosFacade
     ]];
 }
 
-final class TopologyRenameLibrary extends TopologyTestAgent
+final class TopologyRenameTransitionCatalog extends DbWriterTransitionCatalog
 {
-    public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
+    /**
+     * @param class-string<HilosFacade> $hilosClass Inspected history-cleanup fixture
+     * @return array<string, list<DbWriterTransitionState>> Real remaining unlink and erasure states
+     */
+    protected function buildDefinitions(string $hilosClass): array
+    {
+        return [
+            ...parent::buildDefinitions($hilosClass),
+            HilosDbContext::userRenames => $this->renameStates(
+                $hilosClass,
+                $this->role($hilosClass, TopologyRenameHistoryAgent::AGENT_TYPE),
+            ),
+        ];
+    }
+}
+
+final class TopologyRenameHistoryAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'rename_history';
     public const array OWNS_DB = [HilosDbContext::userRenames => [TruthSourceOperation::Update]];
 }
 
-final class TopologyRenameCreatorLibrary extends TopologyTestAgent
+final class TopologyRenameEmptyHistoryAgent extends TopologyTestAgent
 {
-    public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
+    public const string AGENT_TYPE = 'rename_history';
 }
 
 class TopologyRenamePerson extends TopologyTestAgent
@@ -9665,12 +9695,12 @@ final class TopologyRenameEmptyHolder extends TopologyTestAgent
 abstract class TopologyRenameInitialHilos extends HilosFacade
 {
     public const array AGENTS = [
-        TopologyRenameLibrary::AGENT_TYPE => [
-            AgentRegistryKey::WORKER => TopologyRenameLibrary::class,
+        TopologyRenameHistoryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyRenameHistoryAgent::class,
             AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
         ],
         TopologyRenamePerson::AGENT_TYPE => [
-            AgentRegistryKey::WORKER => TopologyRenamePerson::class,
+            AgentRegistryKey::WORKER => TopologyRenameChangingPerson::class,
             AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
             AgentRegistryKey::INDEXED => true,
         ],
@@ -9679,7 +9709,9 @@ abstract class TopologyRenameInitialHilos extends HilosFacade
             AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
         ],
     ];
-    public const array SHARED_DB_OWNERS = ['userRenames' => ['HIL-1896', 'HIL-1952']];
+    public const array SHARED_DB_OWNERS = ['userRenames' => ['HIL-1897', 'HIL-1952']];
+
+    protected const string DB_WRITER_TRANSITION_CATALOG = TopologyRenameTransitionCatalog::class;
 }
 
 class TopologyRenameEmptyAgent extends TopologyTestAgent
@@ -9773,8 +9805,8 @@ abstract class TopologyRenameMovedHilos extends TopologyRenameInitialHilos
 {
     public const array AGENTS = [
         ...parent::AGENTS,
-        TopologyRenameLibrary::AGENT_TYPE => [
-            AgentRegistryKey::WORKER => TopologyRenameCreatorLibrary::class,
+        TopologyRenameHistoryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyRenameEmptyHistoryAgent::class,
             AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
         ],
         TopologyRenamePerson::AGENT_TYPE => [
@@ -9817,7 +9849,11 @@ abstract class TopologyRenameMissingPersonalGrantHilos extends TopologyRenameMov
 {
     public const array AGENTS = [
         ...parent::AGENTS,
-        TopologyRenamePerson::AGENT_TYPE => TopologyRenameInitialHilos::AGENTS[TopologyRenamePerson::AGENT_TYPE],
+        TopologyRenamePerson::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyRenamePerson::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
     ];
 }
 

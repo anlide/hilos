@@ -129,8 +129,8 @@ final class AgentTruthSourceOperationsTest extends TestCase
      * The library only creates people: an edit of one person is that person's agent's (HIL-1404).
      *
      * The claim is read off the class the way a start reads it, so no project subclass stands
-     * between the base's declaration and the answer (HIL-1194). The rename journal is held for
-     * editing alone - the agent adds its row, the library reads it back and its hook may add to it.
+     * between the base's declaration and the answer (HIL-1194). The rename journal is only read here;
+     * the person's agent adds its row and writes its feed link.
      */
     public function testLibraryAgentOnlyCreatesThePersonRow(): void
     {
@@ -140,8 +140,8 @@ final class AgentTruthSourceOperationsTest extends TestCase
         $this->assertTrue($claims[HilosDbContext::users]->allows(TruthSourceOperation::Add));
         $this->assertFalse($claims[HilosDbContext::users]->allows(TruthSourceOperation::Update));
         $this->assertFalse($claims[HilosDbContext::users]->allows(TruthSourceOperation::Remove));
-        $this->assertTrue($claims[HilosDbContext::userRenames]->allows(TruthSourceOperation::Update));
-        $this->assertFalse($claims[HilosDbContext::userRenames]->allows(TruthSourceOperation::Add));
+        $this->assertArrayNotHasKey(HilosDbContext::userRenames, $claims);
+        $this->assertContains(HilosDbContext::userRenames, AgentTruthSourceOperationsTestLibrary::readDbCollections());
     }
 
     /**

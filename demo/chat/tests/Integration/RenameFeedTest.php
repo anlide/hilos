@@ -5,7 +5,14 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Constants\ChatEventType;
+use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
+use Demo\Chat\Core\Router\DTO\UserRenameFeedLinkSignalData;
+use Demo\Chat\Database\View\Item\UserRename;
+use Hilos\Core\Agent\Exception\AgentException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Log\AgentLogStream;
+use Hilos\Utils\Logger;
 use Hilos\Moderation\DTO\ModerationVerdictSignalData;
 use Hilos\Moderation\ModerationKindKey;
 use Hilos\Runtime\State\Item\HilosProfileNameChange as StateHilosProfileNameChange;
@@ -31,7 +38,8 @@ use Hilos\Users\UserNotificationType;
  * Both ways a chat person is renamed end in the framework's rename ask: an administrator's frame
  * is the framework library's to hand on, and a moderated rename of oneself asks once the moderator
  * allowed the name. The person's agent writes the name and the journal row and answers the library
- * (HIL-1404); on that answer chat's hook writes the feed event and links the journal row to it.
+ * (HIL-1404); on that answer chat's hook writes the feed event and asks the person's agent to
+ * link the journal row to it without an answer (HIL-1896).
  * The event's type follows the row's author, and a person renamed by somebody else is told so.
  * Clearing the room's history takes the rows off their events and keeps them.
  */
@@ -45,6 +53,8 @@ final class RenameFeedTest extends IntegrationTestCase
     /** Connection a person asks to be renamed from. */
     private const string SELF_ACCEPT_KEY = 'rename-feed-self-ak';
 
+    private string $logDirectory;
+
     /** Starts the feed fixture with no live connections. */
     protected function setUp(): void
     {
@@ -52,6 +62,9 @@ final class RenameFeedTest extends IntegrationTestCase
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::initSignalRouter(new ChatSignalRouter());
+        $this->logDirectory = sys_get_temp_dir() . '/hilos-rename-feed-' . bin2hex(random_bytes(6));
+        mkdir($this->logDirectory);
+        Logger::setLogFile($this->logDirectory . '/main.log');
     }
 
     /** Drops chat connections before the base releases the name protocol owners. */
@@ -59,7 +72,15 @@ final class RenameFeedTest extends IntegrationTestCase
     {
         ExecutionContext::setCurrentAcceptKey(null);
         Hilos::$rt->connections->actions->clear();
-        parent::tearDown();
+        try {
+            parent::tearDown();
+        } finally {
+            Logger::resetLogFile();
+            foreach (array_diff(scandir($this->logDirectory), ['.', '..']) as $entry) {
+                unlink($this->logDirectory . '/' . $entry);
+            }
+            rmdir($this->logDirectory);
+        }
     }
 
     /**
@@ -180,6 +201,117 @@ final class RenameFeedTest extends IntegrationTestCase
         self::assertSame('After clear', Hilos::$db->userRenames[$rowId]->newName);
     }
 
+    /** A frame arriving after history cleanup silently leaves the journal unlinked. */
+    public function testALateFeedLinkDoesNotReviveADeletedEvent(): void
+    {
+        $userId = (int)Hilos::$db->users->actions->createWithName('Late feed')->id;
+        $row = Hilos::$db->userRenames->actions->add($userId, $userId, 'Before late', 'Late feed');
+        $link = $this->queuedFeedLink($row);
+        self::assertNull($row->eventId, 'The hook creates only the event');
+
+        Hilos::$db->events->actions->deleteAll();
+        $this->deliverFeedLink($userId, $link);
+
+        self::assertNull($row->eventId);
+        self::assertNull($this->onlyJournalRowOf($userId)->event_id);
+        self::assertFileDoesNotExist($this->personErrorLog($userId));
+        $this->assertNoAgentReplies();
+    }
+
+    /** A repeated frame keeps one journal link and writes no refusal. */
+    public function testARepeatedFeedLinkKeepsTheOriginalEvent(): void
+    {
+        $userId = (int)Hilos::$db->users->actions->createWithName('Repeated feed')->id;
+        $row = Hilos::$db->userRenames->actions->add($userId, $userId, 'Before repeat', 'Repeated feed');
+        $link = $this->queuedFeedLink($row);
+
+        $this->deliverFeedLink($userId, $link);
+        $this->deliverFeedLink($userId, $link);
+
+        self::assertSame($link->eventId, $row->eventId);
+        self::assertSame($link->eventId, $this->onlyJournalRowOf($userId)->event_id);
+        self::assertCount(1, EntityUserRename::get([EntityUserRename::event_id => $link->eventId]));
+        self::assertFalse($this->personAgent($userId)->shouldStop());
+        self::assertFileDoesNotExist($this->personErrorLog($userId));
+        $this->assertNoAgentReplies();
+    }
+
+    /** A unique-key refusal is contained and restores the same loaded row's memory. */
+    public function testARefusedLinkRollsBackTheDatabaseAndTheLoadedRow(): void
+    {
+        $userId = (int)Hilos::$db->users->actions->createWithName('Rollback feed')->id;
+        $first = Hilos::$db->userRenames->actions->add($userId, $userId, 'First before', 'First after');
+        $link = $this->queuedFeedLink($first);
+        $this->deliverFeedLink($userId, $link);
+        $second = Hilos::$db->userRenames->actions->add($userId, $userId, 'Second before', 'Second after');
+
+        $this->deliverFeedLink($userId, new UserRenameFeedLinkSignalData($userId, (int)$second->id, $link->eventId));
+
+        self::assertNull($second->eventId, 'The existing View reference observes the rollback');
+        self::assertNull(Hilos::$db->userRenames[(int)$second->id]->eventId);
+        $storedSecond = EntityUserRename::get([EntityUserRename::id => $second->id])->first();
+        self::assertNotNull($storedSecond);
+        self::assertNull($storedSecond->event_id);
+        self::assertSame($link->eventId, $first->eventId);
+        self::assertCount(1, EntityUserRename::get([EntityUserRename::event_id => $link->eventId]));
+        $error = (string)file_get_contents($this->personErrorLog($userId));
+        self::assertStringContainsString("user #{$userId}, rename #{$second->id}, event #{$link->eventId}", $error);
+        self::assertStringContainsString('not written:', $error);
+        self::assertStringNotContainsString('Second before', $error);
+        self::assertStringNotContainsString('Second after', $error);
+    }
+
+    /** A folded person's service frame still links the row, then stops the person agent. */
+    public function testAFoldedPersonsFeedLinkIsWrittenBeforeTheAgentStops(): void
+    {
+        $userId = (int)Hilos::$db->users->actions->createWithName('Folded feed')->id;
+        $survivorId = (int)Hilos::$db->users->actions->createWithName('Feed survivor')->id;
+        $row = Hilos::$db->userRenames->actions->add($userId, $userId, 'Before fold', 'Folded feed');
+        $link = $this->queuedFeedLink($row);
+        Hilos::$db->userMerges->actions->add($userId, $survivorId);
+
+        $this->deliverFeedLink($userId, $link);
+
+        self::assertSame($link->eventId, $row->eventId);
+        self::assertSame($link->eventId, $this->onlyJournalRowOf($userId)->event_id);
+        self::assertTrue($this->personAgent($userId)->shouldStop());
+        self::assertFileDoesNotExist($this->personErrorLog($userId));
+    }
+
+    /** Set ownership logs a foreign row; a foreign addressee is an agent protocol error. */
+    public function testAnotherPersonsRowAndAnotherAddresseeAreRefused(): void
+    {
+        $userId = (int)Hilos::$db->users->actions->createWithName('Feed owner')->id;
+        $otherId = (int)Hilos::$db->users->actions->createWithName('Other feed owner')->id;
+        $otherRow = Hilos::$db->userRenames->actions->add($otherId, $otherId, 'Other before', 'Other after');
+        $link = $this->queuedFeedLink($otherRow);
+
+        $this->deliverFeedLink($userId, new UserRenameFeedLinkSignalData($userId, $link->renameId, $link->eventId));
+
+        self::assertNull($otherRow->eventId);
+        self::assertNull($this->onlyJournalRowOf($otherId)->event_id);
+        $error = (string)file_get_contents($this->personErrorLog($userId));
+        self::assertStringContainsString("user #{$userId}, rename #{$link->renameId}, event #{$link->eventId}", $error);
+        self::assertStringContainsString('not written:', $error);
+        self::assertStringNotContainsString('Other before', $error);
+        self::assertStringNotContainsString('Other after', $error);
+
+        $this->expectException(AgentException::class);
+        $this->deliverFeedLink($userId, $link);
+    }
+
+    /** The library can create the feed event, but cannot edit the person's journal anymore. */
+    public function testTheUsersLibraryCannotWriteTheFeedLink(): void
+    {
+        $userId = (int)Hilos::$db->users->actions->createWithName('Library feed')->id;
+        $row = Hilos::$db->userRenames->actions->add($userId, $userId, 'Before library', 'Library feed');
+        $link = $this->queuedFeedLink($row);
+        $library = $this->usersLibrary();
+
+        $this->expectException(WriteNotAllowedException::class);
+        $this->underAgent($library, static fn () => $row->actions->linkEvent($link->eventId));
+    }
+
     /**
      * Hands the users library the rename the framework user card forwards, and returns its answer.
      *
@@ -248,7 +380,7 @@ final class RenameFeedTest extends IntegrationTestCase
             $this->underAgent($library, static fn () => $library->onSignalAgent($signal, '', HilosSignalConstants::HILOS_MODERATION_VERDICT));
             self::assertSame($oldName, Hilos::$db->users[$userId]->name, 'The library only asks the person owner');
             self::assertCount($eventsBefore, Hilos::$db->events);
-            self::assertSame(2, $this->deliverPersonAgentFrames(), 'One owner ask and its reply');
+            self::assertSame(3, $this->deliverPersonAgentFrames(), 'One owner ask, its reply and the feed link');
             $this->assertProfileNamePhase(self::SELF_ACCEPT_KEY, StateHilosProfileNameChange::PHASE_DONE);
             $expectedEvents = $eventsBefore + 1;
             self::assertCount($expectedEvents, Hilos::$db->events, 'Exactly one feed line per changed name');
@@ -258,6 +390,62 @@ final class RenameFeedTest extends IntegrationTestCase
         } finally {
             ExecutionContext::setCurrentAcceptKey(null);
         }
+    }
+
+    /**
+     * Runs the real project hook but holds its link frame for an explicit delivery.
+     *
+     * @param UserRename $row Journal row whose event the library creates
+     * @return UserRenameFeedLinkSignalData The one queued link, without an answer address
+     */
+    private function queuedFeedLink(UserRename $row): UserRenameFeedLinkSignalData
+    {
+        $library = $this->usersLibrary();
+        $this->underAgent($library, static fn () => $library->afterUserRenamed($row));
+        $links = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === ChatSignalConstants::USER_RENAME_FEED_LINK) {
+                self::assertInstanceOf(AgentSignalData::class, $signal->data);
+                self::assertInstanceOf(UserRenameFeedLinkSignalData::class, $signal->data->data);
+                $links[] = $signal->data->data;
+            }
+        }
+        self::assertCount(1, $links);
+        self::assertSame($row->userId, $links[0]->userId);
+        self::assertSame($row->id, $links[0]->renameId);
+
+        return $links[0];
+    }
+
+    /**
+     * @param int $userId Person agent receiving the frame
+     * @param UserRenameFeedLinkSignalData $link Captured link payload
+     */
+    private function deliverFeedLink(int $userId, UserRenameFeedLinkSignalData $link): void
+    {
+        $agent = $this->personAgent($userId);
+        $this->underAgent($agent, static fn () => $agent->onSignalAgent(
+            new AgentSignalData($link),
+            '',
+            ChatSignalConstants::USER_RENAME_FEED_LINK,
+        ));
+    }
+
+    /** DB syncs carry writes; the link protocol itself sends no answer. */
+    private function assertNoAgentReplies(): void
+    {
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            self::assertNotInstanceOf(AgentSignalData::class, $signal->data);
+        }
+    }
+
+    /**
+     * @param int $userId Person agent whose errors are captured
+     * @return string Error stream path
+     */
+    private function personErrorLog(int $userId): string
+    {
+        return AgentLogStream::pathFor($this->logDirectory, $this->personAgent($userId)->getId(), true);
     }
 
     /**

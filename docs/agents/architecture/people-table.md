@@ -185,11 +185,11 @@ project's. The journal is born with its foreign keys onto `hilos_user`.
 A project that needs something of its own on a rename row extends the journal by
 [../orm/inheritance.md](../orm/inheritance.md); the chat demo's link from a
 rename to the event of its feed is the first case: the column `event_id`, which
-its `afterUserRenamed()` currently writes through the journal row's item actions
-— empty in the framework and left for exactly this (HIL-1196). The hook and its
-users-library `Update` grant still exist. Creating the feed event there is
-creation; linking an already-created journal row is a later write. That link
-moves to the renamed person's owner (not in the code yet — HIL-1896).
+the users library's `afterUserRenamed()` now links through a frame to the renamed
+person's owner after creating the feed event — empty in the framework and left
+for exactly this (HIL-1196). The hook remains. Creating the feed event there is
+creation; linking an already-created journal row is a later write, performed by
+the renamed person's owner (HIL-1896).
 
 When chat history is cleared, `ChatAgent` currently uses borrowed journal
 `Update` for `unlinkEvents()`. It will obtain confirmed unlink from the

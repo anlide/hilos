@@ -67,10 +67,10 @@ final class AccountErasureTest extends IntegrationTestCase
 
         $personRegistration = (int)Hilos::$db->events->actions->addUserRegistered($personId)->id;
         $otherRegistration = (int)Hilos::$db->events->actions->addUserRegistered($otherId)->id;
-        $personRename = (int)Hilos::$db->events->actions->addUserRenamed(
+        $personRename = (int)$this->feedLineFor(
             Hilos::$db->userRenames->actions->add($personId, $personId, 'Arriving', 'Leaving'),
         )->id;
-        $renameOfOther = (int)Hilos::$db->events->actions->addUserRenamed(
+        $renameOfOther = (int)$this->feedLineFor(
             Hilos::$db->userRenames->actions->add($otherId, $personId, 'Old', 'Staying'),
         )->id;
         $file = $this->keepRegistryFile($personId, 'note.txt', 'attachment of a person who asked to leave');
@@ -148,7 +148,7 @@ final class AccountErasureTest extends IntegrationTestCase
         Hilos::$db->userMerges->actions->add($foldedId, $survivorId);
         Hilos::$db->users[$foldedId]->actions->setBlock(true);
         $registrationId = (int)Hilos::$db->events->actions->addUserRegistered($foldedId)->id;
-        $renameId = (int)Hilos::$db->events->actions->addUserRenamed(
+        $renameId = (int)$this->feedLineFor(
             Hilos::$db->userRenames->actions->add($foldedId, $foldedId, 'Before', 'Folded'),
         )->id;
         $this->requestDueDeletion($survivorId);

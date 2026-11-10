@@ -158,10 +158,9 @@ claims (HIL-630), and takes the frames of the edits that have moved to it
   startup refusals belong to [A Claim Over A Set](truth-source.md#a-claim-over-a-set).
   The one exception is a row the owner writes in the same transaction as its
   own row: the person's rename journal row is added with the name, so the agent
-  currently claims that set **with `Add`** and nothing else (HIL-1404).
-  The feed link also moves to the renamed person's owner
-  (not in the code yet — HIL-1896), and clearing chat history obtains that
-  owner's confirmed unlink before deleting the events
+  claims that set with `Add`; it also claims `Update` to link the live chat feed
+  event on a project frame (HIL-1404, HIL-1896). Clearing chat history obtains
+  that owner's confirmed unlink before deleting the events
   (not in the code yet — HIL-1897).
   The person's one row of second-factor settings (`hilos_second_factor_setting`,
   keyed by the person) is born by the owner's first edit of it — a wait chosen, a
@@ -306,8 +305,8 @@ for any sweep, erasure or merge:
 Ordinary cross-owner writes are separate, finite transitions. The chat agent's
 borrowed journal `Update` for `unlinkEvents()` goes to the journal's personal
 owner, whose answer precedes event deletion (not in the code yet — HIL-1897).
-The users library's journal link goes to that same owner
-(not in the code yet — HIL-1896). Creating the first administrator moved from
+The users library hands its journal link to that same owner after creating the
+feed event (HIL-1896). Creating the first administrator moved from
 `mintAdminUser()` at the sessions holder to the users library in HIL-1898; the
 holder still authorizes and binds the session.
 Trust renewal, the administrator's term and switch-off have the ordinary

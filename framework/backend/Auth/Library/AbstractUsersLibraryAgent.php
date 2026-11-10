@@ -317,12 +317,11 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * that person's agent ({@see AbstractUserAgent}), which this library asks by frame
      * ({@see askRename()}).
      *
-     * The rename journal is held for editing alone (HIL-1404). Its row is written by the person's
-     * agent, in one transaction with the name it records: a rename and its row stand or fall
-     * together, so they have one writer. This library reads the row back on the agent's answer to
-     * tell the person, and hands it to the project's hook ({@see afterUserRenamed()}), which may
-     * add to it - the chat demo ties the row to its feed line. An erased person's rows leave with
-     * the erasure, which is the session holder's.
+     * The rename journal is only read here (HIL-1896). Its row is written by the person's agent,
+     * in one transaction with the name it records. This library reads the row on the answer to
+     * tell the person and call the project's hook ({@see afterUserRenamed()}); any link the hook
+     * needs is written by the person's agent too. An erased person's rows leave with the erasure,
+     * which is the session holder's.
      *
      * The second factor is a proof of the account too (HIL-494), and since HIL-1406 this library
      * only brings it into being: it starts an enrolment (an unfinished one goes in the same
@@ -363,7 +362,6 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosDbContext::secondFactorResets => [TruthSourceOperation::Add],
         HilosDbContext::accountDeletions => [TruthSourceOperation::Add],
         HilosDbContext::legalAcceptances => [TruthSourceOperation::Add],
-        HilosDbContext::userRenames => [TruthSourceOperation::Update],
     ];
 
     /**
@@ -385,8 +383,15 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * person's agent owns their second-factor settings (HIL-1406): the wait in force dates a new
      * removal, and the section shows the wait and the lock. It owns their step-up confirmations too
      * (HIL-1407): the gate's verdict and the choice of a way to confirm read them.
+     * The person's agent writes the rename journal (HIL-1896); this library reads the completed row
+     * for the notification and the project's afterUserRenamed hook.
      */
-    public const array READS_DB = [HilosDbContext::files, HilosDbContext::secondFactorSettings, HilosDbContext::stepUps];
+    public const array READS_DB = [
+        HilosDbContext::files,
+        HilosDbContext::secondFactorSettings,
+        HilosDbContext::stepUps,
+        HilosDbContext::userRenames,
+    ];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
 
@@ -2520,6 +2525,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * demo writes the rename into its feed here (HIL-1196), and a project without a feed has
      * nothing to write. What a project writes ABOUT a rename is news - its failure is logged and
      * does not undo the rename, which the administrator is then told succeeded.
+     * The project writes its own rows and asks the person's agent for any journal change;
+     * only that agent edits the journal (HIL-1896).
      *
      * @param UserRename $rename Journal row of the rename just committed
      * @throws HilosException When the project's own bookkeeping fails

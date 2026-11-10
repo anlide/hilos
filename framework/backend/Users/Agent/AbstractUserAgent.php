@@ -311,7 +311,7 @@ abstract class AbstractUserAgent extends AbstractAgent
 
     /**
      * @var array<string, list<TruthSourceOperation>> The person's borrowed child sets, and the rename
-     *     journal of the person, which the agent adds a row to in the transaction that writes the name.
+     *     journal: added with the name, its feed link written here.
      *     The ways of signing in and the passkeys are written here since HIL-1405, and the second factor
      *     since HIL-1406; their creation is the libraries'. One row is born here too: the person's
      *     second-factor settings (`hilos_second_factor_setting`, keyed by the person), which the
@@ -342,7 +342,7 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosDbContext::notifications => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::notificationPreferences => TruthSourceOperation::ALL,
         HilosDbContext::pushSubscriptions => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::userRenames => [TruthSourceOperation::Add],
+        HilosDbContext::userRenames => [TruthSourceOperation::Add, TruthSourceOperation::Update],
     ];
 
     private int $userId;
@@ -1567,6 +1567,20 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
+     * A project's frame checks its addressee by the same words.
+     *
+     * @param int $userId Person the frame names
+     * @param string $name Frame name, for the refusal
+     * @throws AgentException When the frame names another person than this agent's
+     */
+    protected function refuseAnotherPerson(int $userId, string $name): void
+    {
+        if ($userId !== $this->userId) {
+            throw new AgentException("{$name} for user #{$userId} reached the agent of user #{$this->userId}");
+        }
+    }
+
+    /**
      * Writes a rename and answers the users library with its row or its refusal.
      *
      * The person is checked first, on every frame ({@see AddressablePerson::require()}): one
@@ -1919,17 +1933,5 @@ abstract class AbstractUserAgent extends AbstractAgent
     {
         // The frame spells the id as text. A strict compare with the int would never match.
         return $idString === (string)$this->userId;
-    }
-
-    /**
-     * @param int $userId Person the frame names
-     * @param string $name Frame name, for the refusal
-     * @throws AgentException When the frame names another person than this agent's
-     */
-    private function refuseAnotherPerson(int $userId, string $name): void
-    {
-        if ($userId !== $this->userId) {
-            throw new AgentException("{$name} for user #{$userId} reached the agent of user #{$this->userId}");
-        }
     }
 }

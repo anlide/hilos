@@ -77,7 +77,7 @@ final class EventBridgePropertiesTest extends IntegrationTestCase
             $this->assertNotNull($targetUser->id);
             $this->assertNotNull($actorUser->id);
             $row = Hilos::$db->userRenames->actions->add($targetUser->id, $actorUser->id, 'Old Name', 'New Name');
-            $event = Hilos::$db->events->actions->addUserRenamed($row);
+            $event = $this->feedLineFor($row);
 
             $this->assertSame(ChatEventType::USER_RENAMED_BY_ADMIN->value, $event->type);
             $rename = $event->userRename;

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Constants;
 
+use Demo\Chat\Core\Router\DTO\UserRenameFeedLinkSignalData;
+
 /**
  * ChatSignalConstants - Chat signal name constants.
  *
@@ -41,6 +43,12 @@ final class ChatSignalConstants
      *     into the registry, or why not - the answer to Hilos::$files->publishUploads() (HIL-144)
      */
     public const string ATTACHMENTS_PUBLISHED = 'chat_attachments_published';
+
+    /**
+     * @var string Users library → the person's agent: the rename's feed event exists, write the journal
+     *     row's link to it (HIL-1896). Carried by {@see UserRenameFeedLinkSignalData}. Not answered.
+     */
+    public const string USER_RENAME_FEED_LINK = 'chat_user_rename_feed_link';
 
     // ── Bot agent lifecycle ─────────────────────────────────────────────
     /** @var string LibraryAgent → BotAgent: start (sending to agent triggers framework start if not running) */

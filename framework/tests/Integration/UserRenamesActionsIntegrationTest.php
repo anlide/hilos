@@ -22,7 +22,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  *
  * HIL-1112: the journal is cut into sets by the renamed person, and the owner of one
  * person's set creates that person's rows and no one else's. The other cases write as the
- * owner of the whole journal, which is what the users library is. The people are seeded past
+ * test owner of the whole journal. The people are seeded past
  * every action: they are the ground the journal stands on, not what is under test.
  */
 final class UserRenamesActionsIntegrationTest extends HilosSessionIntegrationTestCase

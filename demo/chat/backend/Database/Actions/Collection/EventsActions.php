@@ -92,12 +92,11 @@ final class EventsActions extends DbActions
     }
 
     /**
-     * Appends the feed line of a rename and links the journal row to it (HIL-1196).
+     * Appends the feed line alone; the journal row's link is the person's agent's (HIL-1896).
      *
      * The type follows from the row's author: a person who renamed themselves - an administrator
      * renaming their own account included - is 'user_renamed', anybody else or nobody is
-     * 'user_renamed_by_admin'. The caller holds the transaction, so the line is written whole or
-     * not at all.
+     * 'user_renamed_by_admin'.
      *
      * @param UserRename $rename Journal row of the rename just committed
      * @return DbEvent Created event
@@ -106,14 +105,11 @@ final class EventsActions extends DbActions
      */
     public function addUserRenamed(UserRename $rename): DbEvent
     {
-        $event = $this->add(
+        return $this->add(
             $rename->renamedByUserId === $rename->userId
                 ? ChatEventType::USER_RENAMED->value
                 : ChatEventType::USER_RENAMED_BY_ADMIN->value,
         );
-        Hilos::$db->userRenames[(int)$rename->id]->actions->linkEvent((int)$event->id);
-
-        return $event;
     }
 
     /**

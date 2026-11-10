@@ -1959,7 +1959,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             'secondFactors' => ['HIL-1903', 'HIL-1952', 'HIL-1999'],
             'stepUps' => ['HIL-1952'],
             'userPhotos' => ['HIL-1952'],
-            'userRenames' => ['HIL-1896', 'HIL-1952'],
+            'userRenames' => ['HIL-1952'],
             'users' => ['HIL-1952', 'HIL-1999'],
             'verifications' => ['HIL-1952'],
         ];

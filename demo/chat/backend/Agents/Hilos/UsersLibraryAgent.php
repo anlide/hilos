@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Agents\Hilos;
 
 use Demo\Chat\Auth\ChatOAuthConfig;
+use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Core\Router\DTO\UserRenameFeedLinkSignalData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
@@ -13,7 +15,6 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Database;
 use Hilos\Database\View\Item\UserRename;
 use Hilos\HilosException;
 
@@ -58,25 +59,20 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     }
 
     /**
-     * Writes a rename into the room's feed: the event, and the journal row linked to it (HIL-1196).
-     *
-     * One transaction, so the feed line is whole or absent. The rename committed before this
-     * runs, so the transaction is a top-level one; a failure rolls it back and goes out to the
-     * framework, which logs it - the rename stands.
+     * Writes the feed event, then asks the person's agent to link the journal row (HIL-1896).
+     * An insert or enqueue failure reaches the framework caller, which logs it; the name stands.
      *
      * @param UserRename $rename Journal row of the rename just committed
-     * @throws HilosException When the event, the link or the transaction cannot be written
+     * @throws HilosException When the event or the frame cannot be written
+     * @throws LogicException If event id is null after sync
      */
     public function afterUserRenamed(UserRename $rename): void
     {
-        Database::transactionStart();
-        try {
-            Hilos::$db->events->actions->addUserRenamed($rename);
-            Database::transactionCommit();
-        } catch (HilosException $e) {
-            Database::transactionRollback();
-            throw $e;
-        }
+        $event = Hilos::$db->events->actions->addUserRenamed($rename);
+        $this->sendToAgent(
+            ChatSignalConstants::USER_RENAME_FEED_LINK,
+            new UserRenameFeedLinkSignalData($rename->userId, (int)$rename->id, (int)$event->id),
+        );
     }
 
     /**

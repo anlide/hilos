@@ -149,7 +149,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'pushSubscriptions' => [
                 ['notifications', 'whole', 'add,update'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove']],
             'dataExports' => [['export', 'whole', 'add,remove,update'], ['holder', 'whole', 'remove']],
-            'userRenames' => [['users', 'whole', 'update'], ['person', 'set', 'add'], ['holder', 'whole', 'remove']],
+            'userRenames' => [['person', 'set', 'add,update'], ['holder', 'whole', 'remove']],
             'userPhotos' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'remove']],
         ];
         $leaves = [
@@ -170,7 +170,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'notificationPreferences' => ['HIL-1952'],
             'pushSubscriptions' => ['HIL-1895', 'HIL-1905', 'HIL-1906', 'HIL-1952'],
             'dataExports' => ['HIL-1952'],
-            'userRenames' => ['HIL-1896', 'HIL-1952'],
+            'userRenames' => ['HIL-1952'],
             'userPhotos' => ['HIL-1952'],
         ];
         if ($hasLegalAndOauth) {
@@ -187,7 +187,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             $roles['chat'] = 'Demo\\Chat\\Agents\\ChatAgent';
             self::assertSame($roles['chat'], AgentRegistry::workerClass($facade::AGENTS['chat']));
             $vectors['userRenames'][] = ['chat', 'whole', 'update'];
-            $leaves['userRenames'] = ['HIL-1896', 'HIL-1897', 'HIL-1952'];
+            $leaves['userRenames'] = ['HIL-1897', 'HIL-1952'];
             $vectors['events'] = [['chat', 'whole', 'add,remove,update'], ['users', 'whole', 'add'], ['holder', 'whole', 'remove']];
             $vectors['eventUserRegistrations'] = [
                 ['chat', 'whole', 'add,remove,update'], ['users', 'whole', 'add'], ['holder', 'whole', 'remove']];
@@ -248,21 +248,16 @@ final class DbWriterTransitionCatalogTest extends TestCase
         }
     }
 
-    /** Both feed-link moves commute and immediately give the personal journal its Update. */
-    public function testRenameLinkAndUnlinkHaveBothIntermediateStates(): void
+    /** Only unlink still waits for its personal-owner cutover before terminal erasure. */
+    public function testRenameOnlyUnlinkStillWaitsForItsCutover(): void
     {
         $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['userRenames']);
-        self::assertCount(5, $states);
-        foreach ([
-            'HIL-1897,HIL-1952' => ChatAgent::class,
-            'HIL-1896,HIL-1952' => UsersLibraryAgent::class,
-        ] as $pending => $remainingWriter) {
-            $this->assertVector([
-                $remainingWriter . ':whole:update',
-                UserAgent::class . ':set:add,update',
-                SessionsLibraryAgent::class . ':whole:remove',
-            ], $states[$pending]);
-        }
+        self::assertCount(3, $states);
+        $this->assertVector([
+            ChatAgent::class . ':whole:update',
+            UserAgent::class . ':set:add,update',
+            SessionsLibraryAgent::class . ':whole:remove',
+        ], $states['HIL-1897,HIL-1952']);
         $this->assertVector([
             UserAgent::class . ':set:add,update',
             SessionsLibraryAgent::class . ':whole:remove',
@@ -643,7 +638,6 @@ final class DbWriterTransitionCatalogTest extends TestCase
                 '' => ['export:whole:add,remove,update'],
             ],
             'userRenames' => [
-                'HIL-1896,HIL-1952' => ['users:whole:update', 'person:set:add', 'holder:whole:remove'],
                 'HIL-1952' => ['person:set:add,update', 'holder:whole:remove'],
                 '' => ['person:set:add,remove,update'],
             ],
@@ -664,10 +658,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
         }
         if ($isChat) {
             $ceiling['userRenames'] = [
-                'HIL-1896,HIL-1897,HIL-1952' => [
-                    'users:whole:update', 'chat:whole:update', 'person:set:add', 'holder:whole:remove'],
                 'HIL-1897,HIL-1952' => ['chat:whole:update', 'person:set:add,update', 'holder:whole:remove'],
-                'HIL-1896,HIL-1952' => ['users:whole:update', 'person:set:add,update', 'holder:whole:remove'],
                 'HIL-1952' => ['person:set:add,update', 'holder:whole:remove'],
                 '' => ['person:set:add,remove,update'],
             ];

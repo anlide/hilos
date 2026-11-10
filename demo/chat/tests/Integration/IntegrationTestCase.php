@@ -9,7 +9,10 @@ use Demo\Chat\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Agents\Hilos\UserAgent;
 use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
+use Demo\Chat\Core\Router\DTO\UserRenameFeedLinkSignalData;
 use Demo\Chat\Database\Database;
+use Demo\Chat\Database\View\Item\Event;
+use Hilos\Database\View\Item\UserRename;
 use Demo\Chat\Hilos;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
@@ -593,6 +596,7 @@ abstract class IntegrationTestCase extends TestCase
             }
             if (
                 $frame instanceof UserRenameSignalData
+                || $frame instanceof UserRenameFeedLinkSignalData
                 || $frame instanceof UserAdminWriteSignalData
                 || $frame instanceof UserAdminCommandSignalData
                 || $frame instanceof UserBlockWriteSignalData
@@ -769,6 +773,20 @@ abstract class IntegrationTestCase extends TestCase
             ProfileNameStateSignalData::PHASE => $phase,
             ProfileNameStateSignalData::REFUSAL => $change->refusal,
         ], $lastState->change);
+    }
+
+    /**
+     * Completes the feed link explicitly for fixtures that do not dispatch the rename protocol.
+     *
+     * @param UserRename $row Persisted journal row
+     * @return Event Feed line linked to the row
+     */
+    protected function feedLineFor(UserRename $row): Event
+    {
+        $event = Hilos::$db->events->actions->addUserRenamed($row);
+        Hilos::$db->userRenames[(int)$row->id]->actions->linkEvent((int)$event->id);
+
+        return $event;
     }
 
     /**

@@ -20,7 +20,6 @@ use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
 class DbWriterTransitionCatalog
 {
     protected const string PUSH_GONE = 'HIL-1895';
-    protected const string RENAME_LINK = 'HIL-1896';
     protected const string RENAME_UNLINK = 'HIL-1897';
     protected const string DELIVERY_PRUNE = 'HIL-1902';
     protected const string FACTOR_REPLACE = 'HIL-1903';
@@ -181,23 +180,23 @@ class DbWriterTransitionCatalog
     /**
      * @param class-string<Hilos> $hilosClass Inspected topology
      * @param ?class-string<AbstractAgent> $chat Optional chat history owner, supplied only by its project provider
-     * @return list<DbWriterTransitionState> Journal link, unlink and terminal transitions
+     * @return list<DbWriterTransitionState> Journal unlink and terminal transitions
      */
     protected function renameStates(string $hilosClass, ?string $chat = null): array
     {
         $person = $this->role($hilosClass, HilosAgentType::HILOS_USER);
-        $pending = [self::RENAME_LINK => $this->claim($this->role($hilosClass, HilosAgentType::HILOS_USERS_LIBRARY),
-            DbWriterClaimWidth::Whole, TruthSourceOperation::Update),
-            self::ERASURE => $this->claim($this->role($hilosClass, HilosAgentType::HILOS_SESSIONS_LIBRARY),
+        $pending = [self::ERASURE => $this->claim($this->role($hilosClass, HilosAgentType::HILOS_SESSIONS_LIBRARY),
                 DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)];
-        $completed = [self::RENAME_LINK => $this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Update),
-            self::ERASURE => $this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Remove)];
+        $completed = [self::ERASURE => $this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Remove)];
         if ($chat !== null) {
             $pending[self::RENAME_UNLINK] = $this->claim($chat, DbWriterClaimWidth::Whole, TruthSourceOperation::Update);
-            $completed[self::RENAME_UNLINK] = $this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Update);
         }
 
-        return $this->states($this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Add), $pending, $completed);
+        return $this->states(
+            $this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Add, TruthSourceOperation::Update),
+            $pending,
+            $completed,
+        );
     }
 
     /**

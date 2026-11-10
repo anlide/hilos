@@ -167,7 +167,10 @@ final class AbstractUserAgentTest extends TestCase
         foreach (self::borrowedSets() as $collection) {
             self::assertSame([TruthSourceOperation::Update, TruthSourceOperation::Remove], TestUserAgent::OWNS_DB_SET[$collection]);
         }
-        self::assertSame([TruthSourceOperation::Add], TestUserAgent::OWNS_DB_SET[HilosDbContext::userRenames]);
+        self::assertSame(
+            [TruthSourceOperation::Add, TruthSourceOperation::Update],
+            TestUserAgent::OWNS_DB_SET[HilosDbContext::userRenames],
+        );
         self::assertSame([TruthSourceOperation::Remove], TestUserAgent::OWNS_DB_SET[HilosDbContext::legalAcceptances]);
         self::assertSame(
             [TruthSourceOperation::Add, TruthSourceOperation::Update],

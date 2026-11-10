@@ -69,6 +69,17 @@ const EVENT_CHAT_STARTED = 'chat_started'
 const EVENT_CHAT_STOPPED = 'chat_stopped'
 const EVENT_CHAT_CLEARED = 'chat_cleared'
 
+/** a rename notice waits for its journal row: without it the line has neither name nor author */
+export function isUnlinkedRename(
+  type: string,
+  rename: UserRename | null,
+): boolean {
+  return (
+    rename === null &&
+    (type === EVENT_USER_RENAMED || type === EVENT_USER_RENAMED_BY_ADMIN)
+  )
+}
+
 /** Read a list item's slot as an inline record, or undefined. */
 function recordSlot(slot: unknown): Record<string, unknown> | undefined {
   return typeof slot === 'object' && slot !== null && !Array.isArray(slot)
@@ -238,7 +249,7 @@ export const mainEvents: ReadonlySignal<readonly EventItem[]> = computedSignal(
     const photos = userPhotos.get()
     let previousAuthorKey: string | null = null
 
-    return mainEventItems.get().map((item) => {
+    return mainEventItems.get().flatMap((item) => {
       const eventRef = item.slots[EVENT_SLOT] as EntityRef | undefined
       const event = eventRef ? Events.signal(eventRef).get() : undefined
       const type = event?.type ?? ''
@@ -247,6 +258,9 @@ export const mainEvents: ReadonlySignal<readonly EventItem[]> = computedSignal(
         recordSlot(item.slots[REGISTRATION_SLOT]),
       )
       const rename = userRenameFrom(recordSlot(item.slots[RENAME_SLOT]))
+      if (isUnlinkedRename(type, rename)) {
+        return []
+      }
       const isMessage = type === EVENT_MESSAGE_SENT
       const author = eventAuthor(message, registration, rename, photos)
       const authorKey = isMessage ? author.key : null
@@ -271,17 +285,19 @@ export const mainEvents: ReadonlySignal<readonly EventItem[]> = computedSignal(
           })
         : []
 
-      return {
-        key: item.itemKey,
-        type,
-        timestamp: event?.timestamp ?? null,
-        authorName: author.name,
-        authorPhoto: author.photo,
-        seriesHead,
-        text: isMessage ? (message?.message ?? '') : '',
-        description: serviceDescription(type, rename),
-        attachments,
-      }
+      return [
+        {
+          key: item.itemKey,
+          type,
+          timestamp: event?.timestamp ?? null,
+          authorName: author.name,
+          authorPhoto: author.photo,
+          seriesHead,
+          text: isMessage ? (message?.message ?? '') : '',
+          description: serviceDescription(type, rename),
+          attachments,
+        },
+      ]
     })
   },
 )

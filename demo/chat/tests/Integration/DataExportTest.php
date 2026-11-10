@@ -119,10 +119,10 @@ final class DataExportTest extends IntegrationTestCase
         $personId = $this->createUser('Exporting');
         $otherId = $this->createUser('Other');
         $this->eventIds[] = (int)Hilos::$db->events->actions->addUserRegistered($personId)->id;
-        $this->eventIds[] = (int)Hilos::$db->events->actions->addUserRenamed(
+        $this->eventIds[] = (int)$this->feedLineFor(
             Hilos::$db->userRenames->actions->add($personId, $personId, 'Before', 'Exporting'),
         )->id;
-        $this->eventIds[] = (int)Hilos::$db->events->actions->addUserRenamed(
+        $this->eventIds[] = (int)$this->feedLineFor(
             Hilos::$db->userRenames->actions->add($otherId, $personId, 'Other before', 'Other'),
         )->id;
         $file = $this->keepRegistryFile($personId, 'note.txt', "my attachment\n");
