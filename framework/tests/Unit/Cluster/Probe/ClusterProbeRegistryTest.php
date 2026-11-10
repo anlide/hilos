@@ -165,7 +165,12 @@ final class ClusterProbeRegistryTest extends TestCase
         $this->assertFalse($daemon->requiresMonopolisticProcess());
 
         $this->assertSame(
-            [CliCommands::CLUSTER_TEST_DB_WRITE, CliCommands::CLUSTER_TEST_DB_READ],
+            [
+                CliCommands::CLUSTER_TEST_DB_WRITE,
+                CliCommands::CLUSTER_TEST_DB_READ,
+                CliCommands::CLUSTER_TEST_DB_SESSION,
+                CliCommands::CLUSTER_TEST_DB_QUERY,
+            ],
             DbProbeAgent::AGENT_COMMANDS,
         );
     }

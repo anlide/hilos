@@ -264,7 +264,7 @@ What Hilos checks and what it believes:
   keeps the promise with the setting off.
   The cluster stands check both the setting and an actual read through the
   application's own connections with a test-only diagnostic
-  (not in the code yet — HIL-2027); production still only declares.
+  in scenario 49; production still only declares.
 
 What keeps each promise for each logical database name on each topology:
 

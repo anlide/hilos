@@ -88,6 +88,12 @@ final class CliCommands
     /** @var string Command: Read a probe row as one node holds it (test-only) */
     public const string CLUSTER_TEST_DB_READ = 'test:cluster:db:read';
 
+    /** @var string Command: Inspect an application database session (test-only) */
+    public const string CLUSTER_TEST_DB_SESSION = 'test:cluster:db:session';
+
+    /** @var string Command: Query a probe row without refreshing the local copy (test-only) */
+    public const string CLUSTER_TEST_DB_QUERY = 'test:cluster:db:query';
+
     /** @var string Command: Write a row of a runtime set on one node, through its truth-source door (test-only) */
     public const string CLUSTER_TEST_RT_WRITE = 'test:cluster:rt:write';
 

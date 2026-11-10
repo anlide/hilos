@@ -110,6 +110,18 @@ final class CommandConstants
     /** @var string Reply payload key: the database server (its @@hostname) a test DB write went through */
     public const string FIELD_DATABASE_MEMBER = 'databaseMember';
 
+    /** @var string Request and reply payload key: logical database name */
+    public const string FIELD_DATABASE_NAME = 'databaseName';
+
+    /** @var string Reply payload key: server connection id of the application session */
+    public const string FIELD_DATABASE_CONNECTION_ID = 'databaseConnectionId';
+
+    /** @var string Reply payload key: application session causal-read bitmask */
+    public const string FIELD_WSREP_SYNC_WAIT = 'wsrepSyncWait';
+
+    /** @var string Reply payload key: whether the application session allows dirty reads */
+    public const string FIELD_WSREP_DIRTY_READS = 'wsrepDirtyReads';
+
     /** @var string Request payload key: set key a test RT write names */
     public const string FIELD_RT_SET_KEY = 'rtSetKey';
 

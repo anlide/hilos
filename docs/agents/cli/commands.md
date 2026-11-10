@@ -536,8 +536,10 @@ can inspect a network-partitioned node that cannot reach MySQL either), the clus
 family `test:cluster:client:attach` / `:detach` / `:send` / `:fanout` and the two drills
 beside it, `test:cluster:db:announce` and `test:cluster:agent:place` (same reason: the
 master answers them out of memory, and a partitioned node is exactly where they are worth
-running), `test:notification:emit`, `test:user:create` and `test:session:bind` (the CLI sends
-each to its owning library and prints the reply; database work stays in the daemon),
+running), `test:cluster:db:session` and `test:cluster:db:query` (the CLI talks only to the
+local command socket; the node's probe agent uses its application connection, and both
+commands print JSON), `test:notification:emit`, `test:user:create` and `test:session:bind`
+(the CLI sends each to its owning library and prints the reply; database work stays in the daemon),
 `test:status:heartbeat:stale`, `test:status:heartbeat:now`, `test:status:work:start` and
 `test:settings:write` (the same shape: the Status owner or the settings library answers and
 writes, and the CLI process has nothing to read or write — HIL-1856),

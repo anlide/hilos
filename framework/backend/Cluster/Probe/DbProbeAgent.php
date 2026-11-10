@@ -15,6 +15,7 @@ use Hilos\Core\TruthSource\Exception\ClaimedSetKeyMissingException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseNames;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -57,19 +58,17 @@ final class DbProbeAgent extends AbstractAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_PROBE_DB;
 
     /**
-     * The write half and the read half of the drill, both test-only.
+     * Four test-only commands: write, cached read, session inspection and a fresh query.
      *
-     * Neither carries an inner DTO: the payload is two strings, so both are entered under
-     * the bare name. The `test:` prefix on that name is what keeps the socket from ever
-     * parking either of them on a production-like node.
-     *
-     * The master answers neither, and nothing had to be done to arrange that: it has no
-     * branch for a name it does not know, so both are parked and routed here - which is
-     * exactly the shape wanted, because the master must not touch a database.
+     * Each uses a string payload under its bare name. The `test:` prefix keeps the socket
+     * from parking any of them on a production-like node. All database work stays here
+     * in the worker; the master only parks the request and delivers the reply.
      */
     public const array AGENT_COMMANDS = [
         CliCommands::CLUSTER_TEST_DB_WRITE,
         CliCommands::CLUSTER_TEST_DB_READ,
+        CliCommands::CLUSTER_TEST_DB_SESSION,
+        CliCommands::CLUSTER_TEST_DB_QUERY,
     ];
 
     /**
@@ -100,7 +99,7 @@ final class DbProbeAgent extends AbstractAgent
     }
 
     /**
-     * Routes the two commands of {@see AGENT_COMMANDS}.
+     * Routes the four probe commands.
      *
      * Every path answers exactly once, so a CLI parked on the command socket learns the
      * outcome instead of timing out.
@@ -115,6 +114,8 @@ final class DbProbeAgent extends AbstractAgent
         $reply = match ($data->command) {
             CliCommands::CLUSTER_TEST_DB_WRITE => $this->write($data),
             CliCommands::CLUSTER_TEST_DB_READ => $this->read($data),
+            CliCommands::CLUSTER_TEST_DB_SESSION => $this->session($data),
+            CliCommands::CLUSTER_TEST_DB_QUERY => $this->query($data),
             default => CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"),
         };
 
@@ -196,6 +197,75 @@ final class DbProbeAgent extends AbstractAgent
         return CommandReplyDTO::ok($request->correlationId, [
             CommandConstants::FIELD_SETTING_KEY => $key,
             CommandConstants::FIELD_SETTING_VALUE => $value,
+        ]);
+    }
+
+    /**
+     * @param CommandRequestDTO $request Request naming the logical database
+     * @return CommandReplyDTO Session facts or a refusal with its reason
+     */
+    private function session(CommandRequestDTO $request): CommandReplyDTO
+    {
+        $name = self::stringField($request, CommandConstants::FIELD_DATABASE_NAME);
+        if ($name === null) {
+            return CommandReplyDTO::error(
+                $request->correlationId,
+                'Missing ' . CommandConstants::FIELD_DATABASE_NAME,
+            );
+        }
+
+        try {
+            $facts = Database::sessionFacts(Database::getDatabase($name)->connectionIndex);
+        // read-refusal-swallowed: this probe answers its caller with whatever failed, the refusal included
+        } catch (HilosException $e) {
+            return CommandReplyDTO::error($request->correlationId, $e->getMessage());
+        }
+
+        return CommandReplyDTO::ok($request->correlationId, [
+            CommandConstants::FIELD_DATABASE_NAME => $name,
+            CommandConstants::FIELD_DATABASE_MEMBER => $facts->member,
+            CommandConstants::FIELD_DATABASE_CONNECTION_ID => $facts->connectionId,
+            CommandConstants::FIELD_WSREP_SYNC_WAIT => $facts->wsrepSyncWait,
+            CommandConstants::FIELD_WSREP_DIRTY_READS => $facts->wsrepDirtyReads,
+        ]);
+    }
+
+    /**
+     * Reads without refreshing the local copy and refuses a session change during the read.
+     *
+     * @param CommandRequestDTO $request Request naming the probe key
+     * @return CommandReplyDTO Stored value, null when absent, with session facts, or a refusal
+     */
+    private function query(CommandRequestDTO $request): CommandReplyDTO
+    {
+        $key = self::stringField($request, CommandConstants::FIELD_SETTING_KEY);
+        if ($key === null) {
+            return CommandReplyDTO::error(
+                $request->correlationId,
+                'Missing ' . CommandConstants::FIELD_SETTING_KEY,
+            );
+        }
+
+        try {
+            $index = Database::getDatabase(DatabaseNames::PRIMARY)->connectionIndex;
+            $before = Database::sessionFacts($index);
+            $value = Hilos::$db->probeValues->queryValue($key);
+            $facts = Database::sessionFacts($index);
+            if ($facts->connectionId !== $before->connectionId) {
+                return CommandReplyDTO::error($request->correlationId, 'session changed during the read');
+            }
+        // read-refusal-swallowed: this probe answers its caller with whatever failed, the refusal included
+        } catch (HilosException $e) {
+            return CommandReplyDTO::error($request->correlationId, $e->getMessage());
+        }
+
+        return CommandReplyDTO::ok($request->correlationId, [
+            CommandConstants::FIELD_SETTING_KEY => $key,
+            CommandConstants::FIELD_SETTING_VALUE => $value,
+            CommandConstants::FIELD_DATABASE_MEMBER => $facts->member,
+            CommandConstants::FIELD_DATABASE_CONNECTION_ID => $facts->connectionId,
+            CommandConstants::FIELD_WSREP_SYNC_WAIT => $facts->wsrepSyncWait,
+            CommandConstants::FIELD_WSREP_DIRTY_READS => $facts->wsrepDirtyReads,
         ]);
     }
 

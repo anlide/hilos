@@ -47,4 +47,22 @@ class ProbeValues extends Objects
 
         return null;
     }
+
+    /**
+     * Reads the database without hydrating or changing the local copy.
+     *
+     * @param string $key Probe key
+     * @return ?string Stored value or null when absent
+     * @throws DatabaseException When the probe query fails
+     * @throws InvalidArgumentException When the entity query has an invalid order direction
+     */
+    public function queryValue(string $key): ?string
+    {
+        /** @var EntityProbeValues $probeValues */
+        $probeValues = static::entityClass()::get( // fresh-sql: changes on other nodes may not have reached the local copy.
+            [EntityProbeValue::key => $key],
+        );
+
+        return $probeValues->first()?->value;
+    }
 }

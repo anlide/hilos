@@ -445,6 +445,22 @@ def db_read(node, key):
     return None
 
 
+def application_session(node, database):
+    """Inspect the probe's real application connection to a logical database."""
+    out = client_out(node, "test:cluster:db:session", database)
+    assert out is not None, (f"{node} did not report its {database} application session: "
+                             "check that HILOS_PROBE_DB is registered")
+    return json.loads(out)
+
+
+def application_query(node, key):
+    """Read a probe value through the application connection, without refreshing its copy."""
+    out = client_out(node, "test:cluster:db:query", key)
+    assert out is not None, (f"{node} did not query {key} through its primary application session: "
+                             "check that HILOS_PROBE_DB is registered")
+    return json.loads(out)
+
+
 # A node's daemon log, read from the host by node id (control.py says how and why).
 
 def node_log_path(node):
@@ -5407,7 +5423,9 @@ def scenario_36_slave_cut_off_with_its_leader_stops_its_work():
 # What scenario 26 asks every member of a clustered database about itself.
 CLUSTER_STATUS_SQL = ("SHOW GLOBAL STATUS WHERE Variable_name IN "
                       "('wsrep_cluster_size', 'wsrep_cluster_status', 'wsrep_local_state_comment')")
-SYNC_WAIT_SQL = "SELECT @@GLOBAL.wsrep_sync_wait"
+SYNC_WAIT_SQL = "SELECT @@SESSION.wsrep_sync_wait"
+DIRTY_READS_SQL = "SELECT @@SESSION.wsrep_dirty_reads"
+WSREP_READ_BIT = 1
 
 
 def member_status(member):
@@ -5461,9 +5479,10 @@ def scenario_26_database_is_one_cluster():
 
     - the component it sees includes every data member and voter the stand declares, and is Primary;
     - it is Synced, that is it has applied what the cluster committed and takes writes;
-    - wsrep_sync_wait is at least 1: a read there waits for the writes the other members
-      committed, which is the READ_AFTER_WRITE the demo declares (docs/agents/app-topology.md,
-      "Database Guarantees") and what scenarios 11 and 22 read through;
+    - the session's wsrep_sync_wait mask includes the READ bit and wsrep_dirty_reads is off:
+      a read there waits for the writes the other members committed, which is the READ_AFTER_WRITE
+      the demo declares (docs/agents/app-topology.md, "Database Guarantees") and what scenarios
+      11 and 22 read through;
     - the application's user holds a connection there, not counting the one asking: the one
       address the nodes know leads to every member, so every member is written to. The daemons
       and the workers of the nodes hold more long connections than there are members, and the
@@ -5495,8 +5514,10 @@ def scenario_26_database_is_one_cluster():
         answer = db_sql(SYNC_WAIT_SQL, member)
         assert answer.isdigit(), f"{member} did not answer: {SYNC_WAIT_SQL}"
         sync_wait = int(answer)
-        assert sync_wait >= 1, (f"{member} runs wsrep_sync_wait={sync_wait}: a read there may miss a write "
-                                "another member committed, and the demo declares READ_AFTER_WRITE")
+        assert sync_wait & WSREP_READ_BIT, (f"{member} runs wsrep_sync_wait={sync_wait} without the READ bit: "
+                                           "a read may miss a write another member committed")
+        dirty_reads = db_sql(DIRTY_READS_SQL, member)
+        assert dirty_reads == "0", f"{member} runs wsrep_dirty_reads={dirty_reads!r}, expected 0"
         sync_waits.add(sync_wait)
 
         connections_sql = app_connections_sql(user)
@@ -5680,6 +5701,80 @@ def database_members_by_hostname():
         assert hostname not in mapped, f"two database members answer as {hostname}"
         mapped[hostname] = member.service
     return mapped
+
+
+def scenario_49_application_connections_read_what_was_written():
+    """Real application sessions read committed writes and reconnect without changing the copy.
+
+    Inspect both logical databases on every node. With multiple writable backends, require the
+    READ bit and disabled dirty reads, and choose a reader on another backend. A direct UPDATE
+    of the non-journaled probe row separates a fresh query from the process's held copy. Killing
+    the reader's actual connection then exercises Database::sql's ordinary reconnect path.
+    """
+    wait_converge(ALL_NODES)
+    multi = len(STAND.database_sql_backends) > 1
+    by_host = database_members_by_hostname()
+
+    def check_session(node, database, session):
+        if multi:
+            sync_wait = session["wsrepSyncWait"]
+            assert sync_wait & WSREP_READ_BIT, (f"{node} {database} session runs wsrep_sync_wait={sync_wait} "
+                                               "without the READ bit")
+            dirty_reads = session["wsrepDirtyReads"]
+            assert dirty_reads is False, (f"{node} {database} session runs wsrep_dirty_reads={dirty_reads!r}, "
+                                          "expected False")
+
+    sessions = {}
+    for node in ALL_NODES:
+        for database in ("primary", "change_log"):
+            session = application_session(node, database)
+            check_session(node, database, session)
+            sessions[node, database] = session
+
+    writer = ALL_NODES[0]
+    writer_member = sessions[writer, "primary"]["databaseMember"]
+    reader = next((node for node in ALL_NODES if node != writer and
+                   (not multi or sessions[node, "primary"]["databaseMember"] != writer_member)), None)
+    assert reader is not None, f"all application primary sessions use the same backend {writer_member}"
+
+    key = f"{DB_PROBE_KEY}_causal_{writer}"
+    out = client_out(writer, "test:cluster:db:write", key, "causal-1")
+    prefix = f"Wrote {key}=causal-1 via "
+    member = next((line[len(prefix):] for line in (out or "").splitlines() if line.startswith(prefix)), None)
+    assert member, f"{writer} did not acknowledge the probe write with its backend: {out!r}"
+    query = application_query(reader, key)
+    assert query["settingValue"] == "causal-1", (f"{reader} queried {key}={query['settingValue']!r} "
+                                                f"immediately after {writer} wrote causal-1 via {member}")
+    reader_member = query["databaseMember"]
+    assert not multi or reader_member != member, (f"{writer} and {reader} both used backend {member}: "
+                                                 "the read did not cross backends")
+
+    wait_db_value(reader, key, "causal-1", CONVERGE_TIMEOUT, f"{reader}'s copy holds {writer}'s causal-1")
+    # This row is not journaled. Bypass ORM writes so no fact invalidates the reader's copy.
+    db_sql(f"UPDATE `hilos_probe_value` SET `value` = 'direct' WHERE `key` = '{key}'", by_host.get(member))
+    query = application_query(reader, key)
+    assert query["settingValue"] == "direct", (f"{reader} queried {key}={query['settingValue']!r} "
+                                              "after the direct UPDATE, expected direct")
+    held = db_read(reader, key)
+    assert held == "causal-1", (f"{reader}'s copy holds {key}={held!r} after the direct UPDATE, "
+                                "expected causal-1")
+
+    connection_id = query["databaseConnectionId"]
+    db_sql(f"KILL {connection_id}", by_host.get(query["databaseMember"]))
+    session = application_session(reader, "primary")
+    new_id = session["databaseConnectionId"]
+    assert new_id != connection_id, (f"{reader} kept databaseConnectionId={connection_id} after KILL: "
+                                     "the application did not reconnect")
+    check_session(reader, "primary", session)
+    query = application_query(reader, key)
+    assert query["settingValue"] == "direct", (f"{reader} queried {key}={query['settingValue']!r} "
+                                              "after reconnecting, expected direct")
+
+    assert client(writer, "test:cluster:db:write", key, "causal-2"), f"{writer} could not write causal-2"
+    wait_db_value(reader, key, "causal-2", CONVERGE_TIMEOUT, f"{reader}'s copy follows {writer}'s causal-2")
+    return (f"{writer} wrote via {member}; {reader} read via {reader_member}, distinguished the query "
+            f"from its copy, and reconnected {connection_id} -> {new_id} via {session['databaseMember']}; "
+            "the final write reached its copy")
 
 
 def member_back(member, count, timeout, since_start=None):
@@ -5885,6 +5980,8 @@ SCENARIOS = [
     # Keep 24's initial fleet placement, then read fresh global DDL counters before later
     # scenarios can touch the database or replace containers.
     Scenario("40 journal triggers are installed once", scenario_40_journal_triggers_are_installed_once, Need(nodes=2)),
+    Scenario("49 application connections read what was written",
+             scenario_49_application_connections_read_what_was_written, Need(nodes=2)),
     Scenario("1 master-slave mesh", scenario_1_master_slave_mesh, Need(masters=1, slaves=1)),
     Scenario("2 master-master", scenario_2_master_master, Need(masters=1)),
     Scenario("3 placement", scenario_3_placement, Need(slaves=1)),

@@ -35,7 +35,9 @@ use Hilos\Core\CLI\Commands\ClusterTestClientDetachCommand;
 use Hilos\Core\CLI\Commands\ClusterTestClientFanoutCommand;
 use Hilos\Core\CLI\Commands\ClusterTestClientSendCommand;
 use Hilos\Core\CLI\Commands\ClusterTestDbAnnounceCommand;
+use Hilos\Core\CLI\Commands\ClusterTestDbQueryCommand;
 use Hilos\Core\CLI\Commands\ClusterTestDbReadCommand;
+use Hilos\Core\CLI\Commands\ClusterTestDbSessionCommand;
 use Hilos\Core\CLI\Commands\ClusterTestDbWriteCommand;
 use Hilos\Core\CLI\Commands\ClusterTestRtDeleteCommand;
 use Hilos\Core\CLI\Commands\ClusterTestRtWriteCommand;
@@ -219,6 +221,8 @@ class CliManager
         $this->commands[CliCommands::CLUSTER_TEST_DB_WRITE] = new ClusterTestDbWriteCommand();
         $this->commands[CliCommands::ORM_TEST_FORGET] = new OrmTestForgetCommand();
         $this->commands[CliCommands::CLUSTER_TEST_DB_READ] = new ClusterTestDbReadCommand();
+        $this->commands[CliCommands::CLUSTER_TEST_DB_SESSION] = new ClusterTestDbSessionCommand();
+        $this->commands[CliCommands::CLUSTER_TEST_DB_QUERY] = new ClusterTestDbQueryCommand();
         $this->commands[CliCommands::CLUSTER_TEST_RT_WRITE] = new ClusterTestRtWriteCommand();
         $this->commands[CliCommands::CLUSTER_TEST_RT_DELETE] = new ClusterTestRtDeleteCommand();
         $this->commands[CliCommands::CLUSTER_TEST_AGENT_PLACE] = new ClusterTestAgentPlaceCommand();

@@ -66,6 +66,8 @@ class ScenarioDatabaseVotesTest(unittest.TestCase):
             return self.status_rows(size)
         if statement == scenarios.SYNC_WAIT_SQL:
             return "1"
+        if statement == scenarios.DIRTY_READS_SQL:
+            return "0"
         if statement == scenarios.app_connections_sql(self.stand.database.user):
             return "2"
         if statement == "SELECT @@hostname":
@@ -158,10 +160,34 @@ class ScenarioDatabaseVotesTest(unittest.TestCase):
                 self.assertIn(f"one cluster of {words}, all synced", detail)
                 for member in self.stand.database_members:
                     self.assertIn(call(scenarios.SYNC_WAIT_SQL, member.service), self.sql.call_args_list)
+                    self.assertIn(call(scenarios.DIRTY_READS_SQL, member.service), self.sql.call_args_list)
                     self.assertIn(call(scenarios.app_connections_sql("app"), member.service), self.sql.call_args_list)
                 if not self.stand.database_voters:
                     self.assertEqual(3, sum(args.args[0] == scenarios.CLUSTER_STATUS_SQL
                                             for args in self.sql.call_args_list))
+
+    def test_26_reads_session_settings_and_accepts_every_mask_with_the_read_bit(self):
+        self.assertEqual("SELECT @@SESSION.wsrep_sync_wait", scenarios.SYNC_WAIT_SQL)
+        self.assertEqual("SELECT @@SESSION.wsrep_dirty_reads", scenarios.DIRTY_READS_SQL)
+        for mask in (1, 3, 5, 9):
+            with self.subTest(mask=mask):
+                self.sql.side_effect = lambda statement, member: (str(mask) if statement == scenarios.SYNC_WAIT_SQL
+                                                                  else self.read_sql(statement, member))
+                scenarios.scenario_26_database_is_one_cluster()
+
+    def test_26_rejects_every_mask_without_the_read_bit(self):
+        for mask in (0, 2, 4, 6, 8):
+            with self.subTest(mask=mask):
+                self.sql.side_effect = lambda statement, member: (str(mask) if statement == scenarios.SYNC_WAIT_SQL
+                                                                  else self.read_sql(statement, member))
+                with self.assertRaisesRegex(AssertionError, f"db1.*wsrep_sync_wait={mask}.*READ bit"):
+                    scenarios.scenario_26_database_is_one_cluster()
+
+    def test_26_rejects_dirty_reads_on_any_member(self):
+        self.sql.side_effect = lambda statement, member: ("1" if statement == scenarios.DIRTY_READS_SQL and member == "db2"
+                                                         else self.read_sql(statement, member))
+        with self.assertRaisesRegex(AssertionError, "db2.*wsrep_dirty_reads='1'"):
+            scenarios.scenario_26_database_is_one_cluster()
 
     def test_26_rejects_a_component_missing_its_voter(self):
         self.sizes = {"db1": 2, "db2": 2}

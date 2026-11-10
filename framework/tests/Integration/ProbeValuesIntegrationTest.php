@@ -109,6 +109,31 @@ final class ProbeValuesIntegrationTest extends FrameworkIntegrationTestCase
         }
     }
 
+    /** Fresh reads observe repeated database changes while the warmed key access keeps its original value. */
+    public function testQueryValueReadsPastTheLocalCopyWithoutChangingIt(): void
+    {
+        Hilos::$db->probeValues->actions->add('node-a', 'probe_key', 'copied');
+        Hilos::$db = new ProbeValuesTestDbContext();
+        Hilos::$db->configure();
+        self::assertSame('copied', Hilos::$db->probeValues['probe_key']->value);
+
+        Database::sql('UPDATE `hilos_probe_value` SET `value` = ? WHERE `key` = ?', ['fresh', 'probe_key']);
+
+        self::assertSame('fresh', Hilos::$db->probeValues->queryValue('probe_key'));
+        self::assertSame('copied', Hilos::$db->probeValues['probe_key']->value);
+
+        Database::sql('UPDATE `hilos_probe_value` SET `value` = ? WHERE `key` = ?', ['newer', 'probe_key']);
+
+        self::assertSame('newer', Hilos::$db->probeValues->queryValue('probe_key'));
+        self::assertSame('copied', Hilos::$db->probeValues['probe_key']->value);
+    }
+
+    /** Absence is a nullable value rather than the required-key access refusal. */
+    public function testQueryValueReturnsNullWhenTheRowIsAbsent(): void
+    {
+        self::assertNull(Hilos::$db->probeValues->queryValue('missing'));
+    }
+
     public function testASetOwnerCannotCreateOrUpdateAnotherNodesRow(): void
     {
         ExecutionContext::setCurrentAgentId(self::OTHER_AGENT_ID);

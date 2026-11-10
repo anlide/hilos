@@ -310,6 +310,28 @@ class Database
     }
 
     /**
+     * @param int $index Connection index to query, including its ordinary reconnect path
+     * @return DatabaseSessionFacts Current server member and session settings
+     * @throws DatabaseConnectionException When not connected or reconnect fails
+     * @throws DatabaseParamsException When SQL parameter processing fails
+     * @throws DatabaseRuntimeException When the query fails or returns no row
+     */
+    public static function sessionFacts(int $index): DatabaseSessionFacts
+    {
+        $row = self::sql(DatabaseSql::SESSION_FACTS, index: $index)->firstRow();
+        if ($row === null) {
+            throw new DatabaseRuntimeException('Session facts query returned no row');
+        }
+
+        return new DatabaseSessionFacts(
+            member: (string)$row['member'],
+            connectionId: (int)$row['connection_id'],
+            wsrepSyncWait: (int)$row['wsrep_sync_wait'],
+            wsrepDirtyReads: (bool)$row['wsrep_dirty_reads'],
+        );
+    }
+
+    /**
      * Opens a connection and sets its session time zone to UTC before the handle is published.
      *
      * The time zone is set on every index, including a reconnect. A failed SET closes the

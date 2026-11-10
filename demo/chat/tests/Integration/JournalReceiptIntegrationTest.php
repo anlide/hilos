@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use Closure;
 use Demo\Chat\Database\Database;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Hilos;
@@ -47,6 +48,8 @@ use Hilos\Database\Entity\Item\ChangeLogReceipt as EntityChangeLogReceipt;
 use Hilos\Database\Entity\Item\Setting;
 use Hilos\Database\Exception\SqlRuntime\DataTooLongException;
 use Hilos\Database\Migration;
+use Hilos\Database\Object\Collection\ChangeLogReceipts;
+use Hilos\Database\Object\Objects;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
@@ -724,9 +727,39 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
         $this->assertSame(1, $this->logCount($receiptId));
     }
 
+    /** A dead link before receipt creation can be replaced before any write is sent. */
+    public function testReceiptOpensOnANewLinkAfterTheOldOneDied(): void
+    {
+        Database::sql('SELECT CONNECTION_ID() AS `id`');
+        $previousConnectionId = (int) Database::field('id');
+        $this->killPrimaryConnection();
+        $handlerRan = false;
+
+        $id = JournalReceiptScope::run(
+            JournalReceiptData::web(57, null, 58, 'setting.after-lost-link', null),
+            static function () use (&$handlerRan): ?int {
+                $handlerRan = true;
+                Database::sql('INSERT INTO `hilos_setting` (`key`, `type`, `value`) VALUES (?, ?, ?)',
+                    [self::KEY_PREFIX . 'after-lost-link', 'string', 'written']);
+                return JournalReceiptScope::currentId();
+            },
+        );
+
+        $this->assertTrue($handlerRan);
+        $this->assertNotNull($id);
+        $this->assertSame(1, $this->logCount($id));
+        Database::sql('SELECT CONNECTION_ID() AS `id`');
+        $this->assertNotSame($previousConnectionId, (int) Database::field('id'));
+    }
+
+    /** A link lost after the safe probe must not cause the receipt INSERT to be replayed. */
     public function testLostReceiptInsertIsNotReplayed(): void
     {
-        $this->killPrimaryConnection();
+        $mounted = Hilos::$db->getDbItemCollection(HilosDbContext::changeLogReceipts);
+        $original = $mounted->getObjectCollection();
+        $losing = JournalReceiptLinkLostAfterProbe::initDB(Objects::LAZY_STRATEGY_KEY);
+        $losing->afterProbe = $this->killPrimaryConnection(...);
+        $mounted->setObjectCollection($losing);
         try {
             JournalReceiptScope::run(
                 JournalReceiptData::web(53, null, 54, 'setting.lost-insert', null),
@@ -737,7 +770,14 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
             self::fail('The lost receipt insert must fail');
         } catch (DatabaseException) {
             // The outcome of the INSERT is ambiguous; no automatic replay is allowed.
+        } finally {
+            $mounted->setObjectCollection($original);
         }
+
+        $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        Database::sql("SELECT COUNT(*) AS `count` FROM {$database}.`hilos_change_log_receipt` WHERE `action` = ?",
+            ['setting.lost-insert']);
+        $this->assertSame(0, (int) Database::field('count'));
 
         $nextId = JournalReceiptScope::run(
             JournalReceiptData::web(55, null, 56, 'setting.next', null),
@@ -1578,6 +1618,24 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
         Database::sql('SELECT TRIGGER_NAME, EVENT_OBJECT_TABLE, EVENT_MANIPULATION, ACTION_TIMING, ACTION_STATEMENT'
             . ' FROM INFORMATION_SCHEMA.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() ORDER BY TRIGGER_NAME');
         return Database::rows();
+    }
+}
+
+final class JournalReceiptLinkLostAfterProbe extends ChangeLogReceipts
+{
+    public ?Closure $afterProbe = null;
+
+    /**
+     * Drops the link after the parent probe has reopened it.
+     *
+     * @param int $connectionIndex Receipt binding connection
+     */
+    protected function reopenLostLink(int $connectionIndex): void
+    {
+        parent::reopenLostLink($connectionIndex);
+        if ($this->afterProbe !== null) {
+            ($this->afterProbe)();
+        }
     }
 }
 

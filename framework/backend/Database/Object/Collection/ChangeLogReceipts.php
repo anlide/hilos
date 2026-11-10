@@ -36,6 +36,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseBinding;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\DatabaseSql;
 use Hilos\Database\Entity\Collection\ChangeLogReceipts as EntityChangeLogReceipts;
 use Hilos\Database\Entity\Item\ChangeLogChange as EntityChangeLogChange;
 use Hilos\Database\Entity\Item\ChangeLogEntry as EntityChangeLogEntry;
@@ -291,6 +292,7 @@ class ChangeLogReceipts extends Objects
      * The insert is not the generic entity save: a migration receipt omits open_handovers, and an
      * insert whose outcome is ambiguous is never sent again. The handover column is written only
      * when the caller retains a local attempt. Membership is the ordinary collection door.
+     * A read before every insert may reopen a link that died before anything was sent.
      *
      * The mounted changeLogReceipts collection is the door. The statement uses that collection's
      * entity binding and its row connection, which for the journal is the primary connection.
@@ -322,9 +324,7 @@ class ChangeLogReceipts extends Objects
             $columns .= ', `' . $entityClass::open_handovers . '`';
             $values .= ', 1';
         }
-        if (!Database::isConnected($binding->connectionIndex)) {
-            Database::sql('SELECT 1', index: $binding->connectionIndex);
-        }
+        $this->reopenLostLink($binding->connectionIndex);
         try {
             Database::sql(
                 "INSERT INTO {$table} ({$columns}) VALUES ({$values})",
@@ -422,6 +422,18 @@ class ChangeLogReceipts extends Objects
             ExecutionContext::currentRequestId(),
             previous: [],
         ), connectionIndex: $binding->connectionIndex);
+    }
+
+    /**
+     * An occupied slot can still hold a dead connection. A link lost before the insert leaves no
+     * ambiguous write because nothing has been sent; only this read may reconnect.
+     *
+     * @param int $connectionIndex Receipt binding connection
+     * @throws DatabaseException When the link cannot be reopened.
+     */
+    protected function reopenLostLink(int $connectionIndex): void
+    {
+        Database::sql(DatabaseSql::PING, index: $connectionIndex);
     }
 
     /**

@@ -63,6 +63,8 @@ use Hilos\Database\Entity\Item\ChangeLogReceipt as EntityChangeLogReceipt;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
+use Hilos\Database\Object\Collection\ChangeLogReceipts;
+use Hilos\Database\Object\Objects;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Log\LogAggregatorAgent;
@@ -484,7 +486,11 @@ PHP);
         $this->assertClear();
     }
 
-    /** @param bool $daemon Schedule entrance whose continuation must wait for its own receipt */
+    /**
+     * A continuation whose link is lost after its safe probe must not poll under another scope.
+     *
+     * @param bool $daemon Schedule entrance whose continuation must wait for its own receipt
+     */
     #[DataProvider('backupMechanisms')]
     public function testBackupContinuationDoesNotPollUnderAnotherScopeWhenItsNewReceiptFails(bool $daemon): void
     {
@@ -512,22 +518,39 @@ PHP);
 
         JournalReceiptScope::run(JournalReceiptData::agent('other-operation', 'other-agent'), function () use ($agent, $child, &$polls): void {
             $outerId = JournalReceiptScope::currentId();
-            Database::sql('SELECT CONNECTION_ID() AS `id`');
-            $connectionId = (int)Database::field('id');
-            $config = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
-            $killer = new mysqli($config->host, $config->user, $config->password, $config->database, $config->port, $config->socket);
-            $killer->query("KILL {$connectionId}");
-            $killer->close();
+            $mounted = Hilos::$db->getDbItemCollection(HilosDbContext::changeLogReceipts);
+            $original = $mounted->getObjectCollection();
+            $losing = JournalReceiptMaintenanceLinkLostAfterProbe::initDB(Objects::LAZY_STRATEGY_KEY);
+            $losing->afterProbe = static function (): void {
+                Database::sql('SELECT CONNECTION_ID() AS `id`');
+                $connectionId = (int)Database::field('id');
+                $config = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
+                $killer = new mysqli(
+                    $config->host,
+                    $config->user,
+                    $config->password,
+                    $config->database,
+                    $config->port,
+                    $config->socket,
+                );
+                $killer->query("KILL {$connectionId}");
+                $killer->close();
+            };
             try {
-                $this->tickBackup();
-                self::fail('Creating the new receipt on a lost link must fail without polling');
-            } catch (DatabaseException) {
-                self::assertSame(1, $polls);
-                self::assertSame($child, self::property($agent, 'childProcess'));
-                self::assertNull(self::property($agent, 'cronReceiptId'));
-                self::assertSame($outerId, JournalReceiptScope::currentId());
-                $this->assertConnection($outerId);
-                self::assertSame(0, $this->logCount($outerId));
+                $mounted->setObjectCollection($losing);
+                try {
+                    $this->tickBackup();
+                    self::fail('The new receipt must fail after the safe probe loses the link, before polling');
+                } catch (DatabaseException) {
+                    self::assertSame(1, $polls);
+                    self::assertSame($child, self::property($agent, 'childProcess'));
+                    self::assertNull(self::property($agent, 'cronReceiptId'));
+                    self::assertSame($outerId, JournalReceiptScope::currentId());
+                    $this->assertConnection($outerId);
+                    self::assertSame(0, $this->logCount($outerId));
+                }
+            } finally {
+                $mounted->setObjectCollection($original);
             }
         });
         $this->assertClear();
@@ -1368,5 +1391,23 @@ final class JournalReceiptMaintenanceEnv extends EnvAccessor
     {
         ($this->onRead ?? static fn () => null)($key);
         return $this->values[$key] ?? parent::effectiveValueFor($key);
+    }
+}
+
+final class JournalReceiptMaintenanceLinkLostAfterProbe extends ChangeLogReceipts
+{
+    public ?Closure $afterProbe = null;
+
+    /**
+     * Drops the link after the safe parent probe.
+     *
+     * @param int $connectionIndex Receipt binding connection
+     */
+    protected function reopenLostLink(int $connectionIndex): void
+    {
+        parent::reopenLostLink($connectionIndex);
+        if ($this->afterProbe !== null) {
+            ($this->afterProbe)();
+        }
     }
 }

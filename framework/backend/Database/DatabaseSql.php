@@ -41,6 +41,9 @@ final class DatabaseSql
 
     public const string SESSION_MAX_STATEMENT_TIME_GET = 'SELECT @@max_statement_time';
 
+    public const string SESSION_FACTS = 'SELECT CONNECTION_ID() AS connection_id, @@hostname AS member, '
+        . '@@SESSION.wsrep_sync_wait AS wsrep_sync_wait, @@SESSION.wsrep_dirty_reads AS wsrep_dirty_reads';
+
     public const string SESSION_MAX_STATEMENT_TIME_SET = 'SET SESSION max_statement_time = %d';
 
     /**

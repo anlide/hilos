@@ -57,6 +57,8 @@ use Hilos\Database\Database as FrameworkDatabase;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
+use Hilos\Database\Object\Collection\ChangeLogReceipts;
+use Hilos\Database\Object\Objects;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\HilosException;
@@ -900,19 +902,27 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
         $this->assertSame(1, (int) $this->receipt($id)['open_handovers']);
     }
 
-    /** A lost response to the receipt INSERT is not retried; the next attempt gets a clean link. */
+    /** A link lost after the safe receipt probe must not replay the INSERT. */
     public function testLostStartDoesNotReplayTheInsertOrChangeTheCurrentIndex(): void
     {
-        $this->killPrimaryConnection();
-        Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+        $previousConnectionIndex = Database::getCurrentIndex();
+        $mounted = Hilos::$db->getDbItemCollection(HilosDbContext::changeLogReceipts);
+        $original = $mounted->getObjectCollection();
+        $losing = JournalReceiptCronLinkLostAfterProbe::initDB(Objects::LAZY_STRATEGY_KEY);
+        $losing->afterProbe = $this->killPrimaryConnection(...);
         try {
-            JournalReceiptScope::start(JournalReceiptData::cron('lost-start', null, 'initiator'));
-            self::fail('The ambiguous receipt insert must fail');
-        } catch (DatabaseException) {
-            $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
-            $this->assertNull(JournalReceiptScope::currentId());
+            $mounted->setObjectCollection($losing);
+            Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+            try {
+                JournalReceiptScope::start(JournalReceiptData::cron('lost-start', null, 'initiator'));
+                self::fail('The receipt INSERT must fail after the safe probe loses the link');
+            } catch (DatabaseException) {
+                $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+                $this->assertNull(JournalReceiptScope::currentId());
+            }
         } finally {
-            Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+            $mounted->setObjectCollection($original);
+            Database::useConnection($previousConnectionIndex);
         }
         $this->assertConnectionReceipt(null);
         $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
@@ -1397,5 +1407,23 @@ final class JournalReceiptCronSweepSettings extends SettingsAccessor
     public function effectiveValueFor(string $key): mixed
     {
         return $key === VerificationSweepSettings::SWEEP_CRON_KEY ? $this->cron : parent::effectiveValueFor($key);
+    }
+}
+
+final class JournalReceiptCronLinkLostAfterProbe extends ChangeLogReceipts
+{
+    public ?Closure $afterProbe = null;
+
+    /**
+     * Drops the link after the safe parent probe.
+     *
+     * @param int $connectionIndex Receipt binding connection
+     */
+    protected function reopenLostLink(int $connectionIndex): void
+    {
+        parent::reopenLostLink($connectionIndex);
+        if ($this->afterProbe !== null) {
+            ($this->afterProbe)();
+        }
     }
 }

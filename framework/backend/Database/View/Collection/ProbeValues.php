@@ -75,6 +75,19 @@ class ProbeValues extends DbCollection
     }
 
     /**
+     * Reads the database without refreshing the collection's local copy.
+     *
+     * @param string $key Probe key
+     * @return ?string Stored value or null when absent
+     * @throws DatabaseException When the probe query fails
+     * @throws InvalidArgumentException When the entity query has an invalid order direction
+     */
+    public function queryValue(string $key): ?string
+    {
+        return $this->objectCollection->queryValue($key);
+    }
+
+    /**
      * Finds a probe value by key for the collection offset implementation.
      *
      * @param string $key Probe key

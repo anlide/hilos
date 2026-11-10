@@ -134,6 +134,9 @@ the receipt actions `createReceipt`, `adjustHandovers`, `deleteIfEmpty` and
 `deleteEmptyMigrationReceipt`.
 An INSERT whose response was lost is ambiguous and is never replayed to try to
 recover its number; its failure reaches the caller without running the work.
+A link that died before the INSERT was sent leaves nothing ambiguous: a read
+ahead of every receipt INSERT replaces it through the ordinary reconnect, and
+the operation goes on.
 
 Under impersonation the administrator is at the keyboard and the session's
 person is the one on whose behalf the action runs. That is already the session's
