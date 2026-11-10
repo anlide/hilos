@@ -45,6 +45,16 @@ const TEARDOWN_COMMAND_TIMEOUT_SECONDS = 60;
 /** How often the runner looks at a command it is waiting on. */
 const TEARDOWN_POLL_INTERVAL_MICROSECONDS = 100_000;
 
+/**
+ * How long a teardown goes on removing what docker still holds before calling it left behind.
+ * Killing a `down` that outstayed its timeout does not stop docker, which keeps taking the
+ * containers away, so the stand can be gone minutes after the command that dropped it was killed.
+ */
+const TEARDOWN_RESIDUE_CEILING_SECONDS = 300;
+
+/** How long a teardown pauses between one removal of what docker still holds and the next. */
+const TEARDOWN_RESIDUE_POLL_MICROSECONDS = 2_000_000;
+
 /** The signal a command that outstayed its timeout is killed with. */
 const TEARDOWN_KILL_SIGNAL = 9;
 
@@ -78,9 +88,9 @@ function tearDownStands(string $root, array $stands): array
  * than as what the removal commands printed: docker prints the same id twice when a container
  * is both stopped and removed, and the count in the log would then exceed what was there.
  *
- * The services of a `profile` stand are resolved once here and handed to all three residue
- * lookups: the answer cannot change while the teardown runs, and asking compose three times
- * would cost three subprocesses for one fact.
+ * The services of a `profile` stand are resolved once here and handed to every residue lookup:
+ * the answer cannot change while the teardown runs, and asking compose on each look would cost
+ * a subprocess per look for one fact.
  *
  * A stand whose own declaration is broken is dropped and then left alone, and the problem is
  * asked for BEFORE the first residue lookup rather than at the end where the report is
@@ -116,15 +126,19 @@ function tearDownStand(string $root, array $stand): array
     $before = standResidue($stand, $services);
     runTeardownCommand(standDownCommand($stand), $root . '/' . $stand['cwd']);
 
-    $held = standResidue($stand, $services);
-    if ($held['containers'] !== []) {
-        runTeardownCommand(standRemoveContainersCommand($held['containers']), $root);
-    }
-    if ($held['networks'] !== []) {
-        runTeardownCommand(standRemoveNetworksCommand($held['networks']), $root);
-    }
-
-    $after = standResidue($stand, $services);
+    $after = drainStandResidue(
+        static fn(): array => standResidue($stand, $services),
+        static function (array $held) use ($root): void {
+            if ($held['containers'] !== []) {
+                runTeardownCommand(standRemoveContainersCommand($held['containers']), $root);
+            }
+            if ($held['networks'] !== []) {
+                runTeardownCommand(standRemoveNetworksCommand($held['networks']), $root);
+            }
+        },
+        static fn(): float => microtime(true),
+        usleep(...),
+    );
 
     return [
         'id' => $stand['id'],
@@ -212,6 +226,53 @@ function standResidue(array $stand, ?array $services): array
         ),
         'networks' => teardownNames(runTeardownCommand(standResidueNetworksCommand($stand), null)),
     ];
+}
+
+/**
+ * Remove what docker holds for a stand and look again, until nothing is held or the ceiling is reached.
+ *
+ * The removal is repeated rather than run once and waited on: a `down` killed at its timeout will
+ * never take the networks down, and `docker network rm` refuses a network while a container is
+ * still attached to it. A network refused on the first pass has to be asked for again once its
+ * container is gone, or it would stand until the ceiling and be reported as left behind.
+ *
+ * The clock and the pause are parameters so that a test can walk the whole wait without waiting.
+ *
+ * @param callable(): array{containers: array<int, string>, networks: array<int, string>} $residue
+ *     Asks docker what is held right now.
+ * @param callable(array{containers: array<int, string>, networks: array<int, string>}): void $remove
+ *     Removes what it is handed.
+ * @param callable(): float $now The current moment in seconds.
+ * @param callable(int): void $sleep Pauses for the given microseconds.
+ * @return array{containers: array<int, string>, networks: array<int, string>} What is still held
+ *     at the end: nothing, unless the ceiling ended the wait.
+ */
+function drainStandResidue(callable $residue, callable $remove, callable $now, callable $sleep): array
+{
+    $deadline = $now() + TEARDOWN_RESIDUE_CEILING_SECONDS;
+
+    $held = $residue();
+    while (standHoldsResidue($held)) {
+        $remove($held);
+        $held = $residue();
+        if (!standHoldsResidue($held) || $now() >= $deadline) {
+            break;
+        }
+        $sleep(TEARDOWN_RESIDUE_POLL_MICROSECONDS);
+    }
+
+    return $held;
+}
+
+/**
+ * Whether a residue names anything at all.
+ *
+ * @param array{containers: array<int, string>, networks: array<int, string>} $residue What was looked up.
+ * @return bool True while a container or a network is still held.
+ */
+function standHoldsResidue(array $residue): bool
+{
+    return $residue['containers'] !== [] || $residue['networks'] !== [];
 }
 
 /**

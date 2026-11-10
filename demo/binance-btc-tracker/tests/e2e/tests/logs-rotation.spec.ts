@@ -82,8 +82,9 @@ test.use({ timezoneId: READER_ZONE })
 
 /**
  * The age axis of rotation, written once so the rule line can be seen to say it; 0 is its
- * default. The stand's other two axes default to the night and the 512 MiB of the Normal mode
- * (HIL-906), so rotation is on and the rotation command is never refused for being off.
+ * default. Of the stand's other two axes the schedule is held out of a run's reach and the size
+ * defaults to the 512 MiB of the Normal mode (HIL-906), so rotation is on and the rotation
+ * command is never refused for being off.
  */
 const ROTATION_MAX_AGE = 'logs.rotation.max_age_seconds'
 
@@ -569,8 +570,9 @@ test('shows the configured rotation threshold, carries a batch off on the operat
     // The archive as it stands, read here rather than at the top: every write above
     // repaints the badges and so re-serves this window, which means the picture on
     // screen now is one the page has answered for four times over. Nothing can
-    // have been added to it either — until the next line, only the nightly schedule
-    // and the size threshold may rotate, and the scenario reaches neither.
+    // have been added to it either — until the next line, only the schedule, which
+    // the stand holds out of a run's reach, and the size threshold may rotate, and
+    // the scenario reaches neither.
     const before = await rowKeys(page)
 
     // Three batches, oldest first, each arriving on a page that has not navigated

@@ -155,8 +155,6 @@ services:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620
     container_name: hilos-mysql-framework-remote-test${HILOS_STAND_SUFFIX:-}
-    labels:
-      hilos.role: database
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
       MYSQL_DATABASE: ${MYSQL_FRAMEWORK_TEST_DATABASE:-hilos-framework-test}

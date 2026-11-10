@@ -11,8 +11,8 @@ require_once __DIR__ . '/../../../scripts/stand-teardown.php';
 
 /**
  * The parts of the stand teardown that answer without docker: the stand list being readable at
- * all, the commands each mode builds, what is read back out of docker's answer, and the line a
- * teardown is reported by.
+ * all, the commands each mode builds, what is read back out of docker's answer, the wait for what
+ * docker is still taking away, and the line a teardown is reported by.
  *
  * Actually removing a container is out of scope on purpose — proving it would mean standing a
  * demo up, which is the very thing the full run already does. What is worth pinning here is the
@@ -66,6 +66,18 @@ final class StandTeardownTest extends TestCase
         'profiles' => ['test'],
         'networks' => [],
     ];
+
+    /** Docker's answer once the stand is gone. */
+    private const array NOTHING_HELD = ['containers' => [], 'networks' => []];
+
+    /** Docker's answer while a stand is still standing: a one-off container and the network it sits on. */
+    private const array STAND_HELD = [
+        'containers' => ['hilos-chat-test-app-run-abc123'],
+        'networks' => ['hilos-chat-test_default'],
+    ];
+
+    /** Docker's answer once the container is gone and the network it held has not been asked for again. */
+    private const array NETWORK_HELD = ['containers' => [], 'networks' => ['hilos-chat-test_default']];
 
     /** Every stand the run knows about, in the shape the teardown reads. */
     public function testEveryDeclaredStandCarriesWhatTheTeardownReads(): void
@@ -382,6 +394,107 @@ final class StandTeardownTest extends TestCase
     {
         $this->assertSame('', standProblem(self::PROFILE_STAND, ['mysql-framework-test']));
         $this->assertSame('', standProblem(self::DEMO_STAND, null));
+    }
+
+    /** The usual teardown: `down` took everything, so nothing is removed and nothing is waited for. */
+    public function testDrainingAnEmptyStandNeitherRemovesNorPauses(): void
+    {
+        $drain = self::drainAgainst([self::NOTHING_HELD]);
+
+        $this->assertSame(self::NOTHING_HELD, $drain['left']);
+        $this->assertSame([], $drain['removed']);
+        $this->assertSame([], $drain['pauses']);
+    }
+
+    /** One removal that takes everything is the end of it: the pause is only for what is still there. */
+    public function testDrainingStopsWithoutAPauseWhenTheFirstRemovalTookEverything(): void
+    {
+        $drain = self::drainAgainst([self::STAND_HELD, self::NOTHING_HELD]);
+
+        $this->assertSame(self::NOTHING_HELD, $drain['left']);
+        $this->assertSame([self::STAND_HELD], $drain['removed']);
+        $this->assertSame([], $drain['pauses']);
+    }
+
+    /** Docker finishing while the teardown waits is a clean teardown, however long it took. */
+    public function testDrainingReportsNothingLeftWhenTheResidueGoesDuringTheWait(): void
+    {
+        $drain = self::drainAgainst([self::STAND_HELD, self::STAND_HELD, self::STAND_HELD, self::NOTHING_HELD]);
+
+        $this->assertSame(self::NOTHING_HELD, $drain['left']);
+        $this->assertSame([self::STAND_HELD, self::STAND_HELD, self::STAND_HELD], $drain['removed']);
+        $this->assertSame([2_000_000, 2_000_000], $drain['pauses']);
+        $this->assertStringNotContainsString(
+            'LEFT BEHIND',
+            describeTeardown([...self::cleanResult('chat'), 'residue' => $drain['left']]),
+        );
+    }
+
+    /**
+     * A container that really hangs is still red, and it is red at five minutes: 150 pauses of two
+     * seconds bring the clock onto the ceiling, and the look made there is the last one.
+     */
+    public function testDrainingGivesUpAtTheCeilingAndReportsWhatIsLeft(): void
+    {
+        $drain = self::drainAgainst([self::STAND_HELD]);
+
+        $this->assertSame(self::STAND_HELD, $drain['left']);
+        $this->assertCount(151, $drain['removed']);
+        $this->assertSame(array_fill(0, 150, 2_000_000), $drain['pauses']);
+        $this->assertSame(
+            'stands: chat — LEFT BEHIND: hilos-chat-test-app-run-abc123, hilos-chat-test_default',
+            describeTeardown([...self::cleanResult('chat'), 'residue' => $drain['left']]),
+        );
+    }
+
+    /**
+     * A killed `down` leaves the network to the removal, and docker refuses it while the container
+     * is attached. The second pass has to ask for it again, which is why waiting alone is not enough.
+     */
+    public function testDrainingRemovesOnTheSecondPassTheNetworkRefusedOnTheFirst(): void
+    {
+        $drain = self::drainAgainst([self::STAND_HELD, self::NETWORK_HELD, self::NOTHING_HELD]);
+
+        $this->assertSame(self::NOTHING_HELD, $drain['left']);
+        $this->assertSame([self::STAND_HELD, self::NETWORK_HELD], $drain['removed']);
+        $this->assertSame([2_000_000], $drain['pauses']);
+    }
+
+    /**
+     * Drain a stand against a docker answering from a list, on a clock that only the pauses move.
+     *
+     * Docker gives the answers in order and goes on repeating the last one, which is what a
+     * container that never goes away looks like.
+     *
+     * @param array<int, array{containers: array<int, string>, networks: array<int, string>}> $answers
+     *     What each look at docker finds.
+     * @return array{left: array{containers: array<int, string>, networks: array<int, string>},
+     *     removed: array<int, array{containers: array<int, string>, networks: array<int, string>}>,
+     *     pauses: array<int, int>} What is left, what each removal was handed, and each pause asked for.
+     */
+    private static function drainAgainst(array $answers): array
+    {
+        $moment = 0.0;
+        $removed = [];
+        $pauses = [];
+
+        $left = drainStandResidue(
+            static function () use (&$answers): array {
+                return count($answers) > 1 ? array_shift($answers) : $answers[0];
+            },
+            static function (array $held) use (&$removed): void {
+                $removed[] = $held;
+            },
+            static function () use (&$moment): float {
+                return $moment;
+            },
+            static function (int $microseconds) use (&$moment, &$pauses): void {
+                $pauses[] = $microseconds;
+                $moment += $microseconds / 1_000_000;
+            },
+        );
+
+        return ['left' => $left, 'removed' => $removed, 'pauses' => $pauses];
     }
 
     /**

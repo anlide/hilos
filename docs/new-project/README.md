@@ -243,10 +243,11 @@ stack up). The daemon/cli `env_file` uses the long form with
 **Test** (`docker-compose.test.yml`, the agent/CI lane): mysql (data in tmpfs,
 write durability reduced by `framework/docker/mysql/test-stand.cnf`, healthcheck),
 the daemon (`env_file: ../tests/.env` — must exist; created by
-`composer run setup-env`), a cli service, the prod-parity nginx serving
-`frontend/dist` with the `/ws` upgrade proxy (profile `e2e`), the Playwright
-runner (its image tag MUST equal the `@playwright/test` version). Teardown
-always via `--profile "*" down` or profiled services leak.
+`composer run setup-env`; `LOG_ROTATION_CRON=0 3 29 2 *` in its `environment`, so
+the nightly log rotation never runs under a test), a cli service, the prod-parity
+nginx serving `frontend/dist` with the `/ws` upgrade proxy (profile `e2e`), the
+Playwright runner (its image tag MUST equal the `@playwright/test` version).
+Teardown always via `--profile "*" down` or profiled services leak.
 
 When Status is enabled, keep its files separate per installation: local stacks
 use `data/status`, test stacks use `data/status-test`, and each cluster stand uses

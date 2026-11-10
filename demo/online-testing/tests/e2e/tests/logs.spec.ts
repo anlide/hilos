@@ -1,6 +1,7 @@
 import { test, expect } from '../test.js'
 
 import {
+  clearCustomSetting,
   setCustomSetting,
   shownByTestId,
   typeInto,
@@ -140,11 +141,12 @@ test('navigates Logs pages and preserves filters and live logging modes', async 
   ).toBeVisible()
 
   // A stand that has never applied a mode has no settings rows at all, so the values
-  // in force are the defaults — and those are what the chosen mode declares, so its
-  // card opens with no differences (HIL-906).
-  await expect(
-    page.getByTestId('hilos-setting-preset-differences'),
-  ).toHaveCount(0)
+  // in force are the defaults, and those are what the chosen mode declares (HIL-906)
+  // except for the rotation schedule, which the stand holds out of a run's reach. So
+  // the card opens with that one difference.
+  const differences = page.getByTestId('hilos-setting-preset-differences')
+  await expect(differences.getByRole('listitem')).toHaveCount(1)
+  await expect(differences).toContainText('0 3 29 2 *')
 
   await logsPages.getByTestId('hilos-page-tab-hilos_logs').click()
   await expectPageReady(expect, page)
@@ -176,9 +178,8 @@ test('navigates Logs pages and preserves filters and live logging modes', async 
   await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
 
   await gotoPage(expect, page, '/hilos/logs/settings')
-  await expect(
-    page.getByTestId('hilos-setting-preset-differences'),
-  ).toBeVisible()
+  // The block shows without the edit too; its second line is the edit arriving.
+  await expect(differences.getByRole('listitem')).toHaveCount(2)
 
   // Putting them back is the gesture the defect was found on, and it asks nothing
   // first: the card is already the chosen one.
@@ -192,9 +193,7 @@ test('navigates Logs pages and preserves filters and live logging modes', async 
   await expect(page.getByTestId('hilos-toast-success')).toHaveCount(0)
   // The differences going is the new state arriving over the socket, not a guess about
   // when it will: the backend answers the action with nothing and pushes the state.
-  await expect(
-    page.getByTestId('hilos-setting-preset-differences'),
-  ).toHaveCount(0)
+  await expect(differences).toHaveCount(0)
 
   // Choosing another mode, which is the second gesture and the second sentence. With
   // the values back there is nothing of anyone's own to overwrite, so no confirmation
@@ -235,4 +234,13 @@ test('navigates Logs pages and preserves filters and live logging modes', async 
   )
   await page.getByTestId('hilos-toast-close').click()
   await expect(frugal).toBeEnabled()
+
+  // The modes wrote the nightly schedule over the stand's distant one, and the stand
+  // is shared: without its row the environment answers again.
+  await gotoPage(expect, page, '/hilos/settings')
+  await typeInto(page.getByTestId('hilos-table-search'), 'logs.rotation.cron')
+  await expect(
+    page.getByTestId('hilos-table-row-logs.rotation.cron'),
+  ).toBeVisible()
+  await clearCustomSetting(page, 'logs.rotation.cron')
 })

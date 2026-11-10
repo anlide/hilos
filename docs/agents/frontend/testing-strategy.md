@@ -1084,6 +1084,15 @@ do not work around the race by choosing a less frequent rule.
 See
 [cron schedule pause commands](../cli/commands.md#pausing-a-cron-schedule-while-its-test-checks-the-rule).
 
+**The nightly log rotation is held far away on every stand.** A stand that runs
+a daemon sets `LOG_ROTATION_CRON=0 3 29 2 *` (29 February), because a rotation
+carries `daemon.log` off and everything reading the live file stays red until
+the daemon's life ends. A spec that needs a rotation brings it to now with
+`test:logs:rotate` or `test:cron:fire hilos_log_store/hilos_log_rotation` and
+leaves the stand's schedule alone. A spec that writes `logs.rotation.cron` —
+applying a logging mode does — clears that setting before it ends, so the far
+schedule answers again.
+
 A setup that avoids waiting for the clock is also allowed when it catches the
 same regression and leaves the stand's timer unchanged — for example,
 subscribe before the action and assert on the same event. Ordinary waiting for

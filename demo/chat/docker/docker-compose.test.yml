@@ -146,6 +146,8 @@ services:
     working_dir: /app
     environment:
       - APP_ENV=test
+      # The nightly rotation carries daemon.log away under a run; a test that needs a rotation calls it itself.
+      - LOG_ROTATION_CRON=0 3 29 2 *
       # Its own backups: without it BACKUP_DIR comes from the local .env through the
       # project bind, and test:backup:reset on test:up would wipe the local stand's
       # archives. The process value wins over /app/.env.

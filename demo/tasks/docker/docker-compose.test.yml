@@ -145,6 +145,8 @@ services:
     working_dir: /app
     environment:
       - APP_ENV=test
+      # The nightly rotation carries daemon.log away under a run; a test that needs a rotation calls it itself.
+      - LOG_ROTATION_CRON=0 3 29 2 *
       # The project zone the time-zone e2e stand on (HIL-1596). Pinned in the test
       # stack so a run reads the same zone whatever the host or a stale tests/.env
       # carries; the process value wins over the env file and /app/.env.

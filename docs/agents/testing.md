@@ -389,6 +389,14 @@ to this, and a stack with a `docker/docker-compose.cluster.yml` needs its row in
 A check run beside a full run on another instance lowers it, so the full run keeps
 the processor when both want it. A new stand service takes the same line.
 
+**Log rotation of a stand.** Every service that runs a daemon sets
+`LOG_ROTATION_CRON=0 3 29 2 *`, in `docker/cluster/common.env` on a cluster stand,
+so a test stand never rotates its logs on its own at night. A scenario that needs a
+rotation asks for one: see
+[Time](frontend/testing-strategy.md#time--a-command-brings-the-moment-to-now).
+`framework/tests/Unit/StandLogRotationGuardTest.php` holds every `demo/` row of
+`scripts/test-stands.php` to this, so a new demo takes the same line.
+
 **Any cluster fleet may run beside any e2e step.** No edge keeps them apart and the
 order does not either; a fleet leaves with its own step (`downsStand`), which is
 hygiene rather than separation. A red step beside a fleet keeps the full run red.
