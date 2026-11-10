@@ -4,13 +4,14 @@ import {
   openAndSelectPhoto,
   typeInto,
   gotoPage,
+  preparePhotoSubject,
 } from '../../../../../framework/frontend/e2e/index.js'
 
 import {
   dictateModerationVerdict,
   modelKey,
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
-import { nameForPhoto, picture } from '../helpers/profilePhoto.js'
+import { picture } from '../helpers/profilePhoto.js'
 import { endSendPause } from '../helpers/sendPause.js'
 
 // spec-owner: demo — the feed, Participants and /user/{id} are chat's own screens.
@@ -45,12 +46,9 @@ test(
       // message carries a key of its own, so the analyzer that reads the feed
       // after a message never spends the photo's verdict.
       const key = modelKey()
-      const name = await nameForPhoto(page, key)
+      const { name, userId } = await preparePhotoSubject(expect, page, key)
       await gotoPage(expect, page, '/')
       await expect(page.getByTestId('self-user')).toHaveText(name)
-      const userId = Number(
-        await page.getByTestId('self-user-id').textContent(),
-      )
 
       // The rename notice before it makes the first message the head of a series.
       const firstKey = modelKey()

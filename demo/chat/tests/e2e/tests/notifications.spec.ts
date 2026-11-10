@@ -2,6 +2,7 @@ import type { Browser, Page } from '@playwright/test'
 import { test, expect } from '../test.js'
 
 import {
+  changeOwnName,
   openBell,
   unreadBadge,
   clickSubmit,
@@ -12,6 +13,8 @@ import {
   grantAdminToSelf,
   watchClientDocument,
 } from '../../../../../framework/frontend/e2e/index.js'
+import { resolveHilosPath } from '../../../../../framework/frontend/core/src/routing/hilosAdmin.js'
+import { HilosPages } from '../../../../../framework/frontend/core/src/routing/hilosPages.js'
 import {
   dictateModerationVerdict,
   modelKey,
@@ -84,6 +87,24 @@ test('a mention reaches the named user in another window', async ({
   await expect(menu).toContainText(`@${recipientName} could you look at this?`)
 
   await recipient.context().close()
+})
+
+test("a person's own rename shows as a notice in the room", async ({
+  page,
+}) => {
+  const { name: oldName } = await createTestUser(expect, page)
+  const key = modelKey()
+  const newName = `Renamed person ${key}`
+  await dictateModerationVerdict(key, true, 'ok')
+  await gotoPage(expect, page, resolveHilosPath(HilosPages.PROFILE))
+  await changeOwnName(expect, page, newName)
+  await expect(page.getByTestId('modal')).toBeHidden()
+  await expect(page.getByTestId('profile-name')).toHaveText(newName)
+
+  await gotoPage(expect, page, '/')
+  await expect(
+    page.getByTestId('event-notice').filter({ hasText: key }),
+  ).toHaveText(`renamed from ${oldName} to ${newName}`)
 })
 
 test('an administrator renaming somebody reaches the renamed person, their open page and the room', async ({

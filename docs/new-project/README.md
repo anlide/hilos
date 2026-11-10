@@ -9,6 +9,7 @@ running in project-owned docker stacks. The demos, each with what it carries:
 | [demo/tasks](../../demo/tasks) | one app agent, every admin section | React | every admin section on React |
 | [demo/polls](../../demo/polls) | one app agent, every admin section | Angular | every admin section on Angular, Angular toolchain |
 | [demo/binance-btc-tracker](../../demo/binance-btc-tracker) | minimal | Vue | the smallest complete shape on Vue: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
+| [demo/pmd](../../demo/pmd) | service database | Vue | active carrier: empty home; sign-in, profile and Security; admin Analytics, Users, Settings, Appearance and Communications |
 | [demo/ecommerce-shop](../../demo/ecommerce-shop) | minimal | React | the smallest complete shape on React: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
 | [demo/online-testing](../../demo/online-testing) | minimal | Angular | the smallest complete shape on Angular: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
 | [demo/preferans](../../demo/preferans) | minimal | Angular | an active Angular carrier with password sign-in, an empty home, profile, settings, i18n, Appearance and Analytics; local/test stacks and e2e: [testing.md](../agents/testing.md) |
@@ -279,8 +280,8 @@ registry of taken host ports:
 | online-testing local | 33071 | 8150/8151/8152 | 8160 | https 8156 | 5178 | 10.203 |
 | online-testing test | 33072 | 8153/8154/8155 | — | http 8157 / https 8158 | — | 10.213 |
 | online-testing cluster | — | — | — | — | — | 10.223 |
-| pmd local (not in the code yet — HIL-2016) | 33073 | 8170/8171/8172 | 8180 | https 8176 | 5179 | 10.204 |
-| pmd test (not in the code yet — HIL-2016) | 33074 | 8173/8174/8175 | — | http 8177 / https 8178 | — | 10.214 |
+| pmd local | 33073 | 8170/8171/8172 | 8180 | https 8176 | 5179 | 10.204 |
+| pmd test | 33074 | 8173/8174/8175 | — | http 8177 / https 8178 | — | 10.214 |
 | roblox-game-server local (not in the code yet — HIL-2017) | 33075 | 8190/8191/8192 | 8200 | https 8196 | 5180 | 10.205 |
 | roblox-game-server test (not in the code yet — HIL-2017) | 33076 | 8193/8194/8195 | — | http 8197 / https 8198 | — | 10.215 |
 | roblox-game-server cluster (not in the code yet — HIL-2029) | — | — | — | — | — | 10.225 |

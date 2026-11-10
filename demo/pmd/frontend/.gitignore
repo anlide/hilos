@@ -1,0 +1,4 @@
+# Frontend build output and Vite cache.
+/dist/
+/dist-prerender/
+/.vite/

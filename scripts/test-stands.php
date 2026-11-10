@@ -73,6 +73,16 @@ return [
         'holdsDatabase' => true,
     ],
     [
+        'id' => 'pmd',
+        'cwd' => 'demo/pmd',
+        'composeFile' => 'docker/docker-compose.test.yml',
+        'project' => 'hilos-pmd-test' . standInstanceSuffix(),
+        'mode' => 'project',
+        'profiles' => [],
+        'networks' => [],
+        'holdsDatabase' => true,
+    ],
+    [
         'id' => 'tasks',
         'cwd' => 'demo/tasks',
         'composeFile' => 'docker/docker-compose.test.yml',

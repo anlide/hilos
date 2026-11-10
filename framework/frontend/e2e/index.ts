@@ -185,6 +185,7 @@ export {
   selectPhoto,
   openAndSelectPhoto,
   drawPhotoFixture,
+  preparePhotoSubject,
   samplePhotoPixels,
   type PhotoFixtureRectangle,
   type PhotoFixtureRecipe,

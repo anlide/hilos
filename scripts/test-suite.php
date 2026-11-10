@@ -110,6 +110,7 @@ $demos = [
     'tasks' => ['check' => 9, 'php' => 17, 'e2e' => 642],
     'polls' => ['check' => 15, 'php' => 17, 'e2e' => 792],
     'binance-btc-tracker' => ['check' => 10, 'php' => 15, 'build' => 13, 'e2e' => 755],
+    'pmd' => ['check' => 10, 'php' => 15, 'e2e' => 600],
     'ecommerce-shop' => ['check' => 9, 'php' => 15, 'e2e' => 102],
     'online-testing' => ['check' => 15, 'php' => 15, 'e2e' => 111],
     'preferans' => ['check' => 15, 'php' => 15, 'e2e' => 360],

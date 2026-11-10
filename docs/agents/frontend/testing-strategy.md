@@ -522,7 +522,7 @@ additions before execution, rather than freezing their file list today.
 
 | Target / view | Whole framework areas and current source specs | Activation and transfer owner |
 |---|---|---|
-| `pmd` / Vue | **Table geometry:** `chat/table-geometry`. **Account/profile/security:** `chat/{profile,profile-data,profile-time-zone,profile-session-time-zone,profile-photo,rename-moderation,account-deletion,account-merge,security-center,second-factor-mail}`. **Analytics:** `chat/{analytics,analytics-browser-session}`. **People/settings/Appearance:** `binance-btc-tracker/{users,settings,appearance}`. | (not in the code yet — HIL-2016) |
+| `pmd` / Vue | **Table geometry:** `pmd/table-geometry` (moved from chat in HIL-2016 slice 13). **Account/profile/security:** `pmd/{profile,profile-data,profile-time-zone,profile-session-time-zone,profile-photo}` (moved from chat in HIL-2016 slice 9); `pmd/{rename-moderation,account-deletion,account-merge,second-factor-mail}` (moved from chat in slice 10); `pmd/security-center` (moved from chat in slice 11). **Analytics:** `pmd/{analytics,analytics-browser-session}` (moved from chat in slice 11). **People/settings/Appearance:** `pmd/{users,settings,appearance}` (moved from binance-btc-tracker in HIL-2016 slice 12). | PMD active; all sixteen specs moved in slices 9–13. |
 | `roblox-game-server` / Vue | **Change Log/Moderation/Communications:** `chat/{change-log,change-log-table,change-log-tables,moderation,communications}`. **Theme:** `chat/{theme-account,theme-guest}`. **Daemon/Backup/Logs/maintenance:** `binance-btc-tracker/{daemon,backup,backup-reopen,logs,logs-rotation,maintenance-restore,maintenance-words}`. | (not in the code yet — HIL-2017) |
 | `solar-system-model` / React | **Account/profile:** `tasks/{profile,profile-data,profile-time-zone,profile-photo,account-deletion}`. **Theme/Analytics:** `tasks/{theme-account,theme-guest,analytics,analytics-browser-session}`. **Table geometry:** the entire independent Geometry area in `ecommerce-shop/users`, with its frontend fixture; excludes Users scenarios. | (not in the code yet — HIL-2018) |
 | `file-gallery-manager` / React | **i18n lifecycle:** `tasks/{i18n-country-names,i18n-country,i18n-language-names,i18n-language,i18n-locale,i18n-overview}`. **Daemon/Change Log/Communications:** `tasks/{daemon,change-log,change-log-table,change-log-tables,communications}`. **Users:** the entire Users remainder of `ecommerce-shop/users` after Geometry is separated, including F-001. | (not in the code yet — HIL-2019) |
@@ -535,7 +535,7 @@ The only physical file split in this plan is
 independent areas sharing one file, not a license to divide arbitrary
 assertions. Geometry's fixture moves with its consumer.
 The existing examples are
-[`TableGeometryFixture.vue`](../../../demo/chat/frontend/tests/tableGeometry/TableGeometryFixture.vue)
+[`TableGeometryFixture.vue`](../../../demo/pmd/frontend/tests/tableGeometry/TableGeometryFixture.vue)
 and
 [`TableGeometryFixture.tsx`](../../../demo/ecommerce-shop/frontend/tests/tableGeometry/TableGeometryFixture.tsx).
 Each activation carries the required frontend wiring, fixtures, preparation and
@@ -690,15 +690,16 @@ after a refusal — is one test of the same title in `profile.spec.ts` of tasks
 and polls. None of these files carries a `spec-owner` line; chat's message and
 message picture moderation specs do (HIL-1638).
 
-The current Analytics section proofs are in chat (Vue), tasks (React) and
+The current Analytics section proofs are in PMD (Vue), tasks (React) and
 preferans (Angular): each carries `analytics.spec.ts` and
-`analytics-browser-session.spec.ts`. The Angular pair moved from polls; the
-remaining Vue and React transfers are still planned in the targets above.
+`analytics-browser-session.spec.ts`. The Vue pair moved from Chat and the Angular
+pair from Polls; the remaining React transfer is still planned above.
 The three session specs share one test title, while the titles in
 `analytics.spec.ts` follow the pages each kit serves. The actions the specs look
 at are the registration of the person and of the administrator, because tasks
-and preferans declare no actions of their own; no demo's product takes part in them,
-and they carry no `spec-owner` line (HIL-1422).
+and preferans declare no actions of their own. Their framework journeys carry
+no `spec-owner` line (HIL-1422); PMD retains the approved demo owner line for its
+moved Vue screen journeys (HIL-2016).
 
 online-testing additionally carries cluster browser proofs for Analytics and
 Moderation over the stand's three masters. The Analytics spec uses three
@@ -779,12 +780,17 @@ and the re-check of an open admin and profile on sign-out. The view-only
 takeover test parked by the owner stays in chat's `impersonation-settings` —
 the write it is refused is a chat message.
 
-The previous move left Chat's `profile` cases (header link, rename, tab conflict
-and push devices), `profile-photo`, `account-merge`, `account-deletion`,
-`profile-data` and `second-factor-mail` here. Those are current paths, not
-exceptions to the new whole-area assignment to PMD above. Their activation
-must carry the required photo, merge and notification support; today's feature
-availability does not make these framework proofs product-owned.
+PMD currently carries the sixteen transferred framework specs: `table-geometry`;
+`profile`, `profile-data`, `profile-time-zone`, `profile-session-time-zone`,
+`profile-photo`, `rename-moderation`, `account-deletion`, `account-merge`,
+`second-factor-mail`, `security-center`, `analytics`,
+`analytics-browser-session`, `users`, `settings` and `appearance`. Its
+`profile.spec.ts` keeps complete section navigation, including registered
+Devices and Agreements, plus the rename, unsent-draft and conflict cases.
+PMD's own `activation.spec.ts` is an additional carrier proof, not a transferred
+framework spec. Chat keeps `chat-photo.spec.ts` for its product photo flow and
+`notifications.spec.ts`'s own-rename proof; moving framework specs does not
+move Chat's product behavior.
 
 `admin-gating` and `account-lifecycle` are the screens of an administrator
 over people: framework-level tests moved to binance-btc-tracker under HIL-1219.
@@ -1619,7 +1625,7 @@ the Browser sessions tab in all three kits.
 `expectAnalyticsSessionListAccessibility(expect: Expect, page: Page, direction: 'ascending' | 'descending', kit: 'vue' | 'react' | 'angular' = 'vue'): Promise<void>`
 checks the Browser sessions list the same way: the section head, one `h1` that
 names the list's table through `aria-labelledby` with no table title of its own,
-and the `aria-sort` and accessible name of Last seen. The chat (Vue) and polls
+and the `aria-sort` and accessible name of Last seen. The PMD (Vue) and polls
 (Angular) Overview specs arm `watchSocketFrames` before setup and bookmark the
 log before opening Analytics from the dashboard; the tasks (React) spec arms one
 `watchDeliveryFrames` instead, bookmarks its received packets the same way and
@@ -1642,10 +1648,10 @@ browser session through `test:session:bind`, without an auth flow.
 `createTestAdmin` uses that preparation and grants admin; `grantAdminToSelf`
 uses `admin:create` for the current browser session. These setup helpers do
 not perform a real UI sign-in or promise its action journal.
-The three kits' `analytics-browser-session.spec.ts` carriers instead create
+The three demos' `analytics-browser-session.spec.ts` carriers instead create
 both the person and administrator accounts with `seedTestUser`, then perform
-real `openSignIn` / `login` on the main page. Chat uses its `message-signin`
-entry; the other carriers use the standard sign-in entry.
+real `openSignIn` / `login` on the main page. PMD, Tasks and Polls use the
+standard sign-in entry.
 
 `waitAnalyticsBrowserSession(expect, sendCommand, userId, expectedAction?, journals = [sendCommand])`
 waits for the journal writer and returns
@@ -1685,12 +1691,12 @@ addressed period; it also covers a real session from the list and
 People-to-Person navigation with the captured Today context. Its separate
 `analytics-browser-session.spec.ts` checks the real sign-in session's privacy
 and action order, the shared session head, F5 and return to the list by its
-crumb. Polls retains the Angular Analytics accessibility group in
-`demo/polls/tests/e2e/tests/a11y.spec.ts`, which checks count-link names and
-Enter on a period, the Browser sessions table name and sort, keyboard navigation
-to a session and return by its crumb, plus `aria-current` and focus on the People
-return. These are the Tasks React and Preferans Angular carriers;
-other demo carriers keep their own existing scenario coverage.
+crumb. The PMD Vue, Tasks React and Preferans Angular Analytics journeys keep
+their existing scenario coverage. The separate Analytics accessibility groups
+remain in Chat, Binance, Tasks and Polls. Polls retains its Angular group in
+`demo/polls/tests/e2e/tests/a11y.spec.ts`, which checks count-link names and Enter
+on a period, the Browser sessions table name and sort, keyboard navigation to a
+session and return by its crumb, plus `aria-current` and focus on the People return.
 
 The cluster proof also uses `cluster.ts`: `readClusterBrowserStand` validates
 the harness roles and address/log maps, `newClusterMasterPage` sets the master

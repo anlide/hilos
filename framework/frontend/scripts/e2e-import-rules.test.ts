@@ -16,6 +16,7 @@ const demos = [
   'chat',
   'ecommerce-shop',
   'online-testing',
+  'pmd',
   'polls',
   'preferans',
   'tasks',

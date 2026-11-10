@@ -661,7 +661,7 @@ positive integer `userId`, it returns `browserSessionId` (null until loaded)
 and `actionNames`: at most 50 names from that user's latest browser session,
 through the same bounded reader. It writes nothing and exposes no browser
 endpoint; e2e polls it to observe journal rotation and writer loading before
-opening the page. The browser-session E2E currently lives in chat, tasks and
+opening the page. The browser-session E2E currently lives in PMD, tasks and
 preferans; the Angular accessibility proof remains in polls. Shared checks
 live in `framework/frontend/e2e/analytics.ts`
 (HIL-1422). The shared `expectAnalyticsBrowserSessionHead(expect, page,
@@ -669,16 +669,16 @@ label)` checks one `h1` with the exact label and an id, one current breadcrumb
 entry that is not a link and whose own words are that label, the Browser
 sessions crumb as a link by name to the list's address, and the real actions
 table, named by that `h1` through `aria-labelledby`. It does not read classes or
-the order of nodes. Chat's
-`demo/chat/tests/e2e/tests/analytics-browser-session.spec.ts` checks user and
+the order of nodes. PMD's
+`demo/pmd/tests/e2e/tests/analytics-browser-session.spec.ts` checks user and
 administrator sessions and reloads the current address; its
-`demo/chat/tests/e2e/tests/analytics.spec.ts` checks the viewer's list-to-session
+`demo/pmd/tests/e2e/tests/analytics.spec.ts` checks the viewer's list-to-session
 path, generic head and `Hidden` values. The existing
 `expectAnalyticsSessionReturn` and `expectAnalyticsSessionHeader` keep their
 `locator.or` legacy/shared title lookup and `toHaveCount(1)` assertion; the
 legacy title is now met only by the Angular carriers. The mirrored order,
-privacy and body/frame assertions remain unchanged. Chat also has a People flow in
-`demo/chat/tests/e2e/tests/analytics.spec.ts`. Tasks carries the React
+privacy and body/frame assertions remain unchanged. PMD also has a People flow in
+`demo/pmd/tests/e2e/tests/analytics.spec.ts`. Tasks carries the React
 overview, Browser sessions, People-to-Person and Period flows in
 `demo/tasks/tests/e2e/tests/analytics.spec.ts`: each count opens the list on its
 own period, Period and Reset rewrite the address without a new subscription,

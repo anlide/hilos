@@ -1,0 +1,22 @@
+// This demo's HilosUsersContext: binds the framework Hilos users/user admin pages
+// (@hilos/vue HilosUsersPage / HilosUserPage / HilosUserSessionsPage) to this
+// project's scope stores, live connection, and typed user collection. The
+// framework owns the table, the row view-model, search/sort/paging, the rename
+// round-trip, and the takeover; the project supplies its collection and opts
+// the user card into browser account merge.
+// Shared by the list, detail and sessions wrappers (HilosPages.USERS / USER /
+// USER_SESSIONS), which carry the same row slots.
+import { type HilosUsersContext } from '@hilos/core/admin/users'
+
+import { actions, connection } from '../../../bootstrap/connection.js'
+import { scopes } from '../../../bootstrap/session.js'
+import { Users } from '../../../types/index.js'
+
+/** This project's context for the framework users/user admin pages. */
+export const hilosUsersContext: HilosUsersContext = {
+  scopes,
+  connection,
+  actions,
+  users: Users,
+  accountMerge: true,
+}

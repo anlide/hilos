@@ -376,7 +376,7 @@ its names into this file in the same commit that clears its marker.
   the guest choice on first login. It also checks the synchronized account's
   cached first frame; a browser that never received that account choice cannot
   know it before the handshake.
-- Run `appearance.spec.ts` in binance-btc-tracker (Vue), tasks (React) and
+- Run `appearance.spec.ts` in PMD (Vue), tasks (React) and
   preferans (Angular) for both editors, live settings delivery, viewer refusal through
   Save and Enter, default changes and Off/On, discard and keyboard/focus. Every
   changed setting returns to its catalog default.

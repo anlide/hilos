@@ -6,6 +6,7 @@
         {"root": "demo/binance-btc-tracker", "facade": "Demo\\BinanceBtcTracker\\Hilos"},
         {"root": "demo/ecommerce-shop", "facade": "Demo\\EcommerceShop\\Hilos"},
         {"root": "demo/online-testing", "facade": "Demo\\OnlineTesting\\Hilos"},
-        {"root": "demo/preferans", "facade": "Demo\\Preferans\\Hilos"}
+        {"root": "demo/preferans", "facade": "Demo\\Preferans\\Hilos"},
+        {"root": "demo/pmd", "facade": "Demo\\Pmd\\Hilos"}
     ]
 }

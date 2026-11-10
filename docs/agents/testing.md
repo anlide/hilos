@@ -223,10 +223,10 @@ ever skipped — only work whose output is already on disk and provably current
 looks suspiciously cheap, the guards' own log lines are the first place to check.
 
 It is **not** part of the inner loop. The two-window coverage lives in chat's
-bots and profile specs (Vue; and so do binance-btc-tracker's `settings.spec.ts`
-and `users.spec.ts`), the `users.spec.ts` of ecommerce-shop (React), polls's
-`profile.spec.ts` (Angular — edits in another tab of the same session) and
-online-testing's `users.spec.ts` (Angular) — representative paths per view layer. The **a11y** coverage is the same kind of
+bots and PMD's profile, settings and users specs (Vue), the `users.spec.ts` of
+ecommerce-shop (React), polls's `profile.spec.ts` (Angular — edits in another
+tab of the same session) and online-testing's `users.spec.ts` (Angular) —
+representative paths per view layer. The **a11y** coverage is the same kind of
 separate, rarely-run category — an `a11y.spec.ts` per demo asserting the
 accessibility tree over the live socket: table accessible names and `aria-sort`,
 keyboard sort operability, the skip link and `aria-current`, the document title
@@ -537,7 +537,7 @@ merely because a directory or README exists.
 |---|---|---|
 | Vue | `chat` | Active |
 | Vue | `binance-btc-tracker` | Active |
-| Vue | `pmd` | Planned (not in the code yet — HIL-2016) |
+| Vue | `pmd` | Active |
 | Vue | `roblox-game-server` | Planned (not in the code yet — HIL-2017) |
 | React | `tasks` | Active |
 | React | `ecommerce-shop` | Active |
@@ -548,7 +548,7 @@ merely because a directory or README exists.
 | Angular | `preferans` | Active |
 | Angular | `concert-tickets` | Planned (not in the code yet — HIL-2021) |
 
-The planned rows' markers cover each activation's complete obligation: an
+The five planned rows' markers cover each activation's complete obligation: an
 application shell with an empty home page, AUTH/sign-in, working Analytics in
 the administrative section, ordinary local/test stands, the command interface
 below, and registration in the existing runner and stand registry. Each new
@@ -558,13 +558,15 @@ normal admin view mode and its masking rules. The exact framework areas each
 activation takes, their current paths and the whole-area transfer rule live in
 [Which demo carries a spec](frontend/testing-strategy.md#which-demo-carries-a-spec--the-server-check-travels-the-product-stays-home).
 
-PMD uses a service database in this phase (not in the code yet — HIL-2016).
+PMD is an active Vue carrier with its service database and transferred framework
+specs. Its local and test stacks do not add it to the separate six-demo cluster
+stand matrix below.
 Solar permits guest access to its public Model and authenticated access to its
 administration and Analytics; a sign-in control in the public header is
 optional (not in the code yet — HIL-2018). The Model product itself is outside
 this activation phase.
 
-Today `pmd`, `roblox-game-server`, `solar-system-model` and
+Today `roblox-game-server`, `solar-system-model` and
 `file-gallery-manager` have `composer.json` stubs without scripts;
 `demo/concert-tickets` does not exist. [`framework-projects.json`](../../framework-projects.json)
 lists the active projects; [`scripts/test-suite.php`](../../scripts/test-suite.php)
@@ -576,11 +578,11 @@ when its code lands, clearing its markers in that same commit under
 
 ### Run and clean up an active ordinary stand
 
-From the repository root, the existing Chat interface is:
+From the repository root, use the Chat commands and PMD geometry command below:
 
 ```bash
 composer -d demo/chat run test:e2e-full
-composer -d demo/chat run test:e2e-full -- table-geometry.spec.ts
+composer -d demo/pmd run test:e2e-full -- tests/table-geometry.spec.ts
 composer -d demo/chat run test:e2e-full -- --grep "<title>"
 composer -d demo/chat run test:down
 ```

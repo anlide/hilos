@@ -988,7 +988,7 @@ Remember the outcome, speak on its change, clear on recovery.
   browser: a line the daemon writes arrives on its own (HIL-395);
   `logs-rotation.spec.ts` — rotation, takeout, the two dialogs answering a
   change beneath them, and pruning exactly the carried-off batch (HIL-763,
-  HIL-1233); `settings.spec.ts` keeps the click-through-error-card check from
+  HIL-1233); PMD's `settings.spec.ts` keeps the click-through-error-card check from
   HIL-1097 on a deterministic refused setting.
 - Where every stream lands, proven on a live stand by a run and not by reading
   — `composer run test:log-streams`, the `log-streams` step of the full run:

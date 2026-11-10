@@ -1,6 +1,12 @@
 import type { Expect, Page } from '@playwright/test'
+import { resolveHilosPath } from '../core/src/routing/hilosAdmin.js'
+import { HilosPages } from '../core/src/routing/hilosPages.js'
+import { dictateModerationVerdict } from '../scripts/standModel.mjs'
 import { clickSubmit } from './input.js'
-import { expectPageReady } from './page.js'
+import { expectPageReady, gotoPage } from './page.js'
+import { changeOwnName } from './profileRename.js'
+import type { SignedInUser } from './session.js'
+import { createTestUser } from './testUser.js'
 
 /** A colored rectangle in a demo's photo fixture. */
 export interface PhotoFixtureRectangle {
@@ -31,6 +37,29 @@ export interface PhotoPixelSamples {
   width: number
   height: number
   colors: number[][]
+}
+
+/**
+ * Prepare a verified photo subject whose approved name carries the model key.
+ *
+ * @param expect The calling spec's Playwright expect.
+ * @param page The browser page to bind to the new account and open on /profile.
+ * @param key The stand model key carried by the name and later photo prompts.
+ * @returns The signed-in identity with its committed display name.
+ */
+export async function preparePhotoSubject(
+  expect: Expect,
+  page: Page,
+  key: string,
+): Promise<SignedInUser & { name: string }> {
+  const user = await createTestUser(expect, page)
+  await gotoPage(expect, page, resolveHilosPath(HilosPages.PROFILE))
+  const name = `Photo ${key}`
+  await dictateModerationVerdict(key, true, 'ok')
+  await changeOwnName(expect, page, name)
+  await expect(page.getByTestId('modal')).toBeHidden()
+  await expect(page.getByTestId('profile-name')).toHaveText(name)
+  return { ...user, name }
 }
 
 /** Select a picture in an open photo window and await the ready crop controls. */

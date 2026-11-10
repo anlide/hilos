@@ -687,7 +687,8 @@ carries its own copy of the lever in `tests/e2e/helpers/adminViewMode.ts`.
 
 | Demo | Kit | Side | Looks (mode on) | Refused (mode off) |
 |---|---|---|---|---|
-| chat | Vue | account and showcase | `admin-view-mode` (a guest's gear; the strip on `/hilos`, `/hilos/legal/acceptances` and `/hilos/users`, the personal data as hidden; a signed-in non-admin granted the full section and taken back to the view, live), `bots`, `moderator`, `account-merge` (the merge window) | `admin-view-mode`, its first test (no gear while the mode is off) |
+| chat | Vue | account and showcase | `admin-view-mode` (a guest's gear; the strip on `/hilos`, `/hilos/legal/acceptances` and `/hilos/users`, the personal data as hidden; a signed-in non-admin granted the full section and taken back to the view, live), `bots`, `moderator` | `admin-view-mode`, its first test (no gear while the mode is off) |
+| pmd | Vue | account | `account-merge` (the merge window) | — |
 | binance-btc-tracker | Vue | operations | `settings`, `backup`, `protected-mode` (the maintenance circle), `communications`, `users` (the windows of a person's card), `logs` (a guest follows a live log: time and level shown, text hidden and absent from every socket frame), `daemon` (the root and placement, the node pages, environment values as hidden, restart disabled, and a forged restart refused by the server), `i18n-country-name-write` (a viewer opens and drafts every country name form; Save is disabled and no action leaves the page) | `auth` (the surface in place of an admin page), `admin-gating` (the people page), `backup` (the backup page) |
 | tasks | React | account | `admin-view-mode` (a guest's gear, the strip on the account screens, the acceptances as hidden, the Legal setting window, the sign-in methods viewer case), `step-up`, `daemon` (the root and placement, the node pages, environment values as hidden, restart disabled), `i18n-country-name-write` (a viewer opens and drafts every country name form; Save is disabled and no action leaves the page) | `auth`, `a11y` (no gear) |
 | ecommerce-shop | React | operations | `admin-view-mode` (the strip on the operations screens: settings, users, backup, maintenance) | `auth`, `users` |
@@ -803,7 +804,7 @@ data: a viewer receives row fields and page data as an admin does (HIL-1256), so
 a live viewer sees the keep toggle and the restore button disabled (HIL-1264).
 
 The settings carry their viewer case in
-`demo/binance-btc-tracker/tests/e2e/tests/settings.spec.ts` (HIL-1262; the area
+`demo/pmd/tests/e2e/tests/settings.spec.ts` (HIL-1262; the area
 moved with HIL-1219). The log modes carry theirs as a unit of the
 setting-presets screen
 (`framework/frontend/vue/src/admin/settings/HilosSettingPresetsPage.test.ts`)
@@ -812,10 +813,9 @@ closed differences omitted, and the cards' actions disabled. An open selection
 key may still light the applied card.
 
 The people section carries its viewer case in
-`demo/binance-btc-tracker/tests/e2e/tests/users.spec.ts` (HIL-1263, laid out by
-HIL-1273). Its merge window is the account side and binance-btc-tracker wires no
-merge, so that window's viewer case is
-`demo/chat/tests/e2e/tests/account-merge.spec.ts`.
+`demo/pmd/tests/e2e/tests/users.spec.ts` (HIL-1263, laid out by
+HIL-1273). PMD enables the merge window, whose separate viewer case is in
+`demo/pmd/tests/e2e/tests/account-merge.spec.ts`.
 
 The Daemon section carries its viewer cases in each kit's section spec:
 `demo/binance-btc-tracker/tests/e2e/tests/daemon.spec.ts`,

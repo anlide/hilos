@@ -1,4 +1,18 @@
 {
-  "extends": "../../tsconfig.json",
-  "include": ["./**/*.ts", "./**/*.vue", "../../env.d.ts"]
+  "extends": "../../../../pmd/frontend/tests/tableGeometry/tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "vue": ["../../node_modules/vue"],
+      "@hilos/core/base": [
+        "../../node_modules/@hilos/core/dist/base/index.d.ts"
+      ],
+      "@hilos/vue/base": ["../../node_modules/@hilos/vue/dist/base/index.d.ts"]
+    }
+  },
+  "include": [
+    "../../../../pmd/frontend/tests/tableGeometry/main.ts",
+    "../../../../pmd/frontend/tests/tableGeometry/*.vue",
+    "../../env.d.ts",
+    "./vite.config.ts"
+  ]
 }

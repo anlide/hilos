@@ -1,0 +1,16 @@
+<!-- The Hilos user detail page (HilosPages.USER): a thin project binding of the
+framework HilosUserPage to this app's context. The profile selector, the
+rename dialog, account merge and the success/fail handling are the framework's;
+the project supplies the shared HilosUsersContext and opts account merge in.
+Bootstrap classes only (styling-rules.md). -->
+<script setup lang="ts">
+import { HilosUserPage } from '@hilos/vue/admin/users'
+
+import { hilosUsersContext } from './hilosUsersContext.js'
+
+defineOptions({ name: 'HilosUserPage' })
+</script>
+
+<template>
+  <HilosUserPage :context="hilosUsersContext" />
+</template>
