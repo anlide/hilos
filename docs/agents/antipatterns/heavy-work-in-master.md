@@ -89,7 +89,8 @@ that needs no I/O — a random token — and let the worker persist and verify i
   candidate. Packing remains one atomic operation; the browser's 8 MiB outbound cap does
   not bound worker or peer source payloads.
 - **Source hand-overs and replica answers retain their row construction.** The live
-  master uses its existing effect FIFO; incoming peer RT writes and DB facts enter that
+  master uses its existing effect FIFO; incoming peer RT writes, DB facts,
+  agent signals, and page access re-decision announcements enter that
   same FIFO, so a query sees earlier applied writes and its completed frames precede
   later source writes. Claim reports, reader-interest announcements and queries use
   that FIFO too; inbound reader-interest reports cannot change filtering ahead of an

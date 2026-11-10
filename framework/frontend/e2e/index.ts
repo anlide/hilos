@@ -449,6 +449,12 @@ export {
 } from './theme.js'
 export { watchThemeFrames, type ThemeFrameLog } from './themeFrames.js'
 export {
+  attachThemeFailure,
+  themeFailureActions,
+  themeFailureFrames,
+  type ThemeFailureSession,
+} from './themeFailureRecord.js'
+export {
   chooseProfileTimeZone,
   expectProfileTimeZone,
   expectProfileTimeZoneCatalog,

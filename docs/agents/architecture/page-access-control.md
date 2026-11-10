@@ -498,11 +498,13 @@ than the 403, because the same gate answers *view* there
 is behind a connection can be answered only where a browser context is mounted — in a
 worker. So the writing worker announces, the master fans the announcement out to
 every local worker link and broadcasts `peer_page_access_reassess` to every other
-node, slaves included (HIL-1306). A receiving node writes to its workers on arrival
-and does not forward it: the subscription mirror lives in a worker of the node
-serving the page's agent. Each worker sweeps the mirror it owns. The re-decision
-therefore reaches every open page of that person, wherever it is served, and not
-merely the pages of the worker that happened to write the rights.
+node, slaves included (HIL-1306). A receiving node writes to its workers in the
+same call unless the effect queue is busy, in which case the write is not done
+on arrival or on return from `deliverPageAccessReassess`, and the node does not
+forward it: the subscription mirror lives in a worker of the node serving the
+page's agent. Each worker sweeps the mirror it owns. The re-decision therefore
+reaches every open page of that person, wherever it is served, and not merely
+the pages of the worker that happened to write the rights.
 
 The master's local part is one buffered write per worker, plus one peer broadcast. It
 resolves no identity, walks no registry, and holds no reverse "connections of user X"
@@ -511,8 +513,8 @@ lookup — that would be a second source of truth beside
 rather than acted on at receipt, because the database sync of the flag that was just
 written rides the same queue in front of it; a local frame acted on at receipt would
 overtake the sync and set a worker re-deciding against a flag it has not seen change. A
-peer announcement is written to receiving workers on arrival, as peer DB and RT sync
-are; on a working link, that preserves the sender's order.
+peer announcement enters the same master effect queue as incoming facts and
+agent signals, so the order of one line is preserved.
 
 **A downgrade is the second trigger, and it carries its own criterion** (HIL-652).
 Signing out is not a rights change: nothing is written about what the person may

@@ -4306,6 +4306,9 @@ abstract class DaemonManager extends BaseManager implements
      * Held is silence - the frame goes out when the start ends. A command remembers its
      * asking node here, so its later reply can return there; other failed frames log a line.
      *
+     * The frame may wait in the master's effect queue behind earlier frames from the same
+     * neighbour. Reception order is arrival order.
+     *
      * @param string $agentType Target agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param SignalDTO $signal Signal to deliver
@@ -4314,6 +4317,14 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function deliverSignalToAgent(string $agentType, ?string $agentIndex, SignalDTO $signal): void
     {
+        if ($this->signalDispatchNotifier !== null && $this->currentSignalDispatch === null) {
+            $owner = WeakReference::create($this);
+            $this->queueSignalEffect(static function () use ($owner, $agentType, $agentIndex, $signal): Generator {
+                $owner->get()?->deliverSignalToAgent($agentType, $agentIndex, $signal);
+                yield;
+            }, peerApplyContext: "signal to agent '{$agentType}'");
+            return;
+        }
         $signalType = $signal->signalType->getType();
         $signalName = $signal->signalName->getName();
         $agentLabel = $agentIndex !== null ? "{$agentType} (index: {$agentIndex})" : $agentType;
@@ -9518,17 +9529,25 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Delivers a remote page access re-decision to this node's workers on arrival.
+     * Delivers a remote page access re-decision to this node's workers.
      *
-     * Remote RT and DB sync also writes to workers on arrival, so the worker links see
-     * this announcement after everything the same peer sent before it. No local queue
-     * or rebroadcast is involved.
+     * The announcement rides the same effect queue as incoming RT and DB facts, so the
+     * worker links see it after everything the same peer sent before it. Nothing is
+     * rebroadcast.
      *
      * @param string $originNodeId Id of the announcing node
      * @param SignalDTO $signal By-user or by-connection announcement
      */
     public function deliverPageAccessReassess(string $originNodeId, SignalDTO $signal): void
     {
+        if ($this->signalDispatchNotifier !== null && $this->currentSignalDispatch === null) {
+            $owner = WeakReference::create($this);
+            $this->queueSignalEffect(static function () use ($owner, $originNodeId, $signal): Generator {
+                $owner->get()?->deliverPageAccessReassess($originNodeId, $signal);
+                yield;
+            }, peerApplyContext: "page access re-decision from node '{$originNodeId}'");
+            return;
+        }
         $workerServer = $this->findWorkerServer();
         if ($workerServer === null) {
             return;

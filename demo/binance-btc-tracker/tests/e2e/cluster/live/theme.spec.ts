@@ -11,6 +11,7 @@ import {
   THEME_SETTINGS_STORAGE_KEY,
   THEME_SWITCHING_KEY,
   armSocketDrop,
+  attachThemeFailure,
   chooseHeaderTheme,
   clearCustomSetting,
   countSentFrames,
@@ -25,7 +26,9 @@ import {
   saveAppearanceDefaultTheme,
   saveAppearanceSwitching,
   watchClusterMasterUpgrades,
+  watchDeliveryFrames,
   watchThemeFrames,
+  type DeliveryFrameLog,
   type ThemeFrameLog,
   type ThemeTestPick,
   type ThemeTestPosition,
@@ -62,6 +65,8 @@ interface ThemeBrowser {
   frames: ThemeFrameLog[]
   upgrades: UpgradeWatcher
   counts: { loads: number; sockets: number }
+  delivery: DeliveryFrameLog
+  errors: string[]
 }
 
 /** A malformed payload must fail here rather than disappear in a frame filter. */
@@ -202,6 +207,7 @@ async function withThemeProof(
   const contexts = new Set<BrowserContext>()
   const watchers = new Set<UpgradeWatcher>()
   const clients: ThemeBrowser[] = []
+  const observed: ThemeBrowser[] = []
   let failed = false
   let failure: unknown
   const cleanupErrors: unknown[] = []
@@ -213,6 +219,12 @@ async function withThemeProof(
   ): Promise<ThemeBrowser> {
     contexts.add(page.context())
     const frames = watchThemeFrames(page)
+    const delivery = watchDeliveryFrames(page)
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    page.on('console', (message) => {
+      if (message.type() === 'error') errors.push(message.text())
+    })
     const counts = { loads: 0, sockets: 0 }
     page.on('load', () => {
       counts.loads += 1
@@ -223,7 +235,7 @@ async function withThemeProof(
     const upgrades = await watchClusterMasterUpgrades(expect, page, stand, node)
     watchers.add(upgrades)
     await emulateSystemTheme(page, system)
-    return {
+    const client = {
       page,
       node,
       system,
@@ -232,7 +244,11 @@ async function withThemeProof(
       frames,
       upgrades,
       counts,
+      delivery,
+      errors,
     }
+    observed.push(client)
+    return client
   }
 
   async function fresh(
@@ -274,6 +290,22 @@ async function withThemeProof(
   } catch (error) {
     failed = true
     failure = error
+    await attachThemeFailure(
+      test.info(),
+      observed.map((browser) => ({
+        page: browser.page,
+        node: browser.node,
+        userId: browser.userId,
+        expectedPick: browser.pick,
+        expectedInitialized: browser.initialized,
+        system: browser.system,
+        counts: browser.counts,
+        errors: browser.errors,
+        delivery: browser.delivery,
+      })),
+    ).catch((reason: unknown) => {
+      console.error('Theme failure evidence was not saved:', reason)
+    })
   } finally {
     // Restore network even when a stale-session assertion failed while offline.
     const onlineResults = await Promise.allSettled(

@@ -28,8 +28,9 @@ interface AgentSignalSink
     /**
      * Delivers a resolved signal to a local agent, starting it first when it is not running.
      *
-     * A start under way holds the frame until it ends. An undelivered tracked page request is
-     * answered through the ordinary addressed browser route; other refusals remain log entries.
+     * Returning does not mean the frame is already in a worker. A start under way holds the
+     * frame until it ends. An undelivered tracked page request is answered through the ordinary
+     * addressed browser route; other refusals remain log entries.
      *
      * @param string $agentType Target agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
