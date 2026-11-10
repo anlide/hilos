@@ -101,7 +101,8 @@ final class LegalReconsentIntegrationTest extends ProfileIntegrationTestCase
     {
         self::accept(self::USER_ID, 'terms', 'terms-1');
         Database::sqlRun(
-            "INSERT INTO `hilos_identity` (`user_id`, `type`, `identifier`, `verified`) VALUES (?, 'password', ?, 1)",
+            "INSERT INTO `hilos_identity` (`created_at`, `updated_at`, `user_id`, `type`, `identifier`, `verified`) "
+            . "VALUES (1735689600000, 1735689600000, ?, 'password', ?, 1)",
             [self::USER_ID, 'confirmed@example.test'],
         );
 
@@ -115,11 +116,13 @@ final class LegalReconsentIntegrationTest extends ProfileIntegrationTestCase
     {
         self::accept(self::USER_ID, 'terms', 'terms-1');
         Database::sqlRun(
-            "INSERT INTO `hilos_identity` (`user_id`, `type`, `identifier`, `verified`) VALUES (?, 'password', ?, 0)",
+            "INSERT INTO `hilos_identity` (`created_at`, `updated_at`, `user_id`, `type`, `identifier`, `verified`) "
+            . "VALUES (1735689600000, 1735689600000, ?, 'password', ?, 0)",
             [self::USER_ID, 'unconfirmed@example.test'],
         );
         Database::sqlRun(
-            "INSERT INTO `hilos_identity` (`user_id`, `type`, `identifier`, `verified`) VALUES (?, 'sms', ?, 1)",
+            "INSERT INTO `hilos_identity` (`created_at`, `updated_at`, `user_id`, `type`, `identifier`, `verified`) "
+            . "VALUES (1735689600000, 1735689600000, ?, 'sms', ?, 1)",
             [self::USER_ID, '+12025550199'],
         );
 
@@ -143,7 +146,8 @@ final class LegalReconsentIntegrationTest extends ProfileIntegrationTestCase
     {
         self::accept(self::USER_ID, 'terms', 'terms-1');
         Database::sqlRun(
-            "INSERT INTO `hilos_identity` (`user_id`, `type`, `identifier`, `verified`) VALUES (?, 'password', ?, 1)",
+            "INSERT INTO `hilos_identity` (`created_at`, `updated_at`, `user_id`, `type`, `identifier`, `verified`) "
+            . "VALUES (1735689600000, 1735689600000, ?, 'password', ?, 1)",
             [self::USER_ID, 'person@example.test'],
         );
         Database::sqlRun(

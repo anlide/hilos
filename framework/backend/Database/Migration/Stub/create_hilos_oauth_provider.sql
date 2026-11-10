@@ -22,8 +22,8 @@ CREATE TABLE `hilos_oauth_provider` (
     `client_id` VARCHAR(255) DEFAULT NULL,
     `client_secret` VARCHAR(255) DEFAULT NULL,
     `scope` VARCHAR(255) DEFAULT NULL,
-    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `created_at` BIGINT NOT NULL,
+    `updated_at` BIGINT NOT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_oauth_provider_key` (`provider_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

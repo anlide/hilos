@@ -1350,7 +1350,8 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
             self::seedIdentity($userId, 'magic_link', $email);
         }
         Database::sqlRun(
-            "INSERT INTO `hilos_identity` (`user_id`, `type`, `identifier`, `verified`) VALUES (?, 'magic_link', ?, 0)",
+            "INSERT INTO `hilos_identity` (`created_at`, `updated_at`, `user_id`, `type`, `identifier`, `verified`) "
+            . "VALUES (1735689600000, 1735689600000, ?, 'magic_link', ?, 0)",
             [106, 'taras@example.test'],
         );
         self::seedSession(self::ADMIN_TOKEN, self::ADMIN_ID, self::CREATED_AT, null);

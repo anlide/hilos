@@ -47,7 +47,8 @@ final class PersonForeignKeysIntegrationTest extends FrameworkIntegrationTestCas
     public static function rowsAboutNobody(): iterable
     {
         yield 'identity' => [
-            'INSERT INTO `hilos_identity` (`user_id`, `type`, `identifier`) VALUES (?, ?, ?)',
+            'INSERT INTO `hilos_identity` (`created_at`, `updated_at`, `user_id`, `type`, `identifier`) '
+            . 'VALUES (1735689600000, 1735689600000, ?, ?, ?)',
             [999, 'password', 'nobody@example.test'],
         ];
         yield 'session' => [

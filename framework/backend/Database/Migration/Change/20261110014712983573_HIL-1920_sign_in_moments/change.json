@@ -1,0 +1,35 @@
+{
+    "format": 1,
+    "id": "20261110014712983573_HIL-1920_sign_in_moments",
+    "parts": [
+        {
+            "unit": "identity",
+            "up": "identity.sql",
+            "down": "identity_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261023065022000000_HIL-1653_identity_display_fields",
+                    "unit": "identity"
+                }
+            ],
+            "afterStubUpSha256": "d298fbb619667126ae9b7b2bb421cb6e49bb4f312f908a0d13a891e2fcf71b87",
+            "afterStubDownSha256": "ae26767a5e05d5e4cd4f72841dd95a73c3f42f7c0a78eaae3cb593bc33874436"
+        },
+        {
+            "unit": "oauth_provider",
+            "up": "oauth_provider.sql",
+            "down": "oauth_provider_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "dc1631c395b77dbce4e921d6fa28bacd0578f0344ebc4ebc3575b04a2434ed18",
+            "afterStubDownSha256": "fc6499840a3ab2258c08a7d0991278b371aaefd49e66809df2a7704d1c6f7351"
+        },
+        {
+            "unit": "passkey_credential",
+            "up": "passkey_credential.sql",
+            "down": "passkey_credential_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "315c90ad4406743c3ca5c35f0070f714d944c6cc27e579e3659e6ed054dcdd2a",
+            "afterStubDownSha256": "e960ce225937d8485e6183d71874084e8e16a83373f61d864a50b42d2ff14054"
+        }
+    ]
+}

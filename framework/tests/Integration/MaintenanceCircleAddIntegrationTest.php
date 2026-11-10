@@ -165,7 +165,8 @@ final class MaintenanceCircleAddIntegrationTest extends HilosSessionIntegrationT
     {
         Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Ann')", [self::ANN_USER_ID]);
         Database::sqlRun(
-            'INSERT INTO `hilos_identity` (`user_id`, `type`, `identifier`, `verified`) VALUES (?, ?, ?, 0)',
+            'INSERT INTO `hilos_identity` (`created_at`, `updated_at`, `user_id`, `type`, `identifier`, `verified`) '
+            . 'VALUES (1735689600000, 1735689600000, ?, ?, ?, 0)',
             [self::ANN_USER_ID, self::EMAIL_TYPE, self::ANN_EMAIL],
         );
 

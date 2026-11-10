@@ -740,9 +740,9 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
         $params->add(SqlParam::auto($provider));
         Database::sql(
             'INSERT INTO `' . EntityIdentity::_table . '` '
-            . '(`' . EntityIdentity::user_id . '`, `' . EntityIdentity::type . '`, '
+            . '(`created_at`, `updated_at`, `' . EntityIdentity::user_id . '`, `' . EntityIdentity::type . '`, '
             . '`' . EntityIdentity::identifier . '`, `' . EntityIdentity::provider . '`, '
-            . '`' . EntityIdentity::verified . '`) VALUES (?, ?, ?, ?, 1)',
+            . '`' . EntityIdentity::verified . '`) VALUES (1735689600000, 1735689600000, ?, ?, ?, ?, 1)',
             $params,
         );
     }

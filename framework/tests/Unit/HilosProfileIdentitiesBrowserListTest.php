@@ -145,12 +145,12 @@ final class HilosProfileIdentitiesBrowserListTest extends TestCase
         $this->fail('HilosProfileIdentitiesBrowserList has no passkey sidecar item');
     }
 
-    public function testOnlyCredentialEnrollmentIsProjectedAsASqlMoment(): void
+    public function testNumericMomentsNeedNoSqlProjection(): void
     {
         $this->assertArrayNotHasKey(BrowserListFieldKey::SQL_MOMENTS, $this->identitiesItem());
         foreach (HilosProfileIdentitiesBrowserList::BROWSER[BrowserListConfigKey::ITEMS] as $item) {
             if (($item[BrowserListFieldKey::SOURCE] ?? null) === HilosProfileIdentitiesBrowserList::DB_PASSKEY_CREDENTIALS) {
-                $this->assertSame([PasskeyCredential::createdAt], $item[BrowserListFieldKey::SQL_MOMENTS]);
+                $this->assertArrayNotHasKey(BrowserListFieldKey::SQL_MOMENTS, $item);
 
                 return;
             }

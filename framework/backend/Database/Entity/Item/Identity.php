@@ -41,7 +41,6 @@ class Identity extends Entity
     public const string verified = 'verified';
     public const string password_changed_at = 'password_changed_at';
     public const string provider_name = 'provider_name';
-    /** DB-only stamps written by the database itself; named here so the PII verdict can name them. */
     public const string created_at = 'created_at';
     public const string updated_at = 'updated_at';
 
@@ -49,7 +48,7 @@ class Identity extends Entity
     public const bool _journaled = true;
     public const array _journalSecrets = [self::secret];
     public const array _journalNoise = [
-        self::updated_at => 'Database-maintained update timestamp; the receipt already has the action time',
+        self::updated_at => 'Application-stamped on every write; the receipt already has the action time',
     ];
     public const string _primary = self::id;
     public const array _columns = [
@@ -61,6 +60,8 @@ class Identity extends Entity
         self::verified,
         self::password_changed_at,
         self::provider_name,
+        self::created_at,
+        self::updated_at,
     ];
 
     public const array _moments = [self::password_changed_at, self::created_at, self::updated_at];
@@ -74,6 +75,8 @@ class Identity extends Entity
         self::verified => PhpType::BOOLEAN->value,
         self::password_changed_at => PhpType::INTEGER->value,
         self::provider_name => PhpType::TEXT->value,
+        self::created_at => PhpType::INTEGER->value,
+        self::updated_at => PhpType::INTEGER->value,
     ];
 
     public const array _foreign = [
@@ -118,4 +121,6 @@ class Identity extends Entity
     public bool $verified = false;
     public ?int $password_changed_at = null;
     public ?string $provider_name = null;
+    public int $created_at;
+    public int $updated_at;
 }

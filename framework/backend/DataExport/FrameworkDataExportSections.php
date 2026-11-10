@@ -37,7 +37,7 @@ final class FrameworkDataExportSections
         $identities = Hilos::$db->identities->exportEntries($userId);
         $writer->section('account', [
             'id' => $userId,
-            'since' => DataExportTime::iso($identities[0]->createdAt ?? null, $timeZone),
+            'since' => $identities === [] ? null : DataExportTime::isoMs($identities[0]->createdAt, $timeZone),
         ]);
 
         // Who did a rename is somebody else's data, so the author stays out of the copy.
@@ -99,7 +99,7 @@ final class FrameworkDataExportSections
                 'identifier' => $identity->identifier,
                 'provider' => $identity->provider,
                 'verified' => $identity->verified,
-                'createdAt' => DataExportTime::iso($identity->createdAt, $timeZone),
+                'createdAt' => DataExportTime::isoMs($identity->createdAt, $timeZone),
             ];
         }
         $writer->section('sign_in_methods', $signInMethods);
@@ -108,8 +108,8 @@ final class FrameworkDataExportSections
         foreach (Hilos::$db->passkeyCredentials->listByUser($userId) as $passkey) {
             $passkeys[] = [
                 'label' => $passkey->label,
-                'createdAt' => DataExportTime::iso($passkey->createdAt, $timeZone),
-                'lastUsedAt' => DataExportTime::iso($passkey->lastUsedAt, $timeZone),
+                'createdAt' => DataExportTime::isoMs($passkey->createdAt, $timeZone),
+                'lastUsedAt' => $passkey->lastUsedAt === null ? null : DataExportTime::isoMs($passkey->lastUsedAt, $timeZone),
             ];
         }
         $writer->section('passkeys', $passkeys);

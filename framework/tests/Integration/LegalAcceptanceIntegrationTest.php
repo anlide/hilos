@@ -197,7 +197,8 @@ final class LegalAcceptanceIntegrationTest extends ProfileIntegrationTestCase
             );
         }
         Database::sqlRun(
-            "INSERT INTO hilos_identity (user_id, type, identifier, verified) VALUES (?, 'magic_link', ?, 1)",
+            "INSERT INTO hilos_identity (`created_at`, `updated_at`, user_id, type, identifier, verified) "
+            . "VALUES (1735689600000, 1735689600000, ?, 'magic_link', ?, 1)",
             [self::OTHER_USER_ID, 'unique-person@example.test'],
         );
         $table = new LegalAcceptanceIntegrationTable();

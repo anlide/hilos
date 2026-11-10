@@ -51,6 +51,7 @@ use Hilos\Tests\Unit\Auth\Method\Fixtures\AuthMethodTestSettings;
 use Hilos\Tests\Unit\Auth\WebAuthn\WebAuthnTestVectors;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * An account started on a passkey, against the real tables (HIL-1104).
@@ -185,6 +186,42 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
         self::runPasskeyStub(down: true);
 
         parent::tearDown();
+    }
+
+    /** Registration and a subsequent use persist application-owned millisecond moments. */
+    public function testCredentialCreationAndUseKeepIntegerMilliseconds(): void
+    {
+        AuthMethodTestSettings::$passkeyAllowsUnproven = true;
+        $options = $this->askOptions(null);
+
+        $before = TimeHelper::nowMs();
+        self::assertNull($this->complete(null, $options, new WebAuthnTestVectors()));
+        $after = TimeHelper::nowMs();
+
+        $credentials = Hilos::$db->passkeyCredentials->listByUser($this->theOnlyUser());
+        self::assertCount(1, $credentials);
+        self::assertIsInt($credentials[0]->createdAt);
+        self::assertGreaterThanOrEqual($before, $credentials[0]->createdAt);
+        self::assertLessThanOrEqual($after, $credentials[0]->createdAt);
+        self::assertNull($credentials[0]->lastUsedAt);
+        $createdAt = $credentials[0]->createdAt;
+        $stored = Database::sql('SELECT `created_at`, `last_used_at` FROM `hilos_passkey_credential` WHERE `id` = ?',
+            [$credentials[0]->id])->row();
+        self::assertSame($createdAt, (int)$stored['created_at']);
+        self::assertNull($stored['last_used_at']);
+
+        $before = TimeHelper::nowMs();
+        $credentials[0]->recordUse(1);
+        $after = TimeHelper::nowMs();
+
+        self::assertIsInt($credentials[0]->lastUsedAt);
+        self::assertGreaterThanOrEqual($before, $credentials[0]->lastUsedAt);
+        self::assertLessThanOrEqual($after, $credentials[0]->lastUsedAt);
+        $stored = Database::sql('SELECT `created_at`, `last_used_at`, `sign_count` FROM `hilos_passkey_credential` WHERE `id` = ?',
+            [$credentials[0]->id])->row();
+        self::assertSame($credentials[0]->lastUsedAt, (int)$stored['last_used_at']);
+        self::assertSame($createdAt, (int)$stored['created_at']);
+        self::assertSame(1, (int)$stored['sign_count']);
     }
 
     /**

@@ -627,7 +627,8 @@ final class StatusAdminNotificationIntegrationTest extends FrameworkIntegrationT
         for ($id = $first; $id <= $last; $id++) {
             Database::sqlRun('INSERT INTO hilos_user (id, name, admin, time_zone) VALUES (?, ?, 1, ?)',
                 [$id, 'Admin ' . $id, $id === 1 ? 'America/New_York' : 'Asia/Tokyo']);
-            Database::sqlRun("INSERT INTO hilos_identity (user_id, type, identifier, verified) VALUES (?, 'password', ?, 1)",
+            Database::sqlRun("INSERT INTO hilos_identity (`created_at`, `updated_at`, user_id, type, identifier, verified) "
+                . "VALUES (1735689600000, 1735689600000, ?, 'password', ?, 1)",
                 [$id, 'admin' . $id . '@example.test']);
         }
     }

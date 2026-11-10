@@ -78,8 +78,8 @@ class PasskeyCredential extends Entity
         self::aaguid => PhpType::STRING->value,
         self::user_handle => PhpType::BINARY->value,
         self::label => PhpType::STRING->value,
-        self::last_used_at => PhpType::DATETIME->value,
-        self::created_at => PhpType::DATETIME->value,
+        self::last_used_at => PhpType::INTEGER->value,
+        self::created_at => PhpType::INTEGER->value,
     ];
 
     public const array _foreign = [
@@ -115,6 +115,6 @@ class PasskeyCredential extends Entity
     public ?string $aaguid = null;
     public string $user_handle;
     public ?string $label = null;
-    public ?string $last_used_at = null;
-    public string $created_at;
+    public ?int $last_used_at = null;
+    public int $created_at;
 }

@@ -248,8 +248,8 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
         $identity = Hilos::$db->identities->createPasskeyIdentity(self::USER_ID, 'credential-302');
         Database::sqlRun(
             'INSERT INTO `hilos_passkey_credential` '
-            . '(`identity_id`, `user_id`, `credential_id`, `public_key`, `algorithm`, `user_handle`) '
-            . 'VALUES (?, ?, ?, ?, ?, ?)',
+            . '(`created_at`, `identity_id`, `user_id`, `credential_id`, `public_key`, `algorithm`, `user_handle`) '
+            . 'VALUES (1735689600000, ?, ?, ?, ?, ?, ?)',
             [(int)$identity->id, self::USER_ID, 'credential-302', 'unused-public-key', -7, 'handle-302'],
         );
         self::assertNull(new StepUpMethodResolver()->resolveAddress(self::USER_ID));
@@ -279,8 +279,8 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
         $identity = Hilos::$db->identities->createPasskeyIdentity(self::USER_ID, 'credential-495');
         Database::sqlRun(
             'INSERT INTO `hilos_passkey_credential` '
-            . '(`identity_id`, `user_id`, `credential_id`, `public_key`, `algorithm`, `user_handle`) '
-            . 'VALUES (?, ?, ?, ?, ?, ?)',
+            . '(`created_at`, `identity_id`, `user_id`, `credential_id`, `public_key`, `algorithm`, `user_handle`) '
+            . 'VALUES (1735689600000, ?, ?, ?, ?, ?, ?)',
             [(int)$identity->id, self::USER_ID, 'credential-495', 'unused-public-key', -7, 'handle-495'],
         );
 
@@ -304,8 +304,8 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
         $identity = Hilos::$db->identities->createPasskeyIdentity(self::USER_ID, 'credential-1303');
         Database::sqlRun(
             'INSERT INTO `hilos_passkey_credential` '
-            . '(`identity_id`, `user_id`, `credential_id`, `public_key`, `algorithm`, `user_handle`) '
-            . 'VALUES (?, ?, ?, ?, ?, ?)',
+            . '(`created_at`, `identity_id`, `user_id`, `credential_id`, `public_key`, `algorithm`, `user_handle`) '
+            . 'VALUES (1735689600000, ?, ?, ?, ?, ?, ?)',
             [(int)$identity->id, self::USER_ID, 'credential-1303', 'unused-public-key', -7, 'handle-1303'],
         );
         self::assertSame(StepUpMethod::PASSKEY, new StepUpMethodResolver()->resolve(self::USER_ID)?->method);

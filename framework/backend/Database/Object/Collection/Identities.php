@@ -57,7 +57,7 @@ class Identities extends Objects
     private const string DELETE_REASON_LINK_EXISTS = 'magic_link_exists';
 
     /**
-     * Reads the DB-only creation stamp alongside an explicit list of portable fields.
+     * Reads the creation moment alongside an explicit list of portable fields.
      *
      * @param int $userId Person whose sign-in methods are exported
      * @return list<IdentityExportEntry> Metadata in creation order, without secrets
@@ -77,7 +77,7 @@ class Identities extends Objects
                 $row[EntityIdentity::type] === IdentityType::PASSWORD ? null : $row[EntityIdentity::identifier],
                 $row[EntityIdentity::provider],
                 (bool)$row[EntityIdentity::verified],
-                $row[EntityIdentity::created_at],
+                (int)$row[EntityIdentity::created_at],
             );
         }
 

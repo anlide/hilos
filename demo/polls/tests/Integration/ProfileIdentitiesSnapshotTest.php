@@ -134,7 +134,7 @@ final class ProfileIdentitiesSnapshotTest extends IntegrationTestCase
                 'Laptop',
             );
             // Fixture-only enrollment clock: the normal registration API always stamps now.
-            $credential->createdAt = '2026-01-01 00:30:00';
+            $credential->createdAt = 1767227400000;
             $credential->sync();
             Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, $userId);
             $snapshot = Hilos::$browser?->buildSubscribeSnapshot(ProfilePage::PAGE, self::ACCEPT_KEY, new PageRouteParams([]));
@@ -167,7 +167,7 @@ final class ProfileIdentitiesSnapshotTest extends IntegrationTestCase
             }
             $this->drainSignals();
 
-            $credential->createdAt = '2026-01-02 00:30:00';
+            $credential->createdAt = 1767313800000;
             $credential->sync();
             while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
                 if ($signal->data instanceof DbSyncUpdatedSignalData && $signal->data->collectionKey === PollsDbContext::passkeyCredentials) {

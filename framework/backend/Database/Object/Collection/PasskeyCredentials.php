@@ -105,9 +105,8 @@ class PasskeyCredentials extends Objects
         $credential->aaguid = $aaguid;
         $credential->userHandle = $userHandle;
         $credential->label = $label;
-        // `created_at` is a mapped column, so the insert carries it and the SQL
-        // default never applies; stamped here like every other framework row.
-        $credential->createdAt = TimeHelper::getSqlDateTime();
+        // The application owns the creation moment; the column has no SQL default.
+        $credential->createdAt = TimeHelper::nowMs();
         $credential->sync();
 
         $id = $credential->id;

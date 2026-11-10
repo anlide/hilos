@@ -210,7 +210,8 @@ final class SessionTestBindCommandRouteIntegrationTest extends HilosSessionInteg
     public function testADeletedIdDoesNotFindAReplacementByItsOldEmail(): void
     {
         Database::sqlRun(
-            "INSERT INTO `hilos_identity` (`user_id`, `type`, `identifier`, `verified`) VALUES (43, 'magic_link', 'old@example.test', 1)",
+            "INSERT INTO `hilos_identity` (`created_at`, `updated_at`, `user_id`, `type`, `identifier`, `verified`) "
+            . "VALUES (1735689600000, 1735689600000, 43, 'magic_link', 'old@example.test', 1)",
         );
         Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = 42');
         $before = self::rawSession();

@@ -116,7 +116,6 @@ final class HilosProfileIdentitiesBrowserList
                     PasskeyCredential::label,
                     PasskeyCredential::createdAt,
                 ],
-                BrowserListFieldKey::SQL_MOMENTS => [PasskeyCredential::createdAt],
             ],
         ],
     ];

@@ -29,6 +29,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DbSyncApplicator;
+use Hilos\Database\Entity\Item\OAuthProvider as EntityOAuthProvider;
 use Hilos\Database\Object\Item\OAuthProvider as ObjectOAuthProvider;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\SqlParam;
@@ -40,6 +41,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTableRow;
+use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
@@ -153,6 +155,87 @@ final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestC
         self::runStubs(down: true);
 
         parent::tearDown();
+    }
+
+    /** A provider is born with one application-owned millisecond stamp in both columns. */
+    public function testAddingAProviderStampsCreationAndUpdateTogether(): void
+    {
+        $before = TimeHelper::nowMs();
+        $row = $this->row();
+        $after = TimeHelper::nowMs();
+
+        $stored = Database::sql('SELECT `created_at`, `updated_at` FROM `hilos_oauth_provider` WHERE `id` = ?', [$row->id])->row();
+        self::assertSame($stored['created_at'], $stored['updated_at']);
+        self::assertGreaterThanOrEqual($before, (int)$stored['created_at']);
+        self::assertLessThanOrEqual($after, (int)$stored['created_at']);
+        $object = Hilos::$db->oauthProviders->getObjectCollection()->get($row->id);
+        self::assertNotNull($object);
+        self::assertSame((int)$stored['created_at'], $object->valueForColumn(EntityOAuthProvider::created_at));
+        self::assertSame((int)$stored['updated_at'], $object->valueForColumn(EntityOAuthProvider::updated_at));
+    }
+
+    /** @return iterable<string, array{string}> Mapped and secret-only configuration writes */
+    public static function stampedProviderUpdates(): iterable
+    {
+        yield 'client id' => ['updateClientId'];
+        yield 'client secret' => ['writeClientSecret'];
+        yield 'erase client secret' => ['eraseClientSecret'];
+    }
+
+    /** @param string $operation Configuration write to apply to a row with an old stamp */
+    #[DataProvider('stampedProviderUpdates')]
+    public function testConfigurationWritesAdvanceTheStampAndKeepCreation(string $operation): void
+    {
+        Database::sqlRun(
+            'INSERT INTO `hilos_oauth_provider` (`provider_key`, `client_id`, `client_secret`, `created_at`, `updated_at`) '
+            . "VALUES (?, 'old-client', 'old-secret', 1735689600123, 1735689600456)",
+            [OAuthProviderPreset::GITHUB->value],
+        );
+        $row = Hilos::$db->oauthProviders[OAuthProviderPreset::GITHUB->value];
+
+        $before = TimeHelper::nowMs();
+        match ($operation) {
+            'updateClientId' => $row->actions->updateClientId('new-client'),
+            'writeClientSecret' => $row->actions->writeClientSecret('new-secret'),
+            'eraseClientSecret' => $row->actions->writeClientSecret(null),
+        };
+        $after = TimeHelper::nowMs();
+
+        $stored = Database::sql('SELECT * FROM `hilos_oauth_provider` WHERE `id` = ?', [$row->id])->row();
+        self::assertSame(1735689600123, (int)$stored['created_at']);
+        self::assertGreaterThanOrEqual($before, (int)$stored['updated_at']);
+        self::assertLessThanOrEqual($after, (int)$stored['updated_at']);
+        $object = Hilos::$db->oauthProviders->getObjectCollection()->get($row->id);
+        self::assertNotNull($object);
+        self::assertSame((int)$stored['updated_at'], $object->valueForColumn(EntityOAuthProvider::updated_at));
+        self::assertSame([], $object->getChangedColumns(), 'Secret writes must leave no pending stamp for a later sync');
+        match ($operation) {
+            'updateClientId' => self::assertSame('new-client', $stored['client_id']),
+            'writeClientSecret' => self::assertSame('new-secret', $stored['client_secret']),
+            'eraseClientSecret' => self::assertNull($stored['client_secret']),
+        };
+    }
+
+    /** Repeating a configured value and syncing without changes preserve a fixed old stamp. */
+    public function testUnchangedProviderConfigurationDoesNotAdvanceTheStamp(): void
+    {
+        Database::sqlRun(
+            'INSERT INTO `hilos_oauth_provider` (`provider_key`, `client_id`, `created_at`, `updated_at`) '
+            . "VALUES (?, 'same-client', 1735689600123, 1735689600456)",
+            [OAuthProviderPreset::GITHUB->value],
+        );
+
+        Hilos::$db->oauthProviders[OAuthProviderPreset::GITHUB->value]->actions->updateClientId('same-client');
+        $object = Hilos::$db->oauthProviders->getObjectCollection()->findByProviderKey(OAuthProviderPreset::GITHUB->value);
+        self::assertNotNull($object);
+        $object->sync();
+
+        self::assertSame(1735689600456, $object->valueForColumn(EntityOAuthProvider::updated_at));
+        self::assertSame(1735689600456, (int)Database::sql(
+            'SELECT `updated_at` FROM `hilos_oauth_provider` WHERE `provider_key` = ?',
+            [OAuthProviderPreset::GITHUB->value],
+        )->field('updated_at'));
+        self::assertSame([], $this->announced);
     }
 
     public function testAStoredClientIdWinsOverEnv(): void
@@ -632,7 +715,10 @@ final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestC
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::string(self::UNHELD_PROVIDER_KEY));
-        Database::sql('INSERT INTO `hilos_oauth_provider` (`provider_key`) VALUES (?)', $params);
+        Database::sql(
+            'INSERT INTO `hilos_oauth_provider` (`created_at`, `updated_at`, `provider_key`) VALUES (1735689600000, 1735689600000, ?)',
+            $params,
+        );
         $this->assertArrayNotHasKey(self::UNHELD_PROVIDER_KEY, Hilos::$db->oauthProviders);
 
         $google = Hilos::$db->oauthProviders->actions->add(OAuthProviderPreset::GOOGLE->value);

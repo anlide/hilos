@@ -15,9 +15,11 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Identity object - wraps Identity entity.
@@ -55,6 +57,30 @@ class Identity extends Object_
      * identifier (see {@see verifyDummyPassword()}). Not a real credential.
      */
     private const string DUMMY_PASSWORD_HASH = '$2y$12$Dl.YAAr3YO3hR7hVxV56Gewg9CzLLWQqLQfTP0TdJj.o9lg9lhwiy';
+
+    /**
+     * Stamps creation and changed rows before saving. These columns have no Object/View
+     * reader, so a forgotten application writer would otherwise remain invisible.
+     *
+     * @throws DatabaseException If database operation fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
+     * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     */
+    public function sync(): void
+    {
+        $now = TimeHelper::nowMs();
+        if (!$this->entity->isRelated()) {
+            $this->entity->created_at = $now;
+            $this->entity->updated_at = $now;
+        } elseif ($this->getChangedColumns() !== []) {
+            $this->entity->updated_at = $now;
+        }
+
+        parent::sync();
+    }
 
     /**
      * Magic getter for entity properties.
@@ -172,13 +198,18 @@ class Identity extends Object_
             TruthSourceOperation::Update,
         );
 
+        $now = TimeHelper::nowMs();
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::string($passwordHash));
+        $params->add(SqlParam::int($now));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
-            'UPDATE `' . EntityIdentity::_table . '` SET `' . EntityIdentity::secret . '` = ? WHERE `' . EntityIdentity::id . '` = ?',
+            'UPDATE `' . EntityIdentity::_table . '` SET `' . EntityIdentity::secret . '` = ?, `'
+                . EntityIdentity::updated_at . '` = ? WHERE `' . EntityIdentity::id . '` = ?',
             $params,
         );
+        $this->entity->updated_at = $now;
+        $this->entitySync->updated_at = $now;
     }
 
     /**
@@ -208,12 +239,17 @@ class Identity extends Object_
             TruthSourceOperation::Update,
         );
 
+        $now = TimeHelper::nowMs();
         $params = SqlParamCollection::empty();
+        $params->add(SqlParam::int($now));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
-            'UPDATE `' . EntityIdentity::_table . '` SET `' . EntityIdentity::secret . '` = NULL WHERE `' . EntityIdentity::id . '` = ?',
+            'UPDATE `' . EntityIdentity::_table . '` SET `' . EntityIdentity::secret . '` = NULL, `'
+                . EntityIdentity::updated_at . '` = ? WHERE `' . EntityIdentity::id . '` = ?',
             $params,
         );
+        $this->entity->updated_at = $now;
+        $this->entitySync->updated_at = $now;
     }
 
     /**

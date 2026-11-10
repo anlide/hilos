@@ -189,8 +189,8 @@ final class JournalTriggerGeneratorIntegrationTest extends IntegrationTestCase
         Database::sql('SELECT MIN(`id`) AS `id` FROM `hilos_user`');
         $userId = (int)Database::field('id');
         $this->assertGreaterThan(0, $userId);
-        Database::sql("INSERT INTO `hilos_identity` (`user_id`, `type`, `identifier`, `secret`)"
-            . " VALUES (?, 'password', 'journal-fixture@example.test', 'hash-one')", [$userId]);
+        Database::sql("INSERT INTO `hilos_identity` (`created_at`, `updated_at`, `user_id`, `type`, `identifier`, `secret`)"
+            . " VALUES (1735689600000, 1735689600000, ?, 'password', 'journal-fixture@example.test', 'hash-one')", [$userId]);
         $insertId = Database::lastInsertId();
         Database::sql('SELECT `id` FROM `hilos_identity` WHERE `identifier` = ?', ['journal-fixture@example.test']);
         $identityId = (int)Database::field('id');

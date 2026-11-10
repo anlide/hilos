@@ -26,8 +26,8 @@ use Hilos\HilosException;
  * @property-read ?string $transports
  * @property-read ?string $aaguid
  * @property-read ?string $label
- * @property-read ?string $lastUsedAt
- * @property-read string $createdAt
+ * @property-read ?int $lastUsedAt
+ * @property-read int $createdAt
  */
 class PasskeyCredential extends DbItem
 {

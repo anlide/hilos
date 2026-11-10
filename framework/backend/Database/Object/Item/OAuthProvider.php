@@ -7,6 +7,7 @@ namespace Hilos\Database\Object\Item;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Database;
@@ -17,6 +18,7 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * OAuthProvider object - wraps OAuthProvider entity.
@@ -51,6 +53,30 @@ class OAuthProvider extends Object_
 
     /** Remembered answer of {@see hasClientSecret()}; null when never asked or forgotten. */
     private ?bool $clientSecretSet = null;
+
+    /**
+     * Stamps creation and changed rows before saving. These columns have no Object/View
+     * reader, so a forgotten application writer would otherwise remain invisible.
+     *
+     * @throws DatabaseException If database operation fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
+     * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     */
+    public function sync(): void
+    {
+        $now = TimeHelper::nowMs();
+        if (!$this->entity->isRelated()) {
+            $this->entity->created_at = $now;
+            $this->entity->updated_at = $now;
+        } elseif ($this->getChangedColumns() !== []) {
+            $this->entity->updated_at = $now;
+        }
+
+        parent::sync();
+    }
 
     /**
      * Magic getter for entity properties.
@@ -172,14 +198,18 @@ class OAuthProvider extends Object_
         $idString = (string)$this->entity->id;
         DbWriteGuard::guardItemWrite(static::getCollectionKey(), $idString, $this->touchedSetKeys(...), TruthSourceOperation::Update);
 
+        $now = TimeHelper::nowMs();
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::auto($secret));
+        $params->add(SqlParam::int($now));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
             'UPDATE `' . EntityOAuthProvider::_table . '` SET `' . EntityOAuthProvider::client_secret
-                . '` = ? WHERE `' . EntityOAuthProvider::id . '` = ?',
+                . '` = ?, `' . EntityOAuthProvider::updated_at . '` = ? WHERE `' . EntityOAuthProvider::id . '` = ?',
             $params,
         );
+        $this->entity->updated_at = $now;
+        $this->entitySync->updated_at = $now;
         $this->clientSecretSet = $secret !== null && $secret !== '';
 
         $this->announceUnmappedUpdate();

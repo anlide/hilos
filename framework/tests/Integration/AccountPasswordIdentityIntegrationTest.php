@@ -125,6 +125,18 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
             $identity = $prehashed
                 ? $this->identities()->createPasswordIdentityWithHash($this->nextUserId(), $this->uniqueEmail(), self::SEED_HASH)
                 : $this->identities()->createPasswordIdentity($this->nextUserId(), $this->uniqueEmail(), self::PASSWORD);
+            $after = TimeHelper::nowMs();
+
+            self::assertIsInt($identity->valueForColumn(EntityIdentity::created_at));
+            self::assertSame(
+                $identity->valueForColumn(EntityIdentity::created_at),
+                $identity->valueForColumn(EntityIdentity::updated_at),
+            );
+            $stored = Database::sql('SELECT `created_at`, `updated_at` FROM `hilos_identity` WHERE `id` = ?', [$identity->id])->row();
+            self::assertGreaterThanOrEqual($before, (int)$stored['created_at']);
+            self::assertLessThanOrEqual($after, (int)$stored['created_at']);
+            self::assertSame($identity->valueForColumn(EntityIdentity::created_at), (int)$stored['created_at']);
+            self::assertSame($stored['created_at'], $stored['updated_at']);
 
             self::assertGreaterThanOrEqual($before, $identity->passwordChangedAt);
             self::assertLessThanOrEqual(TimeHelper::nowMs(), $identity->passwordChangedAt);
@@ -142,7 +154,88 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
             }
             self::assertCount(1, $created);
             self::assertSame($identity->passwordChangedAt, $created[0]->row[EntityIdentity::password_changed_at]);
+            self::assertSame((int)$stored['created_at'], $created[0]->row[EntityIdentity::created_at]);
+            self::assertSame((int)$stored['updated_at'], $created[0]->row[EntityIdentity::updated_at]);
         }
+    }
+
+    /** @return iterable<string, array{string}> Each mapped or secret-only update entrance */
+    public static function momentUpdateOperations(): iterable
+    {
+        yield 'password change' => ['recordPasswordChange'];
+        yield 'verification' => ['markVerified'];
+        yield 'password hash' => ['setPasswordHash'];
+        yield 'password removal' => ['clearPassword'];
+    }
+
+    /** @param string $operation Update entrance exercised against a fixed old stamp */
+    #[DataProvider('momentUpdateOperations')]
+    public function testUpdatesStampTheIdentityWithoutChangingItsCreationMoment(string $operation): void
+    {
+        $id = $this->seedPasswordRow($this->nextUserId(), $this->uniqueEmail());
+        Database::sqlRun(
+            'UPDATE `hilos_identity` SET `verified` = 0, `created_at` = 1735689600123, `updated_at` = 1735689600456 WHERE `id` = ?',
+            [$id],
+        );
+        $identity = $this->identities()->get($id);
+        self::assertNotNull($identity);
+
+        $before = TimeHelper::nowMs();
+        match ($operation) {
+            'recordPasswordChange' => Hilos::$db->identities[$id]->actions->recordPasswordChange(),
+            'markVerified' => $identity->markVerified(),
+            'setPasswordHash' => $identity->setPasswordHash('replacement-hash'),
+            'clearPassword' => $identity->clearPassword(),
+        };
+        $after = TimeHelper::nowMs();
+
+        $stored = Database::sql('SELECT * FROM `hilos_identity` WHERE `id` = ?', [$id])->row();
+        self::assertSame(1735689600123, (int)$stored['created_at']);
+        self::assertGreaterThanOrEqual($before, (int)$stored['updated_at']);
+        self::assertLessThanOrEqual($after, (int)$stored['updated_at']);
+        self::assertSame((int)$stored['updated_at'], $identity->valueForColumn(EntityIdentity::updated_at));
+        self::assertSame([], $identity->getChangedColumns(), 'A secret write must not leave a pending stamp for a later sync');
+        match ($operation) {
+            'recordPasswordChange' => self::assertGreaterThanOrEqual($before, (int)$stored['password_changed_at']),
+            'markVerified' => self::assertSame(1, (int)$stored['verified']),
+            'setPasswordHash' => self::assertSame('replacement-hash', $stored['secret']),
+            'clearPassword' => self::assertNull($stored['secret']),
+        };
+    }
+
+    /** A read and an empty sync leave a genuinely old, fractional stamp intact. */
+    public function testEmptySyncDoesNotAdvanceTheIdentityMoment(): void
+    {
+        $id = $this->seedPasswordRow($this->nextUserId(), $this->uniqueEmail());
+        Database::sqlRun('UPDATE `hilos_identity` SET `updated_at` = 1735689600456 WHERE `id` = ?', [$id]);
+        $identity = $this->identities()->get($id);
+        self::assertNotNull($identity);
+
+        $identity->sync();
+
+        self::assertSame(1735689600456, $identity->valueForColumn(EntityIdentity::updated_at));
+        self::assertSame(1735689600456, (int)Database::sql('SELECT `updated_at` FROM `hilos_identity` WHERE `id` = ?', [$id])
+            ->field('updated_at'));
+    }
+
+    /** @return iterable<string, array{int}> Signed millisecond values, including the legacy TIMESTAMP boundary */
+    public static function storedPasswordMoments(): iterable
+    {
+        yield 'epoch' => [0];
+        yield 'before epoch' => [-1];
+        yield 'after 2038' => [2147483648123];
+        yield 'fractional second' => [1735689600123];
+    }
+
+    /** @param int $moment Persisted milliseconds the cold ORM must preserve exactly */
+    #[DataProvider('storedPasswordMoments')]
+    public function testReadsSignedPasswordMillisecondsWithoutRescaling(int $moment): void
+    {
+        $id = $this->seedPasswordRow($this->nextUserId(), $this->uniqueEmail());
+        Database::sqlRun('UPDATE `hilos_identity` SET `password_changed_at` = ? WHERE `id` = ?', [$moment, $id]);
+
+        self::assertSame($moment, Hilos::$db->identities[$id]->passwordChangedAt);
+        self::assertSame($moment, $this->identities()->get($id)?->passwordChangedAt);
     }
 
     /** An old row without evidence of when its password was set stays unknown on read and verification. */
@@ -813,9 +906,9 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
         $params->add(SqlParam::auto($secret));
         Database::sql(
             'INSERT INTO `' . EntityIdentity::_table . '`'
-            . ' (`' . EntityIdentity::user_id . '`, `' . EntityIdentity::type . '`,'
+            . ' (`created_at`, `updated_at`, `' . EntityIdentity::user_id . '`, `' . EntityIdentity::type . '`,'
             . ' `' . EntityIdentity::identifier . '`, `' . EntityIdentity::secret . '`,'
-            . ' `' . EntityIdentity::verified . '`) VALUES (?, ?, ?, ?, 1)',
+            . ' `' . EntityIdentity::verified . '`) VALUES (1735689600000, 1735689600000, ?, ?, ?, ?, 1)',
             $params,
         );
 

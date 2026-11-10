@@ -292,12 +292,9 @@ rules still apply to other fields.
   `BIGINT` with no DEFAULT at all, which its creating code stamps itself.
   The notification tables' moment columns also use signed `BIGINT` epoch milliseconds,
   with application writers stamping their values.
-- **The database owns it.** The column is left out of `_columns` entirely, so the ORM
-  neither writes nor reads it and the DEFAULT is its only writer. `hilos_identity` is the
-  example: its `created_at` / `updated_at` exist in the DDL, and in the Entity only as
-  column-name constants, which the personal-data verdict below needs to name them.
-  Move these old moment columns and every writer to the storage norm
-  (not in the code yet — HIL-1920).
+- **The database owns it.** For a column the application does not need to read, leave it
+  out of `_columns`; the ORM neither writes nor reads it, and the DEFAULT is its only
+  writer. This shape remains available for other DB-only columns.
 
 The criterion is not taste: hydration walks `_columns` (`Entity::fromRow()`), so leaving a
 column out of it makes the value invisible to the ORM. Need to read it — first shape; do

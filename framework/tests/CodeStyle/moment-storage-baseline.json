@@ -3,13 +3,6 @@
     "records": [
         {
             "rule": "MOMENT-WRITE",
-            "subject": "[\"source\",\"framework/backend/Database/Object/Collection/PasskeyCredentials.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\PasskeyCredentials::createFromRegistration\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\PasskeyCredential\\\",\\\"hilos_passkey_credential\\\",\\\"created_at\\\"]\"]",
-            "actual": "999c3d408540c00a31cfbe5a1c78c8546748442ae4fef1269fd0d1509f9ef619",
-            "count": 1,
-            "owner": "HIL-1920"
-        },
-        {
-            "rule": "MOMENT-WRITE",
             "subject": "[\"source\",\"framework/backend/Database/Object/Collection/RegistrationReservations.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\RegistrationReservations::createReservation\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\RegistrationReservation\\\",\\\"hilos_registration_reservation\\\",\\\"expires_at\\\"]\"]",
             "actual": "ca2a89c16c70e48b3fb349c80f8e96e8be2f093de035a6a9a3757f7274d19102",
             "count": 1,
@@ -59,13 +52,6 @@
         },
         {
             "rule": "MOMENT-WRITE",
-            "subject": "[\"source\",\"framework/backend/Database/Object/Item/PasskeyCredential.php\",\"Hilos\\\\Database\\\\Object\\\\Item\\\\PasskeyCredential::touchLastUsed\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\PasskeyCredential\\\",\\\"hilos_passkey_credential\\\",\\\"last_used_at\\\"]\"]",
-            "actual": "2c23104869f01c1c749cdc35dd6df0cefb47540f50796e73292a20d10a3ad11f",
-            "count": 1,
-            "owner": "HIL-1920"
-        },
-        {
-            "rule": "MOMENT-WRITE",
             "subject": "[\"source\",\"framework/backend/Database/Object/Item/UserVerification.php\",\"Hilos\\\\Database\\\\Object\\\\Item\\\\UserVerification::consume\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\UserVerification\\\",\\\"hilos_user_verification\\\",\\\"consumed_at\\\"]\"]",
             "actual": "d7da607f47718d13af07bb0bdcf224388d3afa453380472248837b244eb4dcc1",
             "count": 1,
@@ -84,41 +70,6 @@
             "actual": "DEFAULT current_timestamp(); EXTRA on update current_timestamp()",
             "count": 1,
             "owner": "HIL-1921"
-        },
-        {
-            "rule": "MOMENT-AUTO-WRITE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Identity\",\"hilos_identity\",\"created_at\"]",
-            "actual": "DEFAULT current_timestamp()",
-            "count": 1,
-            "owner": "HIL-1920"
-        },
-        {
-            "rule": "MOMENT-AUTO-WRITE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Identity\",\"hilos_identity\",\"updated_at\"]",
-            "actual": "DEFAULT current_timestamp(); EXTRA on update current_timestamp()",
-            "count": 1,
-            "owner": "HIL-1920"
-        },
-        {
-            "rule": "MOMENT-AUTO-WRITE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\OAuthProvider\",\"hilos_oauth_provider\",\"created_at\"]",
-            "actual": "DEFAULT current_timestamp()",
-            "count": 1,
-            "owner": "HIL-1920"
-        },
-        {
-            "rule": "MOMENT-AUTO-WRITE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\OAuthProvider\",\"hilos_oauth_provider\",\"updated_at\"]",
-            "actual": "DEFAULT current_timestamp(); EXTRA on update current_timestamp()",
-            "count": 1,
-            "owner": "HIL-1920"
-        },
-        {
-            "rule": "MOMENT-AUTO-WRITE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\PasskeyCredential\",\"hilos_passkey_credential\",\"created_at\"]",
-            "actual": "DEFAULT current_timestamp()",
-            "count": 1,
-            "owner": "HIL-1920"
         },
         {
             "rule": "MOMENT-AUTO-WRITE",
@@ -234,27 +185,6 @@
         },
         {
             "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Identity\",\"hilos_identity\",\"created_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1920"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Identity\",\"hilos_identity\",\"password_changed_at\"]",
-            "actual": "bigint unsigned",
-            "count": 1,
-            "owner": "HIL-1920"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\Identity\",\"hilos_identity\",\"updated_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1920"
-        },
-        {
-            "rule": "MOMENT-TYPE",
             "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\LegalAcceptanceExport\",\"hilos_legal_acceptance_export\",\"expires_at\"]",
             "actual": "timestamp",
             "count": 1,
@@ -280,34 +210,6 @@
             "actual": "timestamp",
             "count": 1,
             "owner": "HIL-1925"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\OAuthProvider\",\"hilos_oauth_provider\",\"created_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1920"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\OAuthProvider\",\"hilos_oauth_provider\",\"updated_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1920"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\PasskeyCredential\",\"hilos_passkey_credential\",\"created_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1920"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Hilos\\\\Database\\\\Entity\\\\Item\\\\PasskeyCredential\",\"hilos_passkey_credential\",\"last_used_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1920"
         },
         {
             "rule": "MOMENT-TYPE",

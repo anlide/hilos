@@ -38,7 +38,6 @@ class OAuthProvider extends Entity
     /** DB-only secret column (see @object-exclude); referenced by the provider layer's queries, never ORM-mapped. */
     public const string client_secret = 'client_secret';
     public const string scope = 'scope';
-    /** DB-only stamps written by the database itself; named here so the PII verdict can name them. */
     public const string created_at = 'created_at';
     public const string updated_at = 'updated_at';
 
@@ -49,6 +48,8 @@ class OAuthProvider extends Entity
         self::provider_key,
         self::client_id,
         self::scope,
+        self::created_at,
+        self::updated_at,
     ];
 
     public const array _moments = [self::created_at, self::updated_at];
@@ -58,6 +59,8 @@ class OAuthProvider extends Entity
         self::provider_key => PhpType::STRING->value,
         self::client_id => PhpType::STRING->value,
         self::scope => PhpType::STRING->value,
+        self::created_at => PhpType::INTEGER->value,
+        self::updated_at => PhpType::INTEGER->value,
     ];
 
     public const array _indexes = [
@@ -89,4 +92,6 @@ class OAuthProvider extends Entity
     public string $provider_key;
     public ?string $client_id = null;
     public ?string $scope = null;
+    public int $created_at;
+    public int $updated_at;
 }

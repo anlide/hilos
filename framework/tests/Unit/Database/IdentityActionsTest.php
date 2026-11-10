@@ -165,6 +165,8 @@ final class IdentityActionsTest extends TestCase
             'verified' => true,
             'password_changed_at' => null,
             'provider_name' => null,
+            'created_at' => 1735689600000,
+            'updated_at' => 1735689600000,
         ])) : MetadataIdentityObject::create();
         $object->type = $type;
         $object->userId = 42;

@@ -203,11 +203,31 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $source = $catalog->part($change->parts[0]->changeId, 'identity');
             self::assertFalse($source->introducesUnit);
             self::assertSame([], $source->requires);
-            self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('identity')->upPath)),
-                $source->afterStubUpSha256);
-            self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('identity')->downPath)),
-                $source->afterStubDownSha256);
             $origins[] = $change;
+            $signInIndices = [149, 107, 107, 88, 88, 90];
+            $signInParts = [
+                'identity' => '23ffd88b4e80df8cab33c4058276195ed1510da449aaaade6637237219830a47',
+                'oauth_provider' => '459b21cbd9183b9fa308440ab4ea0165ccbf1f9fa80825f1042831270e957f12',
+                'passkey_credential' => 'f94e7f65cc568746bc4d64c19144c308b5b6699773dd6f3a80738c6486dc0825',
+            ];
+            foreach (array_keys($signInParts) as $offset => $key) {
+                $base = $project->root . '/' . sprintf('%03d', $signInIndices[$index] + $offset)
+                    . '_framework_change_' . $signInParts[$key];
+                $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+                self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+                self::assertSame([$key], $change->units);
+                self::assertCount(1, $change->parts);
+                self::assertSame('20261110014712983573_HIL-1920_sign_in_moments/' . $key, $change->parts[0]->key());
+                $source = $catalog->part($change->parts[0]->changeId, $key);
+                self::assertFalse($source->introducesUnit);
+                self::assertSame($key === 'identity' ? ['20261023065022000000_HIL-1653_identity_display_fields/identity'] : [],
+                    $source->requires);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
+                    $source->afterStubUpSha256);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
+                    $source->afterStubDownSha256);
+                $origins[] = $change;
+            }
             foreach (array_keys($exportTimeZones) as $offset => $unit) {
                 $base = $project->root . '/' . sprintf('%03d', $exportTimeZoneIndices[$index] + $offset)
                     . '_framework_change_' . $exportTimeZones[$unit];

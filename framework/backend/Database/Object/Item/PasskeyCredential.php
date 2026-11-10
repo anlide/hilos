@@ -42,8 +42,8 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property ?string $aaguid
  * @property string $userHandle
  * @property ?string $label
- * @property-read ?string $lastUsedAt
- * @property string $createdAt
+ * @property-read ?int $lastUsedAt
+ * @property int $createdAt
  */
 class PasskeyCredential extends Object_
 {
@@ -117,7 +117,7 @@ class PasskeyCredential extends Object_
             self::aaguid => $this->entity->aaguid = $value === null ? null : (string)$value,
             self::userHandle => $this->entity->user_handle = (string)$value,
             self::label => $this->entity->label = $value === null ? null : (string)$value,
-            self::createdAt => $this->entity->created_at = (string)$value,
+            self::createdAt => $this->entity->created_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -178,7 +178,7 @@ class PasskeyCredential extends Object_
             return;
         }
 
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
 
         DbWriteGuard::guardItemWrite(
             static::getCollectionKey(),
@@ -188,7 +188,7 @@ class PasskeyCredential extends Object_
         );
 
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string($now));
+        $params->add(SqlParam::int($now));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
             'UPDATE `' . EntityPasskeyCredential::_table

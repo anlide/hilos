@@ -314,7 +314,10 @@ final class OAuthProviderNameIntegrationTest extends ProfileIntegrationTestCase
         ?string $reported,
         bool $queueFailure,
     ): void {
-        $identity = Hilos::$db->identities->createOauthIdentity(self::USER_ID, self::PROVIDER, 'subject', 'Known name');
+        $identityId = (int)Hilos::$db->identities->createOauthIdentity(self::USER_ID, self::PROVIDER, 'subject', 'Known name')->id;
+        // Creation and the metadata write can share a millisecond; start from a known older stamp.
+        Database::sqlRun('UPDATE `hilos_identity` SET `updated_at` = 1735689600000 WHERE `id` = ?', [$identityId]);
+        Hilos::$db->forgetLoadedDataForTest();
         $this->providerNameReports();
         $methods = ['oauthService', 'grantSession'];
         if ($queueFailure) {
@@ -345,7 +348,7 @@ final class OAuthProviderNameIntegrationTest extends ProfileIntegrationTestCase
         self::assertCount(!$queueFailure && $reported !== null && trim($reported) !== '' ? 1 : 0, $reports);
         foreach ($reports as $report) {
             self::assertSame([
-                'userId' => self::USER_ID, 'identityId' => $identity->id, 'providerName' => $reported,
+                'userId' => self::USER_ID, 'identityId' => $identityId, 'providerName' => $reported,
             ], $report->data->data->toArray());
             $this->deliverToPerson($report);
         }
@@ -360,8 +363,11 @@ final class OAuthProviderNameIntegrationTest extends ProfileIntegrationTestCase
         }
         self::assertCount($changed ? 1 : 0, $updates);
         if ($changed) {
-            self::assertSame((string)$identity->id, $updates[0]->idString);
-            self::assertSame(['provider_name' => self::NAME], $updates[0]->row);
+            self::assertSame((string)$identityId, $updates[0]->idString);
+            self::assertSame([
+                'provider_name' => self::NAME,
+                'updated_at' => (int)$this->oauthRow()['updated_at'],
+            ], $updates[0]->row);
         }
     }
 

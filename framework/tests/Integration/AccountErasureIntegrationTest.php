@@ -798,8 +798,8 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         $identity = Hilos::$db->identities->createPasskeyIdentity($userId, "credential-{$userId}");
         Database::sqlRun(
             'INSERT INTO `hilos_passkey_credential` '
-            . '(`identity_id`, `user_id`, `credential_id`, `public_key`, `algorithm`, `user_handle`) '
-            . 'VALUES (?, ?, ?, ?, ?, ?)',
+            . '(`created_at`, `identity_id`, `user_id`, `credential_id`, `public_key`, `algorithm`, `user_handle`) '
+            . 'VALUES (1735689600000, ?, ?, ?, ?, ?, ?)',
             [(int)$identity->id, $userId, "credential-{$userId}", 'unused-public-key', -7, "handle-{$userId}"],
         );
         $verifications = Hilos::$db?->getObjectCollection(HilosDbContext::verifications);

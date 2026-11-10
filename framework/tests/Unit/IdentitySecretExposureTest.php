@@ -29,6 +29,8 @@ final class IdentitySecretExposureTest extends TestCase
             'verified' => 1,
             'password_changed_at' => null,
             'provider_name' => null,
+            'created_at' => 1735689600000,
+            'updated_at' => 1735689600000,
             'secret' => 'db-only-hash',
         ]);
         $identity = Identity::fromEntity($entity);

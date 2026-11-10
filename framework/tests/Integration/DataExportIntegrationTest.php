@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\EnvConstants;
+use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\DataExport\DataExportHttp;
 use Hilos\DataExport\DataExportNotificationType;
 use Hilos\Constants\HilosSignalConstants;
@@ -26,6 +27,7 @@ use Hilos\DataExport\DataExportState;
 use Hilos\DataExport\DataExportStateProjector;
 use Hilos\DataExport\DataExportWriter;
 use Hilos\Database\Database;
+use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Fs\ClusterDirectoryMarker;
@@ -122,6 +124,45 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         parent::tearDown();
     }
 
+    /** @return iterable<string, array{?int, ?string}> Unused and used credentials keep distinct export values */
+    public static function exportedPasskeyUseMoments(): iterable
+    {
+        yield 'unused' => [null, null];
+        yield 'used with milliseconds' => [1735776000123, '2025-01-02T00:00:00.123+00:00'];
+    }
+
+    /**
+     * @param ?int $lastUsedAt Stored last-use milliseconds, absent for a new key
+     * @param ?string $expectedLastUsedAt Exported last-use text with its millisecond precision
+     */
+    #[DataProvider('exportedPasskeyUseMoments')]
+    public function testSignInAndPasskeyExportsPreserveMillisecondsAndNull(?int $lastUsedAt, ?string $expectedLastUsedAt): void
+    {
+        self::seedIdentity(7, IdentityType::PASSKEY, 'export-passkey');
+        Database::sqlRun('UPDATE `hilos_identity` SET `created_at` = 1735689600123 WHERE `user_id` = 7');
+        $identityId = (int)Database::sql('SELECT `id` FROM `hilos_identity` WHERE `user_id` = 7')->field('id');
+        Database::sqlRun(
+            'INSERT INTO `hilos_passkey_credential` '
+            . '(`identity_id`, `user_id`, `credential_id`, `public_key`, `algorithm`, `user_handle`, `label`, `created_at`, `last_used_at`) '
+            . "VALUES (?, 7, 'export-passkey', 'PUBLIC_KEY', ?, 'user-handle', 'My key', 1735689600123, ?)",
+            [$identityId, PasskeyAlgorithm::Es256->value, $lastUsedAt],
+        );
+        $request = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        $agent = new DataExportTestAgent();
+        $agent->onStart();
+        $agent->onTick();
+
+        self::assertSame(DataExportState::READY, $request->state);
+        $archive = new PharData($this->directory . '/' . $request->storedName);
+        self::assertSame(['id' => 7, 'since' => '2025-01-01T00:00:00.123+00:00'], self::section($archive, 'account'));
+        self::assertSame('2025-01-01T00:00:00.123+00:00', self::section($archive, 'sign_in_methods')[0]['createdAt']);
+        self::assertSame([[
+            'label' => 'My key',
+            'createdAt' => '2025-01-01T00:00:00.123+00:00',
+            'lastUsedAt' => $expectedLastUsedAt,
+        ]], self::section($archive, 'passkeys'));
+    }
+
     /** @return iterable<string, array{?int}> Optional exported notification and device moments */
     public static function notificationMoments(): iterable
     {
@@ -142,7 +183,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::seedIdentity(7, 'password', 'person@example.test');
         self::seedIdentity(7, 'magic_link', 'person@example.test');
         self::seedIdentity(8, 'magic_link', 'foreign@example.test');
-        Database::sqlRun("UPDATE hilos_identity SET secret = 'PASSWORD_SECRET', created_at = '2025-01-01 00:00:00' WHERE user_id = 7");
+        Database::sqlRun("UPDATE hilos_identity SET secret = 'PASSWORD_SECRET', created_at = 1735689600000 WHERE user_id = 7");
         self::seedSession('PERSON_SESSION_TOKEN', 7, self::SESSION_CREATED_AT, null);
         self::seedSession('FOREIGN_SESSION_TOKEN', 8, self::SESSION_CREATED_AT, null);
         self::seedSession('IMPERSONATED_SESSION_TOKEN', 7, self::SESSION_CREATED_AT, null, 8);
@@ -185,7 +226,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame(7 * 86400, strtotime($first->expiresAt) - strtotime($first->finishedAt));
         $archive = new PharData($this->directory . '/' . $first->storedName);
         self::assertFalse(isset($archive['analytics_person.json']));
-        self::assertSame(['id' => 7, 'since' => '2025-01-01T00:00:00+00:00'], self::section($archive, 'account'));
+        self::assertSame(['id' => 7, 'since' => '2025-01-01T00:00:00.000+00:00'], self::section($archive, 'account'));
         self::assertSame([['from' => 'Old me', 'to' => 'New me', 'at' => '2026-01-03T00:00:00.123+00:00']], self::section($archive, 'renames'));
         self::assertSame(
             [['account' => 7, 'into' => 8, 'at' => '2026-01-04T00:00:00.123+00:00'], ['account' => 9, 'into' => 7, 'at' => null]],

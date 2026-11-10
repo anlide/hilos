@@ -358,9 +358,9 @@ final class MainPageLoginTest extends IntegrationTestCase
         $params->add(SqlParam::string($secretHash));
         Database::sql(
             'INSERT INTO `' . EntityIdentity::_table . '` '
-            . '(`' . EntityIdentity::user_id . '`, `' . EntityIdentity::type . '`, '
+            . '(`created_at`, `updated_at`, `' . EntityIdentity::user_id . '`, `' . EntityIdentity::type . '`, '
             . '`' . EntityIdentity::identifier . '`, `' . EntityIdentity::secret . '`, '
-            . '`' . EntityIdentity::verified . '`) VALUES (?, ?, ?, ?, 1)',
+            . '`' . EntityIdentity::verified . '`) VALUES (1735689600000, 1735689600000, ?, ?, ?, ?, 1)',
             $params,
         );
 
@@ -425,9 +425,9 @@ final class MainPageLoginTest extends IntegrationTestCase
         $params->add(SqlParam::string($email));
         Database::sql(
             'INSERT INTO `' . EntityIdentity::_table . '` '
-            . '(`' . EntityIdentity::user_id . '`, `' . EntityIdentity::type . '`, '
+            . '(`created_at`, `updated_at`, `' . EntityIdentity::user_id . '`, `' . EntityIdentity::type . '`, '
             . '`' . EntityIdentity::identifier . '`, `' . EntityIdentity::verified . '`) '
-            . 'VALUES (?, ?, ?, 1)',
+            . 'VALUES (1735689600000, 1735689600000, ?, ?, ?, 1)',
             $params,
         );
 

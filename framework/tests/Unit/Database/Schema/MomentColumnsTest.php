@@ -244,13 +244,20 @@ final class MomentColumnsTest extends TestCase
     {
         foreach ([
             AuthBlock::class => [AuthBlock::updated_at],
-            Identity::class => [Identity::created_at, Identity::updated_at],
-            OAuthProvider::class => [OAuthProvider::created_at, OAuthProvider::updated_at],
             RegistrationReservation::class => [RegistrationReservation::created_at],
         ] as $class => $columns) {
             $moments = MomentColumns::forEntity($class);
             foreach ($columns as $column) {
                 self::assertEquals(new MomentColumn($column, true, false), $moments[$column]);
+            }
+        }
+        foreach ([
+            Identity::class => [Identity::created_at, Identity::updated_at],
+            OAuthProvider::class => [OAuthProvider::created_at, OAuthProvider::updated_at],
+        ] as $class => $columns) {
+            $moments = MomentColumns::forEntity($class);
+            foreach ($columns as $column) {
+                self::assertEquals(new MomentColumn($column, true, true), $moments[$column]);
             }
         }
         self::assertTrue(MomentColumns::forEntity(AuthBlock::class)[AuthBlock::blocked_until]->mapped);
