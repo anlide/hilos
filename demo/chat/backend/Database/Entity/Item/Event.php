@@ -39,7 +39,7 @@ final class Event extends Entity
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::type => PhpType::STRING->value,
-        self::timestamp => PhpType::DATETIME->value,
+        self::timestamp => PhpType::INTEGER->value,
     ];
 
     // Foreign keys
@@ -66,5 +66,5 @@ final class Event extends Entity
     // Properties
     public ?int $id = null;
     public string $type;
-    public string $timestamp;
+    public int $timestamp;
 }

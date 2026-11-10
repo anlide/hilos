@@ -274,7 +274,7 @@ export const mainEvents: ReadonlySignal<readonly EventItem[]> = computedSignal(
       return {
         key: item.itemKey,
         type,
-        timestamp: event?.timestamp ?? '',
+        timestamp: event?.timestamp ?? null,
         authorName: author.name,
         authorPhoto: author.photo,
         seriesHead,

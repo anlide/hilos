@@ -831,7 +831,7 @@ source fragment. Each source sink has its own subject. `count` covers identical
 occurrences for that exact key; replacing one with the same expression at the
 same subject and count is structurally indistinguishable to this detector.
 
-For example, this is an exact schema record from the checked-in registry:
+For example, a schema record has this shape:
 
 ```json
 {

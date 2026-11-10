@@ -45,7 +45,7 @@ final class Guest extends Entity
         self::id => PhpType::INTEGER->value,
         self::session_token => PhpType::STRING->value,
         self::name => PhpType::STRING->value,
-        self::created_at => PhpType::DATETIME->value,
+        self::created_at => PhpType::INTEGER->value,
     ];
 
     // Indexes
@@ -60,5 +60,5 @@ final class Guest extends Entity
     public ?int $id = null;
     public string $session_token;
     public string $name;
-    public string $created_at;
+    public int $created_at;
 }

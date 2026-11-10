@@ -26,7 +26,7 @@ use Hilos\HilosException;
  * @property-read ?int $id Guest ID (primary key)
  * @property-read string $sessionToken Session cookie token this name belongs to
  * @property-read string $name Display name shown to the visitor
- * @property-read string $createdAt Moment the row was minted
+ * @property-read int $createdAt Moment the row was minted
  */
 final class Guest extends DbItem
 {

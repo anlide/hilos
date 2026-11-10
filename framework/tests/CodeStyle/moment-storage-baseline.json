@@ -3,13 +3,6 @@
     "records": [
         {
             "rule": "MOMENT-WRITE",
-            "subject": "[\"source\",\"demo/chat/backend/Database/Actions/Collection/EventsActions.php\",\"Demo\\\\Chat\\\\Database\\\\Actions\\\\Collection\\\\EventsActions::add\",\"[\\\"schema\\\",\\\"Demo\\\\\\\\Chat\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\Event\\\",\\\"event\\\",\\\"timestamp\\\"]\"]",
-            "actual": "4b2552a73aa2745eff48aa64d4472d4e823a2247e7ffe938b1547e273907c1d0",
-            "count": 1,
-            "owner": "HIL-1930"
-        },
-        {
-            "rule": "MOMENT-WRITE",
             "subject": "[\"source\",\"framework/backend/Database/Object/Collection/AccountDeletions.php\",\"Hilos\\\\Database\\\\Object\\\\Collection\\\\AccountDeletions::request\",\"[\\\"schema\\\",\\\"Hilos\\\\\\\\Database\\\\\\\\Entity\\\\\\\\Item\\\\\\\\AccountDeletion\\\",\\\"hilos_account_deletion\\\",\\\"requested_at\\\"]\"]",
             "actual": "bce955fc37958d58d05706caf19f29c41745ecd3c05dc68302dae53c5056937f",
             "count": 1,
@@ -91,27 +84,6 @@
             "actual": "42ed22640fbd184da2ce5d84975eac6107bc0f46e706565c48abf8123b219cc3",
             "count": 1,
             "owner": "HIL-1921"
-        },
-        {
-            "rule": "MOMENT-AUTO-WRITE",
-            "subject": "[\"schema\",\"Demo\\\\Chat\\\\Database\\\\Entity\\\\Item\\\\Event\",\"event\",\"timestamp\"]",
-            "actual": "DEFAULT current_timestamp()",
-            "count": 1,
-            "owner": "HIL-1930"
-        },
-        {
-            "rule": "MOMENT-AUTO-WRITE",
-            "subject": "[\"schema\",\"Demo\\\\Polls\\\\Database\\\\Entity\\\\Item\\\\Guest\",\"guest\",\"created_at\"]",
-            "actual": "DEFAULT current_timestamp()",
-            "count": 1,
-            "owner": "HIL-1930"
-        },
-        {
-            "rule": "MOMENT-AUTO-WRITE",
-            "subject": "[\"schema\",\"Demo\\\\Tasks\\\\Database\\\\Entity\\\\Item\\\\Guest\",\"guest\",\"created_at\"]",
-            "actual": "DEFAULT current_timestamp()",
-            "count": 1,
-            "owner": "HIL-1930"
         },
         {
             "rule": "MOMENT-AUTO-WRITE",
@@ -210,27 +182,6 @@
             "actual": "DEFAULT current_timestamp()",
             "count": 1,
             "owner": "HIL-1921"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Demo\\\\Chat\\\\Database\\\\Entity\\\\Item\\\\Event\",\"event\",\"timestamp\"]",
-            "actual": "datetime",
-            "count": 1,
-            "owner": "HIL-1930"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Demo\\\\Polls\\\\Database\\\\Entity\\\\Item\\\\Guest\",\"guest\",\"created_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1930"
-        },
-        {
-            "rule": "MOMENT-TYPE",
-            "subject": "[\"schema\",\"Demo\\\\Tasks\\\\Database\\\\Entity\\\\Item\\\\Guest\",\"guest\",\"created_at\"]",
-            "actual": "timestamp",
-            "count": 1,
-            "owner": "HIL-1930"
         },
         {
             "rule": "MOMENT-TYPE",

@@ -18,7 +18,7 @@ use Hilos\Database\Object\Item\Object_;
  *
  * @property-read ?int $id
  * @property string $type
- * @property string $timestamp
+ * @property int $timestamp
  */
 final class Event extends Object_
 {
@@ -57,7 +57,7 @@ final class Event extends Object_
     {
         match ($property) {
             self::type => $this->entity->type = (string)$value,
-            self::timestamp => $this->entity->timestamp = (string)$value,
+            self::timestamp => $this->entity->timestamp = (int)$value,
             default => parent::__set($property, $value),
         };
     }

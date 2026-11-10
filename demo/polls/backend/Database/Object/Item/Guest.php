@@ -21,7 +21,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property-read ?int $id
  * @property string $sessionToken
  * @property string $name
- * @property string $createdAt
+ * @property int $createdAt
  */
 final class Guest extends Object_
 {
@@ -63,7 +63,7 @@ final class Guest extends Object_
         match ($property) {
             self::sessionToken => $this->entity->session_token = (string)$value,
             self::name => $this->entity->name = (string)$value,
-            self::createdAt => $this->entity->created_at = (string)$value,
+            self::createdAt => $this->entity->created_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }

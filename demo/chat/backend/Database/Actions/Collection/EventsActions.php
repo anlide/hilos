@@ -168,7 +168,7 @@ final class EventsActions extends DbActions
 
         $objectEvent = ObjectEvent::create();
         $objectEvent->type = $type;
-        $objectEvent->timestamp = TimeHelper::getSqlDateTime();
+        $objectEvent->timestamp = TimeHelper::nowMs();
         $objectEvent->sync();
 
         if ($objectEvent->id === null) {

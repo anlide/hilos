@@ -27,7 +27,7 @@ use Hilos\HilosException;
  *
  * @property-read ?int $id
  * @property-read string $type
- * @property-read string $timestamp
+ * @property-read int $timestamp
  * @property-read ?EventMessage $eventMessage Message detail for message events
  * @property-read ?EventUserRegistration $eventUserRegistration Registration detail for registration events
  * @property-read ?UserRename $userRename Journal row a rename event shows, null for other events

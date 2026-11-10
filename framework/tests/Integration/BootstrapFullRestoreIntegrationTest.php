@@ -77,6 +77,10 @@ final class BootstrapFullRestoreIntegrationTest extends FrameworkIntegrationTest
         FsPath::ensureDirectory($this->root . '/Schema', 0700);
         foreach (glob(dirname(__DIR__, 3) . '/demo/chat/backend/Database/Migration/Schema/*.sql') as $file) {
             $base = basename($file);
+            // This fixture contains only the tables needed by the bootstrap parts.
+            if (str_contains($base, '_event_timestamp_epoch_ms')) {
+                continue;
+            }
             $index = (int)explode('_', $base, 2)[0];
             if ($index > self::LAST_BOOTSTRAP_INDEX && ($index < 138 || $index > 141)) {
                 continue;

@@ -25,8 +25,8 @@ export interface EventItem {
   readonly key: string
   /** The event type value (see ChatEventType). */
   readonly type: string
-  /** The event timestamp string, as the backend stored it. */
-  readonly timestamp: string
+  /** The moment in epoch milliseconds, or null until the event arrives. */
+  readonly timestamp: number | null
   /** The acting user or bot's name, or empty for a chat-lifecycle notice. */
   readonly authorName: string
   /** The address of the human author's public avatar photo; null for a bot, a notice or a person without one. */

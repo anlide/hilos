@@ -23,7 +23,7 @@ export const EVENT_ATTACHMENT_TYPE = 'eventAttachment'
 /** A chat event header: its kind and when it happened. */
 export interface Event extends Entity {
   readonly type: string
-  readonly timestamp: string
+  readonly timestamp: number
 }
 
 /**
@@ -76,7 +76,7 @@ export function eventFromFields(
   return {
     id: readNumber(fields, 'id'),
     type: readString(fields, 'type'),
-    timestamp: readString(fields, 'timestamp'),
+    timestamp: readNumber(fields, 'timestamp'),
   }
 }
 

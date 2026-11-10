@@ -10,6 +10,7 @@ use Demo\Chat\Agents\Hilos\DataExportAgent;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Analytics\AnalyticsPersonEvent;
@@ -244,7 +245,8 @@ final class DataExportTest extends IntegrationTestCase
         self::assertSame($pageOpenedAt, $second[1]['at']);
         $chat = json_decode($aliceArchive['chat.json']->getContent(), true, flags: JSON_THROW_ON_ERROR);
         foreach ([[$message->timestamp, $chat['messages'][0]['sentAt']], [$registration->timestamp, $chat['registeredAt']]] as [$stored, $written]) {
-            self::assertSame(new DateTimeImmutable($stored . ' UTC')->setTimezone(new DateTimeZone($zone))->format('Y-m-d\\TH:i:sP'), $written);
+            self::assertSame(DateTimeImmutable::createFromTimestamp($stored / TimeConstants::MS_PER_SECOND)
+                ->setTimezone(new DateTimeZone($zone))->format('Y-m-d\\TH:i:s.vP'), $written);
         }
         self::assertStringNotContainsString('shared-browser', $aliceArchive['analytics_person_000001.json']->getContent());
         self::assertStringNotContainsString('bob_action', $aliceArchive['analytics_person_000002.json']->getContent());

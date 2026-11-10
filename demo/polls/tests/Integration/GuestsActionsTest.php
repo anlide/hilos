@@ -6,6 +6,7 @@ namespace Demo\Polls\Tests\Integration;
 
 use Demo\Polls\Hilos;
 use Hilos\HilosException;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration tests for GuestsActions.
@@ -84,9 +85,12 @@ final class GuestsActionsTest extends IntegrationTestCase
 
         // A fresh id is the proof the row went: had it survived, this call would
         // have found it and handed back the one above.
+        $beforeMs = TimeHelper::nowMs();
         $after = Hilos::$db->guests->actions->ensureForSession(self::SESSION_TOKEN);
 
         $this->assertNotSame($before->id, $after->id);
+        $this->assertTrue(is_int($after->createdAt) && $after->createdAt >= $beforeMs && $after->createdAt <= TimeHelper::nowMs(),
+            'A new guest must carry an integer epoch-millisecond moment from its creation call.');
     }
 
     /**

@@ -89,7 +89,7 @@ final class Guests extends Objects
         $guest = ObjectGuest::create();
         $guest->sessionToken = $sessionToken;
         $guest->name = $name;
-        $guest->createdAt = TimeHelper::getSqlDateTime();
+        $guest->createdAt = TimeHelper::nowMs();
         try {
             $guest->sync();
         } catch (DuplicateEntryException) {
