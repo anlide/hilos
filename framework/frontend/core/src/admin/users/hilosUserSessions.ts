@@ -1,19 +1,22 @@
-// The sessions of the person a card shows (HIL-1662): the `userSessions` list
-// the card's pages receive with their one page answer, read out of the page
-// scope's normalized store, and the two commands an administrator ends them
-// with. The list, its slots and the two action names belong to this module; the
-// session and tab field keys, the row view-model and its resolver are the
-// profile's (profile/profileSessions.ts), so the card and the profile draw one
-// row and a project writes no second resolver.
+// The sessions of the person a card shows: the `userSessions` and
+// `userActingSessions` lists the card's pages receive with their one page
+// answer, read out of the page scope's normalized store, and the two commands
+// an administrator ends them with. The lists, their slots and the two action
+// names belong to this module; the session and tab field keys, the row
+// view-model and its resolver are the profile's (profile/profileSessions.ts),
+// so the card and the profile draw one row and a project writes no second
+// resolver.
 //
-// The card differs from the profile in three things only. The order is the
-// activity of the session, newest first, and no session comes first for being
+// The card differs from the profile in its order, names and access. Sessions
+// are ordered by activity, newest first, and no session comes first for being
 // this browser's: an administrator's page carries no connection of its own to
 // compare with. A session in which an administrator acts as the person names
 // that administrator, from the person row the list delivers beside it — never
-// from the browser's own session. And a viewer of the admin view mode is shown
-// the list hidden as a whole, by the one access verdict every admin surface
-// reads, so a list a wider scope left behind is not drawn to them either.
+// from the browser's own session. An outgoing session names the person acted
+// as, and the ordinary list wins when both lists carry the same session id.
+// A viewer of the admin view mode is shown the list hidden as a whole, by the
+// one access verdict every admin surface reads, so a list a wider scope left
+// behind is not drawn to them either.
 //
 // Nothing here removes a session from the list: ending one is answered by the
 // server, and the list follows the server's own update.
@@ -30,6 +33,7 @@ import {
   PROFILE_SESSION_TAB_ACCEPT_KEY_FIELD,
   PROFILE_SESSION_TAB_CONNECTED_AT_FIELD,
   PROFILE_SESSION_TAB_SESSION_ID_FIELD,
+  PROFILE_SESSION_USER_ID_FIELD,
   resolveHilosProfileSessions,
   type HilosProfileSession,
   type HilosProfileSessionSource,
@@ -50,12 +54,14 @@ import { USER_NAME_FIELD, type HilosUsersContext } from './hilosUsers.js'
 
 /** Page list key of the person's sessions, as the framework list declares it. */
 const USER_SESSIONS_LIST = 'userSessions'
+/** Page list key of the sessions in which the person acts as somebody else. */
+const USER_ACTING_SESSIONS_LIST = 'userActingSessions'
 /** List slot of the session row each item is anchored on. */
 const USER_SESSIONS_SESSION_SLOT = 'sessions'
 /** List slot of the live tabs open in the item's session. */
 const USER_SESSIONS_CONNECTIONS_SLOT = 'connections'
-/** List slot of the administrator acting as the person in the item's session. */
-const USER_SESSIONS_IMPERSONATOR_SLOT = 'users'
+/** List slot of the acting administrator or the person acted as, by list. */
+const USER_SESSIONS_USER_SLOT = 'users'
 /** Page data key of whether the card has its real Sessions tab and reads the list. */
 const USER_SESSIONS_ENABLED_KEY = 'userSessionsEnabled'
 
@@ -67,6 +73,7 @@ const HILOS_USER_SESSIONS_END_ALL_ACTION = 'hilos_user_sessions_end_all'
 /** The session fields the row reads, each of which a viewer may be sent hidden. */
 const SESSION_FIELDS = [
   PROFILE_SESSION_ID_FIELD,
+  PROFILE_SESSION_USER_ID_FIELD,
   PROFILE_SESSION_DEVICE_NAME_FIELD,
   PROFILE_SESSION_BROWSER_TIME_ZONE_FIELD,
   PROFILE_SESSION_CREATED_AT_FIELD,
@@ -91,19 +98,27 @@ export interface HilosUserSession extends HilosProfileSession {
    * nobody acts in.
    */
   readonly impersonatorName: Hideable<string> | null
+  /**
+   * The person acted as in an outgoing session: their name, `#<id>` when their
+   * person row did not come with the list, {@link HIDDEN_VALUE} when the name
+   * arrived hidden, or null for a session from the ordinary list.
+   */
+  readonly actingAsName: Hideable<string> | null
 }
 
 /** The person's sessions as the card reads them, and the two commands that end them. */
 export interface HilosUserSessions {
   /**
-   * The sessions, by last activity newest first and, at equal activity, the
-   * newer session first; the tabs of each by connection newest first. Hidden as
-   * a whole for a viewer of the admin view mode, and wherever a field the row is
-   * built from arrived hidden; empty between page answers.
+   * Both lists merged by session id, with the ordinary row winning a duplicate,
+   * by last activity newest first and, at equal activity, the newer session
+   * first; the tabs of each by connection newest first. Hidden as a whole for
+   * a viewer of the admin view mode, and wherever a field the row is built from
+   * arrived hidden; empty between page answers.
    */
   readonly sessions: ReadonlySignal<Hideable<readonly HilosUserSession[]>>
   /**
-   * How many sessions the person has — one per sign-in, whatever its tabs.
+   * How many sessions the person has, including outgoing sessions — one per
+   * sign-in, whatever its tabs.
    * `undefined` when the card does not read the list (the page did not say it
    * does), 0 for a read list with no session, {@link HIDDEN_VALUE} where the
    * sessions are hidden.
@@ -218,26 +233,26 @@ export function createHilosUserSessions<TUser extends User>(
   context: HilosUsersContext<TUser>,
 ): HilosUserSessions {
   const items = context.scopes.pageListSignal(USER_SESSIONS_LIST)
+  const actingItems = context.scopes.pageListSignal(USER_ACTING_SESSIONS_LIST)
   const enabled = context.scopes.pageDataSignal(USER_SESSIONS_ENABLED_KEY)
 
   /**
-   * The name of the administrator acting in a session, read from the person row
-   * the list item carries.
+   * The name read from the person row the list item carries.
    *
    * @param item The list item of the session.
-   * @param impersonatorUserId The administrator the session names, or null.
+   * @param userId The person the session names, or null.
    */
-  function impersonatorName(
+  function userName(
     item: ListItem,
-    impersonatorUserId: number | null,
+    userId: number | null,
   ): Hideable<string> | null {
-    if (impersonatorUserId === null) {
+    if (userId === null) {
       return null
     }
-    const ref = referenceSlot(item.slots[USER_SESSIONS_IMPERSONATOR_SLOT])
+    const ref = referenceSlot(item.slots[USER_SESSIONS_USER_SLOT])
     const user = ref ? context.users.signal(ref).get() : undefined
     if (ref === undefined || user === undefined) {
-      return `#${impersonatorUserId}`
+      return `#${userId}`
     }
 
     return context.users.hidden(ref, USER_NAME_FIELD).get()
@@ -250,39 +265,61 @@ export function createHilosUserSessions<TUser extends User>(
       return HIDDEN_VALUE
     }
     const sources: HilosProfileSessionSource[] = []
-    const names = new Map<number, Hideable<string> | null>()
-    for (const item of items.get()) {
-      const ref = referenceSlot(item.slots[USER_SESSIONS_SESSION_SLOT])
-      const session = ref
-        ? context.scopes.entitySignal(ref).get()?.fields
-        : undefined
-      if (session === undefined) {
-        continue
+    const names = new Map<
+      number,
+      Pick<HilosUserSession, 'impersonatorName' | 'actingAsName'>
+    >()
+    for (const [list, actingAs] of [
+      [items.get(), false],
+      [actingItems.get(), true],
+    ] as const) {
+      for (const item of list) {
+        const ref = referenceSlot(item.slots[USER_SESSIONS_SESSION_SLOT])
+        const session = ref
+          ? context.scopes.entitySignal(ref).get()?.fields
+          : undefined
+        if (session === undefined) {
+          continue
+        }
+        if (anyHidden(session, SESSION_FIELDS)) {
+          return HIDDEN_VALUE
+        }
+        const id = readNumber(session, PROFILE_SESSION_ID_FIELD)
+        if (names.has(id)) {
+          continue
+        }
+        const tabs = item.slots[USER_SESSIONS_CONNECTIONS_SLOT]
+        const connections = tabRecords(tabs)
+        if (
+          isHiddenValue(tabs) ||
+          connections.some((tab) => anyHidden(tab, TAB_FIELDS))
+        ) {
+          return HIDDEN_VALUE
+        }
+        sources.push({ session, connections })
+        names.set(id, {
+          impersonatorName: actingAs
+            ? null
+            : userName(
+                item,
+                readNumberOrNull(
+                  session,
+                  PROFILE_SESSION_IMPERSONATOR_USER_ID_FIELD,
+                ),
+              ),
+          actingAsName: actingAs
+            ? userName(item, readNumber(session, PROFILE_SESSION_USER_ID_FIELD))
+            : null,
+        })
       }
-      const tabs = item.slots[USER_SESSIONS_CONNECTIONS_SLOT]
-      const connections = tabRecords(tabs)
-      if (
-        anyHidden(session, SESSION_FIELDS) ||
-        isHiddenValue(tabs) ||
-        connections.some((tab) => anyHidden(tab, TAB_FIELDS))
-      ) {
-        return HIDDEN_VALUE
-      }
-      sources.push({ session, connections })
-      names.set(
-        readNumber(session, PROFILE_SESSION_ID_FIELD),
-        impersonatorName(
-          item,
-          readNumberOrNull(session, PROFILE_SESSION_IMPERSONATOR_USER_ID_FIELD),
-        ),
-      )
     }
 
     return resolveHilosProfileSessions(sources)
       .map((session) => ({
         ...session,
         tabs: [...session.tabs].sort(byTabConnection),
-        impersonatorName: names.get(session.id) ?? null,
+        impersonatorName: names.get(session.id)?.impersonatorName ?? null,
+        actingAsName: names.get(session.id)?.actingAsName ?? null,
       }))
       .sort(bySessionActivity)
   })

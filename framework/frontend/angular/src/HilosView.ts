@@ -68,6 +68,7 @@ import {
   focusInitial,
   hilosAccessLossReason,
   HilosPages,
+  isEndedSessionReason,
   subscribeSignal,
 } from '@hilos/core/base'
 import type { AuthGate, PageView } from '@hilos/core/base'
@@ -102,7 +103,7 @@ const ACCESS_LOST = computedSignal(() => hilosAccessLossReason.get() !== null)
         <div role="status" aria-live="polite">
           @if (sessionEnded()) {
             <p class="alert alert-warning" data-id="access-loss-notice">
-              {{ accessLossCopy.session_ended }}
+              {{ sessionEndedCopy() }}
             </p>
           }
         </div>
@@ -213,9 +214,13 @@ export class HilosView {
   private readonly sessionEnded = computed(
     () =>
       this.route().page !== HilosPages.PUBLIC_STATUS &&
-      this.accessLossReason() === 'session_ended',
+      isEndedSessionReason(this.accessLossReason()),
   )
-  protected readonly accessLossCopy = ACCESS_LOSS_COPY
+  protected readonly sessionEndedCopy = computed(() => {
+    const reason = this.accessLossReason()
+    if (reason === null || !isEndedSessionReason(reason)) return ''
+    return ACCESS_LOSS_COPY[reason]
+  })
   private readonly route = hilosSignal(this.router.currentRoute)
   private readonly pageViewState = createPageViewState<Type<unknown>>(
     this.router,

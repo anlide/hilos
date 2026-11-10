@@ -32,6 +32,7 @@ use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Object\Item\Session;
 use Hilos\Database\Object\Item\User;
+use Hilos\Pages\Users\HilosUserActingSessionsBrowserList;
 use Hilos\Pages\Users\HilosUserSessionsBrowserList;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
@@ -66,6 +67,8 @@ final class HilosUserSessionsPageTest extends IntegrationTestCase
     private const string LAPTOP_THIRD_KEY = 'ak-user-sessions-laptop-third';
 
     private const string ACTING_KEY = 'ak-user-sessions-acting';
+
+    private const string OUTGOING_KEY = 'ak-user-sessions-outgoing';
 
     private const string STRANGER_KEY = 'ak-user-sessions-stranger';
 
@@ -197,6 +200,119 @@ final class HilosUserSessionsPageTest extends IntegrationTestCase
         self::assertSame($items, $this->listItems(HilosUserPage::PAGE, self::ADMIN_KEY), 'The Overview reads the same list');
     }
 
+    /** The second list carries the card person's outgoing takeover, the acted person's live name and only their tabs. */
+    public function testTheActingSessionsListCarriesTheActedPersonAndTheirTabs(): void
+    {
+        $outgoingSessionId = $this->startActingSession();
+        Hilos::$db->sessions[$outgoingSessionId]->actions->setDeviceName(self::LAPTOP_DEVICE);
+        Hilos::$db->sessions[$outgoingSessionId]->actions->setBrowserTimeZone(self::LAPTOP_ZONE);
+        Hilos::$db->sessions[$outgoingSessionId]->actions->setIpAddress(self::LAPTOP_ADDRESS);
+        $this->stampSession($outgoingSessionId, null);
+        // A tab still carrying P on the same session must not be mistaken for a tab acting as C.
+        Hilos::$rt->connections->actions->register(
+            self::LAPTOP_THIRD_KEY,
+            $this->personId,
+            Hilos::$db->sessions[$outgoingSessionId]->token,
+            $outgoingSessionId,
+        );
+        $this->drainSignals();
+
+        $items = $this->listItems(UserSessionsPage::PAGE, self::ADMIN_KEY, HilosUserActingSessionsBrowserList::LIST);
+
+        self::assertSame([$outgoingSessionId], array_keys($items));
+        self::assertSame([
+            Session::id => $outgoingSessionId,
+            Session::userId => $this->strangerId,
+            Session::deviceName => self::LAPTOP_DEVICE,
+            Session::browserTimeZone => self::LAPTOP_ZONE,
+            Session::createdAt => 1767225600000,
+            Session::lastSeenAt => 1767227400000,
+            Session::expiresAt => null,
+            Session::impersonatorUserId => $this->personId,
+        ], $items[$outgoingSessionId][ChatDbContext::sessions]);
+        self::assertSame(
+            [User::id => $this->strangerId, User::name => self::STRANGER_NAME],
+            $items[$outgoingSessionId][ChatDbContext::users],
+        );
+        self::assertSame([self::OUTGOING_KEY], self::tabKeys($items[$outgoingSessionId]));
+        self::assertSame(
+            $items,
+            $this->listItems(HilosUserPage::PAGE, self::ADMIN_KEY, HilosUserActingSessionsBrowserList::LIST),
+            'The Overview reads the same outgoing sessions',
+        );
+        self::assertArrayNotHasKey($outgoingSessionId, $this->listItems(UserSessionsPage::PAGE, self::ADMIN_KEY));
+        $sent = json_encode($items, JSON_THROW_ON_ERROR);
+        foreach ([...$this->tokens, self::LAPTOP_ADDRESS, self::STRANGER_KEY, self::LAPTOP_THIRD_KEY, self::ADMIN_NAME] as $secret) {
+            self::assertStringNotContainsString($secret, $sent);
+        }
+
+        Hilos::$db->users[$this->strangerId]->actions->rename('Renamed acted person');
+        $this->forwardDbSync(ChatDbContext::users);
+
+        $sent = $this->sentList(self::ADMIN_KEY, HilosUserActingSessionsBrowserList::LIST);
+        self::assertSame([$outgoingSessionId], array_keys($sent[PagePayload::items]));
+        self::assertSame(
+            [User::id => $this->strangerId, User::name => 'Renamed acted person'],
+            $sent[PagePayload::items][$outgoingSessionId][ChatDbContext::users],
+        );
+        self::assertArrayNotHasKey(PagePayload::deleted, $sent);
+    }
+
+    /** Stop restores the session to P and clears its marker; DB_SYNC removes it from the outgoing list on the open card. */
+    public function testStoppingATakeoverRemovesTheActingSessionWithoutAReload(): void
+    {
+        $outgoingSessionId = $this->startActingSession();
+        self::assertSame(
+            [$outgoingSessionId],
+            array_keys($this->listItems(UserSessionsPage::PAGE, self::ADMIN_KEY, HilosUserActingSessionsBrowserList::LIST)),
+        );
+        $this->drainSignals();
+
+        Hilos::$db->sessions[$outgoingSessionId]->actions->bindUser($this->personId);
+        Hilos::$db->sessions[$outgoingSessionId]->actions->setImpersonator(null);
+        Hilos::$rt->connections[self::OUTGOING_KEY]->actions->bindUser($this->personId);
+        $this->forwardDbSync(ChatDbContext::sessions);
+
+        $sent = $this->sentList(self::ADMIN_KEY, HilosUserActingSessionsBrowserList::LIST);
+        self::assertSame([$outgoingSessionId], $sent[PagePayload::deleted]);
+        self::assertArrayNotHasKey($outgoingSessionId, $sent[PagePayload::items] ?? []);
+        self::assertSame([], $this->listItems(UserSessionsPage::PAGE, self::ADMIN_KEY, HilosUserActingSessionsBrowserList::LIST));
+        $ordinary = $this->listItems(UserSessionsPage::PAGE, self::ADMIN_KEY);
+        self::assertArrayHasKey($outgoingSessionId, $ordinary);
+        self::assertNull($ordinary[$outgoingSessionId][ChatDbContext::sessions][Session::impersonatorUserId]);
+        self::assertSame([self::OUTGOING_KEY], self::tabKeys($ordinary[$outgoingSessionId]));
+    }
+
+    /** Starting a takeover moves a session of P to C; its source announcement adds it to the already open outgoing list. */
+    public function testStartingATakeoverAddsTheActingSessionWithoutAReload(): void
+    {
+        Hilos::$db->users[$this->personId]->actions->setAdmin(true);
+        $outgoingSessionId = $this->signIn($this->personId, 'outgoing', [self::OUTGOING_KEY]);
+        self::assertSame([], $this->listItems(UserSessionsPage::PAGE, self::ADMIN_KEY, HilosUserActingSessionsBrowserList::LIST));
+        $this->drainSignals();
+
+        Hilos::$db->sessions[$outgoingSessionId]->actions->setImpersonator($this->personId);
+        Hilos::$db->sessions[$outgoingSessionId]->actions->bindUser($this->strangerId);
+        Hilos::$rt->connections[self::OUTGOING_KEY]->actions->bindUser($this->strangerId);
+        $this->forwardDbSync(ChatDbContext::sessions);
+
+        $sent = $this->sentList(self::ADMIN_KEY, HilosUserActingSessionsBrowserList::LIST);
+        self::assertSame([$outgoingSessionId], array_keys($sent[PagePayload::items]));
+        self::assertSame($this->personId, $sent[PagePayload::items][$outgoingSessionId][ChatDbContext::sessions][Session::impersonatorUserId]);
+        self::assertSame($this->strangerId, $sent[PagePayload::items][$outgoingSessionId][ChatDbContext::sessions][Session::userId]);
+        self::assertSame(
+            [User::id => $this->strangerId, User::name => self::STRANGER_NAME],
+            $sent[PagePayload::items][$outgoingSessionId][ChatDbContext::users],
+        );
+        self::assertSame([self::OUTGOING_KEY], self::tabKeys($sent[PagePayload::items][$outgoingSessionId]));
+        self::assertArrayNotHasKey(PagePayload::deleted, $sent);
+        self::assertSame(
+            [$outgoingSessionId],
+            array_keys($this->listItems(UserSessionsPage::PAGE, self::ADMIN_KEY, HilosUserActingSessionsBrowserList::LIST)),
+        );
+        self::assertArrayNotHasKey($outgoingSessionId, $this->listItems(UserSessionsPage::PAGE, self::ADMIN_KEY));
+    }
+
     /** A session is one item however many tabs it has open, so the person's count is their sign-ins. */
     public function testTabsOfOneSessionStayInsideItsOneItem(): void
     {
@@ -276,10 +392,11 @@ final class HilosUserSessionsPageTest extends IntegrationTestCase
 
     /**
      * A viewer of the admin view mode is shown each session of the person with every field hidden, no
-     * administrator acting in any of them, and is refused both endings before anything leaves the page.
+     * administrator or acted person in either list, and is refused both endings before anything leaves the page.
      */
     public function testAViewerIsShownTheSessionsHiddenAndRefusedBothEndings(): void
     {
+        $outgoingSessionId = $this->startActingSession();
         Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(true);
 
         $items = $this->listItems(UserSessionsPage::PAGE, self::VIEWER_KEY);
@@ -291,8 +408,14 @@ final class HilosUserSessionsPageTest extends IntegrationTestCase
         foreach ($items as $sessionId => $slots) {
             self::assertViewerSession($slots, (string) $sessionId);
         }
-        $sent = json_encode($items, JSON_THROW_ON_ERROR);
-        foreach ([self::LAPTOP_DEVICE, self::LAPTOP_ZONE, self::ADMIN_NAME, self::LAPTOP_KEY, self::ACTING_KEY] as $personal) {
+        $outgoing = $this->listItems(UserSessionsPage::PAGE, self::VIEWER_KEY, HilosUserActingSessionsBrowserList::LIST);
+        self::assertSame([$outgoingSessionId], array_keys($outgoing));
+        self::assertViewerSession($outgoing[$outgoingSessionId], (string) $outgoingSessionId);
+        $sent = json_encode([$items, $outgoing], JSON_THROW_ON_ERROR);
+        foreach ([
+            self::LAPTOP_DEVICE, self::LAPTOP_ZONE, self::ADMIN_NAME, self::LAPTOP_KEY, self::ACTING_KEY,
+            self::OUTGOING_KEY, self::STRANGER_NAME, ...$this->tokens,
+        ] as $personal) {
             self::assertStringNotContainsString($personal, $sent);
         }
 
@@ -418,6 +541,16 @@ final class HilosUserSessionsPageTest extends IntegrationTestCase
         return (int) $session->id;
     }
 
+    /** @return int A session in which the person of the card acts as the stranger */
+    private function startActingSession(): int
+    {
+        Hilos::$db->users[$this->personId]->actions->setAdmin(true);
+        $sessionId = $this->signIn($this->strangerId, 'outgoing', [self::OUTGOING_KEY]);
+        Hilos::$db->sessions[$sessionId]->actions->setImpersonator($this->personId);
+
+        return $sessionId;
+    }
+
     /**
      * Gives one session fixed moments, the way no production write can.
      *
@@ -452,12 +585,16 @@ final class HilosUserSessionsPageTest extends IntegrationTestCase
     /**
      * @param string $page Page of the card
      * @param string $acceptKey Connection reading it
+     * @param string $listName Sessions list of the card
      * @return array<int|string, array<string, mixed>> Slots of each session of the first answer, by session id
      */
-    private function listItems(string $page, string $acceptKey): array
+    private function listItems(string $page, string $acceptKey, string $listName = HilosUserSessionsBrowserList::LIST): array
     {
+        $lists = $this->snapshot($page, $acceptKey)[PagePayload::lists];
+        self::assertArrayHasKey($listName, $lists);
+
         return self::slotsByItemKey(
-            $this->snapshot($page, $acceptKey)[PagePayload::lists][HilosUserSessionsBrowserList::LIST][PagePayload::items],
+            $lists[$listName][PagePayload::items] ?? [],
         );
     }
 
@@ -503,9 +640,10 @@ final class HilosUserSessionsPageTest extends IntegrationTestCase
 
     /**
      * @param string $acceptKey Connection the update is addressed to
+     * @param string $listName Sessions list of the card
      * @return array<string, mixed> The sessions list section it was sent, items keyed by session id
      */
-    private function sentList(string $acceptKey): array
+    private function sentList(string $acceptKey, string $listName = HilosUserSessionsBrowserList::LIST): array
     {
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
             if (
@@ -516,7 +654,7 @@ final class HilosUserSessionsPageTest extends IntegrationTestCase
             ) {
                 continue;
             }
-            $list = $signal->data->data->payload->toArray()[PagePayload::lists][HilosUserSessionsBrowserList::LIST] ?? null;
+            $list = $signal->data->data->payload->toArray()[PagePayload::lists][$listName] ?? null;
             if (!is_array($list)) {
                 continue;
             }

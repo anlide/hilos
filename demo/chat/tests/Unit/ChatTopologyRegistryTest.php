@@ -526,6 +526,7 @@ use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
+use Hilos\Pages\Users\HilosUserActingSessionsBrowserList;
 use Hilos\Pages\Users\HilosUserSessionsBrowserList;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\Tables\Users\HilosUserPhotoBrowserTable;
@@ -1026,6 +1027,7 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testThePersonsCardReadsTheirSessionsOnTheOverviewAndTheSessionsTab(): void
     {
         self::assertSame(HilosUserSessionsBrowserList::class, Hilos::BROWSER_LISTS[HilosUserSessionsBrowserList::LIST]);
+        self::assertSame(HilosUserActingSessionsBrowserList::class, Hilos::BROWSER_LISTS[HilosUserActingSessionsBrowserList::LIST]);
         self::assertSame(UserSessionsPage::class, Hilos::PAGES[HilosPageConstants::HILOS_USER_SESSIONS]);
         $pages = array_keys(Hilos::PAGES);
         self::assertSame(
@@ -1036,14 +1038,16 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame(PageAccessLevel::ADMIN, UserSessionsPage::ACCESS_LEVEL);
         self::assertSame([ChatDbContext::users, ChatDbContext::sessions], HilosUserPage::READS_DB);
 
-        $readers = [];
-        foreach (Hilos::PAGE_LISTS as $page => $lists) {
-            if (isset($lists[HilosUserSessionsBrowserList::LIST])) {
-                self::assertSame(HilosUserSessionsBrowserList::BINDING, $lists[HilosUserSessionsBrowserList::LIST], $page);
-                $readers[] = $page;
+        foreach ([HilosUserSessionsBrowserList::class, HilosUserActingSessionsBrowserList::class] as $listClass) {
+            $readers = [];
+            foreach (Hilos::PAGE_LISTS as $page => $lists) {
+                if (isset($lists[$listClass::LIST])) {
+                    self::assertSame($listClass::BINDING, $lists[$listClass::LIST], $page);
+                    $readers[] = $page;
+                }
             }
+            self::assertSame([HilosUserPage::PAGE, UserSessionsPage::PAGE], $readers, $listClass);
         }
-        self::assertSame([HilosUserPage::PAGE, UserSessionsPage::PAGE], $readers);
         self::assertSame(
             [
                 HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,

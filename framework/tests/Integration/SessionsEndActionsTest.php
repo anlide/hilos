@@ -6,6 +6,7 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
+use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\HilosException;
 use Hilos\Auth\Session\DTO\LogoutActionDTO;
 use Hilos\Auth\Session\DTO\SessionEndActionDTO;
@@ -16,6 +17,7 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
@@ -52,10 +54,12 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
     private const string CURRENT_TOKEN = '11111111111111111111111111111111';
     private const string OTHER_TOKEN = '22222222222222222222222222222222';
     private const string ADMIN_TOKEN = '33333333333333333333333333333333';
+    private const string OUTGOING_TOKEN = '55555555555555555555555555555555';
 
     private const string CURRENT_ACCEPT_KEY = 'accept-current';
     private const string OTHER_ACCEPT_KEY = 'accept-other';
     private const string ADMIN_ACCEPT_KEY = 'accept-admin';
+    private const string OUTGOING_ACCEPT_KEY = 'accept-outgoing';
 
     /**
      * @throws HilosException When the person or runtime fixture cannot be prepared
@@ -70,7 +74,7 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
 
         Hilos::$sr = new SignalRouter();
         Hilos::$rt = new SessionsEndActionsRtContext();
-        Hilos::$rt->mountFeatureRuntime([]);
+        Hilos::$rt->mountFeatureRuntime([new AuthFeature()]);
         Hilos::$rt->configure();
         Hilos::$rt->bindStateCollectionNames();
         RtTruthSourceRegistry::registerDaemon(StateHilosSessionToastStack::RT_COLLECTION);
@@ -160,7 +164,7 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         self::assertCount($exhausted ? 1 : 2, $states);
         $targets = [];
         foreach ($states as $state) {
-            self::assertSame('session_ended', $state->accessLossReason);
+            self::assertSame('ended_from_another_browser', $state->accessLossReason);
             self::assertSame($other->id, $state->sessionId);
             self::assertNull($state->userId);
             self::assertNull($state->requestId, 'The target did not press the action');
@@ -243,7 +247,7 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         self::assertNotNull($frame);
         self::assertSame($other->id, $frame->sessionId);
         self::assertNull($frame->userId);
-        self::assertSame('session_ended', $frame->accessLossReason);
+        self::assertSame('ended_from_another_browser', $frame->accessLossReason);
         self::assertSame([self::OTHER_ACCEPT_KEY], $frame->acceptKeys);
         self::assertSame("Session #{$other->id} ended", $this->nextSuccessMessage());
     }
@@ -306,9 +310,71 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         $state = $this->nextSessionState();
         self::assertNotNull($state);
         self::assertNull($state->userId);
-        self::assertSame('session_ended', $state->accessLossReason);
+        self::assertSame('password_changed', $state->accessLossReason);
         self::assertSame([self::OTHER_ACCEPT_KEY], $state->acceptKeys);
         self::assertNull($this->nextSuccessMessage(), 'The holder owes no second acknowledgement');
+    }
+
+    /** The profile's other-session count includes outgoing takeovers and preserves incoming ones. */
+    public function testEndingOtherSessionsIncludesOutgoingTakeovers(): void
+    {
+        $current = $this->session(self::CURRENT_TOKEN, self::CURRENT_ACCEPT_KEY);
+        $other = $this->session(self::OTHER_TOKEN, self::OTHER_ACCEPT_KEY);
+        $incoming = $this->session(self::ADMIN_TOKEN, self::ADMIN_ACCEPT_KEY, self::ADMIN_ID);
+        $outgoing = $this->session(self::OUTGOING_TOKEN, self::OUTGOING_ACCEPT_KEY, self::USER_ID, self::ADMIN_ID);
+
+        $this->dispatch(new SessionsEndOthersActionDTO());
+
+        self::assertSame(self::USER_ID, $current->userId);
+        $this->assertOtherSessionsEnded($other, $outgoing, $incoming, 'ended_from_another_browser');
+        self::assertSame('Signed out of 2 sessions', $this->nextSuccessMessage());
+    }
+
+    /** A profile password change ends ordinary and outgoing sessions with its own reason. */
+    public function testPasswordChangeIncludesOutgoingTakeovers(): void
+    {
+        $current = $this->session(self::CURRENT_TOKEN, self::CURRENT_ACCEPT_KEY);
+        $other = $this->session(self::OTHER_TOKEN, self::OTHER_ACCEPT_KEY);
+        $incoming = $this->session(self::ADMIN_TOKEN, self::ADMIN_ACCEPT_KEY, self::ADMIN_ID);
+        $outgoing = $this->session(self::OUTGOING_TOKEN, self::OUTGOING_ACCEPT_KEY, self::USER_ID, self::ADMIN_ID);
+
+        new SessionsEndActionsAgent()->onSignalAgent(
+            new AgentSignalData(new AuthOtherSessionsEndSignalData(self::USER_ID, self::CURRENT_TOKEN)),
+            'users-library',
+            HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END,
+        );
+
+        self::assertSame(self::USER_ID, $current->userId);
+        $this->assertOtherSessionsEnded($other, $outgoing, $incoming, 'password_changed');
+        self::assertNull($this->nextSuccessMessage(), 'The holder owes no second acknowledgement');
+    }
+
+    /** A recovered password keeps the saving browser and ends outgoing takeovers without returning them. */
+    public function testPasswordRecoveryIncludesOutgoingTakeovers(): void
+    {
+        $current = $this->session(self::CURRENT_TOKEN, self::CURRENT_ACCEPT_KEY);
+        $other = $this->session(self::OTHER_TOKEN, self::OTHER_ACCEPT_KEY);
+        $incoming = $this->session(self::ADMIN_TOKEN, self::ADMIN_ACCEPT_KEY, self::ADMIN_ID);
+        $outgoing = $this->session(self::OUTGOING_TOKEN, self::OUTGOING_ACCEPT_KEY, self::USER_ID, self::ADMIN_ID);
+
+        new SessionsEndActionsAgent()->onSignalAgent(
+            new AgentSignalData(new AuthPasswordChangedSignalData(
+                self::USER_ID,
+                self::CURRENT_TOKEN,
+                self::CURRENT_ACCEPT_KEY,
+                'person@example.test',
+            )),
+            'users-library',
+            HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED,
+        );
+
+        self::assertSame(self::USER_ID, $current->userId);
+        $signedIn = $this->nextSessionState();
+        self::assertNotNull($signedIn);
+        self::assertSame($current->id, $signedIn->sessionId);
+        self::assertSame(self::USER_ID, $signedIn->userId);
+        self::assertNull($signedIn->accessLossReason);
+        $this->assertOtherSessionsEnded($other, $outgoing, $incoming, 'password_recovered');
     }
 
     /**
@@ -366,23 +432,57 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
      * @param string $token Session token
      * @param string $acceptKey Live connection key
      * @param ?int $impersonatorUserId Administrator behind a takeover, or null for an ordinary session
+     * @param int $userId Person the browser acts as
      * @return Session Persisted signed-in session
      */
-    private function session(string $token, string $acceptKey, ?int $impersonatorUserId = null): Session
+    private function session(string $token, string $acceptKey, ?int $impersonatorUserId = null, int $userId = self::USER_ID): Session
     {
         $session = Hilos::$db->sessions->actions->createAnonymous($token);
-        $session->actions->bindUser(self::USER_ID);
+        $session->actions->bindUser($userId);
         if ($impersonatorUserId !== null) {
             $session->actions->setImpersonator($impersonatorUserId);
         }
         Hilos::$rt?->addConnection(SessionsEndActionsConnection::create(
             $acceptKey,
-            self::USER_ID,
+            $userId,
             $token,
             $session->id,
         ));
 
         return $session;
+    }
+
+    /**
+     * Checks persisted identities independently of the ORM and reads both ending frames.
+     *
+     * @param Session $other Ordinary session that ends
+     * @param Session $outgoing Outgoing takeover that ends completely
+     * @param Session $incoming Incoming takeover that stays signed in
+     * @param string $reason Expected reason on both anonymous frames
+     */
+    private function assertOtherSessionsEnded(Session $other, Session $outgoing, Session $incoming, string $reason): void
+    {
+        $endedIds = [];
+        foreach ([$other, $outgoing] as $session) {
+            self::assertSame([['user_id' => null, 'impersonator_user_id' => null]], Database::sql(
+                'SELECT `user_id`, `impersonator_user_id` FROM `hilos_session` WHERE `id` = ?',
+                [$session->id],
+            )->rows());
+            $state = $this->nextSessionState();
+            self::assertNotNull($state);
+            self::assertNull($state->userId);
+            self::assertSame($reason, $state->accessLossReason);
+            $endedIds[] = $state->sessionId;
+        }
+        self::assertEqualsCanonicalizing([$other->id, $outgoing->id], $endedIds);
+        Database::sql(
+            'SELECT `user_id`, `impersonator_user_id` FROM `hilos_session` WHERE `id` = ?',
+            [$incoming->id],
+        );
+        $row = Database::row();
+        self::assertNotNull($row);
+        self::assertSame(self::USER_ID, (int)$row['user_id']);
+        self::assertSame(self::ADMIN_ID, (int)$row['impersonator_user_id']);
     }
 
     /**

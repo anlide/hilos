@@ -159,7 +159,7 @@ final class AdminSessionsEndActionsTest extends HilosSessionIntegrationTestCase
         foreach ($states as $state) {
             self::assertSame($ended->id, $state->sessionId);
             self::assertNull($state->userId);
-            self::assertSame('session_ended', $state->accessLossReason);
+            self::assertSame('ended_by_administrator', $state->accessLossReason);
         }
         $this->assertAnswered($signals, "Session #{$ended->id} ended");
         $revokes = self::trustRevokes($signals);
@@ -173,6 +173,122 @@ final class AdminSessionsEndActionsTest extends HilosSessionIntegrationTestCase
 
         self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($ended->id, self::PERSON_ID, 30));
         self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($kept->id, self::PERSON_ID, 30));
+    }
+
+    /** An outgoing takeover ends completely and loses only the person's trust in that browser. */
+    public function testOneOutgoingTakeoverEndsCompletelyAndLosesThePersonsTrust(): void
+    {
+        $this->signInAdministrator();
+        $outgoing = $this->session(self::PERSON_TOKEN, self::PERSON_ACCEPT_KEY, self::STRANGER_ID, self::PERSON_ID);
+        $kept = $this->session(self::PERSON_OTHER_TOKEN, self::PERSON_OTHER_ACCEPT_KEY, self::PERSON_ID);
+        $this->trust($outgoing, self::PERSON_ID);
+        $this->trust($outgoing, self::STRANGER_ID);
+        $this->trust($kept, self::PERSON_ID);
+
+        $signals = $this->ask(self::PERSON_ID, (int)$outgoing->id);
+
+        self::assertSame([null, null], self::sessionPeople((int)$outgoing->id));
+        self::assertSame([self::PERSON_ID, null], self::sessionPeople((int)$kept->id));
+        $states = self::sessionStates($signals);
+        self::assertNotSame([], $states);
+        foreach ($states as $state) {
+            self::assertSame($outgoing->id, $state->sessionId);
+            self::assertNull($state->userId);
+            self::assertSame('ended_by_administrator', $state->accessLossReason);
+        }
+        $this->assertAnswered($signals, "Session #{$outgoing->id} ended");
+        $revokes = self::trustRevokes($signals);
+        self::assertCount(1, $revokes);
+        self::assertSame(self::PERSON_ID, $revokes[0]->userId);
+        self::assertSame((int)$outgoing->id, $revokes[0]->sessionId);
+        self::assertFalse($revokes[0]->others);
+
+        $this->carryTrustRevoke($signals);
+
+        self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($outgoing->id, self::PERSON_ID, 30));
+        self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($outgoing->id, self::STRANGER_ID, 30));
+        self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($kept->id, self::PERSON_ID, 30));
+    }
+
+    /** Both directions count: outgoing takeovers end, incoming ones return to their administrators. */
+    public function testEverySessionIncludesOutgoingTakeoversAndReturnsIncomingOnes(): void
+    {
+        $this->signInAdministrator();
+        $ordinary = $this->session(self::PERSON_TOKEN, self::PERSON_ACCEPT_KEY, self::PERSON_ID);
+        $outgoing = $this->session(self::PERSON_OTHER_TOKEN, self::PERSON_OTHER_ACCEPT_KEY, self::STRANGER_ID, self::PERSON_ID);
+        $incoming = $this->session(self::TAKEOVER_TOKEN, self::TAKEOVER_ACCEPT_KEY, self::PERSON_ID, self::TAKEOVER_ADMIN_ID);
+        $stranger = $this->session(self::STRANGER_TOKEN, self::STRANGER_ACCEPT_KEY, self::STRANGER_ID);
+        $this->trust($ordinary, self::PERSON_ID);
+        $this->trust($outgoing, self::PERSON_ID);
+        $this->trust($incoming, self::TAKEOVER_ADMIN_ID);
+        $this->trust($stranger, self::STRANGER_ID);
+
+        $signals = $this->ask(self::PERSON_ID, null);
+
+        self::assertSame([null, null], self::sessionPeople((int)$ordinary->id));
+        self::assertSame([null, null], self::sessionPeople((int)$outgoing->id));
+        self::assertSame([self::TAKEOVER_ADMIN_ID, null], self::sessionPeople((int)$incoming->id));
+        self::assertSame([self::STRANGER_ID, null], self::sessionPeople((int)$stranger->id));
+        $states = self::sessionStates($signals);
+        self::assertNotSame([], $states);
+        $seen = [];
+        foreach ($states as $state) {
+            $seen[] = $state->sessionId;
+            if ($state->sessionId === $incoming->id) {
+                self::assertSame(self::TAKEOVER_ADMIN_ID, $state->userId);
+                self::assertNull($state->accessLossReason);
+            } else {
+                self::assertContains($state->sessionId, [$ordinary->id, $outgoing->id]);
+                self::assertNull($state->userId);
+                self::assertSame('ended_by_administrator', $state->accessLossReason);
+            }
+        }
+        self::assertEqualsCanonicalizing([$ordinary->id, $outgoing->id, $incoming->id], array_values(array_unique($seen)));
+        $this->assertAnswered($signals, 'Ended 3 sessions');
+        $revokes = self::trustRevokes($signals);
+        self::assertCount(1, $revokes);
+        self::assertSame(self::PERSON_ID, $revokes[0]->userId);
+        self::assertSame(0, $revokes[0]->sessionId);
+        self::assertTrue($revokes[0]->others);
+
+        $this->carryTrustRevoke($signals);
+
+        self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($ordinary->id, self::PERSON_ID, 30));
+        self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($outgoing->id, self::PERSON_ID, 30));
+        self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($incoming->id, self::TAKEOVER_ADMIN_ID, 30));
+        self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($stranger->id, self::STRANGER_ID, 30));
+    }
+
+    /** A captured outgoing row that now belongs to another person is refused without effects. */
+    public function testAnOutgoingSessionThatMovedToAnotherPersonIsRefused(): void
+    {
+        $this->signInAdministrator();
+        $outgoing = $this->session(self::PERSON_TOKEN, self::PERSON_ACCEPT_KEY, self::STRANGER_ID, self::PERSON_ID);
+        $outgoing->actions->setImpersonator(self::TAKEOVER_ADMIN_ID);
+
+        $signals = $this->ask(self::PERSON_ID, (int)$outgoing->id);
+
+        $this->assertRefused($signals, 'This session has already ended');
+        self::assertSame([self::STRANGER_ID, self::TAKEOVER_ADMIN_ID], self::sessionPeople((int)$outgoing->id));
+        self::assertSame([], self::sessionStates($signals));
+        self::assertSame([], self::trustRevokes($signals));
+    }
+
+    /** Even impersonating an active administrator refuses both endings before any session or trust changes. */
+    public function testAnImpersonatingAdministratorIsRefusedBothEndingsBeforeAnyEffects(): void
+    {
+        $acting = $this->session(self::ADMIN_TOKEN, self::ADMIN_ACCEPT_KEY, self::TAKEOVER_ADMIN_ID, self::ADMIN_ID);
+        $other = $this->session(self::ADMIN_OTHER_TOKEN, self::ADMIN_OTHER_ACCEPT_KEY, self::ADMIN_ID);
+
+        foreach ([(int)$other->id, null] as $sessionId) {
+            $signals = $this->ask(self::ADMIN_ID, $sessionId);
+
+            $this->assertRefused($signals, 'Only an active administrator can do this');
+            self::assertSame([self::TAKEOVER_ADMIN_ID, self::ADMIN_ID], self::sessionPeople((int)$acting->id));
+            self::assertSame([self::ADMIN_ID, null], self::sessionPeople((int)$other->id));
+            self::assertSame([], self::sessionStates($signals));
+            self::assertSame([], self::trustRevokes($signals));
+        }
     }
 
     /**
@@ -252,17 +368,20 @@ final class AdminSessionsEndActionsTest extends HilosSessionIntegrationTestCase
     {
         $acting = $this->signInAdministrator();
         $other = $this->session(self::ADMIN_OTHER_TOKEN, self::ADMIN_OTHER_ACCEPT_KEY, self::ADMIN_ID);
+        $outgoing = $this->session(self::PERSON_TOKEN, self::PERSON_ACCEPT_KEY, self::PERSON_ID, self::ADMIN_ID);
 
         $signals = $this->ask(self::ADMIN_ID, null);
 
         self::assertSame([null, null], self::sessionPeople((int)$acting->id));
         self::assertSame([null, null], self::sessionPeople((int)$other->id));
+        self::assertSame([null, null], self::sessionPeople((int)$outgoing->id));
         $endedInOrder = array_values(array_unique(array_map(
             static fn (SessionStateSignalData $state): ?int => $state->sessionId,
             self::sessionStates($signals),
         )));
-        self::assertSame([$other->id, $acting->id], $endedInOrder);
-        $this->assertAnswered($signals, 'Ended 2 sessions');
+        self::assertSame($acting->id, array_pop($endedInOrder));
+        self::assertEqualsCanonicalizing([$other->id, $outgoing->id], $endedInOrder);
+        $this->assertAnswered($signals, 'Ended 3 sessions');
     }
 
     /**

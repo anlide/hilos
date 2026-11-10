@@ -98,7 +98,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
         public readonly ?string $accessLossReason = null,
     ) {
         if ($accessLossReason !== null) {
-            if (!in_array($accessLossReason, [SessionAccessLossReason::SESSION_ENDED, SessionAccessLossReason::ACCOUNT_BLOCKED], true)) {
+            if (!in_array($accessLossReason, SessionAccessLossReason::ALL, true)) {
                 throw new InvalidArgumentException('Unknown session access-loss reason');
             }
             if ($userId !== null) {

@@ -244,6 +244,7 @@ use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
+use Hilos\Pages\Users\HilosUserActingSessionsBrowserList;
 use Hilos\Pages\Users\HilosUserSessionsBrowserList;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
@@ -1369,6 +1370,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
     public function testThePersonsCardReadsTheirSessionsOnTheOverviewAndTheSessionsTab(): void
     {
         $this->assertSame(HilosUserSessionsBrowserList::class, Hilos::BROWSER_LISTS[HilosUserSessionsBrowserList::LIST]);
+        $this->assertSame(HilosUserActingSessionsBrowserList::class, Hilos::BROWSER_LISTS[HilosUserActingSessionsBrowserList::LIST]);
         $this->assertSame(UserSessionsPage::class, Hilos::PAGES[HilosPageConstants::HILOS_USER_SESSIONS]);
         $pages = array_keys(Hilos::PAGES);
         $this->assertSame(
@@ -1379,14 +1381,16 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         $this->assertSame(PageAccessLevel::ADMIN, UserSessionsPage::ACCESS_LEVEL);
         $this->assertSame([BinanceBtcTrackerDbContext::users, BinanceBtcTrackerDbContext::sessions], UserPage::READS_DB);
 
-        $readers = [];
-        foreach (Hilos::PAGE_LISTS as $page => $lists) {
-            if (isset($lists[HilosUserSessionsBrowserList::LIST])) {
-                $this->assertSame(HilosUserSessionsBrowserList::BINDING, $lists[HilosUserSessionsBrowserList::LIST], $page);
-                $readers[] = $page;
+        foreach ([HilosUserSessionsBrowserList::class, HilosUserActingSessionsBrowserList::class] as $listClass) {
+            $readers = [];
+            foreach (Hilos::PAGE_LISTS as $page => $lists) {
+                if (isset($lists[$listClass::LIST])) {
+                    $this->assertSame($listClass::BINDING, $lists[$listClass::LIST], $page);
+                    $readers[] = $page;
+                }
             }
+            $this->assertSame([UserPage::PAGE, UserSessionsPage::PAGE], $readers, $listClass);
         }
-        $this->assertSame([UserPage::PAGE, UserSessionsPage::PAGE], $readers);
         $this->assertSame(
             [HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING],
             Hilos::PAGE_TABLES[UserSessionsPage::PAGE],

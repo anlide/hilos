@@ -491,6 +491,7 @@ export {
   ACCESS_LOSS_COPY,
   hilosAccessLossReason,
   bindAccessLoss,
+  isEndedSessionReason,
 } from '../session/accessLoss.js'
 export {
   bindAccountBlocked,

@@ -23,6 +23,7 @@ use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Hilos;
 use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Pages\Users\AbstractHilosUserSessionsPage;
+use Hilos\Pages\Users\HilosUserActingSessionsBrowserList;
 use Hilos\Pages\Users\HilosUserSessionsBrowserList;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -102,16 +103,20 @@ final class HilosUserSessionsBrowserListTest extends TestCase
     /** Nothing in the list opens a field to a viewer of the admin view mode: the columns' verdicts and the hidden tabs stand. */
     public function testNothingIsOpenedToAViewer(): void
     {
-        foreach (HilosUserSessionsBrowserList::BROWSER[BrowserListConfigKey::ITEMS] as $item) {
-            self::assertArrayNotHasKey(BrowserListFieldKey::NOT_PERSONAL, $item);
+        foreach ([HilosUserSessionsBrowserList::class, HilosUserActingSessionsBrowserList::class] as $listClass) {
+            foreach ($listClass::BROWSER[BrowserListConfigKey::ITEMS] as $item) {
+                self::assertArrayNotHasKey(BrowserListFieldKey::NOT_PERSONAL, $item);
+            }
         }
     }
 
-    /** The Sessions tab cannot be registered without the list bound: the start refuses it instead of drawing nothing. */
+    /** The Sessions tab requires both lists, while neither list is mandatory on the Overview. */
     public function testTheSessionsTabRequiresTheList(): void
     {
         self::assertContains(HilosUserSessionsBrowserList::class, AbstractHilosUserSessionsPage::REQUIRED_LISTS);
+        self::assertContains(HilosUserActingSessionsBrowserList::class, AbstractHilosUserSessionsPage::REQUIRED_LISTS);
         self::assertNotContains(HilosUserSessionsBrowserList::class, AbstractHilosUserPage::REQUIRED_LISTS);
+        self::assertNotContains(HilosUserActingSessionsBrowserList::class, AbstractHilosUserPage::REQUIRED_LISTS);
     }
 
     /**

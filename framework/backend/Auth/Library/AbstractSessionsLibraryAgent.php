@@ -3460,7 +3460,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             throw new ValidationException("An administrator's session cannot be ended from here");
         }
 
-        $this->deauthenticateSession($targetSession->token, accessLossReason: SessionAccessLossReason::SESSION_ENDED);
+        $this->deauthenticateSession($targetSession->token, accessLossReason: SessionAccessLossReason::ENDED_FROM_ANOTHER_BROWSER);
         $this->setActionSuccessMessage("Session #{$targetSessionId} ended");
         $this->askPersonAgent($actingSession->userId, HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE, new UserBrowserTrustRevokeSignalData(
             $actingSession->userId,
@@ -3471,7 +3471,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Ends every other ordinary session owned by the acting user.
+     * Ends every other ordinary or outgoing impersonating session owned by the acting user.
      *
      * The trust of every other browser of the person to skip the second factor is taken away by the
      * person's agent, asked once the sessions are ended (HIL-1407).
@@ -3488,7 +3488,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             throw new ValidationException(self::SESSION_ALREADY_ENDED_MESSAGE);
         }
 
-        $ended = $this->deauthenticateOtherSessions($actingSession->userId, $actingSessionToken);
+        $ended = $this->deauthenticateOtherSessions(
+            $actingSession->userId,
+            $actingSessionToken,
+            SessionAccessLossReason::ENDED_FROM_ANOTHER_BROWSER,
+        );
         $this->setActionSuccessMessage(match ($ended) {
             0 => 'No other sessions were signed in',
             1 => 'Signed out of 1 session',
@@ -3503,7 +3507,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Reverts every ordinary session of a user to anonymous EXCEPT one (HIL-416).
+     * Reverts every ordinary or outgoing impersonating session of a user to anonymous EXCEPT one (HIL-416).
      *
      * What a finished password recovery owes the account. A password is reset when
      * access to it has leaked, so returning the account means returning it whole: the
@@ -3517,9 +3521,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * anonymous on a new token and the live connections learn about it. The kept token does not have
      * to be one of the user's sessions - a token that is not among them simply keeps
      * nothing, which is the honest answer for a caller that has none.
-     * Sessions carrying an impersonator are skipped as well: a person may not end the
-     * administrator's work through password recovery or the profile controls. The profile
-     * password change uses this same operation when the person asks to end other sessions (HIL-300).
+     * Incoming impersonations are skipped: a person may not end another administrator's work
+     * through password recovery or the profile controls. The person's outgoing impersonations
+     * end completely. The profile password change uses this same operation when the person
+     * asks to end other sessions (HIL-300).
      *
      * Reaches the connections of THIS node only, exactly like the logout it is built
      * from; a session held open on another node of a cluster keeps its socket until
@@ -3539,19 +3544,23 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * @param int $userId User whose other sessions are dropped
      * @param string $keepSessionToken Session token that stays signed in
-     * @return int Number of ordinary sessions reverted to anonymous
+     * @param string $accessLossReason Live reason given by the operation ending the sessions
+     * @return int Number of ordinary and outgoing impersonating sessions reverted to anonymous
      * @throws InvalidArgumentException When a state frame cannot be named
      * @throws HilosException On database or runtime failure
      */
-    private function deauthenticateOtherSessions(int $userId, string $keepSessionToken): int
+    private function deauthenticateOtherSessions(int $userId, string $keepSessionToken, string $accessLossReason): int
     {
+        $sessions = Hilos::$db->sessions->findByUserId($userId)
+            ->filter(static fn(Session $session): bool => $session->impersonatorUserId === null)
+            ->mergeWith(Hilos::$db->sessions->findByImpersonator($userId));
         $ended = 0;
-        foreach (Hilos::$db->sessions->findByUserId($userId) as $session) {
-            if ($session->token === $keepSessionToken || $session->impersonatorUserId !== null) {
+        foreach ($sessions as $session) {
+            if ($session->token === $keepSessionToken) {
                 continue;
             }
 
-            $this->deauthenticateSession($session->token, accessLossReason: SessionAccessLossReason::SESSION_ENDED);
+            $this->deauthenticateSession($session->token, accessLossReason: $accessLossReason);
             $ended++;
         }
 
@@ -4564,7 +4573,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     throw new InvalidAgentSignalPayloadException($name, AuthOtherSessionsEndSignalData::class, $data->data);
                 }
 
-                $this->deauthenticateOtherSessions($data->data->userId, $data->data->sessionToken);
+                $this->deauthenticateOtherSessions($data->data->userId, $data->data->sessionToken, SessionAccessLossReason::PASSWORD_CHANGED);
 
                 return;
 
@@ -5867,16 +5876,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Ends one session of a person, named by its row, for an administrator (HIL-1662).
-     *
-     * The row has to stand for the person still. A row signed out since, or signed into by
-     * somebody else on the same browser, is refused as already ended: the id the card listed must
-     * not reach whoever holds that row now. An ordinary session is signed out the way the person's
-     * own "end this session" signs it out, and the person's agent is then asked to take its
-     * browser's trust to skip the second factor away (HIL-1407). A session where an administrator
-     * acts as the person is given back to that administrator, the way the command line's Stop gives
-     * it back - with no initiator, because whoever pressed here is not the one behind it - and the
-     * trust of that browser, which is the administrator's, stays.
+     * Ends an ordinary or outgoing session completely and asks away the person's browser trust.
+     * Incoming impersonations return to their administrators with trust intact. A row no longer
+     * bound to the person in either direction is refused as already ended.
      *
      * @param int $userId Person the session has to stand for
      * @param int $sessionId Session row to end
@@ -5889,14 +5891,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private function endOneSessionOf(int $userId, int $sessionId): string
     {
         $session = Hilos::$db->sessions[$sessionId] ?? null;
-        if ($session === null || $session->userId !== $userId) {
+        if ($session === null || ($session->userId !== $userId && $session->impersonatorUserId !== $userId)) {
             throw new ValidationException(self::SESSION_ALREADY_ENDED_MESSAGE);
         }
 
         // Read before the end: giving a takeover back clears the marker this asks about.
-        $ordinary = $session->impersonatorUserId === null;
-        $this->endSessionOfPerson($session);
-        if ($ordinary) {
+        $returnsToAdministrator = $session->impersonatorUserId !== null && $session->impersonatorUserId !== $userId;
+        $this->endSessionOfPerson($session, $userId);
+        if (!$returnsToAdministrator) {
             $this->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE, new UserBrowserTrustRevokeSignalData(
                 $userId,
                 $sessionId,
@@ -5909,21 +5911,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Ends every session a person has at this moment, for an administrator (HIL-1662).
-     *
-     * The set is read once, when the frame arrives, and walked in one pass: a session that
-     * appeared after the card was opened is ended with the rest, and none is left out - neither
-     * the administrator's own, nor one where an administrator acts as the person. Ordinary sessions
-     * are signed out, takeovers given back to their administrators, as one session is
-     * ({@see self::endOneSessionOf()}). The session of the tab that pressed, when it is one of
-     * them, goes last, so a failure on the way is answered to a tab still signed in.
-     *
-     * A browser waiting on the "Access closed" card to be given back to the person loses that
-     * card, as it does when the person ends their other sessions (HIL-1188), and the trust of every
-     * browser of the person to skip the second factor is then asked away from the person's agent
-     * (HIL-1407). An administrator's trust in a browser it took the person over from is the
-     * administrator's and stays. Nothing else about the account changes: no block, no way in
-     * removed, no row erased.
+     * Reads both directions once: ordinary and outgoing sessions end, incoming takeovers return.
+     * The asking ordinary session goes last when included. Blocked cards are lowered and the
+     * person's agent is asked to revoke all their browser trust; other administrators keep theirs.
      *
      * @param int $userId Person whose sessions end
      * @param string $actingAcceptKey Connection of the administrator who pressed
@@ -5936,7 +5926,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private function endEverySessionOf(int $userId, string $actingAcceptKey): string
     {
         $actingSessionId = Hilos::$rt?->sessionConnectionsSource()?->get($actingAcceptKey)?->sessionId;
-        $sessions = Hilos::$db->sessions->findByUserId($userId);
+        $sessions = Hilos::$db->sessions->findByUserId($userId)
+            ->mergeWith(Hilos::$db->sessions->findByImpersonator($userId));
         $ended = count($sessions);
         $actingSession = null;
         foreach ($sessions as $session) {
@@ -5945,10 +5936,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 continue;
             }
 
-            $this->endSessionOfPerson($session);
+            $this->endSessionOfPerson($session, $userId);
         }
         if ($actingSession !== null) {
-            $this->endSessionOfPerson($actingSession);
+            $this->endSessionOfPerson($actingSession, $userId);
         }
 
         $this->lowerBlockedCardsOf($userId, null);
@@ -5963,23 +5954,24 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Ends one session of the set an administrator ends: an ordinary one signed out, a takeover given back (HIL-1662).
+     * Signs out ordinary and outgoing sessions; only another administrator's incoming takeover returns.
      *
-     * @param Session $session Session to end, signed in to the person
+     * @param Session $session Session bound to the person in either direction
+     * @param int $userId Person whose sessions the administrator is ending
      * @throws ValidationException When the session is no longer inside the takeover it was read with
      * @throws InvalidArgumentException When a state frame cannot be named
      * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
      * @throws HilosException On database or runtime failure
      */
-    private function endSessionOfPerson(Session $session): void
+    private function endSessionOfPerson(Session $session, int $userId): void
     {
-        if ($session->impersonatorUserId !== null) {
+        if ($session->impersonatorUserId !== null && $session->impersonatorUserId !== $userId) {
             $this->stopImpersonation($session->token, null, null);
 
             return;
         }
 
-        $this->deauthenticateSession($session->token, accessLossReason: SessionAccessLossReason::SESSION_ENDED);
+        $this->deauthenticateSession($session->token, accessLossReason: SessionAccessLossReason::ENDED_BY_ADMINISTRATOR);
     }
 
     /**
@@ -8821,7 +8813,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $frame->action,
         )) {
             $this->convergeRecovery($frame->identifier, $frame->sessionToken, $frame->acceptKey, sameSessionHeld: true);
-            $this->deauthenticateOtherSessions($frame->userId, $frame->sessionToken);
+            $this->deauthenticateOtherSessions($frame->userId, $frame->sessionToken, SessionAccessLossReason::PASSWORD_RECOVERED);
 
             return;
         }
@@ -8842,7 +8834,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 $frame->requestId,
                 $frame->action,
             );
-            $this->deauthenticateOtherSessions($frame->userId, $frame->sessionToken);
+            $this->deauthenticateOtherSessions($frame->userId, $frame->sessionToken, SessionAccessLossReason::PASSWORD_RECOVERED);
 
             return;
         }
@@ -8859,7 +8851,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             outcome: $frame->outcome,
         );
         $this->convergeRecovery($frame->identifier, $frame->sessionToken, $frame->acceptKey);
-        $this->deauthenticateOtherSessions($frame->userId, $liveToken ?? $frame->sessionToken);
+        $this->deauthenticateOtherSessions($frame->userId, $liveToken ?? $frame->sessionToken, SessionAccessLossReason::PASSWORD_RECOVERED);
     }
 
     /**

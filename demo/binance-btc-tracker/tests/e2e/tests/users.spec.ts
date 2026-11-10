@@ -30,6 +30,7 @@ import {
   watchHeight,
   watchHandshakeFrames,
   watchSocketFrames,
+  type SignedInUser,
   type SocketFrame,
   clickSubmit,
   typeInto,
@@ -168,7 +169,8 @@ test('user Overview has no empty project section and supports keyboard rename', 
 // server's answer in this demo's store, the confirmation step, the library's
 // answer. Ending all of a person's sessions is proved in polls' profile spec,
 // and a takeover's way back to the administrator in chat's
-// impersonation-settings spec.
+// impersonation-settings spec. Ending an outgoing takeover here proves that
+// the second list arrives live and its browser loses the whole account.
 test.describe("a person's sessions on the card", () => {
   test.use({ timezoneId: 'Pacific/Niue' })
 
@@ -239,7 +241,7 @@ test.describe("a person's sessions on the card", () => {
       // The other browser is on the sign-in form and says why; this one keeps
       // its account.
       await expect(other.getByTestId('auth-surface')).toBeVisible()
-      await expectAccessLossNotice(expect, other, 'session_ended')
+      await expectAccessLossNotice(expect, other, 'ended_by_administrator')
       await expectAccessLossNotice(expect, page, null)
       await expect(page.getByTestId('nav-admin')).toHaveAttribute(
         'data-access',
@@ -255,6 +257,102 @@ test.describe("a person's sessions on the card", () => {
       await otherContext.close()
     }
   })
+
+  viewerTest(
+    "ends an outgoing takeover browser from the administrator's Sessions tab",
+    async ({
+      browser,
+      page,
+      viewerPage: other,
+      baseURL,
+      ignoreHTTPSErrors,
+      timezoneId,
+    }) => {
+      const personContext = await browser.newContext({
+        baseURL,
+        ignoreHTTPSErrors,
+        timezoneId,
+      })
+      let person: SignedInUser
+      try {
+        person = await createTestUser(expect, await personContext.newPage())
+      } finally {
+        await personContext.close()
+      }
+
+      const email = uniqueEmail()
+      const userId = await createTestAdmin(expect, page, { email })
+      await gotoPage(expect, page, `/hilos/user/${userId}/sessions`, PAGE_READY)
+      const rows = page.getByTestId('user-session-row')
+      await expect(rows).toHaveCount(1)
+      const ownSession = await rows.getAttribute('data-record')
+      await markDocument(page)
+
+      await gotoPage(expect, other, '/', PAGE_READY)
+      await openSignIn(expect, other)
+      await login(expect, other, email)
+      await expect(other.getByTestId('self-user-id')).toHaveText(String(userId))
+      await expect(rows).toHaveCount(2)
+
+      await gotoPage(expect, other, `/hilos/user/${person.userId}`, PAGE_READY)
+      await clickSubmit(
+        expect,
+        other.getByTestId('hilos-user-impersonate-open'),
+      )
+      await expectSessionRotation(expect, other, async () => {
+        await clickSubmit(
+          expect,
+          other.getByTestId('hilos-user-impersonate-confirm'),
+        )
+        await expect(other.getByTestId('modal')).toBeHidden()
+        await expect(other.getByTestId('impersonation-banner')).toContainText(
+          person.name,
+        )
+      })
+
+      // The ordinary row becomes an outgoing takeover through the open page's
+      // second list. Find it by the person it names, without revisiting the page.
+      const outgoing = rows.filter({
+        has: page
+          .getByTestId('user-session-acting-as')
+          .filter({ hasText: person.name }),
+      })
+      await expect(outgoing).toHaveCount(1)
+      const outgoingSession = await outgoing.getAttribute('data-record')
+      expect(outgoingSession).toBeTruthy()
+      expect(outgoingSession).not.toBe(ownSession)
+      await expect(rows).toHaveCount(2)
+      await expectDocumentUnchanged(expect, page)
+      await markDocument(other)
+
+      await clickSubmit(expect, outgoing.getByTestId('user-session-end'))
+      await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+      await clickSubmit(
+        expect,
+        page.getByTestId('user-session-end-step-up-confirm'),
+      )
+      await clickSubmit(expect, page.getByTestId('user-session-end-confirm'))
+      await expect(page.getByTestId('modal')).toBeHidden()
+      await expect(page.getByTestId('hilos-toast-success')).toContainText(
+        `Session #${outgoingSession} ended`,
+      )
+      await expect(outgoing).toHaveCount(0)
+      await expect(rows).toHaveCount(1)
+      await expect(rows).toHaveAttribute('data-record', ownSession!)
+
+      // End removes the whole browser session instead of restoring its admin.
+      await expect(other.getByTestId('auth-surface')).toBeVisible()
+      await expectAccessLossNotice(expect, other, 'ended_by_administrator')
+      await expect(other.getByTestId('impersonation-banner')).toHaveCount(0)
+      await expectDocumentUnchanged(expect, other)
+      await expectAccessLossNotice(expect, page, null)
+      await expect(page.getByTestId('nav-admin')).toHaveAttribute(
+        'data-access',
+        'full',
+      )
+      await expectDocumentUnchanged(expect, page)
+    },
+  )
 })
 
 test.describe('people time zones and numeric activity', () => {

@@ -282,6 +282,7 @@ use Hilos\Moderation\Library\ModerationRulesLibraryAgentDaemon;
 use Hilos\Moderation\ModerationAgent;
 use Hilos\Moderation\ModerationAgentDaemon;
 use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
+use Hilos\Pages\Users\HilosUserActingSessionsBrowserList;
 use Hilos\Pages\Users\HilosUserSessionsBrowserList;
 use Hilos\Push\Delivery\PushDeliveryChannelAgent;
 use Hilos\Push\Delivery\PushDeliveryChannelAgentDaemon;
@@ -835,6 +836,7 @@ final class Hilos extends HilosFacade
         BotProfileBrowserList::LIST => BotProfileBrowserList::class,
         UserProfileBrowserList::LIST => UserProfileBrowserList::class,
         HilosUserSessionsBrowserList::LIST => HilosUserSessionsBrowserList::class,
+        HilosUserActingSessionsBrowserList::LIST => HilosUserActingSessionsBrowserList::class,
     ];
 
     public const array BROWSER_DATA = [
@@ -913,9 +915,11 @@ final class Hilos extends HilosFacade
         ],
         HilosUserPage::PAGE => [
             HilosUserSessionsBrowserList::LIST => HilosUserSessionsBrowserList::BINDING,
+            HilosUserActingSessionsBrowserList::LIST => HilosUserActingSessionsBrowserList::BINDING,
         ],
         UserSessionsPage::PAGE => [
             HilosUserSessionsBrowserList::LIST => HilosUserSessionsBrowserList::BINDING,
+            HilosUserActingSessionsBrowserList::LIST => HilosUserActingSessionsBrowserList::BINDING,
         ],
     ];
 

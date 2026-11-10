@@ -122,7 +122,11 @@ final class HandshakeResponseSignalDataTest extends TestCase
     public static function accessLossReasons(): array
     {
         return [
-            'remote end' => ['session_ended'],
+            'remote end fallback' => ['session_ended'],
+            'administrator' => ['ended_by_administrator'],
+            'another browser' => ['ended_from_another_browser'],
+            'password changed' => ['password_changed'],
+            'password recovered' => ['password_recovered'],
             'live block' => ['account_blocked'],
             'no loss' => [null],
         ];

@@ -110,6 +110,16 @@ const ACCOUNT_BLOCKED_KEY = 'accountBlocked'
 /** The current handshake's live access-loss explanation, never a retained notice. */
 const ACCESS_LOSS_REASON_KEY = 'accessLossReason'
 
+/** Kept here so the session parser does not import the document latch at runtime. */
+const ACCESS_LOSS_REASONS = [
+  'session_ended',
+  'account_blocked',
+  'ended_by_administrator',
+  'ended_from_another_browser',
+  'password_changed',
+  'password_recovered',
+] as const satisfies readonly AccessLossReason[]
+
 /**
  * Plain session-scope key carrying the standing of the person the session acts
  * as (HIL-945) — under a takeover, of the person taken over — or `null` for an
@@ -759,7 +769,7 @@ export function sessionUserId(
 
 /** Read only the server vocabulary; unknown or absent values carry no reason. */
 function readAccessLossReason(value: unknown): AccessLossReason | null {
-  return value === 'session_ended' || value === 'account_blocked' ? value : null
+  return ACCESS_LOSS_REASONS.find((reason) => reason === value) ?? null
 }
 
 /**

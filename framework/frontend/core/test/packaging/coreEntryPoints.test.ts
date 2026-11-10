@@ -285,6 +285,7 @@ const accessLossValues = [
   'ACCESS_LOSS_COPY',
   'bindAccessLoss',
   'hilosAccessLossReason',
+  'isEndedSessionReason',
   'sessionAccessLossReason',
 ]
 const accessLossTypes = ['AccessLossReason']

@@ -6,7 +6,8 @@ arrives with the page's one answer and follows the server's own updates, so
 this view fetches nothing, polls nothing and removes no row by itself; a row is
 the profile's (HilosSessionRow), whose tabs open here by session id. A session
 in which an administrator acts as the person is marked with that administrator's
-name, which follows a rename without a reload.
+name; one in which the person acts as somebody else names that other person.
+Both names follow a rename without a reload.
 Each ending stands in its own window, after the confirmation step the card's
 windows open with (createHilosUserCardStepUp, operation `end_user_sessions`).
 The single window holds the person and the session it was opened on: when that
@@ -352,7 +353,12 @@ const allCount = computed<Hideable<number>>(() =>
 const allActedAs = computed(
   () =>
     !isHiddenValue(sessions.value) &&
-    sessions.value.some((session) => session.impersonated),
+    sessions.value.some((session) => session.impersonatorName !== null),
+)
+const allActingElsewhere = computed(
+  () =>
+    !isHiddenValue(sessions.value) &&
+    sessions.value.some((session) => session.actingAsName !== null),
 )
 // From Confirm until the window has acted on the answer, as for one session.
 const allSubmitted = ref(false)
@@ -508,6 +514,13 @@ watch(merged, (isMerged) => {
                 class="badge bg-warning-subtle text-warning-emphasis ms-1"
                 >Acting as · <HilosHideable :value="session.impersonatorName"
               /></span>
+              <span
+                v-if="session.actingAsName !== null"
+                class="badge bg-warning-subtle text-warning-emphasis ms-1"
+                data-id="user-session-acting-as"
+                >Acting on behalf of ·
+                <HilosHideable :value="session.actingAsName"
+              /></span>
             </template>
             <template v-if="!merged" #actions>
               <LoadingButton
@@ -564,7 +577,19 @@ watch(merged, (isMerged) => {
             <HilosStepUpStep :controller="endStepUp.step" />
           </form>
           <template v-else-if="endShown !== null">
-            <template v-if="endShown.impersonatorName !== null">
+            <template v-if="endShown.actingAsName !== null">
+              <p>
+                In this session the person is acting as
+                <HilosHideable :value="endShown.actingAsName" />. Ending it
+                signs this browser out completely: it does not go back to the
+                person.
+              </p>
+              <div class="alert alert-secondary small py-2">
+                The person's other sessions are not touched: their other
+                browsers keep working.
+              </div>
+            </template>
+            <template v-else-if="endShown.impersonatorName !== null">
               <p>
                 In this session
                 <HilosHideable :value="endShown.impersonatorName" /> is acting
@@ -659,6 +684,10 @@ watch(merged, (isMerged) => {
               <strong><HilosHideable :value="allCount" /></strong>. The tabs of
               each lose the account at once: where an account is needed, the
               sign-in form takes the place of the content.
+            </p>
+            <p v-if="allActingElsewhere">
+              A session in which the person is acting as someone else signs that
+              browser out completely: it does not go back to the person.
             </p>
             <p v-if="allActedAs">
               A session in which an administrator acts as the person takes that

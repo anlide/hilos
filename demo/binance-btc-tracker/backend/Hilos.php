@@ -201,6 +201,7 @@ use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
 use Hilos\Status\StatusAgent;
 use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
+use Hilos\Pages\Users\HilosUserActingSessionsBrowserList;
 use Hilos\Pages\Users\HilosUserSessionsBrowserList;
 
 /**
@@ -560,6 +561,7 @@ class Hilos extends HilosFacade
     public const array BROWSER_LISTS = [
         HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::class,
         HilosUserSessionsBrowserList::LIST => HilosUserSessionsBrowserList::class,
+        HilosUserActingSessionsBrowserList::LIST => HilosUserActingSessionsBrowserList::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -577,9 +579,11 @@ class Hilos extends HilosFacade
         ],
         UserPage::PAGE => [
             HilosUserSessionsBrowserList::LIST => HilosUserSessionsBrowserList::BINDING,
+            HilosUserActingSessionsBrowserList::LIST => HilosUserActingSessionsBrowserList::BINDING,
         ],
         UserSessionsPage::PAGE => [
             HilosUserSessionsBrowserList::LIST => HilosUserSessionsBrowserList::BINDING,
+            HilosUserActingSessionsBrowserList::LIST => HilosUserActingSessionsBrowserList::BINDING,
         ],
     ];
 

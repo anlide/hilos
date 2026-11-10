@@ -4,6 +4,7 @@ import {
   ACCESS_LOSS_COPY,
   bindAccessLoss,
   hilosAccessLossReason,
+  isEndedSessionReason,
   type AccessLossReason,
 } from '../../src/session/accessLoss.js'
 import {
@@ -16,6 +17,15 @@ import { createPageRouter } from '../../src/routing/PageRouter.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { computedSignal, subscribeSignal } from '../../src/state/signal.js'
 import { bindPageScope } from '../../src/subscription/bindPageScope.js'
+
+const endedSessionReasons = [
+  'session_ended',
+  'ended_by_administrator',
+  'ended_from_another_browser',
+  'password_changed',
+  'password_recovered',
+] as const
+const accessLossReasons = [...endedSessionReasons, 'account_blocked'] as const
 
 const releases: Array<() => void> = []
 afterEach(() => {
@@ -107,14 +117,36 @@ function lossData(reason: AccessLossReason): Record<string, unknown> {
 }
 
 describe('accessLoss', () => {
-  it('owns exactly the two approved explanations', () => {
+  it('owns exactly the six approved explanations', () => {
     expect(ACCESS_LOSS_COPY).toEqual({
       session_ended: 'Your session has ended. Any unsaved changes were lost.',
       account_blocked: 'Any unsaved changes were lost.',
+      ended_by_administrator:
+        'Your session was ended by an administrator. Any unsaved changes were lost.',
+      ended_from_another_browser:
+        'Your session was ended from another browser. Any unsaved changes were lost.',
+      password_changed:
+        'Your session has ended because the password was changed. Any unsaved changes were lost.',
+      password_recovered:
+        'Your session has ended because the password was reset. Any unsaved changes were lost.',
     })
   })
 
-  it.each(['session_ended', 'account_blocked'] as const)(
+  it.each(endedSessionReasons)(
+    'recognizes %s as an ended session',
+    (reason) => {
+      expect(isEndedSessionReason(reason)).toBe(true)
+    },
+  )
+
+  it.each([null, 'account_blocked'] as const)(
+    'does not treat %s as an ended session',
+    (reason) => {
+      expect(isEndedSessionReason(reason)).toBe(false)
+    },
+  )
+
+  it.each(accessLossReasons)(
     'latches %s before dropping page data, without subscribing or navigating',
     (reason) => {
       const s = setup()
@@ -147,7 +179,7 @@ describe('accessLoss', () => {
     },
   )
 
-  it.each(['session_ended', 'account_blocked'] as const)(
+  it.each(accessLossReasons)(
     'keeps %s through repeated anonymous frames and a reconnect with null reason',
     (reason) => {
       const s = setup()
@@ -169,11 +201,7 @@ describe('accessLoss', () => {
     },
   )
 
-  it.each([
-    {},
-    { accessLossReason: 'session_ended' },
-    lossData('account_blocked'),
-  ])(
+  it.each([{}, ...accessLossReasons.map(lossData)])(
     'does not treat a cold guest or first blocked sign-in as live loss: %j',
     (data) => {
       const s = setup()
@@ -199,14 +227,17 @@ describe('accessLoss', () => {
     },
   )
 
-  it('does not reuse the reason from an earlier handshake', () => {
-    const s = setup()
-    s.handshake(7, { accessLossReason: 'session_ended' })
-    s.handshake(null)
-    expect(hilosAccessLossReason.get()).toBeNull()
-  })
+  it.each(accessLossReasons)(
+    'does not reuse %s from an earlier handshake',
+    (reason) => {
+      const s = setup()
+      s.handshake(7, { accessLossReason: reason })
+      s.handshake(null)
+      expect(hilosAccessLossReason.get()).toBeNull()
+    },
+  )
 
-  it.each(['session_ended', 'account_blocked'] as const)(
+  it.each(accessLossReasons)(
     'clears %s on successful identity restoration',
     (reason) => {
       const s = setup()
@@ -217,27 +248,34 @@ describe('accessLoss', () => {
     },
   )
 
-  it('clears session end on explicit navigation and keeps block until its card leaves', () => {
+  it.each(endedSessionReasons)('clears %s on explicit navigation', (reason) => {
     const s = setup()
     s.handshake(7)
-    s.handshake(null, lossData('session_ended'))
+    s.handshake(null, lossData(reason))
     s.router.navigate('/next')
     expect(hilosAccessLossReason.get()).toBeNull()
+  })
+
+  it('keeps block through navigation until its card leaves', () => {
+    const s = setup()
     s.handshake(7)
     s.handshake(null, lossData('account_blocked'))
-    s.router.navigate('/old')
+    s.router.navigate('/next')
     expect(hilosAccessLossReason.get()).toBe('account_blocked')
     s.handshake(null)
     expect(hilosAccessLossReason.get()).toBeNull()
   })
 
-  it('does not carry a session-end explanation into a new blocked sign-in card', () => {
-    const s = setup()
-    s.handshake(7)
-    s.handshake(null, lossData('session_ended'))
-    s.handshake(null, { accountBlocked: { identifier: 'other@example.com' } })
-    expect(hilosAccessLossReason.get()).toBeNull()
-  })
+  it.each(endedSessionReasons)(
+    'does not carry %s into a new blocked sign-in card',
+    (reason) => {
+      const s = setup()
+      s.handshake(7)
+      s.handshake(null, lossData(reason))
+      s.handshake(null, { accountBlocked: { identifier: 'other@example.com' } })
+      expect(hilosAccessLossReason.get()).toBeNull()
+    },
+  )
 
   it('uses the configured current-user slot and type', () => {
     const s = setup({

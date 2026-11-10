@@ -11,6 +11,7 @@ import {
 } from '../../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
 import { type ProjectSignal } from '../../../src/protocol/parseSignal.js'
+import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { bindAdminAccess } from '../../../src/session/adminAccess.js'
 import { bindSessionScope } from '../../../src/session/sessionScope.js'
 import { entityCollection } from '../../../src/state/EntityCollection.js'
@@ -89,18 +90,18 @@ function tab(
   return { acceptKey, sessionId, connectedAt }
 }
 
-/** One list item of the card's sessions list. */
+/** One list item of either sessions list, with the related person when present. */
 function item(
   session: Record<string, unknown>,
   connections: Record<string, unknown>[] = [],
-  impersonator?: Record<string, unknown>,
+  user?: Record<string, unknown>,
 ): ListItemFragment {
   return {
     itemKey: session.id as number,
     slots: {
       sessions: session,
       connections,
-      ...(impersonator === undefined ? {} : { users: impersonator }),
+      ...(user === undefined ? {} : { users: user }),
     },
   }
 }
@@ -140,19 +141,24 @@ function usersContext(): {
  * @param items The list items the answer carries.
  * @param options The demo's slot types.
  * @param enabled The page's userSessionsEnabled flag, or null for an answer without it.
+ * @param actingItems The outgoing sessions the answer carries.
  */
 function answerPage(
   scopes: ScopeManager,
   items: ListItemFragment[],
   options: NormalizerOptions = CHAT_TYPES,
   enabled: boolean | null = true,
+  actingItems: ListItemFragment[] = [],
 ): void {
-  const page = scopes.openPage('hilos_user_sessions')
+  const page = scopes.openPage(HilosPages.USER_SESSIONS)
   ingest(
     page,
     {
       data: enabled === null ? {} : { userSessionsEnabled: enabled },
-      lists: { userSessions: { items } },
+      lists: {
+        userSessions: { items },
+        userActingSessions: { items: actingItems },
+      },
     },
     options,
   )
@@ -240,10 +246,238 @@ describe('createHilosUserSessions', () => {
         impersonated: false,
         tabs: [],
         impersonatorName: null,
+        actingAsName: null,
       })
       expect(controller.count.get()).toBe(3)
     },
   )
+
+  it.each(DEMO_ENTITY_TYPES)(
+    'merges both lists by session id and keeps the ordinary row during Stop, with the slot typed %s',
+    (_type, options) => {
+      const { context, scopes } = usersContext()
+      const controller = createHilosUserSessions(context)
+      answerPage(
+        scopes,
+        [
+          item(sessionRow(4, 1790000000000, { impersonatorUserId: 12 }), [], {
+            id: 12,
+            name: 'Olena',
+          }),
+        ],
+        options,
+        true,
+        [
+          {
+            ...item(
+              sessionRow(3, 1790000000000, {
+                userId: 9,
+                impersonatorUserId: 5,
+              }),
+              [tab('ak-stale', 3, 1790000000500)],
+              { id: 9, name: 'Maria' },
+            ),
+            itemKey: 'outgoing-3',
+          },
+          item(
+            sessionRow(8, 1790500000000, {
+              userId: 9,
+              impersonatorUserId: 5,
+            }),
+            [
+              tab('ak-b', 8, 1790000000500),
+              tab('ak-c', 8, 1790000000900),
+              tab('ak-a', 8, 1790000000500),
+            ],
+            { id: 9, name: 'Maria' },
+          ),
+        ],
+      )
+      expect(controller.count.get()).toBe(3)
+      expect(shown(controller.sessions.get())[2]).toMatchObject({
+        id: 3,
+        impersonatorName: null,
+        actingAsName: 'Maria',
+      })
+
+      ingest(
+        scopes.page()!,
+        {
+          lists: {
+            userSessions: {
+              items: [
+                item(sessionRow(3, 1790000000000), [
+                  tab('ak-ordinary', 3, 1790000000600),
+                ]),
+              ],
+            },
+          },
+        },
+        options,
+      )
+
+      const sessions = shown(controller.sessions.get())
+      expect(
+        sessions.map(({ id, impersonatorName, actingAsName }) => ({
+          id,
+          impersonatorName,
+          actingAsName,
+        })),
+      ).toEqual([
+        { id: 8, impersonatorName: null, actingAsName: 'Maria' },
+        { id: 4, impersonatorName: 'Olena', actingAsName: null },
+        { id: 3, impersonatorName: null, actingAsName: null },
+      ])
+      expect(sessions[2]?.tabs).toEqual([
+        {
+          acceptKey: 'ak-ordinary',
+          connectedAt: 1790000000600,
+          current: false,
+        },
+      ])
+      expect(sessions[0]?.tabs.map((entry) => entry.acceptKey)).toEqual([
+        'ak-c',
+        'ak-a',
+        'ak-b',
+      ])
+      expect(controller.count.get()).toBe(3)
+
+      ingest(
+        scopes.page()!,
+        { lists: { userActingSessions: { deleted: ['outgoing-3'] } } },
+        options,
+      )
+      expect(shown(controller.sessions.get())).toEqual(sessions)
+    },
+  )
+
+  it.each([HilosPages.USER, HilosPages.USER_SESSIONS])(
+    'counts both lists once per session on %s',
+    (pageKey) => {
+      const { context, scopes } = usersContext()
+      const controller = createHilosUserSessions(context)
+      const page = scopes.openPage(pageKey)
+      ingest(
+        page,
+        {
+          data: { userSessionsEnabled: true },
+          lists: {
+            userSessions: { items: [item(sessionRow(3, 1790000000000))] },
+            userActingSessions: {
+              items: [
+                item(
+                  sessionRow(8, 1790500000000, {
+                    userId: 9,
+                    impersonatorUserId: 5,
+                  }),
+                  [
+                    tab('ak-a', 8, 1790000000100),
+                    tab('ak-b', 8, 1790000000200),
+                  ],
+                  { id: 9, name: 'Maria' },
+                ),
+              ],
+            },
+          },
+        },
+        CHAT_TYPES,
+      )
+      expect(controller.count.get()).toBe(2)
+
+      ingest(page, { lists: { userSessions: { cleared: true } } }, CHAT_TYPES)
+      expect(controller.count.get()).toBe(1)
+      expect(shown(controller.sessions.get())[0]?.id).toBe(8)
+
+      ingest(page, { data: { userSessionsEnabled: false } }, CHAT_TYPES)
+      expect(controller.count.get()).toBeUndefined()
+      ingest(page, { data: { userSessionsEnabled: true } }, CHAT_TYPES)
+      expect(controller.count.get()).toBe(1)
+
+      scopes.dropPage()
+      expect(controller.sessions.get()).toEqual([])
+      expect(controller.count.get()).toBeUndefined()
+    },
+  )
+
+  it('names the person acted as, falling back only for a missing person and preserving hidden names', () => {
+    const { context, scopes } = usersContext()
+    scopes.session.entities.upsert(
+      { type: USER_ENTITY_TYPE, id: 9 },
+      { id: 9, name: 'Ambient' },
+    )
+    const controller = createHilosUserSessions(context)
+    const session = sessionRow(8, 1790500000000, {
+      userId: 9,
+      impersonatorUserId: 5,
+    })
+    answerPage(scopes, [], CHAT_TYPES, true, [item(session)])
+    expect(shown(controller.sessions.get())[0]).toMatchObject({
+      impersonatorName: null,
+      actingAsName: '#9',
+    })
+    const names: unknown[] = []
+    releases.push(
+      subscribeSignal(controller.sessions, (sessions) =>
+        names.push(shown(sessions)[0]?.actingAsName),
+      ),
+    )
+
+    for (const [name, expected] of [
+      ['Maria', 'Maria'],
+      ['Maria Kowalska', 'Maria Kowalska'],
+      [{ _hidden: true }, HIDDEN_VALUE],
+    ] as const) {
+      ingest(
+        scopes.page()!,
+        {
+          lists: {
+            userActingSessions: {
+              items: [item(session, [], { id: 9, name })],
+            },
+          },
+        },
+        CHAT_TYPES,
+      )
+      expect(names.at(-1)).toBe(expected)
+    }
+
+    expect(shown(controller.sessions.get())[0]).toMatchObject({
+      impersonatorName: null,
+      actingAsName: HIDDEN_VALUE,
+    })
+  })
+
+  it('hides both lists and their count when an outgoing session or tab field is hidden', () => {
+    const outgoing = sessionRow(8, 1790500000000, {
+      userId: 9,
+      impersonatorUserId: 5,
+    })
+    const cases = [
+      item({ ...outgoing, userId: { _hidden: true } }),
+      item({ ...outgoing, lastSeenAt: { _hidden: true } }),
+      item(outgoing, [
+        { acceptKey: 'ak-a', sessionId: 8, connectedAt: { _hidden: true } },
+      ]),
+      {
+        itemKey: 8,
+        slots: { sessions: outgoing, connections: { _hidden: true } },
+      },
+    ]
+    for (const hidden of cases) {
+      const { context, scopes } = usersContext()
+      const controller = createHilosUserSessions(context)
+      answerPage(
+        scopes,
+        [item(sessionRow(3, 1790000000000))],
+        CHAT_TYPES,
+        true,
+        [hidden],
+      )
+
+      expect(controller.sessions.get()).toBe(HIDDEN_VALUE)
+      expect(controller.count.get()).toBe(HIDDEN_VALUE)
+    }
+  })
 
   it('follows the list as the server moves it and removes nothing on its own', () => {
     const { context, scopes, dispatched } = usersContext()
@@ -388,11 +622,28 @@ describe('createHilosUserSessions', () => {
   it('hides the sessions and their count from a viewer, even ones a wider scope left behind', () => {
     const handshake = bindAccess({ id: 1, admin: true }, true)
     const { context, scopes } = usersContext()
+    scopes.session.entities.upsert(
+      { type: 'session', id: 8 },
+      sessionRow(8, 1790500000000, { userId: 9, impersonatorUserId: 5 }),
+    )
     const controller = createHilosUserSessions(context)
-    answerPage(scopes, [
-      item(sessionRow(3, 1790000000000), [tab('ak-a', 3, 1790000000100)]),
-    ])
-    expect(controller.count.get()).toBe(1)
+    answerPage(
+      scopes,
+      [item(sessionRow(3, 1790000000000), [tab('ak-a', 3, 1790000000100)])],
+      CHAT_TYPES,
+      true,
+      [
+        item(
+          sessionRow(8, 1790500000000, {
+            userId: 9,
+            impersonatorUserId: 5,
+          }),
+          [tab('ak-b', 8, 1790000000200)],
+          { id: 9, name: 'Maria' },
+        ),
+      ],
+    )
+    expect(controller.count.get()).toBe(2)
 
     handshake({ id: 10, admin: false })
 

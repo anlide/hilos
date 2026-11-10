@@ -776,7 +776,11 @@ test(
         const target = document.page
         await expect(target.getByTestId('auth-surface')).toHaveCount(1)
         await expect(target.getByTestId('auth-surface')).toBeVisible()
-        await expectAccessLossNotice(expect, target, 'session_ended')
+        await expectAccessLossNotice(
+          expect,
+          target,
+          'ended_from_another_browser',
+        )
         await expect(target.getByTestId('modal')).toHaveCount(0)
         await expect(target.getByTestId('modal-confirm')).toHaveCount(0)
         await expect(target).toHaveURL(document.url)

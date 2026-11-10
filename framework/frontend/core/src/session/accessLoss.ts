@@ -15,13 +15,27 @@ import {
   type SessionScopeOptions,
 } from './sessionScope.js'
 
-/** The server's two explanations for taking an active session's identity away. */
-export type AccessLossReason = 'session_ended' | 'account_blocked'
+/** The server's explanations for taking an active session's identity away. */
+export type AccessLossReason =
+  | 'session_ended'
+  | 'account_blocked'
+  | 'ended_by_administrator'
+  | 'ended_from_another_browser'
+  | 'password_changed'
+  | 'password_recovered'
 
 /** Shared copy for the live access-loss notice in all three SDK views. */
 export const ACCESS_LOSS_COPY = {
   session_ended: 'Your session has ended. Any unsaved changes were lost.',
   account_blocked: 'Any unsaved changes were lost.',
+  ended_by_administrator:
+    'Your session was ended by an administrator. Any unsaved changes were lost.',
+  ended_from_another_browser:
+    'Your session was ended from another browser. Any unsaved changes were lost.',
+  password_changed:
+    'Your session has ended because the password was changed. Any unsaved changes were lost.',
+  password_recovered:
+    'Your session has ended because the password was reset. Any unsaved changes were lost.',
 } as const
 
 const accessLossReason = createSignal<AccessLossReason | null>(null)
@@ -33,6 +47,11 @@ let boundRelease: (() => void) | null = null
  */
 export const hilosAccessLossReason: ReadonlySignal<AccessLossReason | null> =
   accessLossReason
+
+/** Whether the explanation belongs to an ended session's sign-in surface. */
+export function isEndedSessionReason(reason: AccessLossReason | null): boolean {
+  return reason !== null && reason !== 'account_blocked'
+}
 
 /**
  * Latch only a known person becoming anonymous with a reason in that same frame.
@@ -66,14 +85,14 @@ export function bindAccessLoss(
   })
   const offCard = subscribeSignal(card, (next) => {
     if (
-      (next !== null && accessLossReason.get() === 'session_ended') ||
+      (next !== null && isEndedSessionReason(accessLossReason.get())) ||
       (next === null && accessLossReason.get() === 'account_blocked')
     ) {
       accessLossReason.set(null)
     }
   })
   const offPath = subscribeSignal(router.currentPath, () => {
-    if (accessLossReason.get() === 'session_ended') {
+    if (isEndedSessionReason(accessLossReason.get())) {
       accessLossReason.set(null)
     }
   })

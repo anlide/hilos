@@ -94,28 +94,32 @@ describe('sessionScope', () => {
     },
   )
 
-  it.each(['session_ended', 'account_blocked'])(
-    'publishes the current %s reason before identity changes',
-    (value) => {
-      const connection = fakeConnection()
-      const scopes = new ScopeManager()
-      bindSessionScope(connection as unknown as HilosConnection, scopes)
-      connection.emitHandshakeResponse({ entities: { currentUser: { id: 1 } } })
-      const reason = sessionAccessLossReason(scopes)
-      const observed: unknown[] = []
-      const off = subscribeSignal(sessionUserId(scopes), () =>
-        observed.push(reason.get()),
-      )
+  it.each([
+    'session_ended',
+    'account_blocked',
+    'ended_by_administrator',
+    'ended_from_another_browser',
+    'password_changed',
+    'password_recovered',
+  ])('publishes the current %s reason before identity changes', (value) => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    connection.emitHandshakeResponse({ entities: { currentUser: { id: 1 } } })
+    const reason = sessionAccessLossReason(scopes)
+    const observed: unknown[] = []
+    const off = subscribeSignal(sessionUserId(scopes), () =>
+      observed.push(reason.get()),
+    )
 
-      connection.emitHandshakeResponse({
-        entities: { currentUser: null },
-        data: { accessLossReason: value },
-      })
+    connection.emitHandshakeResponse({
+      entities: { currentUser: null },
+      data: { accessLossReason: value },
+    })
 
-      expect(observed).toEqual([value])
-      off()
-    },
-  )
+    expect(observed).toEqual([value])
+    off()
+  })
 
   it('exposes the handshake_response schema keyed for projectSchemas', () => {
     expect(SESSION_SIGNAL_SCHEMAS['handshake_response']).toBeDefined()

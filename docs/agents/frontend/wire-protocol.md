@@ -732,50 +732,74 @@ has to write.
 
 **A live access-loss reason travels with the frame that removes the identity.**
 The existing `hilos_session_state.accessLossReason` is reflected in
-`handshake_response.data.accessLossReason`: `null`, `session_ended`, or
-`account_blocked`. Each outgoing handshake writes the field, including `null`,
-and only an anonymous identity may carry a reason. The PHP DTO parser rejects a
-present value of the wrong type or an unknown reason; an older payload without
-the field reads as `null`. This is context for one live delivery, not session
-history. `session_ended` accompanies the existing remote end-session and
-end-other-sessions paths (`hilos_session_end` and
-`hilos_sessions_end_others`); `account_blocked` accompanies live enforcement
-for ordinary sessions. Voluntary sign-out, a cold handshake, expiry, merge or
-erasure, impersonation, and a blocked sign-in refused before a live identity
-carry no reason. The holder, sibling tabs and the in-place sign-out fallback
-use the same existing delivery path; cluster delivery is unchanged.
+`handshake_response.data.accessLossReason`: `null`, `session_ended`,
+`account_blocked`, `ended_by_administrator`, `ended_from_another_browser`,
+`password_changed`, or `password_recovered`. Each outgoing handshake writes the
+field, including `null`, and only an anonymous identity may carry a reason. The
+PHP DTO parsers reject a present value of the wrong type or an unknown reason;
+an older payload without the field reads as `null`. This is context for one live
+delivery, not session history. Neither the reason payload nor its warning copy
+names either person. `session_ended` remains accepted by the PHP and SDK
+parsers and retains its shared copy as a compatibility fallback, but the server
+no longer sends it. `ended_by_administrator` accompanies one or all sessions an
+administrator ends for a person (`hilos_user_session_end` and
+`hilos_user_sessions_end_all`). `ended_from_another_browser` accompanies one
+session or the other sessions ended from the person's profile
+(`hilos_session_end` and `hilos_sessions_end_others`). `password_changed`
+accompanies other sessions ended after a password change; `password_recovered`
+accompanies other sessions ended by each of the three password-recovery
+branches. `account_blocked` keeps its existing meaning for live enforcement of
+ordinary sessions. Ending an outgoing `P→C` impersonating session completely
+signs it out with the operation's reason; ending an incoming `A→P` takeover
+returns to `A` without an access-loss reason. Stopping impersonation, voluntary
+sign-out, expiry, merge or erasure, a cold handshake, and a blocked sign-in
+refused before a live identity carry no reason. The holder, sibling tabs and the
+in-place sign-out fallback use the same existing delivery path; cluster delivery
+is unchanged.
 
-**Core latches a warning only for an explained live identity loss.** It
-normalizes the reason in each handshake before publishing the current identity,
-then latches only a recognized reason when a previously signed-in identity
-becomes anonymous. A cold guest, a first refusal of blocked sign-in, or a
-missing, unknown or null reason does not create a warning; a later anonymous
-handshake with `null` does not clear one already latched. A new signed-in
-identity clears the document-local latch. Explicit navigation clears
-`session_ended` and shows the destination as an ordinary guest page; dismissal
-of the existing blocked card or an unblock clears `account_blocked`. Moving
-between surfaces does not transfer one reason to the other, and a new document
-starts without the latch. Anonymous reconnects after cookie rotation preserve
-the warning without reopening a modal. It has no timer or separate close
-control. The warning is unconditional: there is no dirty-state check or discard
-confirmation, draft persistence or restoration, or shared dirty registry.
+**Core latches a warning for an explained live identity loss.** It normalizes the
+reason in each handshake before publishing the current identity, then latches a
+recognized reason only when a previously signed-in identity becomes anonymous.
+The five ended-session reasons (`session_ended` and the four operation-specific
+reasons) share one document-local latch. A cold guest, a first refusal of
+blocked sign-in, or a missing, unknown or null reason does not create a warning;
+a later anonymous handshake with `null` does not clear one already latched. A
+new signed-in identity clears the latch. Explicit navigation clears any of the
+five ended-session reasons and shows the destination as an ordinary guest page;
+a new document starts without the latch. Anonymous reconnects after cookie
+rotation preserve the warning without reopening a modal. `account_blocked`
+remains on its separate card and keeps its existing clearing rules: dismissing
+that card or unblocking clears it. Moving between surfaces does not transfer one
+reason to the other. It has no timer or separate close control. The warning is
+unconditional: there is no dirty-state check or discard confirmation, draft
+persistence or restoration, or shared dirty registry.
 
 **The SDK views remove inaccessible content and show the shared notice.** On
-`session_ended`, `HilosView` replaces the current view, including a public page,
-with the in-place sign-in surface when configured and “Your session has ended.
-Any unsaved changes were lost.” On `account_blocked`, the existing layout
-replaces its content with the “Access closed” card, where “Any unsaved changes
-were lost.” appears beside the reason. If no auth surface is configured, the
-inaccessible view is still removed and its warning remains. The header and
-footer keep their existing contract. Old views, dialogs and departure copies
-are removed. Core waits for the existing page answer while forgetting the old
-page scope and held frames; a late guest `page_response` cannot restore the old
-view over the warning. It changes no route; the existing subscription remains,
-and no new subscription or page data is sent. The three SDKs read one
-document-local controller and shared copy, expose a persistent polite Bootstrap
-status, and return focus through the existing `focusInitial` path. No second
-auth modal opens, and the existing auth gate and 401 resume/action replay are
-not extended by this notice.
+any of the five ended-session reasons, `HilosView` replaces the current view
+with the in-place sign-in surface when configured, except on the public status
+page (`HilosPages.PUBLIC_STATUS`). The persistent notice uses the shared copy
+for each reason: “Your session has ended. Any unsaved changes were lost.” for
+`session_ended` (the compatibility fallback), “Your session was ended by an
+administrator. Any unsaved changes were lost.” for `ended_by_administrator`,
+“Your session was ended from another browser. Any unsaved changes were lost.”
+for `ended_from_another_browser`,
+“Your session has ended because the password was changed. Any unsaved changes
+were lost.” for `password_changed`, and “Your session has ended because the
+password was reset. Any unsaved changes were lost.” for `password_recovered`.
+On `account_blocked`, the existing layout replaces its content with the “Access
+closed” card, where “Any unsaved changes were lost.” appears beside the reason.
+If no auth surface is configured, the inaccessible view is still removed and its
+warning remains. The header and footer keep their existing contract. Old views,
+dialogs and departure copies are removed. Core waits for the existing page
+answer while forgetting the old page scope and held frames; a late guest
+`page_response` cannot restore the old view over the warning. It changes no
+route; the existing subscription remains, and no new subscription or page data
+is sent. The three SDKs read one document-local controller and shared copy,
+expose a persistent polite Bootstrap status, and return focus through the
+existing `focusInitial` path. No second auth modal opens, and the existing auth
+gate and 401 resume/action replay are not extended by this notice. There are no
+new frames, timers or requests, and the warning does not inspect or preserve
+unsaved state.
 
 ## Backend contract surface (the gate)
 

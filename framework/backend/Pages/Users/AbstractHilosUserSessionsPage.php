@@ -41,9 +41,9 @@ use Hilos\Tables\Users\AbstractHilosUsersTable;
  * The Sessions tab of a person's card: the person's sessions, and the two buttons that end them (HIL-1662).
  *
  * The same card as {@see AbstractHilosUserPage} - the person, the head, the standing and its live
- * frame, the subscription parsed into {@see HilosUserPageSubscribeParams} - with the sessions list
- * ({@see HilosUserSessionsBrowserList}) as the one thing it must have bound: a project registering
- * this page without the list is refused at the start rather than drawn as an empty list.
+ * frame, the subscription parsed into {@see HilosUserPageSubscribeParams} - with both sessions lists
+ * ({@see HilosUserSessionsBrowserList} and {@see HilosUserActingSessionsBrowserList}) bound: a project
+ * registering this page without either list is refused at the start rather than drawn as an empty list.
  *
  * Its own actions are the two endings and nothing of the card's: renaming, merging, rights, blocking,
  * deletion and the takeover stay on the card's Overview, and this page does not answer them. Its ADMIN
@@ -64,7 +64,7 @@ abstract class AbstractHilosUserSessionsPage extends AbstractHilosUserPage
     /** @var list<string> The person this page is about, and the sessions the list reads */
     public const array READS_DB = [HilosDbContext::users, HilosDbContext::sessions];
 
-    public const array REQUIRED_LISTS = [HilosUserSessionsBrowserList::class];
+    public const array REQUIRED_LISTS = [HilosUserSessionsBrowserList::class, HilosUserActingSessionsBrowserList::class];
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_USER_SESSIONS,

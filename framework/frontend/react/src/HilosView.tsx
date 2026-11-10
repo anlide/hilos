@@ -60,6 +60,7 @@ import {
   focusInitial,
   hilosAccessLossReason,
   HilosPages,
+  isEndedSessionReason,
   subscribeSignal,
   type AuthGate,
   type DeferredFlagState,
@@ -149,7 +150,11 @@ export function HilosView({
   const modalOpen = useSignal(authGate?.modalOpen ?? MODAL_CLOSED)
   const accessLossReason = useSignal(hilosAccessLossReason)
   const sessionEnded =
-    page !== HilosPages.PUBLIC_STATUS && accessLossReason === 'session_ended'
+    page !== HilosPages.PUBLIC_STATUS && isEndedSessionReason(accessLossReason)
+  const sessionEndedCopy =
+    accessLossReason !== null && isEndedSessionReason(accessLossReason)
+      ? ACCESS_LOSS_COPY[accessLossReason]
+      : ''
   const AuthSurface = authSurface
 
   const skeletonFlagRef = useRef<DeferredFlagState | null>(null)
@@ -194,7 +199,7 @@ export function HilosView({
   // The removed HilosModal releases its trap in a passive-effect cleanup.
   // Focus the replacement afterward, preserving a deliberate choice elsewhere.
   useEffect(() => {
-    if (!sessionEnded || hilosAccessLossReason.get() !== 'session_ended') {
+    if (!sessionEnded || !isEndedSessionReason(hilosAccessLossReason.get())) {
       return
     }
     const root = accessLossSurfaceRef.current
@@ -253,7 +258,7 @@ export function HilosView({
             <div role="status" aria-live="polite">
               {sessionEnded ? (
                 <p className="alert alert-warning" data-id="access-loss-notice">
-                  {ACCESS_LOSS_COPY.session_ended}
+                  {sessionEndedCopy}
                 </p>
               ) : null}
             </div>

@@ -16,14 +16,17 @@ import {
   createAppPageRouter,
   createSignal,
   entityCollection,
+  HIDDEN_VALUE,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   hilosToasts,
   HilosPages,
+  ingest,
   pageIdentity,
   resolvePageTitle,
   ScopeManager,
   USER_ENTITY_TYPE,
   userFromFields,
+  type Hideable,
   type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
@@ -55,6 +58,8 @@ interface SessionFixture {
   readonly tabs?: readonly string[]
   /** The administrator acting in it, and whether their person row came along. */
   readonly impersonator?: { readonly id: number; readonly delivered: boolean }
+  /** The person acted as in an outgoing session, and whether their row came along. */
+  readonly actingAs?: { readonly id: number; readonly delivered: boolean }
 }
 
 const mounted: ReturnType<typeof mount>[] = []
@@ -282,37 +287,51 @@ function sessionsWorld(
       sent.filter((entry) => !entry.action.startsWith('hilos_step_up_')),
     /** The server delivers one session of the person, or its update. */
     give(session: SessionFixture): void {
-      page.entities.upsert(
-        { type: 'session', id: session.id },
+      const person = session.actingAs ?? session.impersonator
+      ingest(
+        page,
         {
-          id: session.id,
-          userId: 1,
-          deviceName: `Browser ${session.id}`,
-          browserTimeZone: 'Europe/Warsaw',
-          createdAt: CREATED_AT,
-          lastSeenAt: session.lastSeenAt,
-          expiresAt: null,
-          impersonatorUserId: session.impersonator?.id ?? null,
+          lists: {
+            [session.actingAs ? 'userActingSessions' : 'userSessions']: {
+              items: [
+                {
+                  itemKey: session.id,
+                  slots: {
+                    sessions: {
+                      id: session.id,
+                      userId: session.actingAs?.id ?? 1,
+                      deviceName: `Browser ${session.id}`,
+                      browserTimeZone: 'Europe/Warsaw',
+                      createdAt: CREATED_AT,
+                      lastSeenAt: session.lastSeenAt,
+                      expiresAt: null,
+                      impersonatorUserId: session.actingAs
+                        ? 1
+                        : (session.impersonator?.id ?? null),
+                    },
+                    connections: (session.tabs ?? []).map(
+                      (acceptKey, index) => ({
+                        acceptKey,
+                        sessionId: session.id,
+                        connectedAt: CREATED_AT + index,
+                      }),
+                    ),
+                    ...(person?.delivered ? { users: { id: person.id } } : {}),
+                  },
+                },
+              ],
+            },
+          },
         },
+        { entityTypes: { users: USER_ENTITY_TYPE, sessions: 'session' } },
       )
-      page.lists.upsert('userSessions', session.id, {
-        sessions: { type: 'session', id: session.id },
-        connections: (session.tabs ?? []).map((acceptKey, index) => ({
-          acceptKey,
-          sessionId: session.id,
-          connectedAt: CREATED_AT + index,
-        })),
-        ...(session.impersonator?.delivered
-          ? { users: { type: 'user', id: session.impersonator.id } }
-          : {}),
-      })
     },
     /** The server takes one session out of the person's list. */
-    take(sessionId: number): void {
-      page.lists.delete('userSessions', sessionId)
+    take(sessionId: number, list = 'userSessions'): void {
+      ingest(page, { lists: { [list]: { deleted: [sessionId] } } })
     },
     /** The server renames a person. */
-    rename(userId: number, name: string): void {
+    rename(userId: number, name: Hideable<string>): void {
       page.entities.upsert({ type: 'user', id: userId }, { name })
     },
     /** The server answers the last ending sent: its success sentence, or a refusal. */
@@ -573,6 +592,40 @@ describe('HilosUserSessionsPage list', () => {
     const after = wrapper.findAll('[data-id="user-session-row"]')
     expect(after[0].get('h3').text()).toBe('Session #12 Acting as · Olena')
     expect(after[2].findAll('[data-id="user-session-tab"]')).toHaveLength(1)
+    expect(world.sent).toEqual([])
+  })
+
+  it('names the person acted as in an outgoing session, follows their rename and preserves hidden and missing names', async () => {
+    const world = sessionsWorld()
+    world.rename(22, 'Carol')
+    world.give({
+      id: 14,
+      lastSeenAt: CREATED_AT + 1,
+      actingAs: { id: 22, delivered: true },
+    })
+    world.give({
+      id: 15,
+      lastSeenAt: CREATED_AT,
+      actingAs: { id: 23, delivered: false },
+    })
+    const wrapper = await mountTab(world.context)
+    const badges = () => wrapper.findAll('[data-id="user-session-acting-as"]')
+
+    expect(badges().map((badge) => badge.text())).toEqual([
+      'Acting on behalf of · Carol',
+      'Acting on behalf of · #23',
+    ])
+    expect(wrapper.text()).not.toContain('Acting as ·')
+
+    world.rename(22, 'Dana')
+    await nextTick()
+    expect(badges()[0].text()).toBe('Acting on behalf of · Dana')
+
+    world.rename(22, HIDDEN_VALUE)
+    await nextTick()
+    expect(badges()[0].get('[data-id="hilos-hidden"]').text()).toBe('Hidden')
+    expect(badges()[0].text()).toBe('Acting on behalf of · Hidden')
+    expect(wrapper.text()).not.toContain('Dana')
     expect(world.sent).toEqual([])
   })
 
@@ -863,6 +916,58 @@ describe('HilosUserSessionsPage ending one session', () => {
       'This is your own account: if you are using this session now, this tab loses the account too.',
     )
   })
+
+  it('explains the complete sign-out of an outgoing session and ends it on the card owner through the confirmation step', async () => {
+    const world = sessionsWorld({ stepUp: 'ask' })
+    world.rename(22, 'Carol')
+    world.give({
+      id: 14,
+      lastSeenAt: CREATED_AT,
+      actingAs: { id: 22, delivered: true },
+    })
+    const wrapper = await mountTab(world.context)
+
+    await click(endButton(14))
+    expect(el('step-up-password')).not.toBeNull()
+    expect(world.sent).toEqual([
+      expect.objectContaining({
+        action: 'hilos_step_up_start',
+        data: { operation: 'end_user_sessions' },
+      }),
+    ])
+    expect(world.endings()).toEqual([])
+    await passStep()
+    expect(dialog()?.querySelector('p')?.textContent?.trim()).toBe(
+      'In this session the person is acting as Carol. Ending it signs this browser out completely: it does not go back to the person.',
+    )
+    expect(dialog()?.textContent).toContain(
+      "The person's other sessions are not touched: their other browsers keep working.",
+    )
+    expect(dialog()?.textContent).not.toContain('back to that administrator')
+
+    world.rename(22, HIDDEN_VALUE)
+    await nextTick()
+    expect(dialog()?.querySelector('p')?.textContent?.trim()).toBe(
+      'In this session the person is acting as Hidden. Ending it signs this browser out completely: it does not go back to the person.',
+    )
+    expect(dialog()?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+
+    await click(el('user-session-end-confirm'))
+    expect(world.endings()).toEqual([
+      expect.objectContaining({
+        action: 'hilos_user_session_end',
+        data: { userId: 1, sessionId: 14 },
+      }),
+    ])
+    world.answer({ message: 'Session #14 ended' })
+    await settle()
+    expect(dialog()).toBeNull()
+    expect(successToasts()).toEqual(['Session #14 ended'])
+    expect(wrapper.findAll('[data-id="user-session-row"]')).toHaveLength(1)
+    world.take(14, 'userActingSessions')
+    await nextTick()
+    expect(wrapper.findAll('[data-id="user-session-row"]')).toHaveLength(0)
+  })
 })
 
 describe('HilosUserSessionsPage ending all sessions', () => {
@@ -889,6 +994,22 @@ describe('HilosUserSessionsPage ending all sessions', () => {
       'This is your own account: your current session ends too',
     )
     expect(dialog()?.textContent).not.toContain('takes that browser back')
+    expect(dialog()?.textContent).not.toContain(
+      'does not go back to the person',
+    )
+
+    world.rename(22, 'Carol')
+    world.give({
+      id: 14,
+      lastSeenAt: CREATED_AT + 3,
+      actingAs: { id: 22, delivered: true },
+    })
+    await nextTick()
+    expect(count()).toBe('3')
+    expect(dialog()?.textContent).toContain(
+      'A session in which the person is acting as someone else signs that browser out completely: it does not go back to the person.',
+    )
+    expect(dialog()?.textContent).not.toContain('takes that browser back')
 
     world.give({
       id: 13,
@@ -896,8 +1017,25 @@ describe('HilosUserSessionsPage ending all sessions', () => {
       impersonator: { id: 99, delivered: true },
     })
     await nextTick()
+    expect(count()).toBe('4')
+    expect(dialog()?.textContent).toContain('takes that browser back')
+    expect(dialog()?.textContent).toContain('does not go back to the person')
+
+    world.take(14, 'userActingSessions')
+    await nextTick()
     expect(count()).toBe('3')
     expect(dialog()?.textContent).toContain('takes that browser back')
+    expect(dialog()?.textContent).not.toContain(
+      'does not go back to the person',
+    )
+
+    world.take(13)
+    await nextTick()
+    expect(count()).toBe('2')
+    expect(dialog()?.textContent).not.toContain('takes that browser back')
+    expect(dialog()?.textContent).not.toContain(
+      'does not go back to the person',
+    )
 
     await click(el('user-sessions-end-all-confirm'))
     expect(world.endings()).toEqual([
@@ -1055,6 +1193,12 @@ describe('HilosUserSessionsPage view mode and merged card', () => {
     const scopes = signIn({ id: 5, admin: false }, true)
     const world = sessionsWorld({ scopes })
     world.give({ id: 11, lastSeenAt: CREATED_AT, tabs: ['ak-a'] })
+    world.rename(22, 'Carol')
+    world.give({
+      id: 14,
+      lastSeenAt: CREATED_AT + 1,
+      actingAs: { id: 22, delivered: true },
+    })
     const wrapper = await mountTab(world.context)
 
     const tab = wrapper.get('[data-id="hilos-user-sessions-page"]')
@@ -1062,6 +1206,8 @@ describe('HilosUserSessionsPage view mode and merged card', () => {
     expect(tab.find('[data-id="user-session-row"]').exists()).toBe(false)
     expect(tab.text()).not.toContain('Browser 11')
     expect(tab.text()).not.toContain('No sessions')
+    expect(tab.text()).not.toContain('Carol')
+    expect(tab.find('[data-id="user-session-acting-as"]').exists()).toBe(false)
 
     await click(el('user-sessions-end-all'))
     expect(dialog()).not.toBeNull()

@@ -67,6 +67,7 @@ import {
   DEFAULT_SKELETON_DELAY_MS,
   focusInitial,
   hilosAccessLossReason,
+  isEndedSessionReason,
   HilosPages,
 } from '@hilos/core/base'
 import type { AuthGate, PageView } from '@hilos/core/base'
@@ -119,8 +120,13 @@ const accessLost = computedSignal(() => hilosAccessLossReason.get() !== null)
 const sessionEnded = computed(
   () =>
     route.value.page !== HilosPages.PUBLIC_STATUS &&
-    accessLossReason.value === 'session_ended',
+    isEndedSessionReason(accessLossReason.value),
 )
+const sessionEndedCopy = computed(() => {
+  const reason = accessLossReason.value
+  if (reason === null || !isEndedSessionReason(reason)) return ''
+  return ACCESS_LOSS_COPY[reason]
+})
 
 const skeletonFlag = createDeferredFlagState(DEFAULT_SKELETON_DELAY_MS)
 const showSkeleton = useSignal(skeletonFlag.shown)
@@ -211,7 +217,7 @@ function onModalToggle(open: boolean): void {
           class="alert alert-warning"
           data-id="access-loss-notice"
         >
-          {{ ACCESS_LOSS_COPY.session_ended }}
+          {{ sessionEndedCopy }}
         </p>
       </div>
       <component

@@ -1604,6 +1604,41 @@ describe('HilosView live access loss', () => {
     expect(document.querySelector('[data-id="auth-surface"]')).toBeNull()
   })
 
+  it.each([
+    [
+      'ended_by_administrator',
+      'Your session was ended by an administrator. Any unsaved changes were lost.',
+    ],
+    [
+      'ended_from_another_browser',
+      'Your session was ended from another browser. Any unsaved changes were lost.',
+    ],
+    [
+      'password_changed',
+      'Your session has ended because the password was changed. Any unsaved changes were lost.',
+    ],
+    [
+      'password_recovered',
+      'Your session has ended because the password was reset. Any unsaved changes were lost.',
+    ],
+  ] as const)(
+    'shows the reason-specific notice and sign-in surface for %s',
+    async (reason, copy) => {
+      const s = session()
+      s.handshake(7)
+      s.answer()
+      const wrapper = s.render()
+
+      s.handshake(null, { accessLossReason: reason })
+      await settleCode()
+
+      expect(wrapper.get('[data-id="access-loss-notice"]').text()).toBe(copy)
+      expect(wrapper.find('[data-id="private-page"]').exists()).toBe(false)
+      expect(wrapper.findAll('[data-id="auth-surface"]')).toHaveLength(1)
+      expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
+    },
+  )
+
   it('replaces an already open action-auth dialog with one in-place surface', async () => {
     const s = session()
     s.handshake(7)

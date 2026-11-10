@@ -1648,6 +1648,52 @@ describe('HilosView live access loss', () => {
     expect(root.querySelector('[data-id="private-page"]')).toBeNull()
   })
 
+  it.each([
+    [
+      'ended_by_administrator',
+      'Your session was ended by an administrator. Any unsaved changes were lost.',
+    ],
+    [
+      'ended_from_another_browser',
+      'Your session was ended from another browser. Any unsaved changes were lost.',
+    ],
+    [
+      'password_changed',
+      'Your session has ended because the password was changed. Any unsaved changes were lost.',
+    ],
+    [
+      'password_recovered',
+      'Your session has ended because the password was reset. Any unsaved changes were lost.',
+    ],
+  ] as const)(
+    'shows the sign-in form and the explanation for %s',
+    async (reason, copy) => {
+      const session = liveSession()
+      session.handshake(7)
+      session.answer()
+      const fixture = render(session)
+
+      session.handshake(null, { accessLossReason: reason })
+      await settle(fixture)
+
+      const root = fixture.nativeElement as HTMLElement
+      const notice = root.querySelector<HTMLElement>(
+        '[data-id="access-loss-notice"]',
+      )
+      expect(notice?.textContent?.trim()).toBe(copy)
+      expect(root.querySelector('[data-id="private-page"]')).toBeNull()
+      const signInForm = root.querySelector<HTMLFormElement>(
+        'form[data-id="auth-surface"]',
+      )
+      expect(signInForm).not.toBeNull()
+      expect(signInForm?.hidden).toBe(false)
+      expect(root.querySelector('[data-id="auth-identifier"]')).not.toBeNull()
+      expect(document.activeElement).toBe(
+        root.querySelector('[data-id="auth-identifier"]'),
+      )
+    },
+  )
+
   it('preserves a deliberate focus choice outside the replaced page', async () => {
     const session = liveSession()
     session.handshake(7)
