@@ -2,6 +2,7 @@ import { expect, test } from '../test.js'
 
 import {
   AUTH_ACTION_COMPLETE_REGISTRATION,
+  AUTH_ACTION_DISMISS_SESSION_ACK,
   HilosPages,
   resolveHilosPath,
 } from '../../../../../framework/frontend/core/src/index.js'
@@ -39,7 +40,7 @@ test('signing in and opening Analytics shows real data', async ({ page }) => {
     expect.configure({ timeout: ANALYTICS_WRITER_TIMEOUT_MS }),
     sendCommand,
     user.userId,
-    AUTH_ACTION_COMPLETE_REGISTRATION,
+    AUTH_ACTION_DISMISS_SESSION_ACK,
   )
 
   await gotoPage(expect, page, resolveHilosPath(HilosPages.ANALYTICS))

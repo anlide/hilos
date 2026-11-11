@@ -1,0 +1,394 @@
+# Docker Compose configuration for tests (unit, Playwright e2e)
+# Isolated from the local stack (different ports, volumes, network).
+#
+# e2e runs against the BUILT frontend artifact served by
+# solar-system-model-nginx-test with a booted daemon behind it
+# (docs/agents/frontend/testing-strategy.md). The e2e
+# stack (mysql + daemon + nginx) starts via `composer run test:e2e-up`, then any
+# number of `composer run test:e2e` invocations drive it, then `test:e2e-down`.
+# Frontend services sit behind profiles so the PHP-only test commands never
+# start them.
+
+name: hilos-solar-system-model-test${HILOS_STAND_SUFFIX:-}
+
+services:
+  solar-system-model-mysql-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    image: mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620
+    container_name: solar-system-model-mysql-test${HILOS_STAND_SUFFIX:-}
+    # How the runner's artifact collector finds this container: the three demos spell
+    # their database service three different ways, so it is asked for by role rather
+    # than guessed at by name, which would have broken silently on the fourth (HIL-841).
+    labels:
+      hilos.role: database
+    ports:
+      # Host-side of every publish binds to loopback by default; set
+      # HILOS_BIND_HOST in docker/.env to expose this stack to a LAN/tailnet.
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${MYSQL_TEST_HOST_PORT:-33078}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      MYSQL_DATABASE: ${MYSQL_TEST_DATABASE:-hilos-demo-solar-system-model-test}
+      MYSQL_USER: ${MYSQL_USER:-hilos}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hilos_pass}
+      TZ: UTC
+    # The test database lives in memory and goes with its container (HIL-1327).
+    tmpfs:
+      - /var/lib/mysql
+    volumes:
+      - ../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+    # --connect alone: it waits for the TCP listener the init-time server never opens and
+    # does not test the login, so neither the image's random healthcheck password (misread
+    # when it starts and ends with a double quote) nor the age of the data directory can
+    # keep this service unhealthy.
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    networks:
+      - hilos-solar-system-model-test-network
+
+  # Registration and second-factor messages land in the stand mailbox.
+  # No host ports: the runner reads Mailpit over this network.
+  solar-system-model-mailpit-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
+    container_name: solar-system-model-mailpit-test${HILOS_STAND_SUFFIX:-}
+    environment:
+      # A test relay authenticates nobody and encrypts nothing; the daemon
+      # connects with MAIL_SMTP_SECURITY=none and no credentials.
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      TZ: UTC
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    networks:
+      - hilos-solar-system-model-test-network
+
+  # Framework TLS gateway for model checks and OAuth provider emulation.
+  # No host ports: only this stand reaches the gateway.
+  solar-system-model-stand-gateway-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    build:
+      context: ../../../framework/docker/stand-gateway
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
+    container_name: solar-system-model-stand-gateway-test${HILOS_STAND_SUFFIX:-}
+    # The gateway runs on the framework's own TLS server (HIL-921) and loads the
+    # classes it needs from the framework itself, so there is still no composer here.
+    volumes:
+      - ../../../framework:/hilos/framework:ro
+    environment:
+      MAILPIT_SMTP_HOST: solar-system-model-mailpit-test
+      MAILPIT_SMTP_PORT: 1025
+      # What the healthcheck below trusts: it reaches the gateway over TLS as well.
+      SSL_CERT_FILE: /app/tls/ca.pem
+      TZ: UTC
+    depends_on:
+      solar-system-model-mailpit-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"https://127.0.0.1:18000/test/health\") === false ? 1 : 0);'"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 3s
+    networks:
+      # One name in every stack, and the name the gateway's certificate is issued
+      # for (HIL-921): the daemon checks the name of the peer it reaches, so the
+      # service name, which differs from stack to stack, cannot be the address.
+      hilos-solar-system-model-test-network:
+        aliases:
+          - stand-gateway
+
+  solar-system-model-daemon-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
+    env_file:
+      - path: ../tests/.env
+        required: false
+    container_name: solar-system-model-daemon-test${HILOS_STAND_SUFFIX:-}
+    # Found by role for the same reason the database is (HIL-841): the collector runs
+    # this demo's own db:migration:status inside a container that is ALREADY up, never
+    # starting one, because a stand it raised is no longer the stand that failed.
+    labels:
+      hilos.role: app
+    volumes:
+      - ..:/app
+      # The stand's own data root: exports, backups, Status and files never share the local installation's data/ (docs/agents/testing.md).
+      - ../data/test:/app/data
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs-test:/var/log/hilos
+    working_dir: /app
+    environment:
+      - APP_ENV=test
+      # The nightly rotation carries daemon.log away under a run; a test that needs a rotation calls it itself.
+      - LOG_ROTATION_CRON=0 3 29 2 *
+      # The project zone the time-zone e2e stand on (HIL-1596). Pinned in the test
+      # stack so a run reads the same zone whatever the host or a stale tests/.env
+      # carries; the process value wins over the env file and /app/.env.
+      - HILOS_PROJECT_TIME_ZONE=Europe/Warsaw
+      - DB_HOST=solar-system-model-mysql-test
+      - DB_PORT=3306
+      - DB_DATABASE=${MYSQL_TEST_DATABASE:-hilos-demo-solar-system-model-test}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+      - HTTP_STATUS_HOST=0.0.0.0
+      - HTTP_STATUS_PORT=8090
+      # The sign-in throttle off, as the test environment keeps it
+      # (docs/agents/architecture/auth-throttle.md): every browser of a run signs
+      # in from the runner's one address, so counters carried across the suite
+      # would make a test depend on the ones before it. The process value wins
+      # over a stale tests/.env. No spec of this demo proves the throttle;
+      # binance-btc-tracker and ecommerce-shop keep it on for theirs.
+      - HILOS_AUTH_THROTTLE_ENABLED=false
+      - HILOS_DATA_EXPORT_XACCEL_LOCATION=/__hilos_data_export
+      - HILOS_FILES_XACCEL_LOCATION=/__hilos_files
+      - WORKER_COMM_HOST=0.0.0.0
+      - WORKER_COMM_PORT=8091
+      - WEBSOCKET_HOST=0.0.0.0
+      - WEBSOCKET_PORT=8092
+      # Trust this stand's own nginx, by address, to name the visitor behind it
+      # (HIL-680). One address and not a pool: the websocket port below is published
+      # as well, and a connection that reaches it without passing through nginx
+      # arrives from the docker network's gateway - a peer that must never be
+      # trusted to name anyone.
+      - HILOS_TRUSTED_PROXIES=${DOCKER_TEST_NGINX_IP:-10.${HILOS_STAND_NET_SOLAR_SYSTEM_MODEL:-216}.0.12}/32
+      # The CLI command channel, the socket admin:grant / admin:revoke speak.
+      # In-network only: the e2e runner shares the compose network, so no host
+      # port is published.
+      - COMMAND_HOST=0.0.0.0
+      - COMMAND_PORT=8094
+      # The daemon addresses itself, so an operator command run with `docker exec`
+      # in this container (admin:create / admin:grant / admin:revoke /
+      # protected-mode:open) reaches the command channel over loopback.
+      - HILOS_DAEMON_HOST=127.0.0.1
+      - CLUSTER_NODE_NAME=Main node
+      # Mail: the transport is pinned to the stand's own interceptor rather than
+      # auto-selected, so a stand that loses the relay fails loudly instead of
+      # quietly writing .eml files into the work tree that nobody reads. A sender
+      # identity is mandatory — without it a message cannot be encoded at all.
+      - MAIL_TRANSPORT=smtp
+      - MAIL_SMTP_HOST=solar-system-model-mailpit-test
+      - MAIL_SMTP_PORT=1025
+      - MAIL_SMTP_SECURITY=none
+      - MAIL_FROM_ADDRESS=notifications@solar-system-model.test
+      - MAIL_FROM_NAME=Hilos Solar System Model
+      # WebAuthn / passkey (HIL-284): pin the Relying Party to the in-network e2e
+      # host, so a device key enrolled in a spec verifies. The runner reaches the
+      # app as https://solar-system-model-nginx-test, so the browser scopes the credential to
+      # that RP id and sends that origin in clientDataJSON; the daemon matches
+      # rpId hash and origin exactly, and the defaults (localhost /
+      # http://localhost) reject it.
+      - HILOS_WEBAUTHN_RP_ID=solar-system-model-nginx-test
+      - HILOS_WEBAUTHN_ORIGIN=https://solar-system-model-nginx-test
+      - HILOS_WEBAUTHN_CHALLENGE_SECRET=e2e-webauthn-challenge-secret
+      # OAuth (HIL-924): the stand's own provider emulator, which the presets are pointed
+      # at as a base - each builds <base>/<github|google>/authorize|token|userinfo from it.
+      # https is kept, because the emulator speaks the TLS a real provider speaks (HIL-921).
+      # The pairs are fake but non-empty: an empty pair leaves that provider out, with no
+      # icon and no sign-in. The callback is absolute, because a provider, and the emulator
+      # playing one, refuses a redirect_uri without a scheme and a host.
+      - OAUTH_ENDPOINT_URL=https://stand-gateway:18000/oauth
+      - OAUTH_GITHUB_CLIENT_ID=stand-github-client
+      - OAUTH_GITHUB_CLIENT_SECRET=stand-github-secret
+      - OAUTH_GOOGLE_CLIENT_ID=stand-google-client
+      - OAUTH_GOOGLE_CLIENT_SECRET=stand-google-secret
+      - OAUTH_REDIRECT_URI=https://solar-system-model-nginx-test/auth/callback
+      - HILOS_MODERATION_TEXT_URL=https://stand-gateway:18000/model
+      - HILOS_MODERATION_IMAGE_URL=https://stand-gateway:18000/model
+      # The gateway answers over TLS with the stand's own certificate (HIL-921), and the
+      # daemon verifies it the way it verifies a provider in production: the trust comes
+      # from the environment, not from a switch in the client. OpenSSL reads this file
+      # beside the system's certificate directory, so every other peer stays trusted.
+      - SSL_CERT_FILE=/hilos/framework/docker/stand-gateway/tls/ca.pem
+    command: ["php", "backend/Bootstrap/docker.php"]
+    depends_on:
+      solar-system-model-mysql-test:
+        condition: service_healthy
+      solar-system-model-mailpit-test:
+        condition: service_healthy
+      solar-system-model-stand-gateway-test:
+        condition: service_healthy
+    ports:
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${HTTP_TEST_PORT:-8213}:8090"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WORKER_TEST_PORT:-8214}:8091"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WEBSOCKET_TEST_PORT:-8215}:8092"
+    networks:
+      - hilos-solar-system-model-test-network
+
+  # On-demand Node toolchain for the solar-system-model frontend (npm install /
+  # build / check). Mounts the whole repo at /hilos so the @hilos/react `file:`
+  # dependency into framework/frontend resolves. Used by
+  # `composer run test:e2e-build` to produce the dist that
+  # solar-system-model-nginx-test serves.
+  solar-system-model-frontend-cli-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    image: node:26.13.0-bookworm-slim@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9
+    container_name: solar-system-model-frontend-cli-test${HILOS_STAND_SUFFIX:-}
+    volumes:
+      - ../../..:/hilos
+    working_dir: /hilos/demo/solar-system-model/frontend
+    environment:
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      NODE_OPTIONS: "--no-experimental-webstorage"
+    profiles:
+      - cli
+    # The stand's claimed network: without one, compose makes a <project>_default
+    # from Docker's default pools on every run, and the stands exhaust them.
+    networks:
+      - hilos-solar-system-model-test-network
+
+  # Serves the built frontend artifact over the same nginx image and config
+  # template as prod (test what you ship) and proxies /ws to the daemon. The
+  # e2e runner reaches it in-network as https://solar-system-model-nginx-test;
+  # host ports are only for manual inspection.
+  solar-system-model-nginx-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    container_name: solar-system-model-nginx-test${HILOS_STAND_SUFFIX:-}
+    volumes:
+      - ../frontend/dist:/usr/share/nginx/html:ro
+      - ../data/test/data_export:/data_export:ro
+      - ../data/test/files/published:/published:ro
+      - nginx-ssl-test:/etc/nginx/ssl
+    ports:
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${NGINX_TEST_HTTP_PORT:-8217}:80"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${NGINX_TEST_HTTPS_PORT:-8218}:443"
+    environment:
+      - FRONTEND_HTML_UPSTREAM=solar-system-model-daemon-test
+    depends_on:
+      - solar-system-model-daemon-test
+    profiles:
+      - e2e
+    networks:
+      hilos-solar-system-model-test-network:
+        ipv4_address: ${DOCKER_TEST_NGINX_IP:-10.${HILOS_STAND_NET_SOLAR_SYSTEM_MODEL:-216}.0.12}
+
+  solar-system-model-cli-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
+    env_file:
+      - path: ../tests/.env
+        required: false
+    container_name: solar-system-model-cli-test${HILOS_STAND_SUFFIX:-}
+    volumes:
+      - ..:/app
+      # The stand's own data root: exports, backups, Status and files never share the local installation's data/ (docs/agents/testing.md).
+      - ../data/test:/app/data
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs-test:/var/log/hilos
+    working_dir: /app
+    environment:
+      - APP_ENV=test
+      # The project zone the time-zone e2e stand on (HIL-1596). Pinned in the test
+      # stack so a run reads the same zone whatever the host or a stale tests/.env
+      # carries; the process value wins over the env file and /app/.env.
+      - HILOS_PROJECT_TIME_ZONE=Europe/Warsaw
+      # The daemon's trust in the stand gateway's certificate (HIL-921), so a command
+      # that reaches the gateway from here verifies it the same way.
+      - SSL_CERT_FILE=/hilos/framework/docker/stand-gateway/tls/ca.pem
+      # Where the daemon answers, so a command that writes state the daemon owns can ask
+      # whether one is running before it starts (HIL-728). The check is fail-closed: without
+      # this pair the CLI refuses such a command rather than risk a second writer, so
+      # test:db-prepare needs it even though it runs before the daemon exists.
+      - HILOS_DAEMON_HOST=solar-system-model-daemon-test
+      - COMMAND_PORT=8094
+      - DB_HOST=solar-system-model-mysql-test
+      - DB_PORT=3306
+      - DB_DATABASE=${MYSQL_TEST_DATABASE:-hilos-demo-solar-system-model-test}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+    profiles:
+      - cli
+    depends_on:
+      solar-system-model-mysql-test:
+        condition: service_healthy
+    networks:
+      - hilos-solar-system-model-test-network
+
+  # Playwright e2e runner. The official image ships the browsers — its version
+  # tag MUST match `@playwright/test` in tests/e2e/package.json, otherwise
+  # Playwright cannot locate its browser executables. BASE_URL points at the
+  # in-network nginx, so the run never depends on host ports. No depends_on:
+  # the stack is started explicitly via `composer run test:e2e-up`, never as a
+  # side effect of running tests. node_modules installs onto the host
+  # bind-mount (docs/agents/frontend/build-and-docker.md).
+  solar-system-model-e2e-runner:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+    container_name: solar-system-model-e2e-runner${HILOS_STAND_SUFFIX:-}
+    # The browser's scratch lives in memory: chromium runs with
+    # --disable-dev-shm-usage, so its shared memory and profile churn land in
+    # /tmp - gigabytes per suite written through the container layer to disk.
+    tmpfs:
+      - /tmp
+    volumes:
+      - ../../..:/hilos
+    working_dir: /hilos/demo/solar-system-model/tests/e2e
+    environment:
+      BASE_URL: https://solar-system-model-nginx-test
+      # The admin-gated /hilos specs take the grant over the daemon command
+      # channel before they navigate (helpers/adminGrant.ts).
+      COMMAND_HOST: solar-system-model-daemon-test
+      COMMAND_PORT: "8094"
+      CI: "1"
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      # The mail interceptor's HTTP API. The shared stand mailbox module
+      # (framework/frontend/scripts/standMailbox.mjs) reads its address from here
+      # and has no default of its own.
+      MAILPIT_URL: http://solar-system-model-mailpit-test:8025
+      # Model and OAuth emulator controls for the stand's specs.
+      STAND_GATEWAY_URL: https://stand-gateway:18000
+      # The gateway's certificate is the stand's own (HIL-921). Node adds this file to
+      # its trusted roots rather than replacing them, for a spec's fetch. The browser
+      # reaches the gateway too - the provider emulator's consent screen (HIL-923,
+      # HIL-924) - and its pass to the stand's certificate is ignoreHTTPSErrors in
+      # tests/e2e/playwright.config.ts, not this file.
+      NODE_EXTRA_CA_CERTS: /hilos/framework/docker/stand-gateway/tls/ca.pem
+      # A factor pinned by hand for every Playwright cap. Nothing in the repository
+      # sets it, the full run included; the default is deliberately EMPTY rather
+      # than "1", because empty means "no override" to the scale and leaves the
+      # suite on the host heuristic (HIL-853).
+      HILOS_E2E_TIMEOUT_SCALE: ${HILOS_E2E_TIMEOUT_SCALE:-}
+    profiles:
+      - e2e
+    networks:
+      - hilos-solar-system-model-test-network
+
+volumes:
+  nginx-ssl-test:
+
+networks:
+  hilos-solar-system-model-test-network:
+    driver: bridge
+    ipam:
+      config:
+        # Deliberately outside 172.16.0.0/12 and 192.168.0.0/16 - Docker's default
+        # address pools. nginx needs a fixed address (the daemon trusts it by that
+        # address and nothing else), so this subnet is claimed, not assigned. Inside
+        # a default pool that claim loses a race: any other stack whose network came
+        # up first may already hold the range, and then the stand fails to start with
+        # "Pool overlaps with other one on this address space". 10.0.0.0/8 is never
+        # auto-assigned (docs/new-project/README.md).
+        - subnet: ${DOCKER_TEST_NETWORK_SUBNET:-10.${HILOS_STAND_NET_SOLAR_SYSTEM_MODEL:-216}.0.0/16}

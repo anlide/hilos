@@ -89,6 +89,7 @@ final class PhpunitIssueGateTest extends TestCase
             $root . '/demo/pmd/tests/phpunit.xml',
             $root . '/demo/polls/tests/phpunit.xml',
             $root . '/demo/preferans/tests/phpunit.xml',
+            $root . '/demo/solar-system-model/tests/phpunit.xml',
             $root . '/demo/tasks/tests/phpunit.xml',
         ];
     }

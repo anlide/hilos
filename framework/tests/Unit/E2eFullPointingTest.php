@@ -64,6 +64,7 @@ final class E2eFullPointingTest extends TestCase
         'chat', 'tasks', 'polls', 'binance-btc-tracker',
         'ecommerce-shop', 'online-testing', 'preferans', 'pmd',
         'concert-tickets',
+        'solar-system-model',
     ];
 
     /**

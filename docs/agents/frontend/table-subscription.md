@@ -2136,13 +2136,14 @@ These helpers are re-exported from
 [`table.ts`](../../../framework/frontend/e2e/table.ts) finds a row's reading
 control in its table row, its card, or its tile.
 
-React's Tiles are proved on the ecommerce shop's synthetic `/__table_geometry/`
-fixture. Its opt-in `geometry-tiles` control declares `views` and a picture
-column. The “React Tiles” group of
-[`users.spec.ts`](../../../demo/ecommerce-shop/tests/e2e/tests/users.spec.ts)
+React's Tiles are proved on the synthetic `/__table_geometry/` fixture of the
+Solar System Model, which the ecommerce shop also builds from the same source.
+Its opt-in `geometry-tiles` control declares `views` and a picture column. The
+“React Tiles” group of
+[`table-geometry.spec.ts`](../../../demo/solar-system-model/tests/e2e/tests/table-geometry.spec.ts)
 switches the view over one window, restores the remembered choice, and measures
 the grid and a departed tile's retained footprint; the “SDK Tiles accessibility”
-group of
+group of the shop's
 [`a11y.spec.ts`](../../../demo/ecommerce-shop/tests/e2e/tests/a11y.spec.ts)
 checks the view buttons by keyboard and the named list with its unique targets.
 

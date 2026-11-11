@@ -11,6 +11,7 @@ running in project-owned docker stacks. The demos, each with what it carries:
 | [demo/binance-btc-tracker](../../demo/binance-btc-tracker) | minimal | Vue | the smallest complete shape on Vue: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
 | [demo/pmd](../../demo/pmd) | service database | Vue | active carrier: empty home; sign-in, profile and Security; admin Analytics, Users, Settings, Appearance and Communications |
 | [demo/ecommerce-shop](../../demo/ecommerce-shop) | minimal | React | the smallest complete shape on React: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
+| [demo/solar-system-model](../../demo/solar-system-model) | minimal | React | active carrier: empty public home, sign-in at `/hilos`, profile; admin Analytics, Users, Settings |
 | [demo/online-testing](../../demo/online-testing) | minimal | Angular | the smallest complete shape on Angular: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
 | [demo/preferans](../../demo/preferans) | minimal | Angular | an active Angular carrier with password sign-in, an empty home, profile, settings, i18n, Appearance and Analytics; local/test stacks and e2e: [testing.md](../agents/testing.md) |
 | [demo/concert-tickets](../../demo/concert-tickets) | minimal | Angular | an active Angular carrier with sign-in (password, passkey, SMS, GitHub), an empty home, profile, and admin Daemon, Logs, Change Log and Analytics; local/test stacks and e2e: [testing.md](../agents/testing.md) |
@@ -289,8 +290,8 @@ registry of taken host ports:
 | roblox-game-server local (not in the code yet — HIL-2017) | 33075 | 8190/8191/8192 | 8200 | https 8196 | 5180 | 10.205 |
 | roblox-game-server test (not in the code yet — HIL-2017) | 33076 | 8193/8194/8195 | — | http 8197 / https 8198 | — | 10.215 |
 | roblox-game-server cluster (not in the code yet — HIL-2029) | — | — | — | — | — | 10.225 |
-| solar-system-model local (not in the code yet — HIL-2018) | 33077 | 8210/8211/8212 | 8220 | https 8216 | 5181 | 10.206 |
-| solar-system-model test (not in the code yet — HIL-2018) | 33078 | 8213/8214/8215 | — | http 8217 / https 8218 | — | 10.216 |
+| solar-system-model local | 33077 | 8210/8211/8212 | 8220 | https 8216 | 5181 | 10.206 |
+| solar-system-model test | 33078 | 8213/8214/8215 | — | http 8217 / https 8218 | — | 10.216 |
 | file-gallery-manager local (not in the code yet — HIL-2019) | 33079 | 8230/8231/8232 | 8240 | https 8236 | 5182 | 10.207 |
 | file-gallery-manager test (not in the code yet — HIL-2019) | 33080 | 8233/8234/8235 | — | http 8237 / https 8238 | — | 10.217 |
 | file-gallery-manager cluster (not in the code yet — HIL-2032) | — | — | — | — | — | 10.227 |

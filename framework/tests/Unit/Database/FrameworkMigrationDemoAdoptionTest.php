@@ -37,6 +37,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             'Demo\\Preferans\\Hilos',
             'Demo\\Pmd\\Hilos',
             'Demo\\ConcertTickets\\Hilos',
+            'Demo\\SolarSystemModel\\Hilos',
         ], array_column($projects, 'facade'));
         $indices = [97, 53, 53, 43, 42, 42];
         $browserTimeZoneIndices = [99, 59, 59, 45, 45, 45];
@@ -788,7 +789,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);
-        self::assertSame([[], [], [], [], [], [], [], [], []], array_column($plans, 'publications'));
+        self::assertSame([[], [], [], [], [], [], [], [], [], []], array_column($plans, 'publications'));
     }
 
     /**

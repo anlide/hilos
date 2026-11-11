@@ -314,6 +314,26 @@ export async function openSignIn(
 }
 
 /**
+ * Open the sign-in surface by walking into a page closed to a guest, the way a
+ * guest of a shell with no sign-in control does.
+ *
+ * The closed page answers that it wants an account, and the auth surface takes
+ * its place; once the flow on it ends, the gate resumes that page.
+ *
+ * @param expect The calling spec's Playwright expect.
+ * @param page Page starting from any location (it navigates to `path`).
+ * @param path A page that asks a guest to sign in, as the address bar holds it.
+ */
+export async function openSignInOnPage(
+  expect: Expect,
+  page: Page,
+  path: string,
+): Promise<void> {
+  await gotoPage(expect, page, path)
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+}
+
+/**
  * Sign out through the shell control and wait for the anonymous state to settle.
  *
  * The name in the shell is bound to an account, so its removal confirms the
@@ -409,22 +429,36 @@ export interface SignedInUser {
  * resolved. This is the standard way an authenticated spec obtains its user
  * under the session≠user model.
  *
+ * A shell with no sign-in button names `entryPath` instead: the surface opens on
+ * that page closed to a guest, the registration happens there, and the page is
+ * then left for '/' to read the self user.
+ *
  * @param expect The calling spec's Playwright expect.
  * @param page Page starting from any location (it navigates to '/')
- * @param options The entry control used to open sign-in.
+ * @param options The entry control used to open sign-in, or the closed page
+ *                whose sign-in surface takes its place.
  * @returns The registered account's email, display name, and durable user id
  */
 export async function signUp(
   expect: Expect,
   page: Page,
-  { entryId = 'nav-signin' }: { entryId?: string } = {},
+  {
+    entryId = 'nav-signin',
+    entryPath,
+  }: { entryId?: string; entryPath?: string } = {},
 ): Promise<SignedInUser> {
   const email = uniqueEmail()
 
-  await gotoPage(expect, page, '/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await openSignIn(expect, page, entryId)
-  await register(expect, page, email)
+  if (entryPath === undefined) {
+    await gotoPage(expect, page, '/')
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    await openSignIn(expect, page, entryId)
+    await register(expect, page, email)
+  } else {
+    await openSignInOnPage(expect, page, entryPath)
+    await register(expect, page, email)
+    await gotoPage(expect, page, '/')
+  }
 
   const name = nameFromEmail(email)
   // Registration resolves the self user in place; assert the name to be sure

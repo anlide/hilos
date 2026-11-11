@@ -1,0 +1,6 @@
+-- hilos-framework: {"format":1,"kind":"change","units":["push_subscription"],"parts":[{"changeId":"20261111062211778865_HIL-1895_push_subscription_revision","unit":"push_subscription","upSha256":"e72096f39952436de92a20a20c9e8ca8a3ba3256f2f13c064e8ae493ce7bc22e","downSha256":"d7276ca07e8844fd7267ae973c0be04fc3428635bb729b19df1dc75d6cd52551"}],"upSha256":"e72096f39952436de92a20a20c9e8ca8a3ba3256f2f13c064e8ae493ce7bc22e","downSha256":"d7276ca07e8844fd7267ae973c0be04fc3428635bb729b19df1dc75d6cd52551"}
+ALTER TABLE `hilos_push_subscription`
+    ADD COLUMN `revision` BIGINT NOT NULL DEFAULT 1 AFTER `last_seen_at`;
+
+ALTER TABLE `hilos_push_subscription`
+    MODIFY COLUMN `revision` BIGINT NOT NULL;

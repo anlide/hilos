@@ -8,6 +8,7 @@
         {"root": "demo/online-testing", "facade": "Demo\\OnlineTesting\\Hilos"},
         {"root": "demo/preferans", "facade": "Demo\\Preferans\\Hilos"},
         {"root": "demo/pmd", "facade": "Demo\\Pmd\\Hilos"},
-        {"root": "demo/concert-tickets", "facade": "Demo\\ConcertTickets\\Hilos"}
+        {"root": "demo/concert-tickets", "facade": "Demo\\ConcertTickets\\Hilos"},
+        {"root": "demo/solar-system-model", "facade": "Demo\\SolarSystemModel\\Hilos"}
     ]
 }

@@ -83,6 +83,16 @@ return [
         'holdsDatabase' => true,
     ],
     [
+        'id' => 'solar-system-model',
+        'cwd' => 'demo/solar-system-model',
+        'composeFile' => 'docker/docker-compose.test.yml',
+        'project' => 'hilos-solar-system-model-test' . standInstanceSuffix(),
+        'mode' => 'project',
+        'profiles' => [],
+        'networks' => [],
+        'holdsDatabase' => true,
+    ],
+    [
         'id' => 'tasks',
         'cwd' => 'demo/tasks',
         'composeFile' => 'docker/docker-compose.test.yml',

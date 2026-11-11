@@ -101,10 +101,10 @@ collects, how long it keeps it, and what remains after account deletion.
 The admin analytics section comes with this same case, with no case of its own;
 see [The Admin Section](#the-admin-section). The section opens in Vue, React and
 Angular.
-The demos with accounts that declare it are chat, binance-btc-tracker,
-ecommerce-shop, tasks, online-testing, polls and preferans. The owner,
-04.10.2026: «Аналитику включить во всех 6 demo» — "Turn analytics on in all
-six demos".
+The demos with accounts that declare it are chat, binance-btc-tracker, pmd,
+ecommerce-shop, tasks, solar-system-model, online-testing, polls and
+preferans. The owner, 04.10.2026: «Аналитику включить во всех 6 demo» —
+"Turn analytics on in all six demos".
 
 ## The Directory
 
@@ -431,10 +431,11 @@ behavior; the first-snapshot reader-zone Overview below remains today's code.
   `HilosAnalyticsBrowserSessionPage` in Vue, React and Angular. The opening `page_response` carries the
   short browser description and last signed-in person in `data.browserSession`,
   with `data.pageLabel` naming the session. Chat and Binance opt the Vue detail
-  page, Tasks and ecommerce-shop the React page, and Polls and OnlineTesting the
-  Angular page into the shared entity head through their complete project
-  provider entries. Its circular visual uses the shared catalog's `bi-window`
-  icon, its description is the owner lead, and `bindPageInstanceName` in Vue and
+  page into the shared entity head; Tasks, ecommerce-shop and Solar System Model
+  opt the React page in; Polls and OnlineTesting opt the Angular page in. Each
+  project uses its complete provider entry. Its circular visual uses the shared
+  catalog's `bi-window` icon, its description is the owner lead, and
+  `bindPageInstanceName` in Vue and
   Angular, or `usePageInstanceName()` in React, sends the permitted live label to
   the head, final breadcrumb entry and document title. Angular reads the label
   from the current page scope; an undefined label falls back to the catalog, an
@@ -450,12 +451,13 @@ behavior; the first-snapshot reader-zone Overview below remains today's code.
   Analytics agent: its page payload is empty, and one `page_response` carries
   the catalog, shared Analytics head and table. The Vue bindings expose the
   `Overview`, `Browser sessions` and `People` tabs in Chat and Binance, with
-  People active on this page. Tasks and ecommerce-shop mount the React Overview,
-  Browser sessions and People pages, with the same three tabs; Polls and
-  OnlineTesting mount the Angular Overview and People pages. Each project's row
-  contains the pages its kit serves. In Polls and OnlineTesting, `PeoplePage`
-  extends `AbstractHilosAnalyticsPeoplePage` and is registered in `PAGES`; its existing Analytics agent supplies the
-  subscription route. Each project registers `HilosAnalyticsPeopleTable` in its
+  People active on this page. Tasks, ecommerce-shop and Solar System Model mount
+  the React Overview, Browser sessions and People pages, with the same three
+  tabs; Polls and OnlineTesting mount the Angular Overview and People pages.
+  Each project's row contains the pages its kit serves. In Polls and
+  OnlineTesting, `PeoplePage` extends `AbstractHilosAnalyticsPeoplePage` and is
+  registered in `PAGES`; its existing Analytics agent supplies the subscription
+  route. Each project registers `HilosAnalyticsPeopleTable` in its
   `TableContext` and `TABLES`, then binds it to `PeoplePage::PAGE` in
   `PAGE_TABLES`. The page and table are optional; `HilosFeature::ANALYTICS` does
   not require them.
@@ -503,10 +505,10 @@ behavior; the first-snapshot reader-zone Overview below remains today's code.
   `userPhotos.fileId`. A viewer gets Hidden for both fields, even when no photo
   is published. A user or photo source failure remains a page failure; this
   adds no request or live fan-out.
-  Chat and Binance opt the Vue page into the entity head; Tasks and
-  ecommerce-shop do the same for React; Polls and OnlineTesting do the same for
-  Angular. All three use the permitted `pageLabel` for the owner name and
-  breadcrumb, with `name` and `photo` from the same `page_response` snapshot
+  Chat and Binance opt the Vue page into the entity head; Tasks, ecommerce-shop
+  and Solar System Model do the same for React; Polls and OnlineTesting do the
+  same for Angular. All three use the permitted `pageLabel` for the owner name
+  and breadcrumb, with `name` and `photo` from the same `page_response` snapshot
   for the avatar. The avatar shows initials/name and
   the published photo, falls back to initials when the image fails, and shows
   `bi-person` for a deleted or hidden name; a hidden photo is not used as an
@@ -577,25 +579,26 @@ behavior; the first-snapshot reader-zone Overview below remains today's code.
   context is refused.
   The existing FILTER_USER detail table and person-page behavior are unchanged.
 - In Chat and Binance, Vue renders the Browser sessions page and its Overview,
-  Browser sessions and People tabs. Tasks and ecommerce-shop render the same
-  page and tabs in React; Polls and OnlineTesting do so in Angular. Each
-  project's `BrowserSessionsPage` extends
+  Browser sessions and People tabs. Tasks, ecommerce-shop and Solar System Model
+  render the same page and tabs in React; Polls and OnlineTesting do so in
+  Angular. Each project's `BrowserSessionsPage` extends
   `AbstractHilosAnalyticsBrowserSessionsPage` and is registered in `PAGES`; its
   existing Analytics agent supplies the subscription route. Each project
   registers `HilosAnalyticsBrowserSessionListTable` in its `TableContext` and
   `TABLES` and binds it to `BrowserSessionsPage::PAGE` in `PAGE_TABLES`. The
-  project's lazy view mounts `HilosAnalyticsBrowserSessionsPage` with its
+  project's view mounts `HilosAnalyticsBrowserSessionsPage` with its
   `HilosAnalyticsContext` — from `@hilos/vue/admin/analytics` in Chat and
-  Binance, `@hilos/react/admin/analytics` in Tasks and ecommerce-shop, and
-  `@hilos/angular/admin/analytics` in Polls and OnlineTesting. This list adds no
+  Binance, `@hilos/react/admin/analytics` in Tasks, ecommerce-shop and Solar
+  System Model, and `@hilos/angular/admin/analytics` in Polls and OnlineTesting.
+  This list adds no
   separate Analytics feature requirement. The session catalog entry remains a
   child of Browser sessions, so that ancestor is present whether the detail is
   opened from the list, from Person, or directly (the list, period and parent
   breadcrumb behavior is HIL-1741). In Chat and Binance, the complete Vue
   provider entries opt the detail into the shared entity head, and the complete
-  React entries of Tasks and ecommerce-shop and Angular entries of Polls and
-  OnlineTesting do the same. The framework default and other providers retain
-  the legacy head.
+  React entries of Tasks, ecommerce-shop and Solar System Model and Angular
+  entries of Polls and OnlineTesting do the same. The framework default and other
+  providers retain the legacy head.
   The first existing `page_response` supplies the head identity with
   the page data. No DB/RT field, signal, DTO, route, request, payload key or URL
   was added for this head. The existing two-line session header, actions table
@@ -661,8 +664,9 @@ positive integer `userId`, it returns `browserSessionId` (null until loaded)
 and `actionNames`: at most 50 names from that user's latest browser session,
 through the same bounded reader. It writes nothing and exposes no browser
 endpoint; e2e polls it to observe journal rotation and writer loading before
-opening the page. The browser-session E2E currently lives in PMD, tasks and
-preferans; the Angular accessibility proof remains in polls. Shared checks
+opening the page. The browser-session E2E currently lives in PMD,
+solar-system-model and preferans; the Angular accessibility proof remains in
+polls. Shared checks
 live in `framework/frontend/e2e/analytics.ts`
 (HIL-1422). The shared `expectAnalyticsBrowserSessionHead(expect, page,
 label)` checks one `h1` with the exact label and an id, one current breadcrumb
@@ -678,16 +682,18 @@ path, generic head and `Hidden` values. The existing
 `locator.or` legacy/shared title lookup and `toHaveCount(1)` assertion; the
 legacy title is now met only by the Angular carriers. The mirrored order,
 privacy and body/frame assertions remain unchanged. PMD also has a People flow in
-`demo/pmd/tests/e2e/tests/analytics.spec.ts`. Tasks carries the React
-overview, Browser sessions, People-to-Person and Period flows in
-`demo/tasks/tests/e2e/tests/analytics.spec.ts`: each count opens the list on its
-own period, Period and Reset rewrite the address without a new subscription,
-and F5, Back and Forward keep the addressed period; a real session opens from
-the list and returns by its crumb, and Signed in opens Person, whose session
-link has the same return; a viewer receives Hidden values with only public
-session links. It keeps the User-to-Person-to-session regression in
-`demo/tasks/tests/e2e/tests/analytics-browser-session.spec.ts`, which also
-checks the session head, F5 and the crumb back to the list. The Analytics
+`demo/pmd/tests/e2e/tests/analytics.spec.ts`. Solar System Model carries the
+React overview, Browser sessions, People-to-Person and Period flows in
+`demo/solar-system-model/tests/e2e/tests/analytics.spec.ts`: each count opens
+the list on its own period, Period and Reset rewrite the address without a new
+subscription, and F5, Back and Forward keep the addressed period; a real
+session opens from the list and returns by its crumb, and Signed in opens
+Person, whose session link has the same return; a viewer receives Hidden
+values with only public session links. It keeps the User-to-Person-to-session
+regression in
+`demo/solar-system-model/tests/e2e/tests/analytics-browser-session.spec.ts`,
+which also checks the session head, F5 and the crumb back to the list. The
+Analytics
 accessibility group in `demo/tasks/tests/e2e/tests/a11y.spec.ts` checks the
 count links' names and Enter, and the keyboard path through the list, People,
 Person and session and back to the list.

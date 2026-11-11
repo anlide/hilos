@@ -1,4 +1,22 @@
 {
-  "extends": "../../tsconfig.json",
-  "include": ["./**/*.ts", "./**/*.tsx", "../../env.d.ts"]
+  "extends": "../../../../solar-system-model/frontend/tests/tableGeometry/tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "react": ["../../node_modules/@types/react"],
+      "react/*": ["../../node_modules/@types/react/*"],
+      "react-dom": ["../../node_modules/@types/react-dom"],
+      "react-dom/*": ["../../node_modules/@types/react-dom/*"],
+      "@hilos/core/base": [
+        "../../node_modules/@hilos/core/dist/base/index.d.ts"
+      ],
+      "@hilos/react/base": [
+        "../../node_modules/@hilos/react/dist/base/index.d.ts"
+      ]
+    }
+  },
+  "include": [
+    "../../../../solar-system-model/frontend/tests/tableGeometry/main.tsx",
+    "../../../../solar-system-model/frontend/tests/tableGeometry/*.tsx",
+    "../../env.d.ts"
+  ]
 }

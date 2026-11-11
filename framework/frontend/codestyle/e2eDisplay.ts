@@ -76,9 +76,9 @@ const THEME_SPEC_PATHS = [
   'demo/preferans/tests/e2e/tests/appearance.spec.ts',
   'demo/preferans/tests/e2e/tests/theme-account.spec.ts',
   'demo/preferans/tests/e2e/tests/theme-guest.spec.ts',
+  'demo/solar-system-model/tests/e2e/tests/theme-account.spec.ts',
+  'demo/solar-system-model/tests/e2e/tests/theme-guest.spec.ts',
   'demo/tasks/tests/e2e/tests/appearance.spec.ts',
-  'demo/tasks/tests/e2e/tests/theme-account.spec.ts',
-  'demo/tasks/tests/e2e/tests/theme-guest.spec.ts',
   GUEST_THEME_SCENARIOS,
 ]
 

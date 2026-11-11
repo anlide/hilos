@@ -124,8 +124,8 @@ checks belong to those future leaves, not to this documentation change:
    wiring; complex settings-page suites are not the starting family.
 2. **Browser pilot:** share the text of one comparable screen scenario already
    run on Vue, React and Angular. The candidate is `theme-guest.spec.ts` in
-   `demo/{chat,tasks,polls}/tests/e2e/tests/`. Keep all useful steps and
-   expectations, local registration entries, fixtures and cleanup, and the same
+   `demo/{chat,solar-system-model,preferans}/tests/e2e/tests/`. Keep all useful
+   steps and expectations, local registration entries, fixtures and cleanup, and the same
    number and distribution of runs. Verify local spec attribution in reports.
    The theme feature may choose dark to prove the mode selection under the
    existing exception; other scenarios gain no palette matrix. The
@@ -545,20 +545,26 @@ additions before execution, rather than freezing their file list today.
 |---|---|---|
 | `pmd` / Vue | **Table geometry:** `pmd/table-geometry` (moved from chat in HIL-2016 slice 13). **Account/profile/security:** `pmd/{profile,profile-data,profile-time-zone,profile-session-time-zone,profile-photo}` (moved from chat in HIL-2016 slice 9); `pmd/{rename-moderation,account-deletion,account-merge,second-factor-mail}` (moved from chat in slice 10); `pmd/security-center` (moved from chat in slice 11). **Analytics:** `pmd/{analytics,analytics-browser-session}` (moved from chat in slice 11). **People/settings/Appearance:** `pmd/{users,settings,appearance}` (moved from binance-btc-tracker in HIL-2016 slice 12). | PMD active; all sixteen specs moved in slices 9–13. |
 | `roblox-game-server` / Vue | **Change Log/Moderation/Communications:** `chat/{change-log,change-log-table,change-log-tables,moderation,communications}`. **Theme:** `chat/{theme-account,theme-guest}`. **Daemon/Backup/Logs/maintenance:** `binance-btc-tracker/{daemon,backup,backup-reopen,logs,logs-rotation,maintenance-restore,maintenance-words}`. | (not in the code yet — HIL-2017) |
-| `solar-system-model` / React | **Account/profile:** `tasks/{profile,profile-data,profile-time-zone,profile-photo,account-deletion}`. **Theme/Analytics:** `tasks/{theme-account,theme-guest,analytics,analytics-browser-session}`. **Table geometry:** the entire independent Geometry area in `ecommerce-shop/users`, with its frontend fixture; excludes Users scenarios. | (not in the code yet — HIL-2018) |
+| `solar-system-model` / React | **Account/profile:** `solar-system-model/{profile,profile-data,profile-time-zone,profile-photo,account-deletion}` (moved from tasks). **Theme/Analytics:** `solar-system-model/{theme-account,theme-guest,analytics,analytics-browser-session}` (moved from tasks). **Table geometry:** `solar-system-model/table-geometry` — the entire independent Geometry area split out of `ecommerce-shop/users`, with its React frontend fixture; the Users scenarios, F-001 included, stay in `ecommerce-shop/users` for the `file-gallery-manager` row. | Solar active; all ten specs moved. |
 | `file-gallery-manager` / React | **i18n lifecycle:** `tasks/{i18n-country-names,i18n-country,i18n-language-names,i18n-language,i18n-locale,i18n-overview}`. **Daemon/Change Log/Communications:** `tasks/{daemon,change-log,change-log-table,change-log-tables,communications}`. **Users:** the entire Users remainder of `ecommerce-shop/users` after Geometry is separated, including F-001. | (not in the code yet — HIL-2019) |
 | `preferans` / Angular | **i18n lifecycle:** `preferans/{i18n-country-names,i18n-country,i18n-language-names,i18n-language,i18n-locale,i18n-overview}`. **Theme/Appearance:** `preferans/{theme-account,theme-guest,appearance}`. **Analytics:** `preferans/{analytics,analytics-browser-session}`. | Active; transferred from polls (HIL-2020) |
 | `concert-tickets` / Angular | **Daemon/Change Log:** `concert-tickets/{daemon,change-log,change-log-table,change-log-tables}`. **Profile/account deletion:** `concert-tickets/{profile,profile-data,profile-time-zone,profile-photo,account-deletion}`. | Active; transferred from polls (HIL-2021) |
 
 **Move a whole area within its view framework, leaving no second proof behind.**
-The only physical file split in this plan is
-`demo/ecommerce-shop/tests/e2e/tests/users.spec.ts`: Geometry and Users are
-independent areas sharing one file, not a license to divide arbitrary
-assertions. Geometry's fixture moves with its consumer.
+The only physical file split in this plan was the shop's `users.spec.ts`:
+Geometry and Users were independent areas sharing one file, not a license to
+divide arbitrary assertions. Geometry now lives in
+[`table-geometry.spec.ts`](../../../demo/solar-system-model/tests/e2e/tests/table-geometry.spec.ts)
+of the Solar System Model, and
+[`users.spec.ts`](../../../demo/ecommerce-shop/tests/e2e/tests/users.spec.ts)
+of the shop keeps only Users. Geometry's fixture moves with its consumer.
 The existing examples are
 [`TableGeometryFixture.vue`](../../../demo/pmd/frontend/tests/tableGeometry/TableGeometryFixture.vue)
 and
-[`TableGeometryFixture.tsx`](../../../demo/ecommerce-shop/frontend/tests/tableGeometry/TableGeometryFixture.tsx).
+[`TableGeometryFixture.tsx`](../../../demo/solar-system-model/frontend/tests/tableGeometry/TableGeometryFixture.tsx).
+A donor whose accessibility checks still open the fixture builds it from that
+one source with its own dependencies into its own output, as chat does from
+PMD's and the shop from Solar's.
 Each activation carries the required frontend wiring, fixtures, preparation and
 stand services with the consuming area. F-001 stays with Users, with its
 existing quarantine status; a transfer does not heal it.
@@ -708,18 +714,22 @@ neighbor that differs from it only by surrounding spaces. The
 of its own on `hilos_profile_name` and walks the section, the Add, Edit and
 Delete dialogs and a view-mode viewer through the shared steps. The model's
 check of a profile name — published only after approval, the previous name kept
-after a refusal — is one test of the same title in `profile.spec.ts` of tasks
-and concert-tickets. None of these files carries a `spec-owner` line; chat's message and
-message picture moderation specs do (HIL-1638).
+after a refusal — is one test of the same title in `profile.spec.ts` of
+solar-system-model and concert-tickets. None of these files carries a
+`spec-owner` line; chat's message and message picture moderation specs do
+(HIL-1638).
 
-The current Analytics section proofs are in PMD (Vue), tasks (React) and
-preferans (Angular): each carries `analytics.spec.ts` and
-`analytics-browser-session.spec.ts`. The Vue pair moved from Chat and the Angular
-pair from Polls; the remaining React transfer is still planned above.
+The current Analytics section proofs are in PMD (Vue), solar-system-model
+(React) and preferans (Angular): each carries `analytics.spec.ts` and
+`analytics-browser-session.spec.ts`. The Vue pair moved from Chat, the React
+pair from Tasks and the Angular pair from Polls.
 The three session specs share one test title, while the titles in
 `analytics.spec.ts` follow the pages each kit serves. The actions the specs look
-at are the registration of the person and of the administrator, because tasks
-and preferans declare no actions of their own. Their framework journeys carry
+at are the sign-ins of the person and of the administrator, because
+solar-system-model and preferans declare no actions of their own. PMD and
+Preferans sign in on the main page, so the actions stand on `main`; Solar signs
+in on `/hilos`, where its sign-in form opens in place, so they stand on
+`hilos`. Their framework journeys carry
 no `spec-owner` line (HIL-1422); PMD retains the approved demo owner line for its
 moved Vue screen journeys (HIL-2016).
 
@@ -739,7 +749,7 @@ probes, product shell smoke and cluster proofs keep the owners below:
 
 | Proof | Specs | Lives in |
 |---|---|---|
-| Guest storage, choices, System media, reset and reload/new tabs; account header/profile delivery between independent sessions, another person's isolation, an open receiving modal, keyboard/focus | theme-guest, theme-account | chat (Vue), tasks (React), preferans (Angular) |
+| Guest storage, choices, System media, reset and reload/new tabs; account header/profile delivery between independent sessions, another person's isolation, an open receiving modal, keyboard/focus | theme-guest, theme-account | chat (Vue), solar-system-model (React), preferans (Angular) |
 | Stale Dark reconnect after explicit reset without adoption; first login adoption by a never-chosen account; synchronized account's cached first frame | theme-account | chat only |
 | Both Appearance editors, live viewer rows, Save/Enter refusal, default and Off/On delivery, discard, keyboard/focus | appearance | binance-btc-tracker (Vue), tasks (React), preferans (Angular) |
 | Built head: remembered Dark and fresh System dark on `/` and `/about`, HTML attribute and painted background with application JS blocked | theme-first-frame | chat (Vue/Vite), ecommerce-shop (React/Vite), online-testing (Angular build/SSG) |
@@ -749,8 +759,10 @@ probes, product shell smoke and cluster proofs keep the owners below:
 Only the shell smoke carries `spec-owner: demo`. The guest/account, Appearance
 and first-frame specs are framework proofs. Profile Off/On stays within each
 installation: chat changes its existing settings page; tasks and preferans use
-their own Appearance. The build probes cover a cached pick or a fresh browser's
-System fallback, not a server account choice that browser has never received.
+their own Appearance. Solar has no Appearance page, so React's Off/On proof
+stays in Tasks' `appearance.spec.ts`. The build probes cover a cached pick or a
+fresh browser's System fallback, not a server account choice that browser has
+never received.
 The full production build/head sweep already checks every emitted entrypoint.
 
 The current shared Change Log receipt and history scenarios live in chat (Vue),
@@ -1651,11 +1663,12 @@ the Browser sessions tab in all three kits.
 `expectAnalyticsSessionListAccessibility(expect: Expect, page: Page, direction: 'ascending' | 'descending', kit: 'vue' | 'react' | 'angular' = 'vue'): Promise<void>`
 checks the Browser sessions list the same way: the section head, one `h1` that
 names the list's table through `aria-labelledby` with no table title of its own,
-and the `aria-sort` and accessible name of Last seen. The PMD (Vue) and polls
-(Angular) Overview specs arm `watchSocketFrames` before setup and bookmark the
-log before opening Analytics from the dashboard; the tasks (React) spec arms one
-`watchDeliveryFrames` instead, bookmarks its received packets the same way and
-reads the list's requests from that same log.
+and the `aria-sort` and accessible name of Last seen. The PMD (Vue) and
+preferans (Angular) Overview specs arm `watchSocketFrames` before setup and
+bookmark the log before opening Analytics from the dashboard; the
+solar-system-model (React) spec arms one `watchDeliveryFrames` instead,
+bookmarks its received packets the same way and reads the list's requests from
+that same log.
 `readAnalyticsOverviewSnapshot`
 reads one complete reply from that opening's frames;
 `expectAnalyticsOverviewTiles` compares all three counts and their captured
@@ -1675,9 +1688,11 @@ browser session through `test:session:bind`, without an auth flow.
 uses `admin:create` for the current browser session. These setup helpers do
 not perform a real UI sign-in or promise its action journal.
 The three demos' `analytics-browser-session.spec.ts` carriers instead create
-both the person and administrator accounts with `seedTestUser`, then perform
-real `openSignIn` / `login` on the main page. PMD, Tasks and Polls use the
-standard sign-in entry.
+both the person and administrator accounts with `seedTestUser`, then perform a
+real sign-in. PMD and Preferans use the standard sign-in entry: `openSignIn` /
+`login` on the main page. Solar's public header has no sign-in control, so its
+spec opens the form in place on `/hilos` with `openSignInOnPage` and then calls
+`login`.
 
 `waitAnalyticsBrowserSession(expect, sendCommand, userId, expectedAction?, journals = [sendCommand])`
 waits for the journal writer and returns
@@ -1694,7 +1709,7 @@ for that action in `actionNames`. The session-action specs wait for
 person's admin card into Analytics. Ordinary People/session preconditions
 can use the same waiter without `expectedAction`.
 
-Tasks' React `analytics.spec.ts` uses the shared Overview helper with the
+Solar's React `analytics.spec.ts` uses the shared Overview helper with the
 `'react'` kit, keeps the snapshot oracle and carries the count links — each
 opens Browser sessions on its own period, and Period, Reset, F5, Back and
 Forward keep the addressed period — the list-to-session journey with its return
@@ -1704,9 +1719,9 @@ Reset over the captured context, and a viewer's Hidden list values with only
 public session links. Its existing `analytics-browser-session.spec.ts` keeps the
 User-to-Person-to-session privacy and action-order regression and checks the
 session head with `expectAnalyticsBrowserSessionHead`, F5 and the crumb back to
-the list. The Analytics accessibility group in `a11y.spec.ts` covers the count
-links' accessible names and Enter on a period, and the assembled
-list/People/Person/session outlet, including keyboard navigation and table
+the list. The Analytics accessibility group stays in Tasks' `a11y.spec.ts`; it
+covers the count links' accessible names and Enter on a period, and the
+assembled list/People/Person/session outlet, including keyboard navigation and table
 semantics; its keyboard path starts at the list, with the table name and the
 Last seen sort, then People and Person, the session by Enter and the return by
 its crumb.
@@ -1717,7 +1732,7 @@ addressed period; it also covers a real session from the list and
 People-to-Person navigation with the captured Today context. Its separate
 `analytics-browser-session.spec.ts` checks the real sign-in session's privacy
 and action order, the shared session head, F5 and return to the list by its
-crumb. The PMD Vue, Tasks React and Preferans Angular Analytics journeys keep
+crumb. The PMD Vue, Solar React and Preferans Angular Analytics journeys keep
 their existing scenario coverage. The separate Analytics accessibility groups
 remain in Chat, Binance, Tasks and Polls. Polls retains its Angular group in
 `demo/polls/tests/e2e/tests/a11y.spec.ts`, which checks count-link names and Enter

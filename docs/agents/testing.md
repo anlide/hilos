@@ -604,7 +604,7 @@ merely because a directory or README exists.
 | Vue | `roblox-game-server` | Planned (not in the code yet — HIL-2017) |
 | React | `tasks` | Active |
 | React | `ecommerce-shop` | Active |
-| React | `solar-system-model` | Planned (not in the code yet — HIL-2018) |
+| React | `solar-system-model` | Active |
 | React | `file-gallery-manager` | Planned (not in the code yet — HIL-2019) |
 | Angular | `polls` | Active |
 | Angular | `online-testing` | Active |
@@ -624,13 +624,13 @@ activation takes, their current paths and the whole-area transfer rule live in
 PMD is an active Vue carrier with its service database and transferred framework
 specs. Its local and test stacks do not add it to the separate six-demo cluster
 stand matrix below.
-Solar permits guest access to its public Model and authenticated access to its
-administration and Analytics; a sign-in control in the public header is
-optional (not in the code yet — HIL-2018). The Model product itself is outside
-this activation phase.
+Solar is an active React carrier. It permits guest access to its public Model
+and authenticated access to its administration and Analytics. Its public header
+has no sign-in control; sign-in opens as a form in place on `/hilos`, a page
+closed to a guest. The Model product itself is outside this activation phase.
 
-Today `roblox-game-server`, `solar-system-model` and
-`file-gallery-manager` have `composer.json` stubs without scripts.
+Today `roblox-game-server` and `file-gallery-manager` have `composer.json`
+stubs without scripts.
 [`framework-projects.json`](../../framework-projects.json)
 lists the active projects; [`scripts/test-suite.php`](../../scripts/test-suite.php)
 and [`scripts/test-stands.php`](../../scripts/test-stands.php) register their

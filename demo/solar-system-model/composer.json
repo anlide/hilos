@@ -26,5 +26,89 @@
         "psr-4": {
             "Demo\\SolarSystemModel\\": "backend/"
         }
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Demo\\SolarSystemModel\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "process-timeout": 0,
+        "allow-plugins": {
+            "php-http/discovery": false
+        }
+    },
+    "scripts": {
+        "hilos-frontend-reminder": "@php -r \"echo PHP_EOL . 'Hilos frontend: run npm install in the frontend container after composer changes, so the vendored SDK is not stale - see framework/frontend/README.md.' . PHP_EOL;\"",
+        "post-install-cmd": "@hilos-frontend-reminder",
+        "post-update-cmd": "@hilos-frontend-reminder",
+        "setup-env": "docker compose -f docker/docker-compose.local.yml --profile composer run --rm solar-system-model-cli-local sh -c \"cd /app && cp -n .env.example .env || true; ls -l .env\"",
+        "install-deps": "docker compose -f docker/docker-compose.local.yml run --rm solar-system-model-cli-local composer install",
+        "daemon-start": "docker compose -f docker/docker-compose.local.yml up -d",
+        "daemon-start-build": "docker compose -f docker/docker-compose.local.yml --profile full up -d --build",
+        "daemon-stop": "docker compose -f docker/docker-compose.local.yml stop",
+        "daemon-restart": "docker compose -f docker/docker-compose.local.yml restart solar-system-model-daemon-local",
+        "daemon-status": "docker compose -f docker/docker-compose.local.yml run --rm solar-system-model-cli-local php backend/Bootstrap/cli.php daemon:status",
+        "daemon-monitor": "docker compose -f docker/docker-compose.local.yml run --rm solar-system-model-cli-local php backend/Bootstrap/cli.php daemon:monitor",
+        "cli": "docker compose -f docker/docker-compose.local.yml run --rm solar-system-model-cli-local php backend/Bootstrap/cli.php",
+        "db:migration:up": "docker compose -f docker/docker-compose.local.yml run --rm solar-system-model-cli-local php backend/Bootstrap/cli.php db:migration:up",
+        "db:migration:down": "docker compose -f docker/docker-compose.local.yml run --rm solar-system-model-cli-local php backend/Bootstrap/cli.php db:migration:down",
+        "db:migration:status": "docker compose -f docker/docker-compose.local.yml run --rm solar-system-model-cli-local php backend/Bootstrap/cli.php db:migration:status",
+        "db:migration:retry": "docker compose -f docker/docker-compose.local.yml run --rm solar-system-model-cli-local php backend/Bootstrap/cli.php db:migration:retry",
+        "db:seed:apply": "docker compose -f docker/docker-compose.local.yml run --rm solar-system-model-cli-local php backend/Bootstrap/cli.php db:seed:apply",
+        "db:schema:status": "docker compose -f docker/docker-compose.local.yml run --rm solar-system-model-cli-local php backend/Bootstrap/cli.php db:schema:status",
+        "frontend:install": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm solar-system-model-frontend-cli-local npm install",
+        "frontend:check": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm solar-system-model-frontend-cli-local npm run check",
+        "frontend:lint": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm solar-system-model-frontend-cli-local npm run lint",
+        "frontend:format-check": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm solar-system-model-frontend-cli-local npm run format:check",
+        "frontend:build": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm solar-system-model-frontend-cli-local npm run build",
+        "frontend:logs": "docker compose -f docker/docker-compose.local.yml logs -f solar-system-model-frontend-local",
+        "test:install-deps": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm --no-deps solar-system-model-cli-test composer install --no-interaction",
+        "test:up": [
+            "@test:cli-image",
+            "docker compose -f docker/docker-compose.test.yml up -d solar-system-model-mysql-test"
+        ],
+        "test:down": "@php ../../scripts/down-stands.php solar-system-model",
+        "test:down-volumes": "docker compose -f docker/docker-compose.test.yml --profile \"*\" down -v",
+        "test:cli-image": "docker compose -f docker/docker-compose.test.yml --profile cli build solar-system-model-cli-test",
+        "test:db-reset": [
+            "@test:cli-image",
+            "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm solar-system-model-cli-test php backend/Bootstrap/cli.php test:db:reset"
+        ],
+        "test:db-wait": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm solar-system-model-cli-test php backend/Bootstrap/cli.php db:wait",
+        "test:db-prepare": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm solar-system-model-cli-test sh -c \"php backend/Bootstrap/cli.php db:wait && php backend/Bootstrap/cli.php test:db:reset\"",
+        "test:unit": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm solar-system-model-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite unit",
+        "test:integration": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm solar-system-model-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite integration",
+        "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm solar-system-model-cli-test php vendor/bin/phpunit -c tests/phpunit.xml",
+        "test:check": [
+            "docker compose -f docker/docker-compose.test.yml --profile cli run --rm solar-system-model-frontend-cli-test sh -c \"node ../../../framework/frontend/scripts/npm-install-if-stale.mjs && npm run check && npm run lint && npm run format:check\"",
+            "@test:e2e-install",
+            "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm solar-system-model-e2e-runner sh -c \"npm run lint && npm run format:check\""
+        ],
+        "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm solar-system-model-frontend-cli-test sh -c \"node ../../../framework/frontend/scripts/npm-install-if-stale.mjs && npm run build && npm run test:table-geometry:build\"",
+        "test:e2e-install": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm solar-system-model-e2e-runner node ../../../../framework/frontend/scripts/npm-install-if-stale.mjs",
+        "test:e2e-check": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm solar-system-model-e2e-runner npm run check",
+        "test:e2e-time-zone": "docker compose -f docker/docker-compose.test.yml --profile e2e run --quiet-build --rm --no-deps -T --entrypoint php solar-system-model-daemon-test /hilos/framework/frontend/scripts/e2e-time-zone-env.php 'Demo\\SolarSystemModel\\Hilos' | docker compose -f docker/docker-compose.test.yml --profile e2e run --quiet-build --rm --no-deps -T --entrypoint node solar-system-model-e2e-runner /hilos/framework/frontend/scripts/e2e-time-zone.mjs",
+        "test:e2e-up": [
+            "@test:up",
+            "@test:db-prepare",
+            "docker compose -f docker/docker-compose.test.yml --profile e2e up -d --build solar-system-model-daemon-test solar-system-model-nginx-test"
+        ],
+        "test:e2e": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm solar-system-model-e2e-runner node ../../../../framework/frontend/scripts/playwright-run.mjs",
+        "test:e2e-down": "composer run test:down",
+        "test:e2e-full": [
+            "@test:down @no_additional_args",
+            "@test:up @no_additional_args",
+            "@test:e2e-build @no_additional_args",
+            "@test:e2e-install @no_additional_args",
+            "@test:e2e-check @no_additional_args",
+            "@test:e2e-up @no_additional_args",
+            "@test:e2e",
+            "@test:e2e-down @no_additional_args"
+        ],
+        "test:all": "composer run test:db-reset && composer run test:phpunit && composer run test:down && composer run test:e2e-full"
     }
 }

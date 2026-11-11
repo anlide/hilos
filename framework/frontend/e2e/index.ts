@@ -782,6 +782,7 @@ export {
   register,
   login,
   openSignIn,
+  openSignInOnPage,
   logout,
   registerEmailOnly,
   signInByPhone,

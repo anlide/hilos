@@ -1199,7 +1199,7 @@ existing neighbors are requested merely because paths overlap.
   core API and shared e2e geometry helpers. This card owns every React geometry
   adapter, observer/focus cleanup and proof; no React tail is left to G.
 - **Proof:** G01–G10 and B01–B05 against React DOM ordering, component lifecycle
-  and real browsers in `demo/ecommerce-shop/tests/e2e/tests/users.spec.ts`,
+  and real browsers in `demo/solar-system-model/tests/e2e/tests/table-geometry.spec.ts`,
   extending its fixture for detail/work/removal conditions the real page lacks.
   Mocked rectangles alone cannot establish layout or a no-flash first frame.
 - **Owner frame / design:** inherit the full departure and permanent-room rules
@@ -1311,8 +1311,9 @@ existing neighbors are requested merely because paths overlap.
   `react/test/`. Own React context/render props, overflow observation and focus
   behavior; do not substitute a shared unit test for this view's obligations.
 - **Proof:** H01–H06 and G03/B03/B05 through React tests and declared browser
-  fixtures in ecommerce-shop's users/settings specs; React keyboard/a11y smoke
-  in `demo/tasks/tests/e2e/tests/a11y.spec.ts` where that category lives.
+  fixtures in `demo/solar-system-model/tests/e2e/tests/table-geometry.spec.ts`;
+  React keyboard/a11y smoke in `demo/tasks/tests/e2e/tests/a11y.spec.ts` where
+  that category lives.
 - **Owner frame / design:** D's recorded Q2 contract and the accepted reading
   rules, table sections 4/9 plus D-210; no new numbers or port-specific default.
 - **Excluded:** applications (G), core policy redesign, legacy React deletion

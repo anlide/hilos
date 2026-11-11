@@ -20,6 +20,7 @@ const demos = [
   'pmd',
   'polls',
   'preferans',
+  'solar-system-model',
   'tasks',
 ]
 const ruleId = '@typescript-eslint/no-restricted-imports'

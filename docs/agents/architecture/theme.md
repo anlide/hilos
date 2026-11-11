@@ -363,14 +363,16 @@ its names into this file in the same commit that clears its marker.
 - Check the painting rule with `STYLE-THEME-PINNED`; see "Theming" in
   [styling-rules.md](../frontend/styling-rules.md) for the guard's scope and landing
   markers.
-- Run `theme-guest.spec.ts` and `theme-account.spec.ts` in chat (Vue), tasks
-  (React) and preferans (Angular). Each kit proves guest storage synchronization,
-  System media, explicit choices, reload/new tabs and reset; account choices
-  reach independent sessions in both directions, update an open profile window
-  and leave another person's session alone. Header and profile controls retain
-  keyboard and focus checks. Profile Off/On is proved
-  within the same installation: chat uses its settings page, tasks and preferans
-  their Appearance page.
+- Run `theme-guest.spec.ts` and `theme-account.spec.ts` in chat (Vue),
+  solar-system-model (React) and preferans (Angular). Each kit proves guest
+  storage synchronization, System media, explicit choices, reload/new tabs and
+  reset; account choices reach independent sessions in both directions, update
+  an open profile window and leave another person's session alone. Header and
+  profile controls retain keyboard and focus checks. Profile Off/On is proved
+  within the same installation: chat uses its settings page in
+  `theme-account.spec.ts`, tasks and preferans their Appearance page in
+  `appearance.spec.ts`. Solar has no Appearance page, so React's Off/On proof
+  stays in Tasks.
 - Chat alone keeps the two server regressions: stale Dark reconnect after an
   explicit account reset sends no adoption, and a never-chosen account adopts
   the guest choice on first login. It also checks the synchronized account's
