@@ -5894,7 +5894,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Ends an ordinary or outgoing session completely and asks away the person's browser trust.
      * Incoming impersonations return to their administrators with trust intact. A row no longer
-     * bound to the person in either direction is refused as already ended.
+     * bound to the person in either direction is refused as already ended: the id the card listed
+     * must not reach whoever holds that row now.
      *
      * @param int $userId Person the session has to stand for
      * @param int $sessionId Session row to end
@@ -5928,8 +5929,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /**
      * Reads both directions once: ordinary and outgoing sessions end, incoming takeovers return.
-     * The asking ordinary session goes last when included. Blocked cards are lowered and the
-     * person's agent is asked to revoke all their browser trust; other administrators keep theirs.
+     * The asking ordinary session goes last when included, so a failure on the way is answered to
+     * a tab still signed in. Blocked cards are lowered and the person's agent is asked to revoke
+     * all their browser trust; other administrators keep theirs.
      *
      * @param int $userId Person whose sessions end
      * @param string $actingAcceptKey Connection of the administrator who pressed
