@@ -351,6 +351,39 @@ final class FullRestoreTableStructureTest extends TestCase
         yield 'drop' => ['DROP COLUMN payload_json'];
     }
 
+    /**
+     * A foreign key would either follow the renamed column or break, and the proof does not guess which.
+     *
+     * @param string $alter A rename of the referencing column in one of its accepted forms
+     */
+    #[DataProvider('foreignKeyColumnRenames')]
+    public function testTheColumnOfAForeignKeyCannotBeRenamed(string $alter): void
+    {
+        $structure = $this->structure('owner_id INT, note INT, CONSTRAINT fk_owner FOREIGN KEY (owner_id) REFERENCES parent (id)');
+        $this->expectException(RestoreFailedException::class);
+        $this->expectExceptionMessage('Column rename has ambiguous structural effects');
+        $structure->alter(MigrationOperationReader::read('ALTER TABLE t ' . $alter, 'target')[0]);
+    }
+
+    /** @return iterable<string, array{string}> Every accepted form that renames the referencing column */
+    public static function foreignKeyColumnRenames(): iterable
+    {
+        yield 'rename' => ['RENAME COLUMN owner_id TO owner'];
+        yield 'change' => ['CHANGE owner_id owner INT'];
+        yield 'rename in another case' => ['RENAME COLUMN OWNER_ID TO owner'];
+    }
+
+    /** A table holding a foreign key still renames its other columns (HIL-1926). */
+    public function testAnotherColumnOfATableWithAForeignKeyRenames(): void
+    {
+        $structure = $this->structure('owner_id INT, note INT, CONSTRAINT fk_owner FOREIGN KEY (owner_id) REFERENCES parent (id)');
+        $structure->alter(MigrationOperationReader::read('ALTER TABLE t RENAME COLUMN note TO memo', 'target')[0]);
+        $this->assertSame(
+            $this->structure('owner_id INT, memo INT, CONSTRAINT fk_owner FOREIGN KEY (owner_id) REFERENCES parent (id)')->fingerprint(),
+            $structure->fingerprint(),
+        );
+    }
+
     /** SHOW CREATE adds an engine to each partition without changing the declared structure. */
     public function testRangeColumnsPartitionsMatchThePhysicalEngineForm(): void
     {
