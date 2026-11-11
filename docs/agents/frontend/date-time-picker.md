@@ -835,7 +835,6 @@ stable group id; `label` is visible and accessible. For datetime, the label
 also names the actual configured zone. Render and edit the controller directly:
 no parallel SDK draft and no second `value`/`v-model` binding. Do not recreate
 the controller on every render or echoed prop update.
-(not in the code yet — HIL-1973)
 (not in the code yet — HIL-1976)
 
 In the segmented field, Left/Right selects the neighboring part. ASCII digits
@@ -851,7 +850,6 @@ control with no month grid. Disabled/busy prevents opening while retaining the
 visible draft.
 (not in the code yet — HIL-1974)
 (not in the code yet — HIL-1977)
-(not in the code yet — HIL-1973)
 (not in the code yet — HIL-1976)
 
 Expose a visibly named group and named `spinbutton` parts, including meridiem
@@ -871,7 +869,6 @@ question; leave the field and parts without invalid state. Empty and incomplete
 states have no reason. The permanent live nodes announce changes; the visible
 tooltip has no live role. Do not show the field tooltip while its panel is open;
 the panel states the same reason itself. Color alone is insufficient.
-(not in the code yet — HIL-1973)
 (not in the code yet — HIL-1976)
 
 ## SDK calendar and narrow view
@@ -1096,8 +1093,8 @@ business validator. (not in the code yet — HIL-1979)
 
 ## SDK view imports
 
-The Vue import is available; the React and Angular imports below remain future
-exports. Mount the stable controller with the same `picker`, `id`, `label`,
+The Vue and React imports are available; the Angular import below remains a
+future export. Mount the stable controller with the same `picker`, `id`, `label`,
 optional `describedBy` and optional `dataId` contract in each framework. A
 datetime range label may read `Maintenance window, Europe/Warsaw`, naming the
 configured zone.
@@ -1109,8 +1106,6 @@ import { HilosDateTimePicker } from '@hilos/vue/base'
 ```ts
 import { HilosDateTimePicker } from '@hilos/react/base'
 ```
-
-(not in the code yet — HIL-1973)
 
 ```ts
 import { HilosDateTimePicker } from '@hilos/angular/base'

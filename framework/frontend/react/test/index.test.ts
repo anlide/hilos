@@ -346,6 +346,13 @@ it('exports the shared page head once, from the base entry the root re-exports',
   expectTypeOf<base.HilosPageHeadProps>().toEqualTypeOf<HilosPageHeadProps>()
 })
 
+it('exports the date-time picker from the base entry', () => {
+  expect(base.HilosDateTimePicker).toBeTypeOf('function')
+  expectTypeOf<
+    Parameters<typeof base.HilosDateTimePicker>[0]
+  >().toEqualTypeOf<base.HilosDateTimePickerProps>()
+})
+
 it('exports only the public parts text component with one root/base identity', () => {
   expect(base.HilosTableText).toBe(HilosTableText)
   expectTypeOf<

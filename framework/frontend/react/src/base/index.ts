@@ -136,6 +136,10 @@ export {
 } from '../profile/HilosProfileDevices.js'
 export { HilosModal, type HilosModalProps } from '../HilosModal.js'
 export {
+  HilosDateTimePicker,
+  type HilosDateTimePickerProps,
+} from '../HilosDateTimePicker.js'
+export {
   HilosActionReason,
   type HilosActionReasonProps,
 } from '../HilosActionReason.js'
