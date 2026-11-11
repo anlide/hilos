@@ -779,8 +779,8 @@ or a container memory limit.
 
 Acceptance proves Hilos and database failures separately, keeping the other
 layer healthy (not in the code yet — HIL-2043). New fleets enter after ordinary
-activations HIL-2017/HIL-2019 (HIL-2021 has landed) and phase-one acceptance HIL-2023, with
-isolation in every instance extending HIL-2015: their octets are the third block of
+activation HIL-2019 (HIL-2017 and HIL-2021 have landed) and phase-one acceptance
+HIL-2023, with isolation in every instance extending HIL-2015: their octets are the third block of
 `scripts/stand-instance.php`, the variables `HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER`,
 `HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER` and
 `HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER` with default octets 225, 227 and 229, and the
