@@ -61,8 +61,10 @@ final class DbProbeAgent extends AbstractAgent
      * Four test-only commands: write, cached read, session inspection and a fresh query.
      *
      * Each uses a string payload under its bare name. The `test:` prefix keeps the socket
-     * from parking any of them on a production-like node. All database work stays here
-     * in the worker; the master only parks the request and delivers the reply.
+     * from parking any of them on a production-like node. The master answers none of them,
+     * and nothing had to be done to arrange that: it has no branch for a name it does not
+     * know, so each is parked and routed here - the shape wanted, because the master must
+     * not touch a database.
      */
     public const array AGENT_COMMANDS = [
         CliCommands::CLUSTER_TEST_DB_WRITE,
