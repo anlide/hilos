@@ -548,7 +548,7 @@ additions before execution, rather than freezing their file list today.
 | `solar-system-model` / React | **Account/profile:** `tasks/{profile,profile-data,profile-time-zone,profile-photo,account-deletion}`. **Theme/Analytics:** `tasks/{theme-account,theme-guest,analytics,analytics-browser-session}`. **Table geometry:** the entire independent Geometry area in `ecommerce-shop/users`, with its frontend fixture; excludes Users scenarios. | (not in the code yet — HIL-2018) |
 | `file-gallery-manager` / React | **i18n lifecycle:** `tasks/{i18n-country-names,i18n-country,i18n-language-names,i18n-language,i18n-locale,i18n-overview}`. **Daemon/Change Log/Communications:** `tasks/{daemon,change-log,change-log-table,change-log-tables,communications}`. **Users:** the entire Users remainder of `ecommerce-shop/users` after Geometry is separated, including F-001. | (not in the code yet — HIL-2019) |
 | `preferans` / Angular | **i18n lifecycle:** `preferans/{i18n-country-names,i18n-country,i18n-language-names,i18n-language,i18n-locale,i18n-overview}`. **Theme/Appearance:** `preferans/{theme-account,theme-guest,appearance}`. **Analytics:** `preferans/{analytics,analytics-browser-session}`. | Active; transferred from polls (HIL-2020) |
-| `concert-tickets` / Angular | **Daemon/Change Log:** `polls/{daemon,change-log,change-log-table,change-log-tables}`. **Profile/account deletion:** `polls/{profile,profile-data,profile-time-zone,profile-photo,account-deletion}`. | (not in the code yet — HIL-2021) |
+| `concert-tickets` / Angular | **Daemon/Change Log:** `concert-tickets/{daemon,change-log,change-log-table,change-log-tables}`. **Profile/account deletion:** `concert-tickets/{profile,profile-data,profile-time-zone,profile-photo,account-deletion}`. | Active; transferred from polls (HIL-2021) |
 
 **Move a whole area within its view framework, leaving no second proof behind.**
 The only physical file split in this plan is
@@ -639,7 +639,7 @@ polls (Angular) → online-testing (Angular).
 | The operations half of polls | online-testing: users, settings, notifications, protected-mode, maintenance, logs | online-testing | HIL-1226 |
 | Sign-in on the server — third-party providers and their failures, codes over Telegram, SMS and phone, sign-in by a code and by a link, sign-up in several tabs of one browser | tasks: auth, oauth, phone-codes, admin-view-mode (the sign-in methods viewer case) | tasks | HIL-1324 |
 | Step-up, session rotation, passkey | tasks: step-up, session-rotation, passkey | tasks | HIL-1324 |
-| Profile on the server — password, address, other browsers' sessions, the GitHub link | polls: profile | polls | HIL-1325 |
+| Profile on the server — password, address, other browsers' sessions, the GitHub link | concert-tickets: profile | concert-tickets | HIL-1325, HIL-2021 |
 | Second factor | polls: second-factor | polls | HIL-1325 |
 | Legal | polls: legal-admin, legal-reconsent, legal-terms, legal-consent, legal-agreements | polls | HIL-1325 |
 | Data and privacy | polls: data-export, privacy-erase, impersonation-settings | polls | HIL-1325 |
@@ -650,7 +650,8 @@ polls switched on Ways to sign in, Sessions and Agreements of the profile, and i
 Terms gained a substantial and an editorial revision, to carry them (HIL-1325).
 
 The current Daemon screen specs live where their views are mounted:
-binance-btc-tracker (Vue), tasks (React) and polls (Angular). Ecommerce-shop also
+binance-btc-tracker (Vue), tasks (React) and concert-tickets (Angular, moved from
+polls in HIL-2021). Ecommerce-shop also
 activates the feature without `LOGS` and carries a standalone smoke of its own.
 Online-testing has the backend feature without a UI. Chat checks the section's accessibility
 in its existing `tests/e2e/tests/a11y.spec.ts`. The matrix above moves the three
@@ -708,7 +709,7 @@ of its own on `hilos_profile_name` and walks the section, the Add, Edit and
 Delete dialogs and a view-mode viewer through the shared steps. The model's
 check of a profile name — published only after approval, the previous name kept
 after a refusal — is one test of the same title in `profile.spec.ts` of tasks
-and polls. None of these files carries a `spec-owner` line; chat's message and
+and concert-tickets. None of these files carries a `spec-owner` line; chat's message and
 message picture moderation specs do (HIL-1638).
 
 The current Analytics section proofs are in PMD (Vue), tasks (React) and
@@ -753,14 +754,15 @@ System fallback, not a server account choice that browser has never received.
 The full production build/head sweep already checks every emitted entrypoint.
 
 The current shared Change Log receipt and history scenarios live in chat (Vue),
-tasks (React) and polls (Angular) until their whole areas move under the matrix.
+tasks (React) and concert-tickets (Angular, moved from polls in HIL-2021); the Vue
+and React ones stay until their whole areas move under the matrix.
 They cover an administrator blocking a person from
 that person's card: the column's value is journaled in every demo, and the
 signed-in person is the author (a registration receipt has no author because it
 comes from a guest). Chat additionally covers the adopted Vue section head,
 overview tiles, four section links with Back, and direct Feed and Noisy columns
 entry through F5. Tasks checks the React section head through the shared
-owner-page checks. Polls checks the Angular section and table heads; its table
+owner-page checks. Concert Tickets checks the Angular section and table heads; its table
 paths cover direct entry, reload/F5, Back and Forward, with receipt/history
 links, record-filter clearing, the old-address refusal and the Noisy page.
 Only chat carries `change-log-bot.spec.ts` (`spec-owner: demo`): a bot's
@@ -1105,7 +1107,10 @@ one moment to now and stamps it where the browser reads it; the spec then waits
 for the state that arrives over the socket. Try that shape first:
 `test:verification:end-pause` ages the resend gate and stamps the browser's line
 at now (HIL-1186), so the step after the pause runs at once and the production
-cooldown stays what it is. A missing command is the leaf's contract work.
+cooldown stays what it is. A browser spec calls the shared
+`endResendPause(page, address)` from `framework/frontend/e2e` instead of a local
+copy; it wraps `endVerificationPause`, the network call in
+`framework/frontend/scripts`. A missing command is the leaf's contract work.
 If a cron rule's natural run can invalidate the spec's own checks, pause that
 rule before `test:cron:fire` and remove the pause in awaited `finally` cleanup;
 do not work around the race by choosing a less frequent rule.
@@ -1780,7 +1785,7 @@ page bodies. `expectChangeLog…`, `expectRegistrationReceiptFacts` and
 `expectChangeLogSectionHead(expect, page, currentPage)` checks the adopted
 owner in all three kits, its four section links, current page and absence of
 child cards. The owner-page checks exercise the shared head in Vue Chat,
-React Tasks and Angular Polls, while preserving the exact legacy heading
+React Tasks and Angular Concert Tickets, while preserving the exact legacy heading
 fallback for consumers that have not adopted the shared head.
 `expectChangeLogReceiptWriter(expect, page, actorLabel, action, agentId)` checks
 the exact Who, Action and Agent values in the receipt's first attribution `dl`.
@@ -1790,13 +1795,14 @@ When and Source, for comparison across masters.
 `expectTrackedTableRecord(expect, page, table, recordKey, since?)` and
 `expectTrackedTableWhole(expect, page, table, since?)` accept optional final
 `since?: number` values and forward them to the table-owner head check. Tasks
-and Polls pass fixture value `110`; the defaults remain `hilos_user: 153` and
+passes fixture value `110` and Concert Tickets `1`, the migration each journals
+`hilos_user` from; the defaults remain `hilos_user: 153` and
 `bot: 153`. The table-head helper keeps its legacy heading fallback for consumers
 without the shared head and retains its existing legacy layout checks.
 The shared row reader is `tableRowKeyByText(expect, page, text)` in `table.ts`;
 chat keeps a wrapper. The shared receipt checks remain common across kits.
 Chat's section-head, overview-tile, direct-entry, F5 and Back scenarios cover
-Vue adoption; Tasks' and Polls' table specs check their shared heads through
+Vue adoption; Tasks' and Concert Tickets' table specs check their shared heads through
 the same owner-page checks.
 
 ### The Moderation section — names and checks

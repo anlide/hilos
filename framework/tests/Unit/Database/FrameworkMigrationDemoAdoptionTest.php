@@ -36,6 +36,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             'Demo\\BinanceBtcTracker\\Hilos', 'Demo\\EcommerceShop\\Hilos', 'Demo\\OnlineTesting\\Hilos',
             'Demo\\Preferans\\Hilos',
             'Demo\\Pmd\\Hilos',
+            'Demo\\ConcertTickets\\Hilos',
         ], array_column($projects, 'facade'));
         $indices = [97, 53, 53, 43, 42, 42];
         $browserTimeZoneIndices = [99, 59, 59, 45, 45, 45];
@@ -64,7 +65,12 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             'data_export' => '6f7552ae23f9d48f528091ecebaab13fd22b0f314bf8f29e08832361b62bc5ba',
             'legal_acceptance_export' => 'ee22a8b08ebfa4d74799509ddb26680c80f2ac2c21e8aa15c9a2abf77183a922',
         ];
-        foreach (array_slice($projects, 0, 7) as $index => $project) {
+        // PMD (index 7) keeps its unchecked track; Concert Tickets (index 8) is a native baseline.
+        foreach (array_slice($projects, 0, 7) + [8 => $projects[8]] as $index => $project) {
+            if ($index === 8) {
+                $this->assertConcertTicketsNativeBaseline($project->root, $project->facade, $catalog, $schema);
+                continue;
+            }
             if ($index === 6) {
                 $base = $project->root . '/001_framework_baseline';
                 $origin = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
@@ -751,7 +757,131 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);
-        self::assertSame([[], [], [], [], [], [], [], []], array_column($plans, 'publications'));
+        self::assertSame([[], [], [], [], [], [], [], [], []], array_column($plans, 'publications'));
+    }
+
+    /**
+     * Concert Tickets started on one native baseline written from its features and nothing after it.
+     *
+     * The pair is historical: its units, both body hashes and every change part folded into it stay
+     * as they were reviewed, and a later framework change reaches the track as its own CHANGE pair.
+     *
+     * @param string $root Migration track of the project
+     * @param string $facade Project facade class
+     * @param FrameworkMigrationCatalog $catalog Framework change catalog
+     * @param FrameworkSchemaCatalog $schema Framework schema catalog
+     */
+    private function assertConcertTicketsNativeBaseline(
+        string $root,
+        string $facade,
+        FrameworkMigrationCatalog $catalog,
+        FrameworkSchemaCatalog $schema,
+    ): void {
+        $base = $root . '/001_framework_baseline';
+        $origin = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+        self::assertSame(FrameworkMigrationOrigin::BASELINE, $origin->kind);
+        self::assertSame([
+            'access_log',
+            'account_deletion',
+            'account_erasure_assignment',
+            'account_erasure_operation',
+            'account_erasure_result',
+            'admin_view_mode_latch',
+            'analytics',
+            'change_log',
+            'data_export',
+            'database_marker',
+            'file',
+            'file_variant',
+            'identity',
+            'legal_acceptance',
+            'legal_acceptance_export',
+            'migration',
+            'migration_claim',
+            'moderation_rule',
+            'notification',
+            'notification_delivery',
+            'notification_preference',
+            'oauth_provider',
+            'passkey_credential',
+            'push_subscription',
+            'registration_reservation',
+            'second_factor',
+            'second_factor_backup_code',
+            'second_factor_reset',
+            'second_factor_setting',
+            'second_factor_trust',
+            'session',
+            'setting',
+            'step_up',
+            'user',
+            'user_merge',
+            'user_photo',
+            'user_rename',
+            'user_verification',
+            'verifier_circle',
+        ], $origin->units);
+        self::assertSame('4ca274e363aa0f4799db61a73de73c0e2ad56d17f0d0f88eb1fb106bb622a847', $origin->upSha256);
+        self::assertSame('ce447a1cd61c1408da06c15430070166778a37b56ca63312789d72acfbb2f234', $origin->downSha256);
+        $baselinePartKeys = [
+            '20261021021039718057_HIL-1580_add_user_time_zone/user',
+            '20261022124515804554_HIL-1582_browser_time_zones/session',
+            '20261022124515804554_HIL-1582_browser_time_zones/user',
+            '20261022205657000000_HIL-1624_add_moderation_rules/moderation_rule',
+            '20261023065022000000_HIL-1653_identity_display_fields/identity',
+            '20261101093551800031_HIL-1579_export_time_zones/data_export',
+            '20261101093551800031_HIL-1579_export_time_zones/legal_acceptance_export',
+            '20261108074007375591_HIL-1936_account_erasure_storage/account_erasure_assignment',
+            '20261108074007375591_HIL-1936_account_erasure_storage/account_erasure_operation',
+            '20261108080825608007_HIL-1893_delivery_routing_key/notification_delivery',
+            '20261108210743046351_HIL-1937_account_erasure_results/account_erasure_result',
+            '20261109000848893922_HIL-1918_bootstrap_moments/admin_view_mode_latch',
+            '20261109000848893922_HIL-1918_bootstrap_moments/database_marker',
+            '20261109000848893922_HIL-1918_bootstrap_moments/migration_claim',
+            '20261109072435317521_HIL-1987_account_operation_tables/account_erasure_assignment',
+            '20261109072435317521_HIL-1987_account_operation_tables/account_erasure_operation',
+            '20261109072435317521_HIL-1987_account_operation_tables/account_erasure_result',
+            '20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_assignment',
+            '20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_operation',
+            '20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_result',
+            '20261109114206000000_HIL-1926_file_moments/file',
+            '20261109114206000000_HIL-1926_file_moments/file_variant',
+            '20261109120150360881_HIL-1919_session_moments/session',
+            '20261109120150360881_HIL-1919_session_moments/verifier_circle',
+            '20261109185924000000_HIL-1927_analytics_signed_moments/analytics',
+            '20261110014712983573_HIL-1920_sign_in_moments/identity',
+            '20261110014712983573_HIL-1920_sign_in_moments/oauth_provider',
+            '20261110014712983573_HIL-1920_sign_in_moments/passkey_credential',
+            '20261110021316313226_HIL-1923_notification_moments/notification',
+            '20261110021316313226_HIL-1923_notification_moments/notification_delivery',
+            '20261110021316313226_HIL-1923_notification_moments/notification_preference',
+            '20261110021316313226_HIL-1923_notification_moments/push_subscription',
+            '20261110024242374685_HIL-1924_people_moments/access_log',
+            '20261110024242374685_HIL-1924_people_moments/account_deletion',
+            '20261110024242374685_HIL-1924_people_moments/user',
+            '20261110024242374685_HIL-1924_people_moments/user_merge',
+            '20261110024242374685_HIL-1924_people_moments/user_photo',
+            '20261110024242374685_HIL-1924_people_moments/user_rename',
+            '20261110164648748072_HIL-1929_journal_moments/change_log',
+            '20261111013234414363_HIL-1921_auth_proof_moments/registration_reservation',
+            '20261111013234414363_HIL-1921_auth_proof_moments/step_up',
+            '20261111013234414363_HIL-1921_auth_proof_moments/user_verification',
+        ];
+        $baselineParts = array_map(static function (string $key) use ($catalog): FrameworkMigrationPart {
+            [$changeId, $unit] = explode('/', $key);
+
+            return $catalog->part($changeId, $unit);
+        }, $baselinePartKeys);
+        self::assertSame($this->partRecords($baselineParts), $this->partRecords($origin->parts));
+        // No late framework change has reached this track yet: the baseline pair is all of it.
+        self::assertSame([$base . '.sql', $base . '_down.sql'], glob($root . '/*.sql'));
+        $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
+        self::assertContains('change_log', $selectedUnits);
+        self::assertSame(
+            $this->partRecords($catalog->partsForUnits($selectedUnits)),
+            $this->partRecords($origin->parts),
+        );
+        self::assertSame([], $catalog->missingParts($selectedUnits, [$origin]));
     }
 
     /**

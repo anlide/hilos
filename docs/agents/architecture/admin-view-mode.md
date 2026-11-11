@@ -692,8 +692,9 @@ carries its own copy of the lever in `tests/e2e/helpers/adminViewMode.ts`.
 | binance-btc-tracker | Vue | operations | `settings`, `backup`, `protected-mode` (the maintenance circle), `communications`, `users` (the windows of a person's card), `logs` (a guest follows a live log: time and level shown, text hidden and absent from every socket frame), `daemon` (the root and placement, the node pages, environment values as hidden, restart disabled, and a forged restart refused by the server), `i18n-country-name-write` (a viewer opens and drafts every country name form; Save is disabled and no action leaves the page) | `auth` (the surface in place of an admin page), `admin-gating` (the people page), `backup` (the backup page) |
 | tasks | React | account | `admin-view-mode` (a guest's gear, the strip on the account screens, the acceptances as hidden, the Legal setting window, the sign-in methods viewer case), `step-up`, `daemon` (the root and placement, the node pages, environment values as hidden, restart disabled), `i18n-country-name-write` (a viewer opens and drafts every country name form; Save is disabled and no action leaves the page) | `auth`, `a11y` (no gear) |
 | ecommerce-shop | React | operations | `admin-view-mode` (the strip on the operations screens: settings, users, backup, maintenance) | `auth`, `users` |
-| polls | Angular | account | `admin-view-mode` (a guest's gear, the strip on the account screens, the acceptances as hidden, the Legal setting window), `second-factor` (the two-factor setting window), `legal-admin` (the export of acceptances switched off), `daemon` (the root and placement, the node pages, environment values as hidden, restart disabled), `i18n-country-name-write` (a viewer opens and drafts every country name form; Save is disabled and no action leaves the page) | `auth`, `a11y` (no gear) |
+| polls | Angular | account | `admin-view-mode` (a guest's gear, the strip on the account screens, the acceptances as hidden, the Legal setting window), `second-factor` (the two-factor setting window), `legal-admin` (the export of acceptances switched off), `i18n-country-name-write` (a viewer opens and drafts every country name form; Save is disabled and no action leaves the page) | `auth`, `a11y` (no gear) |
 | online-testing | Angular | operations | `admin-view-mode` (the strip on the operations screens: settings, users, maintenance with its Circle and Words tabs, and the six log screens) | `auth`, `users` (the refusal and the revoked grant) |
+| concert-tickets | Angular | account | `daemon` (the root and placement, the node pages, environment values as hidden, restart disabled) | — |
 
 The React and Angular kits carry the viewer cases of their primitives and of
 every section as units (`framework/frontend/react/test/`,
@@ -747,7 +748,7 @@ including name masking in the reply before acknowledgement, deleted people,
 full value sides, cursor refusals and receipt portions. The Vue detail rendering
 is covered by
 `framework/frontend/vue/src/admin/changeLog/HilosChangeLogReceiptModal.test.ts`;
-`demo/{chat,tasks,polls}/tests/e2e/tests/change-log.spec.ts` opens a block
+`demo/{chat,tasks,concert-tickets}/tests/e2e/tests/change-log.spec.ts` opens a block
 receipt and a registration receipt through the built Vue, React and Angular
 pages. Chat's `change-log-bot.spec.ts` checks full long-text values.
 
@@ -762,7 +763,7 @@ no mutation controls. The shared e2e helper checks the column-mode reference and
 Noisy columns separately in `framework/frontend/e2e/changeLog.ts`. Chat follows
 the adopted native section tabs; React and Angular retain their legacy child
 cards, so these checks do not promise a shared section frame.
-`demo/{chat,tasks,polls}/tests/e2e/tests/change-log-tables.spec.ts` follows
+`demo/{chat,tasks,concert-tickets}/tests/e2e/tests/change-log-tables.spec.ts` follows
 journal-label filtering, `Open` into one table and the narrow-screen reference
 cards.
 
@@ -791,7 +792,7 @@ found, and an address change re-reads the section. Its Vue unit,
 draws the same header, columns and triggers for admins and viewers, hides people
 in the history beside their numbers, and offers no mutation control — only the
 receipt each history row opens.
-`demo/{chat,tasks,polls}/tests/e2e/tests/change-log-table.spec.ts` follows a
+`demo/{chat,tasks,concert-tickets}/tests/e2e/tests/change-log-table.spec.ts` follows a
 block receipt to the history of its record and back to the whole table.
 
 The backup section carries the viewer cases of its keep toggle and of its
@@ -820,7 +821,7 @@ HIL-1273). PMD enables the merge window, whose separate viewer case is in
 The Daemon section carries its viewer cases in each kit's section spec:
 `demo/binance-btc-tracker/tests/e2e/tests/daemon.spec.ts`,
 `demo/tasks/tests/e2e/tests/daemon.spec.ts` and
-`demo/polls/tests/e2e/tests/daemon.spec.ts`. They cover the root, placement
+`demo/concert-tickets/tests/e2e/tests/daemon.spec.ts`. They cover the root, placement
 search, keyboard access to Workers, Cron, Agents and HTTP, the disabled restart,
 and the environment and comparison with values hidden. The forged restart
 request belongs only to binance-btc-tracker: it checks the server's refusal.

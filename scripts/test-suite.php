@@ -114,6 +114,7 @@ $demos = [
     'ecommerce-shop' => ['check' => 9, 'php' => 15, 'e2e' => 102],
     'online-testing' => ['check' => 15, 'php' => 15, 'e2e' => 111],
     'preferans' => ['check' => 15, 'php' => 15, 'e2e' => 360],
+    'concert-tickets' => ['check' => 15, 'php' => 20, 'e2e' => 420],
 ];
 
 $steps = [

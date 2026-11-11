@@ -63,6 +63,7 @@ final class E2eFullPointingTest extends TestCase
     private const array KNOWN_DEMOS = [
         'chat', 'tasks', 'polls', 'binance-btc-tracker',
         'ecommerce-shop', 'online-testing', 'preferans', 'pmd',
+        'concert-tickets',
     ];
 
     /**

@@ -121,6 +121,7 @@ The list below describes what each project is for. Some of these catalogs are st
 
 - [binance-btc-tracker](demo/binance-btc-tracker/README.md) — BTC market data, charts, signals and paper trading
 - [chat](demo/chat/README.md) — real-time conversations
+- [concert-tickets](demo/concert-tickets/README.md) — concert tickets: hall seats and a time-limited hold
 - [dkp-system](demo/dkp-system/README.md) — guild DKP points and loot distribution for MMO players
 - [ecommerce-shop](demo/ecommerce-shop/README.md) — demo storefront, cart and orders
 - [file-gallery-manager](demo/file-gallery-manager/README.md) — photo galleries and authors

@@ -180,6 +180,7 @@ export {
   grantAdminToSelf,
   signUpAdmin,
 } from './adminGrant.js'
+export { endResendPause } from './verificationPause.js'
 export { armViewerSubmit, expectViewerRestartRefused } from './adminViewMode.js'
 export {
   expectProfileHeadAccessibility,

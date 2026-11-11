@@ -1,0 +1,27 @@
+# Environment configuration
+.env
+.env.local
+# tests/.env is tracked: the test stack runs with the same values on every machine
+!tests/.env
+.env.*.local
+
+# PHPUnit
+tests/.phpunit.cache/
+
+# Vendor
+vendor/
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# Frontend build output
+/frontend/dist/
+/frontend/out-tsc/
+
+# Angular CLI cache
+/frontend/.angular/
+
+# Playwright
+tests/e2e/test-results/
+tests/e2e/playwright-report/

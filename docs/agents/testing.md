@@ -131,8 +131,8 @@ source scan. `composer run test:framework:integration` includes
 `MomentStorageSchemaIntegrationTest`; run it after
 `composer run test:framework:up` and `composer run test:framework:databases` as
 in the framework setup above. The existing demo suites — chat, polls, tasks,
-binance-btc-tracker, online-testing, ecommerce-shop and preferans — run their
-live moment audit through `EntitySchemaConsistencyTest` with that demo's usual
+binance-btc-tracker, online-testing, ecommerce-shop, preferans and
+concert-tickets — run their live moment audit through `EntitySchemaConsistencyTest` with that demo's usual
 `composer run test:integration` command from its root after the documented
 `test:up` and `test:db-reset` setup. These runs cover the physical axes
 `moment_column_missing`, `moment_type` and `moment_auto_write`; the framework
@@ -246,7 +246,7 @@ looks suspiciously cheap, the guards' own log lines are the first place to check
 
 It is **not** part of the inner loop. The two-window coverage lives in chat's
 bots and PMD's profile, settings and users specs (Vue), the `users.spec.ts` of
-ecommerce-shop (React), polls's `profile.spec.ts` (Angular — edits in another
+ecommerce-shop (React), concert-tickets's `profile.spec.ts` (Angular — edits in another
 tab of the same session) and online-testing's `users.spec.ts` (Angular) —
 representative paths per view layer. The **a11y** coverage is the same kind of
 separate, rarely-run category — an `a11y.spec.ts` per demo asserting the
@@ -449,7 +449,7 @@ the subdirectories of `data/test/`, an e2e runner, which sees the repository at
 `/hilos`, follows the stand's files there (`data/test/status`, `data/test/backup`),
 and the stand does not set `BACKUP_DIR`: where a demo declares a default (chat,
 tasks, binance-btc-tracker and ecommerce-shop: `data/backup`), it lies under `data/`
-and so in the root; polls, pmd, preferans and online-testing keep the framework's
+and so in the root; polls, pmd, preferans, concert-tickets and online-testing keep the framework's
 empty default and have no backup storage on their stand, so `test:backup:reset` on
 the `test:up` of polls finds nothing to empty. A cluster stand's export and
 Status volumes stay separate volumes over its root, because an entry reads them at
@@ -609,9 +609,9 @@ merely because a directory or README exists.
 | Angular | `polls` | Active |
 | Angular | `online-testing` | Active |
 | Angular | `preferans` | Active |
-| Angular | `concert-tickets` | Planned (not in the code yet — HIL-2021) |
+| Angular | `concert-tickets` | Active |
 
-The five planned rows' markers cover each activation's complete obligation: an
+The planned rows' markers cover each activation's complete obligation: an
 application shell with an empty home page, AUTH/sign-in, working Analytics in
 the administrative section, ordinary local/test stands, the command interface
 below, and registration in the existing runner and stand registry. Each new
@@ -630,8 +630,8 @@ optional (not in the code yet — HIL-2018). The Model product itself is outside
 this activation phase.
 
 Today `roblox-game-server`, `solar-system-model` and
-`file-gallery-manager` have `composer.json` stubs without scripts;
-`demo/concert-tickets` does not exist. [`framework-projects.json`](../../framework-projects.json)
+`file-gallery-manager` have `composer.json` stubs without scripts.
+[`framework-projects.json`](../../framework-projects.json)
 lists the active projects; [`scripts/test-suite.php`](../../scripts/test-suite.php)
 and [`scripts/test-stands.php`](../../scripts/test-stands.php) register their
 ordinary test suites and stands alongside the existing cluster and framework
@@ -690,8 +690,9 @@ The address map in
 [`scripts/stand-instance.php`](../../scripts/stand-instance.php) is two blocks.
 The first holds its ten assigned stands. The second holds six reserved ordinary
 demo addresses, `HILOS_STAND_NET_PMD` through
-`HILOS_STAND_NET_CONCERT_TICKETS`, on default octets 214 to 219; Preferans uses
-one of these addresses, while the other planned carriers retain theirs. The
+`HILOS_STAND_NET_CONCERT_TICKETS`, on default octets 214 to 219; Preferans and
+Concert Tickets use two of these addresses, while the other planned carriers
+retain theirs. The
 test compose of each activation reads its own
 variable, and its ports and local subnet are reserved in the registry
 ([../new-project/README.md](../new-project/README.md)).
@@ -777,7 +778,7 @@ or a container memory limit.
 
 Acceptance proves Hilos and database failures separately, keeping the other
 layer healthy (not in the code yet — HIL-2043). New fleets enter after ordinary
-activations HIL-2017/HIL-2019/HIL-2021 and phase-one acceptance HIL-2023, with
+activations HIL-2017/HIL-2019 (HIL-2021 has landed) and phase-one acceptance HIL-2023, with
 isolation in every instance extending HIL-2015: their octets are the third block of
 `scripts/stand-instance.php`, the variables `HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER`,
 `HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER` and

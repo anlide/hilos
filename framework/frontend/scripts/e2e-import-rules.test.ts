@@ -14,6 +14,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 const demos = [
   'binance-btc-tracker',
   'chat',
+  'concert-tickets',
   'ecommerce-shop',
   'online-testing',
   'pmd',

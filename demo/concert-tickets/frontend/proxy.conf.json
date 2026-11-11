@@ -1,0 +1,12 @@
+{
+  "/_hilos/data-export": {
+    "target": "http://concert-tickets-daemon-local:8090"
+  },
+  "/_hilos/file": {
+    "target": "http://concert-tickets-files-local"
+  },
+  "/ws": {
+    "target": "http://concert-tickets-daemon-local:8092",
+    "ws": true
+  }
+}

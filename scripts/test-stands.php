@@ -172,4 +172,14 @@ return [
         'networks' => [],
         'holdsDatabase' => true,
     ],
+    [
+        'id' => 'concert-tickets',
+        'cwd' => 'demo/concert-tickets',
+        'composeFile' => 'docker/docker-compose.test.yml',
+        'project' => 'hilos-concert-tickets-test' . standInstanceSuffix(),
+        'mode' => 'project',
+        'profiles' => [],
+        'networks' => [],
+        'holdsDatabase' => true,
+    ],
 ];

@@ -1,0 +1,102 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Demo\ConcertTickets\Database;
+
+use Demo\ConcertTickets\Hilos;
+use Hilos\Constants\EnvConstants;
+use Hilos\Core\Topology\Exception\InvalidTopologyException;
+use Hilos\Database\Database as BaseDatabase;
+use Hilos\Database\DatabaseConnectionDefaults;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DatabaseConnectionException;
+use Hilos\Database\Exception\DatabaseRuntimeException;
+use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
+use Hilos\Database\Schema\Schema;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\HilosException;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
+
+/**
+ * Database - Database connection configuration for the concert-tickets demo.
+ *
+ * Extends base Database class to provide application-specific configuration.
+ * Reads database connection parameters from environment variables.
+ */
+final class Database extends BaseDatabase
+{
+    /**
+     * Connects the primary database and its derived journal on the same server and reads nothing;
+     * primary stays active. A node's start connects through this alone, because the schema must not be
+     * read before the rollout is over.
+     *
+     * Environment variables used:
+     * - DB_HOST: Database host (default: DatabaseConnectionDefaults::HOST)
+     * - DB_PORT: Database port (default: DatabaseConnectionDefaults::PORT)
+     * - DB_USERNAME: Database username (default: DatabaseConnectionDefaults::USER)
+     * - DB_PASSWORD: Database password (default: empty)
+     * - DB_DATABASE: Database name (default: hilos-demo-concert-tickets)
+     *
+     * @param bool $retryConnection If true, retry connection on temporary errors (useful for Docker startup)
+     * @throws EnvException When required env variables are missing or invalid
+     * @throws DatabaseConnectionException When connect or session setup fails
+     * @throws CantConnectToMysqlServerException When connect retries are exhausted
+     * @throws DatabaseException When a connection cannot be configured or selected, or the journal name is invalid
+     */
+    public static function openConnections(bool $retryConnection = false): void
+    {
+        // Configure primary database connection (index 0)
+        self::configure(
+            index: DatabaseConnectionDefaults::PRIMARY_INDEX,
+            host: Hilos::$env[EnvConstants::DB_HOST]->string(),
+            user: Hilos::$env[EnvConstants::DB_USERNAME]->string(),
+            password: Hilos::$env[EnvConstants::DB_PASSWORD]->string(),
+            database: Hilos::$env[EnvConstants::DB_DATABASE]->string(),
+            port: Hilos::$env[EnvConstants::DB_PORT]->int(),
+            charset: DatabaseConnectionDefaults::CHARSET,
+        );
+
+        // Connect to primary database
+        self::connect(DatabaseConnectionDefaults::PRIMARY_INDEX, retryOnConnectionError: $retryConnection);
+        self::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+
+        self::configure(
+            index: ChangeLogDatabase::CONNECTION_INDEX,
+            host: Hilos::$env[EnvConstants::DB_HOST]->string(),
+            user: Hilos::$env[EnvConstants::DB_USERNAME]->string(),
+            password: Hilos::$env[EnvConstants::DB_PASSWORD]->string(),
+            database: ChangeLogDatabase::configuredName(),
+            port: Hilos::$env[EnvConstants::DB_PORT]->int(),
+            charset: DatabaseConnectionDefaults::CHARSET,
+        );
+        self::connect(ChangeLogDatabase::CONNECTION_INDEX, retryOnConnectionError: $retryConnection);
+    }
+
+    /**
+     * Connects both databases and reads the primary schema alone; primary stays active for Hilos initialization.
+     *
+     * @param bool $initHilos If true, initialize Hilos with storage.
+     *                       Set to false when migrations or DB bootstrap commands must run before Hilos is ready.
+     *                       Call Hilos::init() manually after migrations when using false.
+     * @throws EnvException When required env variables are missing or invalid
+     * @throws DatabaseConnectionException When connect or session setup fails
+     * @throws CantConnectToMysqlServerException When connect retries are exhausted
+     * @throws DatabaseRuntimeException When schema initialization query fails
+     * @throws DatabaseException When a connection cannot be configured or the schema cannot be initialized
+     * @throws InvalidTopologyException When Hilos topology constants are inconsistent
+     * @throws HilosException When Hilos facade initialization fails
+     */
+    public static function initialize(bool $initHilos = true): void
+    {
+        self::openConnections();
+
+        // Initialize database schema structure
+        Schema::initialize(DatabaseConnectionDefaults::PRIMARY_INDEX);
+
+        // The journal connection must be configured before Hilos validates coverage.
+        if ($initHilos) {
+            Hilos::init();
+        }
+    }
+}

@@ -13,6 +13,7 @@ running in project-owned docker stacks. The demos, each with what it carries:
 | [demo/ecommerce-shop](../../demo/ecommerce-shop) | minimal | React | the smallest complete shape on React: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
 | [demo/online-testing](../../demo/online-testing) | minimal | Angular | the smallest complete shape on Angular: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
 | [demo/preferans](../../demo/preferans) | minimal | Angular | an active Angular carrier with password sign-in, an empty home, profile, settings, i18n, Appearance and Analytics; local/test stacks and e2e: [testing.md](../agents/testing.md) |
+| [demo/concert-tickets](../../demo/concert-tickets) | minimal | Angular | an active Angular carrier with sign-in (password, passkey, SMS, GitHub), an empty home, profile, and admin Daemon, Logs, Change Log and Analytics; local/test stacks and e2e: [testing.md](../agents/testing.md) |
 | [demo/chat](../../demo/chat) | full | Vue | every subsystem in real use |
 
 The frontend specifics are split per view framework:
@@ -295,8 +296,8 @@ registry of taken host ports:
 | file-gallery-manager cluster (not in the code yet — HIL-2032) | — | — | — | — | — | 10.227 |
 | preferans local | 33081 | 8250/8251/8252 | 8260 | https 8256 | 5183 | 10.208 |
 | preferans test | 33082 | 8253/8254/8255 | — | http 8257 / https 8258 | — | 10.218 |
-| concert-tickets local (not in the code yet — HIL-2021) | 33083 | 8270/8271/8272 | 8280 | https 8276 | 5184 | 10.209 |
-| concert-tickets test (not in the code yet — HIL-2021) | 33084 | 8273/8274/8275 | — | http 8277 / https 8278 | — | 10.219 |
+| concert-tickets local | 33083 | 8270/8271/8272 | 8280 | https 8276 | 5184 | 10.209 |
+| concert-tickets test | 33084 | 8273/8274/8275 | — | http 8277 / https 8278 | — | 10.219 |
 | concert-tickets cluster (not in the code yet — HIL-2033) | — | — | — | — | — | 10.229 |
 | retired five-node stand — 10.185 stays unassigned (HIL-1218) | — | — | — | — | — | 10.185 |
 

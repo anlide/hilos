@@ -75,9 +75,10 @@ and `hilos_second_factor` is purged whole. Its key still identifies a row, while
 every non-key, non-secret, non-noisy column is journaled only as a fact.
 
 In a demo, journal what a person changes by a decision, not the stream.
-All six demos declare `HilosFeature::CHANGE_LOG`. Chat journals six tables:
-the five framework tables above and its own `bot`. Tasks and polls each journal
-all five framework tables after declaring `MODERATION`. Binance-btc-tracker,
+Seven demos declare `HilosFeature::CHANGE_LOG`. Chat journals six tables:
+the five framework tables above and its own `bot`. Tasks, polls and
+concert-tickets each journal all five framework tables after declaring
+`MODERATION`. Binance-btc-tracker,
 ecommerce-shop and online-testing each journal the other four framework tables;
 none has `hilos_moderation_rule` until it declares `MODERATION`.
 Messages, events, attachments, guests and rename histories stay outside the
@@ -787,11 +788,11 @@ History and receipt component tests cover these renderings in
 `framework/frontend/angular/test/HilosChangeLogReceiptModal.test.ts`.
 
 The shared receipt and history scenarios remain in chat (Vue), tasks (React)
-and polls (Angular), using a person's block receipt and checks from
+and concert-tickets (Angular), using a person's block receipt and checks from
 `framework/frontend/e2e/changeLog.ts`. Chat additionally checks the adopted
 Vue section head, overview tiles, navigation with Back, and direct Feed and
 Noisy columns entry with a complete first answer through F5. Tasks checks the
-React section head through the shared owner-page helper. Polls covers the
+React section head through the shared owner-page helper. Concert Tickets covers the
 Angular section and table routes, including direct table-route entry,
 reload/F5, Back and Forward, and checks the Noisy page, block and registration
 receipts, record-history links, the record-filter clear link and the old
@@ -833,10 +834,10 @@ schema, missing journal tables and unsupported column types. It writes changed
 files atomically and leaves unchanged files, including their older valid-from
 headers, alone. It does not install SQL in the database.
 
-All six demos configure the journal connection and use `DockerApplication`'s
-same startup sequence before starting a daemon, worker or socket. Chat commits
-21 generated triggers for its seven journaled tables. Tasks and polls each commit
-15 generated triggers for their five framework tables; each of the three remaining
+Every demo that declares the journal configures the journal connection and uses
+`DockerApplication`'s same startup sequence before starting a daemon, worker or
+socket. Chat commits 21 generated triggers for its seven journaled tables.
+Tasks, polls and concert-tickets each commit 15 generated triggers for their five framework tables; each of the three remaining
 demos commits 12 for its four framework tables. Generation runs through the existing
 test CLI after migrations, and a repeat leaves matching files untouched.
 
