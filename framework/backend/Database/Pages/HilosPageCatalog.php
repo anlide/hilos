@@ -731,9 +731,9 @@ final class HilosPageCatalog
     /**
      * Top-level admin sections grouped for the dashboard, in display order.
      *
-     * Only a top-level page appears here - the one kind of entry that carries an icon - and the
-     * order of the sections and of the items inside them is the order they are drawn in. A
-     * project's own sections are appended after these, never woven into them.
+     * Only a top-level page appears here, and the order of the sections and of the items inside
+     * them is the order they are drawn in. A project's own sections are appended after these,
+     * never woven into them.
      *
      * @var list<array{title: string, description: string, items: list<string>}> Dashboard sections in display order
      */
