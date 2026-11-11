@@ -34,7 +34,11 @@
 // are no loop over widths.
 //
 // Dark is allowed in the theme feature's own specs, named by exact path; they are
-// still judged for width.
+// still judged for width. A component's geometry on its own stand is checked at
+// the three widths of the norm, 1440, 768 and 375: in the stand specs, named by
+// exact path too, these widths are not below the desktop, and a loop over widths
+// is no width loop when every width it proves is one of them. Any other width, a
+// loop with another or an unknown width, and dark are refused there as anywhere.
 import { type Dirent, existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 
@@ -77,6 +81,19 @@ const THEME_SPEC_PATHS = [
   'demo/tasks/tests/e2e/tests/theme-guest.spec.ts',
   GUEST_THEME_SCENARIOS,
 ]
+
+/**
+ * The specs that check a component's geometry on its own stand (HIL-2092), the
+ * one place a spec may set the widths of the stand and loop over them. Exact
+ * paths: a file of the same name in another demo or another directory is not
+ * one of them.
+ */
+const GEOMETRY_STAND_SPEC_PATHS = [
+  'demo/pmd/tests/e2e/tests/modal-geometry.spec.ts',
+]
+
+/** The widths of the norm a geometry stand is checked at, and no other. */
+const STAND_WIDTHS = [1440, 768, 375]
 
 /** Reason for a viewport narrower than the desktop. */
 const WIDTH_BELOW_MINIMUM = `width below ${DESKTOP_MIN_WIDTH}`
@@ -232,7 +249,9 @@ const START: Trail = { consts: new Set(), depth: 0 }
 
 /**
  * Reports every screen-setting site this file narrows or darkens, in source
- * order: one line per site, naming every reason found there.
+ * order: one line per site, naming every reason found there. The path decides
+ * what the file may: dark in a theme spec, the widths of the stand in a
+ * geometry stand spec.
  *
  * @param relativePath Path of the file from the repository root, as it appears in the report
  * @param source Contents of the file
@@ -246,11 +265,12 @@ export function checkSource(relativePath: string, source: string): string[] {
     true,
   )
   const darkAllowed = THEME_SPEC_PATHS.includes(relativePath)
+  const standWidths = GEOMETRY_STAND_SPEC_PATHS.includes(relativePath)
   const sites = new Map<ts.Node, Set<string>>()
 
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node)) {
-      for (const [site, reasons] of callSites(node, darkAllowed)) {
+      for (const [site, reasons] of callSites(node, darkAllowed, standWidths)) {
         if (reasons.length === 0) {
           continue
         }
@@ -309,21 +329,25 @@ export function checkRepository(repositoryRoot: string): string[] {
  *
  * @param call The call under the walk
  * @param darkAllowed Whether the file is one of the theme specs
+ * @param standWidths Whether the file is one of the geometry stand specs
  * @returns Each site the call owns, with the reasons found there
  */
 function callSites(
   call: ts.CallExpression,
   darkAllowed: boolean,
+  standWidths: boolean,
 ): Array<[ts.Node, string[]]> {
   const callee = call.expression
 
   if (ts.isPropertyAccessExpression(callee)) {
     const method = callee.name.text
     if (method === SET_VIEWPORT_METHOD) {
-      return [[call, narrowed(argument(call, 0))]]
+      return [[call, narrowed(argument(call, 0), standWidths)]]
     }
     if (CONTEXT_METHODS.includes(method) || isTestUse(callee)) {
-      return [[call, contextReasons(argument(call, 0), darkAllowed)]]
+      return [
+        [call, contextReasons(argument(call, 0), darkAllowed, standWidths)],
+      ]
     }
     if (method === EMULATE_MEDIA_METHOD) {
       const options = argument(call, 0)
@@ -346,7 +370,7 @@ function callSites(
       .flatMap(configUses)
       .map((use): [ts.Node, string[]] => [
         use.node,
-        contextReasons(use.value, darkAllowed),
+        contextReasons(use.value, darkAllowed, standWidths),
       ])
   }
 
@@ -396,29 +420,43 @@ function configUses(config: ObjectValue): Property[] {
 /**
  * @param options Reading of a context's options
  * @param darkAllowed Whether the file is one of the theme specs
+ * @param standWidths Whether the file is one of the geometry stand specs
  * @returns The reasons its viewport and its color scheme give
  */
-function contextReasons(options: Resolved, darkAllowed: boolean): string[] {
+function contextReasons(
+  options: Resolved,
+  darkAllowed: boolean,
+  standWidths: boolean,
+): string[] {
   return [
-    ...narrowed(propertyOf(options, VIEWPORT_OPTION)),
+    ...narrowed(propertyOf(options, VIEWPORT_OPTION), standWidths),
     ...darkened(propertyOf(options, COLOR_SCHEME_OPTION), darkAllowed),
   ]
 }
 
 /**
  * @param viewport Reading of a viewport
+ * @param standWidths Whether the file is one of the geometry stand specs
  * @returns The width reason when a width it proves is below the desktop, and
- *   the loop reason when its width is a loop's
+ *   the loop reason when its width is a loop's; in a geometry stand spec a
+ *   width of the stand is not below the desktop, and a loop is none when every
+ *   width it proves is one of them
  */
-function narrowed(viewport: Resolved): string[] {
+function narrowed(viewport: Resolved, standWidths: boolean): string[] {
   const width = memberOf(viewport, WIDTH_PROPERTY)
+  const ofStand = (value: Value): boolean =>
+    standWidths && isNumber(value) && STAND_WIDTHS.includes(value)
   const below = (width.values ?? []).some(
-    (value) => isNumber(value) && value < DESKTOP_MIN_WIDTH,
+    (value) => isNumber(value) && value < DESKTOP_MIN_WIDTH && !ofStand(value),
   )
+  const standLoop =
+    width.values !== null &&
+    width.values.length > 0 &&
+    width.values.every(ofStand)
 
   return [
     ...(below ? [WIDTH_BELOW_MINIMUM] : []),
-    ...(width.loop ? [WIDTH_LOOP] : []),
+    ...(width.loop && !standLoop ? [WIDTH_LOOP] : []),
   ]
 }
 

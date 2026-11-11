@@ -89,7 +89,7 @@
             "@test:e2e-install",
             "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm pmd-e2e-runner sh -c \"npm run lint && npm run format:check\""
         ],
-        "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm pmd-frontend-cli-test sh -c \"node ../../../framework/frontend/scripts/npm-install-if-stale.mjs && npm run build && npm run test:table-geometry:build\"",
+        "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm pmd-frontend-cli-test sh -c \"node ../../../framework/frontend/scripts/npm-install-if-stale.mjs && npm run build && npm run test:table-geometry:build && npm run test:modal-geometry:build\"",
         "test:e2e-install": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm pmd-e2e-runner node ../../../../framework/frontend/scripts/npm-install-if-stale.mjs",
         "test:e2e-check": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm pmd-e2e-runner npm run check",
         "test:e2e-time-zone": "docker compose -f docker/docker-compose.test.yml --profile e2e run --quiet-build --rm --no-deps -T --entrypoint php pmd-daemon-test /hilos/framework/frontend/scripts/e2e-time-zone-env.php 'Demo\\Pmd\\Hilos' | docker compose -f docker/docker-compose.test.yml --profile e2e run --quiet-build --rm --no-deps -T --entrypoint node pmd-e2e-runner /hilos/framework/frontend/scripts/e2e-time-zone.mjs",

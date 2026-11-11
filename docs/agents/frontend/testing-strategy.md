@@ -311,6 +311,9 @@ below when reviewing existing coverage too.
    - `fitsInScrollport` proves fit; `overflow-wrap: break-word` prescribes a
      styling choice. Geometry uses the toolbox and still runs at the configured
      desktop width: it permits neither 375 px nor a width/dark-theme matrix.
+     The one exception is a component's geometry on its own stand, checked at
+     1440, 768 and 375 and never in the dark theme there either; see "Light
+     theme, desktop width" below.
    - The theme feature's own specs keep proof of the chosen mode, including
      the built first frame; the "Light theme, desktop width" exception below
      stays narrow. Other features do not gain palette checks.
@@ -354,11 +357,29 @@ palettes to see it drawn twice, and they run at the desktop width too. The
 names above describe them; the checker below knows them by exact path, so a new
 file named like one of them is refused the dark theme like any other spec.
 
+A component's geometry on its own stand is the one place a spec narrows the
+screen. The stand is a page with no server behind it that mounts the real SDK
+component, and its spec proves only that nothing is cut off and nothing moves.
+It checks this at 1440, 768 and 375 — the three widths every screen of the
+design must survive (the design foundations, rule 2) — and may loop over those
+three; it runs in the light theme only. The checker knows such specs by exact
+path, as it knows the theme specs; the first is
+`demo/pmd/tests/e2e/tests/modal-geometry.spec.ts`, the stand of the modal. A new
+stand spec joins that list in the checker; a file named like one elsewhere gains
+nothing. Product e2e and every other spec keep the whole ban, a geometry check
+inside a product spec included: it runs at the desktop width with the rest of
+its spec. Why the stand is let through: it has no server and no scenario, so a
+width costs one page that opens in a second, not another pass over a server
+path (the owner's decision, 2026-11-10, P-846).
+
 Checked automatically: `E2E-LIGHT-DESKTOP`
 (`framework/frontend/codestyle/e2eDisplay.ts`) reports, throughout
 `demo/*/tests/e2e`, a viewport width below 1024, a viewport width taken from a
-loop, and the dark theme chosen outside the theme specs. It judges only what
-the file proves, and its sites and blind spots are listed in
+loop, and the dark theme chosen outside the theme specs; in a geometry stand
+spec it lets 768, 375 and a loop whose every width is 1440, 768 or 375 through,
+and reports any other narrow width, a loop with another or an unknown width,
+and the dark theme as anywhere. It judges only what the file proves, and its
+sites and blind spots are listed in
 [automated-checks.md](../code-style/automated-checks.md). This section is wider
 than the check: a narrow width or a width loop it cannot work out — a phone's
 device descriptor, a helper's result, arithmetic on a loop's variable — passes
@@ -1900,6 +1921,21 @@ with both readings and the bookmark's description. A missing box fails both
 when taking the bookmark and when checking it. Measurements are single reads,
 with no polling for the layout to return: wait for the expected state in the
 spec before measuring or checking, as for any other assertion.
+
+Whether an element fits is asked through three checks, not bookmarks. Each
+reads the element once, with the same one pixel of slack, refuses an element
+that is not visible, and refuses with what it found:
+
+- `fitsInScrollport(element)` — the element is not cut off by the window or by
+  any ancestor that scrolls or clips it. Scroll it into view first.
+- `fitsWithoutOverflow(element)` — the element is not wider than itself: its
+  own content does not run out of it sideways.
+- `fitsWithoutSidewaysScroll(element)` — nothing from the element up to the
+  page scrolls or cuts sideways: the element itself, every ancestor whose
+  `overflow-x` is not `visible`, and the page's scrolling root. An ancestor that
+  hides or clips its overflow counts, since it cuts what it would scroll. The
+  refusal names the first offender by its tag and, when it has one, its
+  `data-id`, with both widths.
 
 One more question has a helper, and it is not a bookmark: where one element
 lies over another. `overlapSpot(over, under)` returns the middle of the area the

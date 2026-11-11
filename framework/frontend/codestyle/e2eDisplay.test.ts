@@ -1,5 +1,6 @@
 // E2E-LIGHT-DESKTOP under test against its seeded fixtures, and against sources
-// written here under real demo paths, since the theme specs are named by path.
+// written here under real demo paths, since the theme specs and the geometry
+// stand specs are named by path.
 // The real e2e roots are judged by guard.test.ts against the shared baseline,
 // never by a second guard.
 import {
@@ -74,6 +75,12 @@ const THEME_SPECS = [
   'framework/frontend/e2e/themeGuestScenarios.ts',
 ]
 
+/**
+ * The geometry stand specs, written out by hand rather than imported: the exact
+ * list is what the rule promises.
+ */
+const GEOMETRY_STANDS = ['demo/pmd/tests/e2e/tests/modal-geometry.spec.ts']
+
 /** A dark page on line 1 and a narrow one on line 2. */
 const DARK_THEN_NARROW =
   "await page.emulateMedia({ colorScheme: 'dark' })\n" +
@@ -87,6 +94,33 @@ const PALETTES_THEN_WIDTHS =
   'for (const width of [1280, 1440]) {\n' +
   '  await page.setViewportSize({ width, height: 800 })\n' +
   '}\n'
+
+/**
+ * The stand spec's loop over the three screens of the norm, whose context is
+ * set on line 8.
+ *
+ * @param colorScheme The palette the context is given
+ * @returns The source
+ */
+function screensLoop(colorScheme: string): string {
+  return (
+    'const SCREENS = [\n' +
+    '  { width: 1440, height: 900 },\n' +
+    '  { width: 768, height: 1024 },\n' +
+    '  { width: 375, height: 667 },\n' +
+    '] as const\n' +
+    'for (const screen of SCREENS) {\n' +
+    '  test.describe(`modal geometry at ${screen.width}`, () => {\n' +
+    `    test.use({ viewport: screen, colorScheme: '${colorScheme}' })\n` +
+    '  })\n' +
+    '}\n'
+  )
+}
+
+/** The loop over the three screens, then the phone's screen set on line 11. */
+const STAND_SCREENS =
+  screensLoop('light') +
+  'await page.setViewportSize({ width: 375, height: 667 })\n'
 
 /**
  * Runs the checker over a fixture exactly as the repository scan would.
@@ -192,6 +226,56 @@ it('refuses dark in a theme file the list does not name', () => {
     expect(checkSource(path, DARK_THEN_NARROW)).toEqual([
       `E2E-LIGHT-DESKTOP ${path}:1${DARK}`,
       `E2E-LIGHT-DESKTOP ${path}:2${NARROW}`,
+    ])
+  }
+})
+
+it('lets the geometry stand spec loop over the three screens of the norm and set the phone one', () => {
+  for (const path of GEOMETRY_STANDS) {
+    expect(checkSource(path, STAND_SCREENS)).toEqual([])
+  }
+})
+
+it('refuses the screens of the stand in a geometry file the list does not name', () => {
+  const lookAlikes = [
+    // A geometry spec of another component in the same demo.
+    'demo/pmd/tests/e2e/tests/table-geometry.spec.ts',
+    // The stand spec, by its name, in another demo.
+    'demo/chat/tests/e2e/tests/modal-geometry.spec.ts',
+  ]
+
+  for (const path of lookAlikes) {
+    expect(checkSource(path, STAND_SCREENS)).toEqual([
+      `E2E-LIGHT-DESKTOP ${path}:8${NARROW_LOOP}`,
+      `E2E-LIGHT-DESKTOP ${path}:11${NARROW}`,
+    ])
+  }
+})
+
+it('refuses the geometry stand spec any other width and a loop over another or an unknown width', () => {
+  const others =
+    "import { SCREENS } from '../helpers/screens.js'\n" +
+    'await page.setViewportSize({ width: 320, height: 568 })\n' +
+    'for (const width of [1440, 1024, 768]) {\n' +
+    '  await page.setViewportSize({ width, height: 800 })\n' +
+    '}\n' +
+    'for (const screen of SCREENS) {\n' +
+    '  test.use({ viewport: screen })\n' +
+    '}\n'
+
+  for (const path of GEOMETRY_STANDS) {
+    expect(checkSource(path, others)).toEqual([
+      `E2E-LIGHT-DESKTOP ${path}:2${NARROW}`,
+      `E2E-LIGHT-DESKTOP ${path}:4${LOOP}`,
+      `E2E-LIGHT-DESKTOP ${path}:7${LOOP}`,
+    ])
+  }
+})
+
+it('refuses dark in the geometry stand spec, where its screens pass', () => {
+  for (const path of GEOMETRY_STANDS) {
+    expect(checkSource(path, screensLoop('dark'))).toEqual([
+      `E2E-LIGHT-DESKTOP ${path}:8${DARK}`,
     ])
   }
 })

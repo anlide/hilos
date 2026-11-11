@@ -91,7 +91,9 @@ use `$hilos-testing-cli`.
 4. Run the test in the light theme at the desktop viewport its config gives
    it: no dark-theme variant, no loop over palettes or widths, no narrowed
    viewport, no check of what only a narrow screen draws. Only the theme
-   feature's own specs choose dark, to prove the pick:
+   feature's own specs choose dark, to prove the pick; only a component's
+   geometry on its own stand runs at 1440, 768 and 375 and may loop over them,
+   in the light theme:
    `docs/agents/frontend/testing-strategy.md`, "Light theme, desktop width".
    Check the explicit, fixed browser time zone too; use the demo's authoring
    command for a new or replacement literal and preserve suitable saved roles:
@@ -178,9 +180,11 @@ use `$hilos-testing-cli`.
 - Use available test-command preconditions and owned cleanup; UI creation or
   sign-up stays when it is the subject. Prepare the admin/account once per
   scenario with the existing toolbox, without sharing away session isolation.
-- Run every test in the light theme at the desktop width: never narrow the
+- Run every test in the light theme at the desktop width: do not narrow the
   viewport and never repeat or check a screen in the dark theme. Only the theme
-  feature's own specs choose dark, to prove the pick.
+  feature's own specs choose dark, to prove the pick; only a component's
+  geometry on its own stand runs at 1440, 768 and 375, in the light theme —
+  "Light theme, desktop width" in `docs/agents/frontend/testing-strategy.md`.
 - Keep an explicit, fixed browser zone distinct from UTC and the project zone;
   draw new literals with the authoring command, never during test runs. Follow
   [Explicit browser time zones](../../docs/agents/frontend/testing-strategy.md#explicit-browser-time-zones).

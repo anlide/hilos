@@ -740,6 +740,55 @@ export async function fitsWithoutOverflow(element: Locator): Promise<void> {
 }
 
 /**
+ * Refuse an element when it, or any box from it up to the page, scrolls sideways.
+ *
+ * A modal never scrolls sideways (rules-and-violations.md, section E): the end
+ * of a sentence is where its reason lives, and a horizontal scrollbar puts it
+ * furthest away. The box that would scroll is often an ancestor the spec cannot
+ * name, so this checks the element itself, every ancestor whose overflow-x is
+ * not `visible`, and the document's scrolling root, each with the toolbox's 1px
+ * allowance for fractional layout rounding. An ancestor that hides or clips its
+ * overflow is the same violation, because it cuts the content instead of
+ * scrolling it. fitsWithoutOverflow reads the element itself and nothing else.
+ *
+ * @param element The element whose contents must fit from itself up to the page.
+ */
+export async function fitsWithoutSidewaysScroll(
+  element: Locator,
+): Promise<void> {
+  await element.evaluate(
+    (node, { slack, what }) => {
+      if (!node.checkVisibility({ visibilityProperty: true })) {
+        throw new Error(`${what}: the element is not visible`)
+      }
+      const boxes: Element[] = [node]
+      for (
+        let parent = node.parentElement;
+        parent;
+        parent = parent.parentElement
+      ) {
+        if (getComputedStyle(parent).overflowX !== 'visible') {
+          boxes.push(parent)
+        }
+      }
+      const root = document.scrollingElement
+      if (root && !boxes.includes(root)) boxes.push(root)
+      const box = boxes.find(
+        (each) => each.scrollWidth - each.clientWidth > slack,
+      )
+      if (box) {
+        const id = box.getAttribute('data-id')
+        const name = box.tagName.toLowerCase()
+        throw new Error(
+          `${what}: ${id === null ? name : `${name}[data-id="${id}"]`} scrolls sideways by ${box.scrollWidth - box.clientWidth}px (scrollWidth: ${box.scrollWidth}, clientWidth: ${box.clientWidth}); allowance ${slack}px`,
+        )
+      }
+    },
+    { slack: SLACK_PX, what: element.toString() },
+  )
+}
+
+/**
  * Watch how far below the top of the table's root its first row stands.
  *
  * A live message over the table takes room that was held before it arrived, so

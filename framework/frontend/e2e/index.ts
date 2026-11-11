@@ -25,6 +25,7 @@ export { cleanupFixtures, type TestCleanup } from './cleanupFixtures.js'
 export {
   fitsInScrollport,
   fitsWithoutOverflow,
+  fitsWithoutSidewaysScroll,
   liesAbove,
   overlapSpot,
   watchFirstRowTop,

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-import type { Expect, Page } from '@playwright/test'
+import type { Expect, Locator, Page } from '@playwright/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { watchTableFirstLive } from '../geometry.js'
+import { fitsWithoutSidewaysScroll, watchTableFirstLive } from '../geometry.js'
 
 // Exercise the real observer callback and its RAF history, with numeric DOM
 // stubs. Chromium separately proves the renderer's used tracks and native hits.
@@ -274,5 +274,99 @@ describe('first-live frame observer', () => {
       'the original controller survives',
     )
     await f.watch.stop()
+  })
+})
+
+/** A long text inside a box that may scroll, with numeric width stubs. */
+function sideways(overflowX: string) {
+  // A browser computes `visible` for the root; happy-dom leaves it empty, which
+  // would let the ancestor walk read the root before its own check could.
+  document.head.innerHTML =
+    '<style>html { overflow-x: visible } ' +
+    `div { overflow-x: ${overflowX} }</style>`
+  document.body.innerHTML =
+    '<section><div><p data-id="long-text"></p></div></section>'
+  const text = document.querySelector<HTMLElement>('[data-id="long-text"]')!
+  const widths = new Map<Element, { scroll: number; client: number }>()
+  vi.spyOn(Element.prototype, 'scrollWidth', 'get').mockImplementation(
+    function (this: Element) {
+      return widths.get(this)?.scroll ?? 0
+    },
+  )
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(
+    function (this: HTMLElement) {
+      return widths.get(this)?.client ?? 0
+    },
+  )
+  const element = {
+    evaluate: async <A>(read: (node: HTMLElement, arg: A) => void, arg: A) =>
+      read(text, arg),
+    toString: () => "getByTestId('long-text')",
+  } as unknown as Locator
+  const fits = { scroll: 300, client: 300 }
+  widths.set(text, fits)
+  widths.set(text.parentElement!, fits)
+  widths.set(document.documentElement, { scroll: 1440, client: 1440 })
+  return {
+    element,
+    widen: (box: Element, scroll: number, client: number) =>
+      widths.set(box, { scroll, client }),
+    text,
+    box: text.parentElement!,
+  }
+}
+
+describe('sideways scroll from the element up to the page', () => {
+  afterEach(() => {
+    document.head.replaceChildren()
+  })
+
+  it('passes when every box fits its width', async () => {
+    const f = sideways('auto')
+    await expect(fitsWithoutSidewaysScroll(f.element)).resolves.toBeUndefined()
+  })
+
+  it('refuses the element itself, naming it by its data-id', async () => {
+    const f = sideways('auto')
+    f.widen(f.text, 340, 300)
+    await expect(fitsWithoutSidewaysScroll(f.element)).rejects.toThrow(
+      `getByTestId('long-text'): p[data-id="long-text"] scrolls sideways by 40px (scrollWidth: 340, clientWidth: 300); allowance 1px`,
+    )
+  })
+
+  it('refuses a scrolling ancestor, naming it by its tag', async () => {
+    const f = sideways('auto')
+    f.widen(f.box, 420, 300)
+    await expect(fitsWithoutSidewaysScroll(f.element)).rejects.toThrow(
+      `getByTestId('long-text'): div scrolls sideways by 120px (scrollWidth: 420, clientWidth: 300); allowance 1px`,
+    )
+  })
+
+  it('refuses an ancestor that hides what overflows it', async () => {
+    const f = sideways('hidden')
+    f.widen(f.box, 420, 300)
+    await expect(fitsWithoutSidewaysScroll(f.element)).rejects.toThrow(
+      `getByTestId('long-text'): div scrolls sideways by 120px (scrollWidth: 420, clientWidth: 300); allowance 1px`,
+    )
+  })
+
+  it('passes an ancestor that lets its overflow show', async () => {
+    const f = sideways('visible')
+    f.widen(f.box, 420, 300)
+    await expect(fitsWithoutSidewaysScroll(f.element)).resolves.toBeUndefined()
+  })
+
+  it('refuses a document that scrolls sideways', async () => {
+    const f = sideways('auto')
+    f.widen(document.documentElement, 1480, 1440)
+    await expect(fitsWithoutSidewaysScroll(f.element)).rejects.toThrow(
+      `getByTestId('long-text'): html scrolls sideways by 40px (scrollWidth: 1480, clientWidth: 1440); allowance 1px`,
+    )
+  })
+
+  it('passes a box wider by exactly the 1px allowance', async () => {
+    const f = sideways('auto')
+    f.widen(f.box, 301, 300)
+    await expect(fitsWithoutSidewaysScroll(f.element)).resolves.toBeUndefined()
   })
 })
