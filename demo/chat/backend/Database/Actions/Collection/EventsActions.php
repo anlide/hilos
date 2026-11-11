@@ -177,6 +177,8 @@ final class EventsActions extends DbActions
 
     /**
      * Deletes all events from database and clears the collection.
+     * The journal rows were taken off their events by their owners before (HIL-1897);
+     * a link written after that is cleared by the key's ON DELETE SET NULL.
      *
      * @throws HilosException On error (permission error, database error, etc.)
      */
@@ -187,8 +189,6 @@ final class EventsActions extends DbActions
         Hilos::$db->eventAttachments->actions->deleteAll();
         Hilos::$db->eventMessages->actions->deleteAll();
         Hilos::$db->eventUserRegistrations->actions->deleteAll();
-        // The journal is the person's history, not the room's: its rows stay, off their events.
-        Hilos::$db->userRenames->actions->unlinkEvents();
 
         $this->deleteAllObjects();
     }

@@ -41,7 +41,7 @@ use Hilos\Users\UserNotificationType;
  * (HIL-1404); on that answer chat's hook writes the feed event and asks the person's agent to
  * link the journal row to it without an answer (HIL-1896).
  * The event's type follows the row's author, and a person renamed by somebody else is told so.
- * Clearing the room's history takes the rows off their events and keeps them.
+ * Clearing the room's history asks each person's agent to take its rows off, and keeps them (HIL-1897).
  */
 final class RenameFeedTest extends IntegrationTestCase
 {
@@ -178,27 +178,6 @@ final class RenameFeedTest extends IntegrationTestCase
         self::assertNotNull($row->event_id);
         self::assertSame(ChatEventType::USER_RENAMED->value, Hilos::$db->events[$row->event_id]->type);
         self::assertCount(0, $this->notificationsFor($adminId));
-    }
-
-    /**
-     * Clearing the room's history keeps the journal - it is the person's history - and takes each
-     * row off the event that went.
-     *
-     * @throws HilosException When seeding or the cleanup fails
-     */
-    public function testClearingTheHistoryKeepsTheJournalOffItsEvents(): void
-    {
-        $userId = (int)Hilos::$db->users->actions->createWithName('Before clear')->id;
-        $this->allowRename($userId, 'After clear');
-        $rowId = (int)$this->onlyJournalRowOf($userId)->id;
-
-        Hilos::$db->events->actions->deleteAll();
-
-        $row = $this->onlyJournalRowOf($userId);
-        self::assertSame($rowId, $row->id);
-        self::assertNull($row->event_id, 'The row lost its event in the database');
-        self::assertNull(Hilos::$db->userRenames[$rowId]->eventId, 'and in the cache that heard it');
-        self::assertSame('After clear', Hilos::$db->userRenames[$rowId]->newName);
     }
 
     /** A frame arriving after history cleanup silently leaves the journal unlinked. */

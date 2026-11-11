@@ -34,6 +34,7 @@ use Hilos\Runtime\State\Item\HilosModerationCheck;
 use Hilos\Runtime\State\Item\HilosUpload;
 use Hilos\Runtime\View\Item\HilosModerationCheck as ModerationCheck;
 use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\WiringRefusal;
 use Random\RandomException;
 use Throwable;
@@ -41,6 +42,8 @@ use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
+use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkSignalData;
+use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkedSignalData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
@@ -49,6 +52,7 @@ use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use LogicException as NativeLogicException;
@@ -86,8 +90,10 @@ final class ChatAgent extends AbstractAgent
 {
     /**
      * The room and everything written into it: the events, their messages, who joined, and what
-     * was attached - and the links of the rename journal to the room's events, which clearing
-     * the room's history takes off.
+     * was attached.
+     *
+     * The rename journal belongs to each person's agent. History cleanup asks those owners to
+     * take their rows off the feed and waits for their answers (HIL-1897).
      *
      * The session set is not among them, nor are the two runtime lists of the browsers parked on
      * a confirmation code: they belong to {@see SessionsLibraryAgent}, which claims them in its
@@ -100,9 +106,6 @@ final class ChatAgent extends AbstractAgent
         ChatDbContext::events => TruthSourceOperation::BY_KIND,
         ChatDbContext::eventMessages => TruthSourceOperation::BY_KIND,
         ChatDbContext::eventUserRegistrations => TruthSourceOperation::BY_KIND,
-        // Borrowed to sweep room references from the rename journal while clearing the room's history.
-        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
-        ChatDbContext::userRenames => [TruthSourceOperation::Update],
         ChatDbContext::eventAttachments => TruthSourceOperation::BY_KIND,
     ];
 
@@ -126,8 +129,8 @@ final class ChatAgent extends AbstractAgent
     /** @var list<string> Readiness and provenance of the accepted attachments */
     public const array READS_RT = [HilosUpload::RT_COLLECTION];
 
-    /** @var list<string> Check timeout settings and the registry rows being linked */
-    public const array READS_DB = [HilosDbContext::settings, HilosDbContext::files];
+    /** @var list<string> Check settings, registry rows, and the journal rows whose owners a history clear asks to unlink */
+    public const array READS_DB = [HilosDbContext::settings, HilosDbContext::files, ChatDbContext::userRenames];
 
     public const string AGENT_TYPE = AgentType::CHAT;
 
@@ -143,12 +146,23 @@ final class ChatAgent extends AbstractAgent
         ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
         HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class,
         ChatSignalConstants::ATTACHMENTS_PUBLISHED => FilesPublishedSignalData::class,
+        ChatSignalConstants::USER_RENAME_FEED_UNLINKED => UserRenameFeedUnlinkedSignalData::class,
     ];
 
     private const string IMAGE_MIME_PREFIX = 'image/';
+    private const int CLEAR_ID_BYTES = 8;
 
     /** @var int Next local sweep moment in epoch milliseconds; the checks themselves live in RT */
     private int $nextModerationSweepAt = 0;
+
+    /**
+     * History clear waiting for unlink answers; lost on restart on purpose, the next cron starts
+     * from the data. Correlation only has to differ between attempts, so tolerant randomness suffices.
+     */
+    private ?string $clearId = null;
+
+    /** @var array<int, true> People whose unlink answer is still awaited */
+    private array $clearAwaits = [];
 
     /**
      * Answers behind publication work already queued by this agent, preserving its causal order.
@@ -370,7 +384,7 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Handles chat-owned cron cleanup of the persisted history and the files its messages carried.
+     * History cleanup asks journal owners to unlink, then deletes history after their answers.
      *
      * The files are collected before their events go and handed to the files library after: it
      * removes each one at once, rather than leaving it to hold its place in the storage limit
@@ -390,10 +404,7 @@ final class ChatAgent extends AbstractAgent
     {
         switch ($name) {
             case ChatCronConstants::CLEANUP_HISTORY:
-                $fileIds = Hilos::$db->eventAttachments->allFileIds();
-                Hilos::$db->events->actions->deleteAll();
-                Hilos::$db->events->actions->addChatCleared();
-                (Hilos::$files ?? throw new LogicException('The files door is not created'))->remove($fileIds);
+                $this->handleHistoryCleanup();
 
                 return;
 
@@ -409,6 +420,7 @@ final class ChatAgent extends AbstractAgent
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Agent signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this agent
+     * @throws InvalidAgentSignalPayloadException When an unlink answer differs from its declaration
      * @throws InvalidArgumentException When a signal of the session-state answer cannot be named
      * @throws HilosException On bot message publish failure, or on database or runtime failure
      * @throws LogicException On payload type mismatch, or if event id is null after sync
@@ -438,6 +450,15 @@ final class ChatAgent extends AbstractAgent
                 }
                 $this->applySessionState($data->data);
                 return;
+            case ChatSignalConstants::USER_RENAME_FEED_UNLINKED:
+                $answer = $data->data;
+                if (!$answer instanceof UserRenameFeedUnlinkedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserRenameFeedUnlinkedSignalData::class, $answer);
+                }
+                $this->settleHistoryClear($answer);
+
+                return;
+
             case ChatSignalConstants::BOT_MESSAGE:
                 if (!$data->data instanceof BotMessageSignalData) {
                     throw new LogicException(
@@ -449,6 +470,69 @@ final class ChatAgent extends AbstractAgent
             default:
                 throw new AgentUnknownSignalException($name);
         }
+    }
+
+    /** Starts over from the remaining links; no answer to the old attempt can advance this one. */
+    private function handleHistoryCleanup(): void
+    {
+        if ($this->clearId !== null) {
+            $this->logAgentError(
+                "History clear {$this->clearId} replaced: no unlink answer from users #"
+                . implode(', #', array_keys($this->clearAwaits)),
+            );
+        }
+
+        $userIds = Hilos::$db->userRenames->linkedUserIds();
+        if ($userIds === []) {
+            $this->clearId = null;
+            $this->clearAwaits = [];
+            $this->finishHistoryClear();
+
+            return;
+        }
+
+        $this->clearId = RandomHelper::hex(self::CLEAR_ID_BYTES);
+        $this->clearAwaits = array_fill_keys($userIds, true);
+        foreach ($userIds as $userId) {
+            $this->sendToAgent(
+                ChatSignalConstants::USER_RENAME_FEED_UNLINK,
+                new UserRenameFeedUnlinkSignalData($userId, $this->clearId),
+            );
+        }
+    }
+
+    /**
+     * @param UserRenameFeedUnlinkedSignalData $answer Owner's outcome for a history-clear attempt
+     */
+    private function settleHistoryClear(UserRenameFeedUnlinkedSignalData $answer): void
+    {
+        if ($answer->clearId !== $this->clearId || !isset($this->clearAwaits[$answer->userId])) {
+            return;
+        }
+        if (!$answer->unlinked) {
+            $this->logAgentError(
+                "History clear {$this->clearId} abandoned: user #{$answer->userId} did not take the journal off the feed",
+            );
+            $this->clearId = null;
+            $this->clearAwaits = [];
+
+            return;
+        }
+
+        unset($this->clearAwaits[$answer->userId]);
+        if ($this->clearAwaits === []) {
+            $this->clearId = null;
+            $this->finishHistoryClear();
+        }
+    }
+
+    /** Removes history and its files only after every requested unlink succeeded. */
+    private function finishHistoryClear(): void
+    {
+        $fileIds = Hilos::$db->eventAttachments->allFileIds();
+        Hilos::$db->events->actions->deleteAll();
+        Hilos::$db->events->actions->addChatCleared();
+        (Hilos::$files ?? throw new LogicException('The files door is not created'))->remove($fileIds);
     }
 
     /**

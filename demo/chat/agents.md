@@ -65,9 +65,9 @@ Framework rules stay in `/docs/agents/**`; nothing here overrides them.
    library creates registration/feed events, while later room changes belong to
    `ChatAgent`; the sessions holder still has the terminal rights listed in the
    framework [Writer
-   Map](../../docs/agents/architecture/account-operations.md#writer-map). Chat's
-   borrowed `userRenames` update for history cleanup moves to the journal's personal
-   owner (not in the code yet — HIL-1897). Its RT truth sources remain `connections` and
+   Map](../../docs/agents/architecture/account-operations.md#writer-map). For history
+   cleanup, ChatAgent reads `userRenames` to find linked users and asks each journal's
+   personal owner to unlink its rows. Its RT truth sources remain `connections` and
    `userStates`.
    The [chat erasure part](spec/agents/chat-agent.md#responsibilities) deletes messages
    across all rooms, attachments, registrations and feed events in one `ChatAgent`

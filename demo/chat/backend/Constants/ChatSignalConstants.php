@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Constants;
 
 use Demo\Chat\Core\Router\DTO\UserRenameFeedLinkSignalData;
+use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkSignalData;
+use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkedSignalData;
 
 /**
  * ChatSignalConstants - Chat signal name constants.
@@ -49,6 +51,18 @@ final class ChatSignalConstants
      *     row's link to it (HIL-1896). Carried by {@see UserRenameFeedLinkSignalData}. Not answered.
      */
     public const string USER_RENAME_FEED_LINK = 'chat_user_rename_feed_link';
+
+    /**
+     * @var string ChatAgent → the person's agent: take every journal row of yours off its feed event
+     *     before history is cleared, and answer (HIL-1897). Carried by {@see UserRenameFeedUnlinkSignalData}.
+     */
+    public const string USER_RENAME_FEED_UNLINK = 'chat_user_rename_feed_unlink';
+
+    /**
+     * @var string The person's agent → ChatAgent: the answer to USER_RENAME_FEED_UNLINK.
+     *     Carried by {@see UserRenameFeedUnlinkedSignalData}.
+     */
+    public const string USER_RENAME_FEED_UNLINKED = 'chat_user_rename_feed_unlinked';
 
     // ── Bot agent lifecycle ─────────────────────────────────────────────
     /** @var string LibraryAgent → BotAgent: start (sending to agent triggers framework start if not running) */

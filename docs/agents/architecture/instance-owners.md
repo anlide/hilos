@@ -160,8 +160,7 @@ claims (HIL-630), and takes the frames of the edits that have moved to it
   own row: the person's rename journal row is added with the name, so the agent
   claims that set with `Add`; it also claims `Update` to link the live chat feed
   event on a project frame (HIL-1404, HIL-1896). Clearing chat history obtains
-  that owner's confirmed unlink before deleting the events
-  (not in the code yet — HIL-1897).
+  that owner's confirmed unlink before deleting the events.
   The person's one row of second-factor settings (`hilos_second_factor_setting`,
   keyed by the person) is born by the owner's first edit of it — a wait chosen, a
   wrong code counted — so the agent claims that set with `Add` and `Update`
@@ -303,8 +302,8 @@ for any sweep, erasure or merge:
   (not in the code yet — HIL-1999).
 
 Ordinary cross-owner writes are separate, finite transitions. The chat agent's
-borrowed journal `Update` for `unlinkEvents()` goes to the journal's personal
-owner, whose answer precedes event deletion (not in the code yet — HIL-1897).
+history-clear request calls `unlinkEventsOf()` through the journal's personal
+owner, whose answer precedes event deletion.
 The users library hands its journal link to that same owner after creating the
 feed event (HIL-1896). Creating the first administrator moved from
 `mintAdminUser()` at the sessions holder to the users library in HIL-1898; the

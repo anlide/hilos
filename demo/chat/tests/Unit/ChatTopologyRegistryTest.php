@@ -11,6 +11,8 @@ use Demo\Chat\CLI\DTO\BotExtrasDeleteCommandData;
 use Demo\Chat\CLI\DTO\SendPauseEndCommandData;
 use Demo\Chat\CLI\DTO\SubmissionObserveCommandData;
 use Demo\Chat\Core\Router\DTO\UserRenameFeedLinkSignalData;
+use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkSignalData;
+use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkedSignalData;
 use Hilos\Moderation\ModerationCommandConstants;
 use Hilos\Moderation\DTO\ModerationObserveCommandData;
 
@@ -2119,6 +2121,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::BOT_MESSAGE => AgentType::CHAT,
             HilosSignalConstants::HILOS_SESSION_STATE => AgentType::CHAT,
             ChatSignalConstants::ATTACHMENTS_PUBLISHED => AgentType::CHAT,
+            ChatSignalConstants::USER_RENAME_FEED_UNLINKED => AgentType::CHAT,
             HilosSignalConstants::HILOS_USER_RENAME => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => HilosAgentType::HILOS_USER,
@@ -2154,6 +2157,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_PUSH_REMOVE => HilosAgentType::HILOS_USER,
             ChatSignalConstants::USER_RENAME_FEED_LINK => HilosAgentType::HILOS_USER,
+            ChatSignalConstants::USER_RENAME_FEED_UNLINK => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_CODE_MINT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -2445,6 +2449,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => 'userId',
             HilosSignalConstants::HILOS_USER_PUSH_REMOVE => 'userId',
             ChatSignalConstants::USER_RENAME_FEED_LINK => 'userId',
+            ChatSignalConstants::USER_RENAME_FEED_UNLINK => 'userId',
             ChatSignalConstants::BOT_AGENT_START => 'botId',
             ChatSignalConstants::BOT_ANSWER_NOW => 'botId',
             HilosSignalConstants::HILOS_MAIL_DELIVER => NotificationDeliverSignalData::shardKey,
@@ -2496,6 +2501,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
             HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class,
             ChatSignalConstants::ATTACHMENTS_PUBLISHED => FilesPublishedSignalData::class,
+            ChatSignalConstants::USER_RENAME_FEED_UNLINKED => UserRenameFeedUnlinkedSignalData::class,
             HilosSignalConstants::HILOS_USER_RENAME => UserRenameSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE => UserAdminWriteSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => UserAdminCommandSignalData::class,
@@ -2531,6 +2537,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => UserPushUnsubscribeSignalData::class,
             HilosSignalConstants::HILOS_USER_PUSH_REMOVE => UserPushRemoveSignalData::class,
             ChatSignalConstants::USER_RENAME_FEED_LINK => UserRenameFeedLinkSignalData::class,
+            ChatSignalConstants::USER_RENAME_FEED_UNLINK => UserRenameFeedUnlinkSignalData::class,
             HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE => ProfileNameContinueSignalData::class,
             HilosSignalConstants::HILOS_AUTH_CODE_MINT => AuthCodeMintSignalData::class,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE => AuthRegistrationHoldReleaseSignalData::class,
@@ -3164,7 +3171,7 @@ final class ChatTopologyRegistryTest extends TestCase
             'secondFactors' => ['HIL-1903', 'HIL-1952', 'HIL-1999'],
             'stepUps' => ['HIL-1952'],
             'userPhotos' => ['HIL-1952'],
-            'userRenames' => ['HIL-1897', 'HIL-1952'],
+            'userRenames' => ['HIL-1952'],
             'users' => ['HIL-1952', 'HIL-1999'],
             'verifications' => ['HIL-1952'],
         ];

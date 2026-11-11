@@ -10,6 +10,7 @@ use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Agents\Hilos\UserAgent;
 use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Core\Router\DTO\UserRenameFeedLinkSignalData;
+use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkSignalData;
 use Demo\Chat\Database\Database;
 use Demo\Chat\Database\View\Item\Event;
 use Hilos\Constants\TimeConstants;
@@ -599,6 +600,7 @@ abstract class IntegrationTestCase extends TestCase
             if (
                 $frame instanceof UserRenameSignalData
                 || $frame instanceof UserRenameFeedLinkSignalData
+                || $frame instanceof UserRenameFeedUnlinkSignalData
                 || $frame instanceof UserAdminWriteSignalData
                 || $frame instanceof UserAdminCommandSignalData
                 || $frame instanceof UserBlockWriteSignalData

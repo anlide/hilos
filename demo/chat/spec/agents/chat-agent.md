@@ -17,10 +17,9 @@ through this agent. Uploads belong to the framework uploads agent.
   does not own `users`. The users library creates registration and rename-feed events;
   their later changes belong to `ChatAgent`, subject to the current terminal rights in
   the framework [Writer
-  Map](../../../../docs/agents/architecture/account-operations.md#writer-map). Its
-  borrowed `Update` on `userRenames` for clearing history moves to the journal's
-  personal owner, whose unlink is confirmed before events are deleted (not in the code
-  yet — HIL-1897).
+  Map](../../../../docs/agents/architecture/account-operations.md#writer-map).
+  ChatAgent reads `userRenames` to find linked users during history cleanup; each journal's
+  personal owner unlinks its own rows on request before the events are deleted.
 - **Erasure participant**: deletes the person's messages across every room, attachment
   links, registration details and feed events in one transaction of its own with its result.
   It uses saved event ids and the personal journal owner's confirmed unlink; other
@@ -75,4 +74,10 @@ hold the message composer in the session subsystem.
 
 ## Cron
 
-- `cleanup_history` (every 30 minutes): `ChatAgent::onSignalCron()` collects the registry file ids of every attachment, deletes the events, adds the `chat_cleared` event, then hands the ids to `Hilos::$files->remove()` — the files library removes the rows and their bytes at once.
+- `cleanup_history` (every 30 minutes): ChatAgent asks each person whose
+  journal row still links an event to unlink. After all answers confirm, it
+  collects attachment file ids, deletes all events, adds the `chat_cleared`
+  event and hands the ids to `Hilos::$files->remove()` — the files library
+  removes the rows and their bytes at once. With no linked users, cleanup
+  happens in the same tick. A refusal or missing answer leaves the history
+  for the next cron.

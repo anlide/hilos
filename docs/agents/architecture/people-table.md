@@ -191,11 +191,10 @@ for exactly this (HIL-1196). The hook remains. Creating the feed event there is
 creation; linking an already-created journal row is a later write, performed by
 the renamed person's owner (HIL-1896).
 
-When chat history is cleared, `ChatAgent` currently uses borrowed journal
-`Update` for `unlinkEvents()`. It will obtain confirmed unlink from the
-journal's personal owner before deleting the events
-(not in the code yet — HIL-1897). Neither a database `SET NULL` nor deletion
-of the journal before its event ids were read substitutes for that hand-over.
+When chat history is cleared, `ChatAgent` reads the journal to find linked users
+and obtains confirmed unlink from each journal's personal owner before deleting
+the events. Neither a database `SET NULL` nor deletion of the journal before
+its event ids were read substitutes for that hand-over.
 Keep the current grants and hook until their actual moves; the journal's
 terminal deletion remains at the holder until erasure's live switch
 (not in the code yet — HIL-1952).

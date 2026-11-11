@@ -74,4 +74,26 @@ final class UserRenames extends FrameworkUserRenames
 
         return $ids;
     }
+
+    /**
+     * The people whose journal a history clear asks to unlink. Read from the table because a
+     * deleted event clears its column only there (ON DELETE SET NULL).
+     *
+     * @return list<int> Unique linked person ids in ascending order
+     * @throws HilosException On database failure
+     */
+    public function linkedUserIds(): array
+    {
+        $renames = EntityUserRename::get(
+            '`' . EntityUserRename::event_id . '` IS NOT NULL',
+            [],
+            [EntityUserRename::user_id => SqlSortDirection::ASC],
+        );
+        $ids = [];
+        foreach ($renames as $entity) {
+            $ids[(int)$entity->user_id] = (int)$entity->user_id;
+        }
+
+        return array_values($ids);
+    }
 }

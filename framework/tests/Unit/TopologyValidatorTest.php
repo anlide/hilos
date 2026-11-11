@@ -9,6 +9,7 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Core\TruthSource\DbWriterPartition;
+use Hilos\Core\TruthSource\DbWriterClaimWidth;
 use Hilos\Core\TruthSource\DbWriterTransitionCatalog;
 use Hilos\Core\TruthSource\DbWriterTransitionState;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
@@ -9638,17 +9639,25 @@ abstract class TopologyPublicDbRowReadHilos extends HilosFacade
 
 final class TopologyRenameTransitionCatalog extends DbWriterTransitionCatalog
 {
+    public const string TEST_UNLINK = 'HIL-999998';
+
     /**
      * @param class-string<HilosFacade> $hilosClass Inspected history-cleanup fixture
-     * @return array<string, list<DbWriterTransitionState>> Real remaining unlink and erasure states
+     * @return array<string, list<DbWriterTransitionState>> Synthetic unlink and real erasure states
      */
     protected function buildDefinitions(string $hilosClass): array
     {
         return [
             ...parent::buildDefinitions($hilosClass),
-            HilosDbContext::userRenames => $this->renameStates(
-                $hilosClass,
-                $this->role($hilosClass, TopologyRenameHistoryAgent::AGENT_TYPE),
+            HilosDbContext::userRenames => $this->states(
+                $this->claim($this->role($hilosClass, HilosAgentType::HILOS_USER),
+                    DbWriterClaimWidth::Set, TruthSourceOperation::Add, TruthSourceOperation::Update),
+                [self::ERASURE => $this->claim($this->role($hilosClass, HilosAgentType::HILOS_SESSIONS_LIBRARY),
+                    DbWriterClaimWidth::Whole, TruthSourceOperation::Remove),
+                    self::TEST_UNLINK => $this->claim($this->role($hilosClass, TopologyRenameHistoryAgent::AGENT_TYPE),
+                        DbWriterClaimWidth::Whole, TruthSourceOperation::Update)],
+                [self::ERASURE => $this->claim($this->role($hilosClass, HilosAgentType::HILOS_USER),
+                    DbWriterClaimWidth::Set, TruthSourceOperation::Remove)],
             ),
         ];
     }
@@ -9709,7 +9718,7 @@ abstract class TopologyRenameInitialHilos extends HilosFacade
             AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
         ],
     ];
-    public const array SHARED_DB_OWNERS = ['userRenames' => ['HIL-1897', 'HIL-1952']];
+    public const array SHARED_DB_OWNERS = ['userRenames' => ['HIL-1952', TopologyRenameTransitionCatalog::TEST_UNLINK]];
 
     protected const string DB_WRITER_TRANSITION_CATALOG = TopologyRenameTransitionCatalog::class;
 }

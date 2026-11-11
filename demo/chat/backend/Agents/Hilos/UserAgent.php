@@ -6,12 +6,15 @@ namespace Demo\Chat\Agents\Hilos;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\UserRenameFeedLinkSignalData;
+use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkSignalData;
+use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkedSignalData;
 use Demo\Chat\Hilos;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Database\DatabaseException;
@@ -29,20 +32,24 @@ final class UserAgent extends AbstractUserAgent
             AgentSignalConfigKey::INDEX_FIELD => UserRenameFeedLinkSignalData::userId,
             AgentSignalConfigKey::DTO => UserRenameFeedLinkSignalData::class,
         ],
+        ChatSignalConstants::USER_RENAME_FEED_UNLINK => [
+            AgentSignalConfigKey::INDEX_FIELD => UserRenameFeedUnlinkSignalData::userId,
+            AgentSignalConfigKey::DTO => UserRenameFeedUnlinkSignalData::class,
+        ],
     ];
 
     /** Person writes and self-stop arrive in frames; the worker tracks the idle window. */
     protected const MAX_IDLE_SLEEP_SECONDS = 600;
 
     /**
-     * Writes the feed link without an answer; inherited person frames keep their own protocol.
+     * Answers the unlink; the link keeps no answer. Inherited frames keep their own protocol.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Full sender identity, passed to the inherited handler
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is unknown to this agent
      * @throws InvalidAgentSignalPayloadException When the payload differs from its declaration
-     * @throws AgentException When the frame names another person
+     * @throws AgentException When the frame names another person or its unlink answer cannot be built
      * @throws InvalidArgumentException When an inherited answer cannot be named or queued
      * @throws DatabaseException When the folded-account lookup fails
      * @throws LogicException When the folded-account collection cannot be read
@@ -64,10 +71,55 @@ final class UserAgent extends AbstractUserAgent
 
                 return;
 
+            case ChatSignalConstants::USER_RENAME_FEED_UNLINK:
+                $unlink = $data->data;
+                if (!$unlink instanceof UserRenameFeedUnlinkSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserRenameFeedUnlinkSignalData::class, $unlink);
+                }
+
+                $this->refuseAnotherPerson($unlink->userId, $name);
+                $this->sendToAgent(ChatSignalConstants::USER_RENAME_FEED_UNLINKED, $this->unlinkFeedEvents($unlink));
+                if (isset(Hilos::$db->userMerges[$unlink->userId])) {
+                    $this->selfStop();
+                }
+
+                return;
+
             default:
                 parent::onSignalAgent($data, $sender, $name);
 
                 return;
+        }
+    }
+
+    /**
+     * Contains write failures in this agent's log and answers with the unlink outcome.
+     *
+     * @param UserRenameFeedUnlinkSignalData $unlink Person and history-clear attempt
+     * @return UserRenameFeedUnlinkedSignalData Answer for the same attempt
+     * @throws AgentException When the answer violates its payload contract
+     */
+    private function unlinkFeedEvents(UserRenameFeedUnlinkSignalData $unlink): UserRenameFeedUnlinkedSignalData
+    {
+        $unlinked = true;
+        try {
+            Hilos::$db->userRenames->actions->unlinkEventsOf($unlink->userId);
+        } catch (WiringRefusal $e) {
+            $this->logAgentError(
+                "Rename feed unlink for user #{$unlink->userId}, clear {$unlink->clearId} refused by wiring: {$e->getMessage()}",
+            );
+            $unlinked = false;
+        } catch (Throwable $e) {
+            $this->logAgentError(
+                "Rename feed unlink for user #{$unlink->userId}, clear {$unlink->clearId} not written: {$e->getMessage()}",
+            );
+            $unlinked = false;
+        }
+
+        try {
+            return new UserRenameFeedUnlinkedSignalData($unlink->userId, $unlink->clearId, $unlinked);
+        } catch (InvalidFormatException $e) {
+            throw new AgentException('Rename feed unlink answer violates its payload contract', previous: $e);
         }
     }
 

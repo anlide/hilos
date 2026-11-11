@@ -20,7 +20,6 @@ use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
 class DbWriterTransitionCatalog
 {
     protected const string PUSH_GONE = 'HIL-1895';
-    protected const string RENAME_UNLINK = 'HIL-1897';
     protected const string FACTOR_REPLACE = 'HIL-1903';
     protected const string BACKUP_CODES_REPLACE = 'HIL-1904';
     protected const string PUSH_OWN_UPDATE = 'HIL-1905';
@@ -178,18 +177,14 @@ class DbWriterTransitionCatalog
 
     /**
      * @param class-string<Hilos> $hilosClass Inspected topology
-     * @param ?class-string<AbstractAgent> $chat Optional chat history owner, supplied only by its project provider
-     * @return list<DbWriterTransitionState> Journal unlink and terminal transitions
+     * @return list<DbWriterTransitionState> Journal erasure transitions
      */
-    protected function renameStates(string $hilosClass, ?string $chat = null): array
+    protected function renameStates(string $hilosClass): array
     {
         $person = $this->role($hilosClass, HilosAgentType::HILOS_USER);
         $pending = [self::ERASURE => $this->claim($this->role($hilosClass, HilosAgentType::HILOS_SESSIONS_LIBRARY),
                 DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)];
         $completed = [self::ERASURE => $this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Remove)];
-        if ($chat !== null) {
-            $pending[self::RENAME_UNLINK] = $this->claim($chat, DbWriterClaimWidth::Whole, TruthSourceOperation::Update);
-        }
 
         return $this->states(
             $this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Add, TruthSourceOperation::Update),

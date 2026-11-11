@@ -13,7 +13,7 @@ use Hilos\Core\TruthSource\DbWriterTransitionState;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Hilos;
 
-/** Chat's four history collections and its borrowed rename-journal unlink. */
+/** Chat's four history collections and their terminal transitions. */
 final class DbWriterTransitionCatalog extends FrameworkDbWriterTransitionCatalog
 {
     /**
@@ -38,7 +38,6 @@ final class DbWriterTransitionCatalog extends FrameworkDbWriterTransitionCatalog
             }
             $definitions[$collection] = $this->states($base, $pending);
         }
-        $definitions[ChatDbContext::userRenames] = $this->renameStates($hilosClass, $chat);
 
         return $definitions;
     }

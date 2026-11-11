@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Composer\Autoload\ClassLoader;
-use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Agents\Hilos\UserAgent;
@@ -186,8 +185,6 @@ final class DbWriterTransitionCatalogTest extends TestCase
         if ($isChat) {
             $roles['chat'] = 'Demo\\Chat\\Agents\\ChatAgent';
             self::assertSame($roles['chat'], AgentRegistry::workerClass($facade::AGENTS['chat']));
-            $vectors['userRenames'][] = ['chat', 'whole', 'update'];
-            $leaves['userRenames'] = ['HIL-1897', 'HIL-1952'];
             $vectors['events'] = [['chat', 'whole', 'add,remove,update'], ['users', 'whole', 'add'], ['holder', 'whole', 'remove']];
             $vectors['eventUserRegistrations'] = [
                 ['chat', 'whole', 'add,remove,update'], ['users', 'whole', 'add'], ['holder', 'whole', 'remove']];
@@ -248,16 +245,11 @@ final class DbWriterTransitionCatalogTest extends TestCase
         }
     }
 
-    /** Only unlink still waits for its personal-owner cutover before terminal erasure. */
-    public function testRenameOnlyUnlinkStillWaitsForItsCutover(): void
+    /** The journal has only its person's writer beside the remaining terminal erasure. */
+    public function testRenameHasOnlyItsPersonalWriterAndTerminalErasure(): void
     {
         $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['userRenames']);
-        self::assertCount(3, $states);
-        $this->assertVector([
-            ChatAgent::class . ':whole:update',
-            UserAgent::class . ':set:add,update',
-            SessionsLibraryAgent::class . ':whole:remove',
-        ], $states['HIL-1897,HIL-1952']);
+        self::assertSame(['', 'HIL-1952'], array_keys($states));
         $this->assertVector([
             UserAgent::class . ':set:add,update',
             SessionsLibraryAgent::class . ':whole:remove',
@@ -650,7 +642,6 @@ final class DbWriterTransitionCatalogTest extends TestCase
         }
         if ($isChat) {
             $ceiling['userRenames'] = [
-                'HIL-1897,HIL-1952' => ['chat:whole:update', 'person:set:add,update', 'holder:whole:remove'],
                 'HIL-1952' => ['person:set:add,update', 'holder:whole:remove'],
                 '' => ['person:set:add,remove,update'],
             ];
