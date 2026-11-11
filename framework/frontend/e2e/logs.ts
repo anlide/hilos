@@ -1,10 +1,36 @@
+import process from 'node:process'
+
 import { expectBreadcrumbLabels } from './breadcrumb.js'
 import type { Expect, Locator, Page } from '@playwright/test'
 
 import {
+  deriveTimeoutScale,
+  readHostPressure,
+} from '../scripts/timeout-scale.mjs'
+import {
   deliveryObject as object,
   watchDeliveryFrames,
 } from './deliveryFrames.js'
+
+/**
+ * The cap a wait on an appended line reaching the screen gets, in milliseconds.
+ *
+ * Its own cap rather than the config's `expect`, for the reason a wait on an
+ * intercepted letter has one: the chain is the longest this suite waits on, and
+ * none of it is DOM work. The agent prints the line, the master lifts it out of
+ * the worker's output and files it, the owner of the directory notices the file
+ * grew on its once-a-second round, and only then does a frame cross the socket.
+ * `expect` is the shortest cap there is and describes something else entirely.
+ *
+ * Scaled by the same host-pressure factor every Playwright cap is, so a starved
+ * box makes this slower rather than red.
+ */
+export const TAIL_ARRIVAL_TIMEOUT_MS =
+  15_000 *
+  deriveTimeoutScale({
+    override: process.env.HILOS_E2E_TIMEOUT_SCALE,
+    ...readHostPressure(),
+  }).factor
 
 /**
  * Read the adopted Logs section head without changing its current route context.

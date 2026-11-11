@@ -984,7 +984,7 @@ Remember the outcome, speak on its change, clear on recovery.
   half (`admin/settings/hilosSettingPresets.test.ts`).
 - `demo/online-testing` e2e `logs.spec.ts` — every screen of the section rendered
   over the live socket.
-- `demo/binance-btc-tracker` e2e `logs.spec.ts` — the tail driven from a
+- `demo/roblox-game-server` e2e `logs.spec.ts` — the tail driven from a
   browser: a line the daemon writes arrives on its own (HIL-395);
   `logs-rotation.spec.ts` — rotation, takeout, the two dialogs answering a
   change beneath them, and pruning exactly the carried-off batch (HIL-763,

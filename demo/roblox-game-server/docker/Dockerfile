@@ -9,13 +9,18 @@ FROM php:8.5.12-cli@sha256:50956f094e90a716d43bea28087d447555ad80510e386ab8c9c10
 # - libevent-dev: required to compile ext-event
 # - libssl-dev: enables SSL support (optional)
 # - git, zip, unzip: required for Composer installations
+# - default-mysql-client: mysql and mysqldump for database tooling
 # -----------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libevent-dev \
     libssl-dev \
+    libjpeg62-turbo-dev \
+    libpng-dev \
+    libwebp-dev \
     git \
     zip \
     unzip \
+    default-mysql-client \
  && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------
@@ -25,6 +30,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # mysqli, pdo, and pdo_mysql are required for database operations.
 # -----------------------------------------------------------
 RUN docker-php-ext-install -j$(nproc) sockets pcntl posix mysqli pdo pdo_mysql
+
+# GD draws the image variants published by the files registry (HilosFeature::IMAGES).
+# JPEG and WebP are configured explicitly; PNG is included by GD.
+RUN docker-php-ext-configure gd --with-jpeg --with-webp \
+ && docker-php-ext-install -j$(nproc) gd
 
 # -----------------------------------------------------------
 # Ensure custom extension load order
@@ -58,4 +68,4 @@ RUN mkdir -p /var/log/hilos
 # Use PHP as PID1 to ensure signal propagation and graceful shutdown
 # Note: This runs docker.php from the demo project, which will run daemon.php
 # -----------------------------------------------------------
-CMD ["php", "src/Bootstrap/docker.php"]
+CMD ["php", "backend/Bootstrap/docker.php"]

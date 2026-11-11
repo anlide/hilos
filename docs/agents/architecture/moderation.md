@@ -762,9 +762,11 @@ by Chat (HIL-1628), the Vue Rules Add, Edit and Delete flows, the React/tasks
 mount with three lazy pages and internal Rules forms, and the Angular/polls
 root, kind and rules pages mounted through lazy wrappers and a shared context.
 Profile photos are on in tasks and polls (HIL-1644, HIL-1645). The section's
-e2e runs on all three kits — chat (Vue), tasks (React) and polls (Angular) —
-as one set of tests with shared checks, and each kit's accessibility spec walks
-it too (HIL-1638); where the specs live and what each kit adds is in
+e2e runs on all three kits — roblox-game-server (Vue), tasks (React) and polls
+(Angular) — as one set of tests with shared checks over the framework's kinds;
+the accessibility specs of chat, tasks and polls walk it too, and chat proves
+in its message moderation spec that the section lists its two message kinds
+(HIL-1638); where the specs live and what each kit adds is in
 [testing-strategy.md](../frontend/testing-strategy.md), "Which demo carries a
 spec". Online-testing also carries live cluster browser coverage: an admin's
 name rule reaches another admin without reload, governs a person's own-name

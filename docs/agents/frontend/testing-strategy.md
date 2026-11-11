@@ -124,7 +124,7 @@ checks belong to those future leaves, not to this documentation change:
    wiring; complex settings-page suites are not the starting family.
 2. **Browser pilot:** share the text of one comparable screen scenario already
    run on Vue, React and Angular. The candidate is `theme-guest.spec.ts` in
-   `demo/{chat,solar-system-model,preferans}/tests/e2e/tests/`. Keep all useful
+   `demo/{roblox-game-server,solar-system-model,preferans}/tests/e2e/tests/`. Keep all useful
    steps and expectations, local registration entries, fixtures and cleanup, and the same
    number and distribution of runs. Verify local spec attribution in reports.
    The theme feature may choose dark to prove the mode selection under the
@@ -544,7 +544,7 @@ additions before execution, rather than freezing their file list today.
 | Target / view | Whole framework areas and current source specs | Activation and transfer owner |
 |---|---|---|
 | `pmd` / Vue | **Table geometry:** `pmd/table-geometry` (moved from chat in HIL-2016 slice 13). **Account/profile/security:** `pmd/{profile,profile-data,profile-time-zone,profile-session-time-zone,profile-photo}` (moved from chat in HIL-2016 slice 9); `pmd/{rename-moderation,account-deletion,account-merge,second-factor-mail}` (moved from chat in slice 10); `pmd/security-center` (moved from chat in slice 11). **Analytics:** `pmd/{analytics,analytics-browser-session}` (moved from chat in slice 11). **People/settings/Appearance:** `pmd/{users,settings,appearance}` (moved from binance-btc-tracker in HIL-2016 slice 12). | PMD active; all sixteen specs moved in slices 9–13. |
-| `roblox-game-server` / Vue | **Change Log/Moderation/Communications:** `chat/{change-log,change-log-table,change-log-tables,moderation,communications}`. **Theme:** `chat/{theme-account,theme-guest}`. **Daemon/Backup/Logs/maintenance:** `binance-btc-tracker/{daemon,backup,backup-reopen,logs,logs-rotation,maintenance-restore,maintenance-words}`. | (not in the code yet — HIL-2017) |
+| `roblox-game-server` / Vue | **Change Log/Moderation/Communications:** `roblox-game-server/{change-log,change-log-table,change-log-tables,moderation,communications}` (moved from chat in HIL-2017). **Theme:** `roblox-game-server/{theme-account,theme-guest}` (moved from chat in HIL-2017). **Daemon/Backup/Logs/maintenance:** `roblox-game-server/{daemon,backup,backup-reopen,logs,logs-rotation,maintenance-restore,maintenance-words}` (moved from binance-btc-tracker in HIL-2017). | Roblox Game Server active; all fourteen specs moved in HIL-2017. |
 | `solar-system-model` / React | **Account/profile:** `solar-system-model/{profile,profile-data,profile-time-zone,profile-photo,account-deletion}` (moved from tasks). **Theme/Analytics:** `solar-system-model/{theme-account,theme-guest,analytics,analytics-browser-session}` (moved from tasks). **Table geometry:** `solar-system-model/table-geometry` — the entire independent Geometry area split out of `ecommerce-shop/users`, with its React frontend fixture; the Users scenarios, F-001 included, stay in `ecommerce-shop/users` for the `file-gallery-manager` row. | Solar active; all ten specs moved. |
 | `file-gallery-manager` / React | **i18n lifecycle:** `tasks/{i18n-country-names,i18n-country,i18n-language-names,i18n-language,i18n-locale,i18n-overview}`. **Daemon/Change Log/Communications:** `tasks/{daemon,change-log,change-log-table,change-log-tables,communications}`. **Users:** the entire Users remainder of `ecommerce-shop/users` after Geometry is separated, including F-001. | (not in the code yet — HIL-2019) |
 | `preferans` / Angular | **i18n lifecycle:** `preferans/{i18n-country-names,i18n-country,i18n-language-names,i18n-language,i18n-locale,i18n-overview}`. **Theme/Appearance:** `preferans/{theme-account,theme-guest,appearance}`. **Analytics:** `preferans/{analytics,analytics-browser-session}`. | Active; transferred from polls (HIL-2020) |
@@ -634,9 +634,9 @@ polls (Angular) → online-testing (Angular).
 | Area | Specs today | Lives in | Leaf |
 |---|---|---|---|
 | Settings, people and admin | binance-btc-tracker: settings, users, admin, admin-gating, account-lifecycle | binance-btc-tracker | HIL-1219 |
-| Backup | binance-btc-tracker: backup, backup-reopen | binance-btc-tracker | HIL-1220 |
-| Protected mode and maintenance | binance-btc-tracker: protected-mode | binance-btc-tracker | HIL-1221 |
-| Logs | binance-btc-tracker: logs, logs-rotation | binance-btc-tracker | HIL-1222 |
+| Backup | roblox-game-server: backup, backup-reopen | roblox-game-server | HIL-1220, HIL-2017 |
+| Protected mode and maintenance | binance-btc-tracker: protected-mode; roblox-game-server: maintenance-restore, maintenance-words | binance-btc-tracker, roblox-game-server | HIL-1221, HIL-2017 |
+| Logs | roblox-game-server: logs, logs-rotation | roblox-game-server | HIL-1222, HIL-2017 |
 | Cluster browser — backup, logs, protected mode, one person's tabs, theme settings/choices/reset, Change Log and live i18n edits across masters | binance-btc-tracker: tests/e2e/cluster (live, after-loss), playwright.cluster.config.ts | binance-btc-tracker | HIL-1232, HIL-1443, HIL-1465, HIL-1505 |
 | Cluster browser — Analytics and Moderation across all three masters | online-testing: tests/e2e/cluster/live/analytics.spec.ts, tests/e2e/cluster/live/moderation.spec.ts, playwright.cluster.config.ts | online-testing | HIL-1423, HIL-1639 |
 | Tables | binance-btc-tracker: table-lag, table-refusal | binance-btc-tracker | HIL-1223 |
@@ -694,30 +694,35 @@ Navigation, order, contexts, the host handshake and inode/offset node-log
 observations stay in the demo. The fresh `test:cluster:e2e -- --daemon` phase
 and restoration before the old phases remain documented in [../testing.md](../testing.md).
 
-The current Moderation section specs live where its views are mounted: chat (Vue),
-tasks (React) and polls (Angular) each carry `moderation.spec.ts` with one set
-of tests — tests 1–5 have the same titles and steps in all three, the checks
-they share are one copy in `framework/frontend/e2e/moderation.ts`, and each
-file keeps the scenario, its order and its navigation. The file runs in file
-order (`mode: 'default'`) and writes rules of its own only on
-`hilos_profile_photo`, the kind every kit builds in; each test prepares its own
-rules and reserves their removal through `cleanupFixtures` before it opens Add,
-so no test relies on a neighbor having passed. Only chat carries test 6: a rule
-edited on the Rules page is what the model's next photo check carries, read
-from the stand model's requests. Chat's Rules step also keeps two class checks
-on the built-in block, which HIL-1843 decides. Only tasks carries tests 7 and 8:
-test 7 proves on the server that forged rule writes from a view-mode viewer are
-refused with the view-mode reason; test 8 guards the shared cleanup,
-`deleteModerationOwnRules`, which deletes only the reserved rule and keeps a
-neighbor that differs from it only by surrounding spaces. The
-`Moderation accessibility` group of each kit's `a11y.spec.ts` creates one rule
-of its own on `hilos_profile_name` and walks the section, the Add, Edit and
-Delete dialogs and a view-mode viewer through the shared steps. The model's
+The current Moderation section specs live where its views are mounted:
+roblox-game-server (Vue), tasks (React) and polls (Angular) each carry
+`moderation.spec.ts` with one set of tests — tests 1–5 have the same titles and
+steps in all three, the checks they share are one copy in
+`framework/frontend/e2e/moderation.ts`, and each file keeps the scenario, its
+order and its navigation. The three kits declare no kind of their own, so the
+section each walks holds the framework's two, the profile name and the profile
+photo. The file runs in file order (`mode: 'default'`) and writes rules of its
+own only on `hilos_profile_photo`, the kind every kit builds in; each test
+prepares its own rules and reserves their removal through `cleanupFixtures`
+before it opens Add, so no test relies on a neighbor having passed. Only
+roblox-game-server carries test 6: a rule edited on the Rules page is what the
+model's next photo check carries, read from the stand model's requests. Only
+tasks carries tests 7 and 8: test 7 proves on the server that forged rule
+writes from a view-mode viewer are refused with the view-mode reason; test 8
+guards the shared cleanup, `deleteModerationOwnRules`, which deletes only the
+reserved rule and keeps a neighbor that differs from it only by surrounding
+spaces. The `Moderation accessibility` group of the `a11y.spec.ts` of chat,
+tasks and polls creates one rule of its own on `hilos_profile_name` and walks
+the section, the Add, Edit and Delete dialogs and a view-mode viewer through
+the shared steps; roblox-game-server has no accessibility spec. The model's
 check of a profile name — published only after approval, the previous name kept
 after a refusal — is one test of the same title in `profile.spec.ts` of
 solar-system-model and concert-tickets. None of these files carries a
 `spec-owner` line; chat's message and message picture moderation specs do
 (HIL-1638).
+Chat's own kinds — its messages and their pictures — are proved by one test
+of `message-moderation.spec.ts`: the section lists both as the project's and
+opens each on its Overview.
 
 The current Analytics section proofs are in PMD (Vue), solar-system-model
 (React) and preferans (Angular): each carries `analytics.spec.ts` and
@@ -749,8 +754,8 @@ probes, product shell smoke and cluster proofs keep the owners below:
 
 | Proof | Specs | Lives in |
 |---|---|---|
-| Guest storage, choices, System media, reset and reload/new tabs; account header/profile delivery between independent sessions, another person's isolation, an open receiving modal, keyboard/focus | theme-guest, theme-account | chat (Vue), solar-system-model (React), preferans (Angular) |
-| Stale Dark reconnect after explicit reset without adoption; first login adoption by a never-chosen account; synchronized account's cached first frame | theme-account | chat only |
+| Guest storage, choices, System media, reset and reload/new tabs; account header/profile delivery between independent sessions, another person's isolation, an open receiving modal, keyboard/focus | theme-guest, theme-account | roblox-game-server (Vue), solar-system-model (React), preferans (Angular) |
+| Stale Dark reconnect after explicit reset without adoption; first login adoption by a never-chosen account; synchronized account's cached first frame | theme-account | roblox-game-server only |
 | Both Appearance editors, live viewer rows, Save/Enter refusal, default and Off/On delivery, discard, keyboard/focus | appearance | binance-btc-tracker (Vue), tasks (React), preferans (Angular) |
 | Built head: remembered Dark and fresh System dark on `/` and `/about`, HTML attribute and painted background with application JS blocked | theme-first-frame | chat (Vue/Vite), ecommerce-shop (React/Vite), online-testing (Angular build/SSG) |
 | Product shell account header/reload/reset; also guest choices and the Appearance card with its two live rows in the React and Angular shells | theme-smoke | binance-btc-tracker, ecommerce-shop, online-testing |
@@ -765,17 +770,17 @@ fresh browser's System fallback, not a server account choice that browser has
 never received.
 The full production build/head sweep already checks every emitted entrypoint.
 
-The current shared Change Log receipt and history scenarios live in chat (Vue),
-tasks (React) and concert-tickets (Angular, moved from polls in HIL-2021); the Vue
-and React ones stay until their whole areas move under the matrix.
+The current shared Change Log receipt and history scenarios live in
+roblox-game-server (Vue), tasks (React) and concert-tickets (Angular, moved from polls
+in HIL-2021).
 They cover an administrator blocking a person from
 that person's card: the column's value is journaled in every demo, and the
 signed-in person is the author (a registration receipt has no author because it
-comes from a guest). Chat additionally covers the adopted Vue section head,
-overview tiles, four section links with Back, and direct Feed and Noisy columns
-entry through F5. Tasks checks the React section head through the shared
-owner-page checks. Concert Tickets checks the Angular section and table heads; its table
-paths cover direct entry, reload/F5, Back and Forward, with receipt/history
+comes from a guest). roblox-game-server additionally covers the adopted Vue
+section head, overview tiles, four section links with Back, and direct Feed and
+Noisy columns entry through F5. Tasks checks the React section head through the
+shared owner-page checks. Concert Tickets checks the Angular section and table heads; its
+table paths cover direct entry, reload/F5, Back and Forward, with receipt/history
 links, record-filter clearing, the old-address refusal and the Noisy page.
 Only chat carries `change-log-bot.spec.ts` (`spec-owner: demo`): a bot's
 description is the only long text under the journal. binance-btc-tracker,

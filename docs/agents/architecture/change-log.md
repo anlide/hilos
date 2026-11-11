@@ -787,17 +787,17 @@ History and receipt component tests cover these renderings in
 `framework/frontend/angular/test/HilosChangeLogTableHistoryPage.test.ts` and
 `framework/frontend/angular/test/HilosChangeLogReceiptModal.test.ts`.
 
-The shared receipt and history scenarios remain in chat (Vue), tasks (React)
-and concert-tickets (Angular), using a person's block receipt and checks from
-`framework/frontend/e2e/changeLog.ts`. Chat additionally checks the adopted
-Vue section head, overview tiles, navigation with Back, and direct Feed and
-Noisy columns entry with a complete first answer through F5. Tasks checks the
-React section head through the shared owner-page helper. Concert Tickets covers the
-Angular section and table routes, including direct table-route entry,
-reload/F5, Back and Forward, and checks the Noisy page, block and registration
-receipts, record-history links, the record-filter clear link and the old
-address refusal. Chat's `change-log-bot.spec.ts` checks full long-text values
-(HIL-1464).
+The shared receipt and history scenarios remain in roblox-game-server (Vue),
+tasks (React) and concert-tickets (Angular), using a person's block receipt and checks
+from `framework/frontend/e2e/changeLog.ts`. roblox-game-server additionally
+checks the adopted Vue section head, overview tiles, navigation with Back, and
+direct Feed and Noisy columns entry with a complete first answer through F5.
+Tasks checks the React section head through the shared owner-page helper.
+Concert Tickets covers the Angular section and table routes, including direct
+table-route entry, reload/F5, Back and Forward, and checks the Noisy page,
+block and registration receipts, record-history links, the record-filter clear
+link and the old address refusal. Chat's `change-log-bot.spec.ts` checks full
+long-text values (HIL-1464).
 
 ## Triggers Are Files
 

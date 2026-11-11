@@ -8,6 +8,12 @@ import {
   clickSubmit,
   typeInto,
   createTestUserJoined,
+  expectModerationKindHead,
+  expectModerationKindOverview,
+  gotoPage,
+  grantAdminToSelf,
+  shownByTestId,
+  type ModerationKindDeclaration,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   dictateModerationVerdict,
@@ -30,8 +36,44 @@ import { endSendPause } from '../helpers/sendPause.js'
 //
 // Recovery ends the original re-send lockout by command and then waits for the
 // control's state; room.spec.ts holds the lockout itself.
+//
+// The last test proves that the two kinds the chat declares — its messages and
+// their pictures — are listed in the framework's Moderation section as the
+// project's own; the section itself is walked by the Vue kit's moderation.spec.ts
+// in roblox-game-server.
 
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
+
+// The two kinds the chat declares on top of the framework's.
+const CHAT_MESSAGE: ModerationKindDeclaration = {
+  kind: 'chat_message',
+  title: 'Chat message',
+  owner: 'Project',
+  modelLabel: 'Text model',
+  model: 'qwen2.5:0.5b',
+  profile: 'hilos.moderation.text',
+  reasons: ['insult', 'threat', 'hate_speech', 'sexual', 'spam'],
+  defaultRules: [
+    'Default policy: allow benign messages.',
+    'Block only explicit insults, threats, hate speech, sexual content, and obvious spam.',
+    'If uncertain, return allow=true.',
+  ],
+}
+const CHAT_MESSAGE_PICTURE: ModerationKindDeclaration = {
+  kind: 'chat_message_picture',
+  title: 'Chat message picture',
+  owner: 'Project',
+  modelLabel: 'Vision model',
+  model: 'qwen2.5vl:3b',
+  profile: 'hilos.moderation.image',
+  reasons: ['nudity', 'violence', 'hate'],
+  defaultRules: [
+    'Default policy: allow ordinary pictures, screenshots and drawings.',
+    'Block only nudity or sexual content, graphic violence, and hate symbols.',
+    'If uncertain, return allow=true.',
+  ],
+}
+const CHAT_KINDS = [CHAT_MESSAGE, CHAT_MESSAGE_PICTURE]
 
 test('a rejected message stays out of the room and its author is told', async ({
   page,
@@ -138,4 +180,28 @@ test('chat.text-unavailable', async ({ page, cleanup }) => {
     await expect(page.getByTestId(/^hilos-notification-item-/)).toHaveCount(0)
     await expect(unreadBadge(page)).toBeHidden()
   })
+})
+
+test("the Moderation section lists the chat's two message kinds as its own", async ({
+  page,
+}) => {
+  // Proves: the kinds the chat declares reach the framework's section from the
+  // server — listed beside the framework's and opened on their own Overview
+  // with the model, profile and reasons of their declaration.
+  await grantAdminToSelf(expect, page)
+  await gotoPage(expect, page, '/hilos/moderation')
+  const kinds = page.getByTestId('hilos-moderation-kinds-table')
+  for (const { kind } of CHAT_KINDS) {
+    await expect(
+      shownByTestId(kinds, `hilos-moderation-row-${kind}`),
+    ).toBeVisible()
+  }
+
+  for (const declared of CHAT_KINDS) {
+    await test.step(`Overview of ${declared.kind} reads its declaration`, async () => {
+      await gotoPage(expect, page, `/hilos/moderation/kind/${declared.kind}`)
+      await expectModerationKindHead(expect, page, declared, 'overview')
+      await expectModerationKindOverview(expect, page, declared)
+    })
+  }
 })

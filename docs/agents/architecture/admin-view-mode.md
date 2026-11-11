@@ -669,19 +669,17 @@ mode reported by `test:cluster:inspect`.
 
 A viewer's e2e runs with the mode on (the lever `test:admin-view-mode on`);
 the scenarios that expect a non-admin to be refused run with it off. In the chat
-e2e the lever is `setAdminViewMode()`
-(`demo/chat/tests/e2e/helpers/adminViewMode.ts`); it acts on the whole node, so a
+and operations e2e the lever is the shared `setAdminViewMode()` from
+`framework/frontend/scripts/adminViewMode.mjs`; it acts on the whole node, so a
 spec that turns it on turns it off in its `afterEach`, and a tab opened before the
 flip is opened again to learn it. The operations sections carry their viewer cases
-in binance-btc-tracker
-([../frontend/testing-strategy.md](../frontend/testing-strategy.md), "Which demo carries a spec"),
-where the lever is the same `setAdminViewMode()` of
-`demo/binance-btc-tracker/tests/e2e/helpers/adminViewMode.ts`.
+in roblox-game-server and binance-btc-tracker
+([../frontend/testing-strategy.md](../frontend/testing-strategy.md), "Which demo carries a spec").
 
 Where every demo carries its viewer scenarios, and the refusals that run beside
 them with the mode off, is the table below (HIL-1273). A spec is named by its
-file under `demo/<demo>/tests/e2e/tests/`; every demo that turns the mode on
-carries its own copy of the lever in `tests/e2e/helpers/adminViewMode.ts`.
+file under `demo/<demo>/tests/e2e/tests/`; the shared lever reads the command
+endpoint from that demo's runner environment.
 
 **Viewer scenarios by demo.**
 
@@ -689,7 +687,8 @@ carries its own copy of the lever in `tests/e2e/helpers/adminViewMode.ts`.
 |---|---|---|---|---|
 | chat | Vue | account and showcase | `admin-view-mode` (a guest's gear; the strip on `/hilos`, `/hilos/legal/acceptances` and `/hilos/users`, the personal data as hidden; a signed-in non-admin granted the full section and taken back to the view, live), `bots`, `moderator` | `admin-view-mode`, its first test (no gear while the mode is off) |
 | pmd | Vue | account | `account-merge` (the merge window) | — |
-| binance-btc-tracker | Vue | operations | `settings`, `backup`, `protected-mode` (the maintenance circle), `communications`, `users` (the windows of a person's card), `logs` (a guest follows a live log: time and level shown, text hidden and absent from every socket frame), `daemon` (the root and placement, the node pages, environment values as hidden, restart disabled, and a forged restart refused by the server), `i18n-country-name-write` (a viewer opens and drafts every country name form; Save is disabled and no action leaves the page) | `auth` (the surface in place of an admin page), `admin-gating` (the people page), `backup` (the backup page) |
+| binance-btc-tracker | Vue | operations | `settings`, `protected-mode` (the maintenance circle), `communications`, `users` (the windows of a person's card), `i18n-country-name-write` (a viewer opens and drafts every country name form; Save is disabled and no action leaves the page) | `auth` (the surface in place of an admin page), `admin-gating` (the people page) |
+| roblox-game-server | Vue | operations | `backup` (a guest opens the create and delete dialogs and marks a row, with nothing to send), `communications` (a viewer reads the letter frame and cannot save a draft), `moderation` (a viewer reads the kinds, Overview and Rules and drafts the rule forms; nothing is written), `logs` (a guest follows a live log: time and level shown, text hidden and absent from every socket frame), `daemon` (the root and placement, the node pages, environment values as hidden, restart disabled, and a forged restart refused by the server) | `backup` (the backup page) |
 | tasks | React | account | `admin-view-mode` (a guest's gear, the strip on the account screens, the acceptances as hidden, the Legal setting window, the sign-in methods viewer case), `step-up`, `daemon` (the root and placement, the node pages, environment values as hidden, restart disabled), `i18n-country-name-write` (a viewer opens and drafts every country name form; Save is disabled and no action leaves the page) | `auth`, `a11y` (no gear) |
 | ecommerce-shop | React | operations | `admin-view-mode` (the strip on the operations screens: settings, users, backup, maintenance) | `auth`, `users` |
 | polls | Angular | account | `admin-view-mode` (a guest's gear, the strip on the account screens, the acceptances as hidden, the Legal setting window), `second-factor` (the two-factor setting window), `legal-admin` (the export of acceptances switched off), `i18n-country-name-write` (a viewer opens and drafts every country name form; Save is disabled and no action leaves the page) | `auth`, `a11y` (no gear) |
@@ -711,7 +710,7 @@ copies the lever into its own `tests/e2e/helpers/adminViewMode.ts`.
 The log takeouts carry their viewer case as a unit of the rotations page
 (`framework/frontend/vue/src/admin/logs/HilosLogsRotationsPage.test.ts`) and not
 as an e2e: a batch awaiting takeout exists on a stand only after a forced
-rotation, and only the rotation scenario of binance-btc-tracker pays for one
+rotation, and only the rotation scenario of roblox-game-server pays for one
 (HIL-1268).
 
 The communications section carries the viewer cases of its two field dialogs and
@@ -748,7 +747,7 @@ including name masking in the reply before acknowledgement, deleted people,
 full value sides, cursor refusals and receipt portions. The Vue detail rendering
 is covered by
 `framework/frontend/vue/src/admin/changeLog/HilosChangeLogReceiptModal.test.ts`;
-`demo/{chat,tasks,concert-tickets}/tests/e2e/tests/change-log.spec.ts` opens a block
+`demo/{roblox-game-server,tasks,concert-tickets}/tests/e2e/tests/change-log.spec.ts` opens a block
 receipt and a registration receipt through the built Vue, React and Angular
 pages. Chat's `change-log-bot.spec.ts` checks full long-text values.
 
@@ -763,7 +762,7 @@ no mutation controls. The shared e2e helper checks the column-mode reference and
 Noisy columns separately in `framework/frontend/e2e/changeLog.ts`. Chat follows
 the adopted native section tabs; React and Angular retain their legacy child
 cards, so these checks do not promise a shared section frame.
-`demo/{chat,tasks,concert-tickets}/tests/e2e/tests/change-log-tables.spec.ts` follows
+`demo/{roblox-game-server,tasks,concert-tickets}/tests/e2e/tests/change-log-tables.spec.ts` follows
 journal-label filtering, `Open` into one table and the narrow-screen reference
 cards.
 
@@ -792,13 +791,13 @@ found, and an address change re-reads the section. Its Vue unit,
 draws the same header, columns and triggers for admins and viewers, hides people
 in the history beside their numbers, and offers no mutation control — only the
 receipt each history row opens.
-`demo/{chat,tasks,concert-tickets}/tests/e2e/tests/change-log-table.spec.ts` follows a
+`demo/{roblox-game-server,tasks,concert-tickets}/tests/e2e/tests/change-log-table.spec.ts` follows a
 block receipt to the history of its record and back to the whole table.
 
 The backup section carries the viewer cases of its keep toggle and of its
 restore and reopen dialogs as a unit of its page
 (`framework/frontend/vue/src/admin/backup/HilosBackupPage.test.ts`); its e2e
-(`demo/binance-btc-tracker/tests/e2e/tests/backup.spec.ts`) walks the create
+(`demo/roblox-game-server/tests/e2e/tests/backup.spec.ts`) walks the create
 dialog, the delete dialog over a row and the panel of marked rows. The toggle and
 the restore button stand on row fields, and the restore and reopen blocks on page
 data: a viewer receives row fields and page data as an admin does (HIL-1256), so
@@ -819,12 +818,12 @@ HIL-1273). PMD enables the merge window, whose separate viewer case is in
 `demo/pmd/tests/e2e/tests/account-merge.spec.ts`.
 
 The Daemon section carries its viewer cases in each kit's section spec:
-`demo/binance-btc-tracker/tests/e2e/tests/daemon.spec.ts`,
+`demo/roblox-game-server/tests/e2e/tests/daemon.spec.ts`,
 `demo/tasks/tests/e2e/tests/daemon.spec.ts` and
 `demo/concert-tickets/tests/e2e/tests/daemon.spec.ts`. They cover the root, placement
 search, keyboard access to Workers, Cron, Agents and HTTP, the disabled restart,
 and the environment and comparison with values hidden. The forged restart
-request belongs only to binance-btc-tracker: it checks the server's refusal.
+request belongs only to roblox-game-server: it checks the server's refusal.
 Chat's guest Daemon cases moved into that spec (HIL-1400).
 
 The security section carries its viewer cases as units of six pages

@@ -1,0 +1,302 @@
+import { test, expect } from '../test.js'
+
+import {
+  liesAbove,
+  watchTop,
+  watchSocketFrames,
+  watchLogFrames,
+  expectLogLineClock,
+  expectLogsPageHead,
+  type SocketFrame,
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  grantAdminToSelf,
+  TAIL_ARRIVAL_TIMEOUT_MS,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+import {
+  appendLogLines,
+  FOLLOWED_STREAM,
+  logMarker,
+} from '../../../../../framework/frontend/scripts/standLogs.mjs'
+
+const READER_ZONE = 'America/Los_Angeles'
+test.use({ timezoneId: READER_ZONE })
+
+// The end-to-end pass over the log tail (HIL-395, layer 6 of HIL-350). One
+// scenario rather than a suite: the cheap layers — frame shapes, the buffer, the
+// grouping — are covered by unit tests, and what only a browser can answer is
+// whether a line written by the daemon travels the whole chain on its own.
+//
+// The line is written by the log-store agent over the command channel
+// (framework/frontend/scripts/standLogs.mjs), not appended to the file by this
+// process: the agent prints it, the master files it under the agent's own log,
+// and only then does the node owner notice it grew. A test that wrote the file
+// itself would prove that a file grew.
+//
+// The second half is the one place in the epic where the stickiness threshold is
+// measured against a real pane of a real size — the headless unit and the view
+// tests run in jsdom, where every height is fictional.
+
+/** The address of the followed stream: this node, the live file, that name. */
+const VIEWER_PATH = `/hilos/logs/view/-/live/${FOLLOWED_STREAM}`
+
+/**
+ * Lines appended to make the pane taller than its 26rem, so that scrolling means
+ * something. Below this the reader is at the tail whatever it does, and the
+ * whole second half of the scenario passes without asserting anything.
+ */
+const PANE_FILLER_LINES = 80
+
+test('follows a live log file: an appended line arrives on its own, and one appended while the reader is up the pane waits behind the return button', async ({
+  page,
+}) => {
+  // Four waits on the tail, each of them a server round rather than a repaint,
+  // so the whole scenario does not fit the cap a test of DOM work is given.
+  test.slow()
+
+  const frames = watchLogFrames(page)
+  try {
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, VIEWER_PATH, PAGE_READY)
+    await expectLogsPageHead(expect, page, 'hilos_logs_view')
+    await page.reload()
+    await expectPageReady(expect, page)
+    await expectLogsPageHead(expect, page, 'hilos_logs_view')
+
+    // Two gates before the first append, and they answer different questions.
+    // The badge says a tail is running: the follow starts by itself, from the end
+    // of the file as it was at that moment, so a line written before the start
+    // reached the owner would never be in a frame. It is waited for rather than
+    // the switch, which only says the reader wants one.
+    await expect(page.getByTestId('hilos-log-tail-badge')).toBeVisible()
+    // The pane says it is drawing lines at all. Until the catalog of sources has
+    // reached this browser the pane draws a placeholder INSTEAD of the feed, so a
+    // spec that appended here would be asserting against a screen that shows
+    // nothing whatever arrives.
+    await expect(page.getByTestId('hilos-log-entry').first()).toBeVisible({
+      timeout: TAIL_ARRIVAL_TIMEOUT_MS,
+    })
+
+    const arriving = logMarker('e2e-follow-arrives')
+    expect(await appendLogLines(arriving, 1)).toBe(1)
+
+    const pane = page.getByTestId('hilos-log-pane')
+    await expect(
+      page.getByTestId('hilos-log-entry').filter({ hasText: `${arriving} #1` }),
+    ).toBeVisible({ timeout: TAIL_ARRIVAL_TIMEOUT_MS })
+    const arrivingAt = await expectLogLineClock(
+      expect,
+      page,
+      frames,
+      arriving,
+      'logs_lines_appended',
+      READER_ZONE,
+    )
+
+    // Nothing was reloaded and "Earlier" was never pressed: the line is on screen
+    // because a frame carried it there.
+
+    const filler = logMarker('e2e-follow-filler')
+    expect(await appendLogLines(filler, PANE_FILLER_LINES)).toBe(
+      PANE_FILLER_LINES,
+    )
+    await expect
+      .poll(
+        () =>
+          pane.evaluate(
+            (element) => element.scrollHeight - element.clientHeight,
+          ),
+        { timeout: TAIL_ARRIVAL_TIMEOUT_MS },
+      )
+      .toBeGreaterThan(0)
+
+    // Reading something above. A programmatic scroll raises the ordinary scroll
+    // event the view listens to; neither the code nor the test tries to tell a
+    // reader's scroll from its own.
+    const paneTop = await watchTop(pane)
+    await pane.evaluate((element) => {
+      element.scrollTop = 0
+    })
+    const backToTail = page.getByTestId('hilos-log-back-to-tail')
+    await expect(backToTail).toBeVisible()
+    // The way back arrives in the room the strip above the pane held for it all
+    // along (HIL-1024): the pane does not move, and no line lies under the button.
+    await paneTop.unchanged()
+    await liesAbove(backToTail, pane)
+
+    const waiting = logMarker('e2e-follow-waits')
+    expect(await appendLogLines(waiting, 1)).toBe(1)
+
+    // The counter is asserted first, because it is what proves the line arrived at
+    // all: an absence asserted on its own would also hold for a line still in
+    // flight. It is matched by shape rather than against a strict one — the owner
+    // of the logs writes into this same file now and then (a start, a stop, a
+    // rotation), and a hard number would go red on its own schedule.
+    await expect(page.getByTestId('hilos-log-back-to-tail-count')).toHaveText(
+      /^\d+\+?$/,
+      { timeout: TAIL_ARRIVAL_TIMEOUT_MS },
+    )
+    // The count came in its own room too: the pane still has not moved.
+    await paneTop.unchanged()
+    await expect(
+      page.getByTestId('hilos-log-entry').filter({ hasText: `${waiting} #1` }),
+    ).toHaveCount(0)
+
+    await backToTail.click()
+    await expect(
+      page.getByTestId('hilos-log-entry').filter({ hasText: `${waiting} #1` }),
+    ).toBeVisible()
+
+    // The poured line is in the DOM either way; only the pane's position proves the
+    // press took the reader to the tail, not merely rebuilt the feed under their
+    // old offset. "At the very bottom" is the honest assertion: the view writes
+    // scrollTop = scrollHeight and the browser clamps it.
+    await expect
+      .poll(
+        () =>
+          pane.evaluate(
+            (element) =>
+              element.scrollHeight - element.scrollTop - element.clientHeight,
+          ),
+        { timeout: TAIL_ARRIVAL_TIMEOUT_MS },
+      )
+      .toBeLessThanOrEqual(1)
+
+    // The owner's repro: nothing arrived while they were up, so drain() is a no-op
+    // and only the pin rising can move the pane. A suite that never takes this
+    // path stays green over the live bug.
+    await pane.evaluate((element) => {
+      element.scrollTop = 0
+    })
+    await expect(backToTail).toBeVisible()
+    await backToTail.click()
+    await expect
+      .poll(
+        () =>
+          pane.evaluate(
+            (element) =>
+              element.scrollHeight - element.scrollTop - element.clientHeight,
+          ),
+        { timeout: TAIL_ARRIVAL_TIMEOUT_MS },
+      )
+      .toBeLessThanOrEqual(1)
+
+    // The Follow switch was not touched once in the whole scenario, which is the
+    // decision this asserts: scrolling releases the stickiness, not the tail.
+    // Now read the SAME record back through the owner's anchored read path.
+    await gotoPage(
+      expect,
+      page,
+      `${VIEWER_PATH}/${Date.parse(arrivingAt)}`,
+      PAGE_READY,
+    )
+    await expect(
+      page.getByTestId('hilos-log-entry').filter({ hasText: `${arriving} #1` }),
+    ).toBeVisible({ timeout: TAIL_ARRIVAL_TIMEOUT_MS })
+    expect(
+      await expectLogLineClock(
+        expect,
+        page,
+        frames,
+        arriving,
+        'logs_read_lines',
+        READER_ZONE,
+      ),
+    ).toBe(arrivingAt)
+  } finally {
+    frames.stop()
+    await test.info().attach('log-time-frames', {
+      body: JSON.stringify({ packets: frames.packets, sent: frames.sent }),
+      contentType: 'application/json',
+    })
+  }
+})
+
+// HIL-1257: the text must be absent from the guest's socket frames, not merely
+// hidden by the view. An admin in another context witnesses that the line exists.
+test.describe('the log viewer in the admin view mode', () => {
+  test.afterEach(async () => {
+    await setAdminViewMode(false)
+  })
+
+  test("a guest follows a live log and reads each line's time and level with its text hidden", async ({
+    browser,
+    page,
+  }) => {
+    test.slow()
+
+    const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+    const adminContext = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors,
+      timezoneId: READER_ZONE,
+    })
+    const adminPage = await adminContext.newPage()
+    const frames: SocketFrame[] = []
+    const socketFrames = watchSocketFrames(page, (frame) => frames.push(frame))
+
+    try {
+      await grantAdminToSelf(expect, adminPage)
+      await gotoPage(expect, adminPage, VIEWER_PATH, PAGE_READY)
+      await expect(adminPage.getByTestId('hilos-log-tail-badge')).toBeVisible()
+
+      await setAdminViewMode(true)
+      await gotoPage(expect, page, VIEWER_PATH, PAGE_READY)
+      await expectLogsPageHead(expect, page, 'hilos_logs_view')
+      await expect(page.getByTestId('view-mode-banner')).toBeVisible()
+      await expect(page.getByTestId('hilos-log-tail-badge')).toBeVisible()
+      await expect(page.getByTestId('hilos-log-entry').first()).toBeVisible({
+        timeout: TAIL_ARRIVAL_TIMEOUT_MS,
+      })
+
+      const substring = page.getByTestId('hilos-log-substring')
+      const search = page.getByTestId('hilos-log-search')
+      await expect(substring).toBeDisabled()
+      await expect(search).toBeDisabled()
+      await expect(substring).toHaveAttribute(
+        'aria-describedby',
+        /(^| )hilos-view-mode-strip-text( |$)/,
+      )
+      await expect(search).toHaveAttribute(
+        'aria-describedby',
+        /(^| )hilos-view-mode-strip-text( |$)/,
+      )
+
+      const before = await page.getByTestId('hilos-log-entry').count()
+      const marker = logMarker('e2e-viewer-follow')
+      expect(await appendLogLines(marker, 1)).toBe(1)
+
+      await expect(
+        adminPage
+          .getByTestId('hilos-log-entry')
+          .filter({ hasText: `${marker} #1` }),
+      ).toBeVisible({
+        timeout: TAIL_ARRIVAL_TIMEOUT_MS,
+      })
+      await expect
+        .poll(() => page.getByTestId('hilos-log-entry').count(), {
+          timeout: TAIL_ARRIVAL_TIMEOUT_MS,
+        })
+        .toBeGreaterThan(before)
+
+      const newest = page.getByTestId('hilos-log-entry').last()
+      await expect(newest.getByTestId('hilos-hidden')).toBeVisible()
+      await expect(newest).toContainText(/\d{2}:\d{2}:\d{2}\.\d{3}/)
+      await expect(newest).toContainText('INFO')
+
+      await gotoPage(expect, page, VIEWER_PATH, PAGE_READY)
+      await expect(page.getByTestId('hilos-log-entry').first()).toBeVisible()
+      expect(frames.map(({ raw }) => raw).join('\n')).not.toContain(marker)
+      await expect(page.locator('body')).not.toContainText(marker)
+    } finally {
+      socketFrames.stop()
+      await test.info().attach('viewer-log-frames', {
+        body: JSON.stringify(frames),
+        contentType: 'application/json',
+      })
+      await adminContext.close()
+    }
+  })
+})

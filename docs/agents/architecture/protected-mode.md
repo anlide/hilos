@@ -1778,7 +1778,8 @@ Refuse loudly and before any trace of entry, as above.
   (`framework/frontend/vue/src/admin/maintenance/`,
   `framework/frontend/react/test/`, `framework/frontend/angular/test/`); Overview
   e2e checks in `demo/binance-btc-tracker/tests/e2e/tests/`
-  (`protected-mode.spec.ts`, `maintenance-restore.spec.ts`, `a11y.spec.ts`), in
+  (`protected-mode.spec.ts`, `a11y.spec.ts`), in
+  `demo/roblox-game-server/tests/e2e/tests/maintenance-restore.spec.ts`, in
   `demo/ecommerce-shop/tests/e2e/tests/protected-mode.spec.ts` and in
   `demo/online-testing/tests/e2e/tests/maintenance.spec.ts` use
   `expectMaintenanceWatchdogThresholds()` from `framework/frontend/e2e/maintenance.ts`;
@@ -1799,8 +1800,9 @@ Refuse loudly and before any trace of entry, as above.
   Overview and Circle navigation by direct address, reload, Back and Forward; the
   shared Hilos › Maintenance head, one h1 and the current tab; the table on Circle
   and no circle/table-controller traffic on Overview; and the live window,
-  admission, view mode and cleanup. `backup.spec.ts` keeps its pointer on Overview
-  and then selects the Circle tab. The Circle view is built in all three SDKs.
+  admission, view mode and cleanup. `demo/roblox-game-server`'s `backup.spec.ts`
+  keeps its pointer on Overview and then selects the Circle tab. The Circle view
+  is built in all three SDKs.
   The manual window runs as one scenario in each kit's `protected-mode.spec.ts`
   (binance-btc-tracker Vue, ecommerce-shop React, online-testing Angular), with
   checks in `framework/frontend/e2e/maintenance.ts`; those helpers use Overview.
@@ -1845,12 +1847,12 @@ Refuse loudly and before any trace of entry, as above.
   existing assertions and parked F-016 cases; circle setup and cleanup use the
   Circle address and return to Overview before manual or document marks. Scenario
   38 is the active manual cluster check; F-016 remains parked and unverified.
-- `demo/binance-btc-tracker` e2e `maintenance-restore.spec.ts` — drives a real
+- `demo/roblox-game-server` e2e `maintenance-restore.spec.ts` — drives a real
   backup confirmed by its typed id. The freeze is the backup agent's, not
   `e2e-freeze`. Teardown lifts with `protected-mode:open` and repeats while the
   close still holds the operator slot. The test driver's open does not lift a
   freeze that agent started.
-- `demo/binance-btc-tracker` e2e `maintenance-words.spec.ts` — displays the project's
+- `demo/roblox-game-server` e2e `maintenance-words.spec.ts` — displays the project's
   protected-mode stub registry on the Words tab. Its shared check reads the first
   Words `page_response` after a delivery-log bookmark, compares its rows with the
   table, and verifies the table has no search, filters, actions, selection or row

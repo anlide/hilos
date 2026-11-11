@@ -274,13 +274,13 @@ A defect where **two processes see different state** — the master appends an
 agent's log and a worker asks for its size; the daemon and the CLI; two nodes of
 a cluster — is proved on the stand, where both processes are real rather than
 impersonated. That is the default, and it is already how the log tail is tested:
-`demo/binance-btc-tracker/tests/e2e/helpers/logs.ts` asks the daemon to append
-lines over its own command channel, the log-store agent writes them, the master
-files them, and the front end reads them through a worker
-(`demo/binance-btc-tracker/tests/e2e/tests/logs.spec.ts`). The helper's docblock
-(`demo/binance-btc-tracker/tests/e2e/helpers/logs.ts:14`) says why it does not append to the
-file itself: "Appending to the file from here instead would prove only that a
-file grew."
+`framework/frontend/scripts/standLogs.mjs` asks the daemon to append lines over
+its own command channel, the log-store agent writes them, the master files them,
+and the front end reads them through a worker
+(`demo/roblox-game-server/tests/e2e/tests/logs.spec.ts`). The helper's header
+comment (`framework/frontend/scripts/standLogs.mjs:5`) says why it does not append
+to the file itself: "Appending to the file from here instead would prove only
+that a file grew."
 
 Leave that step only by **naming what e2e cannot see**. There are exactly three
 such reasons, all about observability and none about convenience:
@@ -601,7 +601,7 @@ merely because a directory or README exists.
 | Vue | `chat` | Active |
 | Vue | `binance-btc-tracker` | Active |
 | Vue | `pmd` | Active |
-| Vue | `roblox-game-server` | Planned (not in the code yet — HIL-2017) |
+| Vue | `roblox-game-server` | Active |
 | React | `tasks` | Active |
 | React | `ecommerce-shop` | Active |
 | React | `solar-system-model` | Active |
@@ -629,8 +629,7 @@ and authenticated access to its administration and Analytics. Its public header
 has no sign-in control; sign-in opens as a form in place on `/hilos`, a page
 closed to a guest. The Model product itself is outside this activation phase.
 
-Today `roblox-game-server` and `file-gallery-manager` have `composer.json`
-stubs without scripts.
+Today only `file-gallery-manager` has a `composer.json` stub without scripts.
 [`framework-projects.json`](../../framework-projects.json)
 lists the active projects; [`scripts/test-suite.php`](../../scripts/test-suite.php)
 and [`scripts/test-stands.php`](../../scripts/test-stands.php) register their

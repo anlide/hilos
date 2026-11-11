@@ -83,6 +83,16 @@ return [
         'holdsDatabase' => true,
     ],
     [
+        'id' => 'roblox-game-server',
+        'cwd' => 'demo/roblox-game-server',
+        'composeFile' => 'docker/docker-compose.test.yml',
+        'project' => 'hilos-roblox-game-server-test' . standInstanceSuffix(),
+        'mode' => 'project',
+        'profiles' => [],
+        'networks' => [],
+        'holdsDatabase' => true,
+    ],
+    [
         'id' => 'solar-system-model',
         'cwd' => 'demo/solar-system-model',
         'composeFile' => 'docker/docker-compose.test.yml',

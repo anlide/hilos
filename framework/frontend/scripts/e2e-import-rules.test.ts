@@ -20,6 +20,7 @@ const demos = [
   'pmd',
   'polls',
   'preferans',
+  'roblox-game-server',
   'solar-system-model',
   'tasks',
 ]

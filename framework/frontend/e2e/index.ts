@@ -636,6 +636,7 @@ export {
 } from './page.js'
 export { watchDaemonSource } from './daemonSource.js'
 export {
+  TAIL_ARRIVAL_TIMEOUT_MS,
   expectLogsPageHead,
   watchLogFrames,
   logMomentLabel,

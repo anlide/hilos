@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 import { drawPhotoFixture } from '../../../../../framework/frontend/e2e/index.js'
 
-/** Keep Chat's opaque JPEG and half-transparent PNG recipe for its moderation walk. */
+/** Draw opaque JPEG and half-transparent PNG photo fixtures for the profile photo spec. */
 export async function picture(
   page: Page,
   mimeType: 'image/jpeg' | 'image/png',

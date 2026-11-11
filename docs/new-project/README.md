@@ -8,8 +8,9 @@ running in project-owned docker stacks. The demos, each with what it carries:
 |---|---|---|---|
 | [demo/tasks](../../demo/tasks) | one app agent, every admin section | React | every admin section on React |
 | [demo/polls](../../demo/polls) | one app agent, every admin section | Angular | every admin section on Angular, Angular toolchain |
-| [demo/binance-btc-tracker](../../demo/binance-btc-tracker) | minimal | Vue | the smallest complete shape on Vue: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
+| [demo/binance-btc-tracker](../../demo/binance-btc-tracker) | minimal | Vue | the smallest complete shape on Vue: sign-in and an empty home — copy this; its cluster stand: [testing.md](../agents/testing.md) |
 | [demo/pmd](../../demo/pmd) | service database | Vue | active carrier: empty home; sign-in, profile and Security; admin Analytics, Users, Settings, Appearance and Communications |
+| [demo/roblox-game-server](../../demo/roblox-game-server) | minimal | Vue | active carrier: empty home; sign-in and profile; admin Analytics, Communications, Change Log, Moderation, Daemon, Backup, Logs and Maintenance |
 | [demo/ecommerce-shop](../../demo/ecommerce-shop) | minimal | React | the smallest complete shape on React: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
 | [demo/solar-system-model](../../demo/solar-system-model) | minimal | React | active carrier: empty public home, sign-in at `/hilos`, profile; admin Analytics, Users, Settings |
 | [demo/online-testing](../../demo/online-testing) | minimal | Angular | the smallest complete shape on Angular: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
@@ -287,8 +288,8 @@ registry of taken host ports:
 | online-testing cluster | — | — | — | — | — | 10.223 |
 | pmd local | 33073 | 8170/8171/8172 | 8180 | https 8176 | 5179 | 10.204 |
 | pmd test | 33074 | 8173/8174/8175 | — | http 8177 / https 8178 | — | 10.214 |
-| roblox-game-server local (not in the code yet — HIL-2017) | 33075 | 8190/8191/8192 | 8200 | https 8196 | 5180 | 10.205 |
-| roblox-game-server test (not in the code yet — HIL-2017) | 33076 | 8193/8194/8195 | — | http 8197 / https 8198 | — | 10.215 |
+| roblox-game-server local | 33075 | 8190/8191/8192 | 8200 | https 8196 | 5180 | 10.205 |
+| roblox-game-server test | 33076 | 8193/8194/8195 | — | http 8197 / https 8198 | — | 10.215 |
 | roblox-game-server cluster (not in the code yet — HIL-2029) | — | — | — | — | — | 10.225 |
 | solar-system-model local | 33077 | 8210/8211/8212 | 8220 | https 8216 | 5181 | 10.206 |
 | solar-system-model test | 33078 | 8213/8214/8215 | — | http 8217 / https 8218 | — | 10.216 |

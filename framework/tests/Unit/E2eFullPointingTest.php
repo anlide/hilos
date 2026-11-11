@@ -65,6 +65,7 @@ final class E2eFullPointingTest extends TestCase
         'ecommerce-shop', 'online-testing', 'preferans', 'pmd',
         'concert-tickets',
         'solar-system-model',
+        'roblox-game-server',
     ];
 
     /**
