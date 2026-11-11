@@ -22,6 +22,7 @@ use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\TableConstants;
+use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -832,6 +833,21 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
         self::assertCount(70, $this->rows());
         self::assertSame(35, (int)Database::sql('SELECT COUNT(*) AS n FROM hilos_status_work WHERE expired_at IS NOT NULL')->rows()[0]['n']);
         self::assertNotNull((new StatusPublicFiles())->restore());
+    }
+
+    public function testASignalBeforeTheFirstFreezeTickStillClassifiesTheAnnouncement(): void
+    {
+        $work = Database::transaction(DatabaseNames::PRIMARY, fn() => Hilos::$db->statusWorks->actions->create(
+            'Upgrade', null, $this->now, $this->now + 10000, $this->now - 2000, ['service'],
+        ));
+        $this->settle($this->now - 1000);
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->owner->applyPicturePortion(new DaemonClusterPicturePortionSignalData(true, []), $this->now + 50);
+        $this->owner->tickAt($this->now + 100);
+        $current = Hilos::$rt->hilosStatusMaintenance['current'];
+        self::assertTrue($current->announcementKnown);
+        self::assertSame($work->publicId, $current->workPublicId);
+        self::assertSame($this->now, $current->startedAt);
     }
 
     /** @return list<array<string, mixed>> Independent persisted maintenance facts */

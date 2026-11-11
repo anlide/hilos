@@ -533,6 +533,7 @@ final class StatusAgent extends AbstractHilosAgent
      */
     public function applyPicturePortion(DaemonClusterPicturePortionSignalData $portion, int $nowMs): void
     {
+        $this->advanceMaintenance($nowMs);
         $this->refreshFreeze();
         if ($this->wasFrozen) {
             return;
