@@ -540,6 +540,9 @@ body.modal-open .toast-container > * {
   }
 }
 
+// WHY: progress payloads disappear before Apply, while their place must survive;
+// no Bootstrap utility can express a measured fractional block size.
+// WHAT: a data-free work reserve in a pending live row or card.
 .hilos-table-work-space {
   height: calc(var(--hilos-table-work-px) * 1px);
 }
