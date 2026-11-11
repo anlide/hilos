@@ -195,6 +195,8 @@ abstract class WorkerDTO extends BaseDTO
      * Object-mode decoding of the whole frame would reject otherwise valid NUL-prefixed
      * keys in unrelated sections. Those sections keep the shared associative decoding.
      * Envelope selection retains byte ranges in the immutable frame, never raw subtrees.
+     * The pass runs only when some filter holds a nested container: a flat filter loses
+     * nothing to the shared decoder, and {@see PagePayload::toArray()} restores its root.
      *
      * @param array<string, mixed> $data Worker frame decoded by the shared reader
      * @param string $json Original, already validated JSON frame
@@ -214,6 +216,13 @@ abstract class WorkerDTO extends BaseDTO
         $windows = $signal[SignalPayloadConstants::FIELD_DATA][SignalPayloadConstants::FIELD_DATA]
             [PageResponseSignalData::payload][PagePayload::windows] ?? null;
         if (!is_array($windows) || $windows === []) {
+            return $data;
+        }
+        // Only a nested container comes back from associative decoding in another shape: the scalars of a
+        // flat filter survive it, and its root object is restored by PagePayload::toArray().
+        if (!array_any($windows, static fn (mixed $window): bool => is_array($window)
+            && is_array($window[TableWindowDescriptorDTO::FILTER] ?? null)
+            && array_any($window[TableWindowDescriptorDTO::FILTER], static fn (mixed $value): bool => is_array($value)))) {
             return $data;
         }
 
