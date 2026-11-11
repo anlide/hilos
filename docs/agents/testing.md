@@ -686,16 +686,18 @@ remain for diagnosis and still owe the explicit cleanup above.
 The suffix, network/address, host-port and CPU-share isolation described under
 [the full run](#the-full-run--one-graph-a-bounded-number-of-lanes) still applies.
 The address map in
-[`scripts/stand-instance.php`](../../scripts/stand-instance.php) is two blocks.
+[`scripts/stand-instance.php`](../../scripts/stand-instance.php) is three blocks.
 The first holds its ten assigned stands. The second holds six reserved ordinary
 demo addresses, `HILOS_STAND_NET_PMD` through
 `HILOS_STAND_NET_CONCERT_TICKETS`, on default octets 214 to 219; Preferans and
 Concert Tickets use two of these addresses, while the other planned carriers
-retain theirs. The
-test compose of each activation reads its own
+retain theirs. The third holds three cluster stands,
+`HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER`,
+`HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER` and
+`HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER`, on default octets 225, 227 and 229.
+The test compose of each activation reads its own
 variable, and its ports and local subnet are reserved in the registry
 ([../new-project/README.md](../new-project/README.md)).
-Room for the cluster stands of HIL-1985 is left but not introduced.
 
 **Seven lanes is the agreed comparison condition for HIL-1984 on the test
 box**, not a replacement for the adaptive lane-count formula. Do not increase
