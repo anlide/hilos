@@ -498,11 +498,11 @@ than the 403, because the same gate answers *view* there
 is behind a connection can be answered only where a browser context is mounted — in a
 worker. So the writing worker announces, the master fans the announcement out to
 every local worker link and broadcasts `peer_page_access_reassess` to every other
-node, slaves included (HIL-1306). A receiving node writes to its workers in the
-same call unless the effect queue is busy, in which case the write is not done
-on arrival or on return from `deliverPageAccessReassess`, and the node does not
-forward it: the subscription mirror lives in a worker of the node serving the
-page's agent. Each worker sweeps the mirror it owns. The re-decision therefore
+node, slaves included (HIL-1306). A receiving node does not forward it: the
+subscription mirror lives in a worker of the node serving the page's agent. It
+writes the announcement to its workers at once when the master's effect queue is
+empty, and otherwise after the frames that arrived before it. Each worker sweeps
+the mirror it owns. The re-decision therefore
 reaches every open page of that person, wherever it is served, and not merely
 the pages of the worker that happened to write the rights.
 
