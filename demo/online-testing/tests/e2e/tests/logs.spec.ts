@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test'
 import { test, expect } from '../test.js'
 
 import {
@@ -9,6 +10,30 @@ import {
   grantAdminToSelf,
   expectPageReady,
 } from '../../../../../framework/frontend/e2e/index.js'
+
+/** Every settings key the logging modes write, members first and the chosen mode last. */
+const LOG_MODE_KEYS = [
+  'logs.write_level',
+  'logs.rotation.cron',
+  'logs.rotation.max_live_size_bytes',
+  'logs.rotation.max_age_seconds',
+  'logs.archive_retention.max_age_seconds',
+  'logs.preset',
+]
+
+/**
+ * Return every logging mode setting to its catalog default by removing its custom value.
+ *
+ * @param page The test page.
+ */
+async function clearLogModeRows(page: Page): Promise<void> {
+  await gotoPage(expect, page, '/hilos/settings')
+  for (const key of LOG_MODE_KEYS) {
+    await typeInto(page.getByTestId('hilos-table-search'), key)
+    await expect(page.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+    await clearCustomSetting(page, key)
+  }
+}
 
 // The project's catalog and Angular router must connect all six Logs pages to
 // their live controls and data. Follow their links, retain the due filter through
@@ -174,73 +199,86 @@ test('navigates Logs pages and preserves filters and live logging modes', async 
   await expect(
     page.getByTestId(`hilos-table-row-${retentionKey}`),
   ).toBeVisible()
-  await setCustomSetting(page, retentionKey, '1209600')
-  await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
 
-  await gotoPage(expect, page, '/hilos/logs/settings')
-  // The block shows without the edit too; its second line is the edit arriving.
-  await expect(differences.getByRole('listitem')).toHaveCount(2)
+  let passed = false
+  let cleanupFailure: unknown
+  try {
+    await setCustomSetting(page, retentionKey, '1209600')
+    await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
 
-  // Putting them back is the gesture the defect was found on, and it asks nothing
-  // first: the card is already the chosen one.
-  const revert = page.getByTestId('hilos-setting-preset-revert')
-  await expect(revert).toBeEnabled()
-  await revert.click()
-  await expect(page.getByTestId('hilos-toast-success')).toContainText(
-    "The mode's values are back.",
-  )
-  await page.getByTestId('hilos-toast-close').click()
-  await expect(page.getByTestId('hilos-toast-success')).toHaveCount(0)
-  // The differences going is the new state arriving over the socket, not a guess about
-  // when it will: the backend answers the action with nothing and pushes the state.
-  await expect(differences).toHaveCount(0)
+    await gotoPage(expect, page, '/hilos/logs/settings')
+    // The block shows without the edit too; its second line is the edit arriving.
+    await expect(differences.getByRole('listitem')).toHaveCount(2)
 
-  // Choosing another mode, which is the second gesture and the second sentence. With
-  // the values back there is nothing of anyone's own to overwrite, so no confirmation
-  // opens and the card applies at once.
-  const frugal = page.getByTestId('hilos-setting-preset-frugal')
-  await expect(frugal).toBeEnabled()
-  await frugal.click()
-  await expect(page.getByTestId('hilos-toast-success')).toContainText(
-    'The mode is applied.',
-  )
-  await page.getByTestId('hilos-toast-close').click()
-  await expect(page.getByTestId('hilos-toast-success')).toHaveCount(0)
+    // Putting them back is the gesture the defect was found on, and it asks nothing
+    // first: the card is already the chosen one.
+    const revert = page.getByTestId('hilos-setting-preset-revert')
+    await expect(revert).toBeEnabled()
+    await revert.click()
+    await expect(page.getByTestId('hilos-toast-success')).toContainText(
+      "The mode's values are back.",
+    )
+    await page.getByTestId('hilos-toast-close').click()
+    await expect(page.getByTestId('hilos-toast-success')).toHaveCount(0)
+    // The differences going is the new state arriving over the socket, not a guess about
+    // when it will: the backend answers the action with nothing and pushes the state.
+    await expect(differences).toHaveCount(0)
 
-  // The mode chosen on the modes screen reaches the rotations strip over the
-  // wire. Units hold a forged header, so only this visit proves the live one.
-  await logsPages.getByTestId('hilos-page-tab-hilos_logs_rotations').click()
-  await expectPageReady(expect, page)
-  await expect(logsPages.locator('[aria-current="page"]')).toHaveText(
-    'Rotations',
-  )
-  await expect(page.getByTestId('hilos-rotation-rule')).toContainText(
-    'Mode “Frugal”: rotates at 03:00 or at 256 MiB',
-  )
-  await logsPages.getByTestId('hilos-page-tab-hilos_logs_settings').click()
-  await expectPageReady(expect, page)
-  await expect(logsPages.locator('[aria-current="page"]')).toHaveText(
-    'Settings',
-  )
+    // Choosing another mode, which is the second gesture and the second sentence. With
+    // the values back there is nothing of anyone's own to overwrite, so no confirmation
+    // opens and the card applies at once.
+    const frugal = page.getByTestId('hilos-setting-preset-frugal')
+    await expect(frugal).toBeEnabled()
+    await frugal.click()
+    await expect(page.getByTestId('hilos-toast-success')).toContainText(
+      'The mode is applied.',
+    )
+    await page.getByTestId('hilos-toast-close').click()
+    await expect(page.getByTestId('hilos-toast-success')).toHaveCount(0)
 
-  // Back to the default, because the stand is shared and frugal raises the write
-  // threshold to warnings — every later spec would run against a quieter log. The
-  // chosen card is disabled, so this one becoming clickable is the push arriving.
-  const normal = page.getByTestId('hilos-setting-preset-normal')
-  await expect(normal).toBeEnabled()
-  await normal.click()
-  await expect(page.getByTestId('hilos-toast-success')).toContainText(
-    'The mode is applied.',
-  )
-  await page.getByTestId('hilos-toast-close').click()
-  await expect(frugal).toBeEnabled()
+    // The mode chosen on the modes screen reaches the rotations strip over the
+    // wire. Units hold a forged header, so only this visit proves the live one.
+    await logsPages.getByTestId('hilos-page-tab-hilos_logs_rotations').click()
+    await expectPageReady(expect, page)
+    await expect(logsPages.locator('[aria-current="page"]')).toHaveText(
+      'Rotations',
+    )
+    await expect(page.getByTestId('hilos-rotation-rule')).toContainText(
+      'Mode “Frugal”: rotates at 03:00 or at 256 MiB',
+    )
+    await logsPages.getByTestId('hilos-page-tab-hilos_logs_settings').click()
+    await expectPageReady(expect, page)
+    await expect(logsPages.locator('[aria-current="page"]')).toHaveText(
+      'Settings',
+    )
 
-  // The modes wrote the nightly schedule over the stand's distant one, and the stand
-  // is shared: without its row the environment answers again.
-  await gotoPage(expect, page, '/hilos/settings')
-  await typeInto(page.getByTestId('hilos-table-search'), 'logs.rotation.cron')
-  await expect(
-    page.getByTestId('hilos-table-row-logs.rotation.cron'),
-  ).toBeVisible()
-  await clearCustomSetting(page, 'logs.rotation.cron')
+    // Back to the default, because the stand is shared and frugal raises the write
+    // threshold to warnings — every later spec would run against a quieter log. The
+    // chosen card is disabled, so this one becoming clickable is the push arriving.
+    const normal = page.getByTestId('hilos-setting-preset-normal')
+    await expect(normal).toBeEnabled()
+    await normal.click()
+    await expect(page.getByTestId('hilos-toast-success')).toContainText(
+      'The mode is applied.',
+    )
+    await page.getByTestId('hilos-toast-close').click()
+    await expect(frugal).toBeEnabled()
+    passed = true
+  } finally {
+    // Clearing the mode settings returns the stand to what the test found
+    // (:143–149) and preserves any earlier failure in the test report.
+    try {
+      await clearLogModeRows(page)
+    } catch (cleanupError) {
+      if (passed) {
+        cleanupFailure = cleanupError
+      } else {
+        await test.info().attach('cleanup-error', {
+          body: String(cleanupError),
+          contentType: 'text/plain',
+        })
+      }
+    }
+  }
+  if (cleanupFailure) throw cleanupFailure
 })
