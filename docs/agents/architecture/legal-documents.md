@@ -554,7 +554,7 @@ not depend on whether its row fits in the first history window. Its existing
 document/revision scope, including its own reconnect; a list or another entity's
 descriptor is discarded so the first window follows the exact route.
 The four Document pages likewise discard list reports for another document
-or an exact revision. A new mount reports the opted-in table's opening preset,
+or an exact revision. A new mount reports the table's opening preset,
 including when an active link opens the same page again; its rows, search,
 order and paging then agree from the first answer. A reconnect with the same
 controller keeps its live descriptor.
