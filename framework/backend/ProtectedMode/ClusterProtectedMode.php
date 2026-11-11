@@ -410,7 +410,10 @@ final class ClusterProtectedMode implements
         $this->noteSlaveSyncChanged();
     }
 
-    /** Releases old activations without losing requests, latest target or original deadlines. */
+    /**
+     * Releases old activations without losing requests, latest target or original deadlines.
+     * Nothing is ready without a loop: the next binding notes the change again.
+     */
     public function detachSlaveSyncEventLoop(): void
     {
         ++$this->slaveSyncBindingGeneration;
@@ -419,13 +422,20 @@ final class ClusterProtectedMode implements
         $this->slaveSyncTimer?->close();
         $this->slaveSyncTimer = null;
         $this->slaveSyncLoop = null;
+        $this->slaveSyncReady = false;
     }
 
-    /** Coalesces actual source, installed-link and internal protocol facts. */
+    /**
+     * Coalesces actual source, installed-link and internal protocol facts.
+     * Unbound - on the way out, after the loop is released - a change only stays dirty: a ready
+     * flag nothing can dispatch would keep the master polling until it exits.
+     */
     public function noteSlaveSyncChanged(): void
     {
         $this->slaveSyncDirty = true;
-        $this->slaveSyncReady = true;
+        if ($this->slaveSyncLoop !== null) {
+            $this->slaveSyncReady = true;
+        }
         $this->slaveSyncWork?->markReady();
     }
 

@@ -114,6 +114,28 @@ final class ProtectedModePeerFrameTest extends TestCase
         yield 'slave' => [NodeRole::Slave];
     }
 
+    /** On the way out the loop is released first; links closing after it must not keep the master polling. */
+    public function testALinkClosingAfterTheLoopIsReleasedLeavesNoReadyWork(): void
+    {
+        $loop = new EventLoop();
+        $server = $this->protectedModePeerServer();
+        $server->attachEventLoop($loop);
+        $sync = new ClusterProtectedMode('node-a', $server, $this->createStub(ProtectedModeExecutor::class));
+        try {
+            $server->registerProtectedMode($sync);
+            [$link] = $this->protectedModePeerLink($server, 'peer', NodeRole::Master);
+            self::assertTrue($server->hasProtectedModeSyncReadyWork());
+            $server->prepareShutdown();
+            $server->detachEventLoop();
+            self::assertFalse($server->hasProtectedModeSyncReadyWork());
+            $server->onLinkClosed($link);
+            self::assertFalse($server->hasProtectedModeSyncReadyWork());
+        } finally {
+            $server->detachEventLoop();
+            $loop->close();
+        }
+    }
+
     #[DataProvider('syncFrames')]
     public function testSlaveSyncFramesRoundTripExactly(PeerDTO $frame): void
     {
