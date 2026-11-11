@@ -419,13 +419,16 @@ the CLI process for a daemon that is down; a daemon that does not answer is an
 error, never a silent fallback to cold. The engine replays each `db-<index>.sql`
 into the connection of the same index — into that connection's *currently
 configured* database name — and re-verifies the digest immediately before its
-destructive steps. Tables absent from the dump are left in place; the
-migration-index gate is HIL-430. A schema archive carries the migration table
-without its rows, so its level travels as a marker written into the dump
-(HIL-570) and the engine records that level before it migrates forward; an
-archive taken before the marker existed declares none, and such a restore is
-refused before the first import unless the operator names the level with
-`--migration-index=<N>` (schema scopes only, and `--force` does not lift it).
+destructive steps. Tables absent from the dump stay, except that a FULL
+restore drops the late tables it proves a newer migration of the code
+recreates (they come back empty) and refuses a plan it cannot prove before
+anything is written (`BackupRestorer`); the migration-index gate is HIL-430.
+A schema archive carries the migration table without its rows, so its level
+travels as a marker written into the dump (HIL-570) and the engine records
+that level before it migrates forward; an archive taken before the marker
+existed declares none, and such a restore is refused before the first import
+unless the operator names the level with `--migration-index=<N>` (schema
+scopes only, and `--force` does not lift it).
 A hot restore also carries the live
 authenticated sessions across the swap before it thaws the node (HIL-479), so the
 operator watching the restore is not logged out by it; a project whose runtime

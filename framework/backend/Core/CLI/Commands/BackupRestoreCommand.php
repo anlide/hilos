@@ -134,8 +134,10 @@ Command: backup:restore
 
 Description:
   Restore a stored backup into this installation's databases. Destructive: the tables
-  carried by the dump are dropped and recreated; tables absent from the dump are left
-  in place. The archive digest is re-checked before anything is touched.
+  carried by the dump are dropped and recreated. Other tables of the target stay, except
+  that a FULL restore drops the late tables it proves a newer migration of the code
+  recreates - they come back empty - and refuses, before anything is written, a plan it
+  cannot prove. The archive digest is re-checked before anything is touched.
 
   By default the running daemon supervises the restore: the node enters protected mode
   (every other agent frozen), a child process replays the dump, and this command stays a
