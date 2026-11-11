@@ -26,12 +26,12 @@ use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
 use Hilos\Notification\Delivery\DeliveryAttempt;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
-use Hilos\Push\DTO\PushSubscriptionsGoneSignalData;
 use Hilos\Push\Exception\PushException;
 use Hilos\Push\PushChannelConfig;
 use Hilos\Push\WebPushRequestFactory;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use Hilos\Socket\SocketException;
+use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
 
 /**
  * PushDeliveryChannelAgent - the sharded web-push delivery agent (HIL-199).
@@ -143,18 +143,25 @@ class PushDeliveryChannelAgent extends AbstractDeliveryChannelAgent
         $this->resolveConfig();
         $payload = $this->buildPayload($notification);
 
+        $userId = $notification->userId ?? 0;
         $sends = [];
-        foreach ($this->subscriptions()->forUser($notification->userId ?? 0) as $subscription) {
+        $observed = [];
+        foreach ($this->subscriptions()->forUser($userId) as $subscription) {
+            // DB sync can renew the held object before the transport settles; retain this send's revision.
+            $observed[$subscription->endpoint] = [(int)$subscription->id, (int)$subscription->revision];
             $sends[] = $this->openSend($subscription, $payload);
         }
 
         return new PushDeliveryAttempt(
             $sends,
-            function (array $endpoints): void {
-                $this->sendToAgent(
-                    HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE,
-                    new PushSubscriptionsGoneSignalData($endpoints),
-                );
+            function (array $endpoints) use ($userId, $observed): void {
+                foreach ($endpoints as $endpoint) {
+                    [$id, $revision] = $observed[$endpoint];
+                    $this->sendToAgent(
+                        HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE,
+                        new UserPushEndpointGoneSignalData($userId, $id, $revision),
+                    );
+                }
             },
         );
     }
@@ -174,11 +181,13 @@ class PushDeliveryChannelAgent extends AbstractDeliveryChannelAgent
     /**
      * Opens one endpoint's non-blocking send, or a pre-settled failure when it cannot start.
      *
+     * A project or a test stand replaces how one send opens.
+     *
      * @param ObjectPushSubscription $subscription Target device subscription
      * @param string $payload Rendered notification payload
      * @return PushEndpointSend The started send, or a pre-settled failed send
      */
-    private function openSend(ObjectPushSubscription $subscription, string $payload): PushEndpointSend
+    protected function openSend(ObjectPushSubscription $subscription, string $payload): PushEndpointSend
     {
         if ($this->config === null) {
             return PushEndpointSend::failed($subscription->endpoint, 'push channel disabled by invalid config');

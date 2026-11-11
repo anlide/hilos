@@ -161,6 +161,21 @@ final class FrameworkMigrationSourcesTest extends TestCase
         $catalog->verifyCurrentStubs($units);
     }
 
+    public function testRealPushSubscriptionRevisionCarriesPartWithCurrentStubHashesAndChain(): void
+    {
+        $schema = new FrameworkSchemaCatalog();
+        $catalog = new FrameworkMigrationCatalog($schema);
+        $change = '20261111062211778865_HIL-1895_push_subscription_revision';
+        $part = $catalog->part($change, 'push_subscription');
+
+        $this->assertSame(['20261110021316313226_HIL-1923_notification_moments/push_subscription'], $part->requires);
+        $this->assertFalse($part->introducesUnit);
+        $unit = $schema->unit('push_subscription');
+        $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->upPath)), $part->afterStubUpSha256);
+        $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->downPath)), $part->afterStubDownSha256);
+        $catalog->verifyCurrentStubs(['push_subscription']);
+    }
+
     public function testErasureStorageUnitsAreIntroducedOnceInDependencyOrder(): void
     {
         $schema = new FrameworkSchemaCatalog();

@@ -12,6 +12,7 @@ use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\MigrationMarkedFailedException;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
+use Hilos\Database\Entity\Item\PushSubscription as EntityPushSubscription;
 use Hilos\Database\Migration;
 use Hilos\Database\Migration\FrameworkMigrationCatalog;
 use Hilos\Database\Migration\FrameworkMigrationInstaller;
@@ -498,6 +499,107 @@ final class FrameworkMigrationIntegrationTest extends FrameworkIntegrationTestCa
         self::assertSame(2, Migration::migrateUp());
         Database::sql('SELECT * FROM `hilos_notification_delivery` ORDER BY `id`');
         self::assertSame($upRows, Database::rows());
+    }
+
+    public function testPushSubscriptionRevisionSourceChangePreservesEveryLegacyColumn(): void
+    {
+        $part = new FrameworkMigrationCatalog()->part(
+            '20261111062211778865_HIL-1895_push_subscription_revision',
+            'push_subscription',
+        );
+        self::assertSame(
+            ['20261110021316313226_HIL-1923_notification_moments/push_subscription'],
+            $part->requires,
+        );
+        Database::sqlRun(<<<'SQL'
+            CREATE TABLE IF NOT EXISTS `hilos_user` (
+                `id` INT UNSIGNED NOT NULL PRIMARY KEY
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+            SQL);
+        Database::sqlRun('INSERT IGNORE INTO `hilos_user` (`id`) VALUES (41);');
+        Database::sqlRun(<<<'SQL'
+            CREATE TABLE `hilos_push_subscription` (
+                `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `user_id` INT UNSIGNED NOT NULL,
+                `endpoint` VARCHAR(512) NOT NULL,
+                `p256dh` VARCHAR(255) NOT NULL,
+                `auth` VARCHAR(255) NOT NULL,
+                `user_agent` VARCHAR(255) DEFAULT NULL,
+                `device_name` VARCHAR(64) DEFAULT NULL,
+                `endpoint_hash` CHAR(64) NOT NULL,
+                `gone_at` BIGINT NULL DEFAULT NULL,
+                `created_at` BIGINT NOT NULL,
+                `last_seen_at` BIGINT NULL DEFAULT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_push_subscription_endpoint` (`endpoint`),
+                KEY `idx_push_subscription_user` (`user_id`),
+                CONSTRAINT `fk_push_subscription_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+            SQL);
+
+        Database::sql(
+            'INSERT INTO `hilos_push_subscription` '
+            . '(`id`, `user_id`, `endpoint`, `p256dh`, `auth`, `user_agent`, '
+            . '`device_name`, `endpoint_hash`, `gone_at`, `created_at`, `last_seen_at`) '
+            . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+                1, 41, 'https://push.example/live', 'pk1', 'auth1', 'UA1',
+                'Chrome', hash('sha256', 'https://push.example/live'), null, 1767225600123, 1767225600456,
+            ],
+        );
+        Database::sql(
+            'INSERT INTO `hilos_push_subscription` '
+            . '(`id`, `user_id`, `endpoint`, `p256dh`, `auth`, `user_agent`, '
+            . '`device_name`, `endpoint_hash`, `gone_at`, `created_at`, `last_seen_at`) '
+            . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+                2, 41, 'https://push.example/gone', 'pk2', 'auth2', 'UA2',
+                'Firefox', hash('sha256', 'https://push.example/gone'), 1767227400000, 1767225600123, 1767225600456,
+            ],
+        );
+        Database::sql(
+            'INSERT INTO `hilos_push_subscription` '
+            . '(`id`, `user_id`, `endpoint`, `p256dh`, `auth`, `user_agent`, '
+            . '`device_name`, `endpoint_hash`, `gone_at`, `created_at`, `last_seen_at`) '
+            . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+                3, 41, 'https://push.example/no-seen', 'pk3', 'auth3', null,
+                null, hash('sha256', 'https://push.example/no-seen'), null, 1767225600123, null,
+            ],
+        );
+        Database::sql('SELECT * FROM `hilos_push_subscription` ORDER BY `id`');
+        $legacy = Database::rows();
+
+        file_put_contents($this->project->root . '/9401_push_subscription_revision.sql', $part->upSql);
+        file_put_contents($this->project->root . '/9401_push_subscription_revision_down.sql', $part->downSql);
+
+        self::assertSame(2, Migration::migrateUp());
+        self::assertSame([], EntitySchemaAudit::audit([EntityPushSubscription::class]));
+        Database::sql('SELECT * FROM `hilos_push_subscription` ORDER BY `id`');
+        $upRows = Database::rows();
+        self::assertCount(3, $upRows);
+        self::assertSame(EntityPushSubscription::_columns, array_keys($upRows[0]));
+        foreach ($upRows as $offset => $row) {
+            self::assertArrayHasKey('revision', $row);
+            self::assertSame('1', $row['revision']);
+            unset($row['revision']);
+            self::assertSame($legacy[$offset], $row);
+        }
+
+        self::assertSame(0, Migration::migrateUp());
+
+        self::assertSame(1, Migration::migrateDown(self::ANCHOR));
+        self::assertNull($this->column(EntityPushSubscription::_table, EntityPushSubscription::revision));
+        Database::sql('SELECT * FROM `hilos_push_subscription` ORDER BY `id`');
+        self::assertSame($legacy, Database::rows());
+
+        self::assertSame(1, Migration::migrateUp());
+        Database::sql('SELECT * FROM `hilos_push_subscription` ORDER BY `id`');
+        self::assertSame($upRows, Database::rows());
+
+        Database::sqlRun('DROP TABLE `hilos_push_subscription`');
+        Database::sqlRun((string)file_get_contents((new FrameworkSchemaCatalog())->unit('push_subscription')->upPath));
+        self::assertSame([], EntitySchemaAudit::audit([EntityPushSubscription::class]));
     }
 
     /**

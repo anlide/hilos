@@ -19,7 +19,6 @@ use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
  */
 class DbWriterTransitionCatalog
 {
-    protected const string PUSH_GONE = 'HIL-1895';
     protected const string FACTOR_REPLACE = 'HIL-1903';
     protected const string BACKUP_CODES_REPLACE = 'HIL-1904';
     protected const string PUSH_OWN_UPDATE = 'HIL-1905';
@@ -164,8 +163,7 @@ class DbWriterTransitionCatalog
         $definitions[HilosDbContext::pushSubscriptions] = $this->states(
             [...$this->claim($notifications, DbWriterClaimWidth::Whole, TruthSourceOperation::Add),
                 ...$this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Update, TruthSourceOperation::Remove)],
-            [self::PUSH_GONE => $this->claim($notifications, DbWriterClaimWidth::Whole, TruthSourceOperation::Update),
-                self::PUSH_OWN_UPDATE => $this->claim($notifications, DbWriterClaimWidth::Whole, TruthSourceOperation::Update),
+            [self::PUSH_OWN_UPDATE => $this->claim($notifications, DbWriterClaimWidth::Whole, TruthSourceOperation::Update),
                 self::PUSH_FOREIGN_RECREATE => $this->claim($notifications, DbWriterClaimWidth::Whole, TruthSourceOperation::Update),
                 self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
         );

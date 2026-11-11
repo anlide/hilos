@@ -10,7 +10,6 @@ COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/Files.php 2 
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/Identities.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/Notifications.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/PasskeyCredentials.php 1 # HIL-1531
-COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/PushSubscriptions.php 1 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/RegistrationReservations.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/SecondFactorBackupCodes.php 2 # HIL-1531
 COLLECTION-OBJECT-LIST framework/backend/Database/Object/Collection/SecondFactorResets.php 3 # HIL-1531
@@ -41,7 +40,6 @@ COLLECTION-SQL-READ framework/backend/Database/Object/Collection/LegalAcceptance
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/NotificationPreferences.php 3 # HIL-1533
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/Notifications.php 2 # HIL-1533
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/PasskeyCredentials.php 6 # HIL-1533
-COLLECTION-SQL-READ framework/backend/Database/Object/Collection/PushSubscriptions.php 3 # HIL-1533
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/RegistrationReservations.php 3 # HIL-1533
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/SecondFactorBackupCodes.php 1 # HIL-1533
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/SecondFactorResets.php 4 # HIL-1533

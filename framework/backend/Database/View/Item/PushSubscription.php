@@ -27,13 +27,14 @@ use Hilos\HilosException;
  * @property-read ?int $goneAt
  * @property-read int $createdAt
  * @property-read ?int $lastSeenAt
+ * @property-read int $revision
  */
 class PushSubscription extends DbItem
 {
     /**
      * Magic getter for push subscription properties.
      *
-     * @param string $name Property name (id, userId, endpoint, p256dh, auth, userAgent, createdAt, lastSeenAt)
+     * @param string $name Property name (id, userId, endpoint, p256dh, auth, userAgent, createdAt, lastSeenAt, revision)
      * @return mixed Property value
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
@@ -53,6 +54,7 @@ class PushSubscription extends DbItem
             ObjectPushSubscription::goneAt => $this->_object->goneAt,
             ObjectPushSubscription::createdAt => $this->_object->createdAt,
             ObjectPushSubscription::lastSeenAt => $this->_object->lastSeenAt,
+            ObjectPushSubscription::revision => $this->_object->revision,
             default => parent::__get($name),
         };
     }

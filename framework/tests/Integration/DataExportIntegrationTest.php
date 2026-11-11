@@ -196,8 +196,8 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             . "VALUES (7, 'My app', 'TOTP_SECRET', '2026-01-02 00:00:00')");
         Database::sqlRun("INSERT INTO hilos_second_factor_backup_code (user_id, code) VALUES (7, 'BACKUP_CODE')");
         Database::sqlRun("INSERT INTO hilos_push_subscription (user_id, endpoint, p256dh, auth, endpoint_hash, "
-            . "device_name, user_agent, `created_at`) "
-            . "VALUES (7, 'https://SECRET_ENDPOINT', 'P256DH_SECRET', 'AUTH_SECRET', REPEAT('a', 64), 'My device', 'RAW_USER_AGENT', 1767225600123)");
+            . "device_name, user_agent, `created_at`, `revision`) VALUES "
+            . "(7, 'https://SECRET_ENDPOINT', 'P256DH_SECRET', 'AUTH_SECRET', REPEAT('a', 64), 'My device', 'RAW_USER_AGENT', 1767225600123, 1)");
         Database::sqlRun("INSERT INTO hilos_notification (user_id, type, severity, title, body, `created_at`) VALUES "
             . "(7, 'notice', 'info', 'My notification', 'My body', 1767225600123), "
             . "(8, 'notice', 'info', 'Foreign notification', 'Foreign body', 1767225600123)");

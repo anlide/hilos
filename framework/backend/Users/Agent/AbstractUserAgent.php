@@ -92,6 +92,7 @@ use Hilos\Users\DTO\UserPhotoPutDoneSignalData;
 use Hilos\Users\DTO\UserPhotoPutSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveDoneSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveSignalData;
+use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
@@ -152,9 +153,9 @@ use Throwable;
  * accepts the person's pick (HIL-1427). The agent writes and always answers - a refusal included,
  * because the coordinator continues only on the answer and something is waiting on it - and the
  * coordinator does what follows the write. Background reports of the last usable browser zone
- * and an OAuth identity's provider name are written without an answer; their refusals go to this
- * agent's log. Creating a way in, an
- * enrolment, a set of backup codes or a removal stays with the libraries that create it. When the
+ * and an OAuth identity's provider name, and the transport's dead-endpoint reports, are written
+ * without an answer; their refusals go to this agent's log. Creating a way in, an enrolment,
+ * a set of backup codes or a removal stays with the libraries that create it. When the
  * person is erased, or folded into someone else, the agent stops itself.
  */
 abstract class AbstractUserAgent extends AbstractAgent
@@ -302,6 +303,10 @@ abstract class AbstractUserAgent extends AbstractAgent
             AgentSignalConfigKey::INDEX_FIELD => UserPushRemoveSignalData::userId,
             AgentSignalConfigKey::DTO => UserPushRemoveSignalData::class,
         ],
+        HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserPushEndpointGoneSignalData::userId,
+            AgentSignalConfigKey::DTO => UserPushEndpointGoneSignalData::class,
+        ],
     ];
 
     /** @var array<string, list<TruthSourceOperation>> The person's row, excluding creation and removal. */
@@ -426,9 +431,9 @@ abstract class AbstractUserAgent extends AbstractAgent
      * subscription dropped or a device removed are answered the same way (HIL-1408): the notifications
      * library waits on the answer, and the tabs hear a read or a channel change only after the write.
      * A standing deletion canceled, and a profile photo set or removed, are answered the same way
-     * (HIL-1409): the users library waits on the answer. The last zone a browser named is the one
-     * frame not answered (HIL-1582): the sessions library reports it in the background, so a refusal
-     * is written to this agent's log.
+     * (HIL-1409): the users library waits on the answer. The sessions library reports the last zone
+     * a browser named in the background (HIL-1582). That report, the provider-name report and the
+     * transport's dead-endpoint report are not answered; their refusals go to this agent's log.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
@@ -920,6 +925,20 @@ abstract class AbstractUserAgent extends AbstractAgent
                     $pushRemove,
                     $this->flagRefusal(fn () => $this->removePush($pushRemove->subscriptionId), 'Push removal'),
                 ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE:
+                $gone = $data->data;
+                if (!$gone instanceof UserPushEndpointGoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserPushEndpointGoneSignalData::class, $gone);
+                }
+
+                $this->refuseAnotherPerson($gone->userId, $name);
+                $this->applyPushEndpointGone($gone);
+                if (isset(Hilos::$db->userMerges[$this->userId])) {
+                    $this->selfStop();
+                }
 
                 return;
 
@@ -1674,6 +1693,22 @@ abstract class AbstractUserAgent extends AbstractAgent
         }
 
         $this->sendToAgent($ask->replySignal, UserTimeZoneWriteDoneSignalData::to($ask, $refusal));
+    }
+
+    /**
+     * Writes the transport's report without an answer, including for a folded account; refusals are logged here.
+     *
+     * @param UserPushEndpointGoneSignalData $report Captured subscription and its revision
+     */
+    private function applyPushEndpointGone(UserPushEndpointGoneSignalData $report): void
+    {
+        try {
+            Hilos::$db->pushSubscriptions->actions->markGoneOwned($this->userId, $report->subscriptionId, $report->revision);
+        } catch (WiringRefusal $wiring) {
+            $this->logAgentError("Push device #{$report->subscriptionId} for #{$this->userId} refused by wiring: {$wiring->getMessage()}");
+        } catch (Throwable $e) {
+            $this->logAgentError("Push device #{$report->subscriptionId} for #{$this->userId} not marked gone: {$e->getMessage()}");
+        }
     }
 
     /**

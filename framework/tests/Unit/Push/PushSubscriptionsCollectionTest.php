@@ -28,7 +28,7 @@ final class PushSubscriptionsCollectionTest extends TestCase
         Schema::reset();
         $subscriptions = ObjectPushSubscriptions::initDB(Objects::LAZY_STRATEGY_KEY);
 
-        self::assertSame([], $subscriptions->forUser(1));
+        self::assertSame([], $subscriptions->forUser(1)->toArray());
     }
 
     public function testSubscribeRejectsAnEmptyEndpoint(): void

@@ -167,7 +167,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'notifications' => ['HIL-1952'],
             'notificationDeliveries' => ['HIL-1910', 'HIL-1952'],
             'notificationPreferences' => ['HIL-1952'],
-            'pushSubscriptions' => ['HIL-1895', 'HIL-1905', 'HIL-1906', 'HIL-1952'],
+            'pushSubscriptions' => ['HIL-1905', 'HIL-1906', 'HIL-1952'],
             'dataExports' => ['HIL-1952'],
             'userRenames' => ['HIL-1952'],
             'userPhotos' => ['HIL-1952'],
@@ -257,13 +257,12 @@ final class DbWriterTransitionCatalogTest extends TestCase
         $this->assertVector([UserAgent::class . ':set:add,remove,update'], $states['']);
     }
 
-    /** Every remaining push upsert or dead-endpoint path keeps the library's shared Update. */
+    /** Every remaining push upsert path keeps the library's shared Update. */
     public function testPushUpdateSurvivesUntilItsLastOrdinaryUse(): void
     {
         $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['pushSubscriptions']);
         self::assertSame([
-            '', 'HIL-1895,HIL-1905,HIL-1906,HIL-1952', 'HIL-1895,HIL-1905,HIL-1952',
-            'HIL-1895,HIL-1906,HIL-1952', 'HIL-1895,HIL-1952',
+            '',
             'HIL-1905,HIL-1906,HIL-1952', 'HIL-1905,HIL-1952', 'HIL-1906,HIL-1952', 'HIL-1952',
         ], array_keys($states));
         foreach ($states as $pending => $state) {
@@ -603,13 +602,6 @@ final class DbWriterTransitionCatalogTest extends TestCase
                 '' => ['person:set:add,remove,update'],
             ],
             'pushSubscriptions' => [
-                'HIL-1895,HIL-1905,HIL-1906,HIL-1952' => [
-                    'notifications:whole:add,update', 'person:set:remove,update', 'holder:whole:remove'],
-                'HIL-1895,HIL-1905,HIL-1952' => [
-                    'notifications:whole:add,update', 'person:set:remove,update', 'holder:whole:remove'],
-                'HIL-1895,HIL-1906,HIL-1952' => [
-                    'notifications:whole:add,update', 'person:set:remove,update', 'holder:whole:remove'],
-                'HIL-1895,HIL-1952' => ['notifications:whole:add,update', 'person:set:remove,update', 'holder:whole:remove'],
                 'HIL-1905,HIL-1906,HIL-1952' => [
                     'notifications:whole:add,update', 'person:set:remove,update', 'holder:whole:remove'],
                 'HIL-1905,HIL-1952' => ['notifications:whole:add,update', 'person:set:remove,update', 'holder:whole:remove'],

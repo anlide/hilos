@@ -38,6 +38,9 @@ class PushSubscription extends Entity
     public const string gone_at = 'gone_at';
     public const string created_at = 'created_at';
     public const string last_seen_at = 'last_seen_at';
+    public const string revision = 'revision';
+
+    public const int INITIAL_REVISION = 1;
 
     public const string _table = 'hilos_push_subscription';
     public const string _primary = self::id;
@@ -53,6 +56,7 @@ class PushSubscription extends Entity
         self::gone_at,
         self::created_at,
         self::last_seen_at,
+        self::revision,
     ];
 
     public const array _moments = [self::gone_at, self::created_at, self::last_seen_at];
@@ -69,6 +73,7 @@ class PushSubscription extends Entity
         self::gone_at => PhpType::INTEGER->value,
         self::created_at => PhpType::INTEGER->value,
         self::last_seen_at => PhpType::INTEGER->value,
+        self::revision => PhpType::INTEGER->value,
     ];
 
     public const array _foreign = [
@@ -101,4 +106,5 @@ class PushSubscription extends Entity
     public ?int $gone_at = null;
     public int $created_at;
     public ?int $last_seen_at = null;
+    public int $revision;
 }

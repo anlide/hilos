@@ -196,6 +196,7 @@ final class ProfileSessionsListTest extends IntegrationTestCase
             $device->deviceName = 'Device ' . $index;
             $device->createdAt = 1767225600000;
             $device->goneAt = $goneAt;
+            $device->revision = 1;
             $device->sync();
         }
 

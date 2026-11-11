@@ -199,6 +199,13 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                         'downSha256' => '963d4af66e35bb34658aaa7e1d83a325543ba6442eb5d94aafd7edd77cb367a3',
                         'requires' => [],
                     ],
+                    'push_subscription' => [
+                        'changeId' => '20261111062211778865_HIL-1895_push_subscription_revision',
+                        'file' => '013_framework_change_c12437770c3603bc651bbe5e433c0e256152f4bf69e514b554f40980cf472469',
+                        'upSha256' => 'e72096f39952436de92a20a20c9e8ca8a3ba3256f2f13c064e8ae493ce7bc22e',
+                        'downSha256' => 'd7276ca07e8844fd7267ae973c0be04fc3428635bb729b19df1dc75d6cd52551',
+                        'requires' => ['20261110021316313226_HIL-1923_notification_moments/push_subscription'],
+                    ],
                 ];
                 $origins = [$origin];
                 $coveredParts = $origin->parts;
@@ -668,10 +675,15 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 self::assertFalse($source->introducesUnit);
                 self::assertSame($key === 'notification_delivery'
                     ? ['20261108080825608007_HIL-1893_delivery_routing_key/notification_delivery'] : [], $source->requires);
-                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
-                    $source->afterStubUpSha256);
-                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
-                    $source->afterStubDownSha256);
+                if ($key === 'push_subscription') {
+                    self::assertSame('c536ba46e83beccb57a7088f7739b308e15fcc5d97372dd96e510f8e58727658', $source->afterStubUpSha256);
+                    self::assertSame('854eda7a426d1cf2cb89d4680c1642f819de5281b275d4927cce08c47613e067', $source->afterStubDownSha256);
+                } else {
+                    self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
+                        $source->afterStubUpSha256);
+                    self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
+                        $source->afterStubDownSha256);
+                }
                 $origins[] = $change;
             }
             $personMomentIndices = [
@@ -754,6 +766,25 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                     $source->afterStubDownSha256);
                 $origins[] = $change;
             }
+            $pushRevisionIndices = [158, 115, 115, 96, 96, 98];
+            $base = $project->root . '/' . sprintf('%03d', $pushRevisionIndices[$index])
+                . '_framework_change_c12437770c3603bc651bbe5e433c0e256152f4bf69e514b554f40980cf472469';
+            $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+            self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+            self::assertSame(['push_subscription'], $change->units);
+            self::assertCount(1, $change->parts);
+            self::assertSame('20261111062211778865_HIL-1895_push_subscription_revision/push_subscription', $change->parts[0]->key());
+            $source = $catalog->part($change->parts[0]->changeId, 'push_subscription');
+            self::assertFalse($source->introducesUnit);
+            self::assertSame(
+                ['20261110021316313226_HIL-1923_notification_moments/push_subscription'],
+                $source->requires,
+            );
+            self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('push_subscription')->upPath)),
+                $source->afterStubUpSha256);
+            self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('push_subscription')->downPath)),
+                $source->afterStubDownSha256);
+            $origins[] = $change;
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);
@@ -873,15 +904,39 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             return $catalog->part($changeId, $unit);
         }, $baselinePartKeys);
         self::assertSame($this->partRecords($baselineParts), $this->partRecords($origin->parts));
-        // No late framework change has reached this track yet: the baseline pair is all of it.
-        self::assertSame([$base . '.sql', $base . '_down.sql'], glob($root . '/*.sql'));
+        $changeBase = $root . '/002_framework_change_c12437770c3603bc651bbe5e433c0e256152f4bf69e514b554f40980cf472469';
+        $change = $catalog->verifyPair(FsPath::read($changeBase . '.sql'), FsPath::read($changeBase . '_down.sql'));
+        self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+        self::assertSame(['push_subscription'], $change->units);
+        self::assertCount(1, $change->parts);
+        self::assertSame('20261111062211778865_HIL-1895_push_subscription_revision/push_subscription', $change->parts[0]->key());
+        $source = $catalog->part($change->parts[0]->changeId, 'push_subscription');
+        self::assertFalse($source->introducesUnit);
+        self::assertSame(
+            ['20261110021316313226_HIL-1923_notification_moments/push_subscription'],
+            $source->requires,
+        );
+        self::assertSame(
+            FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('push_subscription')->upPath)),
+            $source->afterStubUpSha256,
+        );
+        self::assertSame(
+            FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('push_subscription')->downPath)),
+            $source->afterStubDownSha256,
+        );
+        self::assertSame([
+            $base . '.sql',
+            $base . '_down.sql',
+            $changeBase . '.sql',
+            $changeBase . '_down.sql',
+        ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);
         self::assertSame(
             $this->partRecords($catalog->partsForUnits($selectedUnits)),
-            $this->partRecords($origin->parts),
+            $this->partRecords([...$origin->parts, ...$change->parts]),
         );
-        self::assertSame([], $catalog->missingParts($selectedUnits, [$origin]));
+        self::assertSame([], $catalog->missingParts($selectedUnits, [$origin, $change]));
     }
 
     /**

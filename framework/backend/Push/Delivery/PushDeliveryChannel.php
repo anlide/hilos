@@ -96,7 +96,7 @@ class PushDeliveryChannel extends AbstractDeliveryChannel
 
         $endpoints = $subscriptions->forUser($userId);
 
-        return $endpoints === [] ? null : (string) count($endpoints);
+        return count($endpoints) === 0 ? null : (string) count($endpoints);
     }
 
     /**

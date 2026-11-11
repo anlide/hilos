@@ -15,6 +15,9 @@
 -- user_id points at hilos_user with RESTRICT and is indexed for delivery lookup.
 -- Account erasure deletes these rows in its transaction. `device_name` is the shared browser/platform
 -- label derived from `user_agent`; both it and `last_seen_at` are informational.
+-- `revision` is the registration counter: starts at 1, increments on each re-subscription or
+-- renewal of the same endpoint, and correlates invalidation reports (`markGoneOwned`) so a
+-- delayed gone signal from an older registration does not expire a newer active one.
 
 CREATE TABLE `hilos_push_subscription` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -28,6 +31,7 @@ CREATE TABLE `hilos_push_subscription` (
     `gone_at` BIGINT NULL DEFAULT NULL,
     `created_at` BIGINT NOT NULL,
     `last_seen_at` BIGINT NULL DEFAULT NULL,
+    `revision` BIGINT NOT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_push_subscription_endpoint` (`endpoint`),
     KEY `idx_push_subscription_user` (`user_id`),

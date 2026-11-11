@@ -165,6 +165,7 @@ use Hilos\Users\DTO\UserPhotoPutDoneSignalData;
 use Hilos\Users\DTO\UserPhotoPutSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveDoneSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveSignalData;
+use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
@@ -1178,6 +1179,13 @@ final class HilosSignalConstants
      * Carried by {@see UserPushRemoveSignalData}.
      */
     public const string HILOS_USER_PUSH_REMOVE = 'hilos_user_push_remove';
+
+    /**
+     * Push delivery channel → the person's agent: the transport said this device's endpoint is dead (HIL-1895).
+     *
+     * Carried by {@see UserPushEndpointGoneSignalData}. Not answered.
+     */
+    public const string HILOS_USER_PUSH_ENDPOINT_GONE = 'hilos_user_push_endpoint_gone';
 
     /**
      * The person's agent → notifications library: the write landed, or why not (HIL-1408).
@@ -3132,9 +3140,6 @@ final class HilosSignalConstants
      * no raw-send intake, so this is the channel's only signal.
      */
     public const string HILOS_PUSH_DELIVER = 'hilos_push_deliver';
-
-    /** Push delivery agent → notifications library: endpoints reported gone by the service. */
-    public const string HILOS_PUSH_SUBSCRIPTIONS_GONE = 'hilos_push_subscriptions_gone';
 
     // ── Hilos analytics journal: processes → the node's journal agent ↔ the cluster writer (agent signal) ──
     /**

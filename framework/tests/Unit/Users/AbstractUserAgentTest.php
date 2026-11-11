@@ -14,6 +14,7 @@ use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Agent\Exception\InvalidAgentIndexException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
@@ -61,6 +62,7 @@ use Hilos\Users\DTO\UserPasswordRehashSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Users\DTO\UserPhotoPutSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveSignalData;
+use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
@@ -322,6 +324,7 @@ final class AbstractUserAgentTest extends TestCase
             HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => UserNotificationChannelSetSignalData::class,
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => UserPushUnsubscribeSignalData::class,
             HilosSignalConstants::HILOS_USER_PUSH_REMOVE => UserPushRemoveSignalData::class,
+            HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE => UserPushEndpointGoneSignalData::class,
         ], array_map(
             static fn (array $config): string => $config[AgentSignalConfigKey::DTO],
             TestUserAgent::AGENT_SIGNALS,
@@ -329,6 +332,28 @@ final class AbstractUserAgentTest extends TestCase
         foreach (TestUserAgent::AGENT_SIGNALS as $config) {
             self::assertSame('userId', $config[AgentSignalConfigKey::INDEX_FIELD]);
         }
+    }
+
+    public function testADeadEndpointReportCannotRetargetAnotherPersonsAgent(): void
+    {
+        $this->expectException(AgentException::class);
+
+        new TestUserAgent('42')->onSignalAgent(
+            new AgentSignalData(new UserPushEndpointGoneSignalData(43, 91, 1)),
+            'push-channel',
+            HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE,
+        );
+    }
+
+    public function testADeadEndpointReportRefusesAnUnparsedPayloadBeforeReadingIt(): void
+    {
+        $this->expectException(InvalidAgentSignalPayloadException::class);
+
+        new TestUserAgent('42')->onSignalAgent(
+            new AgentSignalData(new SignalData(['userId' => 42, 'subscriptionId' => 91, 'lastSeenAt' => null])),
+            'push-channel',
+            HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE,
+        );
     }
 
     public function testDeletingThePersonsOwnRowAsksTheAgentToStop(): void

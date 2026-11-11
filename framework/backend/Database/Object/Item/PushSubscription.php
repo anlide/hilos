@@ -31,6 +31,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property ?int $goneAt
  * @property int $createdAt
  * @property ?int $lastSeenAt
+ * @property int $revision
  */
 class PushSubscription extends Object_
 {
@@ -47,11 +48,12 @@ class PushSubscription extends Object_
     public const string goneAt = 'goneAt';
     public const string createdAt = 'createdAt';
     public const string lastSeenAt = 'lastSeenAt';
+    public const string revision = 'revision';
 
     /**
      * Magic getter for entity properties.
      *
-     * @param string $property Property name (id, userId, endpoint, p256dh, auth, userAgent, createdAt, lastSeenAt)
+     * @param string $property Property name (id, userId, endpoint, p256dh, auth, userAgent, createdAt, lastSeenAt, revision)
      * @return mixed Property value
      * @throws DatabaseException When the property is not a known PushSubscription field
      */
@@ -69,6 +71,7 @@ class PushSubscription extends Object_
             self::goneAt => $this->entity->gone_at,
             self::createdAt => $this->entity->created_at,
             self::lastSeenAt => $this->entity->last_seen_at,
+            self::revision => $this->entity->revision,
             default => parent::__get($property),
         };
     }
@@ -76,7 +79,7 @@ class PushSubscription extends Object_
     /**
      * Magic setter for entity properties.
      *
-     * @param string $property Property name (userId, endpoint, p256dh, auth, userAgent, createdAt, lastSeenAt)
+     * @param string $property Property name (userId, endpoint, p256dh, auth, userAgent, createdAt, lastSeenAt, revision)
      * @param mixed $value Value to set
      * @throws DatabaseException When the property cannot be set on a PushSubscription
      */
@@ -93,6 +96,7 @@ class PushSubscription extends Object_
             self::goneAt => $this->entity->gone_at = $value === null ? null : (int)$value,
             self::createdAt => $this->entity->created_at = (int)$value,
             self::lastSeenAt => $this->entity->last_seen_at = $value === null ? null : (int)$value,
+            self::revision => $this->entity->revision = (int)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -100,7 +104,7 @@ class PushSubscription extends Object_
     /**
      * Converts the subscription to an associative array.
      *
-     * @return array<string, mixed> Subscription data (id, userId, endpoint, p256dh, auth, userAgent, createdAt, lastSeenAt)
+     * @return array<string, mixed> Subscription data (id, userId, endpoint, p256dh, auth, userAgent, createdAt, lastSeenAt, revision)
      */
     public function toArray(): array
     {
@@ -116,6 +120,7 @@ class PushSubscription extends Object_
             self::goneAt => $this->entity->gone_at,
             self::createdAt => $this->entity->created_at,
             self::lastSeenAt => $this->entity->last_seen_at,
+            self::revision => $this->entity->revision,
         ];
     }
 }

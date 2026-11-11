@@ -71,7 +71,6 @@ use Hilos\Notification\NotificationSignalName;
 use Hilos\Pages\Communications\AbstractHilosCommunicationsDeliveriesPage;
 use Hilos\Push\DTO\PushSubscribeActionDTO;
 use Hilos\Push\DTO\PushRemoveActionDTO;
-use Hilos\Push\DTO\PushSubscriptionsGoneSignalData;
 use Hilos\Push\DTO\PushUnsubscribeActionDTO;
 use Hilos\Push\PushSubscriptionAction;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -119,7 +118,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
 
     /**
      * Creating a notification, the operations over the delivery journal, and a push subscription
-     * brought into being or marked gone.
+     * brought into being or renewed by a device subscribing.
      *
      * Nothing may write a framework collection until somebody says who owns it, so a project that
      * never registers this agent simply has no notifications - rather than notifications written
@@ -131,8 +130,8 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      *
      * Delivery rows are created here and still reset for retry here until HIL-1910. Their
      * channel or shard updates attempts and removes expired terminal rows; this library has no
-     * Remove grant. A push row is created and updated here - a device subscribing, or a transport
-     * marking an endpoint gone - and removed by the person's agent.
+     * Remove grant. A push row is created and updated here - a device subscribing - and marked gone or
+     * removed by the person's agent.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
@@ -172,16 +171,13 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * that directory need not be on this library's node.
      * {@see HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT} is absent: it is the receipt this
      * library sends back, and the backup agent declares it.
-     * The fourth comes from a push delivery shard: it reports endpoints the transport found
-     * gone, and this library marks the rows because it owns the subscription table.
-     * The fifth is the person's agent answering a write this library forwarded (HIL-1408):
+     * The fourth is the person's agent answering a write this library forwarded (HIL-1408):
      * the browser action waiting on it is resumed here.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_NOTIFICATION_EMIT => NotificationEmitSignalData::class,
         HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
         HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => DeferredNotificationHandoverSignalData::class,
-        HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => PushSubscriptionsGoneSignalData::class,
         HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE => HandoverAnswerSignalData::class,
     ];
 
@@ -313,18 +309,6 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
                     );
                 }
                 $this->retryDelivery($data->data);
-
-                return;
-
-            case HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE:
-                if (!$data->data instanceof PushSubscriptionsGoneSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        PushSubscriptionsGoneSignalData::class,
-                        $data->data,
-                    );
-                }
-                Hilos::$db->pushSubscriptions->actions->markGone($data->data->endpoints);
 
                 return;
 

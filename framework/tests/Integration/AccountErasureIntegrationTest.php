@@ -837,8 +837,8 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             [$userId, 'email'],
         );
         Database::sqlRun(
-            'INSERT INTO `hilos_push_subscription` (`user_id`, `endpoint`, `p256dh`, `auth`, `endpoint_hash`, `created_at`) '
-            . 'VALUES (?, ?, ?, ?, ?, 1767225600123)',
+            'INSERT INTO `hilos_push_subscription` (`user_id`, `endpoint`, `p256dh`, `auth`, `endpoint_hash`, `created_at`, `revision`) '
+            . 'VALUES (?, ?, ?, ?, ?, 1767225600123, 1)',
             [$userId, "https://push.example.test/{$userId}", 'key', 'secret', hash('sha256', (string)$userId)],
         );
         Database::sqlRun(

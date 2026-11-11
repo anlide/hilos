@@ -8,7 +8,6 @@ use Hilos\BaseDTO;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Push\DTO\PushRemoveActionDTO;
 use Hilos\Push\DTO\PushSubscribeActionDTO;
-use Hilos\Push\DTO\PushSubscriptionsGoneSignalData;
 use Hilos\Push\DTO\PushUnsubscribeActionDTO;
 use Hilos\Push\PushSubscriptionAction;
 use PHPUnit\Framework\TestCase;
@@ -101,12 +100,5 @@ final class PushSubscriptionActionDTOTest extends TestCase
 
         self::assertSame(17, $restored->subscriptionId);
         self::assertSame(PushSubscriptionAction::REMOVE, $restored->getAction());
-    }
-
-    public function testGoneEndpointsRoundtripAsAStringList(): void
-    {
-        $frame = new PushSubscriptionsGoneSignalData(['https://push.example/a']);
-
-        self::assertEquals($frame, PushSubscriptionsGoneSignalData::fromArray($frame->toArray()));
     }
 }

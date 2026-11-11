@@ -19,6 +19,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
 use Hilos\Database\Schema\Schema;
 use Hilos\Hilos;
+use Hilos\Push\Delivery\PushDeliveryChannel;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -78,9 +79,10 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
             'Mozilla/5.0 (Macintosh) Chrome/120 Safari/537.36',
         );
 
-        $created = Database::sql('SELECT created_at, last_seen_at, gone_at FROM hilos_push_subscription')->firstRow();
+        $created = Database::sql('SELECT created_at, last_seen_at, gone_at, revision FROM hilos_push_subscription')->firstRow();
         self::assertSame($created['created_at'], $created['last_seen_at']);
         self::assertNull($created['gone_at']);
+        self::assertSame('1', $created['revision']);
         self::assertGreaterThan(1_000_000_000_000, (int)$created['created_at']);
         $subscriptions = $this->subscriptions();
         self::assertNotNull(Database::sql(
@@ -92,16 +94,23 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
         self::assertCount(1, $active);
         self::assertSame('Chrome on macOS', $active[0]->deviceName);
         self::assertSame(hash('sha256', self::ENDPOINT), $active[0]->endpointHash);
+        self::assertSame(1, $active[0]->revision);
+        self::assertSame('1', new PushDeliveryChannel()->resolveAddress(41));
 
-        self::assertSame(1, Hilos::$db->pushSubscriptions->actions->markGone([self::ENDPOINT]));
-        self::assertSame([], $subscriptions->forUser(41));
+        $id = $active[0]->id;
+        self::assertNotNull($id);
+        $revision = $active[0]->revision;
+        self::assertFalse(Hilos::$db->pushSubscriptions->actions->markGoneOwned(99, $id, $revision));
+        self::assertCount(1, $subscriptions->forUser(41));
+        self::assertTrue(Hilos::$db->pushSubscriptions->actions->markGoneOwned(41, $id, $revision));
+        self::assertSame([], $subscriptions->forUser(41)->toArray());
+        self::assertNull(new PushDeliveryChannel()->resolveAddress(41));
         $gone = Database::sql('SELECT gone_at FROM hilos_push_subscription')->firstRow()['gone_at'];
         self::assertGreaterThanOrEqual((int)$created['created_at'], (int)$gone);
         self::assertLessThanOrEqual(TimeHelper::nowMs(), (int)$gone);
-        self::assertSame(0, Hilos::$db->pushSubscriptions->actions->markGone([self::ENDPOINT]));
+        self::assertFalse(Hilos::$db->pushSubscriptions->actions->markGoneOwned(41, $id, $revision));
         self::assertSame($gone, Database::sql('SELECT gone_at FROM hilos_push_subscription')->firstRow()['gone_at']);
         // Fixed old moments make a refreshed last-seen value observable without a clock wait.
-        $id = (int)Database::sql('SELECT id FROM hilos_push_subscription')->firstRow()['id'];
         Hilos::$db->pushSubscriptions->getObjectCollection()[$id]->createdAt = 1767225600123;
         Hilos::$db->pushSubscriptions->getObjectCollection()[$id]->lastSeenAt = 1767225600456;
         Hilos::$db->pushSubscriptions->getObjectCollection()[$id]->sync();
@@ -115,11 +124,101 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
         );
         self::assertCount(1, $subscriptions->forUser(41));
         self::assertNull($subscriptions->forUser(41)[0]->goneAt);
-        $resubscribed = Database::sql('SELECT created_at, last_seen_at, gone_at FROM hilos_push_subscription')->firstRow();
+        self::assertSame(2, $subscriptions->forUser(41)[0]->revision);
+        $resubscribed = Database::sql('SELECT id, created_at, last_seen_at, gone_at, revision FROM hilos_push_subscription')->firstRow();
+        self::assertSame((string)$id, $resubscribed['id']);
         self::assertSame('1767225600123', $resubscribed['created_at']);
         self::assertGreaterThan(1767225600456, (int)$resubscribed['last_seen_at']);
         self::assertLessThanOrEqual(TimeHelper::nowMs(), (int)$resubscribed['last_seen_at']);
         self::assertNull($resubscribed['gone_at']);
+        self::assertSame('2', $resubscribed['revision']);
+
+        // A third subscribe with same keys strictly increments revision with the same id
+        Hilos::$db->pushSubscriptions->actions->subscribe(
+            41,
+            self::ENDPOINT,
+            'rotated-public-key',
+            'rotated-auth-secret',
+            'Mozilla/5.0 (Macintosh) Chrome/120 Safari/537.36',
+        );
+        $third = Database::sql('SELECT id, revision FROM hilos_push_subscription')->firstRow();
+        self::assertSame((string)$id, $third['id']);
+        self::assertSame('3', $third['revision']);
+    }
+
+    public function testOwnedGoneChecksTheFreshRevisionEvenWhenTheHeldDeviceHasNotReceivedTheRenewal(): void
+    {
+        Hilos::$db->pushSubscriptions->actions->subscribe(41, self::ENDPOINT, 'pk', 'auth', null);
+        $subscription = $this->subscriptions()->forUser(41)[0];
+        self::assertNotNull($subscription->id);
+        $id = $subscription->id;
+        $capturedRevision = $subscription->revision;
+        self::assertSame(1, $capturedRevision);
+
+        // Another worker has renewed the row, while this worker still holds its captured revision.
+        Database::sqlRun('UPDATE `hilos_push_subscription` SET `revision` = ? WHERE `id` = ?', [$capturedRevision + 1, $id]);
+        $renewed = Database::sql('SELECT * FROM `hilos_push_subscription` WHERE `id` = ?', [$id])->firstRow();
+        self::assertSame($capturedRevision, $subscription->revision);
+
+        self::assertFalse(Hilos::$db->pushSubscriptions->actions->markGoneOwned(41, $id, $capturedRevision));
+        self::assertSame($renewed, Database::sql('SELECT * FROM `hilos_push_subscription` WHERE `id` = ?', [$id])->firstRow());
+        self::assertFalse(Hilos::$db->pushSubscriptions->actions->markGoneOwned(99, $id, $capturedRevision + 1));
+        self::assertFalse(Hilos::$db->pushSubscriptions->actions->markGoneOwned(41, $id + 1, $capturedRevision));
+        self::assertSame($renewed, Database::sql('SELECT * FROM `hilos_push_subscription` WHERE `id` = ?', [$id])->firstRow());
+        self::assertTrue(Hilos::$db->pushSubscriptions->actions->markGoneOwned(41, $id, $capturedRevision + 1));
+    }
+
+    public function testSubscribeAdvancesPersistedRevisionWhenHeldObjectLagsBehind(): void
+    {
+        Hilos::$db->pushSubscriptions->actions->subscribe(41, self::ENDPOINT, 'pk', 'auth', null);
+        $id = $this->subscriptionId();
+        self::assertSame(1, $this->subscriptions()[$id]->revision);
+
+        // Another worker updated the revision in the database to 5
+        Database::sqlRun('UPDATE `hilos_push_subscription` SET `revision` = 5 WHERE `id` = ?', [$id]);
+
+        // Stale frame with revision 1 is rejected by owner-check even though held object has revision 1
+        self::assertFalse(Hilos::$db->pushSubscriptions->actions->markGoneOwned(41, $id, 1));
+
+        // Calling subscribe advances the persisted value 5 to 6, rather than held 1 to 2
+        Hilos::$db->pushSubscriptions->actions->subscribe(41, self::ENDPOINT, 'pk', 'auth', null);
+        $persisted = Database::sql('SELECT revision FROM `hilos_push_subscription` WHERE `id` = ?', [$id])->firstRow();
+        self::assertSame('6', $persisted['revision']);
+    }
+
+    public function testDeleteAndRecreateEndpointResetsRevisionAndRejectsOldFrame(): void
+    {
+        Hilos::$db->pushSubscriptions->actions->subscribe(41, self::ENDPOINT, 'pk', 'auth', null);
+        $oldId = $this->subscriptionId();
+        self::assertTrue(Hilos::$db->pushSubscriptions->actions->removeOwned(41, $oldId));
+        self::assertSame([], $this->subscriptions()->forUser(41)->toArray());
+
+        // Recreating the same endpoint creates a new row with revision 1
+        Hilos::$db->pushSubscriptions->actions->subscribe(41, self::ENDPOINT, 'pk', 'auth', null);
+        $newId = $this->subscriptionId();
+        self::assertNotSame($oldId, $newId);
+        $newRow = Database::sql('SELECT id, revision FROM `hilos_push_subscription` WHERE `id` = ?', [$newId])->firstRow();
+        self::assertSame('1', $newRow['revision']);
+
+        // An old gone frame with old id is rejected and does not affect the new row
+        self::assertFalse(Hilos::$db->pushSubscriptions->actions->markGoneOwned(41, $oldId, 1));
+        self::assertCount(1, $this->subscriptions()->forUser(41));
+        self::assertNull($this->subscriptions()->forUser(41)[0]->goneAt);
+    }
+
+    public function testOwnedGoneRefusesWrongRevisionAndRetainsFirstSavedMomentOnDuplicate(): void
+    {
+        Hilos::$db->pushSubscriptions->actions->subscribe(41, self::ENDPOINT, 'pk', 'auth', null);
+        $id = $this->subscriptionId();
+
+        self::assertFalse(Hilos::$db->pushSubscriptions->actions->markGoneOwned(41, $id, 999));
+        self::assertTrue(Hilos::$db->pushSubscriptions->actions->markGoneOwned(41, $id, 1));
+        $this->subscriptions()[$id]->goneAt = 1767225600456;
+        $this->subscriptions()[$id]->sync();
+        self::assertFalse(Hilos::$db->pushSubscriptions->actions->markGoneOwned(41, $id, 1));
+        self::assertSame('1767225600456', Database::sql('SELECT `gone_at` FROM `hilos_push_subscription` WHERE `id` = ?', [$id])
+            ->firstRow()['gone_at']);
+        self::assertSame([], $this->subscriptions()->forUser(41)->toArray());
     }
 
     public function testOwnedRemoveAndUnsubscribeCannotDeleteAnotherUsersRow(): void
@@ -133,7 +232,7 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
         self::assertCount(1, $this->subscriptions()->forUser(41));
 
         self::assertTrue(Hilos::$db->pushSubscriptions->actions->removeOwned(41, $subscription->id));
-        self::assertSame([], $this->subscriptions()->forUser(41));
+        self::assertSame([], $this->subscriptions()->forUser(41)->toArray());
     }
 
     /**
@@ -160,7 +259,7 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
         try {
             ExecutionContext::setCurrentAgentId(self::SET_OWNER);
             self::assertTrue(Hilos::$db->pushSubscriptions->actions->removeOwned(41, $id));
-            self::assertSame([], $this->subscriptions()->forUser(41));
+            self::assertSame([], $this->subscriptions()->forUser(41)->toArray());
 
             ExecutionContext::setCurrentAgentId(self::AGENT);
             Hilos::$db->pushSubscriptions->actions->subscribe(41, self::ENDPOINT, 'pk', 'auth', null);

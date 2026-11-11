@@ -45,6 +45,8 @@ class PushSubscriptionsActions extends DbActions
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws CreateNotAllowedException When the caller may not add a subscription of that person
      * @throws ExternalWriterException When the mounted Entity declares an external database writer
+     * @throws LogicException When the collection has no usable object metadata
+     * @throws WriteNotAllowedException When the caller cannot update the existing subscription
      */
     public function subscribe(int $userId, string $endpoint, string $p256dh, string $auth, ?string $userAgent): void
     {
@@ -53,20 +55,23 @@ class PushSubscriptionsActions extends DbActions
     }
 
     /**
-     * Marks transport-expired endpoints while keeping their rows visible.
+     * Marks an owned device gone only while it is still the subscription the transport captured.
      *
-     * @param list<string> $endpoints Endpoints reported gone by the push service
-     * @return int Rows newly marked gone
-     * @throws DatabaseException When a lookup or write query fails
-     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @param int $userId Device owner's id
+     * @param int $id Captured subscription row id
+     * @param int $revision Captured subscription revision
+     * @return bool Whether the matching device was newly marked gone
+     * @throws DatabaseException When the lookup or write query fails
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
-     * @throws WriteNotAllowedException When the notifications library cannot update subscriptions
+     * @throws WriteNotAllowedException When the caller holds no right to update that person's subscriptions
+     * @throws CreateNotAllowedException When the object writer refuses an insert
+     * @throws InvalidArgumentException When the query order or DB-sync signal is invalid
      */
-    public function markGone(array $endpoints): int
+    public function markGoneOwned(int $userId, int $id, int $revision): bool
     {
-        $this->ensureCanWrite(TruthSourceOperation::Update);
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Update);
 
-        return $this->objectCollection->markGone($endpoints);
+        return $this->objectCollection->markGoneOwned($userId, $id, $revision);
     }
 
     /**
@@ -96,6 +101,7 @@ class PushSubscriptionsActions extends DbActions
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws WriteNotAllowedException When the caller holds no right to remove that person's subscriptions
+     * @throws LogicException When the collection has no usable object metadata
      */
     public function unsubscribeOwned(int $userId, string $endpoint): void
     {
@@ -111,6 +117,7 @@ class PushSubscriptionsActions extends DbActions
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws WriteNotAllowedException When the notifications library cannot remove subscriptions
+     * @throws LogicException When the collection has no usable object metadata
      */
     public function deleteForUser(int $userId): void
     {

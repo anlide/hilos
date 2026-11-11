@@ -8,6 +8,8 @@ use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\Http\DeviceName;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -24,7 +26,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * Persistence primitives for browser push subscriptions, keyed by the device
  * `endpoint` (UNIQUE). {@see subscribe()} is the opt-in write — it upserts the row
  * for an endpoint (rotated keys or a new owner replace it in place);
- * {@see unsubscribeOwned()} removes the acting device, while {@see markGone()} keeps a
+ * {@see unsubscribeOwned()} removes the acting device, while {@see markGoneOwned()} keeps a
  * transport-expired endpoint visible to its owner. {@see forUser()} lists live endpoints
  * for the push delivery channel to send to; {@see deleteForUser()} clears a user's
  * rows inside account erasure's transaction, before the person's RESTRICT key.
@@ -59,6 +61,9 @@ class PushSubscriptions extends Objects
      * @throws DatabaseException When the lookup or write query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws LogicException When the object collection cannot resolve its entity metadata
+     * @throws WriteNotAllowedException When the caller cannot write the subscription row
+     * @throws CreateNotAllowedException When the object writer refuses an insert
      */
     public function subscribe(int $userId, string $endpoint, string $p256dh, string $auth, ?string $userAgent): void
     {
@@ -73,6 +78,13 @@ class PushSubscriptions extends Objects
             $subscription = static::OBJECT_CLASS::create();
             $subscription->endpoint = $endpoint;
             $subscription->createdAt = $now;
+            $subscription->revision = EntityPushSubscription::INITIAL_REVISION;
+        } else {
+            $freshEntity = static::entityClass()::get([ // fresh-sql: a held object can lag behind persisted re-subscribes.
+                EntityPushSubscription::id => $subscription->id,
+            ])->first();
+            $currentRevision = $freshEntity !== null ? $freshEntity->revision : $subscription->revision;
+            $subscription->revision = $currentRevision + 1;
         }
 
         $subscription->userId = $userId;
@@ -91,32 +103,36 @@ class PushSubscriptions extends Objects
     }
 
     /**
-     * Marks transport-expired endpoints while keeping their device rows visible.
+     * A fresh row lookup leaves missing and foreign devices alone. A duplicate keeps the first gone
+     * moment, and a different revision refuses a late report about a renewed subscription.
      *
-     * @param list<string> $endpoints Endpoints reported gone by the push service
-     * @return int Rows newly marked gone
-     * @throws DatabaseException When a lookup or write query fails
-     * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
+     * @param int $userId Device owner's id
+     * @param int $id Captured subscription row id
+     * @param int $revision Captured subscription revision
+     * @return bool Whether the matching device was newly marked gone
+     * @throws DatabaseException When the lookup or write query fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws InvalidArgumentException When the query order or DB-sync signal is invalid
+     * @throws WriteNotAllowedException When the caller cannot write the subscription row
+     * @throws CreateNotAllowedException When the object writer refuses an insert
      */
-    public function markGone(array $endpoints): int
+    public function markGoneOwned(int $userId, int $id, int $revision): bool
     {
-        $marked = 0;
-        $goneAt = TimeHelper::nowMs();
-        foreach (array_unique($endpoints) as $endpoint) {
-            if ($endpoint === '') {
-                continue;
-            }
-            $subscription = $this->find($endpoint);
-            if ($subscription === null || $subscription->goneAt !== null) {
-                continue;
-            }
-            $subscription->goneAt = $goneAt;
-            $subscription->sync();
-            $marked++;
+        $entity = static::entityClass()::get( // fresh-sql: a held object can lag behind renewal; its old revision would expire a live device.
+            [EntityPushSubscription::id => $id],
+        )->first();
+        if ($entity === null || $entity->user_id !== $userId || $entity->gone_at !== null || $entity->revision !== $revision) {
+            return false;
         }
 
-        return $marked;
+        if (!isset($this->objects[$id])) {
+            $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
+        }
+        $subscription = $this->objects[$id];
+        $subscription->goneAt = TimeHelper::nowMs();
+        $subscription->sync();
+
+        return true;
     }
 
     /**
@@ -150,6 +166,8 @@ class PushSubscriptions extends Objects
      * @throws DatabaseException When the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws LogicException When the object collection cannot resolve its entity metadata
+     * @throws WriteNotAllowedException When the caller cannot write the subscription row
      */
     public function unsubscribeOwned(int $userId, string $endpoint): void
     {
@@ -177,19 +195,21 @@ class PushSubscriptions extends Objects
      * until a project activates the table.
      *
      * @param int $userId Recipient user id
-     * @return list<ObjectPushSubscription> The recipient's subscriptions (empty when none, or the table is not activated)
+     * @return ObjectCollection<ObjectPushSubscription> Active subscriptions in query order; empty if the table is not activated
      * @throws DatabaseException When the lookup query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
-    public function forUser(int $userId): array
+    public function forUser(int $userId): ObjectCollection
     {
+        $subscriptions = ObjectCollection::empty();
         if (Schema::getTable(EntityPushSubscription::_table) === null) {
-            return [];
+            return $subscriptions;
         }
 
-        $entities = static::entityClass()::get([EntityPushSubscription::user_id => $userId]);
+        $entities = static::entityClass()::get( // fresh-sql: exclude gone or transferred rows even before DB sync reaches this sender.
+            [EntityPushSubscription::user_id => $userId],
+        );
 
-        $subscriptions = [];
         foreach ($entities as $entity) {
             if ($entity->gone_at !== null) {
                 continue;
@@ -201,7 +221,7 @@ class PushSubscriptions extends Objects
             if (!isset($this->objects[$id])) {
                 $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
             }
-            $subscriptions[] = $this->objects[$id];
+            $subscriptions->add($this->objects[$id]);
         }
 
         return $subscriptions;
@@ -216,19 +236,14 @@ class PushSubscriptions extends Objects
      * @throws DatabaseException When a delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws LogicException When the object collection cannot resolve its entity metadata
+     * @throws WriteNotAllowedException When the caller cannot write the subscription row
      */
     public function deleteForUser(int $userId): void
     {
-        $entities = static::entityClass()::get([EntityPushSubscription::user_id => $userId]);
-        foreach ($entities as $entity) {
-            $id = $entity->id;
-            $subscription = $id !== null && isset($this->objects[$id])
-                ? $this->objects[$id]
-                : static::OBJECT_CLASS::fromEntity($entity);
-            $subscription->delete();
-            if ($id !== null) {
-                unset($this[$id]);
-            }
+        foreach ($this->loadByColumn(EntityPushSubscription::user_id, $userId) as $id) {
+            $this->objects[$id]->delete();
+            unset($this[$id]);
         }
     }
 
@@ -238,19 +253,15 @@ class PushSubscriptions extends Objects
      * @param string $endpoint Browser push endpoint URL
      * @return ?ObjectPushSubscription The subscription, or null when the endpoint is unknown
      * @throws DatabaseException When the lookup query fails
+     * @throws InvalidArgumentException When the endpoint column cannot be resolved
+     * @throws LogicException When the object collection cannot resolve its entity metadata
      */
     private function find(string $endpoint): ?ObjectPushSubscription
     {
-        $entity = static::entityClass()::get([EntityPushSubscription::endpoint => $endpoint])->first();
-
-        if ($entity === null || $entity->id === null) {
-            return null;
+        foreach ($this->loadByColumn(EntityPushSubscription::endpoint, $endpoint) as $id) {
+            return $this->objects[$id];
         }
 
-        if (!isset($this->objects[$entity->id])) {
-            $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
-        }
-
-        return $this->objects[$entity->id];
+        return null;
     }
 }

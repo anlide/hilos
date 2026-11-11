@@ -434,7 +434,6 @@ use Hilos\ProtectedMode\DTO\MaintenanceRestoreControlSignalData;
 use Hilos\ProtectedMode\DTO\ManualMaintenancePassSignalData;
 use Hilos\Push\DTO\PushRemoveActionDTO;
 use Hilos\Push\DTO\PushSubscribeActionDTO;
-use Hilos\Push\DTO\PushSubscriptionsGoneSignalData;
 use Hilos\Push\DTO\PushUnsubscribeActionDTO;
 use Hilos\Push\PushSubscriptionAction;
 use Hilos\Sms\DTO\SmsSendSignalData;
@@ -475,6 +474,7 @@ use Hilos\Users\DTO\UserPhotoPutDoneSignalData;
 use Hilos\Users\DTO\UserPhotoPutSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveDoneSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveSignalData;
+use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
@@ -2156,6 +2156,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_PUSH_REMOVE => HilosAgentType::HILOS_USER,
+            HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE => HilosAgentType::HILOS_USER,
             ChatSignalConstants::USER_RENAME_FEED_LINK => HilosAgentType::HILOS_USER,
             ChatSignalConstants::USER_RENAME_FEED_UNLINK => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -2235,7 +2236,6 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
-            HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_FILE_BIND => HilosAgentType::HILOS_FILES_LIBRARY,
             HilosSignalConstants::HILOS_FILE_REMOVE => HilosAgentType::HILOS_FILES_LIBRARY,
@@ -2448,6 +2448,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => 'userId',
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => 'userId',
             HilosSignalConstants::HILOS_USER_PUSH_REMOVE => 'userId',
+            HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE => 'userId',
             ChatSignalConstants::USER_RENAME_FEED_LINK => 'userId',
             ChatSignalConstants::USER_RENAME_FEED_UNLINK => 'userId',
             ChatSignalConstants::BOT_AGENT_START => 'botId',
@@ -2536,6 +2537,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => UserNotificationChannelSetSignalData::class,
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => UserPushUnsubscribeSignalData::class,
             HilosSignalConstants::HILOS_USER_PUSH_REMOVE => UserPushRemoveSignalData::class,
+            HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE => UserPushEndpointGoneSignalData::class,
             ChatSignalConstants::USER_RENAME_FEED_LINK => UserRenameFeedLinkSignalData::class,
             ChatSignalConstants::USER_RENAME_FEED_UNLINK => UserRenameFeedUnlinkSignalData::class,
             HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE => ProfileNameContinueSignalData::class,
@@ -2615,7 +2617,6 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => NotificationEmitSignalData::class,
             HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
             HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => DeferredNotificationHandoverSignalData::class,
-            HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => PushSubscriptionsGoneSignalData::class,
             HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE => HandoverAnswerSignalData::class,
             HilosSignalConstants::HILOS_FILE_BIND => FileBindSignalData::class,
             HilosSignalConstants::HILOS_FILE_REMOVE => FileRemoveSignalData::class,
@@ -3163,7 +3164,7 @@ final class ChatTopologyRegistryTest extends TestCase
             'notificationPreferences' => ['HIL-1952'],
             'notifications' => ['HIL-1952'],
             'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],
-            'pushSubscriptions' => ['HIL-1895', 'HIL-1905', 'HIL-1906', 'HIL-1952'],
+            'pushSubscriptions' => ['HIL-1905', 'HIL-1906', 'HIL-1952'],
             'secondFactorBackupCodes' => ['HIL-1904', 'HIL-1952', 'HIL-1999'],
             'secondFactorResets' => ['HIL-1952', 'HIL-1999'],
             'secondFactorSettings' => ['HIL-1952', 'HIL-1999'],

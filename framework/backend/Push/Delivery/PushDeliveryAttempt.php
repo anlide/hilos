@@ -16,7 +16,7 @@ use Hilos\Notification\Delivery\DeliveryAttempt;
  * settles when every endpoint has, and reports {@see isDelivered()} true when at least one device
  * accepted the push - the delivery row is one row for the whole `push` channel, so any reachable
  * device counts as delivered. As it settles it reports every endpoint the transport returned
- * gone (404/410) to its owning delivery agent; persistence stays with the notifications library.
+ * gone (404/410) to its owning delivery agent; persistence stays with the person's agent.
  * An attempt built over zero endpoints (a
  * subscription list that emptied between dispatch and send, or a channel that could not be
  * configured) settles immediately as a non-delivered failure.

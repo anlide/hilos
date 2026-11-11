@@ -299,10 +299,12 @@ pending rows untouched. Delivery retry moves to the channel
 device is updated by its personal owner (not in the code yet — HIL-1905);
 rebinding another person's endpoint deletes through the former owner and creates anew
 at the library, possibly under a new id (not in the code yet — HIL-1906).
-The transport's dead-endpoint report is written by the personal owner
-(not in the code yet — HIL-1895). The personal owner removes the old enrollment
-(not in the code yet — HIL-1903) and old backup codes
-(not in the code yet — HIL-1904) before the library creates their replacements.
+The push delivery channel's dead-endpoint report is handed to the personal owner
+with an `(id, revision)` snapshot and verified against the fresh persisted
+Entity `(id, revision)` rather than `last_seen_at`. The
+personal owner removes the old enrollment (not in the code yet — HIL-1903) and
+old backup codes (not in the code yet — HIL-1904) before the library creates
+their replacements.
 Trust renewal, policy, rename links, first-admin creation and the legal test
 path have their own addresses in that same table. Their current doors and
 claims stay until each real move; no generic sweep exception is retained.

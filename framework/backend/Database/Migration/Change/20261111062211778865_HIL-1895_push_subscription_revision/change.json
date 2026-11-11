@@ -1,0 +1,19 @@
+{
+    "format": 1,
+    "id": "20261111062211778865_HIL-1895_push_subscription_revision",
+    "parts": [
+        {
+            "unit": "push_subscription",
+            "up": "push_subscription.sql",
+            "down": "push_subscription_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261110021316313226_HIL-1923_notification_moments",
+                    "unit": "push_subscription"
+                }
+            ],
+            "afterStubUpSha256": "a468034db8c65acdd62b78c8cdab54dde4c99843a59c485d88d6fec9e6b6c830",
+            "afterStubDownSha256": "854eda7a426d1cf2cb89d4680c1642f819de5281b275d4927cce08c47613e067"
+        }
+    ]
+}

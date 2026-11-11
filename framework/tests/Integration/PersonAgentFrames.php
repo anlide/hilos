@@ -29,6 +29,7 @@ use Hilos\Users\DTO\UserBlockWriteSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
 use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
 use Hilos\Users\DTO\UserNotificationReadSignalData;
+use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
@@ -157,6 +158,7 @@ trait PersonAgentFrames
             $ask instanceof UserNotificationChannelSetSignalData,
             $ask instanceof UserPushUnsubscribeSignalData,
             $ask instanceof UserPushRemoveSignalData,
+            $ask instanceof UserPushEndpointGoneSignalData,
             $ask instanceof UserAccountDeletionCancelSignalData,
             $ask instanceof UserPhotoPutSignalData,
             $ask instanceof UserPhotoRemoveSignalData => $ask->userId,
