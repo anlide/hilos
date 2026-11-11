@@ -3152,7 +3152,7 @@ final class ChatTopologyRegistryTest extends TestCase
             'identities' => ['HIL-1952', 'HIL-1999'],
             'legalAcceptanceExports' => ['HIL-1952'],
             'legalAcceptances' => ['HIL-1952'],
-            'notificationDeliveries' => ['HIL-1902', 'HIL-1910', 'HIL-1952'],
+            'notificationDeliveries' => ['HIL-1910', 'HIL-1952'],
             'notificationPreferences' => ['HIL-1952'],
             'notifications' => ['HIL-1952'],
             'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],

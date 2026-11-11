@@ -24,6 +24,7 @@ use Hilos\Database\Schema\Schema;
 use Hilos\Database\SqlSortDirection;
 use Hilos\HilosException;
 use Hilos\Notification\Delivery\DeliveryStatus;
+use Hilos\Notification\Delivery\ExpiredDeliveryRef;
 use Hilos\Notification\Delivery\NotificationDeliveryIdentity;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -221,6 +222,61 @@ class NotificationDeliveries extends Objects
         }
 
         return ChangeLogReadCollection::fromArray($identities);
+    }
+
+    /**
+     * Reads a bounded saved snapshot without consulting the mutable Object mirror.
+     *
+     * @param string $channel Saved channel to scan
+     * @param int $cutoffMs Exclusive creation-age boundary in epoch milliseconds
+     * @param int $afterCreatedAt Creation moment of the exclusive cursor in epoch milliseconds
+     * @param int $afterId Delivery primary key breaking ties at the cursor moment
+     * @param int $limit Positive maximum number of references
+     * @return ChangeLogReadCollection<ExpiredDeliveryRef> Dense snapshot ordered by creation moment, then delivery id
+     * @throws InvalidArgumentException When the page limit is not positive
+     * @throws TableNotActivatedException When the project has not activated the delivery table
+     * @throws DatabaseException When the binding or projection query fails
+     */
+    public function expiredIdentitiesAfter(
+        string $channel,
+        int $cutoffMs,
+        int $afterCreatedAt,
+        int $afterId,
+        int $limit,
+    ): ChangeLogReadCollection {
+        if ($limit <= 0) {
+            throw new InvalidArgumentException('Expired notification delivery page limit must be positive');
+        }
+        $this->requireActivatedTable();
+        $entityClass = static::entityClass();
+        $references = [];
+        foreach (Database::sql(
+            'SELECT `' . EntityNotificationDelivery::id . '`, `' . EntityNotificationDelivery::notification_id . '`,'
+            . ' `' . EntityNotificationDelivery::channel . '`, `' . EntityNotificationDelivery::routing_key . '`,'
+            . ' `' . EntityNotificationDelivery::created_at . '`'
+            . ' FROM ' . $entityClass::getSqlTableName()
+            . ' WHERE `' . EntityNotificationDelivery::channel . '` = ?'
+            . ' AND `' . EntityNotificationDelivery::status . '` IN (?, ?)'
+            . ' AND `' . EntityNotificationDelivery::created_at . '` < ?'
+            . ' AND (`' . EntityNotificationDelivery::created_at . '` > ?'
+            . ' OR (`' . EntityNotificationDelivery::created_at . '` = ? AND `' . EntityNotificationDelivery::id . '` > ?))'
+            . ' ORDER BY `' . EntityNotificationDelivery::created_at . '` ASC, `' . EntityNotificationDelivery::id . '` ASC LIMIT ?',
+            [$channel, DeliveryStatus::SENT, DeliveryStatus::FAILED, $cutoffMs, $afterCreatedAt, $afterCreatedAt, $afterId, $limit],
+            index: $entityClass::getDatabase()->connectionIndex,
+        )->rows() as $row) {
+            $references[] = new ExpiredDeliveryRef(
+                identity: new NotificationDeliveryIdentity(
+                    deliveryId: (int)$row[EntityNotificationDelivery::id],
+                    notificationId: (int)$row[EntityNotificationDelivery::notification_id],
+                    channel: (string)$row[EntityNotificationDelivery::channel],
+                    routingKey: $row[EntityNotificationDelivery::routing_key] === null
+                        ? null : (int)$row[EntityNotificationDelivery::routing_key],
+                ),
+                createdAt: (int)$row[EntityNotificationDelivery::created_at],
+            );
+        }
+
+        return ChangeLogReadCollection::fromArray($references);
     }
 
     /**

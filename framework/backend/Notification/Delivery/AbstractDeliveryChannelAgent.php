@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace Hilos\Notification\Delivery;
 
+use DateTimeImmutable;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Cron\CronRuleOrigin;
+use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\TruthSource\DbWriterPartition;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -19,6 +24,7 @@ use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDeliver
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Database\Schema\Schema;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -30,6 +36,7 @@ use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Sms\Exception\SmsTemplateNotInCatalogException;
 use Hilos\Sms\Exception\SmsTemplateParamMissingException;
+use Throwable;
 
 /**
  * AbstractDeliveryChannelAgent - the async owner of one channel's deliveries (HIL-196).
@@ -52,10 +59,9 @@ use Hilos\Sms\Exception\SmsTemplateParamMissingException;
  * Hilos::AGENTS, as a monopolistic singleton or an indexed pool, via its daemon
  * ({@see AbstractDeliveryChannelAgentDaemon}).
  *
- * It co-owns the delivery journal with {@see AbstractNotificationsLibraryAgent} (HIL-771):
- * the library adds and prunes rows, a channel agent updates the one attempt it is running.
- * The claim is {@see self::OWNS_DB} on this class and is merged down every subclass, so a leaf
- * carries it whatever else it declares.
+ * The library ({@see AbstractNotificationsLibraryAgent}) creates delivery rows and still retries
+ * them until HIL-1910. Each channel or shard updates its own attempts and removes its expired
+ * terminal rows. The claim is {@see self::OWNS_DB} and is merged down every subclass.
  *
  * Under a freeze that silences the writers the roster walk leaves running
  * ({@see ProtectedModeRuntime::silencesUnstoppedWriters()}) the pipeline drops everything it
@@ -70,28 +76,15 @@ use Hilos\Sms\Exception\SmsTemplateParamMissingException;
 abstract class AbstractDeliveryChannelAgent extends AbstractAgent
 {
     /**
-     * @var list<string> The notification each dispatched delivery is about, loaded by
-     *     {@see startOp()} through the mounted notifications View. Read rather than claimed: the rows are
-     *     the notifications library's ({@see AbstractNotificationsLibraryAgent}), and a collection
-     *     has one owner. The delivery journal is absent on purpose - {@see self::OWNS_DB} claims
-     *     it, and a claim is the owner's own interest.
+     * @var list<string> Notifications reloaded for delivery and settings read when a retention pass starts.
+     *     The delivery journal is omitted because {@see self::OWNS_DB} already supplies its owner's reader interest.
      */
-    public const array READS_DB = [HilosDbContext::notifications];
+    public const array READS_DB = [HilosDbContext::notifications, HilosDbContext::settings];
 
     /**
-     * This channel's own rows in the delivery journal (HIL-771).
-     *
-     * A co-owner rather than the owner: the journal belongs to
-     * {@see AbstractNotificationsLibraryAgent}, which brings rows into being and prunes them
-     * away, while a channel agent only ever edits the row of the attempt it is running -
-     * {@see pumpInFlight()} and {@see startOp()} below are the whole of it. The registry keeps
-     * a grant per agent, so the two stand side by side on one collection with no overlap in
-     * what they may do; which operations a channel gets is answered by
-     * {@see self::defaultTruthSourceOperations()}, editing alone.
-     *
-     * Claiming it here rather than routing the bookkeeping through the library is the shape
-     * the dispatcher was written for: delivery must not queue behind a single owner, and one
-     * signal per attempt per channel would put that latency back.
+     * Updates and removes this channel/shard's rows; the library creates them.
+     * The per-item partition proof constrains both operations to the saved owner coordinates.
+     * Library retry remains a separate transitional Update grant until HIL-1910.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
@@ -112,6 +105,15 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
     /** Base retry backoff in milliseconds, doubled per prior attempt. */
     private const float RETRY_BACKOFF_BASE_MS = 1000.0;
 
+    /** Daily delivery-journal retention schedule on the project clock. */
+    private const string RETENTION_SCHEDULE = '20 3 * * *';
+
+    /** Existing framework rule name, shared by the channel owners. */
+    private const string RETENTION_RULE = CronRule::FRAMEWORK_NAME_PREFIX . 'delivery_log_prune';
+
+    /** Bounds per-row deletion work to keep the tick under 0.1 seconds beside live sends. */
+    private const int RETENTION_PAGE_SIZE = 25;
+
     /** @var array<int, NotificationDeliveryIdentity> Immutable ops awaiting a start or retry, keyed by delivery id. */
     private array $ops = [];
 
@@ -126,6 +128,21 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
 
     /** Last inspected delivery id, including rows owned by other shards. */
     private int $pendingCursor = 0;
+
+    /** Null when the project has no delivery-journal feature. */
+    private ?CronRule $retentionRule = null;
+
+    /** Exclusive age boundary for this pass; null means no pass is running. */
+    private ?int $retentionCutoffMs = null;
+
+    /** Creation moment of the last inspected row, including foreign shards. */
+    private int $retentionAfterCreatedAt = 0;
+
+    /** Delivery id breaking ties at the inspected creation moment. */
+    private int $retentionAfterId = 0;
+
+    /** Number of rows this instance has removed in the current pass. */
+    private int $retentionRemoved = 0;
 
     /**
      * Returns this agent's channel descriptor (identity, address, signal seams).
@@ -151,18 +168,26 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
     abstract protected function createAttempt(string $address, ObjectNotification $notification): DeliveryAttempt;
 
     /**
-     * A delivery agent edits the attempts it runs and creates or removes nothing.
+     * A channel updates its attempts and removes its expired terminal delivery rows.
+     * Creation stays with the notifications library; both writes retain the channel/shard proof.
      *
-     * The narrower half of the claim {@see self::OWNS_DB} makes, and the reason it is safe: a row
-     * is minted by the dispatch that queued this attempt and removed by the library's prune,
-     * so a channel that could add or remove would be claiming the journal rather than sharing
-     * it.
-     *
-     * @return TruthSourceOperations Editing alone
+     * @return TruthSourceOperations Updating and removing this owner's rows
      */
     public static function defaultTruthSourceOperations(): TruthSourceOperations
     {
-        return TruthSourceOperations::of(TruthSourceOperation::Update);
+        return TruthSourceOperations::of(TruthSourceOperation::Update, TruthSourceOperation::Remove);
+    }
+
+    /**
+     * Registers retention only for projects with the delivery journal enabled.
+     *
+     * @throws CronRuleNameException When the retention rule name does not match framework origin
+     */
+    public function onStart(): void
+    {
+        if (Hilos::hasFeature(HilosFeature::NOTIFICATION_DELIVERY)) {
+            $this->retentionRule = new CronRule(self::RETENTION_RULE, self::RETENTION_SCHEDULE, CronRuleOrigin::FRAMEWORK);
+        }
     }
 
     /**
@@ -203,7 +228,7 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
     }
 
     /**
-     * Pumps every in-flight attempt one step, then starts freshly queued ops.
+     * Pumps in-flight and queued sends, then advances one retention page.
      *
      * Under a freeze that silences this pipeline nothing of it runs: the first such tick drops
      * what is held and says how much, the later ones find nothing, and neither touches the
@@ -216,6 +241,7 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
         if ($this->freezeSilencesDeliveries()) {
             $dropped = $this->abandonDeliveries();
             $this->rereadOwed = true;
+            $this->retentionCutoffMs = null;
             if ($dropped > 0) {
                 $this->logAgentWarning(
                     "protected mode holds the node: {$dropped} durable deliveries dropped, their rows stay pending",
@@ -232,6 +258,7 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
         $nowMs = microtime(true) * TimeConstants::MS_PER_SECOND;
         $this->pumpInFlight($nowMs);
         $this->startQueued($nowMs);
+        $this->tickRetention();
     }
 
     /**
@@ -240,6 +267,78 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
     public function onStop(): void
     {
         $this->abandonDeliveries();
+    }
+
+    /** @return list<CronRule> Current delivery-journal retention schedule */
+    protected function cronRules(): array
+    {
+        return $this->retentionRule === null ? [] : [$this->retentionRule];
+    }
+
+    /** Retention errors abandon this pass without interrupting the delivery pipeline. */
+    private function tickRetention(): void
+    {
+        try {
+            if ($this->retentionRule?->shouldRun() === true) {
+                $this->beginRetentionPass();
+            }
+            if ($this->retentionCutoffMs !== null) {
+                $this->retentionPage();
+            }
+        } catch (Throwable $e) {
+            $this->logAgentError('Delivery-log retention failed: ' . $e->getMessage());
+            $this->retentionCutoffMs = null;
+        }
+    }
+
+    /**
+     * Samples the current policy once for a new pass, retaining no settings between passes.
+     *
+     * @throws SettingException When the retention setting cannot be read as an integer
+     * @throws DatabaseException When the persisted retention setting cannot be read
+     */
+    private function beginRetentionPass(): void
+    {
+        $setting = Hilos::$setting;
+        if ($setting === null) {
+            return;
+        }
+
+        $this->retentionCutoffMs = new DeliveryLogRetention()->cutoff(
+            $setting[DeliveryLogRetention::RETENTION_SETTING_KEY]->int(), new DateTimeImmutable(),
+        );
+        $this->retentionAfterCreatedAt = 0;
+        $this->retentionAfterId = 0;
+        $this->retentionRemoved = 0;
+    }
+
+    /**
+     * Advances across every shard's rows and deletes only this instance's still-terminal rows.
+     *
+     * @throws HilosException When selection, ownership, deletion or its announcement fails
+     */
+    private function retentionPage(): void
+    {
+        $page = Hilos::$db->notificationDeliveries->expiredIdentitiesAfter(
+            $this->channel()->name(), $this->retentionCutoffMs,
+            $this->retentionAfterCreatedAt, $this->retentionAfterId, self::RETENTION_PAGE_SIZE,
+        );
+        foreach ($page as $ref) {
+            $this->retentionAfterCreatedAt = $ref->createdAt;
+            $this->retentionAfterId = $ref->identity->deliveryId;
+            if ($this->ownsIdentity($ref->identity)
+                && isset(Hilos::$db->notificationDeliveries[$ref->identity->deliveryId])
+                && Hilos::$db->notificationDeliveries[$ref->identity->deliveryId]->status !== DeliveryStatus::PENDING) {
+                Hilos::$db->notificationDeliveries[$ref->identity->deliveryId]->actions->delete();
+                $this->retentionRemoved++;
+            }
+        }
+        if (count($page) < self::RETENTION_PAGE_SIZE) {
+            if ($this->retentionRemoved > 0) {
+                $this->logAgentInfo("Delivery-log retention removed {$this->retentionRemoved} rows");
+            }
+            $this->retentionCutoffMs = null;
+        }
     }
 
     /**

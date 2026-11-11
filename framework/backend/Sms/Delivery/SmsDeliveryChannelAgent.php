@@ -11,7 +11,6 @@ use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\HilosException;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
@@ -68,9 +67,6 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
             AgentSignalConfigKey::DTO => SmsSendSignalData::class,
         ],
     ];
-
-    /** @var list<string> The delivery pipeline's reads plus the SMS configuration overrides */
-    public const array READS_DB = [...parent::READS_DB, HilosDbContext::settings];
 
     /**
      * Binds this pool instance to its shard index.

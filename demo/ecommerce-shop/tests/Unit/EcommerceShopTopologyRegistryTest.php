@@ -217,7 +217,7 @@ use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Mail\Frame\MailLetterFrameSettings;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
-use Hilos\Notification\DeliveryLogPruner;
+use Hilos\Notification\Delivery\DeliveryLogRetention;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Demo\EcommerceShop\Pages\Hilos\I18nPage;
 use Demo\EcommerceShop\Pages\Hilos\I18n\Lists\LanguagesListPage;
@@ -1476,7 +1476,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             DeliveryChannelSettings::fieldKey(MailDeliveryChannel::NAME, MailDeliveryChannel::FIELD_SMTP_SECURITY),
             DeliveryChannelSettings::fieldKey(MailDeliveryChannel::NAME, MailDeliveryChannel::FIELD_TIMEOUT_MS),
             MailLetterFrameSettings::SETTING_KEY,
-            DeliveryLogPruner::RETENTION_SETTING_KEY,
+            DeliveryLogRetention::RETENTION_SETTING_KEY,
             ThemeSettingsCatalog::SWITCHING_ENABLED_KEY,
             ThemeSettingsCatalog::DEFAULT_THEME_KEY,
             StatusSettingsCatalog::PUBLISH_DELAY_SECONDS,
@@ -1706,7 +1706,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             'dataExports' => ['HIL-1952'],
             'identities' => ['HIL-1952', 'HIL-1999'],
             'legalAcceptances' => ['HIL-1952'],
-            'notificationDeliveries' => ['HIL-1902', 'HIL-1910', 'HIL-1952'],
+            'notificationDeliveries' => ['HIL-1910', 'HIL-1952'],
             'notificationPreferences' => ['HIL-1952'],
             'notifications' => ['HIL-1952'],
             'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],

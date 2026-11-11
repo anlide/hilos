@@ -16,10 +16,9 @@ use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\SourceChangeProvenance;
 use Hilos\Core\Source\SourceMirrorSubscriberInterface;
 use Hilos\Core\TruthSource\DbWriterPartition;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceKeys;
-use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -27,7 +26,9 @@ use Hilos\Hilos;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
+use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
 use Hilos\Notification\Delivery\DeliveryChannelRegistry;
+use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use Hilos\Sms\Delivery\SmsRawSendAgent;
@@ -42,12 +43,18 @@ abstract class NotificationDeliveryOwnershipIntegrationTestCase extends Notifica
     /** @var list<string> Per-case claims to release without changing the framework harness's claims */
     private array $ownershipClaims = [];
 
+    /** Mounts the ownership facade and production library rights before the rollback scope starts. */
     protected function prepareIntegrationEnvironment(): void
     {
         $this->previousApp = Hilos::appClass();
         parent::prepareIntegrationEnvironment();
         DeliveryOwnershipHilos::initBrowser();
         DeliveryOwnershipChannels::$width = 2;
+        // Replace the API harness's broad fixture grant with the production library's rights.
+        TruthSourceRegistry::register(
+            HilosDbContext::notificationDeliveries, TruthSourceKeys::all(), ExecutionContext::currentAgentId(),
+            OwnershipDeclaration::dbCollectionsOf(AbstractNotificationsLibraryAgent::class)[HilosDbContext::notificationDeliveries],
+        );
         $this->announcements = new DeliveryOwnershipAnnouncements();
         SourceChangeBus::subscribe($this->announcements);
     }
@@ -83,8 +90,7 @@ abstract class NotificationDeliveryOwnershipIntegrationTestCase extends Notifica
     }
 
     /**
-     * Test Remove is deliberate: it proves the partition guard behind the operation ceiling
-     * without granting Remove to production channels.
+     * Uses the production channel's Update and Remove ceiling for partition-guard checks.
      *
      * @param string $agent Claimant's canonical address
      */
@@ -94,7 +100,7 @@ abstract class NotificationDeliveryOwnershipIntegrationTestCase extends Notifica
             HilosDbContext::notificationDeliveries,
             TruthSourceKeys::all(),
             $agent,
-            TruthSourceOperations::of(TruthSourceOperation::Update, TruthSourceOperation::Remove),
+            AbstractDeliveryChannelAgent::defaultTruthSourceOperations(),
         );
         $this->ownershipClaims[] = $agent;
     }

@@ -144,7 +144,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'legalAcceptances' => [['users', 'whole', 'add'], ['person', 'set', 'remove'], ['holder', 'whole', 'remove']],
             'notifications' => [['notifications', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove']],
             'notificationDeliveries' => [
-                ['notifications', 'whole', 'add,remove,update'], ['mail', 'whole', 'update'], ['holder', 'whole', 'remove']],
+                ['notifications', 'whole', 'add,update'], ['mail', 'whole', 'remove,update'], ['holder', 'whole', 'remove']],
             'notificationPreferences' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'remove']],
             'pushSubscriptions' => [
                 ['notifications', 'whole', 'add,update'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove']],
@@ -166,7 +166,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'accountDeletions' => ['HIL-1952'],
             'legalAcceptances' => ['HIL-1952'],
             'notifications' => ['HIL-1952'],
-            'notificationDeliveries' => ['HIL-1902', 'HIL-1910', 'HIL-1952'],
+            'notificationDeliveries' => ['HIL-1910', 'HIL-1952'],
             'notificationPreferences' => ['HIL-1952'],
             'pushSubscriptions' => ['HIL-1895', 'HIL-1905', 'HIL-1906', 'HIL-1952'],
             'dataExports' => ['HIL-1952'],
@@ -180,7 +180,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
         }
         foreach (['sms' => $hasDurableSms, 'push' => $hasPush] as $role => $present) {
             if ($present) {
-                $vectors['notificationDeliveries'][] = [$role, 'whole', 'update'];
+                $vectors['notificationDeliveries'][] = [$role, 'whole', 'remove,update'];
             }
         }
         if ($isChat) {
@@ -308,14 +308,12 @@ final class DbWriterTransitionCatalogTest extends TestCase
         }
     }
 
-    /** Retry and retention follow the partition guard; only retention grants channel Remove. */
+    /** Channel removal is permanent; only library retry and holder erasure remain transitional. */
     public function testDeliveryMovesRequireGuardAndKeepUnpaidLibraryOperations(): void
     {
         $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['notificationDeliveries']);
         $expectedLibrary = [
             '' => 'add',
-            'HIL-1902,HIL-1910,HIL-1952' => 'add,remove,update',
-            'HIL-1902,HIL-1952' => 'add,remove',
             'HIL-1910,HIL-1952' => 'add,update',
             'HIL-1952' => 'add',
         ];
@@ -323,7 +321,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
         foreach ($expectedLibrary as $pending => $operations) {
             $expected = [NotificationsLibraryAgent::class . ':whole:' . $operations];
             foreach ([MailDeliveryChannelAgent::class, SmsDeliveryChannelAgent::class, PushDeliveryChannelAgent::class] as $channel) {
-                $expected[] = $channel . (str_contains($pending, 'HIL-1902') ? ':whole:update' : ':whole:remove,update');
+                $expected[] = $channel . ':whole:remove,update';
             }
             if ($pending !== '') {
                 $expected[] = SessionsLibraryAgent::class . ':whole:remove';
@@ -429,8 +427,8 @@ final class DbWriterTransitionCatalogTest extends TestCase
             AbstractSessionsLibraryAgent::class . ':whole:remove,update',
         ], $inactive['identities'][0]);
         $this->assertVector([
-            AbstractNotificationsLibraryAgent::class . ':whole:add,remove,update',
-            MailDeliveryChannelAgent::class . ':whole:update',
+            AbstractNotificationsLibraryAgent::class . ':whole:add,update',
+            MailDeliveryChannelAgent::class . ':whole:remove,update',
             AbstractSessionsLibraryAgent::class . ':whole:remove',
         ], $inactive['notificationDeliveries'][0]);
         foreach (['legalAcceptanceExports', 'dataExports', 'settings', 'probeValues', 'sessions', 'accessLogEntries', 'userMerges'] as $key) {
@@ -600,12 +598,6 @@ final class DbWriterTransitionCatalogTest extends TestCase
                 '' => ['notifications:whole:add', 'person:set:remove,update'],
             ],
             'notificationDeliveries' => [
-                'HIL-1902,HIL-1910,HIL-1952' => [
-                    'notifications:whole:add,remove,update', 'channel:whole:update', 'holder:whole:remove',
-                    'partition:notification-channel-shard'],
-                'HIL-1902,HIL-1952' => [
-                    'notifications:whole:add,remove', 'channel:whole:update', 'holder:whole:remove',
-                    'partition:notification-channel-shard'],
                 'HIL-1910,HIL-1952' => [
                     'notifications:whole:add,update', 'channel:whole:remove,update', 'holder:whole:remove',
                     'partition:notification-channel-shard'],

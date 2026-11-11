@@ -12,6 +12,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\TableNotActivatedException;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Database\View\Item\NotificationDelivery;
+use Hilos\Notification\Delivery\ExpiredDeliveryRef;
 use Hilos\Notification\Delivery\NotificationDeliveryIdentity;
 
 /**
@@ -62,5 +63,29 @@ class NotificationDeliveries extends DbCollection
         return ($this->getObjectCollection()
             ?? throw new ObjectCollectionNullException('Notification deliveries are detached from their collection'))
             ->pendingIdentitiesAfter($channel, $afterId, $limit);
+    }
+
+    /**
+     * @param string $channel Saved channel to scan
+     * @param int $cutoffMs Exclusive creation-age boundary in epoch milliseconds
+     * @param int $afterCreatedAt Creation moment of the exclusive cursor in epoch milliseconds
+     * @param int $afterId Delivery primary key breaking ties at the cursor moment
+     * @param int $limit Positive page size
+     * @return ChangeLogReadCollection<ExpiredDeliveryRef> Dense saved snapshot ordered by creation moment, then delivery id
+     * @throws ObjectCollectionNullException When detached from the owning collection
+     * @throws InvalidArgumentException When the page limit is not positive
+     * @throws TableNotActivatedException When the project has not activated the delivery table
+     * @throws DatabaseException When the projection query or binding fails
+     */
+    public function expiredIdentitiesAfter(
+        string $channel,
+        int $cutoffMs,
+        int $afterCreatedAt,
+        int $afterId,
+        int $limit,
+    ): ChangeLogReadCollection {
+        return ($this->getObjectCollection()
+            ?? throw new ObjectCollectionNullException('Notification deliveries are detached from their collection'))
+            ->expiredIdentitiesAfter($channel, $cutoffMs, $afterCreatedAt, $afterId, $limit);
     }
 }

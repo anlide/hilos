@@ -15,7 +15,6 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Environment\Exception\EnvException;
@@ -76,9 +75,6 @@ use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 {
     public const string AGENT_TYPE = HilosAgentType::HILOS_MAIL;
-
-    /** Settings are read afresh when composing HTML; the parent's notification interest is retained. */
-    public const array READS_DB = [...parent::READS_DB, HilosDbContext::settings];
 
     /**
      * Pool routes: both intakes are fanned across the pool by the recipient's shard key.

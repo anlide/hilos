@@ -21,7 +21,6 @@ class DbWriterTransitionCatalog
 {
     protected const string PUSH_GONE = 'HIL-1895';
     protected const string RENAME_UNLINK = 'HIL-1897';
-    protected const string DELIVERY_PRUNE = 'HIL-1902';
     protected const string FACTOR_REPLACE = 'HIL-1903';
     protected const string BACKUP_CODES_REPLACE = 'HIL-1904';
     protected const string PUSH_OWN_UPDATE = 'HIL-1905';
@@ -269,7 +268,7 @@ class DbWriterTransitionCatalog
 
     /**
      * @param class-string<Hilos> $hilosClass Inspected topology
-     * @return list<DbWriterTransitionState> Guarded delivery retention, retry and erasure transitions
+     * @return list<DbWriterTransitionState> Guarded delivery retry and erasure transitions
      */
     private function deliveryStates(string $hilosClass): array
     {
@@ -277,21 +276,17 @@ class DbWriterTransitionCatalog
         foreach ([HilosAgentType::HILOS_MAIL, HilosAgentType::HILOS_SMS, HilosAgentType::HILOS_PUSH] as $agentType) {
             $worker = $this->role($hilosClass, $agentType);
             if ($worker !== null && is_subclass_of($worker, AbstractDeliveryChannelAgent::class)) {
-                $channels = [...$channels, ...$this->claim($worker, DbWriterClaimWidth::Whole, TruthSourceOperation::Update)];
+                $channels = [...$channels, ...$this->claim($worker, DbWriterClaimWidth::Whole,
+                    TruthSourceOperation::Update, TruthSourceOperation::Remove)];
             }
         }
         $library = $this->role($hilosClass, HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY);
-        $channelRemoval = array_map(static fn (DbWriterClaim $claim): DbWriterClaim => new DbWriterClaim(
-            $claim->ownerClass, $claim->width, TruthSourceOperations::of(TruthSourceOperation::Remove),
-        ), $channels);
 
         $states = $this->states(
             [...$this->claim($library, DbWriterClaimWidth::Whole, TruthSourceOperation::Add), ...$channels],
-            [self::DELIVERY_PRUNE => $this->claim($library, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove),
-                self::DELIVERY_RETRY => $this->claim($library, DbWriterClaimWidth::Whole, TruthSourceOperation::Update),
+            [self::DELIVERY_RETRY => $this->claim($library, DbWriterClaimWidth::Whole, TruthSourceOperation::Update),
                 self::ERASURE => $this->claim($this->role($hilosClass, HilosAgentType::HILOS_SESSIONS_LIBRARY),
                     DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
-            [self::DELIVERY_PRUNE => $channelRemoval, self::ERASURE => $channelRemoval],
         );
 
         return array_map(static fn (DbWriterTransitionState $state): DbWriterTransitionState => new DbWriterTransitionState(

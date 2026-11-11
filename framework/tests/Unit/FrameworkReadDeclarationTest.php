@@ -248,6 +248,7 @@ final class FrameworkReadDeclarationTest extends TestCase
 
         foreach ($channels as $readsDb) {
             $this->assertContains(HilosDbContext::notifications, $readsDb);
+            $this->assertContains(HilosDbContext::settings, $readsDb);
             $this->assertNotContains(
                 HilosDbContext::notificationDeliveries,
                 $readsDb,

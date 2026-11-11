@@ -325,7 +325,7 @@ final class PmdTopologyRegistryTest extends TestCase
     {
         Hilos::validateTopology();
 
-        $this->addToAssertionCount(1);
+        self::assertSame(['HIL-1910', 'HIL-1952'], Hilos::SHARED_DB_OWNERS['notificationDeliveries']);
     }
 
     /** Every declared feature has its required project bindings. */

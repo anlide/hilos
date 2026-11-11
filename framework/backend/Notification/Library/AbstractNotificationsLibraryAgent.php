@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Notification\Library;
 
-use DateTimeImmutable;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\AbstractLibraryCommands;
@@ -22,16 +21,12 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
-use Hilos\Core\Daemon\Cron\CronRule;
-use Hilos\Core\Daemon\Cron\CronRuleOrigin;
-use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
-use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\AgentSignalData;
@@ -44,8 +39,6 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\Exception\ExternalWriterException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\ChangeLog\JournalReceiptData;
-use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
@@ -54,14 +47,12 @@ use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificatio
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Database\Settings\Exception\SettingException;
-use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
 use Hilos\Notification\Delivery\DeliveryStatus;
 use Hilos\Notification\Delivery\NotificationDispatcher;
 use Hilos\Notification\DeferredNotificationQueue;
-use Hilos\Notification\DeliveryLogPruner;
 use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationChannelPreferenceActionDTO;
@@ -118,11 +109,9 @@ use Throwable;
  * project's registry. Unlike theirs, its project half is empty - no claim over a project's own
  * tables, no rows of its own to add - so a subclass usually adds nothing but its name.
  *
- * WHAT IT DOES NOT OWN: the delivery journal outright. A channel agent
- * ({@see AbstractDeliveryChannelAgent}) edits the row of its own attempt, so the journal is
- * co-owned by operation - this library adds and removes rows, a channel updates them. That is
- * deliberate: the dispatcher was written so that delivery never queues behind a single owner,
- * and routing every attempt's bookkeeping through here would put the latency back.
+ * The library creates delivery rows and still resets them for retry until HIL-1910.
+ * Each channel or shard ({@see AbstractDeliveryChannelAgent}) updates its own attempts and
+ * removes its expired terminal rows; retention never runs through this library.
  */
 abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
 {
@@ -140,17 +129,16 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * a device are that person's agent's. The channel settings are not claimed at all: this
      * library only reads them ({@see self::READS_DB}).
      *
-     * The journal is the one claim that is not exclusive: a channel agent holds an update-only
-     * grant on the same collection ({@see AbstractDeliveryChannelAgent::OWNS_DB}), which the
-     * registry allows because a grant is per agent and the two do not overlap in what they may
-     * do. A push row is created and updated here - a device subscribing, or a transport marking
-     * an endpoint gone - and removed by the person's agent.
+     * Delivery rows are created here and still reset for retry here until HIL-1910. Their
+     * channel or shard updates attempts and removes expired terminal rows; this library has no
+     * Remove grant. A push row is created and updated here - a device subscribing, or a transport
+     * marking an endpoint gone - and removed by the person's agent.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
         HilosDbContext::notifications => [TruthSourceOperation::Add],
-        HilosDbContext::notificationDeliveries => TruthSourceOperation::BY_KIND,
+        HilosDbContext::notificationDeliveries => [TruthSourceOperation::Add, TruthSourceOperation::Update],
         HilosDbContext::pushSubscriptions => [TruthSourceOperation::Add, TruthSourceOperation::Update],
     ];
 
@@ -254,15 +242,6 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
         CliCommands::NOTIFICATION_TEST_EMIT,
     ];
 
-    /** Cron expression for the daily delivery-log prune (03:20). */
-    private const string DELIVERY_LOG_PRUNE_SCHEDULE = '20 3 * * *';
-
-    /** Name of the cron rule that prunes terminal rows out of the delivery journal. */
-    private const string DELIVERY_LOG_PRUNE_RULE = CronRule::FRAMEWORK_NAME_PREFIX . 'delivery_log_prune';
-
-    /** @var ?CronRule Once-per-day guard for the delivery-log prune */
-    private ?CronRule $deliveryLogPruneRule = null;
-
     /**
      * @var array<string, true> Ids of the handed-over batches this instance has applied, so a
      *     repeated frame of one is answered and not applied again
@@ -275,59 +254,6 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     public function __construct(
         private readonly NotificationDispatcher $dispatcher = new NotificationDispatcher(),
     ) {
-    }
-
-    /**
-     * Arms the journal prune.
-     *
-     * The journal prune is armed only where deliveries are written. Whether the project declared
-     * {@see HilosFeature::NOTIFICATION_DELIVERY} is a fact about how it was built, settled before
-     * the first tick and unchanged between them, so it is asked once here rather than on every
-     * tick; a store-only project leaves the rule null and {@see onTick()} does nothing. Until
-     * HIL-857 that project was spared the prune by accident - its catalog happened not to carry
-     * the retention key - and the accident, not the absence of a delivery table, is what stopped
-     * a daily DELETE against a table it never migrated.
-     *
-     * The letters a restore wrote while this library was not running are not sent from here any
-     * more (HIL-846): they arrive as a frame from the agent holding them ({@see emitHandedOverNotices()}).
-     *
-     * @throws CronRuleNameException When the prune rule name does not match framework origin
-     */
-    public function onStart(): void
-    {
-        if (Hilos::hasFeature(HilosFeature::NOTIFICATION_DELIVERY)) {
-            $this->deliveryLogPruneRule = new CronRule(
-                self::DELIVERY_LOG_PRUNE_RULE,
-                self::DELIVERY_LOG_PRUNE_SCHEDULE,
-                CronRuleOrigin::FRAMEWORK,
-            );
-        }
-    }
-
-    /**
-     * Runs the due-once-a-day delivery-log prune.
-     *
-     * Moved here whole from {@see AbstractHilosIndexAgent} (HIL-771), schedule, idempotence
-     * and skip-when-unconfigured included: what it does is delete rows from the journal, and
-     * the journal is this library's.
-     *
-     * @throws HilosException When the cron receipt cannot be opened or closed
-     * @throws EnvException When the project time zone of the prune schedule cannot be read
-     */
-    public function onTick(): void
-    {
-        if ($this->deliveryLogPruneRule !== null && $this->deliveryLogPruneRule->shouldRun()) {
-            JournalReceiptScope::run(
-                JournalReceiptData::cron(self::DELIVERY_LOG_PRUNE_RULE, $this->deliveryLogPruneRule->expression, $this->getId()),
-                fn () => $this->pruneDeliveryLog(),
-            );
-        }
-    }
-
-    /** @return list<CronRule> Current delivery-log pruning schedule */
-    protected function cronRules(): array
-    {
-        return $this->deliveryLogPruneRule === null ? [] : [$this->deliveryLogPruneRule];
     }
 
     /**
@@ -1063,42 +989,6 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
         }
 
         return $queued;
-    }
-
-    /**
-     * Prunes the delivery journal to its retention window, swallowing and logging any failure.
-     *
-     * Reached only where {@see HilosFeature::NOTIFICATION_DELIVERY} is declared, so the retention
-     * key is in the project's catalog: the startup guard refuses to boot a project that declared
-     * the feature without folding the fragment in. A missing key is therefore not a state to skip
-     * over quietly but a broken installation, and reading it raises rather than returns - the
-     * catch below turns that into an error in the agent log. A retention of 0 disables cleanup
-     * inside {@see DeliveryLogPruner::prune()}.
-     *
-     * Any failure is logged and swallowed so a prune error never breaks the agent loop. The
-     * absent accessor is the one thing that returns instead: {@see Hilos::init()} assigns it
-     * unconditionally, so a null here means the facade this agent runs under was never
-     * initialized at all - a state no worker is in, and one this method has nothing to say about.
-     */
-    private function pruneDeliveryLog(): void
-    {
-        try {
-            $setting = Hilos::$setting;
-            if ($setting === null) {
-                return;
-            }
-
-            $deleted = new DeliveryLogPruner()->prune(
-                $setting[DeliveryLogPruner::RETENTION_SETTING_KEY]->int(),
-                new DateTimeImmutable(),
-            );
-
-            if ($deleted > 0) {
-                $this->logAgentInfo("Delivery-log prune removed {$deleted} rows");
-            }
-        } catch (Throwable $e) {
-            $this->logAgentError('Delivery-log prune failed: ' . $e->getMessage());
-        }
     }
 
     /**

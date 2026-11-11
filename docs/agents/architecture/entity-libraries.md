@@ -293,9 +293,9 @@ A creator's `Add` alone is compatible with it; a borrowed or incomplete claim
 is no permission for another DB changing writer.
 
 The [ordinary transition table](account-operations.md#ordinary-transitions)
-addresses each remaining path. Delivery retry moves to the channel
-(not in the code yet — HIL-1910), and retention moves to that channel or shard
-without pruning pending rows (not in the code yet — HIL-1902). A known push
+addresses each remaining path. The channel or shard owns retention and leaves
+pending rows untouched. Delivery retry moves to the channel
+(not in the code yet — HIL-1910). A known push
 device is updated by its personal owner (not in the code yet — HIL-1905);
 rebinding another person's endpoint deletes through the former owner and creates anew
 at the library, possibly under a new id (not in the code yet — HIL-1906).
@@ -831,16 +831,17 @@ Answer `SUBSCRIPTION_PAGE_ERROR`. An empty list is a claim about the data.
   who writes it and whether it gets an agent of its own are decided in
   [Session Ownership](#session-ownership).
 - `framework/backend/Notification/Library/AbstractNotificationsLibraryAgent.php` —
-  the third (HIL-771): the notifications library, which still creates the
-  notification rows, holds the delivery journal and brings a push endpoint into
-  being or marks it gone, and only reads the channel preferences (HIL-1408).
+  the third (HIL-771): the notifications library, which creates notification
+  and delivery rows, retains delivery `Add`/`Update` including retry until
+  HIL-1910, brings a push endpoint into being or marks it gone, and only reads
+  the channel preferences (HIL-1408).
   Marking a letter read, choosing a channel and dropping a device are the
   person's agent's. It is the worked example of a library founded on an entity
   that had *no owner at all* — the emit seam wrote from whatever worker called
   it, which held only while that worker happened to host an owner of something
-  else — and of co-ownership by operation: a delivery channel agent updates the
-  journal row of the attempt it is running, while the library adds and prunes
-  rows.
+  else — and of co-ownership by operation: a delivery channel agent updates
+  and removes its own journal rows, including terminal rows selected by
+  bounded-page retention. The library does not remove delivery rows.
 - [languages-and-countries.md](languages-and-countries.md) — the i18n library: one
   library over the five tables of the language and country reference, because none
   of their rows is written without reading the others; it holds the whole claim,

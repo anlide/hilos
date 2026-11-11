@@ -159,11 +159,11 @@ Address changes do not rewrite an existing delivery's key; a new delivery
 stores the routing key produced for its current recipient state, or `NULL`
 for a singleton. The pool width is expected to agree across nodes after the
 normal restart/freeze process; no rolling mixed-environment or split-brain
-fence is promised. This guard adds no channel `Add` or `Remove`. The
-notifications library still creates, retries and prunes those rows. Pruning
-moves to the channel or shard without deleting pending rows
-(not in the code yet — HIL-1902); retry and `resetForRetry()` move there too
-(not in the code yet — HIL-1910). A standalone raw SMS worker has no
+fence is promised. The channel or shard has no `Add`; its `Update` and `Remove`
+are both checked against the saved delivery identity and current route. The
+notifications library creates rows and retains `Update` for retry through
+`resetForRetry()` until HIL-1910. Retention belongs to the channel or shard and
+does not delete pending rows. A standalone raw SMS worker has no
 delivery claim and cannot borrow the notifications library's grant.
 Borrowing describes readiness and reader interest, never permission for a
 second DB writer. The operations are read folded — `BY_KIND` expanded and the

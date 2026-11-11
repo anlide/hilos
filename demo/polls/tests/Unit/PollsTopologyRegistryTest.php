@@ -2180,7 +2180,7 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertSame(SmsRawSendAgent::class, $entry[AgentRegistryKey::WORKER]);
         $this->assertSame([], OwnershipDeclaration::dbCollectionsOf(SmsRawSendAgent::class));
         $this->assertSame([HilosSignalConstants::HILOS_SMS_SEND], array_keys(SmsRawSendAgent::AGENT_SIGNALS));
-        $this->assertSame(['HIL-1902', 'HIL-1910', 'HIL-1952'], Hilos::SHARED_DB_OWNERS['notificationDeliveries']);
+        $this->assertSame(['HIL-1910', 'HIL-1952'], Hilos::SHARED_DB_OWNERS['notificationDeliveries']);
     }
 
     /**
@@ -2194,7 +2194,7 @@ final class PollsTopologyRegistryTest extends TestCase
             'identities' => ['HIL-1952', 'HIL-1999'],
             'legalAcceptanceExports' => ['HIL-1952'],
             'legalAcceptances' => ['HIL-1952'],
-            'notificationDeliveries' => ['HIL-1902', 'HIL-1910', 'HIL-1952'],
+            'notificationDeliveries' => ['HIL-1910', 'HIL-1952'],
             'notificationPreferences' => ['HIL-1952'],
             'notifications' => ['HIL-1952'],
             'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],
