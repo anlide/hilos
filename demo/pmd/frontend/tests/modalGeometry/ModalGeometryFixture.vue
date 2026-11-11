@@ -3,9 +3,12 @@ The page is taller than the window on every screen of the norm, and the modal
 shows what a process printed — a first line with nowhere to wrap, then more
 lines than any of those screens can hold — so the spec can ask whether the
 dialog keeps its head and foot on screen, scrolls its body, and never scrolls
-sideways. -->
+sideways. The open button sticks to the top of the window, so the page can be
+scrolled before the modal opens; the modal opens a second one over itself, so
+the spec can ask what a wheel or a finger moves while one or two layers are
+open. The second modal lives only while the first is open. -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { HilosLongText, HilosModal } from '@hilos/vue/base'
 
 /** Enough ordinary paragraphs for the page to outgrow the window on every screen. */
@@ -27,6 +30,13 @@ const OUTPUT = [
 ].join('\n')
 
 const open = ref(false)
+const nestedOpen = ref(false)
+
+watch(open, (isOpen) => {
+  if (!isOpen) {
+    nestedOpen.value = false
+  }
+})
 </script>
 
 <template>
@@ -34,7 +44,7 @@ const open = ref(false)
     <h1 class="h4">Modal geometry fixture</h1>
     <button
       type="button"
-      class="btn btn-primary"
+      class="btn btn-primary position-sticky top-0"
       data-id="modal-geometry-open"
       @click="open = true"
     >
@@ -51,6 +61,7 @@ const open = ref(false)
       initial-focus="dialog"
       :copy-text="OUTPUT"
     >
+      <p class="mb-0" data-id="modal-geometry-body-start">Start of output</p>
       <HilosLongText
         kind="output"
         :text="OUTPUT"
@@ -60,8 +71,38 @@ const open = ref(false)
       <template #actions="{ requestClose }">
         <button
           type="button"
+          class="btn btn-outline-secondary"
+          data-id="modal-geometry-nested-open"
+          @click="nestedOpen = true"
+        >
+          Details
+        </button>
+        <button
+          type="button"
           class="btn btn-secondary"
           data-id="modal-geometry-close"
+          @click="requestClose"
+        >
+          Close
+        </button>
+      </template>
+    </HilosModal>
+    <HilosModal
+      v-if="open"
+      v-model="nestedOpen"
+      title="Nested details"
+      initial-focus="dialog"
+    >
+      <HilosLongText
+        kind="output"
+        :text="OUTPUT"
+        data-id="modal-geometry-nested-output"
+      />
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          data-id="modal-geometry-nested-close"
           @click="requestClose"
         >
           Close

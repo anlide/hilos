@@ -58,6 +58,11 @@ export {
   Watched,
 } from './geometry.js'
 export {
+  scrollWithGesture,
+  type ScrollGestureResult,
+  type ScrollGestureSource,
+} from './scrollGesture.js'
+export {
   armSocketDrop,
   controlSocketReconnect,
   countSentFrames,
