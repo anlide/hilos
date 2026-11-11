@@ -49,10 +49,14 @@ final class ClusterStandIsolationGuardTest extends TestCase
     /** Path ending of the part that binds a stack's services to this host. */
     private const string LOCAL_PART = '/docker/cluster/local.yml';
 
-    /** A `file:` naming a canonical part, quoted or not and under any path; `env_file:` and `dockerfile:` do not match. */
-    private const string EXTENDS_CANONICAL = '/(?<![A-Za-z_])file:\s*["\']?(?:[^\s"\',}]*\/)?(?:node|entry|database)\.yml\b/';
+    /**
+     * A `file:` naming any part, quoted or not and under any path: the first key of its line, as in a
+     * block `extends:`, or a key of a one-line mapping such as `{file: ./node.yml, service: node}`.
+     * Anywhere else on a line - `env_file:`, `dockerfile:`, `max-file:`, a path, a comment - it names none.
+     */
+    private const string EXTENDS_PART = '/(?:^\s*|[{,]\s*)file:\s*["\']?[^\s"\',}]+/';
 
-    /** The line that keeps a canonical part's standalone ports off the host. */
+    /** The line that keeps a part's standalone ports off the host. */
     private const string PORTS_RESET = '    ports: !reset []';
 
     /** Any `ports:` key of a compose file. */
@@ -138,38 +142,94 @@ final class ClusterStandIsolationGuardTest extends TestCase
             ARRAY_FILTER_USE_KEY,
         );
 
+        $problems = [];
         $services = 0;
         foreach ($files as $relativePath => $path) {
             $lines = $this->linesOf($path);
-            $resets = [];
-
-            foreach ($this->servicesOf($lines) as $service => $body) {
-                $extends = preg_grep(self::EXTENDS_CANONICAL, $body);
-                if ($extends === []) {
-                    continue;
-                }
-
-                $services++;
-                $this->assertContains(
-                    self::PORTS_RESET,
-                    $body,
-                    "{$relativePath}:" . array_key_first($extends) . ": the service {$service} does not reset its ports",
-                );
-                $resets = array_merge($resets, array_keys($body, self::PORTS_RESET, true));
-            }
-
-            foreach (array_keys(preg_grep(self::PORTS_KEY, $lines)) as $number) {
-                $this->assertContains($number, $resets, "{$relativePath}:{$number}: only a reset of a canonical service may say ports");
-            }
+            $problems = array_merge($problems, $this->portProblemsOf($relativePath, $lines));
+            $services += count(array_filter(
+                $this->servicesOf($lines),
+                static fn(array $body): bool => preg_grep(self::EXTENDS_PART, $body) !== [],
+            ));
         }
 
+        $this->assertSame([], $problems, implode(PHP_EOL, $problems));
         $this->assertGreaterThan(0, $services, 'no local cluster service was found at all - the reader stopped seeing them');
+    }
+
+    /** A part no local stand extends yet is a part all the same, and a `file:` of another key, a path or a comment names none. */
+    public function testAServiceExtendingAnyPartResetsItsPorts(): void
+    {
+        $local = 'demo/shop/docker/cluster/local.yml';
+        $balancer = [
+            1 => 'services:',
+            2 => '  balancer:',
+            3 => '    extends: {file: ./haproxy.yml, service: haproxy}',
+        ];
+        $mailer = [
+            5 => '  mailer:',
+            6 => '    image: axllent/mailpit',
+            7 => '    env_file: ./mailer.env',
+            8 => '    build: {context: ., dockerfile: mailer.Dockerfile}',
+            9 => '    logging:',
+            10 => '      options:',
+            11 => '        max-file: "3"',
+            12 => '    volumes:',
+            13 => '      - ./secrets/file:/run/x:ro  # the secret file: read-only',
+        ];
+        $reset = [4 => '    ports: !reset []'];
+
+        $this->assertSame(
+            ["{$local}:3: the service balancer does not reset its ports"],
+            $this->portProblemsOf($local, $balancer + $mailer),
+        );
+        $this->assertSame([], $this->portProblemsOf($local, $balancer + $reset + $mailer));
+        $this->assertSame(
+            ["{$local}:14: only a reset of a service extending a part may say ports"],
+            $this->portProblemsOf($local, $balancer + $reset + $mailer + [14 => "    ports: ['8025:8025']"]),
+        );
     }
 
     /** A guard that stopped seeing the files would otherwise stay green over nothing. */
     public function testTheGuardSeesTheClusterStacks(): void
     {
         $this->assertGreaterThan(0, count($this->clusterStacks()), 'no cluster stack was found at all - the reader stopped seeing them');
+    }
+
+    /**
+     * What the local file of one stack publishes on the host, one sentence per place.
+     *
+     * A service that extends a part must reset the ports that part publishes standing alone, and
+     * no other `ports:` line may stand in the file.
+     *
+     * @param string $relativePath Repository-relative path of the file
+     * @param array<int, string> $lines Line number => line
+     * @return list<string> One sentence per place, each starting `path:number:`; empty when nothing is published
+     */
+    private function portProblemsOf(string $relativePath, array $lines): array
+    {
+        $problems = [];
+        $resets = [];
+
+        foreach ($this->servicesOf($lines) as $service => $body) {
+            $extends = preg_grep(self::EXTENDS_PART, $body);
+            if ($extends === []) {
+                continue;
+            }
+
+            if (!in_array(self::PORTS_RESET, $body, true)) {
+                $problems[] = "{$relativePath}:" . array_key_first($extends) . ": the service {$service} does not reset its ports";
+            }
+            $resets = array_merge($resets, array_keys($body, self::PORTS_RESET, true));
+        }
+
+        foreach (array_keys(preg_grep(self::PORTS_KEY, $lines)) as $number) {
+            if (!in_array($number, $resets, true)) {
+                $problems[] = "{$relativePath}:{$number}: only a reset of a service extending a part may say ports";
+            }
+        }
+
+        return $problems;
     }
 
     /**

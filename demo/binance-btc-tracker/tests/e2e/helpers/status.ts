@@ -23,11 +23,11 @@ import { STATUS_EXPECT_TIMEOUT_MS } from '../status.config.js'
 export const STATUS_FAULT_COMPONENT = 'settings'
 
 /**
- * The test stand's real Status disk, data/status-test, as the owner
+ * The test stand's real Status disk, data/test/status, as the owner
  * installs it.
  */
 export const STATUS_DISK = new URL(
-  '../../../data/status-test/',
+  '../../../data/test/status/',
   import.meta.url,
 )
 

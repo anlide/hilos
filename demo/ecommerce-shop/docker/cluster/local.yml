@@ -20,6 +20,7 @@ services:
     labels:
       hilos.role: app
     volumes:
+      - data:/app/data
       - ../../data/logs-cluster/m1:/var/log/hilos
       - status:/app/data/status
     depends_on:
@@ -38,6 +39,7 @@ services:
       - ./common.env
       - ./nodes/s1.env
     volumes:
+      - data:/app/data
       - ../../data/logs-cluster/s1:/var/log/hilos
       - status:/app/data/status
     depends_on:
@@ -56,6 +58,7 @@ services:
       - ./common.env
       - ./nodes/s2.env
     volumes:
+      - data:/app/data
       - ../../data/logs-cluster/s2:/var/log/hilos
       - status:/app/data/status
     depends_on:
@@ -66,6 +69,12 @@ services:
         ipv4_address: 10.${HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER:-222}.0.15
 
 volumes:
+  # The stand's own data root: agents clean their storage by their own database, so the
+  # local installation's data/ must stay out of their sight. Every node and the CLI mount
+  # this volume at /app/data, and the harness's down --volumes clears it each run.
+  data:
+    name: hilos-ecommerce-shop-cluster-data${HILOS_STAND_SUFFIX:-}
+
   # Independent test installations must not overwrite each other's Status files.
   # Every node within this cluster shares this one volume.
   status:

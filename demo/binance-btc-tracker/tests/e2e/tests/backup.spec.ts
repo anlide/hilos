@@ -280,7 +280,7 @@ test.describe('backup moments and Period in the reader zone', () => {
 
       const legacy = '2026-01-01T03:30:05.123456+03:00'
       fixture = await createLegacyBackupFixture(
-        fileURLToPath(new URL('../../../data/backup/', import.meta.url)),
+        fileURLToPath(new URL('../../../data/test/backup/', import.meta.url)),
         sourceId,
         legacy,
       )

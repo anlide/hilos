@@ -84,11 +84,13 @@ A Status installation also registers reserved logical name `status`
 node's nginx share its files. The public allowlist and publication contract are
 in [status-page.md](status-page.md#static-publication).
 All six demo contexts register this directory at `data/status`, and their nginx
-containers mount the same directory read-only. A test stand binds `data/status-test`
-over both, the daemon's `/app/data/status` and nginx's `/status`, so the local and
-the test installation of one demo never publish into the same files.
-Each demo cluster stand uses its own named Status volume, suffixed with
-`${HILOS_STAND_SUFFIX:-}` and separate from `data/status` and `data/status-test`.
+containers mount the same directory read-only. A test stand keeps Status in its
+own data root, so the local and the test installation of one demo never publish
+into the same files: an ordinary test stack's daemon sees `data/test/status` as
+`/app/data/status`, and its nginx reads the same directory as `/status`
+([testing.md](../testing.md#the-full-run--one-graph-a-bounded-number-of-lanes),
+"Data root of a stand"). Each demo cluster stand lays its own named Status volume,
+suffixed with `${HILOS_STAND_SUFFIX:-}`, over its data root volume.
 The current carriers are `binance-btc-tracker`, `ecommerce-shop` and `online-testing`.
 Every node and the entry, where present, share that stand's volume; ecommerce-shop
 has no entry. The registrations are in
@@ -100,9 +102,12 @@ has no entry. The registrations are in
 `demo/online-testing/backend/Fs/OnlineTestingFsContext.php`.
 
 `BACKUP_DIR` is no `$fs` name (see below), but a test stand keeps it apart the
-same way: the chat, tasks and polls test stands, whose `test:up` runs
-`test:backup:reset`, set the process value `/app/data/backup-test`, which wins
-over the local `.env` the project bind shows them.
+same way: where a demo declares a default (chat, tasks, binance-btc-tracker and
+ecommerce-shop: `data/backup`), it lies under `data/` and so in the stand's data
+root, and a test stand does not set its own — `test:backup:reset` on `test:up`
+empties the stand's backups, not the local installation's. polls, pmd, preferans
+and online-testing keep the framework's empty default and have no backup storage
+on their stand.
 
 A temporary file is handed to another agent twice: the assembled upload
 (`hilos_file_publish`, field `tmpIndex`) and the drawn image copy

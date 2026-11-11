@@ -135,16 +135,12 @@ services:
       hilos.role: app
     volumes:
       - ..:/app
+      # The stand's own data root: exports, backups, Status and files never share the local installation's data/ (docs/agents/testing.md).
+      - ../data/test:/app/data
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
       - ../data/logs-test:/var/log/hilos
-      # Its own Status files: the local daemon publishes into data/status of the
-      # same project bind, and the two would alternate their revisions.
-      - ../data/status-test:/app/data/status
-      # An override is an absolute path in the shell or docker/.env, mounted
-      # at the same path in the daemon and read-only by nginx.
-      - ${POLLS_FILES_PUBLISHED_DIR:-../data/files/published}:${POLLS_FILES_PUBLISHED_DIR:-/app/data/files/published}
     working_dir: /app
     environment:
       - APP_ENV=test
@@ -154,10 +150,6 @@ services:
       # stack so a run reads the same zone whatever the host or a stale tests/.env
       # carries; the process value wins over the env file and /app/.env.
       - HILOS_PROJECT_TIME_ZONE=Europe/Warsaw
-      # Its own backups: without it BACKUP_DIR comes from the local .env through the
-      # project bind, and test:backup:reset on test:up would wipe the local stand's
-      # archives. The process value wins over /app/.env.
-      - BACKUP_DIR=/app/data/backup-test
       - DB_HOST=polls-mysql-test
       - DB_PORT=3306
       - DB_DATABASE=${MYSQL_TEST_DATABASE:-hilos-demo-polls-test}
@@ -176,7 +168,7 @@ services:
       - HILOS_DATA_EXPORT_XACCEL_LOCATION=/__hilos_data_export
       - HILOS_LEGAL_EXPORT_XACCEL_LOCATION=/__hilos_legal_export
       - HILOS_FILES_XACCEL_LOCATION=/__hilos_files
-      - POLLS_FILES_PUBLISHED_DIR=${POLLS_FILES_PUBLISHED_DIR:-/app/data/files/published}
+      - POLLS_FILES_PUBLISHED_DIR=/app/data/files/published
       - WORKER_COMM_HOST=0.0.0.0
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
@@ -307,10 +299,10 @@ services:
     container_name: polls-nginx-test${HILOS_STAND_SUFFIX:-}
     volumes:
       - ../frontend/dist:/usr/share/nginx/html:ro
-      - ../data/data_export:/data_export:ro
-      - ../data/status-test:/status:ro
-      - ../data/legal_export:/legal_export:ro
-      - ${POLLS_FILES_PUBLISHED_DIR:-../data/files/published}:/published:ro
+      - ../data/test/data_export:/data_export:ro
+      - ../data/test/status:/status:ro
+      - ../data/test/legal_export:/legal_export:ro
+      - ../data/test/files/published:/published:ro
       - nginx-ssl-test:/etc/nginx/ssl
     ports:
       - "${HILOS_BIND_HOST:-127.0.0.1}:${NGINX_TEST_HTTP_PORT:-8088}:80"
@@ -337,6 +329,8 @@ services:
     container_name: polls-cli-test${HILOS_STAND_SUFFIX:-}
     volumes:
       - ..:/app
+      # The stand's own data root: exports, backups, Status and files never share the local installation's data/ (docs/agents/testing.md).
+      - ../data/test:/app/data
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
@@ -348,10 +342,6 @@ services:
       # stack so a run reads the same zone whatever the host or a stale tests/.env
       # carries; the process value wins over the env file and /app/.env.
       - HILOS_PROJECT_TIME_ZONE=Europe/Warsaw
-      # Its own backups: without it BACKUP_DIR comes from the local .env through the
-      # project bind, and test:backup:reset on test:up would wipe the local stand's
-      # archives. The process value wins over /app/.env.
-      - BACKUP_DIR=/app/data/backup-test
       # The daemon's trust in the stand gateway's certificate (HIL-921), so a command
       # that reaches the gateway from here verifies it the same way.
       - SSL_CERT_FILE=/hilos/framework/docker/stand-gateway/tls/ca.pem

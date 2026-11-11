@@ -76,7 +76,8 @@ versus the static compiled dist served by nginx.
   reads `demo/chat/docker/.env` — the file next to the compose file. Port
   overrides put in `demo/chat/.env` are silently ignored.
 - **Published attachments are not mounted here.** The prod and test composes
-  mount `../data/chat_attachments/published:/published:ro` into nginx for the
+  mount `chat_attachments/published` of their data root (the test stand's is
+  `../data/test/`) at `/published:ro` into nginx for the
   daemon's `X-Accel-Redirect`; the local `full` profile does not, so attachment
   downloads 404 in this stack even though upload and moderation work.
 - **The session cookie carries no `Secure` flag in this stack.** It follows

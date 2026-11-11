@@ -310,8 +310,10 @@ there is no `--keep-db` mode: a new invocation discards ordinary fixtures.
 
 Names and the `/dev/shm` DB directory take `HILOS_STAND_SUFFIX`; the subnet takes
 `HILOS_STAND_NET_ONLINE_TESTING_CLUSTER`, and CPU weight takes
-`HILOS_STAND_CPU_SHARES`. The nodes and entry share host `data/data_export`;
-the entry mounts Angular's `frontend/dist` at `/usr/share/nginx/html`. See the
+`HILOS_STAND_CPU_SHARES`. The nodes and the CLI mount the stand's own named data
+volume at `/app/data`, and the nodes and entry share a named export volume of the
+stand over it, both suffixed the same way; the entry mounts Angular's
+`frontend/dist` at `/usr/share/nginx/html`. See the
 shared guide's
 [stand instances](../../docs/agents/testing.md#the-full-run--one-graph-a-bounded-number-of-lanes)
 and [cluster lifecycle](../../docs/agents/testing.md#cluster-compose-model).

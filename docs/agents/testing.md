@@ -405,6 +405,39 @@ rotation asks for one: see
 `framework/tests/Unit/StandLogRotationGuardTest.php` holds every `demo/` row of
 `scripts/test-stands.php` to this, so a new demo takes the same line.
 
+**Data root of a stand.** Every stand service that mounts the project at `/app`
+(`..:/app` or `../..:/app`) mounts the stand's own root at `/app/data` as well: on an
+ordinary test stack `../data/test:/app/data`, the tree's host `data/test/` with no
+instance suffix, since an instance is one per tree; on a cluster stand the stand's
+named volume `data:/app/data`, `name: hilos-<demo>-cluster-data${HILOS_STAND_SUFFIX:-}`,
+on every node and the cluster's CLI. Any other mount whose target lies inside
+`/app/data` comes from the stand's storage only — on an ordinary stack a
+subdirectory of `../data/test/` or a named volume, on a cluster stand a named volume
+alone (`../data/test/…` from `docker/cluster/` is not the stand's storage) — and takes
+no variable in its source or its target, `$NAME` as well as `${…}` (`$$` writes a
+literal `$` and is none): a path from the shell leads it out. Agents clean their
+storage by their own database — an export agent deletes, at start and every hour,
+each file of its directory without a ready row (`expireCopies()` of
+`AbstractDataExportAgent`, `expire()` of `LegalAcceptancesExports`) — and a test
+database after `db-reset` is empty, so a stand without its own root would delete the
+local installation's exports, empty its backups (`test:backup:reset` on `test:up`),
+overwrite its Status with the stand's publication, and write its own files among the
+local ones. On an ordinary stack the test nginx reads exports, Status and files from
+the subdirectories of `data/test/`, an e2e runner, which sees the repository at
+`/hilos`, follows the stand's files there (`data/test/status`, `data/test/backup`),
+and the stand does not set `BACKUP_DIR`: where a demo declares a default (chat,
+tasks, binance-btc-tracker and ecommerce-shop: `data/backup`), it lies under `data/`
+and so in the root; polls, pmd, preferans and online-testing keep the framework's
+empty default and have no backup storage on their stand, so `test:backup:reset` on
+the `test:up` of polls finds nothing to empty. A cluster stand's export and
+Status volumes stay separate volumes over its root, because an entry reads them at
+its own `/data_export` and `/status` and its part is shared with a standalone
+deployment; the harness clears every volume of the stand each run.
+`framework/tests/Unit/StandDataRootGuardTest.php` holds every `demo/` row of
+`scripts/test-stands.php` to this: on a cluster stand it follows `extends` one level
+into the part, and what it cannot read is a refusal. An nginx is a reader and is not
+judged; its miss shows as a red e2e. A new demo meets this with its registry row.
+
 **Any cluster fleet may run beside any e2e step.** No edge keeps them apart and the
 order does not either; a fleet leaves with its own step (`downsStand`), which is
 hygiene rather than separation. A red step beside a fleet keeps the full run red.
@@ -998,23 +1031,26 @@ the stand is raised, and so is a stand that leaves out what the harness reads.
 
 Each demo's root `docker/docker-compose.cluster.yml` keeps the project name and
 `x-hilos-cluster`. One `include` path-list merges `cluster/local.yml` with
-`cluster/tooling.yml`. Local services extend the canonical `database.yml`,
-`node.yml` and, where present, `entry.yml` in that directory. Those canonical
-services do not become extra nodes in the aggregate. Compose 5.6.1, pinned in
-the harness, resolves this model directly, including `!reset` and `!override`.
+`cluster/tooling.yml`. Every service of `local.yml` that extends a file in that
+directory — a part — inherits its mounts and ports and resets the ports with
+`ports: !reset []`; today's parts are `database.yml`, `node.yml` and, where
+present, `entry.yml`. The services inside a part do not join the aggregate
+themselves; only the services that extend them do. Compose 5.6.1, pinned in the
+harness, resolves this model directly, including `!reset` and `!override`.
 
-The local aggregate removes standalone port publications with `ports: !reset []`.
 Every local node replaces `env_file` with the tracked demo `.env.example`,
 `common.env` and its fixed `nodes/<id>.env`, in that order. A global
 `HILOS_CLUSTER_NODE_ENV` therefore cannot replace local node identities. Bind
 paths and build contexts resolve from `docker/cluster`; mounts merge by their
 container target, retaining per-node logs and the stand's export storage.
-Binance shares one named export volume among its nodes and entry. Online-testing
-shares its host `data/data_export` and serves Angular's `frontend/dist` at
+Every cluster stand mounts its own named data volume at `/app/data` on its nodes
+and its CLI ([Data root of a stand](#the-full-run--one-graph-a-bounded-number-of-lanes)).
+Binance and online-testing each share one named export volume of the stand among
+its nodes and entry; online-testing also serves Angular's `frontend/dist` at
 `/usr/share/nginx/html`. Ecommerce-shop has no entry, cluster browser suite or
 additional export volume. Each cluster stand gives Status a separate named
-volume, suffixed with `${HILOS_STAND_SUFFIX:-}` and shared by all its nodes and
-the entry where one exists.
+volume over its root, suffixed with `${HILOS_STAND_SUFFIX:-}` and shared by all
+its nodes and the entry where one exists.
 
 The CLI carrier is default-on. It uses `APP_ENV=test`, explicit cluster database
 credentials and command port, and mounts tracked `tests/.env` read-only

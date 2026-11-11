@@ -27,6 +27,7 @@ services:
       COMMAND_PORT: "8094"
     volumes:
       - ../..:/app
+      - data:/app/data
       # Tracked default; runtime DB env above takes precedence over its test DB.
       - ${HILOS_CLUSTER_TEST_ENV_FILE:-../../tests/.env}:/app/tests/.env:ro
       - ../../../../composer.json:/hilos/composer.json:ro

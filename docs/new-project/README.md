@@ -251,11 +251,14 @@ nginx serving `frontend/dist` with the `/ws` upgrade proxy (profile `e2e`), the
 Playwright runner (its image tag MUST equal the `@playwright/test` version).
 Teardown always via `--profile "*" down` or profiled services leak.
 
-When Status is enabled, keep its files separate per installation: local stacks
-use `data/status`, test stacks use `data/status-test`, and each cluster stand uses
-its own named volume suffixed with `${HILOS_STAND_SUFFIX:-}`, shared by its nodes
-and entry where present. A new project that copies a demo's cluster stand must
-copy its Status volume definition too.
+A stand never shares the local installation's `data/`: the test stack mounts
+`../data/test:/app/data` on its daemon and cli, and its nginx reads exports,
+Status and files from `data/test/`; a cluster stand mounts a named data volume of
+its own, suffixed with `${HILOS_STAND_SUFFIX:-}`, at `/app/data` on every node and
+its CLI, with Status on a named volume of its own over it. A new project that
+copies a demo's stand copies its data root too, and
+`framework/tests/Unit/StandDataRootGuardTest.php` holds it to that
+([Data root of a stand](../agents/testing.md#the-full-run--one-graph-a-bounded-number-of-lanes)).
 
 **Ports.** In-container daemon ports are FIXED for every project: 8090
 (status) / 8091 (worker comm) / 8092 (websocket) — the nginx template proxies

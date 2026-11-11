@@ -33,6 +33,7 @@ services:
     labels:
       hilos.role: app
     volumes:
+      - data:/app/data
       - data-export:/app/data/data_export
       - status:/app/data/status
       - ../../data/logs-cluster/m1:/var/log/hilos
@@ -53,6 +54,7 @@ services:
       - ./common.env
       - ./nodes/m2.env
     volumes:
+      - data:/app/data
       - data-export:/app/data/data_export
       - status:/app/data/status
       - ../../data/logs-cluster/m2:/var/log/hilos
@@ -73,6 +75,7 @@ services:
       - ./common.env
       - ./nodes/m3.env
     volumes:
+      - data:/app/data
       - data-export:/app/data/data_export
       - status:/app/data/status
       - ../../data/logs-cluster/m3:/var/log/hilos
@@ -93,6 +96,7 @@ services:
       - ./common.env
       - ./nodes/s1.env
     volumes:
+      - data:/app/data
       - data-export:/app/data/data_export
       - status:/app/data/status
       - ../../data/logs-cluster/s1:/var/log/hilos
@@ -113,6 +117,7 @@ services:
       - ./common.env
       - ./nodes/s2.env
     volumes:
+      - data:/app/data
       - data-export:/app/data/data_export
       - status:/app/data/status
       - ../../data/logs-cluster/s2:/var/log/hilos
@@ -135,6 +140,7 @@ services:
     # Foreign-authority node, raised only by the stranger scenarios.
     profiles: [stranger]
     volumes:
+      - data:/app/data
       - data-export:/app/data/data_export
       - status:/app/data/status
       - ../../data/logs-cluster/x1:/var/log/hilos
@@ -146,15 +152,22 @@ services:
         ipv4_address: 10.${HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER:-221}.0.16
 
 volumes:
-  # This stand needs its own volume: local and test mount the demo's host data/data_export,
-  # while the export agent deletes files without ready rows in its own database at start
-  # and hourly. The full run may run this cluster step beside e2e. All six nodes share
-  # this disk, and the harness's down --volumes clears it with the database each run.
+  # The stand's own data root: the export agent deletes files without ready rows in its
+  # own database at start and hourly, so the local installation's data/ must stay out of
+  # its sight. Every node and the CLI mount this volume at /app/data, and the harness's
+  # down --volumes clears it with the database each run.
+  data:
+    name: hilos-binance-btc-tracker-cluster-data${HILOS_STAND_SUFFIX:-}
+
+  # Exports sit on a volume of their own over that root because the entry reads them at
+  # its own path, /data_export, and its part is shared with standalone and stays as is.
+  # All six nodes and the entry share this disk.
   data-export:
     name: hilos-binance-btc-tracker-cluster-data-export${HILOS_STAND_SUFFIX:-}
 
-  # Independent test installations must not overwrite each other's Status files.
-  # Every node and the entry within this cluster share this one volume.
+  # Status sits on a volume of its own over the root for the same reason: the entry reads
+  # it at /status. Independent test installations must not overwrite each other's Status
+  # files. Every node and the entry within this cluster share this one volume.
   status:
     name: hilos-binance-btc-tracker-cluster-status${HILOS_STAND_SUFFIX:-}
 

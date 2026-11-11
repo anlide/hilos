@@ -211,8 +211,10 @@ The one nginx entry is `10.221.0.30` inside the stand network, unpublished on th
 host. `hilos_stand_master=m1|m2|m3` selects the master behind it; without the cookie
 nginx rotates over the masters, and an unknown name returns 421. The response header
 `X-Hilos-Stand-Master` carries the responding master's upstream address.
-The nodes' `data_export` is one volume of this stand, shared by every node,
-rather than the demo's host directory used by the local and test stacks.
+The nodes' `data_export` is one volume of this stand, shared by every node and
+the entry, over the stand's own data volume at `/app/data`. The local stack keeps
+exports in the host `data/data_export`, and the test stack in its own root,
+`data/test/`.
 
 Nothing here drives the stand: the framework's shared cluster harness
 (`framework/docker/cluster/`) reads the nodes out of the compose file and runs
