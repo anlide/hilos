@@ -38,7 +38,6 @@ Composer scripts live in the repo-root `composer.json`:
 | `composer run test:framework:piece -- <K>` | Run integration piece K on its own database: the classes whose crc32 of the short name lands on K, as defined in `scripts/framework-pieces.php`. Needs `up` and `databases`. |
 | `composer run test:framework:unit` | Run framework unit tests (`framework/tests/Unit`). |
 | `composer run test:framework:integration` | Run framework integration tests (`framework/tests/Integration`). Requires DB. |
-| `composer run test:framework:phpunit` | Run both PHPUnit suites. |
 | `composer run test:framework:all` | Run the framework backend steps of the graph, tag `framework-php`: the four integration pieces run sequentially, each on its own database, beside the independent `framework-unit`; the stand comes up before them and goes down after a green finish. |
 | `composer run test:framework:down[-volumes]` | Stop (and optionally wipe volumes). |
 
@@ -166,13 +165,36 @@ Removing one of the three attributes from a configuration is **not** a way out
 — it is undoing the gate, and it takes a person's decision.
 
 `PhpunitIssueGateTest` in the framework unit suite keeps the gate on: it reads
-all eight configurations — the framework's and one per demo — and requires the
-three attributes. The next demo is added to the list inside that test — a demo
-born without its gate fails there instead of running quiet.
+every configuration — the framework's and one per demo — and requires the
+three attributes and the process-environment extension. The next demo is added
+to the list inside that test — a demo born without its gate fails there instead
+of running quiet.
 
 *Why the gate exists.* The warning that a walk over a mutating collection was
 skipping a row was printed on every run and counted by nobody, and it stayed in
 the tree until it cost a wrong session (HIL-673).
+
+---
+
+## A test leaves the process environment as it found it
+
+Every `phpunit.xml` registers
+`Hilos\Testing\ProcessEnvironment\ProcessEnvironmentExtension`. It snapshots
+`getenv()` on the way into a test and into a test class, and puts that snapshot
+back on the way out: a name the test changed returns to its previous value, and
+a name the test added is removed. A variable set in `setUpBeforeClass` lives for
+the whole class and leaves with it. A test that fails or is skipped in `setUp`
+leaves no environment behind for the next test either.
+
+A test does not put environment variables back itself. An `<env>` value in the
+configuration (`APP_ENV=test`) reaches every test, whatever the previous one
+removed. Statics sit outside the extension; the test that changed one puts it
+back.
+
+*Why.* The framework gate splits integration into pieces by the crc32 of a
+class's short name. A test that cleared `APP_ENV` in `tearDown` stayed green
+only while the class that needed the variable ran in another piece. A new class,
+or a rename, put the two in one piece (HIL-1916, HIL-2097).
 
 ---
 
@@ -184,7 +206,7 @@ wall-clock, so they are a **deliberate, infrequent** run — never an inner loop
 
 | What changed | Run | How often |
 |---|---|---|
-| PHP backend logic (framework or a demo) | the affected side's PHPUnit — `test:framework:phpunit`, or a demo's `test:phpunit` | every change |
+| PHP backend logic (framework or a demo) | the affected side's PHPUnit — `test:framework:all` for the framework (the gate's own command: the unit suite beside the four integration pieces), or a demo's `test:phpunit` | every change |
 | A project topology registry — `Hilos::PAGES` / `GROUPS` / `AGENTS` / `TABLES` / `ACTIONS` / `SIGNALS` / `AGENT_SIGNALS` | that demo's `test:unit` — the `*TopologyRegistryTest` snapshot guard stays red until the new page / agent / action / signal is added to it | every registry change |
 | FE core / SDK or a view (`@hilos/*`, TS) | `test:framework:frontend` (check + vitest + lint + format) | every change |
 | An Angular view's template | `test:framework:frontend` — plain `tsc` does not read templates, so the `@hilos/angular` check runs a second pass, `ngc --noEmit` over the `tsconfig.build.json` the ng-packagr build uses; a template error — and an Angular extended template diagnostic (`NG8xxx`), which `tsconfig.build.json` raises to an error — is red here, not only in `test:framework:frontend:build` | every Angular template change |

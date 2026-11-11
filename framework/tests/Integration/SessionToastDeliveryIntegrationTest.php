@@ -467,7 +467,7 @@ final class SessionToastDeliveryIntegrationTest extends FrameworkIntegrationTest
         // 'hilos-framework-test.hilos_account_deletion' doesn't exist" in the standing read, and
         // green on the rerun of the same sha - the test database was not all there yet. Paid off by
         // finding which setup races the schema, this skip removed, and the test green in
-        // test:framework:phpunit.
+        // test:framework:all.
         $this->markTestSkipped('FIXME(2026-10-04): flaky - once read a table the test database did not have yet (run 0675)');
         $agent = new SessionToastDeliveryTestAgent();
         $agent->onSignalAgent(

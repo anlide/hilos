@@ -14,6 +14,7 @@ use PHPUnit\Framework\TestCase;
  * nobody. That is how a real defect stayed in the tree until it cost a wrong session (HIL-673).
  * The three attributes turn the count into a verdict, and this test keeps them on: a suite that
  * loses them, or a demo born without them, is caught here instead of going quiet.
+ * The same list requires the process environment extension.
  */
 final class PhpunitIssueGateTest extends TestCase
 {
@@ -24,22 +25,7 @@ final class PhpunitIssueGateTest extends TestCase
 
     public function testEveryPhpunitConfigFailsOnIssues(): void
     {
-        // The list is spelled out rather than globbed: a demo added without its gate must fail
-        // here, and a glob would simply not see it. A new demo is added to THIS list.
-        $root = dirname(__DIR__, 3);
-        $configs = [
-            $root . '/framework/tests/phpunit.xml',
-            $root . '/demo/binance-btc-tracker/tests/phpunit.xml',
-            $root . '/demo/chat/tests/phpunit.xml',
-            $root . '/demo/ecommerce-shop/tests/phpunit.xml',
-            $root . '/demo/online-testing/tests/phpunit.xml',
-            $root . '/demo/pmd/tests/phpunit.xml',
-            $root . '/demo/polls/tests/phpunit.xml',
-            $root . '/demo/preferans/tests/phpunit.xml',
-            $root . '/demo/tasks/tests/phpunit.xml',
-        ];
-
-        foreach ($configs as $config) {
+        foreach ($this->phpunitConfigs() as $config) {
             $this->assertFileExists($config);
 
             $xml = simplexml_load_file($config);
@@ -51,5 +37,58 @@ final class PhpunitIssueGateTest extends TestCase
                 $this->assertSame('true', (string)$value, "{$config} sets {$attribute} to a value other than true");
             }
         }
+    }
+
+    /**
+     * Each watched configuration registers the process environment extension.
+     */
+    public function testEveryPhpunitConfigRestoresTheProcessEnvironment(): void
+    {
+        foreach ($this->phpunitConfigs() as $config) {
+            $this->assertFileExists($config);
+
+            $xml = simplexml_load_file($config);
+            $this->assertNotFalse($xml, "cannot parse {$config}");
+
+            $requiredClass = 'Hilos\Testing\ProcessEnvironment\ProcessEnvironmentExtension';
+            $registeredClass = null;
+            foreach ($xml->extensions->bootstrap as $bootstrap) {
+                $class = $bootstrap['class'];
+                if ($class !== null && (string)$class === $requiredClass) {
+                    $registeredClass = (string)$class;
+                }
+            }
+
+            $this->assertSame(
+                $requiredClass,
+                $registeredClass,
+                "{$config} does not register the process environment extension",
+            );
+        }
+    }
+
+    /**
+     * The named PHPUnit configurations this gate watches.
+     *
+     * Spelled out rather than globbed: a demo added without its gate must fail here, and a
+     * glob would simply not see it. A new demo is added to this list.
+     *
+     * @return list<string> Absolute paths of the watched configurations
+     */
+    private function phpunitConfigs(): array
+    {
+        $root = dirname(__DIR__, 3);
+
+        return [
+            $root . '/framework/tests/phpunit.xml',
+            $root . '/demo/binance-btc-tracker/tests/phpunit.xml',
+            $root . '/demo/chat/tests/phpunit.xml',
+            $root . '/demo/ecommerce-shop/tests/phpunit.xml',
+            $root . '/demo/online-testing/tests/phpunit.xml',
+            $root . '/demo/pmd/tests/phpunit.xml',
+            $root . '/demo/polls/tests/phpunit.xml',
+            $root . '/demo/preferans/tests/phpunit.xml',
+            $root . '/demo/tasks/tests/phpunit.xml',
+        ];
     }
 }

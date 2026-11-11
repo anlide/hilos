@@ -40,7 +40,7 @@ demo/<name>/
   backend/             # the PHP application
   frontend/            # the SDK consumer app (see the per-framework docs)
   tests/
-    phpunit.xml        # unit suite; bootstrap = backend/Bootstrap/phpunit.php
+    phpunit.xml        # unit suite; bootstrap = backend/Bootstrap/phpunit.php; registers the process-environment extension
     Unit/              # at minimum: the topology registry test
     .env               # test DB coordinates; tracked, the same on every checkout
     e2e/               # Playwright package (own package.json; own eslint and prettier configs)

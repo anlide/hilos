@@ -21,9 +21,12 @@
         </testsuite>
     </testsuites>
     <php>
-        <!-- The unit and integration suites share one process, and its memory grows with every case:
-             126.5 MB of the 128 MB default at 5247 cases, and over it two cases later. -->
+        <!-- The value was set when unit and integration ran in one process (the shared goal
+             was removed in HIL-2097). A manual run that names no test suite still runs that way. -->
         <ini name="memory_limit" value="512M"/>
         <env name="APP_ENV" value="test"/>
     </php>
+    <extensions>
+        <bootstrap class="Hilos\Testing\ProcessEnvironment\ProcessEnvironmentExtension"/>
+    </extensions>
 </phpunit>

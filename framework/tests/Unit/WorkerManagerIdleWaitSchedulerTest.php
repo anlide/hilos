@@ -311,23 +311,28 @@ final class WorkerManagerIdleWaitSchedulerTest extends TestCase
         $manager = $this->manager();
         $manager->add(new IdleSchedulerAgent());
         $field = new ReflectionProperty(WorkerTickFailureLog::class, 'windows');
-        $field->setValue(null, null);
-        self::assertFalse(WorkerTickFailureLog::hasPendingWindows());
-        self::assertSame(1600.0, $manager->finishPass(1000.0));
-        self::assertNull($field->getValue());
-        $windows = new RepeatedFailureWindows(1, 60.0);
-        $field->setValue(null, $windows);
-        $windows->admits('failure', 1000.0);
-        self::assertSame(1000.1, $manager->finishPass(1000.0));
-        self::assertTrue($windows->hasPendingWindows());
-        self::assertCount(1, $windows->closeExpired(1060.0));
-        self::assertSame(1600.0, $manager->finishPass(1000.0));
-        $windows->admits('replaced', 1000.0);
-        $windows->admits('replaced', 1060.0);
-        self::assertTrue($windows->hasPendingWindows());
-        self::assertCount(2, $windows->closeExpired(1120.0));
-        self::assertFalse($windows->hasPendingWindows());
-        self::assertSame(1600.0, $manager->finishPass(1000.0));
+        $previous = $field->getValue();
+        try {
+            $field->setValue(null, null);
+            self::assertFalse(WorkerTickFailureLog::hasPendingWindows());
+            self::assertSame(1600.0, $manager->finishPass(1000.0));
+            self::assertNull($field->getValue());
+            $windows = new RepeatedFailureWindows(1, 60.0);
+            $field->setValue(null, $windows);
+            $windows->admits('failure', 1000.0);
+            self::assertSame(1000.1, $manager->finishPass(1000.0));
+            self::assertTrue($windows->hasPendingWindows());
+            self::assertCount(1, $windows->closeExpired(1060.0));
+            self::assertSame(1600.0, $manager->finishPass(1000.0));
+            $windows->admits('replaced', 1000.0);
+            $windows->admits('replaced', 1060.0);
+            self::assertTrue($windows->hasPendingWindows());
+            self::assertCount(2, $windows->closeExpired(1120.0));
+            self::assertFalse($windows->hasPendingWindows());
+            self::assertSame(1600.0, $manager->finishPass(1000.0));
+        } finally {
+            $field->setValue(null, $previous);
+        }
     }
 
     public function testAnalyticsFlushAfterDispatchKeepsTheQueuedBatchOnAShortPass(): void

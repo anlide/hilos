@@ -28,4 +28,7 @@
         <env name="DB_USERNAME" value="hilos"/>
         <env name="DB_PASSWORD" value="hilos_pass"/>
     </php>
+    <extensions>
+        <bootstrap class="Hilos\Testing\ProcessEnvironment\ProcessEnvironmentExtension"/>
+    </extensions>
 </phpunit>
