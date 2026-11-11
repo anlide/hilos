@@ -280,36 +280,6 @@ class NotificationDeliveries extends Objects
     }
 
     /**
-     * Reads pending rows with their recipients in journal order, including orphaned notifications.
-     *
-     * @param string $channel Channel name
-     * @return array<int, ?int> Recipient by notification id, oldest delivery first
-     * @throws TableNotActivatedException When the project has not activated the delivery table
-     * @throws DatabaseException If the database query fails
-     */
-    public function pendingRecipients(string $channel): array
-    {
-        $this->requireActivatedTable();
-
-        $recipients = [];
-        foreach (Database::sql(
-            'SELECT d.`' . EntityNotificationDelivery::notification_id . '`, n.`' . EntityNotification::user_id . '`'
-            . ' FROM `' . EntityNotificationDelivery::_table . '` d'
-            . ' LEFT JOIN `' . EntityNotification::_table . '` n ON n.`' . EntityNotification::id
-            . '` = d.`' . EntityNotificationDelivery::notification_id . '`'
-            . ' WHERE d.`' . EntityNotificationDelivery::channel . '` = ?'
-            . ' AND d.`' . EntityNotificationDelivery::status . '` = ?'
-            . ' ORDER BY d.`' . EntityNotificationDelivery::id . '` ASC',
-            [$channel, DeliveryStatus::PENDING],
-        )->rows() as $row) {
-            $userId = $row[EntityNotification::user_id];
-            $recipients[(int)$row[EntityNotificationDelivery::notification_id]] = $userId === null ? null : (int)$userId;
-        }
-
-        return $recipients;
-    }
-
-    /**
      * Counts one delivery attempt against the row, keeping it pending.
      *
      * Called by the channel agent when it starts an attempt, so `attempts` reflects
