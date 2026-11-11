@@ -458,11 +458,7 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
         $this->subscribe($userId, self::ENDPOINT);
         $id = $this->subscriptionIdOf($userId, self::ENDPOINT);
         self::assertNotNull($id);
-        // A fixed old stamp makes renewal distinct without waiting for the clock.
-        ExecutionContext::run(new ExecutionFrame(agentId: $this->library->getId()), static function () use ($id): void {
-            Hilos::$db->pushSubscriptions->getObjectCollection()[$id]->lastSeenAt = 1767225600123;
-            Hilos::$db->pushSubscriptions->getObjectCollection()[$id]->sync();
-        });
+        $opened = (int)$this->deviceRow($id)['last_seen_at'];
         $attempt = ExecutionContext::run(
             new ExecutionFrame(agentId: $this->pushChannel->getId()),
             fn () => $this->pushChannel->createAttempt('1', Hilos::$db->notifications->getObjectCollection()[$notificationId]),
@@ -474,9 +470,12 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
             PushSubscriptionAction::SUBSCRIBE, null,
         ));
         self::assertNull($answer->error);
+        self::assertSame((int)$this->deviceRow($id)['last_seen_at'], Hilos::$db->pushSubscriptions->getObjectCollection()[$id]->lastSeenAt);
+        // The saved moment is put back where it stood when sending opened: only the revision tells the renewal apart.
+        Database::sqlRun('UPDATE `hilos_push_subscription` SET `last_seen_at` = ? WHERE `id` = ?', [$opened, $id]);
         $renewed = $this->deviceRow($id);
-        self::assertGreaterThan(1767225600123, (int)$renewed['last_seen_at']);
-        self::assertSame((int)$renewed['last_seen_at'], Hilos::$db->pushSubscriptions->getObjectCollection()[$id]->lastSeenAt);
+        self::assertSame($opened, (int)$renewed['last_seen_at']);
+        self::assertSame('2', (string)$renewed['revision']);
         while (Hilos::$sr->getNextQueuedSignal() !== null) {
         }
         $attempt->tick(1.0);
@@ -500,6 +499,57 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
         self::assertSame('rotated-auth-secret', $renewed['auth']);
         self::assertCount(1, Hilos::$db->pushSubscriptions->getObjectCollection()->forUser($userId));
         $attempt->close();
+    }
+
+    public function testALateReportOfASameKeysRenewalWritesNothingAndTheNextSendMarksTheDeviceGone(): void
+    {
+        $userId = self::seedPerson();
+        $notificationId = $this->letter($userId);
+        $this->subscribe($userId, self::ENDPOINT);
+        $id = $this->subscriptionIdOf($userId, self::ENDPOINT);
+        self::assertNotNull($id);
+        $opened = (int)$this->deviceRow($id)['last_seen_at'];
+        $late = ExecutionContext::run(
+            new ExecutionFrame(agentId: $this->pushChannel->getId()),
+            fn () => $this->pushChannel->createAttempt('1', Hilos::$db->notifications->getObjectCollection()[$notificationId]),
+        );
+
+        // The browser hands back the very keys it was subscribed with.
+        $answer = $this->carry(HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE, new UserPushSubscribeSignalData(
+            $userId, $id, self::ENDPOINT, 'pk', 'auth', null,
+            HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE, self::ACCEPT_KEY, null,
+            PushSubscriptionAction::SUBSCRIBE, null,
+        ));
+        self::assertNull($answer->error);
+        Database::sqlRun('UPDATE `hilos_push_subscription` SET `last_seen_at` = ? WHERE `id` = ?', [$opened, $id]);
+        $renewed = $this->deviceRow($id);
+        self::assertSame('2', (string)$renewed['revision']);
+        while (Hilos::$sr->getNextQueuedSignal() !== null) {
+        }
+        $late->tick(1.0);
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($signal);
+        self::assertInstanceOf(AgentSignalData::class, $signal->data);
+        self::assertSame(['userId' => $userId, 'subscriptionId' => $id, 'revision' => 1], $signal->data->data->toArray());
+        $this->deliverToPerson($signal);
+        self::assertSame($renewed, $this->deviceRow($id));
+        self::assertNull($renewed['gone_at']);
+        $late->close();
+
+        while (Hilos::$sr->getNextQueuedSignal() !== null) {
+        }
+        $fresh = ExecutionContext::run(
+            new ExecutionFrame(agentId: $this->pushChannel->getId()),
+            fn () => $this->pushChannel->createAttempt('1', Hilos::$db->notifications->getObjectCollection()[$notificationId]),
+        );
+        $fresh->tick(1.0);
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($signal);
+        self::assertInstanceOf(AgentSignalData::class, $signal->data);
+        self::assertSame(['userId' => $userId, 'subscriptionId' => $id, 'revision' => 2], $signal->data->data->toArray());
+        $this->deliverToPerson($signal);
+        self::assertNotNull($this->deviceRow($id)['gone_at']);
+        $fresh->close();
     }
 
     public function testARepeatedDeadEndpointReportKeepsTheFirstGoneMomentWithoutAnswering(): void
