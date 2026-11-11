@@ -265,8 +265,9 @@ test('navigates Logs pages and preserves filters and live logging modes', async 
     await expect(frugal).toBeEnabled()
     passed = true
   } finally {
-    // Clearing the mode settings returns the stand to what the test found
-    // (:143–149) and preserves any earlier failure in the test report.
+    // Clearing the mode settings returns the stand to what the test found at
+    // its start (no mode applied, the stand's rotation schedule the one
+    // difference) and keeps any earlier failure in the test report.
     try {
       await clearLogModeRows(page)
     } catch (cleanupError) {
