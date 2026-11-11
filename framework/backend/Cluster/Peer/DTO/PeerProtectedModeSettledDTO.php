@@ -8,9 +8,9 @@ use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /**
- * Peer frame the leader sends every follower master once every node of the round has quiesced.
+ * Peer frame the leader sends every follower once every node of the round has quiesced.
  *
- * The close of a quiesce round, sent with {@see PeerServer::broadcastToMasters} at the end of every
+ * The close of a quiesce round, sent with {@see PeerServer::broadcastSettled()} at the end of every
  * one of them - the first entry, a repeat from the verification window and the close back from it -
  * and before the ready. The follower writes {@see ProtectedModeRuntime::PHASE_ACTIVE} on its row,
  * which is all active says there: every node has stopped its roster (HIL-1128). Which leader sent it

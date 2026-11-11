@@ -10,7 +10,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 
 /**
- * The leader sends this frame to every follower master through {@see PeerServer::broadcastToMasters}.
+ * The leader sends this frame to every follower, master or slave, through {@see PeerServer::broadcastWindow()}.
  * Each follower writes a direct verification window without stopping its agents and answers with
  * {@see PeerProtectedModeQuiescedDTO}. The existing freeze descriptor is carried unchanged.
  */

@@ -14,8 +14,8 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
  * Peer frame the leader broadcasts to every follower to freeze it for a destructive operation.
  *
  * The cluster-wide half of the two-phase freeze: once an initiator has asked over
- * {@see PeerProtectedModeEnableDTO}, the leader sends this to each follower with
- * {@see PeerServer::broadcastToMasters}. The same leader sends it again for a repeat
+ * {@see PeerProtectedModeEnableDTO}, the leader sends this to each linked node, master or slave,
+ * with {@see PeerServer::broadcastQuiesce()} (HIL-1818). The same leader sends it again for a repeat
  * entry from the verification window (HIL-1057) and for the close back from it (HIL-1128); a
  * follower already frozen accepts that frame only while its row is still verifying. The follower
  * quiesces its own agents (leaving the initiator agent named in the carried

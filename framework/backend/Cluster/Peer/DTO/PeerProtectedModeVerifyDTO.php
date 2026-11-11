@@ -14,7 +14,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
  *
  * Unlike the enable/quiesce pair, one frame serves both directions: an initiator that does not
  * lead sends it to the leader with {@see PeerServer::sendToMaster}, and the leader sends the same
- * frame on to every follower with {@see PeerServer::broadcastToMasters}. The receiving node knows
+ * frame on to every follower with {@see PeerServer::broadcastVerify()}. The receiving node knows
  * which half it is playing without being told - it either leads the freeze the sender initiated,
  * or it is frozen by the sender - so a second name would carry no information the node does not
  * already hold. Each node then writes {@see ProtectedModeRuntime::PHASE_VERIFYING} locally, which

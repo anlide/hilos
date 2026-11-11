@@ -19,7 +19,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
  * that photographed it.
  *
  * Like {@see PeerProtectedModePassDTO} it travels both ways - initiator to leader, then leader to
- * every follower master - so each node holds the same {@see ProtectedModeRuntime::$circleSessionTokenHashes}
+ * every follower - so each node holds the same {@see ProtectedModeRuntime::$circleSessionTokenHashes}
  * and decides admission against its own copy. A verifier holding a pass brings its key to whichever
  * node it lands on; a member of the circle brings nothing - its tab is recognized by the session it
  * already carries - so whichever node that tab reconnects to has to hold the photograph already.

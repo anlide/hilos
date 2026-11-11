@@ -12,7 +12,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
  *
  * The cluster-wide half of the release: once the initiator has finished and asked over
  * {@see PeerProtectedModeDisableDTO}, the leader sends this to each follower with
- * {@see PeerServer::broadcastToMasters}. The follower clears the freeze on its local
+ * {@see PeerServer::broadcastLift()}. The follower clears the freeze on its local
  * {@see ProtectedModeRuntime} and resumes normal operation. There is
  * only ever one freeze in flight, so the frame carries no payload; it is the lift itself.
  */

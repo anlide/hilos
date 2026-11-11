@@ -8,7 +8,7 @@ use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Core\Exception\InvalidFormatException;
 
 /**
- * A verifier admitted by a code travels from the 101 master through the leader to every master.
+ * A verifier admitted by a code travels from the 101 master through the leader to every node.
  * Receivers admit only while verifying and while this pass stands on their row. Both values are
  * hashes; the clear code and the session token stay at the browser (HIL-1305).
  */

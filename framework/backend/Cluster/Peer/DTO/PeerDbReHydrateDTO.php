@@ -14,7 +14,7 @@ use Hilos\Database\ReHydrateRound;
  * The nodes of a cluster share one database, so a restore run on any of them leaves the others
  * answering out of caches of a database that no longer exists - "looks alive, replies with a
  * fiction", one storey up from the same problem inside a single node. This is the announcement
- * that reaches them, sent with {@see PeerServer::broadcastToMasters}.
+ * that reaches them, sent with {@see PeerServer::broadcastDbReHydrate()}.
  *
  * It carries one field, and it is not about the database: the number the announcing node opened
  * its own round under (HIL-694). The event itself still names no collection and no row. A
