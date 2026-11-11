@@ -847,7 +847,6 @@ Step buttons invoke cyclic stepping. Alt+Down opens the calendar or time
 controls; the opener also works with Enter and Space. Time-only has a time
 control with no month grid. Disabled/busy prevents opening while retaining the
 visible draft.
-(not in the code yet — HIL-1974)
 (not in the code yet — HIL-1977)
 
 Expose a visibly named group and named `spinbutton` parts, including meridiem
@@ -882,7 +881,6 @@ a day changes only that endpoint's date and preserves its time. On a wide view,
 name the active range endpoint in the panel's visually hidden polite live text
 with `labels.chooseDate` and `labels.from` or `labels.to`; only the narrow view
 exposes an explicit endpoint switch.
-(not in the code yet — HIL-1974)
 (not in the code yet — HIL-1977)
 
 Date-only closes after a complete choice: one date, or both range dates.
@@ -899,7 +897,6 @@ modal the wide panel stays inside the modal's scrolling body, so the whole
 panel is visible at once only when that body is at least as tall as the panel;
 a shorter form reaches the rest by scrolling the body. When the panel is open,
 Escape must not reach the parent modal.
-(not in the code yet — HIL-1974)
 (not in the code yet — HIL-1977)
 
 The narrow layout applies at `(max-width: 767.98px)`. `bindNarrowScreen()`

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type React from 'react'
 import {
   createDateTimePickerController,
@@ -8,6 +8,7 @@ import {
   type DateTimePickerCount,
   type DateTimePickerFactors,
   type DateTimePickerKind,
+  type WritableSignal,
 } from '@hilos/core/base'
 import { HilosDateTimePicker, useSignal } from '@hilos/react/base'
 
@@ -63,6 +64,16 @@ const FACTORS = {
   },
 } satisfies Record<string, DateTimePickerFactors>
 
+// React's checkbox onChange follows click. A parent update dispatches a
+// native change and does not move focus; this listener writes the same signal.
+function onFixtureLockChange(
+  signal: WritableSignal<boolean>,
+  event: Event,
+): void {
+  if (!(event.currentTarget instanceof HTMLInputElement)) return
+  signal.set(event.currentTarget.checked)
+}
+
 type FixturePicker = DateTimePickerController<
   DateTimePickerKind,
   DateTimePickerCount
@@ -79,13 +90,17 @@ export function DateTimePickerFixture(): React.JSX.Element {
   const [factors, setFactors] = useState<keyof typeof FACTORS>('en-GB')
   const [zone, setZone] = useState('Europe/Warsaw')
   const [today, setToday] = useState('2026-10-13')
+  const [minDate, setMinDate] = useState('')
   const [seconds, setSeconds] = useState(false)
   const [changes, setChanges] = useState(0)
+  const [mountId, setMountId] = useState(0)
 
   const [busySignal] = useState(() => createSignal(false))
   const [disabledSignal] = useState(() => createSignal(false))
   const busy = useSignal(busySignal)
   const disabled = useSignal(disabledSignal)
+  const busyInputRef = useRef<HTMLInputElement>(null)
+  const disabledInputRef = useRef<HTMLInputElement>(null)
 
   function createPicker(params: {
     kind: DateTimePickerKind
@@ -93,6 +108,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
     factors: keyof typeof FACTORS
     zone: string
     today: string
+    minDate: string
     seconds: boolean
   }): FixturePicker {
     const options = {
@@ -104,12 +120,14 @@ export function DateTimePickerFixture(): React.JSX.Element {
       disabled: () => disabledSignal.get(),
       onChange: () => setChanges((v) => v + 1),
     }
+    const minimum = params.minDate === '' ? {} : { minDate: params.minDate }
     switch (params.kind) {
       case 'date':
         return createDateTimePickerController({
           ...options,
           kind: 'date',
           today: () => params.today,
+          ...minimum,
         })
       case 'time':
         return createDateTimePickerController({
@@ -122,6 +140,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
           kind: 'datetime',
           timeZone: params.zone,
           today: () => params.today,
+          ...minimum,
         })
     }
   }
@@ -133,11 +152,31 @@ export function DateTimePickerFixture(): React.JSX.Element {
       factors: 'en-GB',
       zone: 'Europe/Warsaw',
       today: '2026-10-13',
+      minDate: '',
       seconds: false,
     }),
   )
 
   useEffect(() => () => picker.dispose(), [picker])
+
+  useEffect(() => {
+    const busyInput = busyInputRef.current
+    const disabledInput = disabledInputRef.current
+    if (busyInput === null || disabledInput === null) return
+
+    const onBusyChange = (event: Event): void => {
+      onFixtureLockChange(busySignal, event)
+    }
+    const onDisabledChange = (event: Event): void => {
+      onFixtureLockChange(disabledSignal, event)
+    }
+    busyInput.addEventListener('change', onBusyChange)
+    disabledInput.addEventListener('change', onDisabledChange)
+    return () => {
+      busyInput.removeEventListener('change', onBusyChange)
+      disabledInput.removeEventListener('change', onDisabledChange)
+    }
+  }, [busySignal, disabledSignal])
 
   const pickerSnapshot = useSignal(picker.state)
   const label = kind === 'datetime' ? `Starts, ${zone}` : 'Starts'
@@ -147,6 +186,30 @@ export function DateTimePickerFixture(): React.JSX.Element {
     if (canLoad) {
       picker.setEndpointValue('start', 1792209600000)
     }
+  }
+
+  function mountOpenTime(): void {
+    if (kind !== 'time' || count !== 'single') return
+    const previous = picker.state.get().result
+    const wasBusy = busySignal.get()
+    const wasDisabled = disabledSignal.get()
+    busySignal.set(false)
+    disabledSignal.set(false)
+    const current = createPicker({
+      kind,
+      count,
+      factors,
+      zone,
+      today,
+      minDate,
+      seconds,
+    })
+    if (previous.status === 'valid') current.setValue(previous.value)
+    current.calendar.open()
+    busySignal.set(wasBusy)
+    disabledSignal.set(wasDisabled)
+    setPicker(current)
+    setMountId((value) => value + 1)
   }
 
   return (
@@ -172,6 +235,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
                   factors,
                   zone,
                   today,
+                  minDate,
                   seconds,
                 }),
               )
@@ -201,6 +265,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
                   factors,
                   zone,
                   today,
+                  minDate,
                   seconds,
                 }),
               )
@@ -258,6 +323,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
                   factors,
                   zone: nextZone,
                   today,
+                  minDate,
                   seconds,
                 }),
               )
@@ -289,11 +355,41 @@ export function DateTimePickerFixture(): React.JSX.Element {
                   factors,
                   zone,
                   today: nextToday,
+                  minDate,
                   seconds,
                 }),
               )
             }}
           />
+        </div>
+        <div className="col-sm-6 col-lg-4">
+          <label className="form-label" htmlFor="fixture-min">
+            Minimum day
+          </label>
+          <select
+            id="fixture-min"
+            className="form-select"
+            data-id="fixture-min"
+            value={minDate}
+            onChange={(e) => {
+              const nextMinDate = e.target.value
+              setMinDate(nextMinDate)
+              setPicker(
+                createPicker({
+                  kind,
+                  count,
+                  factors,
+                  zone,
+                  today,
+                  minDate: nextMinDate,
+                  seconds,
+                }),
+              )
+            }}
+          >
+            <option value="">none</option>
+            <option value="2026-10-13">2026-10-13</option>
+          </select>
         </div>
       </div>
       <div className="d-flex flex-wrap gap-3 mb-4">
@@ -317,6 +413,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
         <div className="form-check">
           <input
             id="fixture-busy"
+            ref={busyInputRef}
             type="checkbox"
             className="form-check-input"
             data-id="fixture-busy"
@@ -332,6 +429,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
         <div className="form-check">
           <input
             id="fixture-disabled"
+            ref={disabledInputRef}
             type="checkbox"
             className="form-check-input"
             data-id="fixture-disabled"
@@ -347,12 +445,22 @@ export function DateTimePickerFixture(): React.JSX.Element {
       </div>
       <div className="mb-4">
         <HilosDateTimePicker
+          key={mountId}
           picker={picker}
           id="fixture-picker"
           label={label}
           dataId="fixture-picker"
         />
       </div>
+      <button
+        type="button"
+        className="btn btn-outline-primary"
+        data-id="fixture-mount-open-time"
+        disabled={kind !== 'time' || count !== 'single'}
+        onClick={mountOpenTime}
+      >
+        Mount open time
+      </button>
       <button
         type="button"
         className="btn btn-outline-primary"

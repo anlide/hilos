@@ -1,10 +1,12 @@
-// The React entry of HilosDateTimePicker's shared field cases
-// (../../test-support/dateTimePickerFieldCases.ts): the steps and expectations
+// The React entry of HilosDateTimePicker's shared field and calendar cases
+// (../../test-support/dateTimePickerFieldCases.ts,
+// ../../test-support/dateTimePickerCalendarCases.ts): the steps and expectations
 // live there, and this file only renders the real component and drives React's
 // lifecycle for them.
 import { act, render } from '@testing-library/react'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+import { registerDateTimePickerCalendarCases } from '../../test-support/dateTimePickerCalendarCases.js'
 import {
   registerDateTimePickerFieldCases,
   type DateTimePickerFieldInput,
@@ -17,15 +19,40 @@ const environment = globalThis as typeof globalThis & {
 }
 
 let previousActEnvironment: boolean | undefined
+let scrollDescriptor: PropertyDescriptor | undefined
+let stubbedScroll = false
 
 beforeAll(() => {
   previousActEnvironment = environment.IS_REACT_ACT_ENVIRONMENT
   // Headless controller signals mutate outside React events; RTL act wrappers enable the flag for their own turns.
   environment.IS_REACT_ACT_ENVIRONMENT = false
+  scrollDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'scrollIntoView',
+  )
+  // jsdom draws no layout and so implements no scrollIntoView.
+  if (typeof HTMLElement.prototype.scrollIntoView !== 'function') {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value() {},
+    })
+    stubbedScroll = true
+  }
 })
 
 afterAll(() => {
   environment.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment
+  if (!stubbedScroll) return
+  if (scrollDescriptor === undefined) {
+    Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
+  } else {
+    Object.defineProperty(
+      HTMLElement.prototype,
+      'scrollIntoView',
+      scrollDescriptor,
+    )
+  }
 })
 
 async function mountField(
@@ -76,3 +103,8 @@ async function mountField(
 }
 
 registerDateTimePickerFieldCases('React', { describe, it, expect }, mountField)
+registerDateTimePickerCalendarCases(
+  'React',
+  { describe, it, expect },
+  mountField,
+)
