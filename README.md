@@ -170,7 +170,7 @@ hilos/
 │   │       └── types/              # Types
 │   ├── scripts/                    # Scripts (link-frontend-sdk)
 │   └── Stubs/                      # Stubs (event.php)
-├── demo/                           # 21 demo projects
+├── demo/                           # demo projects
 ├── docs/                           # Documentation
 └── LICENSE
 ```
