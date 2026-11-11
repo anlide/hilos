@@ -475,6 +475,7 @@ use Hilos\Users\DTO\UserPhotoPutSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveDoneSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveSignalData;
 use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
+use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
@@ -2154,6 +2155,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_PHOTO_REMOVE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_NOTIFICATION_READ => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => HilosAgentType::HILOS_USER,
+            HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_PUSH_REMOVE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE => HilosAgentType::HILOS_USER,
@@ -2446,6 +2448,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_PHOTO_REMOVE => 'userId',
             HilosSignalConstants::HILOS_USER_NOTIFICATION_READ => 'userId',
             HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => 'userId',
+            HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE => 'userId',
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => 'userId',
             HilosSignalConstants::HILOS_USER_PUSH_REMOVE => 'userId',
             HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE => 'userId',
@@ -2535,6 +2538,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_PHOTO_REMOVE => UserPhotoRemoveSignalData::class,
             HilosSignalConstants::HILOS_USER_NOTIFICATION_READ => UserNotificationReadSignalData::class,
             HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => UserNotificationChannelSetSignalData::class,
+            HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE => UserPushSubscribeSignalData::class,
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => UserPushUnsubscribeSignalData::class,
             HilosSignalConstants::HILOS_USER_PUSH_REMOVE => UserPushRemoveSignalData::class,
             HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE => UserPushEndpointGoneSignalData::class,
@@ -3164,7 +3168,7 @@ final class ChatTopologyRegistryTest extends TestCase
             'notificationPreferences' => ['HIL-1952'],
             'notifications' => ['HIL-1952'],
             'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],
-            'pushSubscriptions' => ['HIL-1905', 'HIL-1906', 'HIL-1952'],
+            'pushSubscriptions' => ['HIL-1906', 'HIL-1952'],
             'secondFactorBackupCodes' => ['HIL-1904', 'HIL-1952', 'HIL-1999'],
             'secondFactorResets' => ['HIL-1952', 'HIL-1999'],
             'secondFactorSettings' => ['HIL-1952', 'HIL-1999'],

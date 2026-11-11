@@ -52,6 +52,8 @@ use Hilos\Database\Pages\HilosPageCatalog;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
 use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -332,12 +334,19 @@ final class PmdTopologyRegistryTest extends TestCase
             UserPushEndpointGoneSignalData::class,
             Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE],
         );
-        self::assertSame(['HIL-1905', 'HIL-1906', 'HIL-1952'], Hilos::SHARED_DB_OWNERS[PmdDbContext::pushSubscriptions]);
+        self::assertSame(['HIL-1906', 'HIL-1952'], Hilos::SHARED_DB_OWNERS[PmdDbContext::pushSubscriptions]);
     }
 
     /** Startup validates this project's real registry rather than a synthetic facade. */
     public function testProjectTopologyPassesStartupValidation(): void
     {
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE]);
+        self::assertSame('userId', Hilos::getAgentSignalIndexFields()[HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE]);
+        self::assertSame(
+            UserPushSubscribeSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE],
+        );
+        self::assertSame(['HIL-1906', 'HIL-1952'], Hilos::SHARED_DB_OWNERS[HilosDbContext::pushSubscriptions]);
         Hilos::validateTopology();
 
         self::assertSame(['HIL-1910', 'HIL-1952'], Hilos::SHARED_DB_OWNERS['notificationDeliveries']);

@@ -7,6 +7,9 @@ namespace Hilos\Tests\Unit;
 use Closure;
 use Hilos\BaseDTO;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Push\PushSubscriptionAction;
+use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentInterface;
@@ -106,6 +109,29 @@ final class HandoverAskReceiptTest extends TestCase
         $this->assertInstanceOf(SourceChange::class, $change);
         $this->assertSame('ak-asker', $change->origin);
         $this->assertSame('req-7', $change->originRequestId);
+    }
+
+    public function testConcretePushRenewalKeepsOriginAndReplyFieldsAcrossTheEnvelope(): void
+    {
+        $ask = new UserPushSubscribeSignalData(
+            7, 19, 'https://push.example/device', 'pk', 'auth', 'Firefox',
+            HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE,
+            'accept-push', 'request-push', PushSubscriptionAction::SUBSCRIBE, null,
+        );
+        $message = new DaemonAgentMessageDTO(HandoverReceiptTestManager::AGENT_ID, new SignalDTO(
+            new SignalSource(SignalSource::AGENT, 'unit_gatekeeper'),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName(HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE),
+            new AgentSignalData($ask),
+        ));
+        $restored = DaemonAgentMessageDTO::fromArray(json_decode($message->toJson(), true, flags: JSON_THROW_ON_ERROR));
+        self::assertInstanceOf(AgentSignalData::class, $restored->signal->data);
+        self::assertInstanceOf(UserPushSubscribeSignalData::class, $restored->signal->data->data);
+        self::assertSame($ask->toArray(), $restored->signal->data->data->toArray());
+        $this->deliver(new HandoverReceiptTestManager(), $restored->signal->data->data);
+        self::assertSame([['accept-push', 'request-push']], HandoverReceiptTestAgent::$seen);
+        self::assertSame('accept-push', HandoverReceiptTestAgent::$lastChange->origin);
+        self::assertSame('request-push', HandoverReceiptTestAgent::$lastChange->originRequestId);
     }
 
     /**

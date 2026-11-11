@@ -19,13 +19,15 @@ use Hilos\Database\Object\Item\PushSubscription as ObjectPushSubscription;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\Schema;
 use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Push\PushSubscriptionIdentity;
+use Hilos\Core\Exception\ValidationException;
 
 /**
  * PushSubscriptions object collection - the per-device push-subscription accessor (HIL-199).
  *
  * Persistence primitives for browser push subscriptions, keyed by the device
- * `endpoint` (UNIQUE). {@see subscribe()} is the opt-in write — it upserts the row
- * for an endpoint (rotated keys or a new owner replace it in place);
+ * `endpoint` (UNIQUE). The creator inserts new subscriptions; item actions renew an existing
+ * device or perform the temporary foreign rebind until HIL-1906;
  * {@see unsubscribeOwned()} removes the acting device, while {@see markGoneOwned()} keeps a
  * transport-expired endpoint visible to its owner. {@see forUser()} lists live endpoints
  * for the push delivery channel to send to; {@see deleteForUser()} clears a user's
@@ -45,48 +47,36 @@ class PushSubscriptions extends Objects
     public const string COLLECTION_KEY = HilosDbContext::pushSubscriptions;
 
     /**
-     * Registers a device's push subscription, upserting by endpoint (HIL-199).
-     *
-     * The endpoint is the device identity (UNIQUE): a re-subscribe with rotated
-     * keys, or the same endpoint arriving under a new owner, updates the one row in
-     * place rather than inserting a duplicate. `last_seen_at` is stamped on every
-     * write so a resubscribe refreshes liveness.
+     * Creates a new endpoint. Renewal and the temporary foreign rebind belong to item actions.
      *
      * @param int $userId Subscribing user id
-     * @param string $endpoint Browser push endpoint URL (device identity)
-     * @param string $p256dh Client public key (base64url)
-     * @param string $auth Client auth secret (base64url)
-     * @param ?string $userAgent Subscribing device user agent, or null
+     * @param string $endpoint Browser push endpoint URL
+     * @param string $p256dh Client public key
+     * @param string $auth Client auth secret
+     * @param ?string $userAgent Device user agent, or null
      * @throws EmptyValueException When the endpoint is empty
-     * @throws DatabaseException When the lookup or write query fails
-     * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
-     * @throws LogicException When the object collection cannot resolve its entity metadata
-     * @throws WriteNotAllowedException When the caller cannot write the subscription row
-     * @throws CreateNotAllowedException When the object writer refuses an insert
+     * @throws ValidationException When the endpoint already exists
+     * @throws DatabaseException When the lookup or insert fails
+     * @throws InvalidArgumentException When the query or sync signal is invalid
+     * @throws SourceChangeSubscriberException When an announcement fails
+     * @throws LogicException When the collection metadata is invalid
+     * @throws WriteNotAllowedException When the writer cannot write the subscription
+     * @throws CreateNotAllowedException When the writer cannot create the subscription
      */
     public function subscribe(int $userId, string $endpoint, string $p256dh, string $auth, ?string $userAgent): void
     {
         if ($endpoint === '') {
             throw new EmptyValueException('Push subscription endpoint is required');
         }
-
-        $now = TimeHelper::nowMs();
-        $subscription = $this->find($endpoint);
-
-        if ($subscription === null) {
-            $subscription = static::OBJECT_CLASS::create();
-            $subscription->endpoint = $endpoint;
-            $subscription->createdAt = $now;
-            $subscription->revision = EntityPushSubscription::INITIAL_REVISION;
-        } else {
-            $freshEntity = static::entityClass()::get([ // fresh-sql: a held object can lag behind persisted re-subscribes.
-                EntityPushSubscription::id => $subscription->id,
-            ])->first();
-            $currentRevision = $freshEntity !== null ? $freshEntity->revision : $subscription->revision;
-            $subscription->revision = $currentRevision + 1;
+        if ($this->readIdentityByEndpoint($endpoint) !== null) {
+            throw new ValidationException('Push subscription already exists');
         }
 
+        $subscription = static::OBJECT_CLASS::create();
+        $subscription->endpoint = $endpoint;
+        $subscription->createdAt = TimeHelper::nowMs();
+        $subscription->lastSeenAt = $subscription->createdAt;
+        $subscription->revision = EntityPushSubscription::INITIAL_REVISION;
         $subscription->userId = $userId;
         $subscription->p256dh = $p256dh;
         $subscription->auth = $auth;
@@ -94,12 +84,28 @@ class PushSubscriptions extends Objects
         $subscription->deviceName = DeviceName::fromUserAgent($userAgent);
         $subscription->endpointHash = hash('sha256', $endpoint);
         $subscription->goneAt = null;
-        $subscription->lastSeenAt = $now;
         $subscription->sync();
 
         if ($subscription->id !== null) {
             $this[$subscription->id] = $subscription;
         }
+    }
+
+    /**
+     * Reads the persisted identity without trusting a held object or hydrating a replacement.
+     *
+     * @param string $endpoint External browser endpoint
+     * @return ?PushSubscriptionIdentity Current row identity, or null when absent
+     * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the query order or persisted ids are invalid
+     */
+    public function readIdentityByEndpoint(string $endpoint): ?PushSubscriptionIdentity
+    {
+        $entity = static::entityClass()::get( // fresh-sql: input dispatch must see the saved owner even before DB sync arrives.
+            [EntityPushSubscription::endpoint => $endpoint],
+        )->first();
+
+        return $entity === null ? null : new PushSubscriptionIdentity($entity->id, $entity->user_id);
     }
 
     /**

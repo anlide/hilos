@@ -94,6 +94,7 @@ use Hilos\Users\DTO\UserPhotoRemoveDoneSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveSignalData;
 use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
+use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
@@ -294,6 +295,10 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => [
             AgentSignalConfigKey::INDEX_FIELD => UserNotificationChannelSetSignalData::userId,
             AgentSignalConfigKey::DTO => UserNotificationChannelSetSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserPushSubscribeSignalData::userId,
+            AgentSignalConfigKey::DTO => UserPushSubscribeSignalData::class,
         ],
         HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => [
             AgentSignalConfigKey::INDEX_FIELD => UserPushUnsubscribeSignalData::userId,
@@ -900,6 +905,20 @@ abstract class AbstractUserAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE:
+                $pushSubscribe = $data->data;
+                if (!$pushSubscribe instanceof UserPushSubscribeSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserPushSubscribeSignalData::class, $pushSubscribe);
+                }
+
+                $this->refuseAnotherPerson($pushSubscribe->userId, $name);
+                $this->sendToAgent($pushSubscribe->replySignal, HandoverAnswerSignalData::to(
+                    $pushSubscribe,
+                    $this->flagRefusal(fn () => $this->subscribePush($pushSubscribe), 'Push subscribe'),
+                ));
+
+                return;
+
             case HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE:
                 $pushUnsubscribe = $data->data;
                 if (!$pushUnsubscribe instanceof UserPushUnsubscribeSignalData) {
@@ -1455,6 +1474,26 @@ abstract class AbstractUserAgent extends AbstractAgent
                 new NotificationChannelPreferenceProjector()->channelPreferenceMap($this->userId),
             ),
         );
+    }
+
+    /**
+     * Renews the captured device without following its endpoint to a replacement row.
+     *
+     * @param UserPushSubscribeSignalData $ask Captured device and subscription keys
+     * @throws HilosException When the device is gone or the write cannot be persisted
+     */
+    protected function subscribePush(UserPushSubscribeSignalData $ask): void
+    {
+        $subscription = Hilos::$db->pushSubscriptions[$ask->subscriptionId] ?? null;
+        if ($subscription === null || !$subscription->actions->renewOwned(
+            $this->userId,
+            $ask->endpoint,
+            $ask->p256dh,
+            $ask->auth,
+            $ask->userAgent,
+        )) {
+            throw new ValidationException('This device is already gone');
+        }
     }
 
     /**

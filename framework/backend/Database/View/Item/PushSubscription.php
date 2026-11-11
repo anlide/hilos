@@ -8,6 +8,7 @@ use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Item\PushSubscription as ObjectPushSubscription;
 use Hilos\HilosException;
+use Hilos\Database\Actions\Item\PushSubscriptionActions;
 
 /**
  * PushSubscription Db item - read-facing wrapper around ObjectPushSubscription.
@@ -16,6 +17,7 @@ use Hilos\HilosException;
  * channel reads the endpoint plus the p256dh / auth keys to send to the device.
  *
  * @extends DbItem<ObjectPushSubscription>
+ * @property-read PushSubscriptionActions $actions
  * @property-read ?int $id
  * @property-read int $userId
  * @property-read string $endpoint

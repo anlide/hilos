@@ -16,6 +16,10 @@ use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Database\Migration\FrameworkMigrationStartupGuard;
+use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -118,6 +122,13 @@ final class SolarSystemModelTopologyRegistryTest extends TestCase
     /** Startup validates this project's real registry rather than a synthetic facade. */
     public function testProjectTopologyPassesStartupValidation(): void
     {
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE]);
+        self::assertSame('userId', Hilos::getAgentSignalIndexFields()[HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE]);
+        self::assertSame(
+            UserPushSubscribeSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE],
+        );
+        self::assertSame(['HIL-1906', 'HIL-1952'], Hilos::SHARED_DB_OWNERS[HilosDbContext::pushSubscriptions]);
         Hilos::validateTopology();
 
         $this->addToAssertionCount(1);

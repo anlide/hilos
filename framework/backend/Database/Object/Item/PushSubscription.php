@@ -4,18 +4,21 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
+use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Core\Http\DeviceName;
+use Hilos\HilosException;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Database\Entity\Item\PushSubscription as EntityPushSubscription;
 use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
-use Hilos\Database\Object\Collection\PushSubscriptions;
-use Hilos\Database\Object\Item\Object_;
 
 /**
  * PushSubscription object - wraps a PushSubscription entity.
  *
- * One device's browser push subscription (HIL-199). Carries no behavior beyond
- * field access — the upsert/delete orchestration lives on
- * {@see PushSubscriptions}. A push delivery reads
+ * One device's browser push subscription, with renewal of a captured persisted identity.
+ * A push delivery reads
  * {@see endpoint} plus the {@see p256dh} / {@see auth} keys to send to the endpoint.
  *
  * @extends Object_<EntityPushSubscription>
@@ -49,6 +52,81 @@ class PushSubscription extends Object_
     public const string createdAt = 'createdAt';
     public const string lastSeenAt = 'lastSeenAt';
     public const string revision = 'revision';
+
+    /**
+     * Renews only this saved row, refreshing both entity and diff baseline before editing.
+     *
+     * @param int $userId Subscribing person
+     * @param string $endpoint Captured endpoint attribute
+     * @param string $p256dh Client public key
+     * @param string $auth Client auth secret
+     * @param ?string $userAgent Device user agent, or null
+     * @return bool Whether the captured owned identity still existed and was renewed
+     * @throws HilosException When ownership, persistence or announcement refuses the write
+     */
+    public function renewOwned(int $userId, string $endpoint, string $p256dh, string $auth, ?string $userAgent): bool
+    {
+        $entity = static::ENTITY_CLASS::get([EntityPushSubscription::id => $this->id])->first();
+        if ($entity === null) {
+            return false;
+        }
+
+        Database::assertCanWrite($entity::getDatabase()->connectionIndex);
+        $this->restoreSaved($entity->toArray(), related: true);
+        DbWriteGuard::guardItemWrite(
+            static::getCollectionKey(),
+            $this->getIdString(),
+            $this->touchedSetKeys(...),
+            TruthSourceOperation::Update,
+            $this,
+        );
+        if ($entity->endpoint !== $endpoint || $entity->user_id !== $userId) {
+            return false;
+        }
+
+        $this->p256dh = $p256dh;
+        $this->auth = $auth;
+        $this->userAgent = $userAgent;
+        $this->deviceName = DeviceName::fromUserAgent($userAgent);
+        $this->goneAt = null;
+        $this->lastSeenAt = TimeHelper::nowMs();
+        $this->revision = $entity->revision + 1;
+        $this->sync();
+
+        return true;
+    }
+
+    /**
+     * Temporarily rebinds a foreign row in place until HIL-1906; ordinary set guards cover both owners.
+     *
+     * @param int $userId Subscribing person
+     * @param string $endpoint Captured endpoint attribute
+     * @param string $p256dh Client public key
+     * @param string $auth Client auth secret
+     * @param ?string $userAgent Device user agent, or null
+     * @return bool Whether the captured foreign identity still existed and was renewed
+     * @throws HilosException When ownership, persistence or announcement refuses the write
+     */
+    public function rebindForeignLegacy(int $userId, string $endpoint, string $p256dh, string $auth, ?string $userAgent): bool
+    {
+        $entity = static::ENTITY_CLASS::get([EntityPushSubscription::id => $this->id])->first();
+        if ($entity === null || $entity->endpoint !== $endpoint || $entity->user_id === $userId) {
+            return false;
+        }
+
+        $this->restoreSaved($entity->toArray(), related: true);
+        $this->userId = $userId;
+        $this->p256dh = $p256dh;
+        $this->auth = $auth;
+        $this->userAgent = $userAgent;
+        $this->deviceName = DeviceName::fromUserAgent($userAgent);
+        $this->goneAt = null;
+        $this->lastSeenAt = TimeHelper::nowMs();
+        $this->revision = $entity->revision + 1;
+        $this->sync();
+
+        return true;
+    }
 
     /**
      * Magic getter for entity properties.

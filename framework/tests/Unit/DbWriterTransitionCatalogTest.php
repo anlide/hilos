@@ -18,6 +18,7 @@ use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\TruthSource\DbWriterClaim;
+use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Core\TruthSource\DbWriterClaimWidth;
 use Hilos\Core\TruthSource\DbWriterPartition;
 use Hilos\Core\TruthSource\DbWriterTransitionCatalog;
@@ -167,7 +168,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'notifications' => ['HIL-1952'],
             'notificationDeliveries' => ['HIL-1910', 'HIL-1952'],
             'notificationPreferences' => ['HIL-1952'],
-            'pushSubscriptions' => ['HIL-1905', 'HIL-1906', 'HIL-1952'],
+            'pushSubscriptions' => ['HIL-1906', 'HIL-1952'],
             'dataExports' => ['HIL-1952'],
             'userRenames' => ['HIL-1952'],
             'userPhotos' => ['HIL-1952'],
@@ -257,13 +258,13 @@ final class DbWriterTransitionCatalogTest extends TestCase
         $this->assertVector([UserAgent::class . ':set:add,remove,update'], $states['']);
     }
 
-    /** Every remaining push upsert path keeps the library's shared Update. */
+    /** Only the remaining foreign rebind keeps the library's shared Update. */
     public function testPushUpdateSurvivesUntilItsLastOrdinaryUse(): void
     {
         $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['pushSubscriptions']);
         self::assertSame([
             '',
-            'HIL-1905,HIL-1906,HIL-1952', 'HIL-1905,HIL-1952', 'HIL-1906,HIL-1952', 'HIL-1952',
+            'HIL-1906,HIL-1952', 'HIL-1952',
         ], array_keys($states));
         foreach ($states as $pending => $state) {
             $expected = [UserAgent::class . ':set:remove,update'];
@@ -274,6 +275,17 @@ final class DbWriterTransitionCatalogTest extends TestCase
                 ? ':whole:add' : ':whole:add,update');
             $this->assertVector($expected, $state);
         }
+    }
+
+    public function testPushTransitionCannotReintroduceOwnRenewalDebt(): void
+    {
+        $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['pushSubscriptions']);
+        foreach ($states as $state) {
+            self::assertNotContains('HIL-1905', $state->pendingLeaves);
+        }
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage("DB collection 'pushSubscriptions'");
+        CatalogRetiredPushRenewalHilos::validateTopology();
     }
 
     /** Renewal and policy paths share Update; terminal deletion keeps Remove after ordinary work. */
@@ -602,9 +614,6 @@ final class DbWriterTransitionCatalogTest extends TestCase
                 '' => ['person:set:add,remove,update'],
             ],
             'pushSubscriptions' => [
-                'HIL-1905,HIL-1906,HIL-1952' => [
-                    'notifications:whole:add,update', 'person:set:remove,update', 'holder:whole:remove'],
-                'HIL-1905,HIL-1952' => ['notifications:whole:add,update', 'person:set:remove,update', 'holder:whole:remove'],
                 'HIL-1906,HIL-1952' => ['notifications:whole:add,update', 'person:set:remove,update', 'holder:whole:remove'],
                 'HIL-1952' => ['notifications:whole:add', 'person:set:remove,update', 'holder:whole:remove'],
                 '' => ['notifications:whole:add', 'person:set:remove,update'],
@@ -721,5 +730,16 @@ abstract class CatalogRegisteredButInactiveHilos extends CatalogNoFeatureHilos
         HilosAgentType::HILOS_USERS_LIBRARY => [AgentRegistryKey::WORKER => AbstractUsersLibraryAgent::class],
         HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY => [AgentRegistryKey::WORKER => AbstractNotificationsLibraryAgent::class],
         HilosAgentType::HILOS_MAIL => [AgentRegistryKey::WORKER => MailDeliveryChannelAgent::class],
+    ];
+}
+
+/** Reintroducing a retired debt must not reopen an old catalog vertex. */
+abstract class CatalogRetiredPushRenewalHilos extends Hilos
+{
+    public const array AGENTS = ChatHilos::AGENTS;
+
+    public const array SHARED_DB_OWNERS = [
+        ...ChatHilos::SHARED_DB_OWNERS,
+        'pushSubscriptions' => ['HIL-1905', 'HIL-1906', 'HIL-1952'],
     ];
 }

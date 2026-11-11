@@ -4,7 +4,31 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Closure;
 use Hilos\API\AsyncHttpClient;
+use Hilos\Constants\SignalConstants;
+use Hilos\Core\Agent\AgentInterface;
+use Hilos\Core\Agent\AgentManager;
+use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\HilosPageFactory;
+use Hilos\Core\Page\PageSignalRouter;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Source\SourceChangeSubscriberInterface;
+use Hilos\Core\Source\SourceChangeProvenance;
+use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Push\DTO\PushSubscribeActionDTO;
+use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Runtime\State\Collection\HilosSessionConnections;
+use Hilos\Runtime\State\Item\HilosSessionConnection;
+use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Users\Agent\AbstractUserAgent;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Hilos\API\Exception\AsyncHttpStatusException;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\HilosAgentType;
@@ -53,6 +77,7 @@ use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
 use Hilos\Users\DTO\UserNotificationReadSignalData;
 use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
+use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 
 /**
@@ -93,6 +118,8 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
 
     private ?SignalRouter $previousRouter = null;
 
+    private ?RtContext $previousRt = null;
+
     /** @var array<string, SignalDTO> Signals the last {@see carry()} took off the queue beside the answer, by name */
     private array $carried = [];
 
@@ -108,6 +135,9 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
         Schema::reset();
         Schema::initialize();
 
+        $this->previousRt = Hilos::$rt;
+        SourceChangeBus::reset();
+        SourceChangeBus::subscribe(new ViewCacheSubscriber());
         $this->previousRouter = Hilos::$sr;
         Hilos::$sr = new SignalRouter();
         $this->library = new NotificationEditsTestLibrary();
@@ -123,6 +153,8 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
      */
     protected function tearDown(): void
     {
+        Hilos::$rt = $this->previousRt;
+        SourceChangeBus::reset();
         $this->releasePersonAgents();
         TruthSourceRegistry::unregisterAgent($this->library->getId());
         SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($this->library->getId()));
@@ -419,7 +451,7 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
         $attempt->close();
     }
 
-    public function testALateTransportReportKeepsTheStampFromOpeningBeforeTheLibraryRenewsTheDevice(): void
+    public function testALateTransportReportKeepsTheStampFromOpeningBeforeTheOwnerRenewsTheDevice(): void
     {
         $userId = self::seedPerson();
         $notificationId = $this->letter($userId);
@@ -436,12 +468,12 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
             fn () => $this->pushChannel->createAttempt('1', Hilos::$db->notifications->getObjectCollection()[$notificationId]),
         );
 
-        ExecutionContext::run(
-            new ExecutionFrame(agentId: $this->library->getId()),
-            static fn () => Hilos::$db->pushSubscriptions->actions->subscribe(
-                $userId, self::ENDPOINT, 'rotated-public-key', 'rotated-auth-secret', null,
-            ),
-        );
+        $answer = $this->carry(HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE, new UserPushSubscribeSignalData(
+            $userId, $id, self::ENDPOINT, 'rotated-public-key', 'rotated-auth-secret', null,
+            HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE, self::ACCEPT_KEY, null,
+            PushSubscriptionAction::SUBSCRIBE, null,
+        ));
+        self::assertNull($answer->error);
         $renewed = $this->deviceRow($id);
         self::assertGreaterThan(1767225600123, (int)$renewed['last_seen_at']);
         self::assertSame((int)$renewed['last_seen_at'], Hilos::$db->pushSubscriptions->getObjectCollection()[$id]->lastSeenAt);
@@ -559,6 +591,312 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
             self::assertStringContainsString($this->pushChannel->getId(), $refusal->getMessage());
         }
         self::assertSame($before, $this->deviceRow($id));
+    }
+
+    /** @return iterable<string, array{?string}> Waiting browser requests */
+    public static function renewalRequests(): iterable
+    {
+        yield 'tracked' => ['renew-request'];
+        yield 'untracked' => [null];
+    }
+
+    /** @param ?string $requestId Waiting browser request, or null for a silent success */
+    #[DataProvider('renewalRequests')]
+    public function testLibraryInputRenewsThroughTheOwnerAndAnswersOnlyAfterTheWrite(?string $requestId): void
+    {
+        $userId = self::seedPerson();
+        $this->bindBrowser($userId);
+        self::assertNull($this->submitSubscription($requestId));
+        $id = $this->subscriptionIdOf($userId, self::ENDPOINT);
+        self::assertNotNull($id);
+        $before = $this->deviceRow($id);
+        self::assertSame('1', $before['revision']);
+        $this->drainSignals();
+
+        $changes = new NotificationRenewalChanges();
+        SourceChangeBus::subscribe($changes);
+        $signal = $this->submitSubscription($requestId, 'rotated', 'rotated-auth', 'Mozilla/5.0 (Linux) Firefox/120');
+        self::assertNotNull($signal);
+        self::assertSame($before, $this->deviceRow($id));
+        self::assertSame([], $this->drainSignals(), 'No success before the owner writes');
+        self::assertInstanceOf(AgentSignalData::class, $signal->data);
+        $ask = $signal->data->data;
+        self::assertInstanceOf(UserPushSubscribeSignalData::class, $ask);
+        self::assertSame($id, $ask->subscriptionId);
+        self::assertSame($userId, $ask->userId);
+        self::assertSame($requestId, $ask->requestId);
+        self::assertSame(self::ACCEPT_KEY, $ask->acceptKey);
+        self::assertSame(PushSubscriptionAction::SUBSCRIBE, $ask->action);
+        self::assertNull($ask->successMessage);
+
+        $reply = $this->finishRenewal($signal);
+        $saved = $this->deviceRow($id);
+        foreach (['id', 'user_id', 'endpoint', 'endpoint_hash', 'created_at'] as $column) {
+            self::assertSame($before[$column], $saved[$column]);
+        }
+        self::assertSame('rotated', $saved['p256dh']);
+        self::assertSame('rotated-auth', $saved['auth']);
+        self::assertSame('Mozilla/5.0 (Linux) Firefox/120', $saved['user_agent']);
+        self::assertSame('Firefox on Linux', $saved['device_name']);
+        self::assertNull($saved['gone_at']);
+        self::assertSame('2', $saved['revision']);
+        self::assertCount($requestId === null ? 0 : 1, $reply);
+        if ($requestId !== null) {
+            self::assertInstanceOf(PageActionSuccessSignalData::class, $reply[0]->data->data);
+            self::assertSame($requestId, $reply[0]->data->data->requestId);
+            self::assertSame(PushSubscriptionAction::SUBSCRIBE, $reply[0]->data->data->action);
+        }
+        self::assertCount(1, $changes->changes);
+        self::assertSame(self::ACCEPT_KEY, $changes->changes[0]->origin);
+        self::assertSame($requestId, $changes->changes[0]->originRequestId);
+        self::assertSame(1, $changes->changes[0]->previous['revision']);
+        self::assertSame(2, $changes->changes[0]->row['revision']);
+        $sync = $this->carried[SignalConstants::DB_SYNC_UPDATED]->data;
+        self::assertInstanceOf(DbSyncUpdatedSignalData::class, $sync);
+        self::assertSame($changes->changes[0]->row, $sync->row);
+        self::assertSame($changes->changes[0]->previous, $sync->previous);
+        self::assertSame(self::ACCEPT_KEY, $sync->origin);
+        self::assertSame($requestId, $sync->originRequestId);
+    }
+
+    public function testTwoLibrarySubmitsQueueTheSameIdAndBothRenewalsSucceedInOrder(): void
+    {
+        $userId = self::seedPerson();
+        $this->bindBrowser($userId);
+        self::assertNull($this->submitSubscription('create'));
+        $id = $this->subscriptionIdOf($userId, self::ENDPOINT);
+        self::assertNotNull($id);
+        $this->drainSignals();
+        $first = $this->submitSubscription('first', 'same', 'same-auth', null);
+        $second = $this->submitSubscription('second', 'same', 'same-auth', null);
+        self::assertNotNull($first);
+        self::assertNotNull($second);
+        self::assertSame($id, $first->data->data->subscriptionId);
+        self::assertSame($id, $second->data->data->subscriptionId);
+        self::assertSame('1', $this->deviceRow($id)['revision']);
+        foreach ([[$first, 'first', '2'], [$second, 'second', '3']] as [$signal, $requestId, $revision]) {
+            $reply = $this->finishRenewal($signal);
+            self::assertCount(1, $reply);
+            self::assertInstanceOf(PageActionSuccessSignalData::class, $reply[0]->data->data);
+            self::assertSame($requestId, $reply[0]->data->data->requestId);
+            self::assertSame($revision, $this->deviceRow($id)['revision']);
+        }
+        self::assertSame('1', Database::sql('SELECT COUNT(*) AS n FROM hilos_push_subscription')->firstRow()['n']);
+    }
+
+    public function testRenewalAndRemoveKeepTheirDeliveryOrderAndNeverFollowAReplacement(): void
+    {
+        $userId = self::seedPerson();
+        $this->bindBrowser($userId);
+        $this->submitSubscription('create');
+        $id = $this->subscriptionIdOf($userId, self::ENDPOINT);
+        self::assertNotNull($id);
+        $this->drainSignals();
+        $oldAsk = $this->submitSubscription('old');
+        self::assertNotNull($oldAsk);
+        self::assertNull($this->carry(HilosSignalConstants::HILOS_USER_PUSH_REMOVE, new UserPushRemoveSignalData(
+            $userId, $id, HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE,
+            self::ACCEPT_KEY, null, PushSubscriptionAction::REMOVE, null,
+        ))->error);
+        $reply = $this->finishRenewal($oldAsk);
+        self::assertCount(1, $reply);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $reply[0]->data->data);
+        self::assertSame('This device is already gone', $reply[0]->data->data->reason);
+        self::assertArrayNotHasKey($id, Hilos::$db->pushSubscriptions);
+
+        $this->submitSubscription('recreate');
+        $newId = $this->subscriptionIdOf($userId, self::ENDPOINT);
+        self::assertNotNull($newId);
+        self::assertNotSame($id, $newId);
+        $before = $this->deviceRow($newId);
+        $this->drainSignals();
+        $this->finishRenewal($oldAsk);
+        self::assertSame($before, $this->deviceRow($newId));
+        $renewal = $this->submitSubscription('new');
+        self::assertNotNull($renewal);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $this->finishRenewal($renewal)[0]->data->data);
+        self::assertSame('2', $this->deviceRow($newId)['revision']);
+        self::assertNull($this->carry(HilosSignalConstants::HILOS_USER_PUSH_REMOVE, new UserPushRemoveSignalData(
+            $userId, $newId, HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE,
+            self::ACCEPT_KEY, null, PushSubscriptionAction::REMOVE, null,
+        ))->error);
+        self::assertArrayNotHasKey($newId, Hilos::$db->pushSubscriptions);
+    }
+
+    public function testGoneFoldedForeignAndFailedWritesRefuseRenewalWithoutSuccess(): void
+    {
+        $userId = self::seedPerson();
+        $otherId = self::seedPerson();
+        $this->bindBrowser($userId);
+        $this->submitSubscription('create');
+        $id = $this->subscriptionIdOf($userId, self::ENDPOINT);
+        self::assertNotNull($id);
+        $this->drainSignals();
+        $before = $this->deviceRow($id);
+        // A real SQL write refusal after the owner has refreshed the baseline.
+        $badKeys = $this->submitSubscription('db-refusal', str_repeat('x', 256));
+        self::assertNotNull($badKeys);
+        $reply = $this->finishRenewal($badKeys);
+        self::assertCount(1, $reply);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $reply[0]->data->data);
+        self::assertSame($before, $this->deviceRow($id));
+
+        $foreign = $this->renewalAsk($otherId, $id);
+        self::assertSame('The action could not be completed.', $this->carry(HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE, $foreign)->error);
+        self::assertSame($before, $this->deviceRow($id));
+        Hilos::$db->userMerges->actions->add($userId, $otherId);
+        $folded = $this->carry(HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE, $this->renewalAsk($userId, $id));
+        self::assertSame(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE, $folded->error);
+        self::assertSame($before, $this->deviceRow($id));
+        // The same addressability check also precedes creator dispatch at the external input.
+        try {
+            $this->submitSubscription('folded');
+            self::fail('A folded account must not submit a new subscription');
+        } catch (ValidationException $refusal) {
+            self::assertSame(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE, $refusal->getMessage());
+        }
+        $goneId = self::seedPerson();
+        Database::sqlRun('DELETE FROM hilos_user WHERE id = ?', [$goneId]);
+        $gone = $this->carry(HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE, $this->renewalAsk($goneId, $id));
+        self::assertSame("No such user: {$goneId}", $gone->error);
+        self::assertSame($before, $this->deviceRow($id));
+    }
+
+    public function testUntrackedRefusalUsesTheExistingActionErrorAndLegacyForeignInputStillRebinds(): void
+    {
+        $userId = self::seedPerson();
+        $otherId = self::seedPerson();
+        $this->subscribe($userId, self::ENDPOINT);
+        $id = $this->subscriptionIdOf($userId, self::ENDPOINT);
+        self::assertNotNull($id);
+        $before = $this->deviceRow($id);
+        $this->bindBrowser($otherId);
+        $this->drainSignals();
+        self::assertNull($this->submitSubscription(null, 'foreign-key'));
+        $saved = $this->deviceRow($id);
+        self::assertSame((string)$otherId, $saved['user_id']);
+        self::assertSame('foreign-key', $saved['p256dh']);
+        self::assertSame('2', $saved['revision']);
+        foreach (['id', 'endpoint', 'endpoint_hash', 'created_at'] as $column) {
+            self::assertSame($before[$column], $saved[$column]);
+        }
+        $this->drainSignals();
+        $ask = $this->submitSubscription(null);
+        self::assertNotNull($ask);
+        $this->asPerson($otherId, static fn () => Hilos::$db->pushSubscriptions->actions->removeOwned($otherId, $id));
+        $this->drainSignals();
+        $reply = $this->finishRenewal($ask);
+        self::assertCount(1, $reply);
+        self::assertSame(SignalConstants::ACTION_ERROR, $reply[0]->signalName->getName());
+        self::assertInstanceOf(PageActionErrorSignalData::class, $reply[0]->data->data);
+        self::assertNull($reply[0]->data->data->requestId);
+        self::assertSame('This device is already gone', $reply[0]->data->data->reason);
+    }
+
+    /** @param int $userId Person bound to the acting browser */
+    private function bindBrowser(int $userId): void
+    {
+        Hilos::$rt = new NotificationEditsTestRtContext($userId, self::ACCEPT_KEY);
+        Hilos::$rt->configure();
+    }
+
+    /**
+     * Calls the real public agent-action entry; takes only its queued personal ask off the queue.
+     *
+     * @param ?string $requestId Waiting submit
+     * @param string $p256dh Public key
+     * @param string $auth Auth secret
+     * @param ?string $userAgent Device user agent
+     * @return ?SignalDTO Queued renewal, or null for a synchronous create or legacy rebind
+     */
+    private function submitSubscription(
+        ?string $requestId,
+        string $p256dh = 'pk',
+        string $auth = 'auth',
+        ?string $userAgent = null,
+    ): ?SignalDTO {
+        $this->library->beginActionDispatch($requestId);
+        try {
+            ExecutionContext::run(
+                new ExecutionFrame(agentId: $this->library->getId(), acceptKey: self::ACCEPT_KEY, requestId: $requestId),
+                fn () => $this->library->onAgentAction(
+                    self::ACCEPT_KEY, PushSubscriptionAction::SUBSCRIBE,
+                    new PushSubscribeActionDTO(self::ENDPOINT, $p256dh, $auth, $userAgent),
+                ),
+            );
+            $deferred = $this->library->actionReplyDeferred();
+        } finally {
+            $this->library->endActionDispatch();
+        }
+        $ask = null;
+        foreach ($this->drainSignals() as $signal) {
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE) {
+                self::assertNull($ask, 'One input queues exactly one ask');
+                $ask = $signal;
+            } else {
+                Hilos::$sr->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
+            }
+        }
+
+        self::assertSame($requestId !== null && $ask !== null, $deferred);
+
+        return $ask;
+    }
+
+    /**
+     * Runs the actual worker handover receipt, then delivers its answer back to the library.
+     *
+     * @param SignalDTO $signal Captured personal ask
+     * @return list<SignalDTO> Browser outcomes
+     */
+    private function finishRenewal(SignalDTO $signal): array
+    {
+        self::assertInstanceOf(AgentSignalData::class, $signal->data);
+        self::assertInstanceOf(UserPushSubscribeSignalData::class, $signal->data->data);
+        new NotificationEditsTestWorker($this->personAgent($signal->data->data->userId), Hilos::$sr)->deliver($signal);
+        $answer = null;
+        $this->carried = [];
+        foreach ($this->drainSignals() as $queued) {
+            if ($queued->signalName->getName() === HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE) {
+                self::assertNull($answer, 'The owner answers once');
+                $answer = $queued;
+            } else {
+                $this->carried[$queued->signalName->getName()] = $queued;
+            }
+        }
+        self::assertNotNull($answer);
+        self::assertInstanceOf(AgentSignalData::class, $answer->data);
+        ExecutionContext::run(
+            new ExecutionFrame(agentId: $this->library->getId()),
+            fn () => $this->library->onSignalAgent($answer->data, '', $answer->signalName->getName()),
+        );
+
+        return array_values(array_filter($this->drainSignals(), static fn (SignalDTO $queued): bool => $queued->data instanceof WebSocketSignalData));
+    }
+
+    /**
+     * @param int $userId Person addressed by the ask
+     * @param int $id Captured device
+     * @return UserPushSubscribeSignalData Untracked renewal
+     */
+    private function renewalAsk(int $userId, int $id): UserPushSubscribeSignalData
+    {
+        return new UserPushSubscribeSignalData(
+            $userId, $id, self::ENDPOINT, 'pk', 'auth', null,
+            HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE, self::ACCEPT_KEY, null,
+            PushSubscriptionAction::SUBSCRIBE, null,
+        );
+    }
+
+    /** @return list<SignalDTO> All queued frames in order */
+    private function drainSignals(): array
+    {
+        $signals = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $signals[] = $signal;
+        }
+
+        return $signals;
     }
 
     /**
@@ -837,5 +1175,136 @@ final class NotificationEditsTestPushChannel extends PushDeliveryChannelAgent
     protected function openSend(ObjectPushSubscription $subscription, string $payload): PushEndpointSend
     {
         return new PushEndpointSend($subscription->endpoint, $this->client);
+    }
+}
+
+/** The mounted session source used by the real library's user-id resolver. */
+final class NotificationEditsTestRtContext extends RtContext
+{
+    /**
+     * @param int $userId Acting person
+     * @param string $acceptKey Acting browser
+     */
+    public function __construct(private readonly int $userId, private readonly string $acceptKey)
+    {
+    }
+
+    /** Mounts the one session-stage browser used by the case. */
+    public function configure(): void
+    {
+        $connections = NotificationEditsTestConnections::init();
+        $connections->add(NotificationEditsTestConnection::create($this->acceptKey, $this->userId));
+        $this->_stateCollections['notificationEditsConnections'] = $connections;
+    }
+}
+
+/** @extends HilosSessionConnections<NotificationEditsTestConnection> */
+final class NotificationEditsTestConnections extends HilosSessionConnections
+{
+    public const string STATE_CLASS = NotificationEditsTestConnection::class;
+}
+
+/** Session-stage row with no additional fields. */
+final class NotificationEditsTestConnection extends HilosSessionConnection
+{
+    protected function initOwn(): void
+    {
+    }
+
+    /** @param array<string, mixed> $row Serialized row */
+    protected function hydrateOwn(array $row): void
+    {
+    }
+
+    /** @return array<string, mixed> No project fields */
+    protected function ownToArray(): array
+    {
+        return [];
+    }
+
+    /** @param array<string, mixed> $diff Field changes */
+    protected function applyOwnDiff(array $diff): void
+    {
+    }
+}
+
+/** Actual worker dispatch supplies the ask's receipt rather than setting origin in application code. */
+final class NotificationEditsTestWorker extends WorkerManager
+{
+    /**
+     * @param AbstractUserAgent $agent Personal owner already claimed by the case
+     * @param SignalRouter $router Existing queue
+     */
+    public function __construct(private readonly AbstractUserAgent $agent, private readonly SignalRouter $router)
+    {
+        parent::__construct(1);
+        $this->agentManager->addAgent($agent->getId(), $agent);
+    }
+
+    /**
+     * @param SignalDTO $signal Queued personal ask
+     */
+    public function deliver(SignalDTO $signal): void
+    {
+        $deliver = Closure::bind(
+            static function (WorkerManager $worker, DaemonAgentMessageDTO $message): void {
+                $worker->handleAgentMessage($message);
+            },
+            null,
+            WorkerManager::class,
+        );
+        $deliver($this, DaemonAgentMessageDTO::fromArray(new DaemonAgentMessageDTO($this->agent->getId(), $signal)->toArray()));
+    }
+
+    /** @return SignalRouter Existing queue, shared with the library fixture */
+    protected function createSignalRouter(): SignalRouter
+    {
+        return $this->router;
+    }
+
+    /** @return AgentManager Manager whose personal agent is installed by the constructor */
+    protected function createAgentManager(): AgentManager
+    {
+        return new NotificationEditsTestAgentManager();
+    }
+
+    /**
+     * @param AgentInterface $agent Personal agent receiving the signal
+     * @return PageSignalRouter Empty page routes, leaving the signal to the personal owner
+     */
+    protected function createPageSignalRouter(AgentInterface $agent): PageSignalRouter
+    {
+        return new PageSignalRouter(new HilosPageFactory($agent, Hilos::class), new ActionRouteConfig());
+    }
+}
+
+final class NotificationEditsTestAgentManager extends AgentManager
+{
+    /**
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Person index
+     * @return AgentInterface Personal owner
+     */
+    protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
+    {
+        return new IntegrationUserAgent($agentIndex);
+    }
+}
+
+/** Captures only ordinary push-subscription changes. */
+final class NotificationRenewalChanges implements SourceChangeSubscriberInterface
+{
+    /** @var list<SourceChange> Observed changes */
+    public array $changes = [];
+
+    /**
+     * @param SourceChange $change Persisted source fact
+     * @param SourceChangeProvenance $provenance Origin of that fact
+     */
+    public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
+    {
+        if ($change->sourceKey === HilosDbContext::pushSubscriptions) {
+            $this->changes[] = $change;
+        }
     }
 }

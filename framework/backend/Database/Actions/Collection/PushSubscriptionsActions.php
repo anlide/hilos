@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Actions\Collection;
 
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
@@ -20,10 +21,8 @@ use Hilos\Database\View\Item\PushSubscription;
 /**
  * PushSubscriptionsActions - write operations for the PushSubscriptions collection.
  *
- * Backs the `push_subscribe` / `push_unsubscribe` client actions (HIL-199): a device
- * opts in or out of browser push. The actions are mounted on the profile page, which
- * resolves the acting user server-side from the connection, so a client can only ever
- * subscribe its own device.
+ * Creates subscriptions for the notifications library and retains the existing owner-scoped
+ * expiry/removal doors. Renewal is an item action on the captured subscription.
  *
  * @extends DbActions<PushSubscription, ObjectPushSubscriptions>
  * @property-read DbCollectionPushSubscriptions $collection
@@ -32,7 +31,7 @@ use Hilos\Database\View\Item\PushSubscription;
 class PushSubscriptionsActions extends DbActions
 {
     /**
-     * Registers a device's push subscription (upsert by endpoint).
+     * Creates a new device; an existing endpoint is refused without updating it.
      *
      * @param int $userId Subscribing user id
      * @param string $endpoint Browser push endpoint URL
@@ -40,13 +39,14 @@ class PushSubscriptionsActions extends DbActions
      * @param string $auth Client auth secret (base64url)
      * @param ?string $userAgent Subscribing device user agent, or null
      * @throws EmptyValueException When the endpoint is empty
+     * @throws ValidationException When the endpoint already exists
      * @throws DatabaseException When the write query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws CreateNotAllowedException When the caller may not add a subscription of that person
      * @throws ExternalWriterException When the mounted Entity declares an external database writer
      * @throws LogicException When the collection has no usable object metadata
-     * @throws WriteNotAllowedException When the caller cannot update the existing subscription
+     * @throws WriteNotAllowedException When the object writer refuses the subscription write
      */
     public function subscribe(int $userId, string $endpoint, string $p256dh, string $auth, ?string $userAgent): void
     {

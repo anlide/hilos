@@ -37,7 +37,6 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Core\TruthSource\Exception\ExternalWriterException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -78,6 +77,7 @@ use Hilos\Users\AddressablePerson;
 use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
 use Hilos\Users\DTO\UserNotificationReadSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
+use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Command\TestOnlyCommandRegistry;
@@ -118,7 +118,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
 
     /**
      * Creating a notification, the operations over the delivery journal, and a push subscription
-     * brought into being or renewed by a device subscribing.
+     * brought into being or temporarily rebound from another person until HIL-1906.
      *
      * Nothing may write a framework collection until somebody says who owns it, so a project that
      * never registers this agent simply has no notifications - rather than notifications written
@@ -130,8 +130,8 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      *
      * Delivery rows are created here and still reset for retry here until HIL-1910. Their
      * channel or shard updates attempts and removes expired terminal rows; this library has no
-     * Remove grant. A push row is created and updated here - a device subscribing - and marked gone or
-     * removed by the person's agent.
+     * Remove grant. Push creation stays here; renewal, expiry and removal belong to the personal
+     * owner. Only the foreign in-place rebind keeps the library Update until HIL-1906.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
@@ -187,7 +187,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * Every one of them used to be a page action: the first two on the notification centre,
      * the last three on a project's profile page. What they have in common is what moved them
      * - they are judged here, and the five that edit one person's rows are written by that
-     * person's agent; subscribing a device is still written here. None of them needs the page
+     * person's agent; a new device is created here, and a known one is renewed by its owner. None needs the page
      * it was declared on: the recipient is resolved from the ACTING connection, never from the
      * payload, so a client can only ever mark, mute or subscribe for itself.
      *
@@ -817,22 +817,12 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Registers the acting device's web-push subscription (HIL-199).
+     * Creates a new device or hands renewal of an owned identity to its personal owner.
+     * The foreign in-place rebind remains temporary until HIL-1906.
      *
-     * Self-only: the acting user is read from the connection, never from the payload, so a
-     * device can only ever subscribe for its own user. The write upserts by endpoint (rotated
-     * keys or a new owner reuse the same row). No signal is fanned - a subscription is
-     * per-device durable state the toggle reads back from the browser's own
-     * getSubscription(), not shared cross-connection state (unlike the channel preference in
-     * {@see setChannelPreference()}).
-     *
-     * @param string $acceptKey Acting connection accept key
-     * @param PushSubscribeActionDTO $dto Subscription DTO (endpoint, keys, user agent)
-     * @throws ValidationException When the endpoint or a key is missing
-     * @throws ItemNotFoundForUpdateException When the acting connection has no resolvable user
-     * @throws EmptyValueException When the endpoint is empty
-     * @throws DatabaseException When the subscription write query fails
-     * @throws ExternalWriterException When the mounted subscription Entity declares an external database writer
+     * @param string $acceptKey Acting connection
+     * @param PushSubscribeActionDTO $dto Browser subscription keys
+     * @throws HilosException When validation, lookup, persistence or handover refuses the request
      */
     private function subscribePush(string $acceptKey, PushSubscribeActionDTO $dto): void
     {
@@ -841,14 +831,41 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
         }
 
         $userId = $this->requireUserId($acceptKey);
+        AddressablePerson::require($userId);
+        $identity = Hilos::$db->pushSubscriptions->readIdentityByEndpoint($dto->endpoint);
+        if ($identity === null) {
+            Hilos::$db->pushSubscriptions->actions->subscribe($userId, $dto->endpoint, $dto->p256dh, $dto->auth, $dto->userAgent);
 
-        Hilos::$db->pushSubscriptions->actions->subscribe(
+            return;
+        }
+        if ($identity->userId === $userId) {
+            $this->forward(HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE, new UserPushSubscribeSignalData(
+                userId: $userId,
+                subscriptionId: $identity->subscriptionId,
+                endpoint: $dto->endpoint,
+                p256dh: $dto->p256dh,
+                auth: $dto->auth,
+                userAgent: $dto->userAgent,
+                replySignal: HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->currentActionRequestId(),
+                action: PushSubscriptionAction::SUBSCRIBE,
+                successMessage: null,
+            ));
+
+            return;
+        }
+
+        $subscription = Hilos::$db->pushSubscriptions[$identity->subscriptionId] ?? null;
+        if ($subscription === null || !$subscription->actions->rebindForeignLegacy(
             $userId,
             $dto->endpoint,
             $dto->p256dh,
             $dto->auth,
             $dto->userAgent,
-        );
+        )) {
+            throw new ValidationException('This device is already gone');
+        }
     }
 
     /**

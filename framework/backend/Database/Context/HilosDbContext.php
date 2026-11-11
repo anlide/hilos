@@ -21,6 +21,7 @@ use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Actions\Collection\DbActions as CollectionDbActions;
 use Hilos\Database\Actions\Item\DbActions as ItemDbActions;
 use Hilos\Database\Actions\Item\IdentityActions;
+use Hilos\Database\Actions\Item\PushSubscriptionActions;
 use Hilos\Database\Exception\CollectionAlreadyMountedException;
 use Hilos\Database\Exception\FrameworkExtensionException;
 use Hilos\Database\Object\Objects;
@@ -468,6 +469,7 @@ abstract class HilosDbContext extends DbContext
             Objects::LAZY_STRATEGY_KEY,
             DbCollectionPushSubscriptions::class,
             PushSubscriptionsActions::class,
+            PushSubscriptionActions::class,
         );
         $this->mountFramework(
             self::verifierCircle,

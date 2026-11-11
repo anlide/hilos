@@ -296,9 +296,10 @@ The [ordinary transition table](account-operations.md#ordinary-transitions)
 addresses each remaining path. The channel or shard owns retention and leaves
 pending rows untouched. Delivery retry moves to the channel
 (not in the code yet — HIL-1910). A known push
-device is updated by its personal owner (not in the code yet — HIL-1905);
-rebinding another person's endpoint deletes through the former owner and creates anew
-at the library, possibly under a new id (not in the code yet — HIL-1906).
+device is renewed by its personal owner (HIL-1905); the library temporarily
+rebinds a foreign endpoint in place through `rebindForeignLegacy()`. HIL-1906
+will replace that path with deletion by the former owner and creation at the
+library, possibly under a new id (not in the code yet — HIL-1906).
 The push delivery channel's dead-endpoint report is handed to the personal owner
 with an `(id, revision)` snapshot and verified against the fresh persisted
 Entity `(id, revision)` rather than `last_seen_at`. The

@@ -167,6 +167,7 @@ use Hilos\Users\DTO\UserPhotoRemoveDoneSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveSignalData;
 use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
+use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
@@ -1165,6 +1166,13 @@ final class HilosSignalConstants
      * Carried by {@see UserNotificationChannelSetSignalData}.
      */
     public const string HILOS_USER_NOTIFICATION_CHANNEL_SET = 'hilos_user_notification_channel_set';
+
+    /**
+     * Notifications library → the personal owner: renew a captured push device (HIL-1905).
+     *
+     * Carried by {@see UserPushSubscribeSignalData}.
+     */
+    public const string HILOS_USER_PUSH_SUBSCRIBE = 'hilos_user_push_subscribe';
 
     /**
      * Notifications library → the person's agent: drop this browser's push subscription by its address (HIL-1408).

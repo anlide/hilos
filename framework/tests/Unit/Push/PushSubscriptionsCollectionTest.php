@@ -19,7 +19,7 @@ use PHPUnit\Framework\TestCase;
  * than query a missing table, keeping push delivery inert until a project activates
  * it - mirroring the notification-preference gate (HIL-485). An empty endpoint is
  * rejected on the opt-in write and ignored on opt-out, both before any query. The
- * DB-backed upsert/delete are exercised at integration / e2e (HIL-202).
+ * DB-backed creation, renewal and deletion are exercised at integration / e2e (HIL-202).
  */
 final class PushSubscriptionsCollectionTest extends TestCase
 {
@@ -31,7 +31,7 @@ final class PushSubscriptionsCollectionTest extends TestCase
         self::assertSame([], $subscriptions->forUser(1)->toArray());
     }
 
-    public function testSubscribeRejectsAnEmptyEndpoint(): void
+    public function testCreatorSubscribeRejectsAnEmptyEndpoint(): void
     {
         $subscriptions = ObjectPushSubscriptions::initDB(Objects::LAZY_STRATEGY_KEY);
 

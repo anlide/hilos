@@ -21,7 +21,6 @@ class DbWriterTransitionCatalog
 {
     protected const string FACTOR_REPLACE = 'HIL-1903';
     protected const string BACKUP_CODES_REPLACE = 'HIL-1904';
-    protected const string PUSH_OWN_UPDATE = 'HIL-1905';
     protected const string PUSH_FOREIGN_RECREATE = 'HIL-1906';
     protected const string TRUST_RENEW = 'HIL-1907';
     protected const string TRUST_CAP = 'HIL-1908';
@@ -163,8 +162,7 @@ class DbWriterTransitionCatalog
         $definitions[HilosDbContext::pushSubscriptions] = $this->states(
             [...$this->claim($notifications, DbWriterClaimWidth::Whole, TruthSourceOperation::Add),
                 ...$this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Update, TruthSourceOperation::Remove)],
-            [self::PUSH_OWN_UPDATE => $this->claim($notifications, DbWriterClaimWidth::Whole, TruthSourceOperation::Update),
-                self::PUSH_FOREIGN_RECREATE => $this->claim($notifications, DbWriterClaimWidth::Whole, TruthSourceOperation::Update),
+            [self::PUSH_FOREIGN_RECREATE => $this->claim($notifications, DbWriterClaimWidth::Whole, TruthSourceOperation::Update),
                 self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
         );
         $definitions[HilosDbContext::userRenames] = $this->renameStates($hilosClass);

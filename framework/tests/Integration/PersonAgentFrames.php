@@ -31,6 +31,7 @@ use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
 use Hilos\Users\DTO\UserNotificationReadSignalData;
 use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
+use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
@@ -157,6 +158,7 @@ trait PersonAgentFrames
             $ask instanceof UserNotificationReadSignalData,
             $ask instanceof UserNotificationChannelSetSignalData,
             $ask instanceof UserPushUnsubscribeSignalData,
+            $ask instanceof UserPushSubscribeSignalData,
             $ask instanceof UserPushRemoveSignalData,
             $ask instanceof UserPushEndpointGoneSignalData,
             $ask instanceof UserAccountDeletionCancelSignalData,

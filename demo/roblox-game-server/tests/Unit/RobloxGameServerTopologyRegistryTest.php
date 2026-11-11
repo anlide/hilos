@@ -138,6 +138,8 @@ use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\Tables\Users\HilosUserPhotoBrowserTable;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionProperty;
@@ -572,7 +574,7 @@ final class RobloxGameServerTopologyRegistryTest extends TestCase
             'notificationPreferences' => ['HIL-1952'],
             'notifications' => ['HIL-1952'],
             'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],
-            'pushSubscriptions' => ['HIL-1905', 'HIL-1906', 'HIL-1952'],
+            'pushSubscriptions' => ['HIL-1906', 'HIL-1952'],
             'secondFactorBackupCodes' => ['HIL-1904', 'HIL-1952', 'HIL-1999'],
             'secondFactorResets' => ['HIL-1952', 'HIL-1999'],
             'secondFactorSettings' => ['HIL-1952', 'HIL-1999'],
@@ -596,6 +598,13 @@ final class RobloxGameServerTopologyRegistryTest extends TestCase
     /** Startup validates this project's real registry rather than a synthetic facade. */
     public function testProjectTopologyPassesStartupValidation(): void
     {
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE]);
+        self::assertSame('userId', Hilos::getAgentSignalIndexFields()[HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE]);
+        self::assertSame(
+            UserPushSubscribeSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE],
+        );
+        self::assertSame(['HIL-1906', 'HIL-1952'], Hilos::SHARED_DB_OWNERS[HilosDbContext::pushSubscriptions]);
         Hilos::validateTopology();
 
         $this->addToAssertionCount(1);
