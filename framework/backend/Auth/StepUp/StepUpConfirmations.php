@@ -9,6 +9,7 @@ use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\StepUp\DTO\StepUpConfirmedSignalData;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
@@ -19,6 +20,7 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * The one place an identity confirmation is recorded, and the one place it is told (HIL-1330).
@@ -65,7 +67,7 @@ final class StepUpConfirmations
             $sessionTokenHash,
             $userId,
             $operation,
-            date('Y-m-d H:i:s', time() + Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int()),
+            TimeHelper::nowMs() + Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int() * TimeConstants::MS_PER_SECOND,
         );
 
         $writer->sendToSession(HilosSignalConstants::HILOS_STEP_UP_CONFIRMED, $sessionTokenHash, self::frameFor($sessionTokenHash));

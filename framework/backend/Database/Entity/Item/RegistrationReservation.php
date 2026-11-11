@@ -64,6 +64,7 @@ class RegistrationReservation extends Entity
         self::code_accepted_at,
         self::accepted_revisions,
         self::expires_at,
+        self::created_at,
     ];
 
     public const array _moments = [self::code_accepted_at, self::expires_at, self::created_at];
@@ -73,9 +74,10 @@ class RegistrationReservation extends Entity
         self::type => PhpType::STRING->value,
         self::identifier => PhpType::STRING->value,
         self::session_token => PhpType::STRING->value,
-        self::code_accepted_at => PhpType::DATETIME->value,
+        self::code_accepted_at => PhpType::INTEGER->value,
         self::accepted_revisions => PhpType::JSON->value,
-        self::expires_at => PhpType::DATETIME->value,
+        self::expires_at => PhpType::INTEGER->value,
+        self::created_at => PhpType::INTEGER->value,
     ];
 
     public const array _indexes = [
@@ -96,7 +98,8 @@ class RegistrationReservation extends Entity
     public string $type;
     public string $identifier;
     public string $session_token;
-    public ?string $code_accepted_at = null;
+    public ?int $code_accepted_at = null;
     public ?string $accepted_revisions = null;
-    public string $expires_at;
+    public int $expires_at;
+    public int $created_at;
 }

@@ -7,6 +7,7 @@ namespace Hilos\Database\Entity\Item;
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Database\Entity\Collection\AuthBlocks as EntityAuthBlocks;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Object\Item\AuthBlock as ObjectAuthBlock;
 use Hilos\Database\PhpType;
 
 /**
@@ -19,8 +20,8 @@ use Hilos\Database\PhpType;
  * Framework holds the contract; projects activate the table thinly (copy the
  * migration stub) and the framework DbContext exposes the collection.
  *
- * The `updated_at` column is DB-maintained (ON UPDATE CURRENT_TIMESTAMP) and,
- * like created/updated columns elsewhere, is intentionally not ORM-mapped.
+ * The `updated_at` column is stamped by the application on every write that
+ * changes the row ({@see ObjectAuthBlock::sync()}); nothing reads it today.
  *
  * @method static EntityAuthBlocks get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityAuthBlocks getAll()
@@ -44,6 +45,7 @@ class AuthBlock extends Entity
         self::action,
         self::level,
         self::blocked_until,
+        self::updated_at,
     ];
 
     public const array _moments = [self::blocked_until, self::updated_at];
@@ -54,7 +56,8 @@ class AuthBlock extends Entity
         self::identity => PhpType::STRING->value,
         self::action => PhpType::STRING->value,
         self::level => PhpType::INTEGER->value,
-        self::blocked_until => PhpType::DATETIME->value,
+        self::blocked_until => PhpType::INTEGER->value,
+        self::updated_at => PhpType::INTEGER->value,
     ];
 
     public const array _indexes = [
@@ -74,5 +77,6 @@ class AuthBlock extends Entity
     public string $identity;
     public string $action;
     public int $level = 0;
-    public ?string $blocked_until = null;
+    public ?int $blocked_until = null;
+    public int $updated_at;
 }

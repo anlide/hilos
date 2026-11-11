@@ -67,7 +67,7 @@ class AuthBlocks extends DbCollection
      * @param string $identity Throttle identity (IP or session-token hash)
      * @param string $action Throttled action name
      * @param int $level Ladder step reached
-     * @param ?string $blockedUntil Datetime the block lifts, or null when only the level is retained
+     * @param ?int $blockedUntilMs Moment in epoch milliseconds the block lifts, or null when only the level is retained
      * @return AuthBlock The persisted block's read-facing Db item
      * @throws EmptyValueException When scope, identity or action is empty
      * @throws DatabaseException On database error while recording the block
@@ -75,9 +75,9 @@ class AuthBlocks extends DbCollection
      * @throws InvalidArgumentException When object type does not match the collection
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
-    public function recordBlock(string $scope, string $identity, string $action, int $level, ?string $blockedUntil): AuthBlock
+    public function recordBlock(string $scope, string $identity, string $action, int $level, ?int $blockedUntilMs): AuthBlock
     {
-        $objectAuthBlock = $this->objectCollection->recordBlock($scope, $identity, $action, $level, $blockedUntil);
+        $objectAuthBlock = $this->objectCollection->recordBlock($scope, $identity, $action, $level, $blockedUntilMs);
 
         $id = $objectAuthBlock->id;
         if ($id === null) {
@@ -96,16 +96,16 @@ class AuthBlocks extends DbCollection
     /**
      * Finds every block that has not yet lifted.
      *
-     * @param string $now Datetime a block must outlast to still be in force
+     * @param int $nowMs Moment in epoch milliseconds a block must outlast to still be in force
      * @return list<AuthBlock> Blocks still in force, in no particular order
      * @throws DatabaseException On database error while reading the blocks
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
      */
-    public function findActive(string $now): array
+    public function findActive(int $nowMs): array
     {
         $blocks = [];
-        foreach ($this->objectCollection->findActive($now) as $objectAuthBlock) {
+        foreach ($this->objectCollection->findActive($nowMs) as $objectAuthBlock) {
             $id = $objectAuthBlock->id;
             /** @var ?AuthBlock $block */
             $block = $id === null ? null : $this->getItemForKey($id);
@@ -133,15 +133,15 @@ class AuthBlocks extends DbCollection
     /**
      * Deletes the blocks that lifted before a given moment, reporting how many rows went.
      *
-     * @param string $before Datetime a block must have lifted before to be deleted
+     * @param int $beforeMs Moment in epoch milliseconds a block must have lifted before to be deleted
      * @return int Number of blocks deleted
      * @throws DatabaseException On database error while deleting the blocks
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
-    public function clearServed(string $before): int
+    public function clearServed(int $beforeMs): int
     {
-        return $this->objectCollection->clearServed($before);
+        return $this->objectCollection->clearServed($beforeMs);
     }
 
     /**

@@ -137,7 +137,7 @@ final class Event extends Entity
 {
     public const string _table = 'discovery_event';
     public const array _columns = ['at'];
-    public const array _moments = ['at'];
+    public const array _moments = ['at', 'recorded_at'];
     public int $at;
     public function write(): void
     {
@@ -155,6 +155,11 @@ PHP);
             'declaration' => 'MomentDiscoveryFixtures\Database\Entity\Item\Event',
             'table' => 'discovery_event', 'column' => 'at', 'mapped' => true, 'frameworkOwned' => false, 'projectStorage' => null,
         ], $inputs['catalog']);
+        self::assertContains([
+            'entity' => 'MomentDiscoveryFixtures\Database\Entity\Item\Event',
+            'declaration' => 'MomentDiscoveryFixtures\Database\Entity\Item\Event',
+            'table' => 'discovery_event', 'column' => 'recorded_at', 'mapped' => false, 'frameworkOwned' => false, 'projectStorage' => null,
+        ], $inputs['catalog'], 'A DB-only moment absent from _columns stays a declared source input.');
         $report = MomentStorageSourceRule::forRoots($this->repository, $inputs['roots'], $inputs['catalog'], $inputs['excludedPaths']);
         self::assertCount(1, $report['reported']);
         self::assertCount(1, $report['subjects']);

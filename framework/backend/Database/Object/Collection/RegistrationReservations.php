@@ -6,6 +6,7 @@ namespace Hilos\Database\Object\Collection;
 
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Registration\RegistrationReservationSweeper;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -104,11 +105,13 @@ class RegistrationReservations extends Objects
             $this->release($standing);
         }
 
+        $now = TimeHelper::nowMs();
         $reservation = static::OBJECT_CLASS::create();
         $reservation->type = $type;
         $reservation->identifier = $identifier;
         $reservation->sessionToken = $sessionToken;
-        $reservation->expiresAt = date('Y-m-d H:i:s', time() + $ttlSeconds);
+        $reservation->createdAt = $now;
+        $reservation->expiresAt = $now + $ttlSeconds * TimeConstants::MS_PER_SECOND;
         $reservation->acceptedRevisions = $encoded;
         try {
             $reservation->sync();
@@ -141,7 +144,7 @@ class RegistrationReservations extends Objects
     public function findActiveForSession(string $sessionToken): ?ObjectRegistrationReservation
     {
         $reservation = $this->findBySessionToken($sessionToken);
-        if ($reservation === null || !$reservation->isActive(TimeHelper::getSqlDateTime())) {
+        if ($reservation === null || !$reservation->isActive(TimeHelper::nowMs())) {
             return null;
         }
 
@@ -150,7 +153,7 @@ class RegistrationReservations extends Objects
 
     /**
      * A proof opened in another browser borrows the latest live hold's acceptance on that address.
-     * The list is ordered by DB-owned created_at, with id breaking same-second ties.
+     * The list is ordered by the application-stamped created_at, with id breaking same-millisecond ties.
      *
      * @param string $identifier Proven address whose live holds may supply the accepted map
      * @return ?array<string, string> Boundary map from the newest live hold carrying acceptance
@@ -159,7 +162,7 @@ class RegistrationReservations extends Objects
      */
     public function freshestAcceptanceOn(string $identifier): ?array
     {
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
         foreach ($this->listByIdentifier($identifier) as $reservation) {
             if (!$reservation->isActive($now)) {
                 continue;
@@ -182,13 +185,13 @@ class RegistrationReservations extends Objects
      * branch.
      *
      * @param string $sessionToken Session cookie token of the browser that re-sent
-     * @param string $expiresAtSql New expiry as an SQL datetime string
+     * @param int $expiresAtMs New expiry in epoch milliseconds
      * @throws DatabaseException If the lookup or expiry update query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
-    public function extendTo(string $sessionToken, string $expiresAtSql): void
+    public function extendTo(string $sessionToken, int $expiresAtMs): void
     {
-        $this->findActiveForSession($sessionToken)?->extendTo($expiresAtSql);
+        $this->findActiveForSession($sessionToken)?->extendTo($expiresAtMs);
     }
 
     /**
@@ -274,7 +277,7 @@ class RegistrationReservations extends Objects
      */
     public function deleteExpired(): array
     {
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
 
         $freed = [];
         foreach ($this->hydrateExpired($now) as $reservation) {
@@ -334,7 +337,7 @@ class RegistrationReservations extends Objects
             [EntityRegistrationReservation::identifier => $identifier],
             [],
             [
-                'created_at' => SqlSortDirection::DESC,
+                EntityRegistrationReservation::created_at => SqlSortDirection::DESC,
                 EntityRegistrationReservation::id => SqlSortDirection::DESC,
             ],
         );
@@ -353,15 +356,15 @@ class RegistrationReservations extends Objects
     /**
      * Loads and caches every reservation whose expiry has passed.
      *
-     * @param string $nowSql Current time as an SQL datetime string
+     * @param int $nowMs Current moment in epoch milliseconds
      * @return list<ObjectRegistrationReservation> Expired reservation objects (empty when none)
      * @throws DatabaseException If the database query fails
      */
-    private function hydrateExpired(string $nowSql): array
+    private function hydrateExpired(int $nowMs): array
     {
         $entities = static::entityClass()::get(
             '`' . EntityRegistrationReservation::expires_at . '` <= ?',
-            [$nowSql],
+            [$nowMs],
         );
 
         $result = [];

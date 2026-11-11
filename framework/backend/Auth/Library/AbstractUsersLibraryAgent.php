@@ -159,6 +159,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -1856,7 +1857,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 throw new LogicException('Verifications collection is unavailable');
             }
             $cooldown = Hilos::$env[EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC]->int();
-            $aged = $collection->backdateIdentifier($address, date('Y-m-d H:i:s', time() - $cooldown - 1));
+            $aged = $collection->backdateIdentifier($address, TimeHelper::nowMs() - ($cooldown + 1) * TimeConstants::MS_PER_SECOND);
 
             $attempts = Hilos::$rt?->hilosCodeSendAttempts;
             $line = $attempts === null ? null : $attempts[ProtectedModeRuntime::hashSessionToken($sessionToken)];

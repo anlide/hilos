@@ -23,6 +23,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Auth\OAuth\OAuthProviderPreset;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -47,6 +48,7 @@ use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 use Hilos\Sms\SmsChannelConfig;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration tests for the live identifier lookup (HIL-414).
@@ -785,7 +787,7 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
     private function ageReservationOut(string $email): void
     {
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string(date('Y-m-d H:i:s', time() - 1)));
+        $params->add(SqlParam::int(TimeHelper::nowMs() - TimeConstants::MS_PER_SECOND));
         $params->add(SqlParam::string($email));
         Database::sql(
             'UPDATE `' . EntityRegistrationReservation::_table . '` SET `'

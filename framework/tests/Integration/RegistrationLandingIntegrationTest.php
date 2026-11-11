@@ -14,6 +14,7 @@ use Hilos\Auth\Library\Command\PasswordCommands;
 use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -26,6 +27,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\RegistrationReservation as EntityRegistrationReservation;
 use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
 use Hilos\Database\Identity\IdentityType;
@@ -42,6 +44,7 @@ use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * What an account gets at the landing: the password brought to it, or the method's own (HIL-608, HIL-825).
@@ -424,10 +427,44 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
         self::assertTrue($reservation->isProven(), 'The proof is durable, so a reload lands on the password screen');
         self::assertNotNull($reservation->codeAcceptedAt);
         self::assertGreaterThan(
-            (string)$expiredAt,
+            $expiredAt,
             $reservation->expiresAt,
             'After the code the hold keeps the address while a password is chosen',
         );
+    }
+
+    /**
+     * The hold stores the millisecond it was made and the one its code came back on (HIL-1921).
+     *
+     * Each is read between two readings of the clock around the call that stamps it, and the
+     * expiry of a fresh hold is its creation plus the lifetime it was given, to the millisecond.
+     *
+     * @throws HilosException When the hold seed, the mark or the read fails
+     */
+    public function testAHoldStoresWhenItWasMadeAndWhenItsCodeCameBackInMilliseconds(): void
+    {
+        $email = $this->uniqueEmail();
+
+        $beforeHold = TimeHelper::nowMs();
+        $this->seedLiveHold(IdentityType::PASSWORD, self::SESSION_TOKEN, $email);
+        $afterHold = TimeHelper::nowMs();
+        $held = $this->storedHold(self::SESSION_TOKEN);
+
+        self::assertGreaterThanOrEqual($beforeHold, $held[EntityRegistrationReservation::created_at]);
+        self::assertLessThanOrEqual($afterHold, $held[EntityRegistrationReservation::created_at]);
+        self::assertSame(
+            $held[EntityRegistrationReservation::created_at] + self::LIVE_FOR_SECONDS * TimeConstants::MS_PER_SECOND,
+            $held[EntityRegistrationReservation::expires_at],
+        );
+        self::assertNull($held[EntityRegistrationReservation::code_accepted_at]);
+
+        self::assertTrue(new RegistrationReservationService()->markProven(self::SESSION_TOKEN, $email));
+        $afterProof = TimeHelper::nowMs();
+        $proven = $this->storedHold(self::SESSION_TOKEN);
+
+        self::assertGreaterThanOrEqual($afterHold, $proven[EntityRegistrationReservation::code_accepted_at]);
+        self::assertLessThanOrEqual($afterProof, $proven[EntityRegistrationReservation::code_accepted_at]);
+        self::assertSame($held[EntityRegistrationReservation::created_at], $proven[EntityRegistrationReservation::created_at]);
     }
 
     /**
@@ -602,6 +639,28 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
         int $ttlSeconds = self::LIVE_FOR_SECONDS,
     ): void {
         $this->reservations()->createReservation($type, $sessionToken, $identifier, $ttlSeconds, LegalConsentProjector::acceptance());
+    }
+
+    /**
+     * @param string $sessionToken Session cookie token of the browser holding the row
+     * @return array<string, ?int> The hold's moments as stored, in epoch milliseconds, by column
+     * @throws DatabaseException When the read fails
+     */
+    private function storedHold(string $sessionToken): array
+    {
+        $moments = [
+            EntityRegistrationReservation::code_accepted_at,
+            EntityRegistrationReservation::expires_at,
+            EntityRegistrationReservation::created_at,
+        ];
+        $row = Database::sql(
+            'SELECT `' . implode('`, `', $moments) . '` FROM `' . EntityRegistrationReservation::_table
+                . '` WHERE `' . EntityRegistrationReservation::session_token . '` = ?',
+            [$sessionToken],
+        )->row();
+        self::assertNotNull($row);
+
+        return array_map(static fn (mixed $value): ?int => $value === null ? null : (int)$value, $row);
     }
 
     /**

@@ -41,8 +41,8 @@ class StepUp extends Entity
         self::session_token_hash => PhpType::STRING->value,
         self::user_id => PhpType::INTEGER->value,
         self::operation => PhpType::STRING->value,
-        self::confirmed_until => PhpType::DATETIME->value,
-        self::created_at => PhpType::DATETIME->value,
+        self::confirmed_until => PhpType::INTEGER->value,
+        self::created_at => PhpType::INTEGER->value,
     ];
 
     public const array _foreign = [
@@ -67,6 +67,6 @@ class StepUp extends Entity
     public string $session_token_hash;
     public int $user_id;
     public string $operation;
-    public string $confirmed_until;
-    public string $created_at;
+    public int $confirmed_until;
+    public int $created_at;
 }

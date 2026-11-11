@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Verification;
 
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Context\HilosDbContext;
@@ -12,6 +13,7 @@ use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerification
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /** Removes a bounded batch of old spent or expired verification rows. */
 final class VerificationSweeper
@@ -28,11 +30,11 @@ final class VerificationSweeper
      */
     public function sweep(): int
     {
-        $now = time();
+        $now = TimeHelper::nowMs();
 
         return $this->collection()->deleteSpentBefore(
-            date('Y-m-d H:i:s', $now - VerificationSweepSettings::retentionSeconds()),
-            date('Y-m-d H:i:s', $now),
+            $now - VerificationSweepSettings::retentionSeconds() * TimeConstants::MS_PER_SECOND,
+            $now,
             self::BATCH,
         );
     }
@@ -50,7 +52,7 @@ final class VerificationSweeper
     {
         return $this->collection()->backdateIdentifier(
             $identifier,
-            date('Y-m-d H:i:s', time() - VerificationSweepSettings::retentionSeconds() - 1),
+            TimeHelper::nowMs() - (VerificationSweepSettings::retentionSeconds() + 1) * TimeConstants::MS_PER_SECOND,
         );
     }
 

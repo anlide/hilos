@@ -14,6 +14,7 @@ use Hilos\Auth\Throttle\ThrottleVerdictRoute;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
@@ -34,6 +35,7 @@ use Hilos\Runtime\View\Collection\AuthAttempts;
 use Hilos\Runtime\View\Item\AuthAttempt as ViewAuthAttempt;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Utils\Helpers\TimeHelper;
 use Throwable;
 
 /**
@@ -301,7 +303,7 @@ final class AuthThrottleAgent extends AbstractAgent
         }
 
         try {
-            $blocks->clearServed(date('Y-m-d H:i:s', (int)($now - $this->policy->cooldownSeconds())));
+            $blocks->clearServed((int)(($now - $this->policy->cooldownSeconds()) * TimeConstants::MS_PER_SECOND));
         } catch (Throwable $e) {
             $this->logAgentError('Auth throttle: could not drop the served blocks: ' . $e->getMessage());
         }
@@ -368,7 +370,7 @@ final class AuthThrottleAgent extends AbstractAgent
                     $check->identity,
                     $check->action,
                     $level,
-                    date('Y-m-d H:i:s', (int)$liftsAt),
+                    (int)($liftsAt * TimeConstants::MS_PER_SECOND),
                 );
             } catch (Throwable $e) {
                 $this->logAgentError('Auth throttle: could not persist a block: ' . $e->getMessage());
@@ -381,8 +383,9 @@ final class AuthThrottleAgent extends AbstractAgent
     /**
      * Reads back every block still in force and puts it into the counters.
      *
-     * A block whose datetime cannot be read is skipped rather than treated as blocking
-     * forever: a row we cannot understand must not be able to lock a key out permanently.
+     * The table keeps the lift moment in epoch milliseconds and the counters in unix
+     * seconds, so each row is converted on the way in. A row that names no moment is
+     * skipped rather than treated as blocking forever: it only retains a level.
      */
     private function replayDurableBlocks(): void
     {
@@ -395,7 +398,7 @@ final class AuthThrottleAgent extends AbstractAgent
         $replayed = 0;
         $now = microtime(true);
         try {
-            $active = $blocks->findActive(date('Y-m-d H:i:s'));
+            $active = $blocks->findActive(TimeHelper::nowMs());
         } catch (Throwable $e) {
             $this->logAgentError('Auth throttle: could not read the stored blocks: ' . $e->getMessage());
 
@@ -423,7 +426,7 @@ final class AuthThrottleAgent extends AbstractAgent
      * Reads a stored block's lift moment as unix seconds.
      *
      * @param AuthBlock $block Stored block
-     * @return ?float Unix seconds the block lifts, or null when the row names no readable moment
+     * @return ?float Unix seconds the block lifts, or null when the row names no moment
      */
     private function blockLiftsAt(AuthBlock $block): ?float
     {
@@ -432,9 +435,7 @@ final class AuthThrottleAgent extends AbstractAgent
             return null;
         }
 
-        $liftsAt = strtotime($blockedUntil);
-
-        return $liftsAt === false ? null : (float)$liftsAt;
+        return $blockedUntil / TimeConstants::MS_PER_SECOND;
     }
 
     /**

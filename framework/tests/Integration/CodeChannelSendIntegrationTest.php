@@ -8,6 +8,7 @@ use Hilos\Auth\Code\DTO\AuthCodeMintSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeMintedSignalData;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\PhoneCodeCommands;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
@@ -31,6 +32,7 @@ use Hilos\Legal\LegalCatalogStub;
 use Hilos\Legal\LegalConsentProjector;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
+use Hilos\Utils\Helpers\TimeHelper;
 use Random\RandomException;
 
 /**
@@ -431,9 +433,8 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
         $this->request($agent, $phone, 'renew-consent', acceptedRevisions: $accepted);
         self::assertSame(HilosCodeSendAttempt::REASON_CODE_SENT, $this->takeResultReason());
         Database::sqlRun(
-            'UPDATE `hilos_registration_reservation` SET `expires_at` = DATE_SUB(NOW(), INTERVAL 1 SECOND) '
-            . 'WHERE `session_token` = ?',
-            [self::SESSION_TOKEN],
+            'UPDATE `hilos_registration_reservation` SET `expires_at` = ? WHERE `session_token` = ?',
+            [TimeHelper::nowMs() - TimeConstants::MS_PER_SECOND, self::SESSION_TOKEN],
         );
         /** @var ObjectRegistrationReservations $reservations */
         $reservations = Hilos::$db->getObjectCollection(HilosDbContext::registrationReservations);

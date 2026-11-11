@@ -1062,8 +1062,12 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
     {
         for ($index = 0; $index < $count; $index++) {
             Database::sqlRun('INSERT INTO `hilos_user_verification` (`type`, `identifier`, `created_at`, `expires_at`)'
-                . ' VALUES (?, ?, DATE_SUB(NOW(), INTERVAL 2 DAY), DATE_SUB(NOW(), INTERVAL 1 DAY))',
-                ['register_confirm', self::KEY_PREFIX]);
+                . ' VALUES (?, ?, ?, ?)', [
+                    'register_confirm',
+                    self::KEY_PREFIX,
+                    TimeHelper::nowMs() - 2 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+                    TimeHelper::nowMs() - TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+                ]);
         }
     }
 

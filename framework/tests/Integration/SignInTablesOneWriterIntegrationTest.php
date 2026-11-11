@@ -17,6 +17,7 @@ use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
@@ -39,6 +40,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Legal\LegalCatalogStub;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
+use Hilos\Utils\Helpers\TimeHelper;
 use Random\RandomException;
 
 /** Codes and holds are written under the users library's own execution frame (HIL-1411). */
@@ -206,9 +208,8 @@ final class SignInTablesOneWriterIntegrationTest extends HilosSessionIntegration
         $this->mint();
         $this->mint(session: self::OTHER_SESSION);
         Database::sqlRun(
-            'UPDATE `hilos_registration_reservation` SET `expires_at` = DATE_SUB(NOW(), INTERVAL 1 SECOND) '
-            . 'WHERE `session_token` = ?',
-            [self::SESSION],
+            'UPDATE `hilos_registration_reservation` SET `expires_at` = ? WHERE `session_token` = ?',
+            [TimeHelper::nowMs() - TimeConstants::MS_PER_SECOND, self::SESSION],
         );
         Hilos::$db->getObjectCollection(HilosDbContext::registrationReservations)->clearInMemory();
 

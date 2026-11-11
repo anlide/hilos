@@ -21,8 +21,8 @@ use Hilos\HilosException;
  * @property-read string $type
  * @property-read string $identifier
  * @property-read int $attempts
- * @property-read string $expiresAt
- * @property-read ?string $consumedAt
+ * @property-read int $expiresAt
+ * @property-read ?int $consumedAt
  */
 class UserVerification extends DbItem
 {

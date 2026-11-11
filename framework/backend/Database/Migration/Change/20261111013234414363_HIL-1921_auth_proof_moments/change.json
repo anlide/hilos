@@ -1,0 +1,43 @@
+{
+    "format": 1,
+    "id": "20261111013234414363_HIL-1921_auth_proof_moments",
+    "parts": [
+        {
+            "unit": "user_verification",
+            "up": "user_verification.sql",
+            "down": "user_verification_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "bcdeb6ea8225ac9c79f6148a47149f12159ded2388dfba922acb168f804b808e",
+            "afterStubDownSha256": "d40881239b63e861a6c23190f5636b855a524f18fcee49a75a7f8d132e93d54f"
+        },
+        {
+            "unit": "registration_reservation",
+            "up": "registration_reservation.sql",
+            "down": "registration_reservation_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "be2b1907c760d4634397d60767ca41d758d8dc17202ac0adfa7d0295d3fcacd6",
+            "afterStubDownSha256": "658409dcf258de5d2ca3f65277646bf3958ec382d483f0a4b08a3c42c4606a4e"
+        },
+        {
+            "unit": "step_up",
+            "up": "step_up.sql",
+            "down": "step_up_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "3cae7d284d59f2d2c1139395b3e26899e8b2215a404ce8f5f6e590692d6993c4",
+            "afterStubDownSha256": "c8df915c92f502a8cd236b88c3549386b6276dcbccc6cd42aea61d41e64b97ac"
+        },
+        {
+            "unit": "auth_block",
+            "up": "auth_block.sql",
+            "down": "auth_block_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261028002725141545_HIL-1691_status_subscribers",
+                    "unit": "auth_block"
+                }
+            ],
+            "afterStubUpSha256": "2cabeb44d5cf362f6b090253a8d677e4959286201469a4acb657bdca69924df6",
+            "afterStubDownSha256": "91fcb28d04011680c145d30175c8220c8ef459778799558ebf97ed81eb4a8c8c"
+        }
+    ]
+}

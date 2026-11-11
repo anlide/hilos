@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Item;
 
 use Hilos\Auth\Verification\VerificationService;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -35,9 +36,9 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property string $identifier
  * @property ?string $channel
  * @property-read int $attempts
- * @property string $createdAt
- * @property string $expiresAt
- * @property-read ?string $consumedAt
+ * @property int $createdAt
+ * @property int $expiresAt
+ * @property-read ?int $consumedAt
  */
 class UserVerification extends Object_
 {
@@ -98,8 +99,8 @@ class UserVerification extends Object_
             self::type => $this->entity->type = (string)$value,
             self::identifier => $this->entity->identifier = (string)$value,
             self::channel => $this->entity->channel = $value === null ? null : (string)$value,
-            self::createdAt => $this->entity->created_at = (string)$value,
-            self::expiresAt => $this->entity->expires_at = (string)$value,
+            self::createdAt => $this->entity->created_at = (int)$value,
+            self::expiresAt => $this->entity->expires_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -108,17 +109,15 @@ class UserVerification extends Object_
      * Whether this challenge is still usable at the given moment.
      *
      * Active = not consumed, not past its expiry, and under the attempt ceiling.
-     * Datetime comparison is lexicographic on the SQL 'Y-m-d H:i:s' format, which
-     * orders the same as chronological order.
      *
-     * @param string $nowSql Current time as an SQL datetime string
+     * @param int $nowMs Current moment in epoch milliseconds
      * @param int $maxAttempts Attempt ceiling (challenge is inactive once reached)
      * @return bool True when the challenge can still be verified
      */
-    public function isActive(string $nowSql, int $maxAttempts): bool
+    public function isActive(int $nowMs, int $maxAttempts): bool
     {
         return $this->entity->consumed_at === null
-            && $this->entity->expires_at > $nowSql
+            && $this->entity->expires_at > $nowMs
             && $this->entity->attempts < $maxAttempts;
     }
 
@@ -273,7 +272,8 @@ class UserVerification extends Object_
      * object has to stop reading as active for the rest of the process, because the
      * collection caches its objects and hands this same instance back to the next
      * {@see UserVerifications::findActive()}. The winner's exact stamp is not worth
-     * a second SELECT — a race fits inside the second this column stores.
+     * a second SELECT — the two stamps of a race lie milliseconds apart, and nothing
+     * reads which of them the row kept.
      *
      * An unpersisted challenge answers false: there is no row, so nothing was spent.
      *
@@ -287,7 +287,7 @@ class UserVerification extends Object_
             return false;
         }
 
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
 
         DbWriteGuard::guardItemWrite(
             static::getCollectionKey(),
@@ -297,7 +297,7 @@ class UserVerification extends Object_
         );
 
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string($now));
+        $params->add(SqlParam::int($now));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
             'UPDATE `' . EntityUserVerification::_table . '` SET `' . EntityUserVerification::consumed_at
@@ -332,7 +332,7 @@ class UserVerification extends Object_
             return;
         }
 
-        $pastExpiry = date('Y-m-d H:i:s', time() - 1);
+        $pastExpiry = TimeHelper::nowMs() - TimeConstants::MS_PER_SECOND;
 
         DbWriteGuard::guardItemWrite(
             static::getCollectionKey(),
@@ -342,7 +342,7 @@ class UserVerification extends Object_
         );
 
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string($pastExpiry));
+        $params->add(SqlParam::int($pastExpiry));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
             'UPDATE `' . EntityUserVerification::_table . '` SET `' . EntityUserVerification::expires_at
@@ -356,11 +356,11 @@ class UserVerification extends Object_
     /**
      * Ages a challenge for the test-only verification sweep command (HIL-1163).
      *
-     * @param string $createdAtSql Past issue time as an SQL datetime
+     * @param int $createdAtMs Past issue moment in epoch milliseconds
      * @throws DatabaseException When the update fails
      * @throws WriteNotAllowedException When no truth source may update this row
      */
-    public function backdate(string $createdAtSql): void
+    public function backdate(int $createdAtMs): void
     {
         if ($this->entity->id === null) {
             return;
@@ -374,7 +374,7 @@ class UserVerification extends Object_
         );
 
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string($createdAtSql));
+        $params->add(SqlParam::int($createdAtMs));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
             'UPDATE `' . EntityUserVerification::_table . '` SET `' . EntityUserVerification::created_at
@@ -382,7 +382,7 @@ class UserVerification extends Object_
             $params,
         );
 
-        $this->entity->created_at = $createdAtSql;
+        $this->entity->created_at = $createdAtMs;
     }
 
     /**

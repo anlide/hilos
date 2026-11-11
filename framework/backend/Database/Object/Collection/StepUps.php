@@ -39,7 +39,7 @@ class StepUps extends Objects
      * @param string $tokenHash Hash of the browser session token
      * @param int $userId Person confirming the operation
      * @param string $operation Declared operation key
-     * @param string $until Moment the confirmation expires (SQL datetime)
+     * @param int $untilMs Moment the confirmation expires, in epoch milliseconds
      * @throws DatabaseException When the lookup or write fails
      * @throws InvalidArgumentException When the entity query or queued DB-sync signal is invalid
      * @throws CreateNotAllowedException When no truth source may add a confirmation row
@@ -47,7 +47,7 @@ class StepUps extends Objects
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws ObjectGetIdStringNotImplementedException If an inserted row has no primary key
      */
-    public function confirm(string $tokenHash, int $userId, string $operation, string $until): void
+    public function confirm(string $tokenHash, int $userId, string $operation, int $untilMs): void
     {
         $stepUp = $this->find($tokenHash, $userId, $operation);
         $isNew = $stepUp === null;
@@ -56,10 +56,10 @@ class StepUps extends Objects
             $stepUp->sessionTokenHash = $tokenHash;
             $stepUp->userId = $userId;
             $stepUp->operation = $operation;
-            $stepUp->createdAt = TimeHelper::getSqlDateTime();
+            $stepUp->createdAt = TimeHelper::nowMs();
         }
 
-        $stepUp->confirmedUntil = $until;
+        $stepUp->confirmedUntil = $untilMs;
         $stepUp->sync();
 
         if ($isNew && $stepUp->id !== null) {
@@ -79,7 +79,7 @@ class StepUps extends Objects
     {
         $stepUp = $this->find($tokenHash, $userId, $operation);
 
-        return $stepUp !== null && $stepUp->confirmedUntil > TimeHelper::getSqlDateTime();
+        return $stepUp !== null && $stepUp->confirmedUntil > TimeHelper::nowMs();
     }
 
     /**
@@ -97,7 +97,7 @@ class StepUps extends Objects
     {
         $where = '`' . EntityStepUp::session_token_hash . '` = ? AND `' . EntityStepUp::confirmed_until . '` > ?';
         $operations = [];
-        foreach (static::entityClass()::get($where, [$tokenHash, TimeHelper::getSqlDateTime()]) as $entity) {
+        foreach (static::entityClass()::get($where, [$tokenHash, TimeHelper::nowMs()]) as $entity) {
             $operations[] = $entity->operation;
         }
         $operations = array_values(array_unique($operations));
@@ -118,7 +118,7 @@ class StepUps extends Objects
     public function deleteExpiredForUser(int $userId): void
     {
         $where = '`' . EntityStepUp::user_id . '` = ? AND `' . EntityStepUp::confirmed_until . '` <= ?';
-        foreach (static::entityClass()::get($where, [$userId, TimeHelper::getSqlDateTime()]) as $entity) {
+        foreach (static::entityClass()::get($where, [$userId, TimeHelper::nowMs()]) as $entity) {
             $id = $entity->id;
             if ($id === null) {
                 continue;

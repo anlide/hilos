@@ -29,6 +29,7 @@ use Hilos\Auth\StepUp\StepUpSettingsCatalog;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -51,6 +52,7 @@ use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Operation-level step-up against real auth and confirmation tables (HIL-495).
@@ -374,16 +376,72 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
     {
         $this->addPassword();
         Database::sqlRun(
-            'INSERT INTO `hilos_step_up` (`session_token_hash`, `user_id`, `operation`, `confirmed_until`) '
-            . 'VALUES (?, ?, ?, ?)',
+            'INSERT INTO `hilos_step_up` (`session_token_hash`, `user_id`, `operation`, `confirmed_until`, `created_at`) '
+            . 'VALUES (?, ?, ?, ?, ?)',
             [
                 ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
                 self::USER_ID,
                 self::OPERATION,
-                '2020-01-01 00:00:00',
+                1577836800000,
+                TimeHelper::nowMs(),
             ],
         );
 
+        $this->expectExceptionMessage(StepUpMessages::EXPIRED);
+        $this->library->assertOperation(self::ACCEPT_KEY, self::OPERATION);
+    }
+
+    /**
+     * A confirmation stores the millisecond it was made and the one it holds until (HIL-1921).
+     *
+     * Both are read between two readings of the clock around the confirming command; the window
+     * is the code lifetime in milliseconds after the moment the confirmation was decided.
+     *
+     * @throws HilosException When the command or the read fails
+     */
+    public function testAConfirmationStoresItsMomentsInMilliseconds(): void
+    {
+        $this->addPassword();
+        $window = Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int() * TimeConstants::MS_PER_SECOND;
+
+        $before = TimeHelper::nowMs();
+        $this->confirm(self::OPERATION, StepUpMethod::PASSWORD, password: self::PASSWORD);
+        $after = TimeHelper::nowMs();
+
+        $row = Database::sql(
+            'SELECT `confirmed_until`, `created_at` FROM `hilos_step_up` WHERE `session_token_hash` = ? AND `user_id` = ? AND `operation` = ?',
+            [ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN), self::USER_ID, self::OPERATION],
+        )->row();
+        self::assertNotNull($row);
+        self::assertGreaterThanOrEqual($before, (int)$row['created_at']);
+        self::assertLessThanOrEqual($after, (int)$row['created_at']);
+        self::assertGreaterThanOrEqual($before + $window, (int)$row['confirmed_until']);
+        self::assertLessThanOrEqual($after + $window, (int)$row['confirmed_until']);
+        self::assertTrue(Hilos::$db->stepUps->isConfirmed(
+            ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
+            self::USER_ID,
+            self::OPERATION,
+        ));
+    }
+
+    /**
+     * A confirmation holding until the millisecond it was written in is already over (HIL-1921).
+     *
+     * The gate reads now after the row was written, so the moment the row holds until is on or
+     * behind it, and the operation stays closed.
+     *
+     * @throws HilosException When the seed or assertion fails
+     */
+    public function testAConfirmationIsRefusedFromTheMillisecondItHoldsUntil(): void
+    {
+        $this->addPassword();
+        $this->seedConfirmation(self::SESSION_TOKEN, self::USER_ID, self::OPERATION, TimeHelper::nowMs());
+
+        self::assertFalse(Hilos::$db->stepUps->isConfirmed(
+            ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
+            self::USER_ID,
+            self::OPERATION,
+        ));
         $this->expectExceptionMessage(StepUpMessages::EXPIRED);
         $this->library->assertOperation(self::ACCEPT_KEY, self::OPERATION);
     }
@@ -742,12 +800,12 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
     public function testTheFrameLeavesOutExpiredRowsAndOtherBrowsers(): void
     {
         $this->addPassword();
-        $this->seedConfirmation(self::SESSION_TOKEN, self::ADMINISTRATOR_ID, StepUpOperationKey::EXPORT_DATA, '2020-01-01 00:00:00');
+        $this->seedConfirmation(self::SESSION_TOKEN, self::ADMINISTRATOR_ID, StepUpOperationKey::EXPORT_DATA, 1577836800000);
         $this->seedConfirmation(
             self::OTHER_SESSION_TOKEN,
             self::USER_ID,
             StepUpOperationKey::DELETE_ACCOUNT,
-            date('Y-m-d H:i:s', time() + self::TTL_SECONDS),
+            TimeHelper::nowMs() + self::TTL_SECONDS * TimeConstants::MS_PER_SECOND,
         );
 
         $this->confirm(self::OPERATION, StepUpMethod::PASSWORD, password: self::PASSWORD);
@@ -846,15 +904,15 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
      * @param string $sessionToken Browser the row belongs to
      * @param int $userId Person the row is recorded on
      * @param string $operation Operation key
-     * @param string $until Moment the row expires (SQL datetime)
+     * @param int $until Moment the row expires (epoch milliseconds)
      * @throws DatabaseException When the insert fails
      */
-    private function seedConfirmation(string $sessionToken, int $userId, string $operation, string $until): void
+    private function seedConfirmation(string $sessionToken, int $userId, string $operation, int $until): void
     {
         Database::sqlRun(
-            'INSERT INTO `hilos_step_up` (`session_token_hash`, `user_id`, `operation`, `confirmed_until`) '
-            . 'VALUES (?, ?, ?, ?)',
-            [ProtectedModeRuntime::hashSessionToken($sessionToken), $userId, $operation, $until],
+            'INSERT INTO `hilos_step_up` (`session_token_hash`, `user_id`, `operation`, `confirmed_until`, `created_at`) '
+            . 'VALUES (?, ?, ?, ?, ?)',
+            [ProtectedModeRuntime::hashSessionToken($sessionToken), $userId, $operation, $until, TimeHelper::nowMs()],
         );
     }
 

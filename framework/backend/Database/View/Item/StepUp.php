@@ -17,8 +17,8 @@ use Hilos\HilosException;
  * @property-read string $sessionTokenHash
  * @property-read int $userId
  * @property-read string $operation
- * @property-read string $confirmedUntil
- * @property-read string $createdAt
+ * @property-read int $confirmedUntil
+ * @property-read int $createdAt
  */
 class StepUp extends DbItem
 {

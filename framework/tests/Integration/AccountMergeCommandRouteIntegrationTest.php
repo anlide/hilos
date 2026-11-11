@@ -8,6 +8,7 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\Totp;
 use mysqli;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpOperationKey;
@@ -1593,12 +1594,14 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     private static function seedConfirmation(string $operation): void
     {
         Database::sqlRun(
-            'INSERT INTO `hilos_step_up` (`session_token_hash`, `user_id`, `operation`, `confirmed_until`) VALUES (?, ?, ?, ?)',
+            'INSERT INTO `hilos_step_up` (`session_token_hash`, `user_id`, `operation`, `confirmed_until`, `created_at`) '
+            . 'VALUES (?, ?, ?, ?, ?)',
             [
                 ProtectedModeRuntime::hashSessionToken(self::ADMIN_SESSION_TOKEN),
                 self::ADMIN_USER_ID,
                 $operation,
-                date('Y-m-d H:i:s', time() + self::CONFIRMATION_TTL_SECONDS),
+                TimeHelper::nowMs() + self::CONFIRMATION_TTL_SECONDS * TimeConstants::MS_PER_SECOND,
+                TimeHelper::nowMs(),
             ],
         );
     }

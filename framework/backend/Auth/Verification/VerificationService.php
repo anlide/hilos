@@ -217,8 +217,8 @@ class VerificationService
      * full lifetime from now" would have it count down to a code that died sooner.
      *
      * Answered in milliseconds because it is going to a browser, which is told every
-     * moment on the same scale (Flow p.7); the row keeps SQL datetimes, and this is
-     * the one place that conversion belongs for this fact.
+     * moment on the same scale (Flow p.7); the row keeps the same epoch milliseconds,
+     * so the value leaves as it is stored.
      *
      * @param string $type Verification type (see VerificationType)
      * @param string $identifier Normalized identifier (lowercased email, E.164 phone)
@@ -231,9 +231,7 @@ class VerificationService
      */
     public function activeExpiresAt(string $type, string $identifier): ?int
     {
-        $expiresAt = $this->collection()->findActive($type, $identifier, $this->maxAttempts())?->expiresAt;
-
-        return $expiresAt === null ? null : TimeHelper::sqlToMs($expiresAt);
+        return $this->collection()->findActive($type, $identifier, $this->maxAttempts())?->expiresAt;
     }
 
     /**
@@ -269,7 +267,9 @@ class VerificationService
             return 0;
         }
 
-        return max(0, $stats->lastIssuedAt + $this->resendCooldownSeconds() - time());
+        $heldMs = max(0, $this->remainingCooldownMs($stats->lastIssuedAt, $this->resendCooldownSeconds()));
+
+        return (int)ceil($heldMs / TimeConstants::MS_PER_SECOND);
     }
 
     /**
@@ -293,8 +293,15 @@ class VerificationService
      */
     public function resendAllowedAt(string $type, string $identifier): int
     {
-        return TimeHelper::nowMs()
-            + $this->resendAllowedInSeconds($type, $identifier) * TimeConstants::MS_PER_SECOND;
+        $stats = $this->collection()->sendStats($type, $identifier, $this->sendWindowSeconds());
+        if ($stats->lastIssuedAt === null) {
+            return TimeHelper::nowMs();
+        }
+
+        return max(
+            TimeHelper::nowMs(),
+            $stats->lastIssuedAt + $this->resendCooldownSeconds() * TimeConstants::MS_PER_SECOND,
+        );
     }
 
     /**
@@ -534,9 +541,9 @@ class VerificationService
         $stats = $collection->sendStats($type, $identifier, $this->sendWindowSeconds());
 
         if ($stats->lastIssuedAt !== null) {
-            $heldForSeconds = $stats->lastIssuedAt + $cooldownSeconds - time();
-            if ($heldForSeconds > 0) {
-                return VerificationSendOutcome::heldByCooldown($heldForSeconds);
+            $heldMs = $this->remainingCooldownMs($stats->lastIssuedAt, $cooldownSeconds);
+            if ($heldMs > 0) {
+                return VerificationSendOutcome::heldByCooldown((int)ceil($heldMs / TimeConstants::MS_PER_SECOND));
             }
         }
 
@@ -545,6 +552,22 @@ class VerificationService
         }
 
         return null;
+    }
+
+    /**
+     * How much of the cooldown after the newest issue is still left, in milliseconds.
+     *
+     * Shared by the send gate and the countdown read for it, so the two agree on a remainder
+     * shorter than a second. Where seconds are asked it is rounded up: a countdown that reached
+     * zero while the gate still holds the send would offer a button that does nothing.
+     *
+     * @param int $lastIssuedAtMs Epoch milliseconds of the newest issue
+     * @param int $cooldownSeconds Configured minimum seconds between issues for one target
+     * @return int Milliseconds the cooldown still holds; zero or negative once it has passed
+     */
+    private function remainingCooldownMs(int $lastIssuedAtMs, int $cooldownSeconds): int
+    {
+        return $lastIssuedAtMs + $cooldownSeconds * TimeConstants::MS_PER_SECOND - TimeHelper::nowMs();
     }
 
     /**

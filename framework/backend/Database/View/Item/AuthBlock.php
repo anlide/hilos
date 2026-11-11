@@ -18,7 +18,7 @@ use Hilos\HilosException;
  * @property-read string $identity
  * @property-read string $action
  * @property-read int $level
- * @property-read ?string $blockedUntil
+ * @property-read ?int $blockedUntil
  */
 class AuthBlock extends DbItem
 {

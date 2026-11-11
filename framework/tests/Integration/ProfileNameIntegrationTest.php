@@ -16,6 +16,7 @@ use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
@@ -914,7 +915,7 @@ final class ProfileNameIntegrationTest extends ProfileIntegrationTestCase
         $this->dispatchName('Grace');
         $begin = $this->holdNameBegin();
         Hilos::$db->stepUps->actions->confirm(ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
-            self::USER_ID, StepUpOperationKey::CHANGE_NAME, date('Y-m-d H:i:s', time() - 1));
+            self::USER_ID, StepUpOperationKey::CHANGE_NAME, TimeHelper::nowMs() - TimeConstants::MS_PER_SECOND);
         $this->deliverNameBegin($begin);
         $errors = $this->take(SignalConstants::ACTION_ERROR);
         self::assertCount(1, $errors);
@@ -979,7 +980,7 @@ final class ProfileNameIntegrationTest extends ProfileIntegrationTestCase
         $this->dispatchName('Another');
         $begin = $this->holdNameBegin();
         Hilos::$db->stepUps->actions->confirm(ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
-            self::USER_ID, StepUpOperationKey::CHANGE_NAME, date('Y-m-d H:i:s', time() - 1));
+            self::USER_ID, StepUpOperationKey::CHANGE_NAME, TimeHelper::nowMs() - TimeConstants::MS_PER_SECOND);
         $this->deliverNameBegin($begin);
         self::assertCount(1, $this->take(SignalConstants::ACTION_ERROR));
         self::assertSame($requestId, $this->change()->requestId);
@@ -1021,7 +1022,7 @@ final class ProfileNameIntegrationTest extends ProfileIntegrationTestCase
         $this->dispatchName('Grace');
         $begin = $this->holdNameBegin();
         Hilos::$db->stepUps->actions->confirm(ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
-            self::USER_ID, StepUpOperationKey::CHANGE_NAME, date('Y-m-d H:i:s', time() - 1));
+            self::USER_ID, StepUpOperationKey::CHANGE_NAME, TimeHelper::nowMs() - TimeConstants::MS_PER_SECOND);
         Hilos::$rt->connectionsSource()->remove(self::ACCEPT_KEY);
         if ($origin !== 'missing') {
             Hilos::$rt->connectionsSource()->add(ProfileIntegrationConnection::create(self::ACCEPT_KEY,

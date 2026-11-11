@@ -11,18 +11,21 @@ use Hilos\Auth\Verification\VerificationSweepSettingsCatalog;
 use Hilos\Auth\Verification\VerificationSweeper;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Utils\Helpers\TimeHelper;
 use ReflectionProperty;
 
 /** Exercises the real verification table through the users library's sweep (HIL-1163). */
@@ -72,6 +75,34 @@ final class VerificationSweepIntegrationTest extends FrameworkIntegrationTestCas
 
         self::assertSame(2, new VerificationSweeper()->sweep());
         self::assertSame(2, new VerificationSweeper()->countFor(self::ADDRESS));
+    }
+
+    /**
+     * The retention cut and the expiry each turn on one millisecond (HIL-1921).
+     *
+     * A spent row created a millisecond before the cut goes and one created on it stays; an unspent
+     * row is spent once its expiry is not after now, and still live a millisecond before that.
+     *
+     * @throws HilosException When seeding or deleting fails
+     */
+    public function testDeleteSpentBeforeTurnsOnTheMillisecondOfTheCutAndOfTheExpiry(): void
+    {
+        $cutoff = 1735689600123;
+        $now = $cutoff + TimeConstants::SECONDS_PER_HOUR * TimeConstants::MS_PER_SECOND;
+        $later = $now + TimeConstants::SECONDS_PER_HOUR * TimeConstants::MS_PER_SECOND;
+        self::seedAt('spent-before-cut@example.test', $cutoff - 1, $later, $cutoff - 1);
+        self::seedAt('spent-on-cut@example.test', $cutoff, $later, $cutoff);
+        self::seedAt('expired-now@example.test', $cutoff - 1, $now, null);
+        self::seedAt('live-a-millisecond-longer@example.test', $cutoff - 1, $now + 1, null);
+
+        /** @var ObjectUserVerifications $verifications */
+        $verifications = Hilos::$db?->getObjectCollection(HilosDbContext::verifications);
+
+        self::assertSame(2, $verifications->deleteSpentBefore($cutoff, $now, VerificationSweeper::BATCH));
+        self::assertSame(
+            ['spent-on-cut@example.test', 'live-a-millisecond-longer@example.test'],
+            array_column(Database::sql('SELECT `identifier` FROM `hilos_user_verification` ORDER BY `id`')->rows(), 'identifier'),
+        );
     }
 
     /** @throws HilosException When seeding or sweeping fails */
@@ -162,17 +193,28 @@ final class VerificationSweepIntegrationTest extends FrameworkIntegrationTestCas
         bool $consumed,
         int $ageSeconds = 7200,
     ): void {
-        $now = time();
+        $now = TimeHelper::nowMs();
+        self::seedAt(
+            $identifier,
+            $now - ($old ? $ageSeconds : 60) * TimeConstants::MS_PER_SECOND,
+            $now + ($expired ? -60 : 7200) * TimeConstants::MS_PER_SECOND,
+            $consumed ? $now - 30 * TimeConstants::MS_PER_SECOND : null,
+        );
+    }
+
+    /**
+     * @param string $identifier Address on the row
+     * @param int $createdAt Moment the code was issued, in epoch milliseconds
+     * @param int $expiresAt Moment the code expires, in epoch milliseconds
+     * @param ?int $consumedAt Moment the code was spent in epoch milliseconds, or null while it is not
+     * @throws DatabaseException When the insert fails
+     */
+    private static function seedAt(string $identifier, int $createdAt, int $expiresAt, ?int $consumedAt): void
+    {
         Database::sqlRun(
             'INSERT INTO `hilos_user_verification` (`type`, `identifier`, `created_at`, `expires_at`, `consumed_at`)'
                 . ' VALUES (?, ?, ?, ?, ?)',
-            [
-                VerificationType::REGISTER_CONFIRM,
-                $identifier,
-                date('Y-m-d H:i:s', $now - ($old ? $ageSeconds : 60)),
-                date('Y-m-d H:i:s', $now + ($expired ? -60 : 7200)),
-                $consumed ? date('Y-m-d H:i:s', $now - 30) : null,
-            ],
+            [VerificationType::REGISTER_CONFIRM, $identifier, $createdAt, $expiresAt, $consumedAt],
         );
     }
 

@@ -1257,13 +1257,13 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
     private function ageSendsOutOfTheCooldown(string $email, int $seconds): void
     {
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::int($seconds));
+        $params->add(SqlParam::int($seconds * TimeConstants::MS_PER_SECOND));
         $params->add(SqlParam::string(VerificationType::MAGIC_LINK));
         $params->add(SqlParam::string($email));
         Database::sql(
             'UPDATE `' . EntityUserVerification::_table . '` SET `'
-            . EntityUserVerification::created_at . '` = DATE_SUB(`'
-            . EntityUserVerification::created_at . '`, INTERVAL ? SECOND) WHERE `'
+            . EntityUserVerification::created_at . '` = `'
+            . EntityUserVerification::created_at . '` - ? WHERE `'
             . EntityUserVerification::type . '` = ? AND `'
             . EntityUserVerification::identifier . '` = ?',
             $params,
@@ -1280,7 +1280,7 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
     private function ageReservationOut(string $email): void
     {
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string(date('Y-m-d H:i:s', time() - 1)));
+        $params->add(SqlParam::int(TimeHelper::nowMs() - TimeConstants::MS_PER_SECOND));
         $params->add(SqlParam::string($email));
         Database::sql(
             'UPDATE `' . EntityRegistrationReservation::_table . '` SET `'

@@ -816,7 +816,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             ProtectedModeRuntime::hashSessionToken($token),
             $userId,
             StepUpOperationKey::DELETE_ACCOUNT,
-            self::FUTURE,
+            self::DELETION_FUTURE,
         );
         // Written now rather than at CREATED_AT: a row a year old is the hourly sweep's, not the erasure's.
         Hilos::$db->accessLogEntries->actions->record($userId, AccessLogEvent::SIGN_IN, '203.0.113.7', TimeHelper::nowMs());

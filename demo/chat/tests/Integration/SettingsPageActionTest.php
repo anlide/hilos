@@ -29,6 +29,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Http\RequestQueryParams;
@@ -64,6 +65,7 @@ use Hilos\Theme\ThemeSettingsCatalog;
 use Hilos\Theme\DTO\ThemeSettingsSignalData;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration coverage for the settings page action layer (HIL-85).
@@ -774,7 +776,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                     ProtectedModeRuntime::hashSessionToken($token),
                     $adminId,
                     StepUpOperationKey::DISABLE_SECOND_FACTOR,
-                    date('Y-m-d H:i:s', time() + self::CONFIRMATION_TTL_SECONDS),
+                    TimeHelper::nowMs() + self::CONFIRMATION_TTL_SECONDS * TimeConstants::MS_PER_SECOND,
                 );
 
                 $this->settingsPage()->onAction(

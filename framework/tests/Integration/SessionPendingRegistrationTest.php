@@ -13,6 +13,7 @@ use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
@@ -28,6 +29,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration coverage for the unfinished registration a session remembers (HIL-612).
@@ -507,12 +509,13 @@ final class SessionPendingRegistrationTest extends HilosSessionIntegrationTestCa
     {
         Database::sqlRun(
             'INSERT INTO `hilos_registration_reservation` '
-            . '(`type`, `identifier`, `session_token`, `expires_at`) VALUES (?, ?, ?, ?)',
+            . '(`type`, `identifier`, `session_token`, `expires_at`, `created_at`) VALUES (?, ?, ?, ?, ?)',
             [
                 IdentityType::PASSWORD,
                 $identifier,
                 $token,
-                date('Y-m-d H:i:s', time() + self::HOLD_TTL_SECONDS),
+                TimeHelper::nowMs() + self::HOLD_TTL_SECONDS * TimeConstants::MS_PER_SECOND,
+                TimeHelper::nowMs(),
             ],
         );
     }

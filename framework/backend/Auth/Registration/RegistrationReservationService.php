@@ -9,6 +9,7 @@ use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Verification\VerificationSendOutcome;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -284,7 +285,7 @@ final class RegistrationReservationService
             return false;
         }
 
-        $reservation->markCodeAccepted(TimeHelper::getSqlDateTime());
+        $reservation->markCodeAccepted(TimeHelper::nowMs());
         $this->extendTo($sessionToken);
 
         return true;
@@ -309,7 +310,7 @@ final class RegistrationReservationService
      */
     public function extendTo(string $sessionToken): void
     {
-        $this->collection()->extendTo($sessionToken, date('Y-m-d H:i:s', time() + $this->ttlSeconds()));
+        $this->collection()->extendTo($sessionToken, TimeHelper::nowMs() + $this->ttlSeconds() * TimeConstants::MS_PER_SECOND);
     }
 
     /**

@@ -6,6 +6,7 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
@@ -168,8 +169,8 @@ final class VerificationSpendRaceIntegrationTest extends FrameworkIntegrationTes
      *
      * The winner's stamp is aged by an hour before the loser tries, so that "the row
      * is unchanged" can only mean "the loser did not write" - a loser stamping the
-     * current second would otherwise be indistinguishable from the winner, whose
-     * stamp a race puts in that same second.
+     * current millisecond would otherwise be indistinguishable from the winner, whose
+     * stamp a race puts in that same millisecond.
      *
      * @throws HilosException When the challenge insert or a verification query fails
      */
@@ -349,16 +350,16 @@ final class VerificationSpendRaceIntegrationTest extends FrameworkIntegrationTes
      * Moves the stored consume stamp an hour into the past.
      *
      * @param int $id Challenge row to age
-     * @return string The stamp now stored on the row
+     * @return int The stamp now stored on the row, in epoch milliseconds
      * @throws HilosException When the update or the read-back fails
      */
-    private function ageStoredStampByAnHour(int $id): string
+    private function ageStoredStampByAnHour(int $id): int
     {
         Database::sql(
             'UPDATE `' . EntityUserVerification::_table . '` SET `' . EntityUserVerification::consumed_at
-                . '` = `' . EntityUserVerification::consumed_at . '` - INTERVAL 1 HOUR'
+                . '` = `' . EntityUserVerification::consumed_at . '` - ?'
                 . ' WHERE `' . EntityUserVerification::id . '` = ?',
-            [$id],
+            [TimeConstants::SECONDS_PER_HOUR * TimeConstants::MS_PER_SECOND, $id],
         );
 
         return $this->storedStampOf($id);
@@ -366,10 +367,10 @@ final class VerificationSpendRaceIntegrationTest extends FrameworkIntegrationTes
 
     /**
      * @param int $id Challenge row to read
-     * @return ?string Consume stamp stored on the row, or null while it is unspent
+     * @return ?int Consume stamp stored on the row in epoch milliseconds, or null while it is unspent
      * @throws HilosException When the query fails
      */
-    private function storedStampOf(int $id): ?string
+    private function storedStampOf(int $id): ?int
     {
         Database::sql(
             'SELECT `' . EntityUserVerification::consumed_at . '` FROM `' . EntityUserVerification::_table
@@ -381,7 +382,7 @@ final class VerificationSpendRaceIntegrationTest extends FrameworkIntegrationTes
 
         $stamp = $row[EntityUserVerification::consumed_at];
 
-        return $stamp === null ? null : (string)$stamp;
+        return $stamp === null ? null : (int)$stamp;
     }
 
     /**

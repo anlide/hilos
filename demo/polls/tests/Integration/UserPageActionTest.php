@@ -28,6 +28,7 @@ use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Database\Entity\Item\UserRename as EntityUserRename;
 use Hilos\Users\DTO\HilosUserUpdateActionDTO;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration tests for the Hilos user-detail page rename action.
@@ -152,7 +153,7 @@ final class UserPageActionTest extends IntegrationTestCase
             ProtectedModeRuntime::hashSessionToken($token),
             $adminId,
             StepUpOperationKey::DELETE_OTHER_ACCOUNT,
-            date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_HOUR),
+            TimeHelper::nowMs() + TimeConstants::SECONDS_PER_HOUR * TimeConstants::MS_PER_SECOND,
         );
         $library = new UsersLibraryAgent();
         $this->startAgent($library);

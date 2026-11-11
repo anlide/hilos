@@ -7,6 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
+use Hilos\Constants\TimeConstants;
 use Hilos\Database\Entity\Item\User as EntityUser;
 use Demo\Chat\Hilos;
 use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
@@ -79,12 +80,12 @@ final class MainPageRegisterTest extends IntegrationTestCase
     private const int TTL_SECONDS = 900;
 
     /**
-     * @var int How often {@see awaitNextSecond()} looks at the clock, in microseconds
+     * @var int How often {@see awaitNextMillisecond()} looks at the clock, in microseconds
      *
-     * Ten milliseconds: short enough that the wait costs a rounding error of the boundary it
+     * A tenth of a millisecond: short enough that the wait ends close behind the boundary it
      * waits for, long enough that it is not a spin.
      */
-    private const int SECOND_BOUNDARY_POLL_MICROSECONDS = 10_000;
+    private const int MILLISECOND_BOUNDARY_POLL_MICROSECONDS = 100;
 
     /** Neither the address nor a code may be reserved until every current document is accepted. */
     public function testRegistrationWithoutCurrentConsentLeavesNoHoldOrCode(): void
@@ -154,7 +155,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
             // resend reuses a live code they will not - the screen owes the life of the
             // code it is asking for.
             $this->assertSame(
-                TimeHelper::sqlToMs((string)$challenge->expiresAt),
+                $challenge->expiresAt,
                 $outcome->expiresAt,
                 'The submit answers when the code it issued stops working',
             );
@@ -415,7 +416,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
         $this->register($agent, 'confirm-ak', $email);
         $this->seedKnownCode($email);
         $heldUntil = $this->holdOf('confirm-ak')?->expiresAt;
-        $this->awaitNextSecond();
+        $this->awaitNextMillisecond();
 
         try {
             $outcome = $this->confirm($agent, 'confirm-ak', $email, self::CODE);
@@ -434,7 +435,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
             $this->assertNotNull($hold, 'The hold is what the proof is written on');
             $this->assertTrue($hold->isProven(), 'The proof outlives the code, which is now spent');
             $this->assertGreaterThan(
-                (string)$heldUntil,
+                $heldUntil,
                 $hold->expiresAt,
                 'From here the hold keeps the address while a password is chosen',
             );
@@ -1719,25 +1720,25 @@ final class MainPageRegisterTest extends IntegrationTestCase
     }
 
     /**
-     * Waits out the rest of the current wall-clock second, and no longer than that.
+     * Waits out the rest of the current millisecond, and no longer than that.
      *
-     * A hold's expiry is a DATETIME, so it is remembered to the second, and both stamps a
-     * registration flow writes are "now + the same TTL": the one the reservation is born with
-     * and the one {@see RegistrationReservationService::markProven()} writes over it. Inside a
-     * single second those two are the same string, and the refresh a case asserts on becomes
-     * invisible - the faster the box, the more often that happens, which is why this reads as a
-     * rare flake on a loaded server and as a near-certain failure on a fast one.
+     * A hold's expiry is epoch milliseconds, and both stamps a registration flow writes are
+     * "now + the same TTL": the one the reservation is born with and the one
+     * {@see RegistrationReservationService::markProven()} writes over it. Inside a single
+     * millisecond those two are the same number, and the refresh a case asserts on becomes
+     * invisible. That is far rarer than it was while the row kept seconds, and it still happens
+     * the more often the faster the box is, which reads as a flake rather than as a failure.
      *
      * Crossing the boundary is what keeps the assertion strict. Weakening it to "not earlier"
      * would pass on a hold nobody refreshed at all, since an untouched stamp satisfies equality,
      * and the case would then hold whether the product does the thing or not.
      */
-    private function awaitNextSecond(): void
+    private function awaitNextMillisecond(): void
     {
-        $startedIn = time();
+        $startedIn = TimeHelper::nowMs();
 
-        while (time() === $startedIn) {
-            usleep(self::SECOND_BOUNDARY_POLL_MICROSECONDS);
+        while (TimeHelper::nowMs() === $startedIn) {
+            usleep(self::MILLISECOND_BOUNDARY_POLL_MICROSECONDS);
         }
     }
 
@@ -1968,13 +1969,13 @@ final class MainPageRegisterTest extends IntegrationTestCase
     private function ageSendsOutOfTheCooldown(string $email, int $seconds): void
     {
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::int($seconds));
+        $params->add(SqlParam::int($seconds * TimeConstants::MS_PER_SECOND));
         $params->add(SqlParam::string(VerificationType::REGISTER_CONFIRM));
         $params->add(SqlParam::string($email));
         Database::sql(
             'UPDATE `' . EntityUserVerification::_table . '` SET `'
-            . EntityUserVerification::created_at . '` = DATE_SUB(`'
-            . EntityUserVerification::created_at . '`, INTERVAL ? SECOND) WHERE `'
+            . EntityUserVerification::created_at . '` = `'
+            . EntityUserVerification::created_at . '` - ? WHERE `'
             . EntityUserVerification::type . '` = ? AND `'
             . EntityUserVerification::identifier . '` = ?',
             $params,
@@ -2006,7 +2007,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
     private function ageReservationOut(string $email): void
     {
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string(date('Y-m-d H:i:s', time() - 1)));
+        $params->add(SqlParam::int(TimeHelper::nowMs() - TimeConstants::MS_PER_SECOND));
         $params->add(SqlParam::string($email));
         Database::sql(
             'UPDATE `' . EntityRegistrationReservation::_table . '` SET `'

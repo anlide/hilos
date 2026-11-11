@@ -20,6 +20,7 @@ use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValueTooShortException;
@@ -560,7 +561,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
             $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_REQUEST, new ProfileAddSmsRequestActionDTO(self::PHONE));
             $this->settleProfileFlows();
             $cooldown = Hilos::$env[EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC]->int();
-            $this->verifications()->backdateIdentifier(self::PHONE, date('Y-m-d H:i:s', time() - $cooldown - 1));
+            $this->verifications()->backdateIdentifier(self::PHONE, TimeHelper::nowMs() - ($cooldown + 1) * TimeConstants::MS_PER_SECOND);
 
             $this->assertRefused(
                 AuthMessages::SEND_CAP,

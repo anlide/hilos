@@ -8,6 +8,7 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\StepUp\DTO\StepUpConfirmedSignalData;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\SignalRouter;
@@ -28,6 +29,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\TimeHelper;
 use ReflectionProperty;
 
 /**
@@ -165,13 +167,14 @@ final class StepUpConfirmedSessionIntegrationTest extends HilosSessionIntegratio
     private function seedConfirmation(string $sessionToken, string $operation): void
     {
         Database::sqlRun(
-            'INSERT INTO `hilos_step_up` (`session_token_hash`, `user_id`, `operation`, `confirmed_until`) '
-            . 'VALUES (?, ?, ?, ?)',
+            'INSERT INTO `hilos_step_up` (`session_token_hash`, `user_id`, `operation`, `confirmed_until`, `created_at`) '
+            . 'VALUES (?, ?, ?, ?, ?)',
             [
                 ProtectedModeRuntime::hashSessionToken($sessionToken),
                 self::USER_ID,
                 $operation,
-                date('Y-m-d H:i:s', time() + self::CONFIRMATION_LIFETIME_SECONDS),
+                TimeHelper::nowMs() + self::CONFIRMATION_LIFETIME_SECONDS * TimeConstants::MS_PER_SECOND,
+                TimeHelper::nowMs(),
             ],
         );
     }

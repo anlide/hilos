@@ -12,6 +12,7 @@ use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Core\Router\DTO\UserRenameFeedLinkSignalData;
 use Demo\Chat\Database\Database;
 use Demo\Chat\Database\View\Item\Event;
+use Hilos\Constants\TimeConstants;
 use Hilos\Database\View\Item\UserRename;
 use Demo\Chat\Hilos;
 use Demo\Chat\Database\ChatDbContext;
@@ -111,6 +112,7 @@ use Hilos\Users\DTO\UserStepUpCreditDoneSignalData;
 use Hilos\Users\DTO\UserStepUpCreditSignalData;
 use Hilos\Users\DTO\UserStepUpRecordDoneSignalData;
 use Hilos\Users\DTO\UserStepUpRecordSignalData;
+use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\TestCase;
 use Random\RandomException;
 use ReflectionProperty;
@@ -688,7 +690,7 @@ abstract class IntegrationTestCase extends TestCase
         self::assertNotNull($session);
         $hash = ProtectedModeRuntime::hashSessionToken($session->token);
         Hilos::$db->stepUps->actions->confirm(
-            $hash, $userId, StepUpOperationKey::CHANGE_NAME, date('Y-m-d H:i:s', time() + 3600),
+            $hash, $userId, StepUpOperationKey::CHANGE_NAME, TimeHelper::nowMs() + 3600 * TimeConstants::MS_PER_SECOND,
         );
         $this->drainSignals();
         $oldName = Hilos::$db->users[$userId]->name;

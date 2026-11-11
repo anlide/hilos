@@ -59,6 +59,7 @@ use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Tables\Legal\AbstractHilosLegalAcceptancesTable;
 use Hilos\Tables\Legal\HilosLegalAcceptanceTableRow;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
 
@@ -89,6 +90,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
     private const string IMPERSONATED_KEY = 'accept-legal-export-impersonated';
     private const int CREATED_AT = 1767225600000;
     private const string PAST = '2026-01-01 00:00:00';
+    private const int CONFIRMATION_PAST = 1767225600000;
 
     /** The person every refusal and erasure case is about: no administrator. */
     private const int PERSON_ID = 101;
@@ -425,7 +427,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
     {
         $agent = self::startedAgent();
         self::assertRefused($agent, self::ADMIN_KEY, StepUpMessages::EXPIRED);
-        self::confirm(self::ADMIN_TOKEN, self::ADMIN_ID, self::PAST);
+        self::confirm(self::ADMIN_TOKEN, self::ADMIN_ID, self::CONFIRMATION_PAST);
         self::assertRefused($agent, self::ADMIN_KEY, StepUpMessages::EXPIRED);
         self::confirm(self::OTHER_ADMIN_TOKEN, self::ADMIN_ID);
         self::assertRefused($agent, self::ADMIN_KEY, StepUpMessages::EXPIRED);
@@ -1282,18 +1284,20 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
      *
      * @param string $sessionToken Session of the confirming browser
      * @param int $userId Person who confirmed
-     * @param ?string $confirmedUntil End of the confirmation, or null for an hour from now
+     * @param ?int $confirmedUntil End of the confirmation in epoch milliseconds, or null for an hour from now
      * @throws HilosException When the row cannot be written
      */
-    private static function confirm(string $sessionToken, int $userId, ?string $confirmedUntil = null): void
+    private static function confirm(string $sessionToken, int $userId, ?int $confirmedUntil = null): void
     {
         Database::sqlRun(
-            'INSERT INTO `hilos_step_up` (`session_token_hash`, `user_id`, `operation`, `confirmed_until`) VALUES (?, ?, ?, ?)',
+            'INSERT INTO `hilos_step_up` (`session_token_hash`, `user_id`, `operation`, `confirmed_until`, `created_at`) '
+            . 'VALUES (?, ?, ?, ?, ?)',
             [
                 ProtectedModeRuntime::hashSessionToken($sessionToken),
                 $userId,
                 StepUpOperationKey::EXPORT_LEGAL_ACCEPTANCES,
-                $confirmedUntil ?? date('Y-m-d H:i:s', time() + 3600),
+                $confirmedUntil ?? TimeHelper::nowMs() + 3600 * TimeConstants::MS_PER_SECOND,
+                TimeHelper::nowMs(),
             ],
         );
     }

@@ -80,16 +80,16 @@ class AuthBlocks extends Objects
      * process restart would be a way to have a block forgotten - the whole reason the block
      * is durable while the counter is not.
      *
-     * @param string $now Datetime a block must outlast to still be in force
+     * @param int $nowMs Moment in epoch milliseconds a block must outlast to still be in force
      * @return list<ObjectAuthBlock> Blocks still in force, in no particular order
      * @throws DatabaseException If the database query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
-    public function findActive(string $now): array
+    public function findActive(int $nowMs): array
     {
         $blocks = [];
         $rawWhere = '`' . EntityAuthBlock::blocked_until . '` > ?';
-        foreach (static::entityClass()::get($rawWhere, [$now]) as $entityAuthBlock) {
+        foreach (static::entityClass()::get($rawWhere, [$nowMs]) as $entityAuthBlock) {
             if ($entityAuthBlock->id === null) {
                 continue;
             }
@@ -117,14 +117,14 @@ class AuthBlocks extends Objects
      * @param string $identity Throttle identity (IP or session-token hash)
      * @param string $action Throttled action name
      * @param int $level Ladder step reached
-     * @param ?string $blockedUntil Datetime the block lifts, or null when only the level is retained
+     * @param ?int $blockedUntilMs Moment in epoch milliseconds the block lifts, or null when only the level is retained
      * @return ObjectAuthBlock The persisted block object
      * @throws EmptyValueException When scope, identity or action is empty
      * @throws DatabaseException If the insert or update query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
-    public function recordBlock(string $scope, string $identity, string $action, int $level, ?string $blockedUntil): ObjectAuthBlock
+    public function recordBlock(string $scope, string $identity, string $action, int $level, ?int $blockedUntilMs): ObjectAuthBlock
     {
         if ($scope === '' || $identity === '' || $action === '') {
             throw new EmptyValueException('Auth block scope, identity and action are required');
@@ -139,7 +139,7 @@ class AuthBlocks extends Objects
         }
 
         $block->level = $level;
-        $block->blockedUntil = $blockedUntil;
+        $block->blockedUntil = $blockedUntilMs;
         $block->sync();
 
         $id = $block->id;
@@ -159,19 +159,19 @@ class AuthBlocks extends Objects
      * it belonged to has long been swept. Keeping it would mean a table that only ever grows,
      * one row per key ever blocked.
      *
-     * @param string $before Datetime a block must have lifted before to be deleted
+     * @param int $beforeMs Moment in epoch milliseconds a block must have lifted before to be deleted
      * @return int Number of blocks deleted
      * @throws DatabaseException If the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
-    public function clearServed(string $before): int
+    public function clearServed(int $beforeMs): int
     {
         $deleted = 0;
         $column = '`' . EntityAuthBlock::blocked_until . '`';
         // The null half is garbage by the same rule: a row that names no moment is never replayed either.
         $rawWhere = "({$column} IS NULL OR {$column} < ?)";
-        foreach (static::entityClass()::get($rawWhere, [$before]) as $entityAuthBlock) {
+        foreach (static::entityClass()::get($rawWhere, [$beforeMs]) as $entityAuthBlock) {
             $this->forget($entityAuthBlock);
             $deleted++;
         }

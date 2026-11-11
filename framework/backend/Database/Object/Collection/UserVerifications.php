@@ -6,6 +6,7 @@ namespace Hilos\Database\Object\Collection;
 
 use Hilos\Auth\Verification\VerificationRejectReason;
 use Hilos\Auth\Verification\VerificationService;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
@@ -68,7 +69,7 @@ class UserVerifications extends Objects
             return null;
         }
 
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
         $active = null;
         foreach ($this->hydrateByIdentity($type, $identifier) as $verification) {
             if (!$verification->isActive($now, $maxAttempts)) {
@@ -112,7 +113,7 @@ class UserVerifications extends Objects
             return VerificationRejectReason::NO_CHALLENGE;
         }
 
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
         $newest = null;
         foreach ($this->hydrateByIdentity($type, $identifier) as $verification) {
             if ($verification->isActive($now, $maxAttempts)) {
@@ -162,14 +163,11 @@ class UserVerifications extends Objects
             return VerificationSendStats::never();
         }
 
-        $windowStart = time() - $windowSeconds;
+        $windowStart = TimeHelper::nowMs() - $windowSeconds * TimeConstants::MS_PER_SECOND;
         $lastIssuedAt = null;
         $sentInWindow = 0;
         foreach ($this->hydrateByIdentity($type, $identifier) as $verification) {
-            $issuedAt = strtotime($verification->createdAt);
-            if ($issuedAt === false) {
-                continue;
-            }
+            $issuedAt = $verification->createdAt;
             if ($lastIssuedAt === null || $issuedAt > $lastIssuedAt) {
                 $lastIssuedAt = $issuedAt;
             }
@@ -232,14 +230,14 @@ class UserVerifications extends Objects
             throw new EmptyValueException('Verification identifier and code are required');
         }
 
-        $now = time();
+        $now = TimeHelper::nowMs();
         $verification = static::OBJECT_CLASS::create();
         $verification->userId = $userId;
         $verification->type = $type;
         $verification->identifier = $identifier;
         $verification->channel = $channel;
-        $verification->createdAt = date('Y-m-d H:i:s', $now);
-        $verification->expiresAt = date('Y-m-d H:i:s', $now + $ttlSeconds);
+        $verification->createdAt = $now;
+        $verification->expiresAt = $now + $ttlSeconds * TimeConstants::MS_PER_SECOND;
         $verification->sync();
 
         $id = $verification->id;
@@ -281,7 +279,7 @@ class UserVerifications extends Objects
             return;
         }
 
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
         foreach ($this->hydrateByIdentity($type, $identifier) as $verification) {
             if ($verification->isActive($now, $maxAttempts)) {
                 $verification->consume();
@@ -342,8 +340,8 @@ class UserVerifications extends Objects
     /**
      * Deletes old spent or expired challenges, oldest id first and one bounded batch at a time.
      *
-     * @param string $cutoffSql Oldest eligible issue time as an SQL datetime
-     * @param string $nowSql Current moment as an SQL datetime
+     * @param int $cutoffMs Oldest eligible issue moment in epoch milliseconds
+     * @param int $nowMs Current moment in epoch milliseconds
      * @param int $limit Maximum rows to remove
      * @return int Number of removed rows
      * @throws DatabaseException When the lookup or a delete fails
@@ -351,13 +349,13 @@ class UserVerifications extends Objects
      * @throws WriteNotAllowedException When no truth source may remove a row
      * @throws SourceChangeSubscriberException When a store announcement fails
      */
-    public function deleteSpentBefore(string $cutoffSql, string $nowSql, int $limit): int
+    public function deleteSpentBefore(int $cutoffMs, int $nowMs, int $limit): int
     {
         $removed = 0;
         foreach (static::entityClass()::get(
             '`' . EntityUserVerification::created_at . '` < ? AND (`' . EntityUserVerification::consumed_at
                 . '` IS NOT NULL OR `' . EntityUserVerification::expires_at . '` <= ?)',
-            [$cutoffSql, $nowSql],
+            [$cutoffMs, $nowMs],
             [EntityUserVerification::id => SqlSortDirection::ASC],
             $limit,
         ) as $entity) {
@@ -411,11 +409,11 @@ class UserVerifications extends Objects
      * Ages every challenge on one address for the test-only sweep command.
      *
      * @param string $identifier Address whose rows are aged
-     * @param string $createdAtSql Past issue time as an SQL datetime
+     * @param int $createdAtMs Past issue moment in epoch milliseconds
      * @return int Number of aged rows
      * @throws DatabaseException When the lookup or an update fails
      */
-    public function backdateIdentifier(string $identifier, string $createdAtSql): int
+    public function backdateIdentifier(string $identifier, int $createdAtMs): int
     {
         $aged = 0;
         foreach (static::entityClass()::get([EntityUserVerification::identifier => $identifier]) as $entity) {
@@ -426,7 +424,7 @@ class UserVerifications extends Objects
             if (!isset($this->objects[$id])) {
                 $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
             }
-            $this->objects[$id]->backdate($createdAtSql);
+            $this->objects[$id]->backdate($createdAtMs);
             $aged++;
         }
 

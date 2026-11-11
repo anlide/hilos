@@ -20,8 +20,8 @@ CREATE TABLE `hilos_auth_block` (
     `identity` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     `action` VARCHAR(64) NOT NULL,
     `level` TINYINT UNSIGNED NOT NULL DEFAULT 0,
-    `blocked_until` TIMESTAMP NULL DEFAULT NULL,
-    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `blocked_until` BIGINT NULL DEFAULT NULL,
+    `updated_at` BIGINT NOT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_auth_block_scope_identity_action` (`scope`, `identity`, `action`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

@@ -15,6 +15,7 @@ use Hilos\Auth\StepUp\StepUpSettingsCatalog;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
@@ -59,6 +60,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Sms\HilosSmsSender;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\AdminAudience;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Base of the profile's sign-in-method and email-change cases (HIL-1137).
@@ -452,7 +454,7 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
             ProtectedModeRuntime::hashSessionToken($token),
             $userId,
             $operation,
-            date('Y-m-d H:i:s', time() + self::TTL_SECONDS),
+            TimeHelper::nowMs() + self::TTL_SECONDS * TimeConstants::MS_PER_SECOND,
         );
     }
 

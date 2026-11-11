@@ -26,6 +26,7 @@ use Hilos\Auth\SecondFactor\Totp;
 use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
@@ -51,6 +52,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Users\DTO\UserSecondFactorResetRemindDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindSignalData;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * The profile half of the second factor and its delayed removal, against the real tables (HIL-494).
@@ -681,7 +683,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
             ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
             self::USER_ID,
             StepUpOperationKey::ADD_AUTHENTICATOR_APP,
-            date('Y-m-d H:i:s', time() + $secondsLeft),
+            TimeHelper::nowMs() + $secondsLeft * TimeConstants::MS_PER_SECOND,
         );
     }
 

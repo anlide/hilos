@@ -14,6 +14,7 @@ use Hilos\Auth\Throttle\ThrottleGate;
 use Hilos\Auth\Throttle\ThrottleIdentity;
 use Hilos\Auth\Throttle\ThrottleScope;
 use Hilos\Auth\Throttle\ThrottleVerdictRoute;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Agent\Daemon\StatusAgentDaemon;
@@ -41,6 +42,8 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\AuthBlock as EntityAuthBlock;
+use Hilos\Database\Object\Collection\AuthBlocks as ObjectAuthBlocks;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
@@ -51,6 +54,7 @@ use Hilos\Runtime\View\Item\AuthAttempt;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Status\DTO\StatusSubscribeActionDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\TimeHelper;
 use ReflectionProperty;
 
 /**
@@ -213,7 +217,7 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
             }
         }
         $this->assertSame(self::MAX_SESSION + 1, $this->counter(ThrottleScope::SESSION, self::SESSION_IDENTITY)?->count);
-        $this->assertCount(1, Hilos::$db->authBlocks->findActive(date('Y-m-d H:i:s', 0)));
+        $this->assertCount(1, Hilos::$db->authBlocks->findActive(0));
     }
 
     public function testResetClearsTheSharedCounterAndBlockForBothHosts(): void
@@ -240,7 +244,7 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
             ThrottleCommandConstants::FIELD_BLOCKS_CLEARED => 1,
         ], $reply->payload);
         $this->assertNull($this->counter(ThrottleScope::SESSION, self::SESSION_IDENTITY));
-        $this->assertSame([], Hilos::$db->authBlocks->findActive(date('Y-m-d H:i:s', 0)));
+        $this->assertSame([], Hilos::$db->authBlocks->findActive(0));
         foreach ([HilosAgentType::HILOS_USERS_LIBRARY, HilosAgentType::HILOS_STATUS] as $host) {
             $this->assertTrue($this->judgeCheck($agent, new ThrottleCheckSignalData(
                 ThrottleScope::SESSION, self::SESSION_IDENTITY, self::ACTION, self::ACCEPT_KEY, self::REQUEST_KEY, $host,
@@ -391,12 +395,69 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
         $this->assertNotNull($blocks->findByKey(ThrottleScope::SESSION, self::SESSION_IDENTITY, self::ACTION));
 
         // The sweep as it runs while the block is still on: the row has to survive it.
-        $this->assertSame(0, $blocks->clearServed(date('Y-m-d H:i:s')));
+        $this->assertSame(0, $blocks->clearServed(TimeHelper::nowMs()));
         $this->assertNotNull($blocks->findByKey(ThrottleScope::SESSION, self::SESSION_IDENTITY, self::ACTION));
 
         // And as it runs once the block has been served and the ladder cooled.
-        $this->assertSame(1, $blocks->clearServed(date('Y-m-d H:i:s', time() + self::FIRST_STEP + 1)));
+        $this->assertSame(1, $blocks->clearServed(TimeHelper::nowMs() + (self::FIRST_STEP + 1) * TimeConstants::MS_PER_SECOND));
         $this->assertNull($blocks->findByKey(ThrottleScope::SESSION, self::SESSION_IDENTITY, self::ACTION));
+    }
+
+    /**
+     * A block lifting between two whole seconds is stored and replayed after a restart to its millisecond (HIL-1921).
+     *
+     * The restart takes the loaded rows with it as well as the counters, so what the replay puts
+     * into the counters is what the table holds and not the object the first process kept.
+     */
+    public function testABlockLiftingBetweenWholeSecondsIsStoredAndReplayedToTheMillisecond(): void
+    {
+        $this->startedAgent();
+        Hilos::$db->authBlocks->recordBlock(ThrottleScope::SESSION, self::SESSION_IDENTITY, self::ACTION, 1, 4102444800123);
+        $this->assertSame(4102444800123, $this->storedBlock()[EntityAuthBlock::blocked_until]);
+
+        $db = new AuthThrottleTestDbContext();
+        $db->configure();
+        Hilos::$db = $db;
+        $this->mountCounters();
+        $this->startedAgent();
+
+        $counter = $this->counter(ThrottleScope::SESSION, self::SESSION_IDENTITY);
+        $this->assertNotNull($counter);
+        $this->assertSame(1, $counter->level);
+        $this->assertSame(4102444800.123, $counter->blockedUntil);
+    }
+
+    /** A block recorded again over a stored one stamps the millisecond it was recorded on (HIL-1921). */
+    public function testARepeatedBlockStampsTheMillisecondItWasRecordedOn(): void
+    {
+        $this->seedBlock(1, 4102444800123, 1735689600123);
+        $this->startedAgent();
+
+        $before = TimeHelper::nowMs();
+        Hilos::$db->authBlocks->recordBlock(ThrottleScope::SESSION, self::SESSION_IDENTITY, self::ACTION, 2, 4102444860123);
+        $after = TimeHelper::nowMs();
+
+        $stored = $this->storedBlock();
+        $this->assertSame(2, $stored[EntityAuthBlock::level]);
+        $this->assertSame(4102444860123, $stored[EntityAuthBlock::blocked_until]);
+        $this->assertGreaterThanOrEqual($before, $stored[EntityAuthBlock::updated_at]);
+        $this->assertLessThanOrEqual($after, $stored[EntityAuthBlock::updated_at]);
+    }
+
+    /** Writing a block exactly as it stands, or syncing it untouched, leaves its stamp where it was (HIL-1921). */
+    public function testASyncThatChangesNothingLeavesTheStampWhereItWas(): void
+    {
+        $this->seedBlock(1, 4102444800123, 1735689600123);
+        $this->startedAgent();
+
+        Hilos::$db->authBlocks->recordBlock(ThrottleScope::SESSION, self::SESSION_IDENTITY, self::ACTION, 1, 4102444800123);
+        /** @var ObjectAuthBlocks $blocks */
+        $blocks = Hilos::$db->getObjectCollection(HilosDbContext::authBlocks);
+        $block = $blocks->findByKey(ThrottleScope::SESSION, self::SESSION_IDENTITY, self::ACTION);
+        $this->assertNotNull($block);
+        $block->sync();
+
+        $this->assertSame(1735689600123, $this->storedBlock()[EntityAuthBlock::updated_at]);
     }
 
     public function testASwitchedOffLayerJudgesNothingAndRemembersNothing(): void
@@ -409,7 +470,42 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
         }
 
         $this->assertNull($this->counter(ThrottleScope::SESSION, self::SESSION_IDENTITY));
-        $this->assertSame([], Hilos::$db->authBlocks->findActive(date('Y-m-d H:i:s', 0)));
+        $this->assertSame([], Hilos::$db->authBlocks->findActive(0));
+    }
+
+    /**
+     * Writes the session's stored block straight into the table, past the agent and its stamp.
+     *
+     * @param int $level Ladder step the row records
+     * @param int $blockedUntil Moment the block lifts, in epoch milliseconds
+     * @param int $updatedAt Moment the row was last changed, in epoch milliseconds
+     * @throws DatabaseException When the insert fails
+     */
+    private function seedBlock(int $level, int $blockedUntil, int $updatedAt): void
+    {
+        Database::sql(
+            'INSERT INTO `' . EntityAuthBlock::_table . '` (`' . EntityAuthBlock::scope . '`, `' . EntityAuthBlock::identity . '`, `'
+                . EntityAuthBlock::action . '`, `' . EntityAuthBlock::level . '`, `' . EntityAuthBlock::blocked_until . '`, `'
+                . EntityAuthBlock::updated_at . '`) VALUES (?, ?, ?, ?, ?, ?)',
+            [ThrottleScope::SESSION, self::SESSION_IDENTITY, self::ACTION, $level, $blockedUntil, $updatedAt],
+        );
+    }
+
+    /**
+     * @return array<string, ?int> Level and moments of the session's stored block as the table holds them, by column
+     * @throws DatabaseException When the read fails
+     */
+    private function storedBlock(): array
+    {
+        $columns = [EntityAuthBlock::level, EntityAuthBlock::blocked_until, EntityAuthBlock::updated_at];
+        $row = Database::sql(
+            'SELECT `' . implode('`, `', $columns) . '` FROM `' . EntityAuthBlock::_table . '` WHERE `' . EntityAuthBlock::scope
+                . '` = ? AND `' . EntityAuthBlock::identity . '` = ? AND `' . EntityAuthBlock::action . '` = ?',
+            [ThrottleScope::SESSION, self::SESSION_IDENTITY, self::ACTION],
+        )->row();
+        $this->assertNotNull($row);
+
+        return array_map(static fn (mixed $value): ?int => $value === null ? null : (int)$value, $row);
     }
 
     /**

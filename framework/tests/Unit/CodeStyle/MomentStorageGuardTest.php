@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\CodeStyle;
 
-use Hilos\Database\Entity\Item\AuthBlock;
 use Hilos\Database\Entity\Item\UserRename;
 use Hilos\Database\Schema\FrameworkTablesWithoutEntity;
 use Hilos\Testing\MomentStorageBaseline;
@@ -22,11 +21,6 @@ final class MomentStorageGuardTest extends TestCase
         $autoloaders = spl_autoload_functions();
         $inputs = MomentStorageSources::forRepository($repositoryRoot);
         self::assertSame($autoloaders, spl_autoload_functions(), 'The metadata loader must unregister after discovery.');
-        self::assertContains([
-            'entity' => AuthBlock::class, 'declaration' => AuthBlock::class,
-            'table' => 'hilos_auth_block', 'column' => 'updated_at',
-            'mapped' => false, 'frameworkOwned' => true, 'projectStorage' => null,
-        ], $inputs['catalog'], 'DB-only Entity moments remain semantic source inputs.');
         self::assertContains([
             'entity' => null, 'declaration' => FrameworkTablesWithoutEntity::class,
             'table' => 'hilos_migration_claim', 'column' => 'claimed_at',

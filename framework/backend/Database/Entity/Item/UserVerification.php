@@ -73,9 +73,9 @@ class UserVerification extends Entity
         self::identifier => PhpType::STRING->value,
         self::channel => PhpType::STRING->value,
         self::attempts => PhpType::INTEGER->value,
-        self::created_at => PhpType::DATETIME->value,
-        self::expires_at => PhpType::DATETIME->value,
-        self::consumed_at => PhpType::DATETIME->value,
+        self::created_at => PhpType::INTEGER->value,
+        self::expires_at => PhpType::INTEGER->value,
+        self::consumed_at => PhpType::INTEGER->value,
     ];
 
     public const array _foreign = [
@@ -101,7 +101,7 @@ class UserVerification extends Entity
     public string $identifier;
     public ?string $channel = null;
     public int $attempts = 0;
-    public string $created_at;
-    public string $expires_at;
-    public ?string $consumed_at = null;
+    public int $created_at;
+    public int $expires_at;
+    public ?int $consumed_at = null;
 }

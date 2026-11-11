@@ -22,7 +22,7 @@ use Hilos\Database\Object\Collection\UserVerifications;
 final class VerificationSendStats
 {
     /**
-     * @param ?int $lastIssuedAt Unix seconds of the newest issue, or null when nothing was ever issued
+     * @param ?int $lastIssuedAt Epoch milliseconds of the newest issue, or null when nothing was ever issued
      * @param int $sentInWindow Codes issued inside the counting window
      */
     public function __construct(
@@ -42,7 +42,7 @@ final class VerificationSendStats
     }
 
     /**
-     * @param int $lastIssuedAt Unix seconds of the newest issue
+     * @param int $lastIssuedAt Epoch milliseconds of the newest issue
      * @param int $sentInWindow Codes issued inside the counting window
      * @return self Stats of a target that was mailed at least once
      */

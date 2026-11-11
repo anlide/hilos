@@ -9,7 +9,6 @@ use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
-use Hilos\Database\Entity\Item\AuthBlock;
 use Hilos\Database\Entity\Item\ChangeLogReceipt;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Entity\Item\LegalAcceptance;
@@ -104,13 +103,13 @@ final class MomentStorageSchemaIntegrationTest extends FrameworkIntegrationTestC
     /** DB-only, analytics and bootstrap moments cannot disappear behind a historical type record. */
     public function testMissingUnmappedAndProviderColumnsAreUnconditionallyRejected(): void
     {
-        self::assertFalse(MomentColumns::forEntity(AuthBlock::class)['updated_at']->mapped);
-        $mismatches = EntitySchemaAudit::auditMoments([AuthBlock::class]);
+        self::assertFalse(MomentColumns::forEntity(MomentDbOnlyEntity::class)['occurred_at']->mapped);
+        $mismatches = EntitySchemaAudit::auditMoments([MomentDbOnlyEntity::class]);
         array_push($mismatches, ...EntitySchemaAudit::auditProviderMoments(FrameworkTablesWithoutEntity::class));
         $missing = array_values(array_filter($mismatches, static fn (EntitySchemaMismatch $mismatch): bool =>
             $mismatch->axis === EntitySchemaAxis::MOMENT_COLUMN_MISSING));
         self::assertSame([
-            ['hilos_auth_block', 'updated_at'],
+            ['moment_schema_fixture', 'occurred_at'],
             ['hilos_migration_claim', 'claimed_at'],
             ['hilos_analytics_user_agent', 'created_ts'],
         ], array_map(static fn (EntitySchemaMismatch $mismatch): array => [$mismatch->table, $mismatch->subject], $missing));
@@ -320,7 +319,7 @@ final class MomentStorageSchemaIntegrationTest extends FrameworkIntegrationTestC
         if ($this->name() === 'testInjectedMomentCannotBorrowHistoricalDebt') {
             Database::sqlRun('CREATE TABLE moment_schema_fixture (occurred_at ' . $this->providedData()[0] . ' NULL DEFAULT NULL)');
         } elseif ($this->name() === 'testMissingUnmappedAndProviderColumnsAreUnconditionallyRejected') {
-            Database::sqlRun('ALTER TABLE hilos_auth_block DROP COLUMN updated_at;'
+            Database::sqlRun('CREATE TABLE moment_schema_fixture (id INT UNSIGNED NOT NULL);'
                 . 'ALTER TABLE hilos_analytics_user_agent DROP COLUMN created_ts;'
                 . 'ALTER TABLE hilos_migration_claim DROP COLUMN claimed_at;');
         } elseif ($this->name() === 'testMissingRequiredTableFailsBeforeBaselineReconciliation') {
@@ -453,6 +452,14 @@ class MomentSchemaEntity extends Entity
 final class MomentNamedSchemaEntity extends MomentSchemaEntity
 {
     public const string _database = 'moment_schema_fixture';
+}
+
+/** A DB-only moment: declared in _moments, never mapped through _columns, and physically absent in its case. */
+final class MomentDbOnlyEntity extends Entity
+{
+    public const string _table = 'moment_schema_fixture';
+    public const array _columns = ['id'];
+    public const array _moments = ['occurred_at'];
 }
 
 final class MomentSchemaProvider implements TablesWithoutEntityProvider

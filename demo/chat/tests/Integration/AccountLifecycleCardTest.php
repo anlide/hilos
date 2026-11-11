@@ -13,6 +13,7 @@ use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Core\Execution\ExecutionContext;
@@ -34,6 +35,7 @@ use Hilos\Users\DTO\AccountAdminSetSignalData;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Account-card writes run under the real sessions library's claim and answer the waiting page.
@@ -329,7 +331,7 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
             ProtectedModeRuntime::hashSessionToken($this->adminToken),
             $this->adminId,
             $operation,
-            date('Y-m-d H:i:s', time() + self::CONFIRMATION_TTL_SECONDS),
+            TimeHelper::nowMs() + self::CONFIRMATION_TTL_SECONDS * TimeConstants::MS_PER_SECOND,
         );
     }
 

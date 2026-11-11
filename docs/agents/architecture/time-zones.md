@@ -85,7 +85,7 @@ signed `BIGINT` or milliseconds.
 | Bootstrap migration claim, admin-view latch and database marker | 3 | Implemented |
 | Sessions and verifier circle | 6 | Implemented |
 | Identity, OAuth provider and passkey | 7 | Implemented |
-| Verification, registration, step-up and auth blocks | 10 | (not in the code yet — HIL-1921) |
+| Verification, registration, step-up and auth blocks | 10 | Implemented |
 | Second factor, trust, reset and backup codes | 16 | (not in the code yet — HIL-1922) |
 | Notifications, preferences, deliveries and push, including keyset anchors | 10 | Implemented |
 | People, access log, deletion, photo, rename and merge | 9 | Implemented |

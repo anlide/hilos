@@ -29,9 +29,10 @@ use Hilos\Database\SqlParamCollection;
  * @property string $type
  * @property string $identifier
  * @property string $sessionToken
- * @property-read ?string $codeAcceptedAt
+ * @property-read ?int $codeAcceptedAt
  * @property ?string $acceptedRevisions
- * @property string $expiresAt
+ * @property int $expiresAt
+ * @property int $createdAt
  */
 class RegistrationReservation extends Object_
 {
@@ -44,11 +45,12 @@ class RegistrationReservation extends Object_
     public const string codeAcceptedAt = 'codeAcceptedAt';
     public const string acceptedRevisions = 'acceptedRevisions';
     public const string expiresAt = 'expiresAt';
+    public const string createdAt = 'createdAt';
 
     /**
      * Magic getter for entity properties.
      *
-     * @param string $property Property name (id, type, identifier, sessionToken, codeAcceptedAt, acceptedRevisions, expiresAt)
+     * @param string $property Property name (id, type, identifier, sessionToken, codeAcceptedAt, acceptedRevisions, expiresAt, createdAt)
      * @return mixed Property value
      * @throws DatabaseException When the property is not a known RegistrationReservation field
      */
@@ -62,6 +64,7 @@ class RegistrationReservation extends Object_
             self::codeAcceptedAt => $this->entity->code_accepted_at,
             self::acceptedRevisions => $this->entity->accepted_revisions,
             self::expiresAt => $this->entity->expires_at,
+            self::createdAt => $this->entity->created_at,
             default => parent::__get($property),
         };
     }
@@ -72,7 +75,7 @@ class RegistrationReservation extends Object_
      * The proof mark has no setter here; it is written by {@see markCodeAccepted()},
      * which is the only place allowed to say an address was proved.
      *
-     * @param string $property Property name (type, identifier, sessionToken, acceptedRevisions, expiresAt)
+     * @param string $property Property name (type, identifier, sessionToken, acceptedRevisions, expiresAt, createdAt)
      * @param mixed $value Value to set
      * @throws DatabaseException When the property cannot be set on a RegistrationReservation
      */
@@ -83,7 +86,8 @@ class RegistrationReservation extends Object_
             self::identifier => $this->entity->identifier = (string)$value,
             self::sessionToken => $this->entity->session_token = (string)$value,
             self::acceptedRevisions => $this->entity->accepted_revisions = $value,
-            self::expiresAt => $this->entity->expires_at = (string)$value,
+            self::expiresAt => $this->entity->expires_at = (int)$value,
+            self::createdAt => $this->entity->created_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -105,15 +109,14 @@ class RegistrationReservation extends Object_
      * Whether this reservation still holds its identifier at the given moment.
      *
      * A reservation has no consumed state - confirming it deletes it - so holding
-     * is purely a question of expiry. Datetime comparison is lexicographic on the
-     * SQL 'Y-m-d H:i:s' format, which orders the same as chronological order.
+     * is purely a question of expiry.
      *
-     * @param string $nowSql Current time as an SQL datetime string
+     * @param int $nowMs Current moment in epoch milliseconds
      * @return bool True while the reservation still holds the identifier
      */
-    public function isActive(string $nowSql): bool
+    public function isActive(int $nowMs): bool
     {
-        return $this->entity->expires_at > $nowSql;
+        return $this->entity->expires_at > $nowMs;
     }
 
     /**
@@ -141,11 +144,11 @@ class RegistrationReservation extends Object_
      * with a targeted UPDATE and mirrored on the loaded entity, the same split
      * {@see extendTo()} uses. A no-op for an unpersisted reservation.
      *
-     * @param string $acceptedAtSql Moment the code was accepted, as an SQL datetime string
+     * @param int $acceptedAtMs Moment the code was accepted, in epoch milliseconds
      * @throws DatabaseException When the proof update query fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
-    public function markCodeAccepted(string $acceptedAtSql): void
+    public function markCodeAccepted(int $acceptedAtMs): void
     {
         if ($this->entity->id === null) {
             return;
@@ -159,7 +162,7 @@ class RegistrationReservation extends Object_
         );
 
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string($acceptedAtSql));
+        $params->add(SqlParam::int($acceptedAtMs));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
             'UPDATE `' . EntityRegistrationReservation::_table . '` SET `'
@@ -168,7 +171,7 @@ class RegistrationReservation extends Object_
             $params,
         );
 
-        $this->entity->code_accepted_at = $acceptedAtSql;
+        $this->entity->code_accepted_at = $acceptedAtMs;
     }
 
     /**
@@ -181,11 +184,11 @@ class RegistrationReservation extends Object_
      * {@see UserVerification::consume()} uses. A no-op for an unpersisted
      * reservation.
      *
-     * @param string $expiresAtSql New expiry as an SQL datetime string
+     * @param int $expiresAtMs New expiry in epoch milliseconds
      * @throws DatabaseException When the expiry update query fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
-    public function extendTo(string $expiresAtSql): void
+    public function extendTo(int $expiresAtMs): void
     {
         if ($this->entity->id === null) {
             return;
@@ -199,7 +202,7 @@ class RegistrationReservation extends Object_
         );
 
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string($expiresAtSql));
+        $params->add(SqlParam::int($expiresAtMs));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
             'UPDATE `' . EntityRegistrationReservation::_table . '` SET `' . EntityRegistrationReservation::expires_at
@@ -207,13 +210,13 @@ class RegistrationReservation extends Object_
             $params,
         );
 
-        $this->entity->expires_at = $expiresAtSql;
+        $this->entity->expires_at = $expiresAtMs;
     }
 
     /**
      * Converts the reservation to an associative array.
      *
-     * @return array<string, mixed> Reservation data (id, type, identifier, sessionToken, codeAcceptedAt, acceptedRevisions, expiresAt)
+     * @return array<string, mixed> Reservation data (id, type, identifier, sessionToken, codeAcceptedAt, acceptedRevisions, expiresAt, createdAt)
      */
     public function toArray(): array
     {
@@ -225,6 +228,7 @@ class RegistrationReservation extends Object_
             self::codeAcceptedAt => $this->entity->code_accepted_at,
             self::acceptedRevisions => $this->entity->accepted_revisions,
             self::expiresAt => $this->entity->expires_at,
+            self::createdAt => $this->entity->created_at,
         ];
     }
 }

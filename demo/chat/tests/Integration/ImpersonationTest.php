@@ -31,6 +31,7 @@ use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Execution\ExecutionContext;
@@ -66,6 +67,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\AdminCommandConstants;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 
 /**
@@ -521,7 +523,7 @@ final class ImpersonationTest extends IntegrationTestCase
                 ProtectedModeRuntime::hashSessionToken($token),
                 $adminId,
                 StepUpOperationKey::IMPERSONATE,
-                date('Y-m-d H:i:s', time() + self::CONFIRMATION_TTL_SECONDS),
+                TimeHelper::nowMs() + self::CONFIRMATION_TTL_SECONDS * TimeConstants::MS_PER_SECOND,
             );
             $this->runPageStart($agent, 'confirm-ak', $targetId);
 

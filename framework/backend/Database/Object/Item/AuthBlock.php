@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\AuthBlock as EntityAuthBlock;
 use Hilos\Database\Object\Collection\AuthBlocks as ObjectAuthBlocks;
 use Hilos\Database\Object\Collection\AuthBlocks;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * AuthBlock object - wraps AuthBlock entity.
@@ -25,7 +31,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property string $identity
  * @property string $action
  * @property int $level
- * @property ?string $blockedUntil
+ * @property ?int $blockedUntil
  */
 class AuthBlock extends Object_
 {
@@ -37,6 +43,26 @@ class AuthBlock extends Object_
     public const string action = 'action';
     public const string level = 'level';
     public const string blockedUntil = 'blockedUntil';
+
+    /**
+     * Stamps a new or changed row before saving. The column has no Object/View
+     * reader, so a forgotten application writer would otherwise remain invisible.
+     *
+     * @throws DatabaseException If database operation fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
+     * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     */
+    public function sync(): void
+    {
+        if (!$this->entity->isRelated() || $this->getChangedColumns() !== []) {
+            $this->entity->updated_at = TimeHelper::nowMs();
+        }
+
+        parent::sync();
+    }
 
     /**
      * Magic getter for entity properties.
@@ -72,7 +98,7 @@ class AuthBlock extends Object_
             self::identity => $this->entity->identity = (string)$value,
             self::action => $this->entity->action = (string)$value,
             self::level => $this->entity->level = (int)$value,
-            self::blockedUntil => $this->entity->blocked_until = is_scalar($value) ? (string)$value : null,
+            self::blockedUntil => $this->entity->blocked_until = $value === null ? null : (int)$value,
             default => parent::__set($property, $value),
         };
     }

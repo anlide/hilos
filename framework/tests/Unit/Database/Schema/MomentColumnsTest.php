@@ -243,17 +243,10 @@ final class MomentColumnsTest extends TestCase
     public function testMappedAndDatabaseOnlyMoments(): void
     {
         foreach ([
-            AuthBlock::class => [AuthBlock::updated_at],
-            RegistrationReservation::class => [RegistrationReservation::created_at],
-        ] as $class => $columns) {
-            $moments = MomentColumns::forEntity($class);
-            foreach ($columns as $column) {
-                self::assertEquals(new MomentColumn($column, true, false), $moments[$column]);
-            }
-        }
-        foreach ([
             Identity::class => [Identity::created_at, Identity::updated_at],
             OAuthProvider::class => [OAuthProvider::created_at, OAuthProvider::updated_at],
+            AuthBlock::class => [AuthBlock::updated_at],
+            RegistrationReservation::class => [RegistrationReservation::created_at],
         ] as $class => $columns) {
             $moments = MomentColumns::forEntity($class);
             foreach ($columns as $column) {

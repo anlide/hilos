@@ -1805,7 +1805,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             HandshakeResponseSignalData::channel => $kind === IdentifierDetection::KIND_PHONE
                 ? new VerificationService()->activeChannel(VerificationType::SMS_LOGIN, $identifier)
                 : null,
-            HandshakeResponseSignalData::expiresAt => TimeHelper::sqlToMs($reservation->expiresAt),
+            HandshakeResponseSignalData::expiresAt => $reservation->expiresAt,
             HandshakeResponseSignalData::code => null,
             HandshakeResponseSignalData::message => null,
         ];

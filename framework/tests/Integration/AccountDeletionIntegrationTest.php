@@ -422,7 +422,7 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
                 self::USER_ID,
             );
             $cooldown = Hilos::$env[EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC]->int();
-            $this->verifications()->backdateIdentifier(self::EMAIL, date('Y-m-d H:i:s', time() - $cooldown - 1));
+            $this->verifications()->backdateIdentifier(self::EMAIL, TimeHelper::nowMs() - ($cooldown + 1) * TimeConstants::MS_PER_SECOND);
 
             $this->assertRefused(
                 AuthMessages::SEND_CAP,

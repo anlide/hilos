@@ -17,8 +17,8 @@ use Hilos\Database\Object\Collection\StepUps as ObjectStepUps;
  * @property string $sessionTokenHash
  * @property int $userId
  * @property string $operation
- * @property string $confirmedUntil
- * @property string $createdAt
+ * @property int $confirmedUntil
+ * @property int $createdAt
  */
 class StepUp extends Object_
 {
@@ -60,8 +60,8 @@ class StepUp extends Object_
             self::sessionTokenHash => $this->entity->session_token_hash = (string)$value,
             self::userId => $this->entity->user_id = (int)$value,
             self::operation => $this->entity->operation = (string)$value,
-            self::confirmedUntil => $this->entity->confirmed_until = (string)$value,
-            self::createdAt => $this->entity->created_at = (string)$value,
+            self::confirmedUntil => $this->entity->confirmed_until = (int)$value,
+            self::createdAt => $this->entity->created_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }

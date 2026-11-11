@@ -172,6 +172,27 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                         'downSha256' => 'b3f2b3468ce4417b40ab4076ee981f2445f0d40c44b81671e26dc2ad78a58ee7',
                         'requires' => [],
                     ],
+                    'registration_reservation' => [
+                        'changeId' => '20261111013234414363_HIL-1921_auth_proof_moments',
+                        'file' => '010_framework_change_27033a7bf9ae66048bcc04566b4c41aba9b8b6000c7a666b82cd202ffe04370f',
+                        'upSha256' => '2f033a4371e967263542bf55a0e77b259614e483ac9ed8d0b92d4cf9181d5706',
+                        'downSha256' => '41ac12805344609e97df200b45aadf24336923a0b2e4a2f058804b1ecd0c3454',
+                        'requires' => [],
+                    ],
+                    'step_up' => [
+                        'changeId' => '20261111013234414363_HIL-1921_auth_proof_moments',
+                        'file' => '011_framework_change_b4527b9f93fc948e9b047e9950ae158ae4b5db368354f091f3d62222a1ca87e3',
+                        'upSha256' => 'ac967b1aa091fbc6eba71c25e7a6cf216c772d70d9d2e20ea80ac0a51f0f2419',
+                        'downSha256' => '96b3ccc611dc67297027710ab03dd04e73778aa02354a9becccdb739d0287550',
+                        'requires' => [],
+                    ],
+                    'user_verification' => [
+                        'changeId' => '20261111013234414363_HIL-1921_auth_proof_moments',
+                        'file' => '012_framework_change_ade9f4dadae9aa9ff1ce297458703d8d1c8495cd46bda0ea06cddcceccec08f4',
+                        'upSha256' => '3a3dc55150209489b68a820f56e6ff2c54ce6b86f6829475083cba7953b9e218',
+                        'downSha256' => '963d4af66e35bb34658aaa7e1d83a325543ba6442eb5d94aafd7edd77cb367a3',
+                        'requires' => [],
+                    ],
                 ];
                 $origins = [$origin];
                 $coveredParts = $origin->parts;
@@ -702,6 +723,31 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('change_log')->downPath)),
                 $source->afterStubDownSha256);
             $origins[] = $change;
+            $authProofIndices = [154, 111, 111, 92, 92, 94];
+            $authProofParts = [
+                'auth_block' => '318fc5c4d0186fd9201bc8123f2779f5e72e7c61cabcd038155fbf31c8f567dd',
+                'registration_reservation' => '27033a7bf9ae66048bcc04566b4c41aba9b8b6000c7a666b82cd202ffe04370f',
+                'step_up' => 'b4527b9f93fc948e9b047e9950ae158ae4b5db368354f091f3d62222a1ca87e3',
+                'user_verification' => 'ade9f4dadae9aa9ff1ce297458703d8d1c8495cd46bda0ea06cddcceccec08f4',
+            ];
+            foreach (array_keys($authProofParts) as $offset => $key) {
+                $base = $project->root . '/' . sprintf('%03d', $authProofIndices[$index] + $offset)
+                    . '_framework_change_' . $authProofParts[$key];
+                $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+                self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+                self::assertSame([$key], $change->units);
+                self::assertCount(1, $change->parts);
+                self::assertSame('20261111013234414363_HIL-1921_auth_proof_moments/' . $key, $change->parts[0]->key());
+                $source = $catalog->part($change->parts[0]->changeId, $key);
+                self::assertFalse($source->introducesUnit);
+                self::assertSame($key === 'auth_block'
+                    ? ['20261028002725141545_HIL-1691_status_subscribers/auth_block'] : [], $source->requires);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
+                    $source->afterStubUpSha256);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
+                    $source->afterStubDownSha256);
+                $origins[] = $change;
+            }
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);

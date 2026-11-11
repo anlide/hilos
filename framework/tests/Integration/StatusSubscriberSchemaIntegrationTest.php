@@ -59,11 +59,12 @@ final class StatusSubscriberSchemaIntegrationTest extends FrameworkIntegrationTe
             $origin = $catalog->verifyPair(file_get_contents($up), file_get_contents(substr($up, 0, -4) . '_down.sql'));
             self::assertContains($origin->kind, [FrameworkMigrationOrigin::INSTALL, FrameworkMigrationOrigin::CHANGE]);
         }
-        Database::sqlRun("INSERT INTO `hilos_auth_block` (`scope`, `identity`, `action`) VALUES ('ip', '127.0.0.1', 'subscribe'),"
-            . " ('session', 'session-hash', 'subscribe');");
+        Database::sqlRun("INSERT INTO `hilos_auth_block` (`scope`, `identity`, `action`, `updated_at`)"
+            . " VALUES ('ip', '127.0.0.1', 'subscribe', 1767225600000), ('session', 'session-hash', 'subscribe', 1767225600000);");
         Database::sqlRun(file_get_contents($subscriberUp[0]));
         Database::sqlRun(file_get_contents($scopeUp[0]));
-        Database::sqlRun("INSERT INTO `hilos_auth_block` (`scope`, `identity`, `action`) VALUES ('email', 'email-hash', 'subscribe');");
+        Database::sqlRun("INSERT INTO `hilos_auth_block` (`scope`, `identity`, `action`, `updated_at`)"
+            . " VALUES ('email', 'email-hash', 'subscribe', 1767225600000);");
         Database::sqlRun("INSERT INTO `hilos_status_subscriber` (`email`, `subscribed_at`) VALUES ('schema@example.org', 1000);");
         self::assertSame([], EntitySchemaAudit::audit([StatusSubscriber::class]));
         $row = Database::sql('SELECT * FROM `hilos_status_subscriber`')->first()->first();

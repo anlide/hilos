@@ -20,7 +20,7 @@ use Hilos\HilosException;
  * @property-read string $type
  * @property-read string $identifier
  * @property-read string $sessionToken
- * @property-read string $expiresAt
+ * @property-read int $expiresAt
  */
 class RegistrationReservation extends DbItem
 {

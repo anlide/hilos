@@ -30,7 +30,7 @@ class StepUpsActions extends DbActions
      * @param string $tokenHash Hash of the browser session token
      * @param int $userId Person confirming the operation
      * @param string $operation Declared operation key
-     * @param string $until Moment the confirmation expires (SQL datetime)
+     * @param int $untilMs Moment the confirmation expires, in epoch milliseconds
      * @throws CreateNotAllowedException When the truth source rejects the insert
      * @throws WriteNotAllowedException When the truth source rejects the set update
      * @throws DatabaseException When the lookup or write fails
@@ -38,12 +38,12 @@ class StepUpsActions extends DbActions
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws ObjectGetIdStringNotImplementedException If an inserted row has no primary key
      */
-    public function confirm(string $tokenHash, int $userId, string $operation, string $until): void
+    public function confirm(string $tokenHash, int $userId, string $operation, int $untilMs): void
     {
         $this->ensureCanCreateInSet((string)$userId);
         $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Update);
 
-        $this->objectCollection->confirm($tokenHash, $userId, $operation, $until);
+        $this->objectCollection->confirm($tokenHash, $userId, $operation, $untilMs);
     }
 
     /**

@@ -649,7 +649,7 @@ final class AdminSessionsEndActionsTest extends HilosSessionIntegrationTestCase
                 ProtectedModeRuntime::hashSessionToken(self::ADMIN_TOKEN),
                 self::ADMIN_ID,
                 StepUpOperationKey::END_USER_SESSIONS,
-                date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_HOUR),
+                TimeHelper::nowMs() + TimeConstants::SECONDS_PER_HOUR * TimeConstants::MS_PER_SECOND,
             );
         }
 
