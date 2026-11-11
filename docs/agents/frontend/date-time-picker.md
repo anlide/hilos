@@ -835,7 +835,6 @@ stable group id; `label` is visible and accessible. For datetime, the label
 also names the actual configured zone. Render and edit the controller directly:
 no parallel SDK draft and no second `value`/`v-model` binding. Do not recreate
 the controller on every render or echoed prop update.
-(not in the code yet — HIL-1976)
 
 In the segmented field, Left/Right selects the neighboring part. ASCII digits
 fill a numeric part and advance when it is complete; Backspace clears the
@@ -850,7 +849,6 @@ control with no month grid. Disabled/busy prevents opening while retaining the
 visible draft.
 (not in the code yet — HIL-1974)
 (not in the code yet — HIL-1977)
-(not in the code yet — HIL-1976)
 
 Expose a visibly named group and named `spinbutton` parts, including meridiem
 and offset. Supply `aria-valuemin`, `aria-valuemax`, `aria-valuenow` and
@@ -867,9 +865,11 @@ reserve a row for it. Invalid and gap style the field and tooltip as errors and
 set `aria-invalid="true"` on that edge's parts. Ambiguous is a neutral
 question; leave the field and parts without invalid state. Empty and incomplete
 states have no reason. The permanent live nodes announce changes; the visible
-tooltip has no live role. Do not show the field tooltip while its panel is open;
-the panel states the same reason itself. Color alone is insufficient.
-(not in the code yet — HIL-1976)
+tooltip has no live role. Color alone is insufficient.
+
+Do not show the field tooltip while its panel is open; the panel states the
+same reason itself.
+(not in the code yet — HIL-1977)
 
 ## SDK calendar and narrow view
 
@@ -1093,11 +1093,10 @@ business validator. (not in the code yet — HIL-1979)
 
 ## SDK view imports
 
-The Vue and React imports are available; the Angular import below remains a
-future export. Mount the stable controller with the same `picker`, `id`, `label`,
-optional `describedBy` and optional `dataId` contract in each framework. A
-datetime range label may read `Maintenance window, Europe/Warsaw`, naming the
-configured zone.
+The Vue, React, and Angular imports are available. Mount the stable controller
+with the same `picker`, `id`, `label`, optional `describedBy` and optional
+`dataId` contract in each framework. A datetime range label may read
+`Maintenance window, Europe/Warsaw`, naming the configured zone.
 
 ```ts
 import { HilosDateTimePicker } from '@hilos/vue/base'
@@ -1110,8 +1109,6 @@ import { HilosDateTimePicker } from '@hilos/react/base'
 ```ts
 import { HilosDateTimePicker } from '@hilos/angular/base'
 ```
-
-(not in the code yet — HIL-1976)
 
 ## Maintenance integration and implementation ownership
 

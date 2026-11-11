@@ -205,6 +205,10 @@ it('exports the shared page head once, from the base entry the root re-exports',
   expect(base.HilosPageHead).toBe(HilosPageHead)
 })
 
+it('exports the date-time picker field from the base entry', () => {
+  expect(base.HilosDateTimePicker).toBeTypeOf('function')
+})
+
 it('exports the shared profile head once, from the base entry the root re-exports', () => {
   expect(base.HilosProfileHead).toBe(HilosProfileHead)
 })

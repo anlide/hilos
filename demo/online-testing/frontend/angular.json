@@ -123,6 +123,33 @@
             }
           }
         },
+        "build-date-time-picker": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "tests/dateTimePicker/main.ts",
+            "index": "tests/dateTimePicker/index.html",
+            "tsConfig": "tests/dateTimePicker/tsconfig.json",
+            "outputPath": {
+              "base": "dist/__date_time_picker",
+              "browser": ""
+            },
+            "baseHref": "./",
+            "assets": [],
+            "styles": [
+              "node_modules/bootstrap/dist/css/bootstrap.min.css",
+              "node_modules/bootstrap-icons/font/bootstrap-icons.css",
+              "node_modules/@hilos/angular/src/hilos-styles.scss"
+            ],
+            "preserveSymlinks": true,
+            "allowedCommonJsDependencies": ["@vue/reactivity"],
+            "aot": true,
+            "optimization": {
+              "scripts": true,
+              "styles": { "minify": true, "inlineCritical": false },
+              "fonts": true
+            }
+          }
+        },
         "serve": {
           "builder": "@angular/build:dev-server",
           "options": {

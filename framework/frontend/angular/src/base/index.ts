@@ -85,6 +85,7 @@ export {
   type ModalActionsContext,
   type ModalBodyContext,
 } from '../HilosModal.js'
+export { HilosDateTimePicker } from '../HilosDateTimePicker.js'
 export { HilosLongText } from '../HilosLongText.js'
 export { HilosActionError } from '../HilosActionError.js'
 export { HilosActionReason } from '../HilosActionReason.js'
