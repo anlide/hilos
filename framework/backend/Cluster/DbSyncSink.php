@@ -19,8 +19,13 @@ use Hilos\HilosException;
  * for the same reason {@see RtSyncSink} does — the transport must not reach into the daemon,
  * and a test supplies a fake so the transport runs without one.
  *
- * It carries one cue the other way, {@see reReadAfterLink()}, because only the transport knows
- * when a link was established and only the daemon knows what to re-read.
+ * It carries two cues the other way. {@see reReadAfterLink()}, because only the transport knows
+ * when a link was established and only the daemon knows what to re-read. And
+ * {@see catchUpProtectedModeDatabase()}, whose caller is not the transport but the protected-mode
+ * executor of a slave: once synchronized with the leader, it waits for the numbered barrier that
+ * re-reads the database in the daemon and every worker. It enters through this port because that
+ * barrier belongs to the daemon, and the executor reaches the daemon only through the ports of
+ * {@see ClusterContext}.
  *
  * Replication is one-way and one hop: what arrives here is applied and never announced on.
  */

@@ -7713,7 +7713,8 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Uses the existing re-hydrate path, with its verdict kept local to the slave sync.
+     * Implements {@see DbSyncSink}. Uses the existing re-hydrate path, with its verdict kept local
+     * to the slave sync.
      *
      * @param Closure(ReHydrateVerdict): void $onComplete Completion, failure, expiry or supersession
      */
