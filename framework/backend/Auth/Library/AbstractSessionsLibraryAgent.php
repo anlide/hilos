@@ -1044,6 +1044,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->sweepSessionToasts();
         $this->sweepEndedSessions();
         $this->republishChangedStanding();
+        // Before the sign-in surface check: this command is the way out of an installation with every sign-in method off.
         $this->sweepAdminCreates(microtime(true));
         if (!$this->hasSignInSurface()) {
             return;
@@ -2020,6 +2021,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * Resolves the operator's session through the handshake door, preserving expiry rotation.
      * An existing person is flagged by their agent; an anonymous session asks the users library
      * to create an administrator. Each answer finishes the bind and the parked command.
+     *
+     * The lookup by token stays in front of the door: the door mints an anonymous session for a
+     * token it does not know, so without the lookup an operator's typo would create both a session
+     * and an account.
+     *
+     * The block flag is deliberately not consulted: it judges a browser presenting a cookie by
+     * itself, while this is an operator naming a session on purpose, and whoever reaches this
+     * socket can already grant any user id.
      *
      * @param CommandRequestDTO $data Command request carrying the session cookie token
      * @throws InvalidArgumentException When the reply carries an empty correlation id
