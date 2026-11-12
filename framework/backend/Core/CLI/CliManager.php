@@ -126,6 +126,7 @@ use Hilos\Core\CLI\Commands\StatusCommand;
 use Hilos\Core\CLI\Commands\StatusTestHeartbeatNowCommand;
 use Hilos\Core\CLI\Commands\StatusTestHeartbeatStaleCommand;
 use Hilos\Core\CLI\Commands\StatusTestWorkStartCommand;
+use Hilos\Core\CLI\Commands\StatusTestSilenceRemoveCommand;
 use Hilos\Core\CLI\Commands\TableTestLagCommand;
 use Hilos\Core\CLI\Commands\TableTestRefuseCommand;
 use Hilos\Core\CLI\Commands\ThrottleTestResetCommand;
@@ -252,6 +253,7 @@ class CliManager
         $this->commands[CliCommands::STATUS_TEST_HEARTBEAT_STALE] = new StatusTestHeartbeatStaleCommand();
         $this->commands[CliCommands::STATUS_TEST_HEARTBEAT_NOW] = new StatusTestHeartbeatNowCommand();
         $this->commands[CliCommands::STATUS_TEST_WORK_START] = new StatusTestWorkStartCommand();
+        $this->commands[CliCommands::STATUS_TEST_SILENCE_REMOVE] = new StatusTestSilenceRemoveCommand();
         $this->commands[CliCommands::USER_TEST_SEED] = new UserTestSeedCommand();
         $this->commands[CliCommands::USER_TEST_CREATE] = new UserTestCreateCommand();
         $this->commands[CliCommands::SESSION_TEST_BIND] = new SessionTestBindCommand();

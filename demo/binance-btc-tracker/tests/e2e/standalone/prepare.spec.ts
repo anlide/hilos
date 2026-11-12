@@ -23,6 +23,7 @@ import {
   PAGE_READY,
   grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
+import { expectedPublicStatusArchiveDays } from '../../../../../framework/frontend/e2e/publicStatus.js'
 import { standaloneStatusControl } from '../../../../../framework/frontend/scripts/standaloneStatus.mjs'
 import { withStatusAgentLoss } from '../helpers/status.js'
 import { STATUS_EXPECT_TIMEOUT_MS } from '../status.config.js'
@@ -248,7 +249,33 @@ test('prepare an accepted public archive through real loss, publication and reso
       .evaluateAll((buttons) =>
         buttons.map((button) => button.getAttribute('aria-label')),
       )
-    expect(days.at(-1)).toMatch(/ · Major outage$/)
+    expect(
+      accepted.status.outages.find(
+        (outage) => outage.detectedAt === detectedAt,
+      ),
+    ).toMatchObject({ severity: 'major_outage' })
+    const today = await guest.evaluate(() => {
+      const now = new Date()
+      return {
+        start: new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate(),
+        ).getTime(),
+        end: now.getTime(),
+        label: new Intl.DateTimeFormat(undefined, {
+          dateStyle: 'medium',
+        }).format(now),
+      }
+    })
+    const expectedDays = expectedPublicStatusArchiveDays(
+      [`${today.label} · Major outage`],
+      accepted.status,
+      [today],
+      accepted.status.schemaVersion === 3 ? accepted.status.silencePeriods : [],
+      today.end,
+    )
+    expect(days.at(-1)).toBe(expectedDays.at(-1))
     expectPublicStatusReadOnly(expect, log)
     // Evidence of accepted real facts, never a publisher input or a JSON replacement.
     await writeFile(

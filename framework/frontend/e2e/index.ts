@@ -729,6 +729,7 @@ export {
   watchPublicStatus,
   expectPublicStatusPair,
   expectPublicStatusArchive,
+  expectPublicStatusSilenceDay,
   expectPublicStatusStale,
   expectPublicStatusReadOnly,
   expectPublicStatusAccessibility,

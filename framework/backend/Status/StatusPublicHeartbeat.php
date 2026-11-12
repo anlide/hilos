@@ -12,7 +12,7 @@ final readonly class StatusPublicHeartbeat
     /**
      * @param string $revision Paired content revision
      * @param int $aliveAt Publication epoch milliseconds UTC
-     * @param int $sourceSchemaVersion Input version for pair recovery; serialization always writes v2
+     * @param int $sourceSchemaVersion Input version for pair recovery; serialization always writes v3
      * @throws StatusException When heartbeat metadata is invalid
      */
     public function __construct(
@@ -34,13 +34,15 @@ final readonly class StatusPublicHeartbeat
     public static function fromJson(string $json): self
     {
         $data = StatusPublicJson::fields(StatusPublicJson::decode($json), ['schemaVersion', 'revision', 'aliveAt']);
-        if (!in_array($data['schemaVersion'], [StatusPublicSnapshot::LEGACY_SCHEMA_VERSION, StatusPublicSnapshot::SCHEMA_VERSION], true)) {
+        if (!in_array($data['schemaVersion'], [
+            StatusPublicSnapshot::LEGACY_SCHEMA_VERSION, StatusPublicSnapshot::PREVIOUS_SCHEMA_VERSION, StatusPublicSnapshot::SCHEMA_VERSION,
+        ], true)) {
             throw new StatusException('Unsupported public Status heartbeat schema.');
         }
         return new self(StatusPublicJson::text($data['revision']), StatusPublicJson::integer($data['aliveAt']), $data['schemaVersion']);
     }
 
-    /** @return array<string, mixed> Literal heartbeat.json v2 */
+    /** @return array<string, mixed> Literal heartbeat.json v3 */
     public function toArray(): array
     {
         return ['schemaVersion' => StatusPublicSnapshot::SCHEMA_VERSION, 'revision' => $this->revision, 'aliveAt' => $this->aliveAt];

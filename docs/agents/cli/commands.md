@@ -253,53 +253,95 @@ authenticated session rather than taking it over.
 
 ### Status moment and settings write commands
 
-Four commands bring a moment to now, or make a write at a moment the test chooses, so a
-spec waits for no production clock (HIL-1856). Each is the per-feature shape of
+Three Status commands bring a production-clock moment to now, so a spec waits for no
+production clock (HIL-1856). They follow the per-feature shape of
 [Time-based features](#time-based-features-no-universal-clock): the CLI sends the request
-and prints the reply, and the agent that owns the state does the work.
+and prints the reply, and the agent that owns the state does the work. A fourth Status
+test-only command removes one owned, closed silence period after the spec has recovered.
+`test:settings:write` remains the separate settings-library write example.
 
 | Command | Site | Description |
 |---|---|---|
 | `test:status:heartbeat:stale` | `daemon` | Publish the Status heartbeat aged past the reader's stale limit, and hold the owner's publication |
 | `test:status:heartbeat:now` | `daemon` | Release that hold and publish a heartbeat now |
 | `test:status:work:start` | `daemon` | Move an announced maintenance work's start to now, by its public id |
+| `test:status:silence:remove` | `daemon` | Remove one named closed test-owned silence period after its absence is published |
 | `test:settings:write` | `daemon` | Write example settings keys through the settings library, one write per pair, in order |
 
 ```text
 test:status:heartbeat:stale
 test:status:heartbeat:now
 test:status:work:start <publicId>
+test:status:silence:remove <publicId>
 test:settings:write <key>=<value> [<key>=<value> ...]
 ```
 
-The first three are answered by the Status owner (`HILOS_STATUS`, one per cluster), which
-alone publishes the public files and writes the announcements. What each does there, why the
-owner holds its publication after the stale command, and what the moved start leaves untouched
-is in [status-page.md](../architecture/status-page.md#test-only-moments). Each prints one
-line with the moment it caused, in epoch milliseconds, and exits 0:
+The three moment commands are answered by the Status owner (`HILOS_STATUS`, one per cluster),
+which alone publishes the public files and writes the announcements. Their behavior and the
+reason the owner holds publication after `stale` are in
+[status-page.md](../architecture/status-page.md#test-only-moments). Each prints one line with
+its moment in epoch milliseconds and exits 0:
 
 ```text
-Aged the Status heartbeat: alive at epoch ms <aliveAt>
+Aged the Status heartbeat: alive at epoch ms <aliveAt>, silence <silencePeriodId>
 Published a Status heartbeat now: alive at epoch ms <aliveAt>
 Started maintenance announcement <publicId>: starts at epoch ms <startsAt>, version <version>
 ```
 
 The two heartbeat commands take no argument. `test:status:heartbeat:stale` refuses with
 `No public Status pair is published yet.` (exit 1) when the owner has no coherent pair to age.
-`test:status:heartbeat:now` refuses with the same sentence whenever its publication step
-publishes nothing: no coherent pair is published yet, but also a retry barrier left by a failed
-file write, or a database read that failed in that portion. `test:status:work:start`
-refuses a blank or missing public id itself, with usage and exit 2, and the owner refuses in
-the administrator's words: the announcement no longer exists; it was canceled, started or
-expired; the new window would overlap another announcement; or Status changes are
-unavailable during maintenance.
+Its reply carries the owned `silencePeriodId` as well as `aliveAt`; repeating `stale` in the same
+hold returns the same ID and start. Its other explicit refusal texts are
+`Another Status publication command is still pending.`,
+`Silence recovery is still in progress. Try again shortly.`, and
+`An existing silence is still awaiting publication. Try again shortly.`
+`test:status:heartbeat:now` also refuses with that sentence
+before the first coherent pair. Otherwise it releases the hold and advances the ordinary
+bounded publisher. If a full pair is still being built, the owner keeps one pending correlation
+and answers only after a real publication receipt or an error; it does not build the pair in a
+synchronous loop or report success early. The owner has a bounded four-second deadline, and the
+`statusMoments.mjs` helper retains its existing five-second command-channel budget. Other exact
+owner replies include `Another Status publication command is still pending.`,
+`Status silence recovery is unavailable. Try again shortly.`,
+`Status publication is unavailable. Try again shortly.`,
+`Status publication did not complete within its command budget.`, and
+`The Status owner stopped before publication completed.` The missing-pair sentence is not the
+only failure. The command works under freeze, where the publisher reads detached data and does
+no DB work.
+`test:status:work:start` refuses a blank or missing public id itself, with usage and exit 2, and
+the owner refuses in the administrator's words: the announcement no longer exists; it was
+canceled, started or expired; the new window would overlap another announcement; or Status
+changes are unavailable during maintenance.
 
-**A spec that ages the heartbeat owns the release.** The owner keeps the aged moment only by
-publishing nothing more, so the spec that called `test:status:heartbeat:stale` calls
-`test:status:heartbeat:now` in its `finally`
+`test:status:silence:remove <publicId>` accepts one positional public ID. Missing, blank or
+extra arguments print `Usage: test:status:silence:remove <publicId>` and exit 2. On success it
+prints `Removed closed Status silence period <publicId>` and exits 0 only after the owner has
+published the period's absence. A host/port configuration refusal exits 3; a daemon refusal or
+channel failure exits 1. A successful daemon reply without the same ID prints
+`Command failed: the reply carries no matching public id` and exits 1. The owner refuses during
+freeze or unavailable DB access, while
+publication is held or another command is pending, while silence recovery is incomplete, or
+while the target is still open. If matching closed transit exists, it imports the exact facts
+and removes that transit before deleting the DB row in its own transaction. The owner then
+rebuilds the public projection and replies with `{publicId}` once that ID is absent. This is
+single-ID cleanup, not a bulk clear; the CLI only parses, sends and prints through the existing
+command channel. Its explicit refusal texts are `Name the closed silence period by its public
+id.`, `Status changes are unavailable during maintenance or while runtime state is unavailable.`,
+`Status publication is held or another command is still pending.`,
+`Silence recovery is still in progress. Try again shortly.`, and
+`This silence period has not completed publication.`
+
+**A spec that ages the heartbeat owns the release and exact cleanup.** It stores the returned
+`silencePeriodId` for cleanup, calls `test:status:heartbeat:now` first to release the hold, runs
+its existing maintenance cleanup and lift, waits for recovery, then calls
+`test:status:silence:remove` for that ID
 ([Preconditions — test commands with owned cleanup](../frontend/testing-strategy.md#preconditions--test-commands-with-owned-cleanup)).
-The e2e helpers are `staleStatusHeartbeat`, `beatStatusHeartbeat` and `startStatusWork` in
-`framework/frontend/scripts/statusMoments.mjs`, each taking an optional `{host}`.
+The standalone stop/start journey keeps its existing start/release flow, then beats and removes
+the same owned ID. The e2e helpers are `staleStatusHeartbeat`, `beatStatusHeartbeat`,
+`removeStatusSilencePeriod` and `startStatusWork` in
+`framework/frontend/scripts/statusMoments.mjs`, each with an optional `{host}` and the
+existing five-second command-channel budget. A missing-pair refusal from `now` remains valid
+before the first coherent pair; later publication failures remain bounded errors.
 
 `test:settings:write` is answered by the settings library, the one writer of settings. Each
 argument is split at its first `=`, so a value may itself carry `=`, and the pairs travel
@@ -540,9 +582,10 @@ running), `test:cluster:db:session` and `test:cluster:db:query` (the CLI talks o
 local command socket; the node's probe agent uses its application connection, and both
 commands print JSON), `test:notification:emit`, `test:user:create` and `test:session:bind`
 (the CLI sends each to its owning library and prints the reply; database work stays in the daemon),
-`test:status:heartbeat:stale`, `test:status:heartbeat:now`, `test:status:work:start` and
-`test:settings:write` (the same shape: the Status owner or the settings library answers and
-writes, and the CLI process has nothing to read or write — HIL-1856),
+`test:status:heartbeat:stale`, `test:status:heartbeat:now`, `test:status:work:start`,
+`test:status:silence:remove` and `test:settings:write` (the same shape: the Status owner or the
+settings library answers and writes, and the CLI process has nothing to read or write —
+HIL-1856 and HIL-1886),
 `test:account:force-purge`, `test:verification:sweep`,
 `test:legal:hold` (the users library creates the held acceptance if missing without publication,
 then the personal owner removes later rows; the library checks the result before publishing),

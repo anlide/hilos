@@ -15,6 +15,9 @@ final class StatusTestCommandConstants
     /** @var string Reply key: epoch milliseconds of the heartbeat the owner published */
     public const string FIELD_ALIVE_AT = 'aliveAt';
 
+    /** @var string Reply key: the synthetic silence owned by the caller */
+    public const string FIELD_SILENCE_PERIOD_ID = 'silencePeriodId';
+
     /** @var string Request and reply key: public identity of a maintenance announcement */
     public const string FIELD_PUBLIC_ID = 'publicId';
 

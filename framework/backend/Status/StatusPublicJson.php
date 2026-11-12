@@ -100,4 +100,17 @@ final class StatusPublicJson
         }
         return $value;
     }
+
+    /**
+     * @param mixed $value Required signed epoch-millisecond value
+     * @return int Integer without numeric-string, float or sign coercion
+     * @throws StatusException When the value is not an integer
+     */
+    public static function signedInteger(mixed $value): int
+    {
+        if (!is_int($value)) {
+            throw new StatusException('Public Status requires a signed integer.');
+        }
+        return $value;
+    }
 }

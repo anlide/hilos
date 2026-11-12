@@ -21,10 +21,10 @@ import {
 import {
   createPublicStatus,
   createStatusSubscription,
+  publicStatusDayLabel,
   STATUS_SUBSCRIPTION_COPY,
   type PublicStatus,
   type PublicStatusAnnouncement,
-  type PublicStatusDay,
   type PublicStatusDayStrip,
   type PublicStatusState,
   type StatusSubscription,
@@ -91,16 +91,6 @@ const ANNOUNCEMENT_LABELS: Record<PublicStatusAnnouncement, string> = {
  */
 function moment(at: number): string {
   return formatMoment(at) ?? '—'
-}
-
-/**
- * The accessible name of a strip day: its date in the reader's zone and its
- * state in words.
- *
- * @param day The calendar day and its worst published fact.
- */
-function dayLabel(day: PublicStatusDay): string {
-  return `${formatMoment(day.startTs, { kind: 'date' }) ?? '—'} · ${STATES[day.state].label}`
 }
 
 /**
@@ -206,7 +196,7 @@ function PublicStatusView({ reader, subscription }: PublicStatusGeneration) {
       (selectedDay?.componentKey === strip.componentKey
         ? strip.days.find((item) => item.startTs === selectedDay.startTs)
         : undefined) ?? strip.days.at(-1)
-    return day === undefined ? '' : dayLabel(day)
+    return day === undefined ? '' : publicStatusDayLabel(day)
   }
 
   return (
@@ -526,12 +516,20 @@ function PublicStatusView({ reader, subscription }: PublicStatusGeneration) {
                               <button
                                 key={day.startTs}
                                 type="button"
-                                className={`btn flex-fill p-0 py-2 border-0 rounded-1 btn-${STATES[day.state].tone}`}
-                                aria-label={dayLabel(day)}
+                                className={`btn flex-fill p-0 py-2 border-0 rounded-1 position-relative overflow-hidden btn-${day.hasNoData ? 'secondary' : STATES[day.state].tone}`}
+                                aria-label={publicStatusDayLabel(day)}
                                 aria-describedby={`${detailId}-${componentIndex}`}
                                 onFocus={select}
                                 onClick={select}
-                              />
+                              >
+                                {day.hasNoData &&
+                                  day.state !== 'operational' && (
+                                    <span
+                                      className={`position-absolute bottom-0 start-0 w-100 py-1 rounded-bottom-1 text-bg-${STATES[day.state].tone}`}
+                                      aria-hidden="true"
+                                    />
+                                  )}
+                              </button>
                             )
                           })}
                         </div>

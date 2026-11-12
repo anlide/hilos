@@ -3,6 +3,11 @@ import { z } from 'zod'
 
 const momentSchema = z.int().nonnegative()
 const publicIdSchema = z.string().min(1)
+// JS $ also matches before a final newline, so require the exact length.
+const silenceIdSchema = z
+  .string()
+  .length(32)
+  .regex(/^[a-f0-9]{32}$/)
 const componentKeysSchema = z
   .array(z.string().min(1))
   .refine((keys) => new Set(keys).size === keys.length)
@@ -82,6 +87,15 @@ export const publicStatusMaintenancePeriodSchema = z
           period.endedAt === period.completionObservedAt)),
   )
 
+/** A closed publication gap; signed epoch milliseconds preserve its real start. */
+export const publicStatusSilencePeriodSchema = z
+  .strictObject({
+    id: silenceIdSchema,
+    startedAt: z.int(),
+    endedAt: z.int(),
+  })
+  .refine((period) => period.endedAt > period.startedAt)
+
 /** Literal v2: required keys, explicit nulls and no private/extra fields. */
 const publicStatusV2FileSchema = z.strictObject({
   schemaVersion: z.literal(2),
@@ -98,7 +112,7 @@ const publicStatusV2FileSchema = z.strictObject({
   maintenancePeriods: z.array(publicStatusMaintenancePeriodSchema),
 })
 
-/** The actual v1 writer had two empty lists; keep its published outage archive. */
+/** Keep literal legacy boundaries: only v3 may carry closed publication gaps. */
 export const publicStatusFileSchema = z.discriminatedUnion('schemaVersion', [
   publicStatusV2FileSchema.extend({
     schemaVersion: z.literal(1),
@@ -106,11 +120,31 @@ export const publicStatusFileSchema = z.discriminatedUnion('schemaVersion', [
     maintenancePeriods: z.array(publicStatusMaintenancePeriodSchema).max(0),
   }),
   publicStatusV2FileSchema,
+  publicStatusV2FileSchema.extend({
+    schemaVersion: z.literal(3),
+    silencePeriods: z
+      .array(publicStatusSilencePeriodSchema)
+      .refine(
+        (periods) =>
+          new Set(periods.map((period) => period.id)).size === periods.length,
+      )
+      .refine((periods) =>
+        periods.every((period, index) => {
+          const previous = periods[index - 1]
+          return (
+            previous === undefined ||
+            period.startedAt > previous.startedAt ||
+            (period.startedAt === previous.startedAt &&
+              period.id >= previous.id)
+          )
+        }),
+      ),
+  }),
 ])
 
 /** Only aliveAt of a coherent pair proves publisher freshness. */
 export const publicStatusHeartbeatSchema = z.strictObject({
-  schemaVersion: z.union([z.literal(1), z.literal(2)]),
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   revision: publicIdSchema,
   aliveAt: momentSchema,
 })
@@ -125,6 +159,9 @@ export type PublicStatusUpdate = z.infer<typeof publicStatusUpdateSchema>
 export type PublicStatusWork = z.infer<typeof publicStatusWorkSchema>
 export type PublicStatusMaintenancePeriod = z.infer<
   typeof publicStatusMaintenancePeriodSchema
+>
+export type PublicStatusSilencePeriod = z.infer<
+  typeof publicStatusSilencePeriodSchema
 >
 
 /** Two independently fetched files accepted as one generation. */

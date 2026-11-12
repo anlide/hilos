@@ -9,6 +9,7 @@ use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Status\StatusAgent;
+use Hilos\Status\StatusPublicSilencePeriod;
 use Hilos\Status\StatusTestCommandConstants;
 
 /**
@@ -92,13 +93,14 @@ HELP;
         }
 
         $aliveAt = $result->reply->payload[StatusTestCommandConstants::FIELD_ALIVE_AT] ?? null;
-        if (!is_int($aliveAt)) {
-            echo "Command failed: the reply carries no heartbeat moment\n";
+        $silencePeriodId = $result->reply->payload[StatusTestCommandConstants::FIELD_SILENCE_PERIOD_ID] ?? null;
+        if (!is_int($aliveAt) || !is_string($silencePeriodId) || preg_match(StatusPublicSilencePeriod::PUBLIC_ID_PATTERN, $silencePeriodId) !== 1) {
+            echo "Command failed: the reply carries no heartbeat moment or silence identity\n";
 
             return ExitCode::ERROR;
         }
 
-        echo "Aged the Status heartbeat: alive at epoch ms {$aliveAt}\n";
+        echo "Aged the Status heartbeat: alive at epoch ms {$aliveAt}, silence {$silencePeriodId}\n";
 
         return ExitCode::SUCCESS;
     }

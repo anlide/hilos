@@ -77,7 +77,7 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
     private const string CHILD_TABLE = 'hilos_fw_restore_child';
     private const string INDEPENDENT_TABLE = 'hilos_fw_restore_independent';
 
-    /** Chat 115 silence period without its named CHECK, as Status declares it (HIL-1886). */
+    /** Chat 166 silence period without its named CHECK, as Status declares it (HIL-1886). */
     private const string SILENCE_PERIOD_COLUMNS = '`id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, `public_id` CHAR(32) NOT NULL,'
         . ' `started_at` BIGINT NOT NULL, `ended_at` BIGINT NOT NULL, PRIMARY KEY (`id`),'
         . ' UNIQUE KEY `uk_status_silence_period_public` (`public_id`), KEY `idx_status_silence_period_ended` (`ended_at`, `id`)';

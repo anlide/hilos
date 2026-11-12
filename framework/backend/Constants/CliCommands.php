@@ -181,6 +181,9 @@ final class CliCommands
     /** @var string Command: Move an announced maintenance work's start to now, by its public id (test-only) */
     public const string STATUS_TEST_WORK_START = 'test:status:work:start';
 
+    /** Removes one test-owned closed silence period through the Status owner. */
+    public const string STATUS_TEST_SILENCE_REMOVE = 'test:status:silence:remove';
+
     /** @var string Command: Verify stored backup archives against their recorded checksums */
     public const string BACKUP_VERIFY = 'backup:verify';
 

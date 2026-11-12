@@ -30,7 +30,7 @@ function statusFile(
   overrides: Partial<PublicStatusFile> = {},
 ): PublicStatusFile {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 'public-revision',
     generatedAt: NOW - 5000,
     config: { pollIntervalSeconds: 30, staleAfterSeconds: 120 },
@@ -46,6 +46,7 @@ function statusFile(
     outages: [],
     scheduledWorks: [],
     maintenancePeriods: [],
+    silencePeriods: [],
     ...overrides,
   }
 }
@@ -129,7 +130,7 @@ function harness(
   )
   let status: unknown = initial
   let beat: PublicStatusHeartbeat = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 'public-revision',
     aliveAt: NOW,
   }
@@ -640,7 +641,7 @@ describe('public HilosStatusPage', () => {
     'keeps the cold %s pair honestly Unknown, then recovers in the same mount',
     async (failure) => {
       const h = harness(
-        failure === 'malformed' ? { schemaVersion: 2 } : statusFile(),
+        failure === 'malformed' ? { schemaVersion: 3 } : statusFile(),
         false,
         failure !== 'missing',
       )
@@ -665,7 +666,7 @@ describe('public HilosStatusPage', () => {
           url.endsWith('/status.json')
             ? statusFile()
             : {
-                schemaVersion: 2,
+                schemaVersion: 3,
                 revision: 'public-revision',
                 aliveAt: Date.now(),
               },
@@ -849,6 +850,150 @@ describe('public HilosStatusPage', () => {
     expect(detail.text()).toBe(first.attributes('aria-label'))
     expect(h.send).not.toHaveBeenCalled()
   })
+
+  it.each([
+    ['major_outage', 'Major outage'],
+    ['partial_outage', 'Partial outage'],
+    ['maintenance', 'Maintenance'],
+  ] as const)(
+    'names both No data and recorded %s, while silence alone has no Operational claim',
+    async (event, word) => {
+      const startedAt = Date.parse('2026-10-24T06:00:00Z')
+      const endedAt = Date.parse('2026-10-24T07:00:00Z')
+      const h = harness(
+        statusFile({
+          silencePeriods: [
+            {
+              id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+              startedAt: Date.parse('2026-10-24T08:00:00Z'),
+              endedAt: Date.parse('2026-10-24T09:00:00Z'),
+            },
+            {
+              id: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+              startedAt: Date.parse('2026-10-25T08:00:00Z'),
+              endedAt: Date.parse('2026-10-25T09:00:00Z'),
+            },
+          ],
+          outages:
+            event === 'maintenance'
+              ? []
+              : [
+                  outage({
+                    severity: event,
+                    detectedAt: startedAt,
+                    publishedAt: startedAt,
+                    resolvedAt: endedAt,
+                  }),
+                ],
+          maintenancePeriods:
+            event === 'maintenance'
+              ? [
+                  maintenance({
+                    startedAt,
+                    lastObservedAt: endedAt,
+                    endedAt,
+                    completionObservedAt: endedAt,
+                  }),
+                ]
+              : [],
+        }),
+      )
+      await settle()
+      const mixedLabel = `${formatMoment(startedAt, { kind: 'date' })} · No data · ${word} recorded`
+      const silenceLabel = `${formatMoment(NOW, { kind: 'date' })} · No data`
+      const detail = h.wrapper.get('[data-id="public-status-day-detail"]')
+      expect(detail.text()).toBe(silenceLabel)
+      for (const count of [90, 30]) {
+        const strip = h.wrapper.get(`[data-id="public-status-days-${count}"]`)
+        const mixed = strip.get(`button[aria-label="${mixedLabel}"]`)
+        const silence = strip.get(`button[aria-label="${silenceLabel}"]`)
+        expect(mixed.get('span').attributes('aria-hidden')).toBe('true')
+        expect(silence.find('[aria-hidden="true"]').exists()).toBe(false)
+        await mixed.trigger('click')
+        expect(detail.text()).toBe(mixedLabel)
+        expect(mixed.attributes('aria-describedby')).toBe(
+          detail.attributes('id'),
+        )
+        await silence.trigger('click')
+        expect(detail.text()).toBe(silenceLabel)
+        expect(detail.text()).not.toContain('Operational')
+      }
+    },
+  )
+
+  it.each([90, 30])(
+    'keeps the keyboard-focused date in the %s-day strip through local silence, midnight and recovery',
+    async (count) => {
+      const aliveAt = Date.parse('2026-10-25T22:59:00Z')
+      vi.setSystemTime(aliveAt)
+      const facts = statusFile({
+        outages: [
+          outage({
+            detectedAt: aliveAt - 60000,
+            publishedAt: aliveAt - 30000,
+            resolvedAt: aliveAt,
+          }),
+        ],
+      })
+      const h = harness(facts)
+      h.publish(facts, aliveAt)
+      await settle()
+      const date = formatMoment(aliveAt, { kind: 'date' })
+      const strip = h.wrapper.get(`[data-id="public-status-days-${count}"]`)
+      const button = strip.get(`button[aria-label="${date} · Major outage"]`)
+      ;(button.element as HTMLButtonElement).focus()
+      await nextTick()
+      const detail = h.wrapper.get('[data-id="public-status-day-detail"]')
+      expect(document.activeElement).toBe(button.element)
+      expect(detail.text()).toBe(`${date} · Major outage`)
+      expect(button.attributes('aria-describedby')).toBe(
+        detail.attributes('id'),
+      )
+
+      await vi.advanceTimersByTimeAsync(120001)
+      await nextTick()
+      const mixedLabel = `${date} · No data · Major outage recorded`
+      expect(strip.get(`button[aria-label="${mixedLabel}"]`).element).toBe(
+        button.element,
+      )
+      expect(document.activeElement).toBe(button.element)
+      expect(detail.text()).toBe(mixedLabel)
+      const todayLabel = `${formatMoment(Date.now(), { kind: 'date' })} · No data`
+      expect(strip.find(`button[aria-label="${todayLabel}"]`).exists()).toBe(
+        true,
+      )
+      expect(
+        h.wrapper.get('[data-id="public-status-banner"]').text(),
+      ).toContain('not responding since')
+
+      h.publish(
+        statusFile({
+          outages: facts.outages,
+          silencePeriods: [
+            {
+              id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+              startedAt: aliveAt,
+              endedAt: Date.now(),
+            },
+          ],
+        }),
+        Date.now(),
+      )
+      await settle()
+      expect(strip.get(`button[aria-label="${mixedLabel}"]`).element).toBe(
+        button.element,
+      )
+      expect(document.activeElement).toBe(button.element)
+      expect(detail.text()).toBe(mixedLabel)
+      expect(button.attributes('aria-describedby')).toBe(
+        detail.attributes('id'),
+      )
+      expect(h.wrapper.get('[data-id="public-status-banner"]').text()).toBe(
+        'All systems operational',
+      )
+      expect(h.send).not.toHaveBeenCalled()
+    },
+  )
 
   it('renders real scheduled and maintenance data only when supplied', async () => {
     const h = harness(

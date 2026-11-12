@@ -358,7 +358,7 @@ final class StatusPublicFilesIntegrationTest extends StatusPublicFilesStorageTes
                 Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read(), true, flags: JSON_THROW_ON_ERROR,
             ));
             self::assertSame([
-                'schemaVersion' => 2, 'revision' => $snapshot->revision, 'aliveAt' => $snapshot->generatedAt,
+                'schemaVersion' => 3, 'revision' => $snapshot->revision, 'aliveAt' => $snapshot->generatedAt,
             ], json_decode(Hilos::$fs->status[StatusPublicFiles::HEARTBEAT_FILENAME]->read(), true, flags: JSON_THROW_ON_ERROR));
             self::assertSame($snapshot->toArray(), (new StatusPublicFiles())->restore()->toArray());
             self::assertSame([], $this->sourceQueriesSince($lastQuery), 'Writing and restoring detached values must not query sources');

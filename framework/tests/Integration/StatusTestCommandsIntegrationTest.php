@@ -78,7 +78,7 @@ final class StatusTestCommandsIntegrationTest extends FrameworkIntegrationTestCa
         $aged = $reply->payload[StatusTestCommandConstants::FIELD_ALIVE_AT];
         self::assertGreaterThanOrEqual($before - $staleMs, $aged);
         self::assertLessThanOrEqual($after - $staleMs, $aged);
-        self::assertSame(['schemaVersion' => 2, 'revision' => $first['status']['revision'], 'aliveAt' => $aged],
+        self::assertSame(['schemaVersion' => 3, 'revision' => $first['status']['revision'], 'aliveAt' => $aged],
             $this->pair()['heartbeat']);
         self::assertSame(1, $this->hints($frames));
 
@@ -222,6 +222,69 @@ final class StatusTestCommandsIntegrationTest extends FrameworkIntegrationTestCa
         )->rows()[0]['version'], 'Once the window is free, the same work starts');
     }
 
+    public function testPendingNowRejectsASecondRequestAndRepliesOnceOnStop(): void
+    {
+        $this->prepareLargeFrozenArchive();
+        [$stale] = $this->command(CliCommands::STATUS_TEST_HEARTBEAT_STALE);
+        self::assertTrue($stale->isOk());
+        $this->env->asOwner(fn () => $this->env->owner->onSignalCommand(
+            new CommandRequestDTO('deferred', CliCommands::STATUS_TEST_HEARTBEAT_NOW, []), 'cli', CliCommands::STATUS_TEST_HEARTBEAT_NOW,
+        ));
+        self::assertSame([], $this->commandReplies($this->env->drain()), 'No success before the complete pair receipt');
+        [$busy] = $this->command(CliCommands::STATUS_TEST_HEARTBEAT_NOW);
+        self::assertFalse($busy->isOk());
+        $this->env->asOwner(fn () => $this->env->owner->onStop());
+        $replies = $this->commandReplies($this->env->drain());
+        self::assertCount(1, $replies);
+        self::assertSame('deferred', $replies[0]->correlationId);
+        self::assertFalse($replies[0]->isOk());
+        $this->env->asOwner(fn () => $this->env->owner->onStop());
+        self::assertSame([], $this->commandReplies($this->env->drain()));
+    }
+
+    public function testDeferredNowHasABoundedRefusalBeforeTheClientBudget(): void
+    {
+        $this->prepareLargeFrozenArchive();
+        $this->command(CliCommands::STATUS_TEST_HEARTBEAT_STALE);
+        $this->env->asOwner(fn () => $this->env->owner->onSignalCommand(
+            new CommandRequestDTO('deadline', CliCommands::STATUS_TEST_HEARTBEAT_NOW, []), 'cli', CliCommands::STATUS_TEST_HEARTBEAT_NOW,
+        ));
+        self::assertSame([], $this->commandReplies($this->env->drain()));
+        $this->env->tick(TimeHelper::nowMs() + 4000);
+        $replies = $this->commandReplies($this->env->drain());
+        self::assertCount(1, $replies);
+        self::assertSame('deadline', $replies[0]->correlationId);
+        self::assertFalse($replies[0]->isOk());
+        $this->env->asOwner(fn () => $this->env->owner->onStop());
+        self::assertSame([], $this->commandReplies($this->env->drain()));
+    }
+
+    /** Prepares enough real archive rows to require several serialization portions. */
+    private function prepareLargeFrozenArchive(): void
+    {
+        $now = TimeHelper::nowMs();
+        $this->env->asOwner(function () use ($now): void {
+            for ($index = 0; $index < 128; ++$index) {
+                Hilos::$db->statusSilencePeriods->actions->import(str_pad(dechex($index), 32, '0', STR_PAD_LEFT), $now - 400000, $now - 300000);
+            }
+            $this->env->owner->onStop();
+            $this->env->owner->onStart();
+        });
+        $this->settle(fn (): bool => count($this->pair()['status']['silencePeriods'] ?? []) === 128);
+        $this->env->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE);
+        $this->settle(fn (): bool => ($this->pair()['status']['components'][0]['state'] ?? null) === 'maintenance');
+    }
+
+    /**
+     * @param list<SignalDTO> $frames Queued owner frames
+     * @return list<CommandReplyDTO> Command replies only
+     */
+    private function commandReplies(array $frames): array
+    {
+        return array_values(array_map(static fn (SignalDTO $frame): CommandReplyDTO => $frame->data,
+            array_filter($frames, static fn (SignalDTO $frame): bool => $frame->signalType->getType() === SignalTypeConstants::COMMAND_REPLY)));
+    }
+
     /**
      * @param string $command Command-channel wire name
      * @param array<string, mixed> $payload Request payload
@@ -235,6 +298,12 @@ final class StatusTestCommandsIntegrationTest extends FrameworkIntegrationTestCa
         $frames = $this->env->drain();
         $replies = array_values(array_filter($frames, static fn (SignalDTO $frame): bool =>
             $frame->signalType->getType() === SignalTypeConstants::COMMAND_REPLY));
+        for ($tick = 0; $tick < 100 && $replies === []; ++$tick) {
+            $this->env->tick();
+            $frames = array_merge($frames, $this->env->drain());
+            $replies = array_values(array_filter($frames, static fn (object $frame): bool =>
+                $frame->signalType->getType() === SignalTypeConstants::COMMAND_REPLY));
+        }
         self::assertCount(1, $replies);
         self::assertInstanceOf(CommandReplyDTO::class, $replies[0]->data);
         self::assertSame('cid-status', $replies[0]->data->correlationId);

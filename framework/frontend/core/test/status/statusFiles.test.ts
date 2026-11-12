@@ -8,6 +8,7 @@ import {
 import {
   deferred,
   heartbeat,
+  legacyStatusFile,
   NOW,
   outage,
   response,
@@ -46,7 +47,7 @@ const complete = statusFile({
   ],
 })
 
-describe('literal public v2', () => {
+describe('literal public v3', () => {
   it('accepts all declared fields, explicit nulls/empty lists, opaque ids and plain text', () => {
     expect(publicStatusFileSchema.parse(complete)).toEqual(complete)
     expect(publicStatusFileSchema.parse(statusFile())).toEqual(statusFile())
@@ -56,10 +57,7 @@ describe('literal public v2', () => {
   })
 
   it('reads the real v1 archive with two empty lists and rejects reserved nonempty v1 facts', () => {
-    const legacy = {
-      ...statusFile({ outages: complete.outages }),
-      schemaVersion: 1,
-    }
+    const legacy = legacyStatusFile(1, { outages: complete.outages })
     expect(publicStatusFileSchema.parse(legacy)).toEqual(legacy)
     expect(
       publicStatusFileSchema.safeParse({ ...complete, schemaVersion: 1 })
@@ -113,7 +111,7 @@ describe('literal public v2', () => {
   })
 
   it.each([
-    { schemaVersion: 3 },
+    { schemaVersion: 4 },
     { revision: 42 },
     { generatedAt: 1.5 },
     { config: { pollIntervalSeconds: 0, staleAfterSeconds: 120 } },
@@ -154,7 +152,7 @@ describe('literal public v2', () => {
   })
 
   it.each([
-    { schemaVersion: 3 },
+    { schemaVersion: 4 },
     { aliveAt: 0.5 },
     { aliveAt: 'today' },
     { aliveAt: Number.MAX_SAFE_INTEGER + 1 },
@@ -219,7 +217,7 @@ describe('public GET boundary', () => {
           }
         return response(
           failure === 'version'
-            ? { ...complete, schemaVersion: 3 }
+            ? { ...complete, schemaVersion: 4 }
             : failure === 'private'
               ? { ...complete, token: 'secret' }
               : complete,
@@ -232,13 +230,13 @@ describe('public GET boundary', () => {
     },
   )
 
-  it.each([1, 2])(
+  it.each([1, 2, 3] as const)(
     'accepts a coherent supported version %s without losing outage history',
     async (schemaVersion) => {
-      const status = {
-        ...statusFile({ outages: complete.outages }),
-        schemaVersion,
-      }
+      const status =
+        schemaVersion === 3
+          ? statusFile({ outages: complete.outages })
+          : legacyStatusFile(schemaVersion, { outages: complete.outages })
       const beat = { ...heartbeat(), schemaVersion }
       expect(
         await readPublicStatusFiles(new AbortController().signal, async (url) =>
@@ -251,14 +249,20 @@ describe('public GET boundary', () => {
   it.each([
     [1, 2],
     [2, 1],
-  ])(
+    [1, 3],
+    [2, 3],
+    [3, 1],
+    [3, 2],
+  ] as const)(
     'refuses a mixed supported schema pair %s/%s',
     async (statusVersion, heartbeatVersion) => {
       expect(
         await readPublicStatusFiles(new AbortController().signal, async (url) =>
           response(
             url.endsWith('/status.json')
-              ? { ...statusFile(), schemaVersion: statusVersion }
+              ? statusVersion === 3
+                ? statusFile()
+                : legacyStatusFile(statusVersion)
               : { ...heartbeat(), schemaVersion: heartbeatVersion },
           ),
         ),
@@ -293,5 +297,157 @@ describe('public GET boundary', () => {
     pending.resolve(response(heartbeat()))
     await promise
     expect(settled).toHaveBeenCalledWith({ kind: 'unavailable' })
+  })
+})
+
+describe('closed public silence periods', () => {
+  const period = {
+    id: '0123456789abcdef0123456789abcdef',
+    startedAt: -1000,
+    endedAt: 0,
+  }
+
+  it('accepts signed closed intervals, including an untrimmed start', () => {
+    const status = statusFile({ silencePeriods: [period] })
+    expect(publicStatusFileSchema.parse(status)).toEqual(status)
+  })
+
+  it('accepts canonical signed starts and ordinal ids for equal starts through GET', async () => {
+    const status = statusFile({
+      silencePeriods: [
+        period,
+        {
+          id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          startedAt: -1000,
+          endedAt: 10,
+        },
+        { id: '00000000000000000000000000000000', startedAt: 0, endedAt: 20 },
+      ],
+    })
+    expect(publicStatusFileSchema.parse(status)).toEqual(status)
+    expect(
+      await readPublicStatusFiles(new AbortController().signal, async (url) =>
+        response(url.endsWith('/status.json') ? status : heartbeat()),
+      ),
+    ).toEqual({ kind: 'valid', pair: { status, heartbeat: heartbeat() } })
+  })
+
+  it.each([
+    'opaque gap',
+    '0123456789abcdef0123456789abcdeg',
+    '0123456789abcdef0123456789abcde',
+    '0123456789abcdef0123456789abcdef0',
+    '0123456789ABCDEF0123456789ABCDEF',
+    ' 0123456789abcdef0123456789abcdef',
+    '0123456789abcdef0123456789abcdef ',
+    '0123456789abcdef0123456789abcdef\n',
+  ])(
+    'rejects malformed silence id %j through schema and coherent GET',
+    async (id) => {
+      const status = statusFile({ silencePeriods: [{ ...period, id }] })
+      expect(publicStatusFileSchema.safeParse(status).success).toBe(false)
+      expect(
+        await readPublicStatusFiles(new AbortController().signal, async (url) =>
+          response(url.endsWith('/status.json') ? status : heartbeat()),
+        ),
+      ).toEqual({ kind: 'unavailable' })
+    },
+  )
+
+  it.each([
+    {
+      order: 'reversed starts',
+      periods: [
+        { id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', startedAt: 20, endedAt: 30 },
+        { id: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', startedAt: 0, endedAt: 10 },
+      ],
+    },
+    {
+      order: 'reversed ids at the same start',
+      periods: [
+        { id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', startedAt: 0, endedAt: 10 },
+        { id: '0123456789abcdef0123456789abcdef', startedAt: 0, endedAt: 20 },
+      ],
+    },
+  ])('rejects $order through schema and coherent GET', async ({ periods }) => {
+    const status = statusFile({ silencePeriods: periods })
+    expect(publicStatusFileSchema.safeParse(status).success).toBe(false)
+    expect(
+      await readPublicStatusFiles(new AbortController().signal, async (url) =>
+        response(url.endsWith('/status.json') ? status : heartbeat()),
+      ),
+    ).toEqual({ kind: 'unavailable' })
+  })
+
+  it.each([
+    { id: '' },
+    { id: 12 },
+    { startedAt: undefined },
+    { startedAt: -0.5 },
+    { endedAt: undefined },
+    { endedAt: null },
+    { endedAt: -1000 },
+    { endedAt: -1001 },
+    { endedAt: Number.MAX_SAFE_INTEGER + 1 },
+    { nodeId: 'private' },
+    { pid: 42 },
+    { reason: 'private' },
+    { internalId: 1 },
+  ])('rejects invalid bounds and extra/private fields %j', (change) => {
+    expect(
+      publicStatusFileSchema.safeParse({
+        ...statusFile(),
+        silencePeriods: [{ ...period, ...change }],
+      }).success,
+    ).toBe(false)
+  })
+
+  it('rejects duplicate ids even when their intervals differ through schema and GET', async () => {
+    const status = statusFile({
+      silencePeriods: [period, { ...period, startedAt: 1, endedAt: 2 }],
+    })
+    expect(publicStatusFileSchema.safeParse(status).success).toBe(false)
+    expect(
+      await readPublicStatusFiles(new AbortController().signal, async (url) =>
+        response(url.endsWith('/status.json') ? status : heartbeat()),
+      ),
+    ).toEqual({ kind: 'unavailable' })
+  })
+
+  it.each([1, 2] as const)(
+    'preserves the strict legacy %s boundary',
+    (schemaVersion) => {
+      const legacy = legacyStatusFile(schemaVersion)
+      expect(publicStatusFileSchema.parse(legacy)).toEqual(legacy)
+      for (const silencePeriods of [[], [period]]) {
+        expect(
+          publicStatusFileSchema.safeParse({ ...legacy, silencePeriods })
+            .success,
+        ).toBe(false)
+      }
+      expect(
+        publicStatusFileSchema.safeParse({ ...legacy, generatedAt: -1 })
+          .success,
+      ).toBe(false)
+      expect(
+        publicStatusHeartbeatSchema.safeParse(
+          heartbeat({ schemaVersion, aliveAt: -1 }),
+        ).success,
+      ).toBe(false)
+    },
+  )
+
+  it('keeps real v2 work and maintenance facts without v3 keys', () => {
+    const status = legacyStatusFile(2, {
+      scheduledWorks: complete.scheduledWorks,
+      maintenancePeriods: complete.maintenancePeriods,
+    })
+    expect(publicStatusFileSchema.parse(status)).toEqual(status)
+    expect(
+      publicStatusFileSchema.safeParse({ ...status, schemaVersion: 1 }).success,
+    ).toBe(false)
+    expect(
+      publicStatusFileSchema.safeParse({ ...status, schemaVersion: 3 }).success,
+    ).toBe(false)
   })
 })

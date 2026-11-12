@@ -16,7 +16,7 @@ use PHPUnit\Framework\TestCase;
 
 final class FullRestoreTableStructureTest extends TestCase
 {
-    /** Chat 115 migration body, HIL-1886 */
+    /** Chat 166 migration body, HIL-1886 */
     private const string SILENCE_PERIOD_SOURCE = <<<'SQL'
         `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         `public_id` CHAR(32) NOT NULL,

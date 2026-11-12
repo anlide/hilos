@@ -591,7 +591,7 @@ export function publicStatusHarness(initial: unknown, aliveAt: number) {
   const h = statusHarness(HilosPages.PUBLIC_STATUS)
   let status = initial
   let heartbeat: PublicStatusHeartbeat = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: PUBLIC_STATUS_REVISION,
     aliveAt,
   }

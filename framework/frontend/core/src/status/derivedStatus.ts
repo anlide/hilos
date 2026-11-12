@@ -4,6 +4,7 @@ import { type CalendarDay } from '../timeZone/calendarPeriods.js'
 import {
   type PublicStatusComponent,
   type PublicStatusFile,
+  type PublicStatusHeartbeat,
   type PublicStatusMaintenancePeriod,
   type PublicStatusOutage,
   type PublicStatusState,
@@ -16,9 +17,10 @@ export type PublicStatusDayState = Exclude<
   'checking' | 'unknown'
 >
 
-/** One calendar day with its worst published fact, independent of freshness. */
+/** Absence of data and the worst known event outside it are independent facts. */
 export interface PublicStatusDay extends CalendarDay {
   readonly state: PublicStatusDayState
+  readonly hasNoData: boolean
 }
 
 /** A component's full strip and its exact narrow-screen suffix. */
@@ -336,26 +338,103 @@ function intersects(day: CalendarDay, start: number, end: number): boolean {
   return end > start && start < day.endTs && end > day.startTs
 }
 
-/** Paint only actual published intervals, keeping catalog order and 30 as a suffix. */
+/** Unite closed gaps and qualified current silence without changing the file. */
+function silenceIntervals(
+  status: PublicStatusFile,
+  now: number,
+  heartbeat: PublicStatusHeartbeat,
+): readonly CalendarDay[] {
+  const intervals =
+    status.schemaVersion === 3
+      ? status.silencePeriods.map((period) => ({
+          startTs: period.startedAt,
+          endTs: Math.min(period.endedAt, now),
+        }))
+      : []
+  if (now - heartbeat.aliveAt > status.config.staleAfterSeconds * 1000) {
+    intervals.push({ startTs: heartbeat.aliveAt, endTs: now })
+  }
+  const merged: CalendarDay[] = []
+  for (const interval of intervals
+    .filter((interval) => interval.endTs > interval.startTs)
+    .sort((left, right) => left.startTs - right.startTs)) {
+    const previous = merged.at(-1)
+    if (previous !== undefined && previous.endTs >= interval.startTs) {
+      merged[merged.length - 1] = {
+        startTs: previous.startTs,
+        endTs: Math.max(previous.endTs, interval.endTs),
+      }
+    } else merged.push(interval)
+  }
+
+  return merged
+}
+
+/** Does any positive part of an event remain after clipping and subtracting gaps? */
+function hasKnownInterval(
+  day: CalendarDay,
+  start: number,
+  end: number,
+  gaps: readonly CalendarDay[],
+): boolean {
+  let cursor = Math.max(day.startTs, start)
+  const stop = Math.min(day.endTs, end)
+  for (const gap of gaps) {
+    if (cursor >= stop) return false
+    if (gap.endTs <= cursor) continue
+    if (gap.startTs > cursor) return true
+    cursor = gap.endTs
+  }
+
+  return cursor < stop
+}
+
+/**
+ * One date and both facts, shared by accessible names and selected-day text.
+ */
+export function publicStatusDayLabel(day: PublicStatusDay): string {
+  const labels: Readonly<Record<PublicStatusDayState, string>> = {
+    operational: 'Operational',
+    maintenance: 'Maintenance',
+    partial_outage: 'Partial outage',
+    major_outage: 'Major outage',
+  }
+  const fact = day.hasNoData
+    ? day.state === 'operational'
+      ? 'No data'
+      : `No data · ${labels[day.state]} recorded`
+    : labels[day.state]
+
+  return `${formatMoment(day.startTs, { kind: 'date' }) ?? '—'} · ${fact}`
+}
+
+/** Paint known intervals outside silence, keeping catalog order and 30 as a suffix. */
 export function publicStatusDayStrips(
   status: PublicStatusFile,
   days: readonly CalendarDay[],
   now: number,
+  heartbeat: PublicStatusHeartbeat,
 ): readonly PublicStatusDayStrip[] {
+  const gaps = silenceIntervals(status, now, heartbeat)
   return status.components.map((component) => {
     const outages = status.outages.filter(
       (outage) => outage.componentKey === component.componentKey,
     )
     const painted = days.map((day): PublicStatusDay => {
+      const elapsed = { startTs: day.startTs, endTs: Math.min(day.endTs, now) }
+      const hasNoData = gaps.some((gap) =>
+        intersects(elapsed, gap.startTs, gap.endTs),
+      )
       let state: PublicStatusDayState = 'operational'
       // Actual maintenance is a full freeze. Announced component keys are words
       // about planned work, not a boundary on which components were closed.
       for (const period of status.maintenancePeriods) {
         if (
-          intersects(
-            day,
+          hasKnownInterval(
+            elapsed,
             period.startedAt,
             Math.min(now, period.endedAt ?? period.lastObservedAt),
+            gaps,
           )
         ) {
           state = 'maintenance'
@@ -363,14 +442,19 @@ export function publicStatusDayStrips(
       }
       for (const outage of outages) {
         if (
-          intersects(day, outage.detectedAt, outage.resolvedAt ?? now) &&
+          hasKnownInterval(
+            elapsed,
+            outage.detectedAt,
+            Math.min(now, outage.resolvedAt ?? now),
+            gaps,
+          ) &&
           DAY_PRIORITY[outage.severity] > DAY_PRIORITY[state]
         ) {
           state = outage.severity
         }
       }
 
-      return { ...day, state }
+      return { ...day, state, hasNoData }
     })
 
     return {

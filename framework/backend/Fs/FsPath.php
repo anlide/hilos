@@ -152,6 +152,35 @@ final class FsPath
     }
 
     /**
+     * Replaces a reserved range without truncating or extending an existing private staging file.
+     *
+     * @param string $path Existing staging file
+     * @param int $offset Byte offset of the reserved range
+     * @param string $data Replacement bytes
+     * @throws FileWriteException When the range is outside the file or cannot be written completely
+     */
+    public static function writeAt(string $path, int $offset, string $data): void
+    {
+        // warning-suppressed: false becomes FileWriteException below
+        $handle = @fopen($path, 'r+b');
+        if ($handle === false) {
+            throw new FileWriteException("Cannot open staging file: {$path}");
+        }
+        try {
+            $stat = fstat($handle);
+            if ($offset < 0 || $stat === false || $offset > $stat['size'] - strlen($data) || fseek($handle, $offset) !== 0) {
+                throw new FileWriteException("Invalid staging range: {$path}");
+            }
+            // warning-suppressed: a short write becomes FileWriteException below
+            if (@fwrite($handle, $data) !== strlen($data)) {
+                throw new FileWriteException("Cannot replace staging range: {$path}");
+            }
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /**
      * Create the file with the payload only when no file is there yet, and say which happened.
      *
      * The first write of a file that the filesystem itself decides — the marker of a cluster

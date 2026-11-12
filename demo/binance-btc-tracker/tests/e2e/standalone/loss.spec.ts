@@ -15,8 +15,11 @@ import {
   expectPublicStatusPair,
   expectPublicStatusReadOnly,
   expectPublicStatusStale,
+  expectPublicStatusSilenceDay,
   gotoPage,
   grantAdminToSelf,
+  markDocument,
+  expectDocumentUnchanged,
   watchPublicStatus,
   watchStatusFrames,
   type DisplayedStatusPair,
@@ -26,6 +29,7 @@ import { standaloneStatusControl } from '../../../../../framework/frontend/scrip
 import {
   beatStatusHeartbeat,
   staleStatusHeartbeat,
+  removeStatusSilencePeriod,
 } from '../../../../../framework/frontend/scripts/statusMoments.mjs'
 import { STATUS_DISK } from '../helpers/status.js'
 import { STATUS_EXPECT_TIMEOUT_MS } from '../status.config.js'
@@ -71,7 +75,10 @@ test('full daemon stop keeps nginx Status readable, stale and cold, then recover
   const admin = watchStatusFrames(adminPage)
   const events: Record<string, unknown> = { timeOrigin: performance.timeOrigin }
   let aged = false
-  let stopRequested = false
+  let silencePeriodId: string | undefined
+  const silenceFacts: { startedAt: number; endedAt: number | null }[] = []
+  let testFailed = false
+  const errors: unknown[] = []
   try {
     await grantAdminToSelf(expect, adminPage)
     await gotoPublicStatus(expect, guest)
@@ -85,13 +92,16 @@ test('full daemon stop keeps nginx Status readable, stale and cold, then recover
         ),
     )
     expect(before.status.outages).toEqual(archive.accepted.status.outages)
-    await expectPublicStatusArchive(expect, guest, archive)
+    await expectPublicStatusArchive(expect, guest, archive, silenceFacts)
     await expect(guest.getByTestId('conn-state')).toHaveText('connected')
     // The owner publishes its last pair's heartbeat aged past the reader's
     // stale limit and holds every later publication, a stopping daemon's
     // included: this is the pair nginx serves once the daemon is gone.
     aged = true
-    const { aliveAt } = await staleStatusHeartbeat()
+    const stale = await staleStatusHeartbeat()
+    silencePeriodId = stale.silencePeriodId
+    const { aliveAt } = stale
+    silenceFacts.push({ startedAt: aliveAt, endedAt: null })
     const frozen = await expectPublicStatusPair(
       expect,
       guest,
@@ -103,14 +113,13 @@ test('full daemon stop keeps nginx Status readable, stale and cold, then recover
     expect(frozen.status.outages).toEqual(archive.accepted.status.outages)
     await expectPublicStatusStale(expect, guest, frozen)
     events.staleAt = Date.now()
-    await expectPublicStatusArchive(expect, guest, archive)
+    await expectPublicStatusArchive(expect, guest, archive, silenceFacts)
     // Every read from here on is served the held pair.
     const reads = log.reads[0].length
     // A stopped daemon answers no socket; the readers' reconnects wait until
     // the restarted owner publishes, where their release makes the reread
     // immediate.
     await socket.hold()
-    stopRequested = true
     events.stopRequestedAt = Date.now()
     const stopped = await control.request('stop')
     events.knownDead = stopped
@@ -122,7 +131,14 @@ test('full daemon stop keeps nginx Status readable, stale and cold, then recover
     expect(stopped.nginx.state.Running).toBe(true)
     const packetsAtStop = log.wire.packets.length
     await expectPublicStatusStale(expect, guest, frozen)
-    await expectPublicStatusArchive(expect, guest, archive)
+    await expectPublicStatusArchive(expect, guest, archive, silenceFacts)
+    await expectPublicStatusSilenceDay(
+      expect,
+      guest,
+      frozen.status,
+      silenceFacts[0]!,
+      true,
+    )
     const stillDead = await control.request('inspect')
     expect(stillDead.daemon.state).toEqual(stopped.daemon.state)
     expect(stillDead.nginx.id).toBe(stopped.nginx.id)
@@ -137,7 +153,15 @@ test('full daemon stop keeps nginx Status readable, stale and cold, then recover
     expect(reloaded.status).toEqual(frozen.status)
     expect(reloaded.heartbeat).toEqual(frozen.heartbeat)
     await expectPublicStatusStale(expect, guest, frozen)
-    await expectPublicStatusArchive(expect, guest, archive)
+    await expectPublicStatusArchive(expect, guest, archive, silenceFacts)
+    await expectPublicStatusSilenceDay(
+      expect,
+      guest,
+      reloaded.status,
+      silenceFacts[0]!,
+      true,
+    )
+    await markDocument(guest)
     await coldSocket.hold()
     await gotoPublicStatus(expect, page)
     const cold = await expectPublicStatusPair(expect, page, coldLog)
@@ -145,7 +169,15 @@ test('full daemon stop keeps nginx Status readable, stale and cold, then recover
     expect(cold.heartbeat).toEqual(frozen.heartbeat)
     await expectPublicStatusStale(expect, page, cold)
     expect(cold.status.outages).toEqual(archive.accepted.status.outages)
-    await expectPublicStatusArchive(expect, page, archive)
+    await expectPublicStatusArchive(expect, page, archive, silenceFacts)
+    await expectPublicStatusSilenceDay(
+      expect,
+      page,
+      cold.status,
+      silenceFacts[0]!,
+      true,
+    )
+    await markDocument(page)
     expect(coldLog.wire.packets).toEqual([])
     expect(log.wire.packets.length).toBe(packetsAtStop)
     events.coldAt = Date.now()
@@ -224,12 +256,34 @@ test('full daemon stop keeps nginx Status readable, stale and cold, then recover
     // even if its sources are Unknown. The warm reader may accept it later;
     // its health deadline starts only after independent source readiness.
     events.firstFreshReader = 'cold'
-    events.firstFresh = await expectPublicStatusPair(
+    const firstFresh = await expectPublicStatusPair(
       expect,
       page,
       coldLog,
       ({ heartbeat }) => heartbeat.aliveAt > frozen.heartbeat.aliveAt,
     )
+    events.firstFresh = firstFresh
+    expect(firstFresh.status.schemaVersion).toBe(3)
+    const closedPeriods =
+      firstFresh.status.schemaVersion === 3
+        ? firstFresh.status.silencePeriods.filter(
+            (period) => period.id === silencePeriodId,
+          )
+        : []
+    expect(closedPeriods).toEqual([
+      {
+        id: silencePeriodId,
+        startedAt: aliveAt,
+        endedAt: expect.any(Number),
+      },
+    ])
+    const closed = closedPeriods[0]!
+    expect(closed.endedAt).toBeGreaterThan(aliveAt)
+    expect(closed.endedAt).toBeLessThanOrEqual(firstFresh.heartbeat.aliveAt)
+    // The first observed heartbeat may already follow the closing publication.
+    // Retain its actual archived endpoint, never extend it to a later read.
+    silenceFacts[0]!.endedAt = closed.endedAt
+    events.closedSilence = closed
     events.firstFreshAt = Date.now()
     // The restarted node agent reports at once without its process roster;
     // its next whole report follows the change interval, and the owner
@@ -291,7 +345,16 @@ test('full daemon stop keeps nginx Status readable, stale and cold, then recover
       'Operational',
     )
     expect(sourceReady.status.outages).toEqual(archive.accepted.status.outages)
-    await expectPublicStatusArchive(expect, page, archive)
+    expect(
+      sourceReady.status.schemaVersion === 3
+        ? sourceReady.status.silencePeriods.filter(
+            (period) => period.id === silencePeriodId,
+          )
+        : [],
+    ).toEqual([closed])
+    await expectPublicStatusArchive(expect, page, archive, silenceFacts)
+    await expectPublicStatusSilenceDay(expect, page, sourceReady.status, closed)
+    await expectDocumentUnchanged(expect, page)
     events.coldHealthyAt = Date.now()
     // Only now measure the original warm reader's automatic acceptance. Its
     // reconnect was released at the owner's first publication on disk; the
@@ -318,42 +381,80 @@ test('full daemon stop keeps nginx Status readable, stale and cold, then recover
       'Operational',
     )
     expect(fresh.status.outages).toEqual(archive.accepted.status.outages)
-    await expectPublicStatusArchive(expect, guest, archive)
+    expect(
+      fresh.status.schemaVersion === 3
+        ? fresh.status.silencePeriods.filter(
+            (period) => period.id === silencePeriodId,
+          )
+        : [],
+    ).toEqual([closed])
+    expect(closed.endedAt).toBeLessThanOrEqual(fresh.heartbeat.aliveAt)
+    await expectPublicStatusArchive(expect, guest, archive, silenceFacts)
+    await expectPublicStatusSilenceDay(expect, guest, fresh.status, closed)
+    await expectDocumentUnchanged(expect, guest)
     events.freshAt = Date.now()
     await expect(guest.getByTestId('conn-state')).toHaveText('connected')
     await expect(guest.getByTestId('public-status-connection')).toHaveCount(0)
     events.connectedAt = Date.now()
     expectPublicStatusReadOnly(expect, log)
     expectPublicStatusReadOnly(expect, coldLog)
+  } catch (error) {
+    testFailed = true
+    errors.push(error)
   } finally {
-    try {
-      events.cleanup = await control.request('start')
-      // A restart drops the aged heartbeat's hold by itself; without a stop
-      // the hold is still this test's to release.
-      if (aged && !stopRequested) await beatStatusHeartbeat()
-    } finally {
-      await socket.dispose()
-      await coldSocket.dispose()
-      await log.stop()
-      await coldLog.stop()
-      admin.stop()
-      const evidence = test.info().outputPath('stop-cold-recovery.json')
-      await writeFile(
-        evidence,
-        JSON.stringify({
-          events,
-          archive,
-          public: log,
-          cold: coldLog,
-          admin: admin.overviews,
-        }),
-      )
-      await test.info().attach('standalone-status-stop-cold-recovery', {
-        path: evidence,
-        contentType: 'application/json',
-      })
-      await adminContext.close()
-      await context.close()
+    const cleanup = [
+      async () => {
+        events.cleanup = await control.request('start')
+      },
+      async () => {
+        // An early failure may restart a stopped container before its command
+        // channel listens. Await that start's real reply in the existing budget.
+        if (aged)
+          await expect(async () => {
+            await beatStatusHeartbeat()
+          }).toPass({ timeout: STATUS_EXPECT_TIMEOUT_MS })
+      },
+      async () => {
+        if (silencePeriodId !== undefined)
+          await removeStatusSilencePeriod(silencePeriodId)
+      },
+      () => socket.dispose(),
+      () => coldSocket.dispose(),
+      () => log.stop(),
+      () => coldLog.stop(),
+      () => admin.stop(),
+      async () => {
+        const evidence = test.info().outputPath('stop-cold-recovery.json')
+        await writeFile(
+          evidence,
+          JSON.stringify({
+            events,
+            archive,
+            public: log,
+            cold: coldLog,
+            admin: admin.overviews,
+          }),
+        )
+        await test.info().attach('standalone-status-stop-cold-recovery', {
+          path: evidence,
+          contentType: 'application/json',
+        })
+      },
+      () => adminContext.close(),
+      () => context.close(),
+    ]
+    for (const operation of cleanup) {
+      try {
+        await operation()
+      } catch (error) {
+        errors.push(error)
+      }
     }
   }
+  if (errors.length > 0)
+    throw testFailed && errors.length === 1
+      ? errors[0]
+      : new AggregateError(errors, 'Standalone Status cleanup failed', {
+          cause: errors[0],
+        })
 })

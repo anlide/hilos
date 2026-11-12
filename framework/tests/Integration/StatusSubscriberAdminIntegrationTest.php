@@ -82,7 +82,7 @@ final class StatusSubscriberAdminIntegrationTest extends FrameworkIntegrationTes
 {
     private const array TABLES = [
         'hilos_user', 'hilos_user_merge', 'hilos_account_deletion', 'hilos_status_incident',
-        'hilos_status_incident_update', 'hilos_status_subscriber',
+        'hilos_status_incident_update', 'hilos_status_subscriber', 'hilos_status_silence_period',
     ];
 
     private ?HilosDbContext $previousDb = null;

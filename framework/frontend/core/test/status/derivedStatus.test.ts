@@ -4,6 +4,7 @@ import {
   publicStatusBanner,
   publicStatusCurrentMaintenance,
   publicStatusDayStrips,
+  publicStatusDayLabel,
   publicStatusHistory,
   publicStatusOutageViews,
   publicStatusOverall,
@@ -11,7 +12,15 @@ import {
   type PublicStatusState,
 } from '../../src/status/index.js'
 import { calendarDays } from '../../src/timeZone/calendarPeriods.js'
-import { maintenance, NOW, outage, statusFile, work } from './fixtures.js'
+import {
+  heartbeat,
+  legacyStatusFile,
+  maintenance,
+  NOW,
+  outage,
+  statusFile,
+  work,
+} from './fixtures.js'
 
 describe('public current facts', () => {
   it.each([
@@ -361,7 +370,7 @@ describe('published calendar day facts', () => {
     })
     const days = calendarDays(NOW, 'UTC', 90)
     expect(
-      publicStatusDayStrips(status, days, NOW)[0]?.days.every(
+      publicStatusDayStrips(status, days, NOW, heartbeat())[0]?.days.every(
         (day) => day.state === 'operational',
       ),
     ).toBe(true)
@@ -437,6 +446,7 @@ describe('published calendar day facts', () => {
       status,
       days,
       Date.parse('2026-01-03T12:00:00Z'),
+      heartbeat({ aliveAt: Date.parse('2026-01-03T12:00:00Z') }),
     )
     expect(strips.map((strip) => strip.componentKey)).toEqual([
       'second',
@@ -478,7 +488,7 @@ describe('published calendar day facts', () => {
         },
       ],
     })
-    const strips = publicStatusDayStrips(status, days, NOW)
+    const strips = publicStatusDayStrips(status, days, NOW, heartbeat())
     expect(strips[0]?.days).toHaveLength(90)
     expect(strips[0]?.days.at(-1)?.state).toBe('maintenance')
     expect(strips[0]?.narrowDays).toHaveLength(30)
@@ -501,15 +511,21 @@ describe('published calendar day facts', () => {
         ],
       })
       expect(
-        publicStatusDayStrips(status, days, Date.parse(now))[0]?.days.map(
-          (day) => day.state,
-        ),
+        publicStatusDayStrips(
+          status,
+          days,
+          Date.parse(now),
+          heartbeat({ aliveAt: Date.parse(now) }),
+        )[0]?.days.map((day) => day.state),
       ).toEqual(['operational', 'major_outage'])
       const next = calendarDays(Date.parse(end), 'Europe/Warsaw', 2)
       expect(
-        publicStatusDayStrips(status, next, Date.parse(end))[0]?.days.map(
-          (day) => day.state,
-        ),
+        publicStatusDayStrips(
+          status,
+          next,
+          Date.parse(end),
+          heartbeat({ aliveAt: Date.parse(end) }),
+        )[0]?.days.map((day) => day.state),
       ).toEqual(['major_outage', 'operational'])
     },
   )
@@ -538,7 +554,7 @@ describe('observed maintenance boundaries', () => {
       },
     ])
     expect(
-      publicStatusDayStrips(status, days, NOW)[0]?.days.every(
+      publicStatusDayStrips(status, days, NOW, heartbeat())[0]?.days.every(
         (day) => day.state === 'operational',
       ),
     ).toBe(true)
@@ -572,7 +588,9 @@ describe('observed maintenance boundaries', () => {
       },
     ])
     expect(
-      publicStatusDayStrips(status, days, NOW)[0]?.days.map((day) => day.state),
+      publicStatusDayStrips(status, days, NOW, heartbeat())[0]?.days.map(
+        (day) => day.state,
+      ),
     ).toEqual(['maintenance', 'operational', 'operational'])
     const active = statusFile({
       maintenancePeriods: [{ ...period, completionObservedAt: null }],
@@ -580,7 +598,311 @@ describe('observed maintenance boundaries', () => {
     expect(publicStatusOverall(active.components, active)).toBe('maintenance')
     expect(publicStatusHistory(active, days)).toEqual([])
     expect(
-      publicStatusDayStrips(active, days, NOW)[0]?.days.map((day) => day.state),
+      publicStatusDayStrips(active, days, NOW, heartbeat())[0]?.days.map(
+        (day) => day.state,
+      ),
     ).toEqual(['maintenance', 'operational', 'operational'])
   })
+})
+
+describe('known day events beside publication silence', () => {
+  it.each([
+    'major_outage',
+    'partial_outage',
+    'maintenance',
+    'operational',
+  ] as const)(
+    'retains only the worst known %s event outside silence for each component',
+    (expected) => {
+      const days = calendarDays(NOW, 'UTC', 1)
+      const start = days[0]!.startTs
+      const gap = {
+        id: '0123456789abcdef0123456789abcdef',
+        startedAt: start + 1000,
+        endedAt: start + 4000,
+      }
+      const status = statusFile({
+        components: [
+          {
+            componentKey: 'site',
+            name: 'Site',
+            description: null,
+            state: 'operational',
+          },
+          {
+            componentKey: 'other',
+            name: 'Other',
+            description: null,
+            state: 'checking',
+          },
+        ],
+        silencePeriods: [gap],
+        outages: [
+          outage({ detectedAt: start + 1000, resolvedAt: start + 4000 }),
+          ...(expected === 'major_outage' || expected === 'partial_outage'
+            ? [
+                outage({
+                  id: 'known',
+                  severity: expected,
+                  detectedAt: start + 4000,
+                  resolvedAt: start + 5000,
+                }),
+              ]
+            : []),
+        ],
+        maintenancePeriods:
+          expected === 'operational'
+            ? []
+            : [
+                maintenance({
+                  startedAt: start,
+                  lastObservedAt: start + 1000,
+                  endedAt: start + 1000,
+                  completionObservedAt: start + 1000,
+                }),
+              ],
+      })
+      const strips = publicStatusDayStrips(status, days, NOW, heartbeat())
+      expect(strips[0]?.days[0]).toMatchObject({
+        state: expected,
+        hasNoData: true,
+      })
+      expect(strips[1]?.days[0]).toMatchObject({
+        state: expected === 'operational' ? 'operational' : 'maintenance',
+        hasNoData: true,
+      })
+      expect(publicStatusHistory(status, days)).toContainEqual(
+        expect.objectContaining({ id: 'arbitrary id', kind: 'outage' }),
+      )
+    },
+  )
+
+  it('does not let an open outage prove anything within a current gap, preserving its duration', () => {
+    const days = calendarDays(NOW, 'UTC', 3)
+    const aliveAt = days[0]!.startTs + 1000
+    const status = statusFile({ outages: [outage({ detectedAt: aliveAt })] })
+    const original = structuredClone(status)
+    expect(
+      publicStatusDayStrips(
+        status,
+        days,
+        NOW,
+        heartbeat({ aliveAt }),
+      )[0]?.days.map(({ state, hasNoData }) => ({ state, hasNoData })),
+    ).toEqual([
+      { state: 'operational', hasNoData: true },
+      { state: 'operational', hasNoData: true },
+      { state: 'operational', hasNoData: true },
+    ])
+    expect(
+      publicStatusOutageViews(status.outages, NOW)[0]?.durationSeconds,
+    ).toBe((NOW - aliveAt) / 1000)
+    expect(publicStatusHistory(status, days)).toEqual([])
+    expect(status).toEqual(original)
+  })
+
+  it('unites overlapping and touching gaps before subtracting, retaining a single known millisecond', () => {
+    const days = calendarDays(NOW, 'UTC', 1)
+    const start = days[0]!.startTs
+    const status = statusFile({
+      silencePeriods: [
+        {
+          id: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          startedAt: start + 2000,
+          endedAt: start + 4000,
+        },
+        {
+          id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          startedAt: start + 1000,
+          endedAt: start + 3000,
+        },
+        {
+          id: 'cccccccccccccccccccccccccccccccc',
+          startedAt: start + 4000,
+          endedAt: start + 5000,
+        },
+      ],
+      outages: [outage({ detectedAt: start + 1000, resolvedAt: start + 5000 })],
+    })
+    expect(
+      publicStatusDayStrips(status, days, NOW, heartbeat())[0]?.days[0],
+    ).toMatchObject({ state: 'operational', hasNoData: true })
+    status.outages[0]!.resolvedAt = start + 5001
+    expect(
+      publicStatusDayStrips(status, days, NOW, heartbeat())[0]?.days[0],
+    ).toMatchObject({ state: 'major_outage', hasNoData: true })
+    status.outages[0]!.detectedAt = start + 999
+    status.outages[0]!.resolvedAt = start + 5000
+    expect(
+      publicStatusDayStrips(status, days, NOW, heartbeat())[0]?.days[0]?.state,
+    ).toBe('major_outage')
+  })
+
+  it('starts current silence only after the exact threshold and clips future facts to elapsed time', () => {
+    const days = calendarDays(NOW, 'UTC', 1)
+    const status = statusFile({
+      silencePeriods: [
+        {
+          id: '0123456789abcdef0123456789abcdef',
+          startedAt: NOW,
+          endedAt: NOW + 1000,
+        },
+      ],
+      outages: [outage({ detectedAt: NOW, resolvedAt: NOW + 1000 })],
+      maintenancePeriods: [
+        maintenance({ startedAt: NOW, lastObservedAt: NOW + 1000 }),
+      ],
+    })
+    const beat = heartbeat({ aliveAt: NOW - 120000 })
+    expect(
+      publicStatusDayStrips(status, days, NOW, beat)[0]?.days[0],
+    ).toMatchObject({ state: 'operational', hasNoData: false })
+    expect(
+      publicStatusDayStrips(status, days, NOW + 1, beat)[0]?.days[0],
+    ).toMatchObject({ state: 'operational', hasNoData: true })
+    const fresh = heartbeat({ aliveAt: NOW + 1000 })
+    expect(
+      publicStatusDayStrips(status, days, NOW, fresh)[0]?.days[0],
+    ).toMatchObject({ state: 'operational', hasNoData: false })
+  })
+
+  it.each([
+    ['2026-03-28T23:00:00Z', '2026-03-29T22:00:00Z'],
+    ['2026-10-24T22:00:00Z', '2026-10-25T23:00:00Z'],
+  ])(
+    'uses the real Warsaw DST day [%s, %s), excluding both neighboring days',
+    (startText, endText) => {
+      const start = Date.parse(startText)
+      const end = Date.parse(endText)
+      const now = end + 1
+      const days = calendarDays(now, 'Europe/Warsaw', 3)
+      expect(days[1]).toEqual({ startTs: start, endTs: end })
+      const status = statusFile({
+        silencePeriods: [
+          {
+            id: '0123456789abcdef0123456789abcdef',
+            startedAt: start,
+            endedAt: end,
+          },
+        ],
+        outages: [outage({ detectedAt: start, resolvedAt: end })],
+      })
+      expect(
+        publicStatusDayStrips(
+          status,
+          days,
+          now,
+          heartbeat({ aliveAt: now }),
+        )[0]?.days.map(({ state, hasNoData }) => ({ state, hasNoData })),
+      ).toEqual([
+        { state: 'operational', hasNoData: false },
+        { state: 'operational', hasNoData: true },
+        { state: 'operational', hasNoData: false },
+      ])
+    },
+  )
+
+  it('assigns a cross-midnight gap to reader days and keeps narrow30 the same objects as suffix90', () => {
+    const now = Date.parse('2026-10-26T08:00:01Z')
+    const midnight = Date.parse('2026-10-26T07:00:00Z')
+    const days = calendarDays(now, 'America/Los_Angeles', 90)
+    const status = statusFile({
+      silencePeriods: [
+        {
+          id: '0123456789abcdef0123456789abcdef',
+          startedAt: midnight - 1,
+          endedAt: midnight + 1,
+        },
+      ],
+    })
+    const strip = publicStatusDayStrips(
+      status,
+      days,
+      now,
+      heartbeat({ aliveAt: now }),
+    )[0]!
+    expect(strip.days.at(-1)?.startTs).toBe(midnight)
+    expect(strip.days.slice(-3).map((day) => day.hasNoData)).toEqual([
+      false,
+      true,
+      true,
+    ])
+    expect(strip.narrowDays).toHaveLength(30)
+    for (let i = 0; i < 30; i++)
+      expect(strip.narrowDays[i]).toBe(strip.days[i + 60])
+  })
+
+  it('does not turn Checking or a scheduled announcement into a known event marker', () => {
+    const days = calendarDays(NOW, 'UTC', 1)
+    const status = statusFile({
+      components: [
+        {
+          componentKey: 'site',
+          name: 'Site',
+          description: null,
+          state: 'checking',
+        },
+      ],
+      candidates: [{ componentKey: 'site', detectedAt: NOW - 1000 }],
+      scheduledWorks: [work({ startsAt: NOW - 1000 })],
+      silencePeriods: [
+        {
+          id: '0123456789abcdef0123456789abcdef',
+          startedAt: NOW - 2000,
+          endedAt: NOW - 1000,
+        },
+      ],
+    })
+    const day = publicStatusDayStrips(status, days, NOW, heartbeat())[0]!
+      .days[0]!
+    expect(day).toMatchObject({ state: 'operational', hasNoData: true })
+    expect(publicStatusDayLabel(day)).toBe(
+      `${formatMoment(day.startTs, { kind: 'date' })} · No data`,
+    )
+  })
+
+  it.each([1, 2] as const)(
+    'treats legacy %s as no saved gaps while still computing current silence',
+    (schemaVersion) => {
+      const days = calendarDays(NOW, 'UTC', 1)
+      const status = legacyStatusFile(schemaVersion)
+      expect(
+        publicStatusDayStrips(
+          status,
+          days,
+          NOW,
+          heartbeat({ schemaVersion }),
+        )[0]?.days[0]?.hasNoData,
+      ).toBe(false)
+      expect(
+        publicStatusDayStrips(
+          status,
+          days,
+          NOW + 120001,
+          heartbeat({ schemaVersion }),
+        )[0]?.days[0],
+      ).toMatchObject({ state: 'operational', hasNoData: true })
+    },
+  )
+
+  it.each([
+    ['operational', 'Operational', 'No data'],
+    ['partial_outage', 'Partial outage', 'No data · Partial outage recorded'],
+    ['major_outage', 'Major outage', 'No data · Major outage recorded'],
+    ['maintenance', 'Maintenance', 'No data · Maintenance recorded'],
+  ] as const)(
+    'labels the date and both facts for %s without Operational beside No data',
+    (state, normal, missing) => {
+      const day = {
+        ...calendarDays(NOW, 'UTC', 1)[0]!,
+        state,
+        hasNoData: false,
+      }
+      const date = formatMoment(day.startTs, { kind: 'date' })
+      expect(publicStatusDayLabel(day)).toBe(`${date} · ${normal}`)
+      expect(publicStatusDayLabel({ ...day, hasNoData: true })).toBe(
+        `${date} · ${missing}`,
+      )
+    },
+  )
 })

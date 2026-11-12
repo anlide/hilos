@@ -37,6 +37,31 @@ final class FsPathTest extends TestCase
         $this->removeTree($this->root);
     }
 
+    public function testWriteAtReplacesOnlyAReservedRangeAndClosesTheHandle(): void
+    {
+        $path = $this->root . '/reserved';
+        FsPath::write($path, 'before     after');
+        $handles = count(get_resources('stream'));
+        FsPath::writeAt($path, 6, '12345');
+        self::assertSame('before12345after', FsPath::read($path));
+        self::assertSame($handles, count(get_resources('stream')));
+        foreach ([-1, 12, 100] as $offset) {
+            try {
+                FsPath::writeAt($path, $offset, '12345');
+                self::fail('The reserved range must exist in full');
+            } catch (FileWriteException) {
+                self::assertSame('before12345after', FsPath::read($path));
+                self::assertSame($handles, count(get_resources('stream')));
+            }
+        }
+    }
+
+    public function testWriteAtDoesNotCreateAnAbsentFile(): void
+    {
+        $this->expectException(FileWriteException::class);
+        FsPath::writeAt($this->root . '/absent', 0, 'payload');
+    }
+
     public function testReadReturnsFileContents(): void
     {
         $path = $this->root . DIRECTORY_SEPARATOR . 'read.txt';

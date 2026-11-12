@@ -26,6 +26,8 @@ use Hilos\Database\Object\Collection\StatusWorkComponents as ObjectStatusWorkCom
 use Hilos\Database\View\Collection\StatusWorkComponents;
 use Hilos\Database\Object\Collection\StatusMaintenancePeriods as ObjectStatusMaintenancePeriods;
 use Hilos\Database\View\Collection\StatusMaintenancePeriods;
+use Hilos\Database\Object\Collection\StatusSilencePeriods as ObjectStatusSilencePeriods;
+use Hilos\Database\View\Collection\StatusSilencePeriods;
 use Hilos\Database\Object\Collection\StatusIncidents as ObjectStatusIncidents;
 use Hilos\Database\Object\Collection\StatusIncidentUpdates as ObjectStatusIncidentUpdates;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
@@ -237,6 +239,8 @@ final class StatusProjectionDbContext extends HilosDbContext
         $this->setRepresent(self::statusWorkComponents, StatusWorkComponents::class);
         $this->_objectCollections[self::statusMaintenancePeriods] = ObjectStatusMaintenancePeriods::initEmpty();
         $this->setRepresent(self::statusMaintenancePeriods, StatusProjectionMaintenancePeriods::class);
+        $this->_objectCollections[self::statusSilencePeriods] = ObjectStatusSilencePeriods::initEmpty();
+        $this->setRepresent(self::statusSilencePeriods, StatusProjectionSilencePeriods::class);
         $this->_objectCollections[self::settings] = ObjectSettings::initEmpty();
         $this->setRepresent(self::settings, Settings::class);
         $this->_dbItemCollections[self::statusSubscribers] = StatusProjectionSubscribers::initEmpty();
@@ -349,5 +353,20 @@ final class StatusProjectionSubscribers extends StatusSubscribers
     public function counts(): StatusSubscriberCountsData
     {
         return new StatusSubscriberCountsData(0, 0, 0, 0);
+    }
+}
+
+/** Empty silence source for unit cases that do not supply durable archive rows. */
+final class StatusProjectionSilencePeriods extends StatusSilencePeriods
+{
+    /**
+     * @param int $sinceMs Retention boundary
+     * @param ?int $afterId Last processed primary key
+     * @param int $limit Maximum portion
+     * @return static Empty manual selection
+     */
+    public function intersecting(int $sinceMs, ?int $afterId, int $limit): static
+    {
+        return static::initEmpty();
     }
 }

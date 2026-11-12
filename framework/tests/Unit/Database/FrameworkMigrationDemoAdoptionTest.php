@@ -866,6 +866,22 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 $origins,
                 ...$this->assertTrustRestrictionPairs($project->root, $trustRestrictionIndices[$index], $catalog, $schema),
             );
+            $silenceIndices = [166, 123, 123, 104, 104, 106];
+            $base = $project->root . '/' . sprintf('%03d', $silenceIndices[$index]) . '_framework_install_status_silence_period';
+            $up = FsPath::read($base . '.sql');
+            $down = FsPath::read($base . '_down.sql');
+            $install = $catalog->verifyPair($up, $down);
+            self::assertSame(FrameworkMigrationOrigin::INSTALL, $install->kind);
+            self::assertSame(['status_silence_period'], $install->units);
+            self::assertCount(1, $install->parts);
+            self::assertSame('20261105060052889668_HIL-1886_status_silence_period/status_silence_period', $install->parts[0]->key());
+            $source = $catalog->part($install->parts[0]->changeId, 'status_silence_period');
+            self::assertTrue($source->introducesUnit);
+            self::assertSame([], $source->requires);
+            $unit = $schema->unit('status_silence_period');
+            self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
+            self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
+            $origins[] = $install;
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $this->assertLaterSecondFactorMomentTracks($projects, $catalog, $schema);

@@ -67,9 +67,10 @@ final class StatusTestHeartbeatStaleCommandTest extends TestCase
     public function testSendsAnEmptyRequestAndPrintsThePublishedMoment(): void
     {
         $command = new StatusTestHeartbeatStaleCommandSpy();
-        $command->reply = CommandReplyDTO::ok('cid', [StatusTestCommandConstants::FIELD_ALIVE_AT => 1761899879000]);
+        $command->reply = CommandReplyDTO::ok('cid', [StatusTestCommandConstants::FIELD_ALIVE_AT => 1761899879000,
+            StatusTestCommandConstants::FIELD_SILENCE_PERIOD_ID => str_repeat('a', 32)]);
 
-        $this->expectOutputString("Aged the Status heartbeat: alive at epoch ms 1761899879000\n");
+        $this->expectOutputString("Aged the Status heartbeat: alive at epoch ms 1761899879000, silence aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n");
         self::assertSame(ExitCode::SUCCESS, $command->execute([], []));
         self::assertSame(CliCommands::STATUS_TEST_HEARTBEAT_STALE, $command->sentCommand);
         self::assertSame([], $command->sentPayload);
@@ -89,7 +90,7 @@ final class StatusTestHeartbeatStaleCommandTest extends TestCase
         $command = new StatusTestHeartbeatStaleCommandSpy();
         $command->reply = CommandReplyDTO::ok('cid', [StatusTestCommandConstants::FIELD_ALIVE_AT => '1761899879000']);
 
-        $this->expectOutputString("Command failed: the reply carries no heartbeat moment\n");
+        $this->expectOutputString("Command failed: the reply carries no heartbeat moment or silence identity\n");
         self::assertSame(ExitCode::ERROR, $command->execute([], []));
     }
 

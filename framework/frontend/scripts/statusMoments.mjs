@@ -9,6 +9,7 @@ const REPLY_TIMEOUT_MS = 5_000
 const STALE_COMMAND = 'test:status:heartbeat:stale'
 const NOW_COMMAND = 'test:status:heartbeat:now'
 const WORK_START_COMMAND = 'test:status:work:start'
+const SILENCE_REMOVE_COMMAND = 'test:status:silence:remove'
 
 /**
  * Publishes the last pair's heartbeat aged just past the reader's stale limit.
@@ -19,11 +20,25 @@ const WORK_START_COMMAND = 'test:status:work:start'
  *
  * @param {object} [options] Where to send the command.
  * @param {string} [options.host] Explicit cluster host instead of COMMAND_HOST.
- * @returns {Promise<{aliveAt: number}>} The published heartbeat moment in epoch milliseconds.
+ * @returns {Promise<{aliveAt: number, silencePeriodId: string}>} Heartbeat and owned cleanup identity.
  * @throws {Error} When the command refuses or returns an invalid heartbeat.
  */
 export async function staleStatusHeartbeat({ host } = {}) {
-  return heartbeat(STALE_COMMAND, host)
+  const reply = await createStandCommandChannel({
+    timeoutMs: REPLY_TIMEOUT_MS,
+    host,
+  })(STALE_COMMAND, {})
+  if (
+    !isMoment(reply.aliveAt) ||
+    typeof reply.silencePeriodId !== 'string' ||
+    !/^[a-f0-9]{32}$/.test(reply.silencePeriodId)
+  ) {
+    throw new Error(`Invalid ${STALE_COMMAND} reply`)
+  }
+  return {
+    aliveAt: /** @type {number} */ (reply.aliveAt),
+    silencePeriodId: reply.silencePeriodId,
+  }
 }
 
 /**
@@ -36,6 +51,25 @@ export async function staleStatusHeartbeat({ host } = {}) {
  */
 export async function beatStatusHeartbeat({ host } = {}) {
   return heartbeat(NOW_COMMAND, host)
+}
+
+/**
+ * Removes exactly one completed synthetic silence after releasing its hold and maintenance.
+ *
+ * @param {string} publicId Owned silence identity returned by staleStatusHeartbeat.
+ * @param {object} [options] Where to send the command.
+ * @param {string} [options.host] Explicit cluster host instead of COMMAND_HOST.
+ * @returns {Promise<{publicId: string}>} The removed fixture identity.
+ * @throws {Error} When cleanup refuses or the reply names another period.
+ */
+export async function removeStatusSilencePeriod(publicId, { host } = {}) {
+  const reply = await createStandCommandChannel({
+    timeoutMs: REPLY_TIMEOUT_MS,
+    host,
+  })(SILENCE_REMOVE_COMMAND, { publicId })
+  if (reply.publicId !== publicId)
+    throw new Error(`Invalid ${SILENCE_REMOVE_COMMAND} reply`)
+  return { publicId }
 }
 
 /**

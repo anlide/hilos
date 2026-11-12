@@ -4,15 +4,20 @@ declare(strict_types=1);
 
 namespace Hilos\Status;
 
+use AppendIterator;
 use ArrayIterator;
+use Iterator;
+use IteratorIterator;
 use Hilos\Constants\TimeConstants;
 use Hilos\Database\View\Collection\StatusIncidents;
 use Hilos\Database\View\Collection\StatusIncidentUpdates;
 use Hilos\Database\View\Collection\StatusWorks;
 use Hilos\Database\View\Collection\StatusMaintenancePeriods;
+use Hilos\Database\View\Collection\StatusSilencePeriods;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Status\Exception\StatusException;
+use SplMinHeap;
 use SplPriorityQueue;
 use Throwable;
 
@@ -30,6 +35,7 @@ final class StatusPublicSnapshotBuilder
     private ?int $afterIncidentId = null;
     private ?int $afterUpdateId = null;
     private int $sinceMs = 0;
+    private int $silenceSinceMs = 0;
     private bool $historyComplete = false;
     private bool $outageOrderingComplete = false;
     private bool $worksComplete = false;
@@ -61,6 +67,16 @@ final class StatusPublicSnapshotBuilder
     /** @var ?ArrayIterator<int, StatusPublicOutage> Detached archive cursor, safe in every freeze phase */
     private ?ArrayIterator $detached = null;
     private ?int $nextHistoryExpiryAt = null;
+    private bool $silencesComplete = false;
+    private ?int $afterSilenceId = null;
+    /** @var ?Iterator<int|string, StatusPublicSilencePeriod> Detached unimported or frozen archive */
+    private ?Iterator $detachedSilences = null;
+    /** @var ?SplMinHeap<array{int, string, StatusPublicSilencePeriod}> Stable start/id ordering */
+    private ?SplMinHeap $orderedSilences = null;
+    /** @var array<string, StatusPublicSilencePeriod> Deduplication of DB and still-present committed transit */
+    private array $silenceIds = [];
+    /** @var list<StatusPublicSilencePeriod> Bounded ordering output */
+    private array $silences = [];
 
     /**
      * Starts a new generation and discards every value and cursor of its predecessor.
@@ -71,6 +87,7 @@ final class StatusPublicSnapshotBuilder
      * @param int $generatedAt Generation epoch milliseconds UTC and history-window reference
      * @param int $pollIntervalSeconds Positive reader polling interval
      * @param int $staleAfterSeconds Positive heartbeat freshness threshold
+     * @param iterable<StatusPublicSilencePeriod> $transit Closed observations not yet removed after import
      * @throws StatusException When the source is unavailable or publication metadata is invalid
      */
     public function begin(
@@ -79,6 +96,7 @@ final class StatusPublicSnapshotBuilder
         int $generatedAt,
         int $pollIntervalSeconds,
         int $staleAfterSeconds,
+        iterable $transit = [],
     ): void {
         $this->reset();
         if ($current->incidents === null) {
@@ -86,11 +104,14 @@ final class StatusPublicSnapshotBuilder
         }
         $this->base = (new StatusPublicSnapshot($revision, $generatedAt, $pollIntervalSeconds, $staleAfterSeconds, [], [], []))
             ->withCurrent($current, $revision, $generatedAt);
-        $this->sinceMs = max(0, $generatedAt - self::HISTORY_WINDOW_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND);
+        $this->silenceSinceMs = $generatedAt - self::HISTORY_WINDOW_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
+        $this->sinceMs = max(0, $this->silenceSinceMs);
         $this->ordered = new SplPriorityQueue();
         $this->ordered->setExtractFlags(SplPriorityQueue::EXTR_DATA);
         $this->orderedWorks = new SplPriorityQueue();
         $this->orderedWorks->setExtractFlags(SplPriorityQueue::EXTR_DATA);
+        $this->orderedSilences = new SplMinHeap();
+        $this->detachedSilences = is_array($transit) ? new ArrayIterator($transit) : new IteratorIterator($transit);
     }
 
     /**
@@ -106,7 +127,12 @@ final class StatusPublicSnapshotBuilder
             return;
         }
         if ($this->detached !== null || $this->detachedPeriods !== null || $this->detachedWorks !== null) {
-            $this->advanceDetached();
+            try {
+                $this->advanceDetached();
+            } catch (Throwable $failure) {
+                $this->reset();
+                throw $failure instanceof HilosException ? $failure : new StatusException('Detached status build failed.', previous: $failure);
+            }
             return;
         }
         if (Hilos::$db === null || Hilos::$rt?->hilosProtectedModeRuntime === null
@@ -148,15 +174,22 @@ final class StatusPublicSnapshotBuilder
      * Expiry filtering remains bounded and uses the new generation's reference moment.
      *
      * @param StatusPublicSnapshot $snapshot Current public overlay and last complete archive
+     * @param iterable<StatusPublicSilencePeriod> $transit Closed durable facts not yet imported
      */
-    public function beginDetached(StatusPublicSnapshot $snapshot): void
+    public function beginDetached(StatusPublicSnapshot $snapshot, iterable $transit = []): void
     {
         $this->reset();
         $this->base = $snapshot;
-        $this->sinceMs = max(0, $snapshot->generatedAt - self::HISTORY_WINDOW_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND);
+        $this->silenceSinceMs = $snapshot->generatedAt - self::HISTORY_WINDOW_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
+        $this->sinceMs = max(0, $this->silenceSinceMs);
         $this->detached = new ArrayIterator($snapshot->outages);
         $this->detachedPeriods = new ArrayIterator($snapshot->maintenancePeriods);
         $this->detachedWorks = new ArrayIterator($snapshot->scheduledWorks);
+        $silences = new AppendIterator();
+        $silences->append(new ArrayIterator($snapshot->silencePeriods));
+        $silences->append(is_array($transit) ? new ArrayIterator($transit) : new IteratorIterator($transit));
+        $this->detachedSilences = $silences;
+        $this->orderedSilences = new SplMinHeap();
     }
 
     /** @return ?int First moment an announcement or completed fact leaves the archive, or null */
@@ -173,6 +206,7 @@ final class StatusPublicSnapshotBuilder
         $this->afterIncidentId = null;
         $this->afterUpdateId = null;
         $this->sinceMs = 0;
+        $this->silenceSinceMs = 0;
         $this->historyComplete = false;
         $this->outageOrderingComplete = false;
         $this->worksComplete = false;
@@ -192,6 +226,12 @@ final class StatusPublicSnapshotBuilder
         $this->outages = [];
         $this->detached = null;
         $this->nextHistoryExpiryAt = null;
+        $this->silencesComplete = false;
+        $this->afterSilenceId = null;
+        $this->detachedSilences = null;
+        $this->orderedSilences = null;
+        $this->silenceIds = [];
+        $this->silences = [];
     }
 
     /** Advances exactly one finite read or ordering portion of the active generation. */
@@ -264,6 +304,31 @@ final class StatusPublicSnapshotBuilder
             $this->periodsComplete = count($portion) === 0;
             return;
         }
+        if (!$this->silencesComplete) {
+            $portion = Hilos::$db->statusSilencePeriods->intersecting(
+                $this->silenceSinceMs, $this->afterSilenceId, StatusSilencePeriods::MAX_PORTION_ROWS,
+            );
+            foreach ($portion as $period) {
+                $this->afterSilenceId = $period->id;
+                $this->queueSilence(new StatusPublicSilencePeriod($period->publicId, $period->startedAt, $period->endedAt));
+            }
+            $this->silencesComplete = count($portion) < StatusSilencePeriods::MAX_PORTION_ROWS;
+            return;
+        }
+        if ($this->detachedSilences !== null) {
+            for ($step = 0; $step < StatusSilencePeriods::MAX_PORTION_ROWS && $this->detachedSilences->valid(); ++$step) {
+                $this->queueSilence($this->detachedSilences->current());
+                $this->detachedSilences->next();
+            }
+            if (!$this->detachedSilences->valid()) {
+                $this->detachedSilences = null;
+            }
+            return;
+        }
+        if (!$this->orderedSilences->isEmpty()) {
+            $this->drainSilences();
+            return;
+        }
         for ($remaining = StatusWorks::MAX_PORTION_ROWS; $remaining > 0 && !$this->orderedWorks->isEmpty(); --$remaining) {
             $work = $this->orderedWorks->extract();
             $this->works[] = $work;
@@ -305,10 +370,48 @@ final class StatusPublicSnapshotBuilder
                 }
                 continue;
             }
+            if ($this->detachedSilences?->valid()) {
+                $this->queueSilence($this->detachedSilences->current());
+                $this->detachedSilences->next();
+                continue;
+            }
             break;
         }
-        if (!$this->detached?->valid() && !$this->detachedPeriods?->valid() && !$this->detachedWorks?->valid()) {
-            $this->finishGeneration();
+        if (!$this->detached?->valid() && !$this->detachedPeriods?->valid() && !$this->detachedWorks?->valid()
+            && !$this->detachedSilences?->valid()) {
+            $this->drainSilences();
+            if ($this->orderedSilences->isEmpty()) {
+                $this->finishGeneration();
+            }
+        }
+    }
+
+    /**
+     * @param StatusPublicSilencePeriod $period Detached DB or private-transit closed fact
+     * @throws StatusException When the same public identity carries different boundaries
+     */
+    private function queueSilence(StatusPublicSilencePeriod $period): void
+    {
+        if ($period->endedAt <= $this->silenceSinceMs) {
+            return;
+        }
+        $existing = $this->silenceIds[$period->id] ?? null;
+        if ($existing !== null) {
+            if ($existing != $period) {
+                throw new StatusException('Silence transit disagrees with the persisted archive.');
+            }
+            return;
+        }
+        $this->silenceIds[$period->id] = $period;
+        $this->orderedSilences->insert([$period->startedAt, 'id:' . $period->id, $period]);
+        $this->rememberCompletionExpiry($period->endedAt - 1);
+    }
+
+    /** Drains at most one ordered closed-history portion. */
+    private function drainSilences(): void
+    {
+        for ($step = 0; $step < StatusSilencePeriods::MAX_PORTION_ROWS && !$this->orderedSilences->isEmpty(); ++$step) {
+            $this->silences[] = $this->orderedSilences->extract()[2];
         }
     }
 
@@ -348,7 +451,7 @@ final class StatusPublicSnapshotBuilder
     /** Installs only the complete generation and releases its private cursors. */
     private function finishGeneration(): void
     {
-        $snapshot = $this->base->withOutages($this->outages)->withMaintenance($this->works, $this->periods);
+        $snapshot = $this->base->withOutages($this->outages)->withMaintenance($this->works, $this->periods)->withSilencePeriods($this->silences);
         $expiry = $this->nextHistoryExpiryAt;
         $this->reset();
         $this->snapshot = $snapshot;

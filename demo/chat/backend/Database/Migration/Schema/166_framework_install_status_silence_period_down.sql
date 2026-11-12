@@ -1,0 +1,2 @@
+-- hilos-framework: {"format":1,"kind":"install","units":["status_silence_period"],"parts":[{"changeId":"20261105060052889668_HIL-1886_status_silence_period","unit":"status_silence_period","upSha256":"8d9f2ee0493d5c901d62a2fd6f4d20739d5b7687ea0cbb836aaec058437e181c","downSha256":"8327dd20a0851c98038a8bb028cceafc32714a6290936a91b701d3c34fb514b8"}],"upSha256":"8d9f2ee0493d5c901d62a2fd6f4d20739d5b7687ea0cbb836aaec058437e181c","downSha256":"8327dd20a0851c98038a8bb028cceafc32714a6290936a91b701d3c34fb514b8"}
+DROP TABLE IF EXISTS `hilos_status_silence_period`;

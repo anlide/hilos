@@ -16,6 +16,7 @@ import {
 import {
   createPublicStatus,
   createStatusSubscription,
+  publicStatusDayLabel,
   STATUS_SUBSCRIPTION_COPY,
   type PublicStatus,
   type PublicStatusDay,
@@ -352,15 +353,28 @@ let publicStatusSequence = 0
                       ) {
                         <button
                           type="button"
-                          class="btn flex-fill p-0 py-2 border-0 rounded-1"
-                          [class]="'btn-' + states[day.state].tone"
+                          class="btn flex-fill p-0 py-2 border-0 rounded-1 position-relative overflow-hidden"
+                          [class]="
+                            'btn-' +
+                            (day.hasNoData
+                              ? 'secondary'
+                              : states[day.state].tone)
+                          "
                           [attr.aria-label]="dayLabel(day)"
                           [attr.aria-describedby]="
                             detailId + '-' + componentIndex
                           "
                           (focus)="selectDay(component.componentKey, day)"
                           (click)="selectDay(component.componentKey, day)"
-                        ></button>
+                        >
+                          @if (day.hasNoData && day.state !== 'operational') {
+                            <span
+                              class="position-absolute bottom-0 start-0 w-100 py-1 rounded-bottom-1"
+                              [class]="'text-bg-' + states[day.state].tone"
+                              aria-hidden="true"
+                            ></span>
+                          }
+                        </button>
                       }
                     </div>
                     <div
@@ -628,7 +642,7 @@ export class HilosStatusPage {
   /** Give each calendar button a textual date and verdict. */
   protected dayLabel(day: PublicStatusDay): string {
     this.timeZone()
-    return `${formatMoment(day.startTs, { kind: 'date' }) ?? '—'} · ${this.states[day.state].label}`
+    return publicStatusDayLabel(day)
   }
   /** Keep the last day selected by either keyboard focus or activation. */
   protected selectDay(componentKey: string, day: PublicStatusDay): void {

@@ -138,6 +138,7 @@ final class StatusAgent extends AbstractHilosAgent
         CliCommands::STATUS_TEST_HEARTBEAT_STALE,
         CliCommands::STATUS_TEST_HEARTBEAT_NOW,
         CliCommands::STATUS_TEST_WORK_START,
+        CliCommands::STATUS_TEST_SILENCE_REMOVE,
     ];
 
     public const array OWNS_DB = [
@@ -147,6 +148,7 @@ final class StatusAgent extends AbstractHilosAgent
         HilosDbContext::statusWorks => [TruthSourceOperation::Add, TruthSourceOperation::Update],
         HilosDbContext::statusWorkComponents => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
         HilosDbContext::statusMaintenancePeriods => [TruthSourceOperation::Add, TruthSourceOperation::Update],
+        HilosDbContext::statusSilencePeriods => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
     ];
 
     public const array OWNS_RT = [
@@ -167,6 +169,9 @@ final class StatusAgent extends AbstractHilosAgent
     private const int PUBLIC_REVISION_BYTES = 16;
     /** How far past the reader's stale limit a test-aged heartbeat lands, so the reader calls it stale on its first look. */
     private const int TEST_STALE_MARGIN_MS = 1000;
+    /** Leaves a transport margin inside the Status helper's five-second reply budget. */
+    private const int TEST_PUBLICATION_BUDGET_MS = 4000;
+    private const float SILENCE_IMPORT_BUDGET_MS = 20.0;
     private const string SUBSCRIPTIONS_UNAVAILABLE = 'Status subscriptions are unavailable. Try again later.';
     private const string CHANGES_UNAVAILABLE = 'Status changes are unavailable during maintenance or while runtime state is unavailable.';
     private const string WORK_GONE = 'This maintenance announcement no longer exists. Refresh the list.';
@@ -223,6 +228,11 @@ final class StatusAgent extends AbstractHilosAgent
     private ?string $publicFailure = null;
     private int $publicPollIntervalSeconds;
     private int $publicStaleAfterSeconds;
+    // Correlation belongs to this owner's in-flight work; it is never shared runtime state.
+    private ?string $publicCommandCorrelationId = null;
+    private ?string $publicCommandRemoveId = null;
+    private int $publicCommandDeadline = 0;
+    private int $silenceImportRetryAt = 0;
 
     // Private transit/recovery work of this owner; the shared current verdict is in RT.
     private StatusMaintenanceObservationStore $maintenanceStore;
@@ -270,6 +280,10 @@ final class StatusAgent extends AbstractHilosAgent
         $this->publicAttemptAt = 0;
         $this->publicHeartbeatAttemptAt = 0;
         $this->publicHeld = false;
+        $this->publicCommandCorrelationId = null;
+        $this->publicCommandRemoveId = null;
+        $this->publicCommandDeadline = 0;
+        $this->silenceImportRetryAt = 0;
         $this->publicHistoryExpiryAt = null;
         $this->publicFailure = null;
         $this->maintenanceStore = new StatusMaintenanceObservationStore();
@@ -399,8 +413,9 @@ final class StatusAgent extends AbstractHilosAgent
         $this->refreshFreeze();
         $this->resetNotices();
         $this->resetSubscriberNotices();
+        $this->finishPublicCommand(null, 'The Status owner stopped before publication completed.');
         $this->publicBuilder->reset();
-        $this->publicFiles->cancel();
+        $this->publicFiles->stop();
         if (!$this->wasFrozen) {
             $this->sendToAgent(HilosSignalConstants::STATUS_DAEMON_PICTURE_WATCH, new DaemonPictureWatchSignalData(0));
         }
@@ -511,6 +526,7 @@ final class StatusAgent extends AbstractHilosAgent
                 CliCommands::STATUS_TEST_HEARTBEAT_STALE => $this->ageHeartbeat($data->correlationId),
                 CliCommands::STATUS_TEST_HEARTBEAT_NOW => $this->heartbeatNow($data->correlationId),
                 CliCommands::STATUS_TEST_WORK_START => $this->startWorkNow($data),
+                CliCommands::STATUS_TEST_SILENCE_REMOVE => $this->removeSilence($data),
                 default => CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"),
             };
         } catch (WiringRefusal $failure) {
@@ -520,7 +536,14 @@ final class StatusAgent extends AbstractHilosAgent
             $refusal = $this->statusWriteRefusal($failure);
             $reply = CommandReplyDTO::error($data->correlationId, $refusal->errorDetail ?? $refusal->reason);
         }
-        $this->replyToCommand($reply);
+        if ($reply !== null) {
+            if ($this->publicCommandCorrelationId === $data->correlationId) {
+                $this->publicCommandCorrelationId = null;
+                $this->publicCommandRemoveId = null;
+                $this->publicCommandDeadline = 0;
+            }
+            $this->replyToCommand($reply);
+        }
     }
 
     /**
@@ -1592,50 +1615,157 @@ final class StatusAgent extends AbstractHilosAgent
      * heartbeat nor the content is published again until {@see heartbeatNow()} or this owner's restart.
      *
      * @param string $correlationId Command correlation id
-     * @return CommandReplyDTO The published aliveAt, or the refusal when no coherent pair is published
+     * @return CommandReplyDTO Published aliveAt and owned synthetic identity, or a refusal before fixture readiness
      * @throws InvalidArgumentException When the hint cannot be queued
      */
     private function ageHeartbeat(string $correlationId): CommandReplyDTO
     {
+        if ($this->publicCommandCorrelationId !== null) {
+            return CommandReplyDTO::error($correlationId, 'Another Status publication command is still pending.');
+        }
+        $staleAfterSeconds = $this->publicFiles->getSnapshot()?->staleAfterSeconds;
+        if ($staleAfterSeconds === null) {
+            return CommandReplyDTO::error($correlationId, StatusPublicFiles::NO_PUBLIC_PAIR);
+        }
         try {
-            $receipt = $this->publicFiles->publishAgedHeartbeat(
-                TimeHelper::nowMs() - $this->publicStaleAfterSeconds * TimeConstants::MS_PER_SECOND - self::TEST_STALE_MARGIN_MS,
-            );
-        } catch (StatusException $failure) {
+            $this->publicFiles->advanceSilenceRecovery();
+            if (!$this->publicFiles->hasRecoveredSilence()) {
+                return CommandReplyDTO::error($correlationId, 'Silence recovery is still in progress. Try again shortly.');
+            }
+            if (!$this->publicHeld && $this->publicFiles->getSilenceObservation() !== null) {
+                return CommandReplyDTO::error($correlationId, 'An existing silence is still awaiting publication. Try again shortly.');
+            }
+            if (!$this->publicHeld) {
+                $this->publicFiles->publishAgedHeartbeat(
+                    TimeHelper::nowMs() - $staleAfterSeconds * TimeConstants::MS_PER_SECOND - self::TEST_STALE_MARGIN_MS,
+                );
+                $this->publicHeld = true;
+            }
+            $observation = $this->publicFiles->reserveSilence(TimeHelper::nowMs());
+        } catch (StatusException | RandomException $failure) {
             return CommandReplyDTO::error($correlationId, $failure->getMessage());
         }
-        $this->publicHeld = true;
         $this->sendToAllConnected(HilosSignalConstants::STATUS_FILES_CHANGED, new StatusFilesChangedSignalData());
-        return CommandReplyDTO::ok($correlationId, [StatusTestCommandConstants::FIELD_ALIVE_AT => $receipt->aliveAt]);
+        return CommandReplyDTO::ok($correlationId, [
+            StatusTestCommandConstants::FIELD_ALIVE_AT => $observation->startedAt,
+            StatusTestCommandConstants::FIELD_SILENCE_PERIOD_ID => $observation->id,
+        ]);
     }
 
     /**
-     * Runs {@see CliCommands::STATUS_TEST_HEARTBEAT_NOW}: releases the hold and runs the tick's own
-     * publication step at once, with the heartbeat due (HIL-1856).
-     *
-     * The step is preceded by what precedes it in {@see tickAt()}: the maintenance observation and
-     * the freeze are read first, so a freeze that began after the last tick is what the pair
-     * shows, its period included, and no database read starts under it. Nothing beside is special:
-     * it publishes the heartbeat at now by its ordinary path, sends the hint itself, works the same
-     * under a freeze, and the next natural heartbeat follows a full interval later.
+     * Releases the test hold and lets the ordinary bounded publisher answer on its receipt.
      *
      * @param string $correlationId Command correlation id
-     * @return CommandReplyDTO The published aliveAt, or the refusal when the step published nothing
-     * @throws HilosException When declarations, source wiring, represented runtime writes or hint delivery are refused
+     * @return ?CommandReplyDTO Immediate refusal, or null while this owner holds the reply
+     * @throws HilosException When maintenance, source wiring or reply delivery is refused
      */
-    private function heartbeatNow(string $correlationId): CommandReplyDTO
+    private function heartbeatNow(string $correlationId): ?CommandReplyDTO
     {
+        if ($this->publicCommandCorrelationId !== null) {
+            return CommandReplyDTO::error($correlationId, 'Another Status publication command is still pending.');
+        }
+        if ($this->publicFiles->getSnapshot() === null) {
+            return CommandReplyDTO::error($correlationId, StatusPublicFiles::NO_PUBLIC_PAIR);
+        }
         $this->publicHeld = false;
         $this->publicHeartbeatAttemptAt = 0;
+        $this->publicAttemptAt = 0;
         $this->publicFiles->makeHeartbeatDue();
         $nowMs = TimeHelper::nowMs();
         $this->advanceMaintenance($nowMs);
         $this->refreshFreeze();
-        $receipt = $this->advancePublic($nowMs);
-        if ($receipt === null) {
-            return CommandReplyDTO::error($correlationId, StatusPublicFiles::NO_PUBLIC_PAIR);
+        $this->publicCommandCorrelationId = $correlationId;
+        $this->publicCommandDeadline = $nowMs + self::TEST_PUBLICATION_BUDGET_MS;
+        $this->advancePublic($nowMs);
+        return null;
+    }
+
+    /**
+     * Removes only the named closed fixture, after its transit is committed and unlinked.
+     *
+     * @param CommandRequestDTO $request Exact publicId request from the command channel
+     * @return ?CommandReplyDTO Immediate refusal, or null until its absence is published
+     * @throws HilosException When ownership, persistence, transit removal or reply delivery fails
+     * @throws RandomException When pending closure persistence cannot obtain entropy
+     */
+    private function removeSilence(CommandRequestDTO $request): ?CommandReplyDTO
+    {
+        $id = $request->payload[StatusTestCommandConstants::FIELD_PUBLIC_ID] ?? null;
+        if (!is_string($id) || preg_match(StatusPublicSilencePeriod::PUBLIC_ID_PATTERN, $id) !== 1) {
+            return CommandReplyDTO::error($request->correlationId, 'Name the closed silence period by its public id.');
         }
-        return CommandReplyDTO::ok($correlationId, [StatusTestCommandConstants::FIELD_ALIVE_AT => $receipt->aliveAt]);
+        $this->refreshFreeze();
+        if ($this->wasFrozen || Hilos::$db === null) {
+            return CommandReplyDTO::error($request->correlationId, self::CHANGES_UNAVAILABLE);
+        }
+        if ($this->publicHeld || $this->publicCommandCorrelationId !== null) {
+            return CommandReplyDTO::error($request->correlationId, 'Status publication is held or another command is still pending.');
+        }
+        $this->publicFiles->advanceSilenceRecovery();
+        if (!$this->publicFiles->hasRecoveredSilence()) {
+            return CommandReplyDTO::error($request->correlationId, 'Silence recovery is still in progress. Try again shortly.');
+        }
+        if ($this->publicFiles->getSilenceObservation()?->id === $id) {
+            return CommandReplyDTO::error($request->correlationId, 'This silence period has not completed publication.');
+        }
+        $observation = $this->publicFiles->findClosedSilence($id);
+        if ($observation !== null) {
+            $this->importSilence($observation);
+        }
+        Database::transaction(DatabaseNames::PRIMARY, function () use ($id): void {
+            Hilos::$db->statusSilencePeriods->findByPublicId($id)?->actions->delete();
+        });
+        $this->publicInvalidated = true;
+        $this->publicCommandCorrelationId = $request->correlationId;
+        $this->publicCommandRemoveId = $id;
+        $this->publicCommandDeadline = TimeHelper::nowMs() + self::TEST_PUBLICATION_BUDGET_MS;
+        return null;
+    }
+
+    /**
+     * @param StatusSilenceObservation $observation Exact closed durable transit
+     * @throws HilosException When import, commit or subsequent unlink fails
+     */
+    private function importSilence(StatusSilenceObservation $observation): void
+    {
+        try {
+            Database::transaction(DatabaseNames::PRIMARY, function () use ($observation): void {
+                Hilos::$db->statusSilencePeriods->actions->import($observation->id, $observation->startedAt, $observation->endedAt);
+            });
+        } catch (WiringRefusal $failure) {
+            throw $failure;
+        } catch (Throwable $failure) {
+            throw new StatusException('Cannot import closed silence transit.', previous: $failure);
+        }
+        $this->publicFiles->removeCommittedSilence($observation);
+        $this->publicInvalidated = true;
+    }
+
+    /**
+     * @param ?StatusPublicHeartbeat $receipt Successful matching-pair or heartbeat receipt
+     * @param ?string $error Bounded refusal or stop reason
+     * @throws InvalidArgumentException When the command reply cannot be queued
+     */
+    private function finishPublicCommand(?StatusPublicHeartbeat $receipt, ?string $error = null): void
+    {
+        if ($this->publicCommandCorrelationId === null || ($receipt === null && $error === null)) {
+            return;
+        }
+        if ($error === null && $this->publicCommandRemoveId !== null) {
+            foreach ($this->publicFiles->getSnapshot()->silencePeriods as $period) {
+                if ($period->id === $this->publicCommandRemoveId) {
+                    return;
+                }
+            }
+        }
+        $reply = $error !== null ? CommandReplyDTO::error($this->publicCommandCorrelationId, $error)
+            : CommandReplyDTO::ok($this->publicCommandCorrelationId, $this->publicCommandRemoveId === null
+                ? [StatusTestCommandConstants::FIELD_ALIVE_AT => $receipt->aliveAt]
+                : [StatusTestCommandConstants::FIELD_PUBLIC_ID => $this->publicCommandRemoveId]);
+        $this->publicCommandCorrelationId = null;
+        $this->publicCommandRemoveId = null;
+        $this->publicCommandDeadline = 0;
+        $this->replyToCommand($reply);
     }
 
     /**
@@ -1649,7 +1779,39 @@ final class StatusAgent extends AbstractHilosAgent
      */
     private function advancePublic(int $nowMs): ?StatusPublicHeartbeat
     {
-        if ($this->publicHeld) {
+        if ($this->publicCommandCorrelationId !== null && $nowMs >= $this->publicCommandDeadline) {
+            $this->finishPublicCommand(null, 'Status publication did not complete within its command budget.');
+        }
+        if ($nowMs < $this->publicAttemptAt) {
+            return null;
+        }
+        try {
+            $this->publicFiles->advanceSilenceRecovery();
+        } catch (HilosException | RandomException $failure) {
+            $this->publicAttemptAt = $nowMs + self::FIRST_SNAPSHOT_RETRY_INTERVAL_MS;
+            $this->logAgentError('Status silence recovery will retry: ' . $failure->getMessage());
+            $this->finishPublicCommand(null, 'Status silence recovery is unavailable. Try again shortly.');
+            return null;
+        }
+        if (!$this->wasFrozen && Hilos::$db !== null && $nowMs >= $this->silenceImportRetryAt) {
+            try {
+                $startedAt = microtime(true);
+                foreach ($this->publicFiles->getClosedSilenceObservations() as $observation) {
+                    $this->importSilence($observation);
+                    if ((microtime(true) - $startedAt) * TimeConstants::MS_PER_SECOND >= self::SILENCE_IMPORT_BUDGET_MS) {
+                        break;
+                    }
+                }
+            } catch (WiringRefusal $failure) {
+                throw $failure;
+            } catch (HilosException $failure) {
+                $this->silenceImportRetryAt = $nowMs + self::FIRST_SNAPSHOT_RETRY_INTERVAL_MS;
+                $this->publicDatabaseRetryAt = $this->silenceImportRetryAt;
+                $this->publicInvalidated = true;
+                $this->logAgentError('Status silence import will retry: ' . $failure->getMessage());
+            }
+        }
+        if ($this->publicHeld || !$this->publicFiles->hasRecoveredSilence()) {
             return null;
         }
         $available = !$this->wasFrozen && Hilos::$db !== null && $nowMs >= $this->publicDatabaseRetryAt;
@@ -1693,10 +1855,11 @@ final class StatusAgent extends AbstractHilosAgent
                     $this->publicBuilder->reset();
                     $this->publicFiles->cancel();
                     if ($current === null) {
-                        $this->publicBuilder->beginDetached($projection);
+                        $this->publicBuilder->beginDetached($projection, $this->publicFiles->getTransitSilencePeriods());
                     } else {
                         $this->publicBuilder->begin(
                             $current, $projection->revision, $nowMs, $this->publicPollIntervalSeconds, $this->publicStaleAfterSeconds,
+                            $this->publicFiles->getTransitSilencePeriods(),
                         );
                     }
                     $this->publicCurrent = $projection;
@@ -1711,8 +1874,13 @@ final class StatusAgent extends AbstractHilosAgent
                 $this->publicFiles->begin($this->publicArchive);
                 $this->publicBuilder->reset();
             }
-            $receipt = $this->publicFiles->advance($nowMs);
-            if ($receipt === null && $nowMs >= $this->publicHeartbeatAttemptAt) {
+            if ($this->publicBuilder->isBuilding()) {
+                $this->publicFiles->observeSilence($nowMs);
+            } else {
+                $receipt = $this->publicFiles->advance($nowMs);
+            }
+            if ($receipt === null && $nowMs >= $this->publicHeartbeatAttemptAt
+                && (!$this->publicBuilder->isBuilding() || $this->publicFiles->getSilenceObservation() === null)) {
                 try {
                     $receipt = $this->publicFiles->heartbeat($nowMs);
                 } catch (StatusException $failure) {
@@ -1722,8 +1890,15 @@ final class StatusAgent extends AbstractHilosAgent
                 }
             }
             if ($receipt !== null) {
+                $this->publicArchive = $this->publicFiles->getSnapshot();
+                if ($this->publicFiles->getSilenceObservation()?->endedAt === $receipt->aliveAt) {
+                    $expiry = $receipt->aliveAt
+                        + StatusPublicSnapshotBuilder::HISTORY_WINDOW_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
+                    $this->publicHistoryExpiryAt = $this->publicHistoryExpiryAt === null ? $expiry : min($expiry, $this->publicHistoryExpiryAt);
+                }
                 $this->sendToAllConnected(HilosSignalConstants::STATUS_FILES_CHANGED, new StatusFilesChangedSignalData());
                 $this->publicFailure = null;
+                $this->finishPublicCommand($receipt);
             }
         } catch (DatabaseException $failure) {
             $this->publicDatabaseRetryAt = $nowMs + self::FIRST_SNAPSHOT_RETRY_INTERVAL_MS;
@@ -1732,6 +1907,7 @@ final class StatusAgent extends AbstractHilosAgent
         } catch (StatusException $failure) {
             $this->publicAttemptAt = $nowMs + self::FIRST_SNAPSHOT_RETRY_INTERVAL_MS;
             $this->reportPublicFailure($failure);
+            $this->finishPublicCommand(null, 'Status publication is unavailable. Try again shortly.');
         }
         return $receipt;
     }
@@ -1763,6 +1939,7 @@ final class StatusAgent extends AbstractHilosAgent
             $this->publicPollIntervalSeconds, $this->publicStaleAfterSeconds,
             $components, [], $this->publicArchive?->outages ?? [],
             $this->publicArchive?->scheduledWorks ?? [], $this->publicArchive?->maintenancePeriods ?? [],
+            silencePeriods: $this->publicArchive?->silencePeriods ?? [],
         ));
     }
 

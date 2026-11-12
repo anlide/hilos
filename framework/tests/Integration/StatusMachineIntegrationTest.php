@@ -29,18 +29,23 @@ use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceOwner;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Collection\StatusMaintenancePeriodsActions;
+use Hilos\Database\Actions\Collection\StatusSilencePeriodsActions;
 use Hilos\Database\Actions\Collection\StatusWorkComponentsActions;
 use Hilos\Database\Actions\Collection\StatusWorksActions;
 use Hilos\Database\Actions\Item\StatusMaintenancePeriodActions;
+use Hilos\Database\Actions\Item\StatusSilencePeriodActions;
 use Hilos\Database\Actions\Item\StatusWorkActions;
 use Hilos\Database\Actions\Item\StatusWorkComponentActions;
 use Hilos\Database\Entity\Item\StatusMaintenancePeriod as EntityStatusMaintenancePeriod;
+use Hilos\Database\Entity\Item\StatusSilencePeriod as EntityStatusSilencePeriod;
 use Hilos\Database\Entity\Item\StatusWork as EntityStatusWork;
 use Hilos\Database\Entity\Item\StatusWorkComponent as EntityStatusWorkComponent;
 use Hilos\Database\Object\Collection\StatusMaintenancePeriods as ObjectStatusMaintenancePeriods;
+use Hilos\Database\Object\Collection\StatusSilencePeriods as ObjectStatusSilencePeriods;
 use Hilos\Database\Object\Collection\StatusWorkComponents as ObjectStatusWorkComponents;
 use Hilos\Database\Object\Collection\StatusWorks as ObjectStatusWorks;
 use Hilos\Database\View\Collection\StatusMaintenancePeriods;
+use Hilos\Database\View\Collection\StatusSilencePeriods;
 use Hilos\Database\View\Collection\StatusWorkComponents;
 use Hilos\Database\View\Collection\StatusWorks;
 use Hilos\Database\Actions\Collection\StatusIncidentsActions;
@@ -841,7 +846,8 @@ abstract class StatusStorageIntegrationTestCase extends FrameworkRollbackIntegra
         parent::prepareIntegrationEnvironment();
         $this->publicVolume = new StatusPublicVolume();
         foreach ([EntityStatusIncident::_table, EntityStatusIncidentUpdate::_table,
-            EntityStatusWork::_table, EntityStatusWorkComponent::_table, EntityStatusMaintenancePeriod::_table] as $table) {
+            EntityStatusWork::_table, EntityStatusWorkComponent::_table, EntityStatusMaintenancePeriod::_table,
+            EntityStatusSilencePeriod::_table] as $table) {
             Database::sqlRun(file_get_contents(dirname(__DIR__, 2) . '/backend/Database/Migration/Stub/create_' . $table . '.sql'));
             $this->statusTables[] = $table;
         }
@@ -1040,6 +1046,9 @@ final class StatusStorageDbContext extends HilosDbContext
         $this->_objectCollections[self::statusMaintenancePeriods] = ObjectStatusMaintenancePeriods::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::statusMaintenancePeriods, StatusMaintenancePeriods::class,
             StatusMaintenancePeriodsActions::class, StatusMaintenancePeriodActions::class);
+        $this->_objectCollections[self::statusSilencePeriods] = ObjectStatusSilencePeriods::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::statusSilencePeriods, StatusSilencePeriods::class,
+            StatusSilencePeriodsActions::class, StatusSilencePeriodActions::class);
     }
 }
 
@@ -1062,6 +1071,7 @@ final class StatusStorageFixtureOwner implements TruthSourceOwner
         HilosDbContext::statusWorks => [TruthSourceOperation::Add, TruthSourceOperation::Update],
         HilosDbContext::statusWorkComponents => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
         HilosDbContext::statusMaintenancePeriods => [TruthSourceOperation::Add, TruthSourceOperation::Update],
+        HilosDbContext::statusSilencePeriods => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
         HilosDbContext::statusIncidents => [TruthSourceOperation::Add, TruthSourceOperation::Update],
         HilosDbContext::statusIncidentUpdates => [TruthSourceOperation::Add],
     ];

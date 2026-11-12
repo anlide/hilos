@@ -14,7 +14,7 @@ export function statusFile(
   overrides: Partial<PublicStatusFile> = {},
 ): PublicStatusFile {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 'opaque/revision',
     generatedAt: NOW - 5000,
     config: { pollIntervalSeconds: 30, staleAfterSeconds: 120 },
@@ -30,7 +30,27 @@ export function statusFile(
     outages: [],
     scheduledWorks: [],
     maintenancePeriods: [],
+    silencePeriods: [],
     ...overrides,
+  }
+}
+
+/** A literal legacy file, without the v3-only list. */
+export function legacyStatusFile(
+  schemaVersion: 1 | 2,
+  overrides: Partial<PublicStatusFile> = {},
+): PublicStatusFile {
+  const status = statusFile(overrides)
+  return {
+    schemaVersion,
+    revision: status.revision,
+    generatedAt: status.generatedAt,
+    config: status.config,
+    components: status.components,
+    candidates: status.candidates,
+    outages: status.outages,
+    scheduledWorks: status.scheduledWorks,
+    maintenancePeriods: status.maintenancePeriods,
   }
 }
 
@@ -38,7 +58,7 @@ export function heartbeat(
   overrides: Partial<PublicStatusHeartbeat> = {},
 ): PublicStatusHeartbeat {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 'opaque/revision',
     aliveAt: NOW,
     ...overrides,

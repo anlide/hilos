@@ -1091,32 +1091,34 @@ The general registration, cluster marker and shared-volume rules are in
 [filesystem.md](filesystem.md).
 
 `StatusPublicSnapshotBuilder` reads the typed `StatusSnapshot`, published
-incident history and its timelines, upcoming work and retained maintenance
-periods in bounded portions. It retains only detached public values, never DB
-or RT objects. `StatusPublicFiles` serializes a bounded fragment/byte portion
-per owner pass and uses `FsPath::publish()` to atomically install each complete
-file from a temporary file on the same volume. It restores one coherent pair
-at owner start; an absent, malformed or revision-mismatched pair does not
-replace the last known archive. Publish whole `status.json`, then whole
-`heartbeat.json` with the same revision, then the change hint. A heartbeat-only
-pass updates `aliveAt` with the last successful content revision and then sends
-the hint. A failed build or write is retried without advancing the heartbeat or
-sending a success hint; if the files temporarily disagree, the reader accepts
-neither revision-mixed pair.
+incident history and its timelines, upcoming work, retained maintenance
+periods and closed silence history in bounded portions. It retains only
+detached public values, never DB or RT objects. `StatusPublicFiles` serializes a
+bounded fragment/byte portion per owner pass and uses `FsPath::publish()` to
+atomically install each complete file from a temporary file on the same volume.
+It restores one coherent pair at owner start; an absent, malformed or
+revision-mismatched pair does not replace the last known archive. Publish whole
+`status.json`, then whole `heartbeat.json` with the same revision, then the
+change hint. A heartbeat-only pass updates `aliveAt` with the last successful
+content revision and then sends the hint. A failed build or write is retried
+without advancing the heartbeat or sending a success hint; if the files
+temporarily disagree, the reader accepts neither revision-mixed pair.
 
-### Public JSON v2
+### Public JSON v3
 
 These are JSON shape declarations, not PHP/TS implementation types. All keys
 are present: nullable fields serialize as `null`, lists as `[]` when empty.
-Every moment — including `at`, `startsAt` and `endsAt` — is an integer of epoch
-milliseconds UTC, following [A Moment On The Wire](time-zones.md#a-moment-on-the-wire).
-Every public `id`, including a `workId`, is opaque and never a DB integer id.
+Existing moments — including `at`, `startsAt` and `endsAt` — remain integer
+epoch milliseconds UTC under [A Moment On The Wire](time-zones.md#a-moment-on-the-wire).
+The new silence bounds are also epoch milliseconds UTC, but signed so a proven
+start before 1970 is retained. All prior moment constraints remain unchanged.
+Every public `id`, including `workId`, is opaque and never a DB integer id.
 The content `revision` is opaque and has no node id or term; the heartbeat
 repeats the last successfully published `status.json` revision.
 
 ```text
 status.json = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   revision: string,
   generatedAt: int,
   config: {pollIntervalSeconds: int, staleAfterSeconds: int},
@@ -1124,9 +1126,10 @@ status.json = {
   candidates: Candidate[],
   outages: Outage[],
   scheduledWorks: Work[],
-  maintenancePeriods: MaintenancePeriod[]
+  maintenancePeriods: MaintenancePeriod[],
+  silencePeriods: SilencePeriod[]
 }
-heartbeat.json = {schemaVersion: 2, revision: string, aliveAt: int}
+heartbeat.json = {schemaVersion: 3, revision: string, aliveAt: int}
 
 Component = {
   componentKey: string, name: string, description: ?string,
@@ -1149,15 +1152,86 @@ MaintenancePeriod = {
   title: string, componentKeys: list<string>, startedAt: int,
   lastObservedAt: int, endedAt: ?int, completionObservedAt: ?int
 }
+SilencePeriod = {id: string, startedAt: int, endedAt: int}
 ```
 
-The writer emits schema version 2 in both files. The strict reader and restore
-also accept the actual earlier v1 shape, whose `scheduledWorks` and
-`maintenancePeriods` were both empty, and preserve its outage archive. A v1
-file with nonempty maintenance lists is not supported. Restore normalizes a
-coherent v1 pair into the v2 writer; it does not discard accepted outage
-history. Both versions keep the same two addresses, matching-revision pair,
-heartbeat, freshness threshold and change hint.
+Only closed silence periods appear in v3. Their bounds form a half-open
+interval, require `endedAt > startedAt`, and use unique opaque IDs in stable
+`(startedAt, id)` order. The 90-day public window includes periods that
+intersect it; a long period keeps its original `startedAt` rather than being
+clipped to the window. No internal row id, node, PID or reason is published.
+`heartbeat.json` keeps exactly its existing three keys.
+
+The writer always emits schema version 3 in both files. PHP recovery and the
+TypeScript reader accept versions 1, 2 and 3; a pair is accepted only when both
+files have the same supported version and revision. The actual earlier v1 shape
+still requires empty `scheduledWorks` and `maintenancePeriods`; nonempty lists
+remain unsupported. V2 has no `silencePeriods`. Their other shape and moment
+limits remain as before; this is not a migration of older Status moments.
+For both v1 and v2, the reader supplies an empty silence-period list.
+Before a readable v1 or v2 pair can be followed by a v3 heartbeat, the owner
+publishes a complete matching v3 pair. Accepted outage fields remain in the
+public shape through that upgrade.
+
+### Closed Publication Gaps
+
+Before every proposed heartbeat, the owner compares its time with the `aliveAt`
+of the last successful heartbeat. A gap qualifies only when
+`now - aliveAt > staleAfterSeconds * 1000`, including before a heartbeat-only
+update and for a live owner, a cold restart or a new owner. Its start is that
+last successful `aliveAt`; a fresh shared heartbeat after an owner change is
+not a new gap. A shorter gap is not retained, and a failed write, attempt time
+or `generatedAt` is not evidence of new liveness. Without either a trusted
+prior `aliveAt` or a validated unfinished observation, no start is inferred.
+
+The owner durably saves a qualified open observation before publishing a fresh
+heartbeat. If that private save fails, the heartbeat stays blocked. The end is
+the `aliveAt` receipt of the first newly published coherent pair. The owner
+reserves and fills that end in the final bounded status serialization pass;
+the archive is not serialized in one pass. If `status.json` installs but the
+heartbeat write fails, retry rebuilds the closing end from that retry's time
+before trying the heartbeat again. Only a successful receipt makes the closed
+period the published snapshot. The owner then saves the closed transit; after a
+crash between receipt and that save, recovery closes the matching private ID
+from the same coherent public pair. Existing limits remain 64 fragments and
+64 KiB per serialization pass. Private transit discovery visits at most 32
+directory entries per pass, and owner import handles at most 32 closed
+observations per pass. Recovery is detached work and does no DB work under
+freeze.
+
+The durable archive is `Hilos::$db->statusSilencePeriods`, mounted only when
+Status is active with `Objects::LAZY_STRATEGY_KEY` and owned by `StatusAgent`
+for collection `Add` and `Remove`.
+Its primary table `hilos_status_silence_period` has `id BIGINT UNSIGNED`,
+`public_id CHAR(32)`, `started_at BIGINT` and `ended_at BIGINT`, all not null;
+the two moment columns are signed epoch milliseconds with no SQL clock
+defaults. `id` is the auto-increment primary key, `public_id` is unique,
+`(ended_at, id)` is indexed, and `ended_at > started_at` is checked. The public
+ID is a secure opaque 16-byte hex value. Importing that ID with identical
+bounds returns the existing row; different bounds for the same ID are refused.
+The entity is not journaled, and all four columns are classified as non-personal.
+The working archive is append-only and is not deleted at 90 days: that limit
+applies only to public projection. Exact test cleanup is the only removal and
+deletes through the known item's actions in its own transaction.
+
+Open and not-yet-imported closed observations use private transit on the same
+cluster Status volume at `silence-observations/<publicId>.json`, with shape
+`{formatVersion: 1, period: {id, startedAt, endedAt}}`; its moments are signed
+epoch milliseconds and `endedAt` is `null` only while the new coherent pair has
+not succeeded. The directory is mode 0700 and files are mode 0600; reads are
+capped at 1024 bytes. Writes use a same-volume temporary file and atomic
+publish. Symlinks and malformed or unreadable records are not trusted. A damaged
+or inaccessible record is logged and retried in bounded recovery without
+inventing a boundary or ID. Nginx does not serve this transit.
+
+A full database backup carries the closed rows. After rehydrate makes the
+restored database readable, the public archive is rebuilt from that database
+and valid closed transit that has not yet been imported. A closed interval in
+the public copy never repopulates a row missing from a restored database, so
+already imported rows newer than the backup roll back with it. Backup time and
+`generatedAt` do not prove a gap start; a new machine without a prior heartbeat
+does not invent a multi-day gap. A hot restore need not stop the heartbeat.
+No backup or rehydrate protocol changes are part of this behavior.
 
 Apply these publication limits:
 
@@ -1241,36 +1315,34 @@ cadence (30 seconds), the stale limit that turns a silent publisher into “not
 responding” (120 seconds), and the scheduled start of an announced work. A spec
 does not wait one out, and no environment value or compose overlay shortens one
 ([Time-based features](../cli/commands.md#time-based-features-no-universal-clock));
-three test-only commands bring each to now (HIL-1856). They are `test:` commands
-that refuse on a production-like environment and on the command socket, and the
-CLI half only sends and prints
-([Status moment and settings write commands](../cli/commands.md#status-moment-and-settings-write-commands)).
-The Status owner (`HILOS_STATUS`, one per cluster) answers all three from
-`onSignalCommand()` and replies once on every path, because it alone publishes the
-public files and writes the announcements.
+the three moment commands bring them to now (HIL-1856). They are `test:` commands
+that refuse on a production-like environment and use the existing command
+channel. The CLI half only sends and prints; the Status owner (`HILOS_STATUS`, one
+per cluster) answers the moment commands and the separate exact-cleanup command
+from `onSignalCommand()`, because it owns publication and the archive. The owner
+answers every command path once; a deferred command keeps one correlation until
+a receipt or error. See [Status moment and settings write commands](../cli/commands.md#status-moment-and-settings-write-commands).
 
 - **`test:status:heartbeat:stale` ages the heartbeat.** It needs a coherent
   published pair and otherwise refuses with “No public Status pair is published
-  yet.” The owner atomically publishes `heartbeat.json` carrying the revision of
-  the last published pair and `aliveAt` = now − `staleAfterSeconds` × 1000 − 1000
-  ms, so a reader calls it stale on its first look. It sends
-  `status_files_changed` and **holds its own publication** — heartbeat and
-  `status.json` content — until `test:status:heartbeat:now` or its own restart.
-  Nothing else lifts the hold: a second `stale` and `test:status:work:start` leave
-  it in place. `status.json` is not touched. The reply is the published `aliveAt`.
-- **`test:status:heartbeat:now` releases the hold and beats at once.** The owner
-  lifts the hold, makes the heartbeat due and first does what the tick does before
-  its publication step: it reads the maintenance observation
-  (`advanceMaintenance()`) and the freeze (`refreshFreeze()`). A freeze that began
-  after the last tick is therefore what the pair shows, its period included, and
-  no database read starts under it. Then it runs the publication step the tick
-  runs (`advancePublic()`), so the heartbeat is published at now by the normal
-  path with its hint, and the next natural heartbeat follows a full interval
-  later. That step is the one that already runs under a freeze, and Status
-  is not among the agents a freeze stops, so the command works the same there (see
-  [Freeze And Disconnection](#freeze-and-disconnection)). When the step publishes
-  nothing it refuses with the same sentence as the stale command. The reply is the
-  published `aliveAt`.
+  yet.” The owner atomically publishes `heartbeat.json` with the last pair's
+  revision and `aliveAt` = now − `staleAfterSeconds` × 1000 − 1000 ms, sends
+  `status_files_changed`, and holds its publication until `now` or restart.
+  `status.json` is not touched. The reply is
+  `{aliveAt: int, silencePeriodId: string}`; repeating `stale` during the same
+  hold returns the same ID and original start. Starting work does not lift the
+  hold either.
+- **`test:status:heartbeat:now` releases the hold and resumes the ordinary
+  bounded publisher.** The owner makes a heartbeat due and advances the same
+  publication path as a normal tick, including its freeze-aware maintenance and
+  freeze checks. It does not loop synchronously while a full pair is being
+  built: it keeps at most one pending request and replies once after the actual
+  heartbeat receipt, or with a bounded error if publication fails, the owner
+  stops, or the deadline expires. The existing `statusMoments.mjs` helper keeps
+  its five-second command-channel budget. The command works under freeze because
+  the Status publisher can use its detached public values there without DB access.
+  Before any coherent pair exists, it still refuses with “No public Status pair is
+  published yet.” Its successful reply remains `{aliveAt: int}`.
 - **`test:status:work:start <publicId>` starts an announced work now.** In an
   ordinary work write — nothing under a freeze, the maintenance reconciliation
   first, one transaction, the item's own `change` action — the owner moves the
@@ -1289,6 +1361,34 @@ public files and writes the announcements.
   are unavailable. A blank public id is refused with “Name the maintenance
   announcement by its public id.” The reply is the public id, the new `startsAt`
   and the version.
+- **`test:status:silence:remove <publicId>` removes exactly one closed test
+  interval.** The request and successful reply carry `{publicId: string}`. The
+  CLI validates the positional ID and prints
+  `Removed closed Status silence period <publicId>` only after the owner has
+  published its absence. The owner refuses while freeze or DB access is
+  unavailable, while publication is held or another command is pending, while
+  recovery is incomplete, or while the named interval is still open. If closed
+  transit exists, the owner first imports the exact ID and bounds idempotently
+  and removes that transit; only then does it delete the known DB item through
+  its actions in a transaction. It then rebuilds the public projection and
+  answers after a successful receipt confirms the ID is absent. The command is
+  idempotent, test-only and declared in the owner's `AGENT_COMMANDS`; its
+  command-channel route is derived from that declaration, with no manual
+  `SignalRouter` entry. The CLI does no SQL or filesystem work, and no browser
+  hint is sent before the DB delete commits. No browser signal or DTO,
+  `page_response`, `AGENT_SIGNALS`, page route, RT field, public HTTP address,
+  environment key or timer is added.
+
+The stale command saves its open observation before replying, so a spec can
+register the exact `silencePeriodId` for cleanup. A spec releases the hold
+first, then uses its existing maintenance cleanup and lift path, waits for the
+owner to recover, and removes only that ID. The standalone stop/start journey
+keeps its existing start/release flow, then beats and removes its own ID. The shared e2e
+helpers are `staleStatusHeartbeat`, `beatStatusHeartbeat`,
+`removeStatusSilencePeriod` and `startStatusWork` in
+`framework/frontend/scripts/statusMoments.mjs`; they use the existing five-
+second command-channel budget. No spec waits for a production clock or shortens
+one through the stand.
 
 **Why the owner holds its publication after the stale command.** The next
 heartbeat is counted from the one last published, so without the hold the owner
@@ -1327,38 +1427,62 @@ follow-up read, and unmount aborts pending fetches and disposes both timers.
 
 A fresh heartbeat with a broken socket says **system is up**; it does not erase
 an outage or Maintenance in the projection. Age is measured against the
-reader's current clock, even with a live socket. Once `aliveAt` is older than
-`staleAfterSeconds` (default 120 seconds), say **not responding since**
-`<aliveAt>` and show components as Unknown. Stale operational data is not proof
-of current health. Empty, malformed or missing files do not replace the last
-accepted pair; retain its history while its heartbeat is fresh, then show the
-stale verdict. Staleness maps current components to Unknown and hides the
-current Checking list, while retaining accepted outages, scheduled facts and
-completed history. An accepted active maintenance period remains visible as a
-retained observation with `confirmedCurrent: false`; it is not evidence that
-the freeze is still active. Without any accepted pair, the banner and component
-knowledge are Unknown; never invent Operational.
+reader's current clock, even with a live socket. Once `now - aliveAt` is
+strictly greater than `staleAfterSeconds * 1000` (default 120 seconds), say
+**not responding since** `<aliveAt>` and show current components as Unknown.
+Stale operational data is not proof of current health. Empty, malformed,
+missing or temporarily unreadable files do not replace the last accepted
+coherent pair; retain it and continue aging its accepted heartbeat. Staleness
+hides the current Checking list while retaining accepted outages, scheduled
+facts and completed history. An accepted active maintenance period remains
+visible as a retained observation with `confirmedCurrent: false`; it is not
+evidence that the freeze is still active. Without any accepted pair, the banner
+and component knowledge are Unknown; never invent Operational. After a
+successful recovery pair, current states return to the ordinary projection,
+while the newly closed silence period remains in the 90-day public projection.
 
 The public surface shows an overall banner, component states, Checking
 candidates, published open outages and their timelines, unused announcements
 whose scheduled windows have not ended, active maintenance observations, and
 completed outage and maintenance history. A window remains an announcement
 after its scheduled start while it remains unexpired; the actual period begins
-only when protected mode starts and consumes it. Under a fresh
-pair, the banner gives known maintenance
-priority, then Major outage, Partial outage and Checking; Operational requires
-every component to be operational. Staleness overrides the current verdict
-with “not responding”. The 90-day calendar uses published outage intervals and
-observed maintenance only through `lastObservedAt`; the narrow strip is its
-last 30 days. Each day shows its worst published fact; candidates do not color
-days or enter history. Completed maintenance with an unknown end reports its
-completion observation moment and does not invent an exact duration or paint an
-unknown gap. Public “Completed” history is the reader's projection, not the
-separate admin History page. Show no SLA percentage. Use the shared time
-mechanism for calendar boundaries and the core formatter in the reader's zone,
-including the browser's zone for a guest; do not reproduce the mockup's UTC
-screen labels (D-248). The [time-zone canon](time-zones.md) owns zone selection
-and formatting, including recipient-zone mail.
+only when protected mode starts and consumes it. Under a fresh pair, the banner
+gives known maintenance priority, then Major outage, Partial outage and
+Checking; Operational requires every component to be operational. Staleness
+overrides the current verdict with “not responding”.
+
+The 90-day calendar subtracts the union of closed silence periods and a current
+`[aliveAt, now)` silence, which the reader calculates locally only after the
+strict stale threshold. Reader-zone calendar days use the shared calendar
+boundaries, including DST. For each elapsed part of a day,
+it removes that union from overlapping published outage and actual maintenance
+intervals before selecting the day's worst known event. A half-open interval
+ending at midnight does not color the next day; a long silence is not clipped
+in the public file. An open outage does not make its silence interval known.
+`PublicStatusDay` keeps `state` as the worst known event outside silence and
+adds the independent `hasNoData` flag, which is true when any elapsed part of
+that reader-zone day intersects silence. `publicStatusDayStrips(status, days, now, heartbeat)`
+takes the accepted heartbeat as its required fourth argument, and
+`publicStatusDayLabel(day)` supplies the date and words shared by day controls
+and selected-day detail. Without silence, priority remains Major,
+Partial, Maintenance, then Operational. A day with `hasNoData` uses the shared,
+theme-aware gray No data treatment in all three SDKs; a known Major, Partial or
+Maintenance fact outside the gap gets a persistent marker, while Operational
+gets no marker. When a day has no known event outside silence, including a day
+containing only silence, it is No data with no green Operational marker. The
+shared day label and selected-day detail name both facts accessibly, for example
+“No data · Major outage
+recorded”; the state does not add No data to current `PublicStatusState` or the
+outage-severity scale. The wide strip covers 90 days and the narrow strip its
+last 30. Components, incident outcomes and `resolvedAt`, durations, archive
+cards and mail are unchanged. Completed maintenance with an unknown end reports
+its completion observation moment and does not invent an exact duration or
+paint an unknown gap. Public “Completed” history is the reader's projection,
+not the separate admin History page. Show no SLA percentage. Use the shared
+time mechanism for calendar boundaries and the core formatter in the reader's
+zone, including the browser's zone for a guest; do not reproduce the mockup's
+UTC screen labels (D-248). The [time-zone canon](time-zones.md) owns zone
+selection and formatting, including recipient-zone mail.
 
 ## Freeze And Disconnection
 
@@ -1403,17 +1527,17 @@ worker. This permits only the public projection and heartbeat work, with no new
 master I/O, child process or background process.
 
 In every occupied freeze phase, the Status owner publishes from its detached
-sanitized archive, current maintenance observation and the freeze fact. It does
-not read DB-backed Status data or settings, observe components, perform DB ORM
-actions or deliver subscriber or work mail. Its public files contain no
+sanitized archive, current maintenance observation, recovered silence transit
+and the freeze fact. It does not read DB-backed Status data or settings, observe
+components, perform DB ORM actions or deliver subscriber or work mail. Its public files contain no
 operation or phase, node/process/network details,
 agent type, internal error, subscriber address, token or session time zone.
 Entry abandons the owner's component baseline and partial public build; after
 lift it obtains a fresh Daemon picture and resumes only from permitted data.
-On a cold owner start it restores a revision-matched file pair and validated
-private maintenance transit. Without a valid public pair the reader begins
-Unknown. A known occupied freeze publishes Maintenance while retaining the
-restored sanitized archive and active observation; a missing or stale freeze
+On a cold owner start it restores a revision-matched file pair and validates
+private maintenance and silence transit. Without a valid public pair the reader
+begins Unknown. A known occupied freeze publishes Maintenance while retaining
+the restored sanitized archive and active observations; a missing or stale freeze
 runtime row publishes Unknown. Agents stopped by the freeze do not become
 outage facts. This is no exception for ordinary DB ORM writes.
 
@@ -1431,8 +1555,10 @@ current validation surfaces.
 | Framework activation, component catalog, status owner, DB/RT machine, candidate notices and typed admin read | `framework/backend/Status/`, `framework/tests/Unit/Status*Test.php`, `framework/tests/Integration/Status*Test.php` | Landed by HIL-1688 |
 | Admin Overview and Components pages, read-only viewport, gatekeeper actions, shared page head, Vue, React and Angular views | `framework/backend/Pages/Status/`, `framework/backend/Tables/Status/`, `framework/frontend/core/src/admin/status/`, `framework/frontend/vue/src/admin/status/`, `framework/frontend/react/src/admin/status/HilosStatusPage.tsx`, `HilosStatusIncidentModal.tsx`, `HilosStatusComponentsPage.tsx`, `framework/frontend/angular/src/admin/status/` | Landed by HIL-1689; React views landed with HIL-1695; Angular's five page views landed with HIL-1696 |
 | SDK packaging and lazy entrypoints | `framework/frontend/core/test/packaging/coreEntryPoints.test.ts`, `framework/frontend/core/test/bin/initialBundleBudget.test.mjs`, `framework/frontend/vue/test/packaging.smoke.mjs`, `framework/frontend/react/test/packaging.smoke.mjs`, `framework/frontend/react/package.json`, `framework/frontend/react/vite.config.ts`, `framework/frontend/angular/admin/status/`, `framework/frontend/angular/status/`, `framework/frontend/angular/test/packaging.smoke.mjs` | Core, Vue, React and Angular export `/admin/status` lazily and `/status` as a separate entry; eager base closures remain free of Status. |
-| Public files, bounded builder, heartbeat, hint and reader | `framework/backend/Status/StatusPublicSnapshotBuilder.php`, `framework/backend/Status/StatusPublicFiles.php`, `framework/tests/Unit/StatusPublicFilesTest.php`, `framework/tests/Integration/StatusPublicFilesIntegrationTest.php`; `framework/frontend/core/src/status/`, `framework/frontend/core/test/status/` | Landed by HIL-1690 |
-| Public route, Vue, React and Angular pages and standalone browser coverage | `framework/frontend/core/src/routing/hilosPages.ts`, `framework/frontend/core/src/routing/HilosRouter.ts`, `framework/frontend/core/src/routing/pageTitle.ts`; `framework/frontend/vue/src/public/HilosStatusPage.vue` and `framework/frontend/vue/src/public/HilosStatusPage.test.ts`; `framework/frontend/react/src/public/HilosStatusPage.tsx` and `framework/frontend/react/test/HilosPublicStatusPage.test.tsx`; `framework/frontend/angular/src/public/HilosStatusPage.ts`, `framework/frontend/angular/test/HilosPublicStatusPage.test.ts`; `demo/binance-btc-tracker/tests/e2e/tests/status.spec.ts` and `demo/binance-btc-tracker/tests/e2e/tests/a11y.spec.ts`; `demo/ecommerce-shop/tests/e2e/tests/status.spec.ts` and `demo/ecommerce-shop/tests/e2e/tests/a11y.spec.ts`; `demo/tasks/tests/e2e/tests/smoke.spec.ts` and `demo/tasks/tests/e2e/tests/a11y.spec.ts` | Core route and Vue, React and Angular readers are built; Polls and OnlineTesting mount the Angular public reader. |
+| Public files, bounded builder, heartbeat, hint and reader | `framework/backend/Status/StatusPublicSnapshotBuilder.php`, `framework/backend/Status/StatusPublicFiles.php`, `framework/tests/Unit/StatusPublicFilesTest.php`, `framework/tests/Integration/StatusPublicFilesIntegrationTest.php`; `framework/frontend/core/src/status/`, `framework/frontend/core/test/status/` | The original public pair landed by HIL-1690; its v3 silence archive and current-gap derivation landed in HIL-1886. |
+| Closed silence archive, private recovery transit and test cleanup | `framework/backend/Status/StatusPublicSilencePeriod.php`, `StatusSilenceObservation.php`, `StatusSilenceObservationStore.php`, `StatusAgent.php`; `framework/backend/Database/Entity/Item/StatusSilencePeriod.php`, `framework/backend/Database/Actions/Collection/StatusSilencePeriodsActions.php`, `framework/backend/Database/View/Collection/StatusSilencePeriods.php`, `framework/backend/Database/Migration/Change/20261105060052889668_HIL-1886_status_silence_period/`; `framework/backend/Core/CLI/Commands/StatusTestSilenceRemoveCommand.php`; `framework/tests/Unit/StatusSilenceObservationTest.php`, `StatusSilenceObservationStoreTest.php`, `StatusPublicFilesTest.php`; `framework/tests/Integration/StatusSilenceSchemaIntegrationTest.php`, `StatusSilenceStorageIntegrationTest.php`, `StatusSilencePeriodsIntegrationTest.php`, `StatusPublicFilesIntegrationTest.php`, `StatusTestCommandsIntegrationTest.php` | Implemented by HIL-1886. The DB archive is durable; public output retains only its 90-day projection, and exact cleanup stays on the existing command channel. |
+| Two-fact public calendar | `framework/frontend/core/src/status/statusFiles.ts`, `derivedStatus.ts`; `framework/frontend/vue/src/public/HilosStatusPage.vue`, `framework/frontend/react/src/public/HilosStatusPage.tsx`, `framework/frontend/angular/src/public/HilosStatusPage.ts`; `framework/frontend/core/test/status/statusFiles.test.ts`, `derivedStatus.test.ts`, `publicStatus.test.ts`; the three SDK public-page tests | Implemented by HIL-1886. The calendar preserves No data and the worst known event as separate facts, with no independent cluster or failover proof claimed. |
+| Public route, Vue, React and Angular pages and standalone browser coverage | `framework/frontend/core/src/routing/hilosPages.ts`, `framework/frontend/core/src/routing/HilosRouter.ts`, `framework/frontend/core/src/routing/pageTitle.ts`; `framework/frontend/e2e/publicStatus.ts`, `framework/frontend/e2e/test/publicStatus.test.ts`; `framework/frontend/vue/src/public/HilosStatusPage.vue` and `framework/frontend/vue/src/public/HilosStatusPage.test.ts`; `framework/frontend/react/src/public/HilosStatusPage.tsx` and `framework/frontend/react/test/HilosPublicStatusPage.test.tsx`; `framework/frontend/angular/src/public/HilosStatusPage.ts`, `framework/frontend/angular/test/HilosPublicStatusPage.test.ts`; `demo/binance-btc-tracker/tests/e2e/tests/status.spec.ts`, `demo/binance-btc-tracker/tests/e2e/standalone/loss.spec.ts`, and `demo/binance-btc-tracker/tests/e2e/tests/a11y.spec.ts`; `demo/ecommerce-shop/tests/e2e/tests/status.spec.ts` and `demo/ecommerce-shop/tests/e2e/tests/a11y.spec.ts`; `demo/tasks/tests/e2e/tests/smoke.spec.ts` and `demo/tasks/tests/e2e/tests/a11y.spec.ts` | Core route and Vue, React and Angular readers are built; the two Binance journeys cover silence identity/bounds and warm/cold reading, not cluster failover. Polls and OnlineTesting mount the Angular public reader. |
 | Guest subscriptions, primary storage, links and mail | `framework/backend/Status/StatusAgent.php`, `framework/backend/Status/StatusSubscriptionLink.php`, `framework/backend/Status/StatusSubscriberMailTask.php`, `framework/backend/Database/Entity/Item/StatusSubscriber.php`, `framework/backend/Database/Actions/Collection/StatusSubscribersActions.php`, `framework/backend/Database/Actions/Item/StatusSubscriberActions.php`, `framework/backend/Mail/Template/Status*MailTemplate.php`; `framework/tests/Unit/StatusGuestActionDTOTest.php`, `StatusSubscriptionLinkTest.php`, `StatusMailTemplatesTest.php`; `framework/tests/Integration/StatusSubscriberSchemaIntegrationTest.php`, `StatusSubscriberStorageIntegrationTest.php`, `StatusSubscriptionIntegrationTest.php`, `StatusSubscriberMailIntegrationTest.php` | Landed by HIL-1691; storage, guest actions and best-effort mail are documented above |
 | Subscribers admin viewport and public subscription controller | `framework/backend/Pages/Status/AbstractHilosStatusSubscribersPage.php`, `framework/backend/Tables/Status/HilosStatusSubscribersTable.php`; `framework/frontend/core/src/admin/status/hilosStatusSubscribers.ts`, `framework/frontend/core/src/status/statusSubscription.ts`, `framework/frontend/vue/src/admin/status/HilosStatusSubscribersPage.vue`, `framework/frontend/vue/src/public/HilosStatusSubscriptionModal.vue`, `framework/frontend/react/src/admin/status/HilosStatusSubscribersPage.tsx`, `HilosStatusRemoveSubscriberModal.tsx`, `framework/frontend/react/src/public/HilosStatusSubscriptionModal.tsx`; `framework/tests/Unit/StatusSubscriberTableTest.php`, `StatusSubscriberAdminIntegrationTest.php`; `framework/frontend/core/test/admin/status/hilosStatusSubscribers.test.ts`, `framework/frontend/vue/src/admin/status/HilosStatusSubscribersPage.test.ts`, `framework/frontend/react/test/HilosStatusSubscribersPage.test.tsx`, `HilosStatusRemoveSubscriberModal.test.tsx`, `HilosStatusSubscriptionModal.test.tsx`; `demo/chat/tests/e2e/tests/status-subscribers.spec.ts`, `demo/binance-btc-tracker/tests/e2e/tests/status-subscriptions.spec.ts`, `demo/ecommerce-shop/tests/e2e/tests/status-subscriptions.spec.ts`; `framework/frontend/e2e/statusSubscriptions.ts` | Landed by HIL-1691; Chat and Binance carry the built Vue pages, Tasks and Ecommerce Shop the React pages built by HIL-1695; Polls and OnlineTesting mount the Angular pages built by HIL-1696. |
 | Email throttle scope and per-parking-agent verdict route | `framework/backend/Auth/Throttle/ThrottleEmailIdentityInterface.php`, `ThrottleIdentity.php`, `ThrottleVerdictRoute.php`, `framework/backend/Status/StatusAgent.php`, `framework/backend/Core/Topology/TopologyValidator.php`, `framework/backend/Core/Page/PageSignalRouter.php`; `framework/tests/Unit/ThrottleVerdictRouteTest.php`, `StatusThrottleVerdictRoutingTest.php`, `TopologyValidatorTest.php`, `PageSignalRouterThrottlePoolTest.php`; `framework/tests/Integration/AuthThrottleIntegrationTest.php`, `StatusSubscriptionIntegrationTest.php` | Landed by HIL-1691; the ordinary auth verdict remains on its existing host |
@@ -1482,7 +1608,7 @@ Status checks are split across these existing layers:
   `PageSignalRouterThrottlePoolTest.php` and
   `AuthThrottleIntegrationTest.php`.
 - Core file parsing, pair coherence, freshness, hint/poll lifecycle, calendar
-  time zone, v2 maintenance derivation and the Works table controller are covered by
+  time zone, v3 silence and two-fact day derivation, and the Works table controller are covered by
   `framework/frontend/core/test/status/statusFiles.test.ts`,
   `publicStatus.test.ts` and `derivedStatus.test.ts`. The subscription and
   subscriber and Works table controllers are covered by `statusSubscription.test.ts`,
@@ -1494,6 +1620,8 @@ Status checks are split across these existing layers:
   Subscribers, Works and History pages, work modal and Overview tests under
   `framework/frontend/vue/src/`. History row rendering and the Overview count
   are covered by `HilosStatusHistoryPage.test.ts` and `HilosStatusPage.test.ts`.
+  The public strip's No data state, persistent known-event marker and shared
+  day label are covered by `framework/frontend/vue/src/public/HilosStatusPage.test.ts`.
   The router's fragment-only history behavior is covered by
   `framework/frontend/core/test/routing/HilosRouter.test.ts`.
 - React rendering is covered under `framework/frontend/react/test/` by
@@ -1506,6 +1634,9 @@ Status checks are split across these existing layers:
   `HilosView.test.tsx` and `HilosMaintenance.test.tsx`, the focus kept when a
   conflict resolves by `ConflictActions.test.tsx`, and the published exports by
   `framework/frontend/react/test/packaging.smoke.mjs`.
+  The public-page test covers the No data state, known-event marker and selected-day label.
+- Angular public rendering, including the same No data, event-marker and day-label contract,
+  is covered by `framework/frontend/angular/test/HilosPublicStatusPage.test.ts`.
 - Real browser and Mailpit coverage is carried by
   `demo/chat/tests/e2e/tests/status-subscribers.spec.ts`,
   `demo/binance-btc-tracker/tests/e2e/tests/status-subscriptions.spec.ts`,
@@ -1516,13 +1647,23 @@ Status checks are split across these existing layers:
   `tests/e2e/tests/a11y.spec.ts` of Chat, Binance BTC Tracker, Tasks and
   Ecommerce Shop. These specs use light color scheme and desktop Chrome; they do
   not claim dark-theme or narrow-viewport E2E coverage.
-- The three Status test-only commands ([Test-only moments](#test-only-moments))
+- The existing Binance `demo/binance-btc-tracker/tests/e2e/tests/status.spec.ts`
+  active-freeze journey and `demo/binance-btc-tracker/tests/e2e/standalone/loss.spec.ts`
+  stop/cold-recovery journey assert the owned silence ID, exact published bounds, and
+  retention for their warm and cold readers. They are not live-cluster or failover proof.
+  Visual acceptance in both themes and at narrow widths remains manual; these automated
+  checks do not claim color acceptance.
+- The four Status test-only commands (three moment commands plus exact cleanup;
+  [Test-only moments](#test-only-moments))
   are covered on the CLI side by
   `framework/tests/Unit/Core/CLI/Commands/StatusTestHeartbeatStaleCommandTest.php`,
-  `StatusTestHeartbeatNowCommandTest.php` and `StatusTestWorkStartCommandTest.php`,
-  on the publisher side (an aged heartbeat, a heartbeat made due) by
-  `framework/tests/Unit/StatusPublicFilesTest.php`, and on the owner side — the
-  hold, the release under a freeze, the moved start without mail, the refusals — by
+  `StatusTestHeartbeatNowCommandTest.php`, `StatusTestWorkStartCommandTest.php` and
+  `StatusTestSilenceRemoveCommandTest.php`; `framework/frontend/e2e/test/statusMoments.test.ts`
+  covers helper names, owned IDs and the five-second budget. The publisher and archive are
+  covered by `framework/tests/Unit/StatusPublicFilesTest.php`,
+  `framework/tests/Integration/StatusSilenceStorageIntegrationTest.php` (committed rows),
+  and `StatusPublicFilesIntegrationTest.php` (rollback-scoped publication). Owner command
+  behavior, including deferred receipt, exact removal, freeze and refusals, is covered by
   `framework/tests/Integration/StatusTestCommandsIntegrationTest.php`.
 - The Status e2e specs run on the production clock: a poll every 30 seconds, a
   stale limit of 120 seconds, a heartbeat every 30 seconds. No environment value
@@ -1531,8 +1672,9 @@ Status checks are split across these existing layers:
   each moment to now by command: `status.spec.ts` ages and beats the heartbeat,
   `status-works.spec.ts` starts an announced work, and the standalone
   `loss.spec.ts` ages the heartbeat before the full daemon stop, so nginx serves
-  the aged pair and the stale verdict needs no real minutes. A spec that ages the
-  heartbeat beats it again in its `finally`. The timeout budget in `status.config.ts`
+  the aged pair and the stale verdict needs no real minutes. A spec registers its returned
+  silence ID for owned cleanup, releases the hold, performs the existing maintenance or
+  stop/start cleanup, and removes only that closed period. The timeout budget in `status.config.ts`
   is the convergence of the Daemon picture alone; it carries no term for the poll
   interval.
 

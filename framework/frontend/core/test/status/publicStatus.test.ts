@@ -16,6 +16,7 @@ import {
 import {
   deferred,
   heartbeat,
+  legacyStatusFile,
   maintenance,
   NOW,
   outage,
@@ -355,6 +356,51 @@ describe('freshness and truthful current state', () => {
     expect(h.reader.dayStrips.get()[0]?.days.at(-1)?.state).toBe('major_outage')
   })
 
+  it('retains accepted history and stays stale when a fresh coherent pair has a malformed silence id', async () => {
+    const h = mount(true)
+    h.publish(
+      statusFile({
+        silencePeriods: [
+          {
+            id: '0123456789abcdef0123456789abcdef',
+            startedAt: NOW - 20000,
+            endedAt: NOW - 10000,
+          },
+        ],
+        outages: [outage({ detectedAt: NOW - 30000, resolvedAt: NOW - 25000 })],
+      }),
+    )
+    await h.start()
+    const accepted = h.reader.projection.get()
+    await vi.advanceTimersByTimeAsync(120001)
+    h.publish(
+      statusFile({
+        revision: 'malformed pair',
+        generatedAt: Date.now(),
+        silencePeriods: [{ id: 'opaque gap', startedAt: 0, endedAt: 10 }],
+      }),
+      heartbeat({ revision: 'malformed pair', aliveAt: Date.now() }),
+    )
+    h.hint()
+    await settle()
+    expect(h.reader.projection.get()).toBe(accepted)
+    expect(h.reader.freshness.get()).toEqual({
+      kind: 'stale',
+      aliveAt: NOW,
+      since: NOW,
+    })
+    expect(h.reader.banner.get().kind).toBe('not_responding')
+    expect(h.reader.components.get()[0]?.state).toBe('unknown')
+    expect(h.reader.history.get()).toMatchObject([
+      { kind: 'outage', id: 'arbitrary id', resolvedAt: NOW - 25000 },
+    ])
+    expect(h.reader.dayStrips.get()[0]?.days.at(-1)).toMatchObject({
+      state: 'major_outage',
+      hasNoData: true,
+    })
+    expect(h.fetchFile).toHaveBeenCalledTimes(4)
+  })
+
   it.each(['major_outage', 'maintenance'] as const)(
     'keeps %s and its facts beside the lost-connection explanation',
     async (state) => {
@@ -464,7 +510,13 @@ describe('maintenance signals on the existing public reader lifecycle', () => {
       },
     ])
     expect(h.reader.history.get()).toEqual([])
-    expect(h.reader.dayStrips.get()[0]?.days).toEqual(strip)
+    expect(h.reader.dayStrips.get()[0]?.days.slice(0, -1)).toEqual(
+      strip?.slice(0, -1),
+    )
+    expect(h.reader.dayStrips.get()[0]?.days.at(-1)).toEqual({
+      ...strip?.at(-1),
+      hasNoData: true,
+    })
     const completed = { ...active, completionObservedAt: Date.now() }
     h.fetchFile.mockImplementation(async (url) =>
       response(
@@ -534,7 +586,7 @@ describe('maintenance signals on the existing public reader lifecycle', () => {
   it('restores coherent v1 outage history without fabricating works or announcement knowledge', async () => {
     const h = mount()
     h.publish(
-      statusFile({ schemaVersion: 1, outages: [outage({ resolvedAt: NOW })] }),
+      legacyStatusFile(1, { outages: [outage({ resolvedAt: NOW })] }),
       heartbeat({ schemaVersion: 1 }),
     )
     await h.start()
@@ -620,6 +672,129 @@ describe('calendar dependencies without server events', () => {
     expect(h.reader.dayStrips.get()[0]?.days.at(-1)?.startTs).toBe(
       Date.parse('2026-12-31T08:00:00Z'),
     )
+    expect(h.fetchFile).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('live calendar silence', () => {
+  it('stales locally across midnight and recovers with the persisted closed day intact', async () => {
+    const aliveAt = Date.parse('2026-10-25T23:59:00Z')
+    vi.setSystemTime(aliveAt)
+    const h = mount(true)
+    cleanup.push(bindTimeZoneState(h.connection))
+    h.socket.push('handshake_response', {
+      entities: { currentUser: { id: 1, timeZone: 'UTC' } },
+    })
+    const facts = statusFile({
+      outages: [outage({ detectedAt: aliveAt - 1000, resolvedAt: aliveAt })],
+    })
+    h.publish(facts, heartbeat({ aliveAt }))
+    await h.start()
+    expect(h.reader.dayStrips.get()[0]?.days.at(-1)).toMatchObject({
+      state: 'major_outage',
+      hasNoData: false,
+    })
+    await vi.advanceTimersByTimeAsync(120000)
+    expect(h.reader.dayStrips.get()[0]?.days.at(-2)?.hasNoData).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(h.reader.dayStrips.get()[0]?.days.slice(-2)).toMatchObject([
+      { state: 'major_outage', hasNoData: true },
+      { state: 'operational', hasNoData: true },
+    ])
+    expect(h.fetchFile).toHaveBeenCalledTimes(2)
+    const recoveredAt = Date.now()
+    h.publish(
+      statusFile({
+        outages: facts.outages,
+        silencePeriods: [
+          {
+            id: '0123456789abcdef0123456789abcdef',
+            startedAt: aliveAt,
+            endedAt: recoveredAt,
+          },
+        ],
+      }),
+      heartbeat({ aliveAt: recoveredAt }),
+    )
+    h.hint()
+    await settle()
+    expect(h.reader.freshness.get().kind).toBe('fresh')
+    expect(h.reader.dayStrips.get()[0]?.days.slice(-2)).toMatchObject([
+      { state: 'major_outage', hasNoData: true },
+      { state: 'operational', hasNoData: true },
+    ])
+    expect(h.reader.history.get()).toMatchObject([
+      { resolvedAt: aliveAt, durationSeconds: 1 },
+    ])
+    expect(h.fetchFile).toHaveBeenCalledTimes(4)
+  })
+
+  it('keeps the last pair and its closed-gap history on a failed fetch without inventing new silence', async () => {
+    const h = mount(true)
+    h.publish(
+      statusFile({
+        silencePeriods: [
+          {
+            id: '0123456789abcdef0123456789abcdef',
+            startedAt: NOW - 20000,
+            endedAt: NOW - 10000,
+          },
+        ],
+        outages: [outage({ detectedAt: NOW - 30000, resolvedAt: NOW - 25000 })],
+      }),
+    )
+    await h.start()
+    const projection = h.reader.projection.get()
+    const history = h.reader.history.get()
+    const strip = h.reader.dayStrips.get()
+    h.fail()
+    h.hint()
+    await settle()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(h.reader.projection.get()).toBe(projection)
+    expect(h.reader.freshness.get()).toEqual({
+      kind: 'fresh',
+      aliveAt: NOW,
+      since: null,
+    })
+    expect(h.reader.history.get()).toEqual(history)
+    expect(h.reader.dayStrips.get()).toEqual(strip)
+    expect(h.fetchFile).toHaveBeenCalledTimes(4)
+  })
+
+  it('moves a live reader window at its local midnight, with no file hint or extra fetch', async () => {
+    const before = Date.parse('2026-10-25T23:59:59.500Z')
+    vi.setSystemTime(before)
+    const h = mount(true)
+    cleanup.push(bindTimeZoneState(h.connection))
+    h.socket.push('handshake_response', {
+      entities: { currentUser: { id: 1, timeZone: 'UTC' } },
+    })
+    h.publish(
+      statusFile({
+        silencePeriods: [
+          {
+            id: '0123456789abcdef0123456789abcdef',
+            startedAt: before - 1000,
+            endedAt: before - 500,
+          },
+        ],
+      }),
+      heartbeat({ aliveAt: before }),
+    )
+    await h.start()
+    expect(h.reader.dayStrips.get()[0]?.days.at(-1)).toMatchObject({
+      startTs: Date.parse('2026-10-25T00:00:00Z'),
+      hasNoData: true,
+    })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(h.reader.dayStrips.get()[0]?.days.at(-1)).toMatchObject({
+      startTs: Date.parse('2026-10-26T00:00:00Z'),
+      state: 'operational',
+      hasNoData: false,
+    })
+    expect(h.reader.dayStrips.get()[0]?.days.at(-2)?.hasNoData).toBe(true)
+    expect(h.reader.liveConnection.get()).toBe(true)
     expect(h.fetchFile).toHaveBeenCalledTimes(2)
   })
 })

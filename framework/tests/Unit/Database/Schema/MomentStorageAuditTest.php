@@ -8,6 +8,7 @@ use Hilos\AdminViewMode\AdminViewModeLatchTable;
 use Hilos\Database\DatabaseMarker;
 use Hilos\Database\Entity\Item\ChangeLogEntry;
 use Hilos\Database\Entity\Item\OAuthProvider;
+use Hilos\Database\Entity\Item\StatusSilencePeriod;
 use Hilos\Database\Entity\Item\User;
 use Hilos\Database\Exception\InvalidMomentDeclarationException;
 use Hilos\Database\MigrationClaim;
@@ -319,6 +320,35 @@ final class MomentStorageAuditTest extends TestCase
             $moments,
             [ChangeLogEntry::created_at => self::columnRow('timestamp(3)', 'current_timestamp(3)')],
         ));
+    }
+
+    /** Both closed-gap moments must reject unsigned storage through the actual framework Entity metadata. */
+    public function testStatusSilenceMomentsCannotEscapePhysicalStorageAudit(): void
+    {
+        $moments = MomentColumns::forEntity(StatusSilencePeriod::class);
+        $liveColumns = [
+            StatusSilencePeriod::started_at => self::columnRow('bigint'),
+            StatusSilencePeriod::ended_at => self::columnRow('bigint'),
+        ];
+        foreach ([StatusSilencePeriod::started_at, StatusSilencePeriod::ended_at] as $column) {
+            $invalidColumns = $liveColumns;
+            $invalidColumns[$column] = self::columnRow('bigint unsigned');
+            self::assertEquals([
+                new EntitySchemaMismatch(
+                    EntitySchemaAxis::MOMENT_TYPE,
+                    StatusSilencePeriod::class,
+                    StatusSilencePeriod::_table,
+                    $column,
+                    'signed BIGINT (epoch milliseconds)',
+                    'bigint unsigned',
+                ),
+            ], MomentStorageAudit::audit(StatusSilencePeriod::class, StatusSilencePeriod::_table, $moments, $invalidColumns));
+        }
+        self::assertSame([], MomentStorageAudit::audit(StatusSilencePeriod::class, StatusSilencePeriod::_table, $moments, $liveColumns));
+        self::assertEquals([
+            StatusSilencePeriod::started_at => new MomentColumn(StatusSilencePeriod::started_at, true, true),
+            StatusSilencePeriod::ended_at => new MomentColumn(StatusSilencePeriod::ended_at, true, true),
+        ], $moments);
     }
 
     /** Names, integer-looking values, dates and durations do not declare semantics. */

@@ -156,11 +156,16 @@ export function createPublicStatus(
     publicStatusHistory(projection.get(), days.get()),
   )
   const dayStrips = computedSignal(() => {
-    const status = projection.get()
+    const accepted = pair.get()
 
-    return status === null
+    return accepted === null
       ? []
-      : publicStatusDayStrips(status, days.get(), now.get())
+      : publicStatusDayStrips(
+          accepted.status,
+          days.get(),
+          now.get(),
+          accepted.heartbeat,
+        )
   })
 
   let started = false

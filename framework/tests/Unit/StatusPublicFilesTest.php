@@ -25,6 +25,9 @@ use Hilos\Status\StatusComponentState;
 use Hilos\Status\StatusPublicCandidate;
 use Hilos\Status\StatusPublicComponent;
 use Hilos\Status\StatusPublicFiles;
+use Hilos\Status\StatusPublicSilencePeriod;
+use Hilos\Status\StatusSilenceObservation;
+use Hilos\Status\StatusSilenceObservationStore;
 use Hilos\Status\StatusPublicHeartbeat;
 use Hilos\Status\StatusPublicOutage;
 use Hilos\Status\StatusPublicWork;
@@ -80,7 +83,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         }
     }
 
-    public function testLiteralV2KeepsCatalogOrderNullsAndOnlyCurrentChecking(): void
+    public function testLiteralV3KeepsCatalogOrderNullsAndOnlyCurrentChecking(): void
     {
         $this->observe('zeta', 0);
         $this->observe('alpha', 2);
@@ -89,7 +92,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         $snapshot = (new StatusPublicSnapshot('opaque-revision', 1700000000100, 30, 120, [], [], []))
             ->withCurrent(StatusSnapshot::read(), 'opaque-revision', 1700000000100);
         self::assertSame([
-            'schemaVersion' => 2,
+            'schemaVersion' => 3,
             'revision' => 'opaque-revision',
             'generatedAt' => 1700000000100,
             'config' => ['pollIntervalSeconds' => 30, 'staleAfterSeconds' => 120],
@@ -98,7 +101,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
                 ['componentKey' => 'alpha', 'name' => 'Alpha mail', 'description' => null, 'state' => 'operational'],
             ],
             'candidates' => [['componentKey' => 'zeta', 'detectedAt' => 1700000000000]],
-            'outages' => [], 'scheduledWorks' => [], 'maintenancePeriods' => [],
+            'outages' => [], 'scheduledWorks' => [], 'maintenancePeriods' => [], 'silencePeriods' => [],
         ], $snapshot->toArray());
         $candidate->detected_at = 1700000000999;
         self::assertSame(1700000000000, $snapshot->candidates[0]->detectedAt, 'No DB reference survives sanitization');
@@ -195,7 +198,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         self::assertNull($files->heartbeat(100000));
         self::assertNull($files->advance(100000));
         $receipt = $this->publish($files, $snapshot, 100000);
-        self::assertSame(['schemaVersion' => 2, 'revision' => 'first', 'aliveAt' => 100000], $receipt->toArray());
+        self::assertSame(['schemaVersion' => 3, 'revision' => 'first', 'aliveAt' => 100000], $receipt->toArray());
         self::assertSame($snapshot, $files->getSnapshot());
         self::assertSame($snapshot->toArray(), $this->readStatus());
         self::assertSame($receipt->toArray(), $this->readHeartbeat());
@@ -204,7 +207,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         $inode = fileinode($this->path . '/status-inode');
         self::assertNull($files->heartbeat(129999));
         $heartbeat = $files->heartbeat(130000);
-        self::assertSame(['schemaVersion' => 2, 'revision' => 'first', 'aliveAt' => 130000], $heartbeat->toArray());
+        self::assertSame(['schemaVersion' => 3, 'revision' => 'first', 'aliveAt' => 130000], $heartbeat->toArray());
         self::assertNull($files->heartbeat(130000));
         self::assertSame($statusBytes, Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read());
         clearstatcache();
@@ -219,9 +222,9 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         $files = new StatusPublicFiles();
         $this->publish($files, $snapshot, 0);
         self::assertSame([
-            'schemaVersion' => 2, 'revision' => 'empty', 'generatedAt' => 0,
+            'schemaVersion' => 3, 'revision' => 'empty', 'generatedAt' => 0,
             'config' => ['pollIntervalSeconds' => 30, 'staleAfterSeconds' => 120],
-            'components' => [], 'candidates' => [], 'outages' => [], 'scheduledWorks' => [], 'maintenancePeriods' => [],
+            'components' => [], 'candidates' => [], 'outages' => [], 'scheduledWorks' => [], 'maintenancePeriods' => [], 'silencePeriods' => [],
         ], $this->readStatus());
         self::assertSame($snapshot->toArray(), (new StatusPublicFiles())->restore()->toArray());
         self::assertSame(30000, $files->heartbeat(30000)->aliveAt);
@@ -254,10 +257,10 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         $this->publish($files, $this->publicSnapshot(), 200000);
         $statusBytes = Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read();
         $aged = $files->publishAgedHeartbeat(79000);
-        self::assertSame(['schemaVersion' => 2, 'revision' => 'first', 'aliveAt' => 79000], $aged->toArray());
+        self::assertSame(['schemaVersion' => 3, 'revision' => 'first', 'aliveAt' => 79000], $aged->toArray());
         self::assertSame($aged->toArray(), $this->readHeartbeat());
         self::assertSame($statusBytes, Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read());
-        self::assertSame(200000, $files->heartbeat(200000)->aliveAt, 'The ordinary cadence counts from the aged moment');
+        self::assertSame(109000, $files->heartbeat(109000)->aliveAt, 'The ordinary cadence counts from the aged moment');
     }
 
     public function testHeartbeatMadeDuePublishesAtOnceAndTheNextOneFollowsAFullInterval(): void
@@ -268,11 +271,11 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         $this->publish($files, $this->publicSnapshot(), 100000);
         self::assertNull($files->heartbeat(100001), 'A whole pair clears the due mark');
         $files->makeHeartbeatDue();
-        self::assertSame(['schemaVersion' => 2, 'revision' => 'first', 'aliveAt' => 100001], $files->heartbeat(100001)->toArray());
+        self::assertSame(['schemaVersion' => 3, 'revision' => 'first', 'aliveAt' => 100001], $files->heartbeat(100001)->toArray());
         self::assertNull($files->heartbeat(100001), 'The heartbeat it published spends the due mark');
         self::assertNull($files->heartbeat(130000));
         self::assertSame(130001, $files->heartbeat(130001)->aliveAt);
-        self::assertSame(['schemaVersion' => 2, 'revision' => 'first', 'aliveAt' => 130001], $this->readHeartbeat());
+        self::assertSame(['schemaVersion' => 3, 'revision' => 'first', 'aliveAt' => 130001], $this->readHeartbeat());
     }
 
     public function testFrozenOwnerAgesItsHeartbeatPastStaleHoldsEveryPublicationAndBeatsAgainWhenAsked(): void
@@ -297,7 +300,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
             $aged = $reply->payload[StatusTestCommandConstants::FIELD_ALIVE_AT];
             self::assertGreaterThanOrEqual($before - $staleMs, $aged);
             self::assertLessThanOrEqual($after - $staleMs, $aged);
-            self::assertSame(['schemaVersion' => 2, 'revision' => $first['revision'], 'aliveAt' => $aged], $this->readHeartbeat());
+            self::assertSame(['schemaVersion' => 3, 'revision' => $first['revision'], 'aliveAt' => $aged], $this->readHeartbeat());
             self::assertSame($first, $this->readStatus());
             $this->assertOneFilesHint($hints);
 
@@ -357,7 +360,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         self::assertNull($files->advance(1000));
         self::assertSame($statusBytes, Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read());
         self::assertSame($heartbeatBytes, Hilos::$fs->status[StatusPublicFiles::HEARTBEAT_FILENAME]->read());
-        self::assertSame('first', $files->heartbeat(999999)->revision, 'Private staging keeps the preceding coherent pair alive');
+        self::assertSame('first', $files->heartbeat(31000)->revision, 'Private staging keeps the preceding coherent pair alive');
         $temps = array_values(array_filter(Hilos::$fs->status->entries(), static fn(string $name): bool => str_ends_with($name, '.tmp')));
         self::assertCount(1, $temps);
         self::assertMatchesRegularExpression('/^\.status-[a-f0-9]{32}\.tmp$/D', $temps[0]);
@@ -512,11 +515,11 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         }
         rmdir($this->path . '/heartbeat.json');
         rename($this->path . '/saved-heartbeat', $this->path . '/heartbeat.json');
-        self::assertSame(['schemaVersion' => 2, 'revision' => 'first', 'aliveAt' => 1000], $this->readHeartbeat());
+        self::assertSame(['schemaVersion' => 3, 'revision' => 'first', 'aliveAt' => 1000], $this->readHeartbeat());
         self::assertNull((new StatusPublicFiles())->restore(), 'Mismatching revisions are never recovered');
         self::assertTrue(link($this->path . '/status.json', $this->path . '/installed-inode'));
         $inode = fileinode($this->path . '/installed-inode');
-        self::assertSame(['schemaVersion' => 2, 'revision' => 'second', 'aliveAt' => 3000], $files->advance(3000)->toArray());
+        self::assertSame(['schemaVersion' => 3, 'revision' => 'second', 'aliveAt' => 3000], $files->advance(3000)->toArray());
         clearstatcache();
         self::assertSame($inode, fileinode($this->path . '/status.json'), 'Retry only the matching heartbeat');
         self::assertSame($files->getSnapshot()->toArray(), (new StatusPublicFiles())->restore()->toArray());
@@ -554,7 +557,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         $json = json_encode($snapshot->toArray(), JSON_THROW_ON_ERROR);
         $invalid = ['{', 'null', '[]', '{}'];
         foreach ([
-            ['schemaVersion', 3], ['schemaVersion', '1'], ['revision', ''], ['revision', 7],
+            ['schemaVersion', 4], ['schemaVersion', '1'], ['revision', ''], ['revision', 7],
             ['generatedAt', -1], ['generatedAt', 1.5], ['generatedAt', '1000'],
             ['components', (object)[]], ['candidates', null], ['outages', (object)[]],
             ['config', []], ['scheduledWorks', (object)[]], ['scheduledWorks', [['id' => 'future']]],
@@ -623,21 +626,21 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         $files = new StatusPublicFiles();
         $this->publish($files, $snapshot);
         foreach (['{', 'null', '[]', '{}',
-            '{"schemaVersion":3,"revision":"first","aliveAt":1000}',
-            '{"schemaVersion":2,"revision":"other","aliveAt":1000}',
-            '{"schemaVersion":2,"revision":"","aliveAt":1000}',
-            '{"schemaVersion":2,"revision":"first","aliveAt":"1000"}',
-            '{"schemaVersion":2,"revision":"first","aliveAt":-1}',
-            '{"schemaVersion":2,"revision":"first","aliveAt":1.5}',
-            '{"schemaVersion":2,"revision":"first"}',
-            '{"schemaVersion":2,"revision":"first","aliveAt":1000,"pid":42}',
+            '{"schemaVersion":4,"revision":"first","aliveAt":1000}',
+            '{"schemaVersion":3,"revision":"other","aliveAt":1000}',
+            '{"schemaVersion":3,"revision":"","aliveAt":1000}',
+            '{"schemaVersion":3,"revision":"first","aliveAt":"1000"}',
+            '{"schemaVersion":3,"revision":"first","aliveAt":-1}',
+            '{"schemaVersion":3,"revision":"first","aliveAt":1.5}',
+            '{"schemaVersion":3,"revision":"first"}',
+            '{"schemaVersion":3,"revision":"first","aliveAt":1000,"pid":42}',
         ] as $badJson) {
             FsPath::write($this->path . '/heartbeat.json', $badJson);
             self::assertNull((new StatusPublicFiles())->restore(), $badJson);
         }
         FsPath::delete($this->path . '/heartbeat.json');
         self::assertNull((new StatusPublicFiles())->restore());
-        FsPath::write($this->path . '/heartbeat.json', '{"schemaVersion":2,"revision":"first","aliveAt":1000}');
+        FsPath::write($this->path . '/heartbeat.json', '{"schemaVersion":3,"revision":"first","aliveAt":1000}');
         $database = Hilos::$db;
         $settings = Hilos::$setting;
         $runtime = Hilos::$rt;
@@ -788,6 +791,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         $snapshot = $this->publicSnapshot()->withMaintenance([], []);
         $legacy = $snapshot->toArray();
         $legacy['schemaVersion'] = 1;
+        unset($legacy['silencePeriods']);
         FsPath::write($this->path . '/status.json', json_encode($legacy, JSON_THROW_ON_ERROR));
         FsPath::write($this->path . '/heartbeat.json', '{"schemaVersion":1,"revision":"first","aliveAt":1000}');
         $files = new StatusPublicFiles();
@@ -797,8 +801,8 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         self::assertSame($snapshot->outages[0]->toArray(), $restored->outages[0]->toArray());
         self::assertNull($files->heartbeat(999999), 'A v2 heartbeat cannot be paired with legacy status bytes');
         $this->publish($files, $restored, 2000);
-        self::assertSame(2, $this->readStatus()['schemaVersion']);
-        self::assertSame(2, $this->readHeartbeat()['schemaVersion']);
+        self::assertSame(3, $this->readStatus()['schemaVersion']);
+        self::assertSame(3, $this->readHeartbeat()['schemaVersion']);
         foreach ([[1, 2], [2, 1]] as [$statusVersion, $heartbeatVersion]) {
             $legacy['schemaVersion'] = $statusVersion;
             FsPath::write($this->path . '/status.json', json_encode($legacy, JSON_THROW_ON_ERROR));
@@ -813,7 +817,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         StatusPublicSnapshot::fromJson(json_encode($legacy, JSON_THROW_ON_ERROR));
     }
 
-    public function testV2RoundtripPreservesBothSetsAndRejectsUnprovenRelationsAndMoments(): void
+    public function testV3RoundtripPreservesBothSetsAndRejectsUnprovenRelationsAndMoments(): void
     {
         $snapshot = $this->publicSnapshot();
         $fields = $snapshot->toArray();
@@ -925,6 +929,270 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         }
     }
 
+    public function testStrictThresholdAndLiveGapUseOnlyTheLastSuccessfulHeartbeat(): void
+    {
+        $files = new StatusPublicFiles();
+        $this->publish($files, $this->publicSnapshot(), 1000);
+        self::assertSame(121000, $files->heartbeat(121000)->aliveAt, 'Exactly the threshold is still live');
+        self::assertNull($files->heartbeat(241001));
+        $open = $files->getSilenceObservation();
+        self::assertSame(121000, $open->startedAt);
+        self::assertNull($open->endedAt);
+        self::assertSame(121000, $this->readHeartbeat()['aliveAt']);
+        $receipt = $files->advance(241002);
+        self::assertSame(241002, $receipt->aliveAt);
+        self::assertSame([['id' => $open->id, 'startedAt' => 121000, 'endedAt' => 241002]], $this->readStatus()['silencePeriods']);
+        self::assertSame($this->readStatus(), $files->getSnapshot()->toArray());
+        self::assertNull(new StatusSilenceObservationStore()->load($open->id . '.json')->endedAt,
+            'The receipt, rather than an attempted end, closes transit on the next persistence pass');
+        $files->advanceSilenceRecovery();
+        self::assertSame(241002, new StatusSilenceObservationStore()->load($open->id . '.json')->endedAt);
+    }
+
+    public function testColdRestartClosesOnePendingIdentityAndReceiptCrashRecoversItsExactEnd(): void
+    {
+        $files = new StatusPublicFiles();
+        $this->publish($files, $this->publicSnapshot(), 1000);
+        self::assertNull($files->heartbeat(121001));
+        $open = $files->getSilenceObservation();
+        $files->cancel();
+        $cold = new StatusPublicFiles();
+        $cold->restore();
+        $receipt = $cold->advance(130000);
+        self::assertSame(130000, $receipt->aliveAt);
+        self::assertSame($open->id, $this->readStatus()['silencePeriods'][0]['id']);
+        // Simulate death immediately after the pair rename, before private closure persistence.
+        $restarted = new StatusPublicFiles();
+        $restarted->restore();
+        $restarted->advanceSilenceRecovery();
+        self::assertNull($restarted->getSilenceObservation());
+        self::assertSame(130000, $restarted->getClosedSilenceObservations()[0]->endedAt);
+        self::assertSame(130000, new StatusSilenceObservationStore()->load($open->id . '.json')->endedAt);
+        self::assertSame(160000, $restarted->heartbeat(160000)->aliveAt);
+        self::assertCount(1, $this->readStatus()['silencePeriods']);
+    }
+
+    /**
+     * The status rename before a refused heartbeat is shorter than a stand tick. The real
+     * file-failure seam captures those bytes for a reader whose second read follows retry.
+     */
+    public function testFailedHeartbeatRebuildsTheClosingBoundaryAndPendingRemainsOpen(): void
+    {
+        $files = new StatusPublicFiles();
+        $this->publish($files, $this->publicSnapshot(), 1000);
+        $files->heartbeat(121001);
+        $open = $files->getSilenceObservation();
+        rename($this->path . '/heartbeat.json', $this->path . '/saved-heartbeat');
+        mkdir($this->path . '/heartbeat.json');
+        try {
+            $files->advance(130000);
+            self::fail('The heartbeat installation must fail');
+        } catch (StatusException) {
+            self::assertSame(130000, $this->readStatus()['silencePeriods'][0]['endedAt']);
+            self::assertNull(new StatusSilenceObservationStore()->load($open->id . '.json')->endedAt);
+            self::assertSame([], $files->getSnapshot()->silencePeriods);
+        }
+        $statusA = Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read();
+        $snapshotA = StatusPublicSnapshot::fromJson($statusA);
+        self::assertSame($open->id, $files->getSilenceObservation()->id);
+        self::assertNull($files->getSilenceObservation()->endedAt);
+        self::assertSame([['id' => $open->id, 'startedAt' => 1000, 'endedAt' => 130000]], $snapshotA->toArray()['silencePeriods']);
+        rmdir($this->path . '/heartbeat.json');
+        rename($this->path . '/saved-heartbeat', $this->path . '/heartbeat.json');
+        $receipt = $files->advance(140000);
+        self::assertSame(140000, $receipt->aliveAt);
+        $statusB = Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read();
+        $snapshotB = StatusPublicSnapshot::fromJson($statusB);
+        self::assertSame([['id' => $open->id, 'startedAt' => 1000, 'endedAt' => 140000]], $snapshotB->toArray()['silencePeriods']);
+        $expectedB = $snapshotA->toArray();
+        $expectedB['revision'] = $receipt->revision;
+        $expectedB['silencePeriods'][0]['endedAt'] = 140000;
+        self::assertSame($expectedB, $snapshotB->toArray(), 'Retry preserves every other detached snapshot value');
+        self::assertSame($snapshotB->revision, $receipt->revision);
+        self::assertSame($receipt->toArray(), $this->readHeartbeat());
+        self::assertSame($snapshotB->toArray(), $files->getSnapshot()->toArray());
+        self::assertSame(140000, $files->getSilenceObservation()->endedAt);
+
+        // These are the exact bytes a reader can combine across the two atomic installs.
+        FsPath::write(Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->getPath(), $statusA);
+        $mixed = new StatusPublicFiles();
+        self::assertNull($mixed->restore(), 'Status A and heartbeat B must not pass the coherent-pair boundary');
+        self::assertNotSame($snapshotA->revision, $receipt->revision, 'A changed closing end needs a new content revision');
+        $mixed->advanceSilenceRecovery();
+        self::assertSame($open->id, $mixed->getSilenceObservation()->id);
+        self::assertNull($mixed->getSilenceObservation()->endedAt);
+        self::assertSame([], $mixed->getClosedSilenceObservations());
+
+        FsPath::write(Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->getPath(), $statusB);
+        $recovered = new StatusPublicFiles();
+        self::assertSame($snapshotB->toArray(), $recovered->restore()->toArray());
+        $recovered->advanceSilenceRecovery();
+        self::assertNull($recovered->getSilenceObservation());
+        self::assertSame([['id' => $open->id, 'startedAt' => 1000, 'endedAt' => 140000]], array_map(
+            static fn(StatusSilenceObservation $observation): array => $observation->toPublicPeriod()->toArray(),
+            $recovered->getClosedSilenceObservations(),
+        ));
+        self::assertSame(140000, new StatusSilenceObservationStore()->load($open->id . '.json')->endedAt);
+        self::assertSame($receipt->revision, $recovered->heartbeat(170000)->revision);
+        self::assertSame($statusB, Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read(),
+            'A later heartbeat does not change the closed gap or content revision');
+    }
+
+    public function testPendingSaveFailureBlocksFreshHeartbeatAndKeepsTheSameIdentityOnRetry(): void
+    {
+        $files = new StatusPublicFiles();
+        $this->publish($files, $this->publicSnapshot(), 1000);
+        FsPath::write($this->path . '/' . StatusSilenceObservationStore::DIRECTORY, 'unavailable');
+        try {
+            $files->heartbeat(121001);
+            self::fail('A missing durable pending fact must block publication');
+        } catch (StatusException) {
+            self::assertSame(1000, $this->readHeartbeat()['aliveAt']);
+        }
+        $id = $files->getSilenceObservation()->id;
+        FsPath::delete($this->path . '/' . StatusSilenceObservationStore::DIRECTORY);
+        self::assertSame(130000, $files->advance(130000)->aliveAt);
+        self::assertSame($id, $this->readStatus()['silencePeriods'][0]['id']);
+    }
+
+    public function testLargeSilenceArchiveStaysBoundedAndFinalEndUsesTheInstallationPass(): void
+    {
+        $files = new StatusPublicFiles();
+        $this->publish($files, $this->publicSnapshot(), 1000);
+        $periods = [];
+        for ($index = 0; $index < 1024; ++$index) {
+            $periods[] = new StatusPublicSilencePeriod(str_pad(dechex($index), 32, '0', STR_PAD_LEFT), -2000 + $index, -1999 + $index);
+        }
+        $files->begin($this->publicSnapshot('large')->withSilencePeriods($periods));
+        self::assertNull($files->advance(121001));
+        self::assertSame('first', $this->readStatus()['revision']);
+        $receipt = null;
+        for ($step = 1; $step < 100 && $receipt === null; ++$step) {
+            $receipt = $files->advance(121001 + $step);
+        }
+        self::assertGreaterThan(10, $step);
+        self::assertNotNull($receipt);
+        $status = $this->readStatus();
+        self::assertCount(1025, $status['silencePeriods']);
+        self::assertSame($receipt->aliveAt, $status['silencePeriods'][1024]['endedAt']);
+        self::assertSame($status, $files->getSnapshot()->toArray());
+        self::assertSame($status, StatusPublicSnapshot::fromJson(json_encode($status, JSON_THROW_ON_ERROR))->toArray());
+    }
+
+    public function testTheReservedEndMaySitInsideTheOrderedArchiveAndAFreshLeaderCreatesNoGap(): void
+    {
+        $periods = [new StatusPublicSilencePeriod(str_repeat('a', 32), 0, 1),
+            new StatusPublicSilencePeriod(str_repeat('b', 32), 2000, 3000)];
+        $files = new StatusPublicFiles();
+        $this->publish($files, $this->publicSnapshot()->withSilencePeriods($periods), 200000);
+        $freshOwner = new StatusPublicFiles();
+        $freshOwner->restore();
+        $freshOwner->advanceSilenceRecovery();
+        self::assertSame(230000, $freshOwner->heartbeat(230000)->aliveAt);
+        self::assertCount(2, $this->readStatus()['silencePeriods'], 'A fresh shared heartbeat is not a gap');
+        $freshOwner->publishAgedHeartbeat(1000);
+        $freshOwner->heartbeat(121001);
+        $receipt = $freshOwner->advance(130000);
+        self::assertSame([0, 1000, 2000], array_column($this->readStatus()['silencePeriods'], 'startedAt'));
+        self::assertSame($receipt->aliveAt, $this->readStatus()['silencePeriods'][1]['endedAt']);
+        self::assertSame($this->readStatus(), StatusPublicSnapshot::fromJson(
+            Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read(),
+        )->toArray());
+    }
+
+    public function testColdGapWaitsForTheLargeCurrentFreezeOverlayBeforeAnyFreshHeartbeat(): void
+    {
+        $now = TimeHelper::nowMs();
+        $periods = [];
+        for ($index = 0; $index < 128; ++$index) {
+            $periods[] = new StatusPublicSilencePeriod(str_pad(dechex($index), 32, '0', STR_PAD_LEFT), $now - 400000, $now - 300000);
+        }
+        $this->publish(new StatusPublicFiles(), $this->publicSnapshot()->withSilencePeriods($periods), $now - 121001);
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE);
+        $database = Hilos::$db;
+        Hilos::$db = null;
+        try {
+            $this->owner->onStart();
+            self::assertSame($now - 121001, $this->readHeartbeat()['aliveAt']);
+            for ($tick = 0; $tick < 100 && $this->readHeartbeat()['aliveAt'] === $now - 121001; ++$tick) {
+                $this->owner->tickAt($now + $tick);
+            }
+            self::assertGreaterThan(1, $tick);
+            self::assertSame(['maintenance', 'maintenance'], array_column($this->readStatus()['components'], 'state'));
+            self::assertSame($this->readHeartbeat()['aliveAt'], $this->readStatus()['silencePeriods'][128]['endedAt']);
+        } finally {
+            Hilos::$db = $database;
+        }
+    }
+
+    public function testDamagedTransitIsRetriedAndNeverSkippedPastTheDiscoveryCursor(): void
+    {
+        $files = new StatusPublicFiles();
+        $this->publish($files, $this->publicSnapshot(), 1000);
+        $store = new StatusSilenceObservationStore();
+        $fact = new StatusSilenceObservation(str_repeat('c', 32), 0, 1);
+        $store->save($fact);
+        $path = $this->path . '/' . StatusSilenceObservationStore::DIRECTORY . '/' . $fact->id . '.json';
+        FsPath::write($path, 'damaged');
+        $cold = new StatusPublicFiles();
+        $cold->restore();
+        for ($attempt = 0; $attempt < 3; ++$attempt) {
+            try {
+                $cold->advance(121001);
+                self::fail('Damaged transit must remain a bounded retry, never a skipped record');
+            } catch (StatusException) {
+                self::assertSame(1000, $this->readHeartbeat()['aliveAt']);
+                self::assertNull($cold->heartbeat(121001));
+            }
+        }
+        FsPath::write($path, json_encode($fact->toArray(), JSON_THROW_ON_ERROR));
+        self::assertSame(130000, $cold->advance(130000)->aliveAt);
+        self::assertSame($fact->id, $cold->getClosedSilenceObservations()[0]->id);
+    }
+
+    public function testV3SilenceKeysSignedMomentsOrderUniquenessAndAllSnapshotCopies(): void
+    {
+        $periods = [new StatusPublicSilencePeriod(str_repeat('a', 32), -2000, -1000)];
+        $snapshot = $this->publicSnapshot()->withSilencePeriods($periods);
+        self::assertSame($periods, $snapshot->withCurrent(StatusSnapshot::read(), 'current', 2000)->silencePeriods);
+        self::assertSame($periods, $snapshot->withOutages([])->silencePeriods);
+        self::assertSame($periods, $snapshot->withMaintenance([], [])->silencePeriods);
+        self::assertEquals($snapshot, StatusPublicSnapshot::fromJson(json_encode($snapshot->toArray(), JSON_THROW_ON_ERROR)));
+        foreach ([null, (object)[], [['id' => str_repeat('a', 32), 'startedAt' => 1, 'endedAt' => null]],
+            [$periods[0]->toArray(), $periods[0]->toArray()],
+            [['id' => str_repeat('b', 32), 'startedAt' => -1, 'endedAt' => 0], $periods[0]->toArray()],
+        ] as $bad) {
+            $data = $snapshot->toArray();
+            $data['silencePeriods'] = $bad;
+            try {
+                StatusPublicSnapshot::fromJson(json_encode($data, JSON_THROW_ON_ERROR));
+                self::fail('Invalid silence contract must refuse');
+            } catch (StatusException) {
+                self::assertTrue(true);
+            }
+        }
+        foreach ([1, 2] as $version) {
+            $legacy = ($version === 1 ? new StatusPublicSnapshot('legacy', 1000, 30, 120, [], [], [])
+                : $this->publicSnapshot('legacy'))->toArray();
+            $legacy['schemaVersion'] = $version;
+            unset($legacy['silencePeriods']);
+            FsPath::write($this->path . '/status.json', json_encode($legacy, JSON_THROW_ON_ERROR));
+            FsPath::write($this->path . '/heartbeat.json', json_encode([
+                'schemaVersion' => $version, 'revision' => 'legacy', 'aliveAt' => 1000,
+            ], JSON_THROW_ON_ERROR));
+            $files = new StatusPublicFiles();
+            $restored = $files->restore();
+            self::assertSame($version, $restored->sourceSchemaVersion);
+            self::assertSame([], $restored->silencePeriods);
+            self::assertSame($legacy['scheduledWorks'], $restored->toArray()['scheduledWorks']);
+            self::assertSame($legacy['maintenancePeriods'], $restored->toArray()['maintenancePeriods']);
+            self::assertNull($files->heartbeat(2000));
+            $this->publish($files, $restored, 2000);
+            self::assertSame(3, $this->readStatus()['schemaVersion']);
+            self::assertSame(3, $this->readHeartbeat()['schemaVersion']);
+        }
+    }
+
     /**
      * @param string $command Test-only Status command
      * @param array<string, mixed> $payload Request payload
@@ -936,6 +1204,12 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         $frames = $this->drain();
         $replies = array_values(array_filter($frames, static fn (object $frame): bool =>
             $frame->signalType->getType() === SignalTypeConstants::COMMAND_REPLY));
+        for ($tick = 0; $tick < 100 && $replies === []; ++$tick) {
+            $this->owner->tickAt(TimeHelper::nowMs());
+            $frames = array_merge($frames, $this->drain());
+            $replies = array_values(array_filter($frames, static fn (object $frame): bool =>
+                $frame->signalType->getType() === SignalTypeConstants::COMMAND_REPLY));
+        }
         self::assertCount(1, $replies);
         self::assertInstanceOf(CommandReplyDTO::class, $replies[0]->data);
         self::assertSame('cid-status', $replies[0]->data->correlationId);

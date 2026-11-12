@@ -479,7 +479,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame([StatusSettingsCatalog::class], $requirements->requiredCatalogFragments);
         self::assertSame([
             'hilos_status_incident', 'hilos_status_incident_update', 'hilos_status_subscriber',
-            'hilos_status_work', 'hilos_status_work_component', 'hilos_status_maintenance_period',
+            'hilos_status_work', 'hilos_status_work_component', 'hilos_status_maintenance_period', 'hilos_status_silence_period',
         ], $requirements->requiredDbTables);
         self::assertSame([AbstractHilosStatusPage::class, AbstractHilosStatusComponentsPage::class,
                 AbstractHilosStatusSubscribersPage::class, AbstractHilosStatusWorksPage::class, AbstractHilosStatusHistoryPage::class],
@@ -506,6 +506,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             'status_work' => [['hilos_status_work'], [], 0],
             'status_work_component' => [['hilos_status_work_component'], ['status_work'], 0],
             'status_maintenance_period' => [['hilos_status_maintenance_period'], ['status_work'], 0],
+            'status_silence_period' => [['hilos_status_silence_period'], [], 0],
         ], $statusUnits);
     }
 

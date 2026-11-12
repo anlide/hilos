@@ -141,16 +141,60 @@ export function watchPublicStatus(page: Page) {
 
 export type PublicStatusLog = ReturnType<typeof watchPublicStatus>
 
-/** Last trusted archive and day labels remain readable through stale/recovery. */
+/** Independent test facts of a synthetic publication gap. */
+export interface PublicStatusSilenceFact {
+  startedAt: number
+  endedAt: number | null
+}
+
+/** Keep archive facts strict and change only labels whose dates intersect test-owned silence. */
 export async function expectPublicStatusArchive(
   expect: Expect,
   page: Page,
-  archive: { history: string; days: string[] },
+  archive: { history: string; days: string[]; accepted?: PublicStatusPair },
+  silences: readonly PublicStatusSilenceFact[] = [],
 ): Promise<void> {
   await expect(page.getByTestId('public-status-history')).toHaveText(
     archive.history,
     { useInnerText: true },
   )
+  let expected = archive.days
+  if (silences.length > 0) {
+    if (archive.accepted === undefined)
+      throw new Error(
+        'Silence assertions require the independently accepted archive.',
+      )
+    const days = await page.evaluate((aliveAt) => {
+      const today = new Date(aliveAt)
+      const formatter = new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+      })
+      return Array.from({ length: 90 }, (_, index) => {
+        const start = new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate() - 89 + index,
+        )
+        const end = new Date(
+          start.getFullYear(),
+          start.getMonth(),
+          start.getDate() + 1,
+        )
+        return {
+          start: start.getTime(),
+          end: end.getTime(),
+          label: formatter.format(start),
+        }
+      })
+    }, archive.accepted.heartbeat.aliveAt)
+    expected = expectedPublicStatusArchiveDays(
+      archive.days,
+      archive.accepted.status,
+      days,
+      silences,
+      Date.now(),
+    )
+  }
   expect(
     await page
       .getByTestId('public-status-days-90')
@@ -158,7 +202,126 @@ export async function expectPublicStatusArchive(
       .evaluateAll((buttons) =>
         buttons.map((button) => button.getAttribute('aria-label')),
       ),
-  ).toEqual(archive.days)
+  ).toEqual(expected)
+}
+
+/** Check one gap's reader-local date and keep its selected detail through recovery. */
+export async function expectPublicStatusSilenceDay(
+  expect: Expect,
+  page: Page,
+  status: PublicStatusPair['status'],
+  silence: PublicStatusSilenceFact,
+  select = false,
+): Promise<void> {
+  const day = await page.evaluate((at) => {
+    const date = new Date(at)
+    const start = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    const end = new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate() + 1,
+    )
+    return {
+      start: start.getTime(),
+      end: end.getTime(),
+      label: new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+      }).format(start),
+    }
+  }, silence.startedAt)
+  const labels = expectedPublicStatusArchiveDays(
+    [],
+    status,
+    [day],
+    [silence],
+    Date.now(),
+  )
+  for (const [index, label] of labels.entries()) {
+    expect(label).toContain(' · No data')
+    const button = page
+      .getByTestId('public-status-days-90')
+      .nth(index)
+      .getByRole('button', { name: label, exact: true })
+    await expect(button).toBeVisible()
+    if (select) await button.click()
+    await expect(
+      page.getByTestId('public-status-day-detail').nth(index),
+    ).toHaveText(label)
+  }
+}
+
+/**
+ * Test oracle from saved transport facts and explicit gap boundaries; no production calendar resolver.
+ * Unaffected dates keep their complete saved assertion. Affected dates recompute known events
+ * by splitting each recorded interval at gap boundaries.
+ */
+export function expectedPublicStatusArchiveDays(
+  saved: readonly string[],
+  status: PublicStatusPair['status'],
+  days: readonly { start: number; end: number; label: string }[],
+  silences: readonly PublicStatusSilenceFact[],
+  now: number,
+): string[] {
+  const newGaps = silences.map((gap) => ({
+    start: gap.startedAt,
+    end: gap.endedAt ?? now,
+  }))
+  const gaps = [
+    ...newGaps,
+    ...(status.schemaVersion === 3
+      ? status.silencePeriods.map((period) => ({
+          start: period.startedAt,
+          end: period.endedAt,
+        }))
+      : []),
+  ]
+  return status.components.flatMap((component, componentIndex) =>
+    days.map((day, index) => {
+      const end = Math.min(day.end, now)
+      if (!newGaps.some((gap) => gap.start < end && gap.end > day.start))
+        return saved[componentIndex * days.length + index]!
+      const events = [
+        ...status.maintenancePeriods.map((period) => ({
+          start: period.startedAt,
+          end: period.endedAt ?? period.lastObservedAt,
+          label: 'Maintenance',
+          priority: 1,
+        })),
+        ...status.outages
+          .filter((outage) => outage.componentKey === component.componentKey)
+          .map((outage) => ({
+            start: outage.detectedAt,
+            end: outage.resolvedAt ?? now,
+            label:
+              outage.severity === 'major_outage'
+                ? 'Major outage'
+                : 'Partial outage',
+            priority: outage.severity === 'major_outage' ? 3 : 2,
+          })),
+      ].sort((left, right) => right.priority - left.priority)
+      const known = events.find((event) => {
+        const start = Math.max(day.start, event.start)
+        const stop = Math.min(end, event.end)
+        if (start >= stop) return false
+        const boundaries = [
+          start,
+          stop,
+          ...gaps.flatMap((gap) => [gap.start, gap.end]),
+        ]
+          .filter((point) => point >= start && point <= stop)
+          .sort((left, right) => left - right)
+        return boundaries.some((point, i) => {
+          const next = boundaries[i + 1]
+          return (
+            next !== undefined &&
+            point < next &&
+            !gaps.some((gap) => gap.start <= point && next <= gap.end)
+          )
+        })
+      })
+      return `${day.label} · No data${known === undefined ? '' : ` · ${known.label} recorded`}`
+    }),
+  )
 }
 
 /** A stopped publisher's timestamp explains Unknown without erasing history. */
@@ -275,7 +438,7 @@ export async function expectPublicStatusAccessibility(
     )
   expect(
     labels.every((label) =>
-      /\S+ · (Operational|Maintenance|Partial outage|Major outage)$/.test(
+      /\S+ · (Operational|Maintenance|Partial outage|Major outage|No data(?: · (Maintenance|Partial outage|Major outage) recorded)?)$/.test(
         label ?? '',
       ),
     ),

@@ -503,12 +503,12 @@ export async function settled<T>(fixture: ComponentFixture<T>): Promise<void> {
   fixture.detectChanges()
 }
 
-/** A coherent public v2 projection; time is supplied by the test's fake clock. */
+/** A coherent public v3 projection; time is supplied by the test's fake clock. */
 export function publicStatusFile(
   overrides: Partial<PublicStatusFile> = {},
 ): PublicStatusFile {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 'public-revision',
     generatedAt: Date.now() - 5000,
     config: { pollIntervalSeconds: 30, staleAfterSeconds: 120 },
@@ -524,6 +524,7 @@ export function publicStatusFile(
     outages: [],
     scheduledWorks: [],
     maintenancePeriods: [],
+    silencePeriods: [],
     ...overrides,
   }
 }
@@ -542,7 +543,7 @@ export function mountPublicStatus<T>(
   cleanups.push(bindTimeZoneState(h.context.connection))
   let status = initial
   let heartbeat: unknown = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 'public-revision',
     aliveAt: Date.now(),
   }
@@ -572,7 +573,7 @@ export function mountPublicStatus<T>(
     },
     publish(next: unknown, aliveAt = Date.now()) {
       status = next
-      heartbeat = { schemaVersion: 2, revision: 'public-revision', aliveAt }
+      heartbeat = { schemaVersion: 3, revision: 'public-revision', aliveAt }
       h.emit('projectSignal', { type: 'status_files_changed', data: {} })
     },
     beat(next: unknown) {

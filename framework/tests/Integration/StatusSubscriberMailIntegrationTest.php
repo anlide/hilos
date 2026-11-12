@@ -69,7 +69,7 @@ final class StatusSubscriberMailIntegrationTest extends FrameworkIntegrationTest
 {
     private const array TABLES = [
         'hilos_setting', 'hilos_status_incident', 'hilos_status_incident_update', 'hilos_status_subscriber',
-        'hilos_status_work', 'hilos_status_work_component', 'hilos_status_maintenance_period',
+        'hilos_status_work', 'hilos_status_work_component', 'hilos_status_maintenance_period', 'hilos_status_silence_period',
     ];
 
     private StatusAgent $owner;

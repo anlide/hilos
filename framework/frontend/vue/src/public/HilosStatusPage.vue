@@ -10,6 +10,7 @@ import {
 import {
   createPublicStatus,
   createStatusSubscription,
+  publicStatusDayLabel,
   STATUS_SUBSCRIPTION_COPY,
   type PublicStatusDay,
   type PublicStatusDayStrip,
@@ -81,7 +82,7 @@ const detailId = useId()
 const selectedDay = ref<{ componentKey: string; startTs: number } | null>(null)
 
 // Presentation only: precedence, freshness, calendar and interval facts belong
-// to the core controller. The same words accompany badges and colored days.
+// to the core controller. This map names current statuses and their badges.
 const states: Record<
   PublicStatusState | 'not_responding',
   { label: string; tone: string; icon: string }
@@ -121,7 +122,7 @@ function moment(at: number): string {
 
 function dayLabel(day: PublicStatusDay): string {
   void timeZone.value
-  return `${formatMoment(day.startTs, { kind: 'date' }) ?? '—'} · ${states[day.state].label}`
+  return publicStatusDayLabel(day)
 }
 
 function dayDetail(strip: PublicStatusDayStrip): string {
@@ -461,8 +462,8 @@ onUnmounted(() => {
                 v-for="day in variant.days"
                 :key="day.startTs"
                 type="button"
-                class="btn flex-fill p-0 py-2 border-0 rounded-1"
-                :class="`btn-${states[day.state].tone}`"
+                class="btn flex-fill p-0 py-2 border-0 rounded-1 position-relative"
+                :class="`btn-${day.hasNoData ? 'secondary' : states[day.state].tone}`"
                 :aria-label="dayLabel(day)"
                 :aria-describedby="`${detailId}-${componentIndex}`"
                 @focus="
@@ -477,7 +478,14 @@ onUnmounted(() => {
                     startTs: day.startTs,
                   }
                 "
-              ></button>
+              >
+                <span
+                  v-if="day.hasNoData && day.state !== 'operational'"
+                  class="position-absolute bottom-0 start-0 w-100 py-1 rounded-bottom-1"
+                  :class="`text-bg-${states[day.state].tone}`"
+                  aria-hidden="true"
+                ></span>
+              </button>
             </div>
             <div
               class="d-flex justify-content-between small text-body-secondary mt-1"

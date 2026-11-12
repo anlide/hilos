@@ -1,7 +1,11 @@
 import { EventEmitter } from 'node:events'
 import type { Page, Request, Response } from '@playwright/test'
 import { describe, expect, it } from 'vitest'
-import { PUBLIC_STATUS_FILES, watchPublicStatus } from '../publicStatus.js'
+import {
+  PUBLIC_STATUS_FILES,
+  expectedPublicStatusArchiveDays,
+  watchPublicStatus,
+} from '../publicStatus.js'
 
 /** Keep the browser's asynchronous body capture independent of its headers. */
 function observe(text: () => Promise<string>) {
@@ -63,5 +67,82 @@ describe('public Status body capture completion', () => {
     expect(read.completedAt).toEqual(expect.any(Number))
     expect(read.failure).toContain('SyntaxError')
     expect(read.body).toBeUndefined()
+  })
+})
+
+describe('public archive silence oracle', () => {
+  const status = {
+    schemaVersion: 3 as const,
+    revision: 'accepted',
+    generatedAt: 100,
+    config: { pollIntervalSeconds: 30, staleAfterSeconds: 120 },
+    components: [
+      {
+        componentKey: 'api',
+        name: 'API',
+        description: null,
+        state: 'operational' as const,
+      },
+    ],
+    candidates: [],
+    scheduledWorks: [],
+    maintenancePeriods: [],
+    silencePeriods: [],
+    outages: [
+      {
+        id: 'outage',
+        componentKey: 'api',
+        severity: 'major_outage' as const,
+        detectedAt: 10,
+        publishedAt: 11,
+        resolvedAt: 30,
+        updates: [],
+      },
+    ],
+  }
+  const days = [
+    { start: 0, end: 100, label: 'First' },
+    { start: 100, end: 200, label: 'Second' },
+  ]
+  const saved = ['First · Major outage', 'Second · Operational']
+
+  it('keeps every unaffected label exact and retains an event portion before the gap', () => {
+    expect(
+      expectedPublicStatusArchiveDays(
+        saved,
+        status,
+        days,
+        [{ startedAt: 20, endedAt: 50 }],
+        200,
+      ),
+    ).toEqual([
+      'First · No data · Major outage recorded',
+      'Second · Operational',
+    ])
+  })
+  it('does not claim an event wholly inside silence and respects half-open day boundaries', () => {
+    expect(
+      expectedPublicStatusArchiveDays(
+        saved,
+        status,
+        days,
+        [{ startedAt: 10, endedAt: 100 }],
+        200,
+      ),
+    ).toEqual(['First · No data', 'Second · Operational'])
+  })
+  it('retains a known event after the gap and treats an open gap through the explicit clock', () => {
+    expect(
+      expectedPublicStatusArchiveDays(
+        saved,
+        status,
+        days,
+        [
+          { startedAt: 0, endedAt: 20 },
+          { startedAt: 100, endedAt: null },
+        ],
+        150,
+      ),
+    ).toEqual(['First · No data · Major outage recorded', 'Second · No data'])
   })
 })

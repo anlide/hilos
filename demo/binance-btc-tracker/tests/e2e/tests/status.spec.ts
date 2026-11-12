@@ -17,6 +17,7 @@ import {
   expectPublicStatusPair,
   expectPublicStatusReadOnly,
   expectPublicStatusStale,
+  expectPublicStatusSilenceDay,
   expectStatusHead,
   expectStatusSubscriberCounts,
   expectTableTotal,
@@ -39,6 +40,7 @@ import {
   armViewerSubmit,
   typeInto,
 } from '../../../../../framework/frontend/e2e/index.js'
+import { expectedPublicStatusArchiveDays } from '../../../../../framework/frontend/e2e/publicStatus.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import {
   STATUS_FAULT_COMPONENT,
@@ -54,6 +56,7 @@ import {
 import {
   beatStatusHeartbeat,
   staleStatusHeartbeat,
+  removeStatusSilencePeriod,
 } from '../../../../../framework/frontend/scripts/statusMoments.mjs'
 import { STATUS_EXPECT_TIMEOUT_MS } from '../status.config.js'
 
@@ -993,7 +996,35 @@ test(
         .evaluateAll((buttons) =>
           buttons.map((button) => button.getAttribute('aria-label')),
         )
-      expect(labels.at(-1)).toMatch(/ · Major outage$/)
+      expect(
+        resolved.status.outages.find(
+          (outage) => outage.detectedAt === detectedAt,
+        ),
+      ).toMatchObject({ severity: 'major_outage' })
+      const today = await guest.evaluate(() => {
+        const now = new Date()
+        return {
+          start: new Date(
+            now.getFullYear(),
+            now.getMonth(),
+            now.getDate(),
+          ).getTime(),
+          end: now.getTime(),
+          label: new Intl.DateTimeFormat(undefined, {
+            dateStyle: 'medium',
+          }).format(now),
+        }
+      })
+      const expectedDays = expectedPublicStatusArchiveDays(
+        [`${today.label} · Major outage`],
+        resolved.status,
+        [today],
+        resolved.status.schemaVersion === 3
+          ? resolved.status.silencePeriods
+          : [],
+        today.end,
+      )
+      expect(labels.at(-1)).toBe(expectedDays.at(-1))
       const archive = await guest
         .getByTestId('public-status-history')
         .innerText()
@@ -1111,6 +1142,9 @@ test(
     let admin = watchStatusFrames(adminPage)
     const evidence: Array<Record<string, unknown>> = []
     let enteredAt = 0
+    let silencePeriodId: string | undefined
+    let testFailed = false
+    const errors: unknown[] = []
     try {
       await grantAdminToSelf(expect, adminPage)
       // No admin document lives through the freeze: the lift would reload it.
@@ -1120,15 +1154,12 @@ test(
       await adminPage.close()
       await gotoPublicStatus(expect, page)
       await expect(page.getByTestId('conn-state')).toHaveText('connected')
-      const initial = await expectPublicStatusPair(
-        expect,
-        page,
-        log,
-        ({ status }) =>
-          status.components.every(
-            (component) => component.state === 'operational',
-          ),
+      await expectPublicStatusPair(expect, page, log, ({ status }) =>
+        status.components.every(
+          (component) => component.state === 'operational',
+        ),
       )
+      await markDocument(page)
       expect(await enterProtectedMode('e2e-public-status-freeze')).toBe(
         'active',
       )
@@ -1189,6 +1220,7 @@ test(
       // the owner publishes the maintenance pair's heartbeat aged past the limit
       // and holds it, then a heartbeat at now brings Maintenance back.
       const aged = await staleStatusHeartbeat()
+      silencePeriodId = aged.silencePeriodId
       const stale = await expectPublicStatusPair(
         expect,
         page,
@@ -1201,18 +1233,39 @@ test(
       )
       await expectPublicStatusStale(expect, page, stale)
       evidence.push({ elapsedMs: performance.now() - enteredAt, stale })
+      await expectPublicStatusSilenceDay(
+        expect,
+        page,
+        stale.status,
+        { startedAt: aged.aliveAt, endedAt: null },
+        true,
+      )
       const beat = await beatStatusHeartbeat()
       const accepted = await expectPublicStatusPair(
         expect,
         page,
         log,
         ({ status, heartbeat }) =>
-          heartbeat.aliveAt > aged.aliveAt &&
+          heartbeat.aliveAt >= beat.aliveAt &&
           status.components.every(
             (component) => component.state === 'maintenance',
           ),
       )
       expect(accepted.heartbeat.aliveAt).toBeGreaterThanOrEqual(beat.aliveAt)
+      const closed = {
+        id: silencePeriodId,
+        startedAt: aged.aliveAt,
+        endedAt: beat.aliveAt,
+      }
+      expect(closed.endedAt).toBeGreaterThan(closed.startedAt)
+      expect(accepted.status.schemaVersion).toBe(3)
+      expect(
+        accepted.status.schemaVersion === 3
+          ? accepted.status.silencePeriods.filter(
+              (period) => period.id === silencePeriodId,
+            )
+          : [],
+      ).toEqual([closed])
       await expect(page.getByTestId('public-status-banner')).toHaveText(
         'Maintenance in progress',
       )
@@ -1220,20 +1273,59 @@ test(
         page.getByTestId('public-status-component-state'),
       ).toHaveText('Maintenance')
       evidence.push({ elapsedMs: performance.now() - enteredAt, accepted })
+      await expectPublicStatusSilenceDay(expect, page, accepted.status, closed)
+
+      // A later real receipt must leave the first closing receipt untouched.
+      const laterBeat = await beatStatusHeartbeat()
+      expect(laterBeat.aliveAt).toBeGreaterThan(beat.aliveAt)
+      const later = await expectPublicStatusPair(
+        expect,
+        page,
+        log,
+        ({ status, heartbeat }) =>
+          heartbeat.aliveAt >= laterBeat.aliveAt &&
+          status.components.every(
+            (component) => component.state === 'maintenance',
+          ),
+      )
+      expect(
+        later.status.schemaVersion === 3
+          ? later.status.silencePeriods.filter(
+              (period) => period.id === silencePeriodId,
+            )
+          : [],
+      ).toEqual([closed])
+      await expectPublicStatusSilenceDay(expect, page, later.status, closed)
+      evidence.push({ elapsedMs: performance.now() - enteredAt, later })
       expect((await inspectProtectedMode()).phase).toBe('active')
 
       // Independent, never-welcomed visitor arrives after the aged heartbeat.
       await coldSocket.hold()
       await gotoPublicStatus(expect, cold)
-      await expectPublicStatusPair(
+      const coldAccepted = await expectPublicStatusPair(
         expect,
         cold,
         coldLog,
         ({ status, heartbeat }) =>
           status.components.every(
             (component) => component.state === 'maintenance',
-          ) && heartbeat.aliveAt > initial.heartbeat.aliveAt,
+          ) && heartbeat.aliveAt >= laterBeat.aliveAt,
       )
+      expect(
+        coldAccepted.status.schemaVersion === 3
+          ? coldAccepted.status.silencePeriods.filter(
+              (period) => period.id === silencePeriodId,
+            )
+          : [],
+      ).toEqual([closed])
+      await expectPublicStatusSilenceDay(
+        expect,
+        cold,
+        coldAccepted.status,
+        closed,
+        true,
+      )
+      await expectDocumentUnchanged(expect, page)
       await expect(cold.getByTestId('public-status-banner')).toHaveText(
         'Maintenance in progress',
       )
@@ -1245,80 +1337,103 @@ test(
       expectPublicStatusReadOnly(expect, log)
       expectPublicStatusReadOnly(expect, coldLog)
       expectPublicStatusReadOnly(expect, guardedLog)
+    } catch (error) {
+      testFailed = true
+      errors.push(error)
     } finally {
       // The aged heartbeat's hold is released first, or it would keep the lift's
       // publication out of the files. An inspect failure must not prevent the
       // owner's unconditional open. The warm browser must finish its own lift
       // reload before readiness is checked.
-      let frozen: boolean
-      try {
-        try {
-          await beatStatusHeartbeat()
+      let frozen = false
+      const cleanup = [
+        () => beatStatusHeartbeat(),
+        async () => {
           frozen = (await inspectProtectedMode()).phase !== 'inactive'
           if (frozen) await markDocument(page)
-        } finally {
-          await openProtectedModeIfAny()
-        }
-        if (frozen)
-          await expectSelfReload(
-            page,
-            test.info().project.use.navigationTimeout,
-          )
-        expect((await inspectProtectedMode()).phase).toBe('inactive')
-        // The lift restarts the stopped agents, and the owner trusts health
-        // again only from a fresh whole node report; it rebuilds the pair after
-        // it. Settle that recovery at the owner first, so the reader's wait
-        // covers only the rebuild.
-        adminPage = await adminContext.newPage()
-        admin = watchStatusFrames(adminPage)
-        await gotoPage(expect, adminPage, STATUS_PATH, PAGE_READY)
-        await expect
-          .poll(() => admin.latest())
-          .toMatchObject({
-            healthKnown: true,
-            components: { operationalCount: 1, totalCount: 1 },
-            maintenance: null,
-            incidents: [],
+        },
+        () => openProtectedModeIfAny(),
+        async () => {
+          if (frozen)
+            await expectSelfReload(
+              page,
+              test.info().project.use.navigationTimeout,
+            )
+        },
+        async () => {
+          expect((await inspectProtectedMode()).phase).toBe('inactive')
+        },
+        async () => {
+          // The lift restarts the stopped agents, and the owner trusts health
+          // again only from a fresh whole node report; it rebuilds the pair after
+          // it. Settle that recovery at the owner first, so the reader's wait
+          // covers only the rebuild.
+          adminPage = await adminContext.newPage()
+          admin = watchStatusFrames(adminPage)
+          await gotoPage(expect, adminPage, STATUS_PATH, PAGE_READY)
+          await expect
+            .poll(() => admin.latest())
+            .toMatchObject({
+              healthKnown: true,
+              components: { operationalCount: 1, totalCount: 1 },
+              maintenance: null,
+              incidents: [],
+            })
+          evidence.push({
+            elapsedMs: performance.now() - enteredAt,
+            recovered: admin.latest(),
           })
-        evidence.push({
-          elapsedMs: performance.now() - enteredAt,
-          recovered: admin.latest(),
-        })
-        await expectPublicStatusPair(expect, page, log, ({ status }) =>
-          status.components.every(
-            (component) => component.state === 'operational',
-          ),
-        )
-        await expect(page.getByTestId('public-status-banner')).toHaveText(
-          'All systems operational',
-        )
-      } finally {
-        admin.stop()
-        const cleanup = await Promise.allSettled([
-          log.stop(),
-          guardedLog.stop(),
-          coldLog.stop(),
-          guarded.close(),
-          otherContext.close(),
-          adminContext.close(),
-        ])
-        await guardedSocket.dispose()
-        await coldSocket.dispose()
-        await test.info().attach('public-status-active-freeze-real-time', {
-          body: JSON.stringify({
-            enteredAt,
-            evidence,
-            warm: log,
-            remembered: guardedLog,
-            cold: coldLog,
-            admin: admin.overviews,
+        },
+        async () => {
+          await expectPublicStatusPair(expect, page, log, ({ status }) =>
+            status.components.every(
+              (component) => component.state === 'operational',
+            ),
+          )
+          await expect(page.getByTestId('public-status-banner')).toHaveText(
+            'All systems operational',
+          )
+        },
+        () => admin.stop(),
+        async () => {
+          if (silencePeriodId !== undefined)
+            await removeStatusSilencePeriod(silencePeriodId)
+        },
+        () => log.stop(),
+        () => guardedLog.stop(),
+        () => coldLog.stop(),
+        () => guarded.close(),
+        () => otherContext.close(),
+        () => adminContext.close(),
+        () => guardedSocket.dispose(),
+        () => coldSocket.dispose(),
+        () =>
+          test.info().attach('public-status-active-freeze-real-time', {
+            body: JSON.stringify({
+              enteredAt,
+              evidence,
+              warm: log,
+              remembered: guardedLog,
+              cold: coldLog,
+              admin: admin.overviews,
+            }),
+            contentType: 'application/json',
           }),
-          contentType: 'application/json',
-        })
-        const failed = cleanup.filter((result) => result.status === 'rejected')
-        expect(failed, 'Freeze reader cleanup failed').toEqual([])
+      ]
+      for (const operation of cleanup) {
+        try {
+          await operation()
+        } catch (error) {
+          errors.push(error)
+        }
       }
     }
+    if (errors.length > 0)
+      throw testFailed && errors.length === 1
+        ? errors[0]
+        : new AggregateError(errors, 'Freeze reader cleanup failed', {
+            cause: errors[0],
+          })
   },
 )
 
@@ -1343,7 +1458,7 @@ test('nginx serves only the two no-store JSON names through GET and HEAD', async
           )
           expect(response.headers()['cache-control']).toBe('no-store')
           if (method === 'GET')
-            expect(await response.json()).toHaveProperty('schemaVersion', 2)
+            expect(await response.json()).toHaveProperty('schemaVersion', 3)
           else expect(await response.body()).toHaveLength(0)
           await response.dispose()
         }
