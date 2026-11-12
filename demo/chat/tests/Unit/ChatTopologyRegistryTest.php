@@ -421,6 +421,7 @@ use Hilos\Notification\DTO\NotificationEmitSignalData;
 use Hilos\Notification\DTO\NotificationMarkAllReadPayloadDTO;
 use Hilos\Notification\DTO\NotificationMarkReadPayloadDTO;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Notification\Delivery\DTO\NotificationDeliveryRetrySignalData;
 use Hilos\Notification\NotificationAction;
 use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
@@ -2272,9 +2273,12 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_OAUTH_PENDING => AgentType::HILOS_OAUTH,
             HilosSignalConstants::HILOS_MAIL_DELIVER => AgentType::HILOS_MAIL,
             HilosSignalConstants::HILOS_MAIL_SEND => AgentType::HILOS_MAIL,
+            HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY => AgentType::HILOS_MAIL,
             HilosSignalConstants::HILOS_SMS_DELIVER => AgentType::HILOS_SMS,
             HilosSignalConstants::HILOS_SMS_SEND => AgentType::HILOS_SMS,
+            HilosSignalConstants::HILOS_SMS_DELIVERY_RETRY => AgentType::HILOS_SMS,
             HilosSignalConstants::HILOS_PUSH_DELIVER => AgentType::HILOS_PUSH,
+            HilosSignalConstants::HILOS_PUSH_DELIVERY_RETRY => AgentType::HILOS_PUSH,
             HilosSignalConstants::LOGS_AGENT_READ_LINES => HilosAgentType::HILOS_LOG_STORE,
             HilosSignalConstants::LOGS_AGENT_FOLLOW_START => HilosAgentType::HILOS_LOG_STORE,
             HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP => HilosAgentType::HILOS_LOG_STORE,
@@ -2458,9 +2462,12 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::BOT_ANSWER_NOW => 'botId',
             HilosSignalConstants::HILOS_MAIL_DELIVER => NotificationDeliverSignalData::shardKey,
             HilosSignalConstants::HILOS_MAIL_SEND => MailSendSignalData::shardKey,
+            HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY => NotificationDeliveryRetrySignalData::shardKey,
             HilosSignalConstants::HILOS_SMS_DELIVER => NotificationDeliverSignalData::shardKey,
             HilosSignalConstants::HILOS_SMS_SEND => SmsSendSignalData::shardKey,
+            HilosSignalConstants::HILOS_SMS_DELIVERY_RETRY => NotificationDeliveryRetrySignalData::shardKey,
             HilosSignalConstants::HILOS_PUSH_DELIVER => NotificationDeliverSignalData::shardKey,
+            HilosSignalConstants::HILOS_PUSH_DELIVERY_RETRY => NotificationDeliveryRetrySignalData::shardKey,
         ], Hilos::getAgentSignalIndexFields());
     }
 
@@ -2655,9 +2662,12 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_OAUTH_PENDING => OAuthPendingLoginSignalData::class,
             HilosSignalConstants::HILOS_MAIL_DELIVER => NotificationDeliverSignalData::class,
             HilosSignalConstants::HILOS_MAIL_SEND => MailSendSignalData::class,
+            HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY => NotificationDeliveryRetrySignalData::class,
             HilosSignalConstants::HILOS_SMS_DELIVER => NotificationDeliverSignalData::class,
             HilosSignalConstants::HILOS_SMS_SEND => SmsSendSignalData::class,
+            HilosSignalConstants::HILOS_SMS_DELIVERY_RETRY => NotificationDeliveryRetrySignalData::class,
             HilosSignalConstants::HILOS_PUSH_DELIVER => NotificationDeliverSignalData::class,
+            HilosSignalConstants::HILOS_PUSH_DELIVERY_RETRY => NotificationDeliveryRetrySignalData::class,
             HilosSignalConstants::LOGS_AGENT_READ_LINES => LogsReadLinesSignalData::class,
             HilosSignalConstants::LOGS_AGENT_FOLLOW_START => LogsFollowStartSignalData::class,
             HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP => LogsFollowStopSignalData::class,
@@ -3164,7 +3174,7 @@ final class ChatTopologyRegistryTest extends TestCase
             'identities' => ['HIL-1952', 'HIL-1999'],
             'legalAcceptanceExports' => ['HIL-1952'],
             'legalAcceptances' => ['HIL-1952'],
-            'notificationDeliveries' => ['HIL-1910', 'HIL-1952'],
+            'notificationDeliveries' => ['HIL-1952'],
             'notificationPreferences' => ['HIL-1952'],
             'notifications' => ['HIL-1952'],
             'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],

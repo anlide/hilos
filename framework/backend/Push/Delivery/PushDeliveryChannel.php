@@ -75,6 +75,14 @@ class PushDeliveryChannel extends AbstractDeliveryChannel
     }
 
     /**
+     * @return string The push pool's failed-delivery retry agent signal
+     */
+    public function retrySignalName(): string
+    {
+        return HilosSignalConstants::HILOS_PUSH_DELIVERY_RETRY;
+    }
+
+    /**
      * Answers push reachability from the recipient's device subscriptions.
      *
      * Push has no single routable address, so the result is a presence marker (the

@@ -4,18 +4,32 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\Notification as EntityNotification;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
+use Hilos\Database\Exception\Transaction\CrossConnectionWriteException;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Notification\Delivery\DeliveryStatus;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * NotificationDelivery object - wraps a NotificationDelivery entity.
  *
  * Exposes the delivery row's fields and the small status predicates the delivery
  * agent reads; the status transitions (mark sent / record a failed attempt) are
- * write operations and live on the item actions.
+ * write operations and live on the item actions. The retry reset is the one
+ * transition kept here: it judges the saved row and refreshes this object's diff
+ * baseline from it, which only the object itself may do.
  *
  * @extends Object_<EntityNotificationDelivery>
  *
@@ -44,6 +58,61 @@ class NotificationDelivery extends Object_
     public const string createdAt = 'createdAt';
     public const string updatedAt = 'updatedAt';
     public const string deliveredAt = 'deliveredAt';
+
+    /**
+     * Resets the saved failed row to pending, judged by the table rather than by this held object.
+     *
+     * The object may lag behind the table: another process may have settled, reset or removed
+     * the row, or a new row may stand under the same id. So the saved row is read first, and a
+     * row the table no longer holds is refused by its id. The write guard then judges the
+     * proposal as it is held, so a rewritten coordinate is refused before the refresh could hide
+     * it; only after that does the saved row become both the values and the diff baseline of
+     * this same object, so every View holding it reads the table again and the update carries
+     * the saved previous values. The status and the notification behind the row are judged on
+     * the saved state, the notification by a fresh count rather than by any mirror. A refused
+     * reset leaves the table as it was.
+     *
+     * @throws ValidationException When the saved row is gone, is not failed, or its notification is gone
+     * @throws ObjectGetIdStringNotImplementedException When this object has never been saved
+     * @throws DatabaseException When a read or the update query fails
+     * @throws InvalidArgumentException When the entity query or the queued DB-sync signal is invalid
+     * @throws CrossConnectionWriteException When another connection holds an open application level
+     * @throws WriteNotAllowedException When no truth source in this process may write that row, or a coordinate is rewritten
+     * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
+     */
+    public function resetForRetry(): void
+    {
+        $id = $this->getIdString();
+        // A fresh read on purpose: the held object is what may be stale.
+        $saved = static::ENTITY_CLASS::get([EntityNotificationDelivery::id => $this->id])->first();
+        if ($saved === null) {
+            throw new ValidationException("Unknown delivery: {$id}");
+        }
+
+        Database::assertCanWrite($saved::getDatabase()->connectionIndex);
+        DbWriteGuard::guardItemWrite(
+            static::getCollectionKey(),
+            $id,
+            $this->touchedSetKeys(...),
+            TruthSourceOperation::Update,
+            $this,
+        );
+        $this->restoreSaved($saved->toArray(), related: true);
+        if ($saved->status !== DeliveryStatus::FAILED) {
+            throw new ValidationException('Only failed deliveries can be retried');
+        }
+        if (EntityNotification::countUpTo(1, [EntityNotification::id => $saved->notification_id]) === 0) {
+            throw new ValidationException('Delivery notification is unavailable');
+        }
+
+        $this->status = DeliveryStatus::PENDING;
+        $this->attempts = 0;
+        $this->lastError = null;
+        $this->deliveredAt = null;
+        $this->updatedAt = TimeHelper::nowMs();
+        $this->sync();
+    }
 
     /**
      * Magic getter for entity properties.

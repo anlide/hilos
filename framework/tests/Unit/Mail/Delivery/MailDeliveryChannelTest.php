@@ -98,11 +98,11 @@ final class MailDeliveryChannelTest extends TestCase
         $push->expects(self::once())->method('resolveAddress')->with(7)->willReturn('2');
         $push->method('frontendSubscribeConfig')->willReturn(['vapid_public' => 'BPk...']);
         $sms = $this->getMockBuilder(AbstractDeliveryChannel::class)
-            ->onlyMethods(['name', 'deliverSignalName', 'resolveAddress'])->getMock();
+            ->onlyMethods(['name', 'deliverSignalName', 'retrySignalName', 'resolveAddress'])->getMock();
         $sms->method('name')->willReturn('sms');
         $sms->expects(self::once())->method('resolveAddress')->with(7)->willReturn(null);
         $disabled = $this->getMockBuilder(AbstractDeliveryChannel::class)
-            ->onlyMethods(['name', 'deliverSignalName', 'resolveAddress'])->getMock();
+            ->onlyMethods(['name', 'deliverSignalName', 'retrySignalName', 'resolveAddress'])->getMock();
         $disabled->method('name')->willReturn('disabled');
         $disabled->expects(self::never())->method('resolveAddress');
         MailPreferenceTestChannelRegistry::$descriptors = [

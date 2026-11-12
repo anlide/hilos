@@ -16,9 +16,10 @@ use Hilos\Pages\Communications\AbstractHilosCommunicationsDeliveriesPage;
  *
  * What {@see HilosSignalConstants::HILOS_DELIVERY_RETRY} carries. The admin surface keeps the
  * action and the ADMIN level closing it ({@see AbstractHilosCommunicationsDeliveriesPage}),
- * because an agent action has no such level to inherit; the delivery journal is owned by
- * {@see AbstractNotificationsLibraryAgent}, so the row named here is reset and re-dispatched
- * there.
+ * because an agent action has no such level to inherit. It is addressed to
+ * {@see AbstractNotificationsLibraryAgent}, which creates the delivery rows but does not change
+ * them: the library passes the retry on to the channel or shard that owns the row, and that
+ * owner resets it and queues it again.
  *
  * The delivery is named by id and judged nowhere else: whether it exists and whether it is
  * failed are questions for the process that owns the row, at the moment it writes.
@@ -32,8 +33,8 @@ use Hilos\Pages\Communications\AbstractHilosCommunicationsDeliveriesPage;
 final class DeliveryRetrySignalData extends BaseDTO implements HandoverAskInterface
 {
     /**
-     * @param int $deliveryId Delivery journal row to reset and re-dispatch
-     * @param string $replySignal Agent-signal name the library reports back under
+     * @param int $deliveryId Delivery journal row to retry; its channel or shard resets it and queues it again
+     * @param string $replySignal Agent-signal name the answer travels under, from the library or the row's owner
      * @param string $acceptKey Initiating connection accept key to answer
      * @param ?string $requestId Client-minted request id of the tracked submit, or null when untracked
      * @param string $action Browser action name the ack is addressed to

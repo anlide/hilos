@@ -30,8 +30,8 @@ use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
  *
  * The read-only delivery journal ({@see HilosNotificationDeliveriesTable}
  * serves its windows) plus the single row action it owns: retry. A failed delivery
- * row can be re-queued — its status resets to pending with zero attempts and the
- * channel's deliver signal is sent again — so an admin can recover a delivery that
+ * row can be retried — the channel or shard that owns it resets its status to pending
+ * with zero attempts and queues it again — so an admin can recover a delivery that
  * failed on a transient outage without asking the user to re-trigger the event. The
  * action is valid only for a failed row (pending is already queued; sent is done).
  *
@@ -43,10 +43,11 @@ use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
  *
  * The retry runs in two steps since HIL-771, and the split is between the two things the
  * action was doing at once: deciding WHO may ask, which is the page's ADMIN level and lives
- * nowhere else, and WRITING the journal row, which belongs to
- * {@see AbstractNotificationsLibraryAgent}. So the page checks the caller and forwards, the
- * library judges the row and resets it, and the answer comes back here to be acked - the
- * admin's submit is answered by the surface it was submitted to.
+ * nowhere else, and WRITING the journal row, which belongs to the channel or shard that owns
+ * it. So the page checks the caller and forwards to {@see AbstractNotificationsLibraryAgent},
+ * the library passes the request on to that owner, the owner judges the row and resets it, and
+ * the answer comes back here to be acked - the admin's submit is answered by the surface it
+ * was submitted to.
  */
 abstract class AbstractHilosCommunicationsDeliveriesPage extends AbstractHilosCommunicationsChannelContextPage
 {
@@ -61,7 +62,7 @@ abstract class AbstractHilosCommunicationsDeliveriesPage extends AbstractHilosCo
     ];
 
     /**
-     * The library's answer to the retry this page forwarded (HIL-771).
+     * The answer to the retry this page forwarded, from the owner of the row or from the library (HIL-771).
      *
      * Declaring it here is what brings the answer back to the surface that asked: a page-owned
      * signal is routed to the agent serving this page, which hands it to this handler. The
@@ -108,7 +109,7 @@ abstract class AbstractHilosCommunicationsDeliveriesPage extends AbstractHilosCo
     }
 
     /**
-     * Answers the admin whose retry the library has finished (HIL-771).
+     * Answers the admin whose retry has been answered (HIL-771).
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
@@ -136,16 +137,15 @@ abstract class AbstractHilosCommunicationsDeliveriesPage extends AbstractHilosCo
      * The admin half of a two-step action (HIL-771): what this page still is, is the door - it
      * carries the ADMIN level that decides who may ask at all, and an agent action carries no
      * such level, which is why the name stayed here. What it stopped being is the writer: the
-     * journal row belongs to {@see AbstractNotificationsLibraryAgent}, and a page runs in
-     * whichever worker serves the connection, so a page writing it was a write with no claim
-     * behind it.
+     * journal row belongs to its channel or shard, and a page runs in whichever worker serves
+     * the connection, so a page writing it was a write with no claim behind it.
      *
      * Nothing is judged here on the way out, not even that the row exists: the answer would be
      * read in this worker and acted on in another, and the row is free to change in between.
-     * The library judges it where it writes it, and says so on the way back.
+     * The owner of the row judges it where it writes it, and says so on the way back.
      *
      * No sentence is spoken on success: the re-queued row arrives in the window live (HIL-1049) -
-     * at once for the author, whose connection marks the library's write as its own
+     * at once for the author, whose connection marks the owner's write as its own
      * (the retry frame is a HandoverAskInterface), and as a delta for everyone else.
      *
      * @param string $acceptKey WebSocket accept key of the requesting admin

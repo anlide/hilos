@@ -22,6 +22,7 @@ use Hilos\Hilos;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Notification\Delivery\DeliveryStatus;
+use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use Hilos\Sms\Delivery\SmsRawSendAgent;
@@ -187,19 +188,19 @@ final class NotificationDeliveryOwnershipIntegrationTest extends NotificationDel
         });
     }
 
-    /** @return iterable<string, array{string, bool}> All immutable columns under the channel and the transition library */
+    /** @return iterable<string, array{string, bool}> All immutable columns under the channel and the add-only library */
     public static function immutableCoordinates(): iterable
     {
         foreach ([EntityNotificationDelivery::id, EntityNotificationDelivery::notification_id,
             EntityNotificationDelivery::channel, EntityNotificationDelivery::routing_key] as $column) {
             yield "{$column}, channel" => [$column, true];
-            yield "{$column}, transition library" => [$column, false];
+            yield "{$column}, add-only library" => [$column, false];
         }
     }
 
     /**
      * @param string $column Immutable coordinate dirtied before sync
-     * @param bool $channelWriter Whether to use the partitioned channel or the existing library writer
+     * @param bool $channelWriter Whether to use the partitioned channel or the library's production Add-only grant
      */
     #[DataProvider('immutableCoordinates')]
     public function testImmutableCoordinatesCannotMoveADirtyObjectAndSyncRevertsIt(string $column, bool $channelWriter): void
@@ -225,6 +226,29 @@ final class NotificationDeliveryOwnershipIntegrationTest extends NotificationDel
         } else {
             $write();
         }
+    }
+
+    /**
+     * The library creates delivery rows and nothing more: under its production grant the reset of a
+     * failed row is refused before SQL or an announcement, and the row stays failed (HIL-1910).
+     */
+    public function testLibraryAddOnlyGrantCannotResetAFailedDelivery(): void
+    {
+        self::assertSame(
+            [TruthSourceOperation::Add],
+            OwnershipDeclaration::dbCollectionsOf(AbstractNotificationsLibraryAgent::class)[HilosDbContext::notificationDeliveries]->asList(),
+        );
+        $id = Hilos::$db->notificationDeliveries->actions->createPending(11, MailDeliveryChannel::NAME, 0)->id;
+        $this->asClaimant(self::mailOwner(), static function () use ($id): void {
+            Hilos::$db->notificationDeliveries[$id]->actions->beginAttempt();
+            Hilos::$db->notificationDeliveries[$id]->actions->recordFailure('smtp down', 1);
+        });
+
+        $this->assertRefusedWithoutChanges(static fn () => Hilos::$db->notificationDeliveries[$id]->actions->resetForRetry());
+
+        self::assertSame([['status' => DeliveryStatus::FAILED, 'attempts' => '1', 'last_error' => 'smtp down']], Database::sql(
+            'SELECT status, attempts, last_error FROM hilos_notification_delivery WHERE id = ?', [$id],
+        )->rows());
     }
 
     public function testDirtyPrimaryKeyCannotUseAnotherExistingRowsMatchingCoordinatesAsProof(): void

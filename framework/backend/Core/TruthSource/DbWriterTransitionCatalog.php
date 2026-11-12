@@ -25,7 +25,6 @@ class DbWriterTransitionCatalog
     protected const string TRUST_RENEW = 'HIL-1907';
     protected const string TRUST_CAP = 'HIL-1908';
     protected const string TRUST_FORGET = 'HIL-1909';
-    protected const string DELIVERY_RETRY = 'HIL-1910';
     protected const string ERASURE = 'HIL-1952';
     protected const string MERGE = 'HIL-1999';
 
@@ -259,7 +258,7 @@ class DbWriterTransitionCatalog
 
     /**
      * @param class-string<Hilos> $hilosClass Inspected topology
-     * @return list<DbWriterTransitionState> Guarded delivery retry and erasure transitions
+     * @return list<DbWriterTransitionState> Guarded delivery erasure transitions
      */
     private function deliveryStates(string $hilosClass): array
     {
@@ -275,9 +274,8 @@ class DbWriterTransitionCatalog
 
         $states = $this->states(
             [...$this->claim($library, DbWriterClaimWidth::Whole, TruthSourceOperation::Add), ...$channels],
-            [self::DELIVERY_RETRY => $this->claim($library, DbWriterClaimWidth::Whole, TruthSourceOperation::Update),
-                self::ERASURE => $this->claim($this->role($hilosClass, HilosAgentType::HILOS_SESSIONS_LIBRARY),
-                    DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
+            [self::ERASURE => $this->claim($this->role($hilosClass, HilosAgentType::HILOS_SESSIONS_LIBRARY),
+                DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
         );
 
         return array_map(static fn (DbWriterTransitionState $state): DbWriterTransitionState => new DbWriterTransitionState(

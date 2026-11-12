@@ -17,6 +17,7 @@ use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
 use Hilos\Notification\Delivery\DeliveryAttempt;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Notification\Delivery\DTO\NotificationDeliveryRetrySignalData;
 use Hilos\Sms\DTO\SmsSendSignalData;
 use Hilos\Sms\Exception\SmsTemplateNotInCatalogException;
 use Hilos\Sms\Exception\SmsTemplateParamMissingException;
@@ -53,9 +54,10 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_SMS;
 
     /**
-     * Pool routes: both intakes are fanned across the pool by the recipient's shard key.
+     * Pool routes: both intakes and the retry request are fanned across the pool by the recipient's shard key.
      *  - HILOS_SMS_DELIVER (input A) carries a notification delivery;
-     *  - HILOS_SMS_SEND (input B) carries a raw send.
+     *  - HILOS_SMS_SEND (input B) carries a raw send;
+     *  - HILOS_SMS_DELIVERY_RETRY carries the library's request to take a failed delivery back (HIL-1910).
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_SMS_DELIVER => [
@@ -65,6 +67,10 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
         HilosSignalConstants::HILOS_SMS_SEND => [
             AgentSignalConfigKey::INDEX_FIELD => SmsSendSignalData::shardKey,
             AgentSignalConfigKey::DTO => SmsSendSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_SMS_DELIVERY_RETRY => [
+            AgentSignalConfigKey::INDEX_FIELD => NotificationDeliveryRetrySignalData::shardKey,
+            AgentSignalConfigKey::DTO => NotificationDeliveryRetrySignalData::class,
         ],
     ];
 

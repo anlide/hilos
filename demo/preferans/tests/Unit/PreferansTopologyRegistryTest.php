@@ -607,6 +607,7 @@ final class PreferansTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_MAIL_DELIVER => HilosAgentType::HILOS_MAIL,
                 HilosSignalConstants::HILOS_MAIL_SEND => HilosAgentType::HILOS_MAIL,
+                HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY => HilosAgentType::HILOS_MAIL,
             ],
             Hilos::getAgentSignalRoutes(),
         );
@@ -978,7 +979,7 @@ final class PreferansTopologyRegistryTest extends TestCase
             'dataExports' => ['HIL-1952'],
             'identities' => ['HIL-1952', 'HIL-1999'],
             'legalAcceptances' => ['HIL-1952'],
-            'notificationDeliveries' => ['HIL-1910', 'HIL-1952'],
+            'notificationDeliveries' => ['HIL-1952'],
             'notificationPreferences' => ['HIL-1952'],
             'notifications' => ['HIL-1952'],
             'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],

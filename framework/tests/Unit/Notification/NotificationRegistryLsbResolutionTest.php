@@ -122,6 +122,11 @@ final class LsbResolutionTestChannel extends AbstractDeliveryChannel
         return 'hilos_notification_deliver_email';
     }
 
+    public function retrySignalName(): string
+    {
+        return 'hilos_notification_retry_email';
+    }
+
     public function resolveAddress(int $userId): ?string
     {
         return 'user-' . $userId . '@example.test';

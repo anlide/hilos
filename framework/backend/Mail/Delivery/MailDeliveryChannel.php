@@ -84,6 +84,14 @@ class MailDeliveryChannel extends AbstractDeliveryChannel
     }
 
     /**
+     * @return string The mail pool's failed-delivery retry agent signal
+     */
+    public function retrySignalName(): string
+    {
+        return HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY;
+    }
+
+    /**
      * Resolves the recipient's verified email from the framework identities.
      *
      * @param int $userId Recipient user id

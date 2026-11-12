@@ -27,20 +27,26 @@ use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificati
 use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDelivery;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
+use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\HilosMailer;
+use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Notification\Delivery\DeliveryStatus;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Notification\Delivery\DTO\NotificationDeliveryRetrySignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\NotificationDraft;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
+use ReflectionProperty;
 
 /**
  * Integration tests for chat notification channel dispatch and delivery-row transitions (HIL-490).
  *
  * The dispatcher has to resolve the chat registry through the facade, consult real settings and
- * identities, then persist rows and queue handoffs. The retry path likewise crosses the library's
- * signal boundary, so only the live database can prove the row is in its final stored state.
+ * identities, then persist rows and queue handoffs. The retry path crosses two signal boundaries -
+ * the library names the row's owner, the email shard resets it and answers (HIL-1910) - so each hop
+ * runs under its own agent, and only the live database can prove the row is in its final stored state.
  */
 final class NotificationChannelDeliveryTest extends IntegrationTestCase
 {
@@ -78,6 +84,9 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
     /** Router this case replaces while it captures library handoffs. */
     private ?SignalRouter $previousSignalRouter = null;
 
+    /** @var array<int, MailDeliveryChannelAgent> Email shard owners started by this case, by shard */
+    private array $mailOwners = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -93,6 +102,11 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
 
     protected function tearDown(): void
     {
+        foreach ($this->mailOwners as $owner) {
+            TruthSourceRegistry::unregisterAgent($owner->getId());
+            RtTruthSourceRegistry::unregisterAgent($owner->getId());
+        }
+        $this->mailOwners = [];
         $this->cleanUp();
         Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` IN (?, ?)', [self::RECIPIENT_ID, self::RETRY_RECIPIENT_ID]);
         Hilos::$sr = $this->previousSignalRouter;
@@ -257,12 +271,14 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
         self::assertSame(255, mb_strlen((string) $failed->last_error));
     }
 
-    public function testARetriedFailedRowIsResetAndQueuedAgain(): void
+    public function testARetriedFailedRowIsResetAndTakenBackByItsOwner(): void
     {
         $delivery = $this->failedRetryDelivery();
         $deliveryId = $this->deliveryId($delivery);
 
-        $this->retry($deliveryId);
+        $ask = $this->retryAsk($this->retry($deliveryId), $deliveryId);
+        self::assertSame(DeliveryStatus::FAILED, $this->row($deliveryId)->status, 'The library writes nothing');
+        $owner = $this->passToOwner($ask);
         $retried = $this->row($deliveryId);
         self::assertSame(DeliveryStatus::PENDING, $retried->status);
         self::assertSame(0, $retried->attempts);
@@ -270,13 +286,9 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
         self::assertNull($retried->delivered_at);
 
         $signals = $this->takeSignals();
-        $this->assertDeliveryFrame(
-            $signals,
-            self::EMAIL,
-            HilosSignalConstants::HILOS_MAIL_DELIVER,
-            $retried->notification_id,
-        );
+        $this->assertNoDeliveryFrame($signals, self::EMAIL);
         self::assertNull($this->retryAnswer($signals)->error);
+        self::assertSame([$deliveryId], $this->ownerQueue($owner));
     }
 
     public function testRetryKeepsTheSavedDeliveryAndKeyAfterTheAddressDisappears(): void
@@ -291,13 +303,13 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
         );
         self::assertNull(ChatDeliveryChannelRegistry::get(self::EMAIL)?->resolveAddress(self::RETRY_RECIPIENT_ID));
 
-        $this->retry($deliveryId);
+        $ask = $this->retryAsk($this->retry($deliveryId), $deliveryId);
+        $owner = $this->passToOwner($ask);
 
         self::assertSame($savedKey, $this->row($deliveryId)->routing_key);
-        $this->assertDeliveryFrame(
-            $this->takeSignals(), self::EMAIL, HilosSignalConstants::HILOS_MAIL_DELIVER,
-            $delivery->notificationId,
-        );
+        self::assertSame($savedKey, $ask->routingKey);
+        self::assertNull($this->retryAnswer($this->takeSignals())->error);
+        self::assertSame([$deliveryId], $this->ownerQueue($owner));
     }
 
     /** A new delivery captures the new address's seed, while retry keeps the old row's saved seed. */
@@ -309,17 +321,16 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
         $oldNotificationId = $this->emit(self::RETRY_RECIPIENT_ID, channels: [self::EMAIL]);
         $oldDelivery = $this->deliveries()->findFor($oldNotificationId, self::EMAIL);
         self::assertNotNull($oldDelivery);
-        for ($attempt = 0; $attempt < self::MAX_ATTEMPTS; $attempt++) {
-            $this->deliveries()->beginAttempt($oldDelivery);
-            $this->deliveries()->recordFailure($oldDelivery, 'smtp down', self::MAX_ATTEMPTS);
-        }
+        $this->failUnderOwner($oldDelivery);
         Hilos::$db->identities->changeEmail(self::RETRY_RECIPIENT_ID, 'original@example.test', 'replacement@example.test');
         self::assertSame('replacement@example.test', Hilos::$db->identities->findVerifiedEmailByUser(self::RETRY_RECIPIENT_ID));
 
         $newNotificationId = $this->emit(self::RETRY_RECIPIENT_ID, channels: [self::EMAIL]);
         $this->assertDeliveryFrame($this->takeSignals(), self::EMAIL, HilosSignalConstants::HILOS_MAIL_DELIVER, $newNotificationId);
-        $this->retry($this->deliveryId($oldDelivery));
-        $this->assertDeliveryFrame($this->takeSignals(), self::EMAIL, HilosSignalConstants::HILOS_MAIL_DELIVER, $oldNotificationId);
+        $oldAsk = $this->retryAsk($this->retry($this->deliveryId($oldDelivery)), $this->deliveryId($oldDelivery));
+        self::assertSame(HilosMailer::routingKeyForAddress('original@example.test'), $oldAsk->routingKey);
+        self::assertSame([$this->deliveryId($oldDelivery)], $this->ownerQueue($this->passToOwner($oldAsk)));
+        $this->assertNoDeliveryFrame($this->takeSignals(), self::EMAIL);
 
         self::assertNotSame(
             HilosMailer::routingKeyForAddress('original@example.test'),
@@ -341,15 +352,17 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
         $delivery = $this->pendingRetryDelivery();
         $deliveryId = $this->deliveryId($delivery);
 
-        $this->retry($deliveryId);
+        $owner = $this->passToOwner($this->retryAsk($this->retry($deliveryId), $deliveryId));
         self::assertSame('Only failed deliveries can be retried', $this->retryAnswer($this->takeSignals())->error);
         self::assertSame(DeliveryStatus::PENDING, $this->row($deliveryId)->status);
+        self::assertSame([], $this->ownerQueue($owner));
 
-        $this->retry($deliveryId + self::UNKNOWN_DELIVERY_OFFSET);
+        $unknown = $this->retry($deliveryId + self::UNKNOWN_DELIVERY_OFFSET);
         self::assertSame(
             'Unknown delivery: ' . ($deliveryId + self::UNKNOWN_DELIVERY_OFFSET),
-            $this->retryAnswer($this->takeSignals())->error,
+            $this->retryAnswer($unknown)->error,
         );
+        self::assertCount(1, $unknown, 'A row that is not there is answered by the library and asked of nobody');
     }
 
     /**
@@ -514,16 +527,51 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
     private function failedRetryDelivery(): ObjectNotificationDelivery
     {
         $delivery = $this->pendingRetryDelivery();
-        for ($attempt = 0; $attempt < self::MAX_ATTEMPTS; $attempt++) {
-            $this->deliveries()->beginAttempt($delivery);
-            $this->deliveries()->recordFailure($delivery, 'smtp down', self::MAX_ATTEMPTS);
-        }
+        $this->failUnderOwner($delivery);
 
         return $delivery;
     }
 
-    /** Delivers the retry handover to the notifications library under its own execution context. */
-    private function retry(int $deliveryId): void
+    /**
+     * Fails an email delivery through the attempt ceiling under the shard that owns it, as its sends would.
+     *
+     * @param ObjectNotificationDelivery $delivery Pending email delivery
+     */
+    private function failUnderOwner(ObjectNotificationDelivery $delivery): void
+    {
+        $shard = ChatDeliveryChannelRegistry::get(self::EMAIL)?->ownerIndexFor($delivery->routingKey ?? $delivery->notificationId);
+        self::assertNotNull($shard);
+        $this->underAgent($this->mailOwner($shard), function () use ($delivery): void {
+            for ($attempt = 0; $attempt < self::MAX_ATTEMPTS; $attempt++) {
+                $this->deliveries()->beginAttempt($delivery);
+                $this->deliveries()->recordFailure($delivery, 'smtp down', self::MAX_ATTEMPTS);
+            }
+        });
+    }
+
+    /**
+     * The email shard owner of one shard, started the way a node starts it: its declared claims first.
+     *
+     * @param int $shard One-based shard index
+     * @return MailDeliveryChannelAgent The started owner, one per shard per case
+     */
+    private function mailOwner(int $shard): MailDeliveryChannelAgent
+    {
+        if (!isset($this->mailOwners[$shard])) {
+            $this->mailOwners[$shard] = new MailDeliveryChannelAgent((string)$shard);
+            $this->startAgent($this->mailOwners[$shard]);
+        }
+
+        return $this->mailOwners[$shard];
+    }
+
+    /**
+     * Delivers the retry request to the notifications library under its own execution context.
+     *
+     * @param int $deliveryId Delivery the admin picked
+     * @return list<SignalDTO> Every frame the library queued for it
+     */
+    private function retry(int $deliveryId): array
     {
         $library = $this->notificationsLibrary();
         $this->drainSignals();
@@ -541,6 +589,66 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
                 HilosSignalConstants::HILOS_DELIVERY_RETRY,
             );
         });
+
+        return $this->takeSignals();
+    }
+
+    /**
+     * Returns the one frame the library queued: the request to the email shard that owns the row.
+     *
+     * @param list<SignalDTO> $signals Frames the library queued
+     * @param int $deliveryId Delivery the admin picked
+     * @return NotificationDeliveryRetrySignalData The ask, carrying the saved coordinates and the admin's request
+     */
+    private function retryAsk(array $signals, int $deliveryId): NotificationDeliveryRetrySignalData
+    {
+        self::assertCount(1, $signals, 'The library passes the request on and answers nothing itself');
+        self::assertSame(HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY, $signals[0]->signalName->getName());
+        $data = $signals[0]->data;
+        self::assertInstanceOf(AgentSignalData::class, $data);
+        $ask = $data->data;
+        self::assertInstanceOf(NotificationDeliveryRetrySignalData::class, $ask);
+        $saved = $this->row($deliveryId);
+        self::assertSame(
+            [$deliveryId, $saved->notification_id, self::EMAIL, $saved->routing_key,
+                ChatDeliveryChannelRegistry::get(self::EMAIL)?->ownerIndexFor($saved->routing_key ?? $saved->notification_id)],
+            [$ask->deliveryId, $ask->notificationId, $ask->channel, $ask->routingKey, $ask->shardKey],
+        );
+        self::assertSame(
+            [HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE, self::ACCEPT_KEY, null, HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY, null],
+            [$ask->replySignal, $ask->acceptKey, $ask->requestId, $ask->action, $ask->successMessage],
+        );
+
+        return $ask;
+    }
+
+    /**
+     * Hands the library's request to the email shard it names, the way that shard's worker receives an ask:
+     * under the shard's own agent, with the admin who asked as the origin of the write.
+     *
+     * @param NotificationDeliveryRetrySignalData $ask Request the library queued
+     * @return MailDeliveryChannelAgent The owner that received it
+     */
+    private function passToOwner(NotificationDeliveryRetrySignalData $ask): MailDeliveryChannelAgent
+    {
+        self::assertNotNull($ask->shardKey);
+        $owner = $this->mailOwner($ask->shardKey);
+        $this->underAgent($owner, static fn () => ExecutionContext::withOrigin(
+            $ask->acceptKey,
+            $ask->requestId,
+            static fn () => $owner->onSignalAgent(new AgentSignalData($ask), '', HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY),
+        ));
+
+        return $owner;
+    }
+
+    /**
+     * @param MailDeliveryChannelAgent $owner Email shard owner
+     * @return list<int> Delivery ids waiting in its private queue, to be started on its next tick
+     */
+    private function ownerQueue(MailDeliveryChannelAgent $owner): array
+    {
+        return array_keys(new ReflectionProperty(AbstractDeliveryChannelAgent::class, 'ops')->getValue($owner));
     }
 
     /**
@@ -606,7 +714,7 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
     }
 
     /**
-     * Returns the retry handover answer among a library dispatch's queued frames.
+     * Returns the retry handover answer among the queued frames of the hop that ended the request.
      *
      * @param list<SignalDTO> $signals Queued signals to inspect
      * @return HandoverAnswerSignalData Retry outcome

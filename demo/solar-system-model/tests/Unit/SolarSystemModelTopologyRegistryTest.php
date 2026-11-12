@@ -19,6 +19,7 @@ use Hilos\Database\Migration\FrameworkMigrationStartupGuard;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Notification\Delivery\DTO\NotificationDeliveryRetrySignalData;
 use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -117,6 +118,22 @@ final class SolarSystemModelTopologyRegistryTest extends TestCase
         self::assertSame(MainPage::class, Hilos::PAGES[MainPage::PAGE]);
         self::assertSame('solar_system_model', AgentType::SOLAR_SYSTEM_MODEL);
         self::assertSame(AgentType::SOLAR_SYSTEM_MODEL, Hilos::getPageRoutes()[MainPage::PAGE]);
+    }
+
+    /** The inherited mail shard owner takes the delivery retry request by shard key; no other channel opens here. */
+    public function testDeliveryRetryRouteIsOpenOnlyForTheRegisteredMailChannel(): void
+    {
+        self::assertSame(HilosAgentType::HILOS_MAIL, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY]);
+        self::assertSame(
+            NotificationDeliveryRetrySignalData::shardKey,
+            Hilos::getAgentSignalIndexFields()[HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY],
+        );
+        self::assertSame(
+            NotificationDeliveryRetrySignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY],
+        );
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_SMS_DELIVERY_RETRY, Hilos::getAgentSignalRoutes());
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_PUSH_DELIVERY_RETRY, Hilos::getAgentSignalRoutes());
     }
 
     /** Startup validates this project's real registry rather than a synthetic facade. */

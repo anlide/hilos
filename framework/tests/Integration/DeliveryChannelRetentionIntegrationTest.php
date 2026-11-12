@@ -216,6 +216,11 @@ final class DeliveryChannelRetentionIntegrationTest extends DeliveryRetentionInt
 
     public function testRetryAfterPageSelectionKeepsTheRowPending(): void
     {
+        Database::sql("INSERT INTO hilos_user (id, name) VALUES (1902, 'Retention recipient')");
+        Database::sql(
+            'INSERT INTO hilos_notification (id, user_id, type, title, created_at) VALUES (11, 1902, ?, ?, 1)',
+            ['test.retention', 'Retention notification'],
+        );
         $first = $this->insertDelivery(DeliveryStatus::SENT, 1);
         $retried = $this->insertDelivery(DeliveryStatus::FAILED, 1);
         $retryOwed = true;

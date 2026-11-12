@@ -681,6 +681,7 @@ final class ConcertTicketsTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_MAIL_DELIVER => HilosAgentType::HILOS_MAIL,
                 HilosSignalConstants::HILOS_MAIL_SEND => HilosAgentType::HILOS_MAIL,
+                HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY => HilosAgentType::HILOS_MAIL,
                 HilosSignalConstants::MODERATION_RULE_ADD => HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
                 HilosSignalConstants::MODERATION_RULE_DELETE => HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
                 HilosSignalConstants::MODERATION_RULE_UPDATE => HilosAgentType::HILOS_MODERATION_RULES_LIBRARY,
@@ -1122,7 +1123,7 @@ final class ConcertTicketsTopologyRegistryTest extends TestCase
             'dataExports' => ['HIL-1952'],
             'identities' => ['HIL-1952', 'HIL-1999'],
             'legalAcceptances' => ['HIL-1952'],
-            'notificationDeliveries' => ['HIL-1910', 'HIL-1952'],
+            'notificationDeliveries' => ['HIL-1952'],
             'notificationPreferences' => ['HIL-1952'],
             'notifications' => ['HIL-1952'],
             'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],
@@ -1644,7 +1645,7 @@ final class ConcertTicketsTopologyRegistryTest extends TestCase
         $this->assertSame(SmsRawSendAgent::class, $entry[AgentRegistryKey::WORKER]);
         $this->assertSame([], OwnershipDeclaration::dbCollectionsOf(SmsRawSendAgent::class));
         $this->assertSame([HilosSignalConstants::HILOS_SMS_SEND], array_keys(SmsRawSendAgent::AGENT_SIGNALS));
-        $this->assertSame(['HIL-1910', 'HIL-1952'], Hilos::SHARED_DB_OWNERS['notificationDeliveries']);
+        $this->assertSame(['HIL-1952'], Hilos::SHARED_DB_OWNERS['notificationDeliveries']);
     }
 
     public function testDeclaredFeaturesAreFullyActivated(): void

@@ -2653,20 +2653,46 @@ final class TopologyValidatorTest extends TestCase
         }
     }
 
-    public function testRetiredDeliveryGuardDebtCannotReturn(): void
+    /**
+     * With the library only adding delivery rows, the catalog knows the collection by its one remaining vertex,
+     * the sessions library's erasure: a retired guard debt is checked against the closed states, not refused earlier.
+     *
+     * @param class-string<HilosFacade> $facade Topology carrying a debt the guard transitions retired
+     */
+    #[DataProvider('retiredDeliveryGuardDebts')]
+    public function testRetiredDeliveryGuardDebtCannotReturn(string $facade): void
     {
-        $this->assertTopologyErrors(static fn (): mixed => TopologyResurrectedDeliveryDebtHilos::validateTopology(), [
-            'notificationDeliveries', 'exact closed DB writer state',
-        ]);
+        try {
+            $facade::validateTopology();
+        } catch (InvalidTopologyException $exception) {
+            self::assertStringContainsString("DB collection 'notificationDeliveries'", $exception->getMessage());
+            self::assertStringContainsString('exact closed DB writer state', $exception->getMessage());
+            self::assertStringNotContainsString('names an unknown DB writer collection', $exception->getMessage());
+            self::assertStringNotContainsString('is stale', $exception->getMessage());
+            return;
+        }
+
+        $this->fail('Expected topology validation to fail');
     }
 
+    /** @return array<string, array{class-string<HilosFacade>}> Topology carrying the retired debt */
+    public static function retiredDeliveryGuardDebts(): array
+    {
+        return [
+            'the earlier guard key' => [TopologyResurrectedDeliveryDebtHilos::class],
+            'the retry key beside the erasure' => [TopologyResurrectedRetryDebtHilos::class],
+        ];
+    }
+
+    /** The partition proves only a channel's own rows: a whole holder beside it conflicts, an adding library does not. */
     public function testChannelPartitionDoesNotCoverALibraryOrSessionHolder(): void
     {
-        foreach ([AbstractNotificationsLibraryAgent::class, AbstractSessionsLibraryAgent::class] as $other) {
-            self::assertStringContainsString($other, implode("\n", $this->declaredOwnershipErrors(
-                [$other], TopologyPartitionedChannelsHilos::class,
-            )));
-        }
+        self::assertStringContainsString(AbstractSessionsLibraryAgent::class, implode("\n", $this->declaredOwnershipErrors(
+            [AbstractSessionsLibraryAgent::class], TopologyPartitionedChannelsHilos::class,
+        )));
+        self::assertStringNotContainsString(AbstractNotificationsLibraryAgent::class, implode("\n", $this->declaredOwnershipErrors(
+            [AbstractNotificationsLibraryAgent::class], TopologyPartitionedChannelsHilos::class,
+        )));
         self::assertStringContainsString('conflicts with', implode("\n", $this->declaredOwnershipErrors(
             [], TopologyPartlyPartitionedChannelsHilos::class,
         )));
@@ -10050,10 +10076,19 @@ abstract class TopologyRawSmsPartitionHilos extends TopologyRawSmsHilos
 
 abstract class TopologyResurrectedDeliveryDebtHilos extends TopologyRawSmsHilos
 {
-    public const array AGENTS = [...parent::AGENTS, HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY => [
-        AgentRegistryKey::WORKER => AbstractNotificationsLibraryAgent::class,
-        AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
-    ]];
+    public const array AGENTS = [
+        ...parent::AGENTS,
+        HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY => [
+            AgentRegistryKey::WORKER => AbstractNotificationsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
+        ],
+        HilosAgentType::HILOS_SESSIONS_LIBRARY => [AgentRegistryKey::WORKER => AbstractSessionsLibraryAgent::class],
+    ];
 
     public const array SHARED_DB_OWNERS = [HilosDbContext::notificationDeliveries => ['HIL-1893']];
+}
+
+abstract class TopologyResurrectedRetryDebtHilos extends TopologyResurrectedDeliveryDebtHilos
+{
+    public const array SHARED_DB_OWNERS = [HilosDbContext::notificationDeliveries => ['HIL-1910', 'HIL-1952']];
 }

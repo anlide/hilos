@@ -144,7 +144,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'legalAcceptances' => [['users', 'whole', 'add'], ['person', 'set', 'remove'], ['holder', 'whole', 'remove']],
             'notifications' => [['notifications', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove']],
             'notificationDeliveries' => [
-                ['notifications', 'whole', 'add,update'], ['mail', 'whole', 'remove,update'], ['holder', 'whole', 'remove']],
+                ['notifications', 'whole', 'add'], ['mail', 'whole', 'remove,update'], ['holder', 'whole', 'remove']],
             'notificationPreferences' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'remove']],
             'pushSubscriptions' => [
                 ['notifications', 'whole', 'add,update'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove']],
@@ -166,7 +166,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'accountDeletions' => ['HIL-1952'],
             'legalAcceptances' => ['HIL-1952'],
             'notifications' => ['HIL-1952'],
-            'notificationDeliveries' => ['HIL-1910', 'HIL-1952'],
+            'notificationDeliveries' => ['HIL-1952'],
             'notificationPreferences' => ['HIL-1952'],
             'pushSubscriptions' => ['HIL-1906', 'HIL-1952'],
             'dataExports' => ['HIL-1952'],
@@ -311,13 +311,12 @@ final class DbWriterTransitionCatalogTest extends TestCase
         }
     }
 
-    /** Channel removal is permanent; only library retry and holder erasure remain transitional. */
-    public function testDeliveryMovesRequireGuardAndKeepUnpaidLibraryOperations(): void
+    /** Channel removal and retry are permanent; the library only adds, and holder erasure alone remains transitional. */
+    public function testDeliveryMovesRequireGuardAndLeaveTheLibraryAddOnly(): void
     {
         $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['notificationDeliveries']);
         $expectedLibrary = [
             '' => 'add',
-            'HIL-1910,HIL-1952' => 'add,update',
             'HIL-1952' => 'add',
         ];
         self::assertSame(array_keys($expectedLibrary), array_keys($states));
@@ -430,7 +429,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             AbstractSessionsLibraryAgent::class . ':whole:remove,update',
         ], $inactive['identities'][0]);
         $this->assertVector([
-            AbstractNotificationsLibraryAgent::class . ':whole:add,update',
+            AbstractNotificationsLibraryAgent::class . ':whole:add',
             MailDeliveryChannelAgent::class . ':whole:remove,update',
             AbstractSessionsLibraryAgent::class . ':whole:remove',
         ], $inactive['notificationDeliveries'][0]);
@@ -601,9 +600,6 @@ final class DbWriterTransitionCatalogTest extends TestCase
                 '' => ['notifications:whole:add', 'person:set:remove,update'],
             ],
             'notificationDeliveries' => [
-                'HIL-1910,HIL-1952' => [
-                    'notifications:whole:add,update', 'channel:whole:remove,update', 'holder:whole:remove',
-                    'partition:notification-channel-shard'],
                 'HIL-1952' => [
                     'notifications:whole:add', 'channel:whole:remove,update', 'holder:whole:remove',
                     'partition:notification-channel-shard'],

@@ -161,10 +161,11 @@ for a singleton. The pool width is expected to agree across nodes after the
 normal restart/freeze process; no rolling mixed-environment or split-brain
 fence is promised. The channel or shard has no `Add`; its `Update` and `Remove`
 are both checked against the saved delivery identity and current route. The
-notifications library creates rows and retains `Update` for retry through
-`resetForRetry()` until HIL-1910. Retention belongs to the channel or shard and
-does not delete pending rows. A standalone raw SMS worker has no
-delivery claim and cannot borrow the notifications library's grant.
+notifications library only creates rows: an admin retry is passed to the channel
+or shard that owns the row, which resets it under its own `Update`. Retention
+belongs to the channel or shard and does not delete pending rows. A
+standalone raw SMS worker has no delivery claim and cannot borrow the
+notifications library's grant.
 Borrowing describes readiness and reader interest, never permission for a
 second DB writer. The operations are read folded — `BY_KIND` expanded and the
 parents' records merged — so an heir that gives a borrowed record the right to

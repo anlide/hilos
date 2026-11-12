@@ -106,8 +106,10 @@ use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Notification\Delivery\DTO\NotificationDeliveryRetrySignalData;
 use Hilos\Notification\Delivery\NotificationDispatcher;
 use Hilos\Notification\HilosNotifier;
+use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
 use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
@@ -1353,8 +1355,10 @@ final class HilosSignalConstants
     /**
      * Client → server: re-queue one failed channel delivery (HIL-201).
      *
-     * Owned by the deliveries page; resets the failed delivery row to pending with
-     * zero attempts and re-queues the channel's deliver signal.
+     * Owned by the deliveries page, which only passes it on as
+     * {@see self::HILOS_DELIVERY_RETRY}; the channel or shard that owns the row resets it to
+     * pending with zero attempts, queues it itself and answers the admin with
+     * {@see self::HILOS_DELIVERY_RETRY_DONE}.
      */
     public const string COMMUNICATIONS_DELIVERY_RETRY = 'communications_delivery_retry';
 
@@ -2846,12 +2850,13 @@ final class HilosSignalConstants
     public const string HILOS_NOTIFICATION_HANDOVER = 'hilos_notification_handover';
 
     /**
-     * Deliveries page → notifications library: re-queue this failed delivery (HIL-771).
+     * Deliveries page → notifications library: retry this failed delivery (HIL-771).
      *
      * The admin half of the retry, and the reason it is a frame rather than a call: the page
      * keeps the action and the ADMIN level that closes it, because an agent action carries no
-     * such level, but the journal row it resets belongs to the library. So the gatekeeper
-     * checks who is asking and the owner does the writing.
+     * such level, but the journal row it resets belongs to its channel or shard. So the
+     * gatekeeper checks who is asking, the library passes the request on, and the owner does
+     * the writing.
      *
      * The row is judged where it is written, not here: a page that read "failed" and then
      * asked would be judging a row another process is free to change in between. Carried by
@@ -2860,12 +2865,13 @@ final class HilosSignalConstants
     public const string HILOS_DELIVERY_RETRY = 'hilos_delivery_retry';
 
     /**
-     * Notifications library → deliveries page: your retry is done, or it is refused (HIL-771).
+     * Delivery owner or notifications library → deliveries page: your retry is done, or it is refused (HIL-771).
      *
      * The way back for {@see self::HILOS_DELIVERY_RETRY} and only for it. The page deferred
      * its own ack when it handed the work over, so this frame is what finally answers the
-     * admin - success, or the sentence saying why the row could not be re-queued. Carried by
-     * {@see HandoverAnswerSignalData}.
+     * admin - success, or the sentence saying why the row could not be re-queued. The channel
+     * or shard that took the request answers it; the library answers only a request it could
+     * not pass on. Carried by {@see HandoverAnswerSignalData}.
      */
     public const string HILOS_DELIVERY_RETRY_DONE = 'hilos_delivery_retry_done';
 
@@ -3108,6 +3114,18 @@ final class HilosSignalConstants
     public const string HILOS_MAIL_DELIVER = 'hilos_mail_deliver';
 
     /**
+     * {@see AbstractNotificationsLibraryAgent} → mail agent pool: take back one failed email delivery for another try.
+     *
+     * The notification library names the owner of the saved row by its stored identity and hands it
+     * the request, because the row's reset belongs to the channel that writes it. The mail owner
+     * checks, resets the row through its own item action and answers the waiting page itself.
+     * Carried by {@see NotificationDeliveryRetrySignalData}; INDEX_FIELD is its `shardKey`, the current
+     * reduction of the row's saved routing key, so the signal reaches the same pool instance as
+     * the delivery of that row.
+     */
+    public const string HILOS_MAIL_DELIVERY_RETRY = 'hilos_mail_delivery_retry';
+
+    /**
      * {@see HilosMailer::send()} → mail agent pool: raw-send one message.
      *
      * The raw-send intake (Auth codes, magic links) carried by
@@ -3129,6 +3147,18 @@ final class HilosSignalConstants
     public const string HILOS_SMS_DELIVER = 'hilos_sms_deliver';
 
     /**
+     * {@see AbstractNotificationsLibraryAgent} → sms agent pool: take back one failed SMS delivery for another try.
+     *
+     * The notification library names the owner of the saved row by its stored identity and hands it
+     * the request, because the row's reset belongs to the channel that writes it. The SMS owner
+     * checks, resets the row through its own item action and answers the waiting page itself.
+     * Carried by {@see NotificationDeliveryRetrySignalData}; INDEX_FIELD is its `shardKey`, the current
+     * reduction of the row's saved routing key, so the signal reaches the same pool instance as
+     * the delivery of that row.
+     */
+    public const string HILOS_SMS_DELIVERY_RETRY = 'hilos_sms_delivery_retry';
+
+    /**
      * {@see HilosSmsSender::send()} → sms agent pool: raw-send one message.
      *
      * The raw-send intake (Auth login/add codes) carried by
@@ -3148,6 +3178,18 @@ final class HilosSignalConstants
      * no raw-send intake, so this is the channel's only signal.
      */
     public const string HILOS_PUSH_DELIVER = 'hilos_push_deliver';
+
+    /**
+     * {@see AbstractNotificationsLibraryAgent} → push agent pool: take back one failed push delivery for another try.
+     *
+     * The notification library names the owner of the saved row by its stored identity and hands it
+     * the request, because the row's reset belongs to the channel that writes it. The push owner
+     * checks, resets the row through its own item action and answers the waiting page itself.
+     * Carried by {@see NotificationDeliveryRetrySignalData}; INDEX_FIELD is its `shardKey`, the current
+     * reduction of the row's saved routing key, so a recipient's retry stays on the pool instance
+     * that holds their deliveries.
+     */
+    public const string HILOS_PUSH_DELIVERY_RETRY = 'hilos_push_delivery_retry';
 
     // ── Hilos analytics journal: processes → the node's journal agent ↔ the cluster writer (agent signal) ──
     /**

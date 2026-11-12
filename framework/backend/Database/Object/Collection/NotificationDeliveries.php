@@ -18,6 +18,8 @@ use Hilos\Database\Entity\Collection\NotificationDeliveries as EntityNotificatio
 use Hilos\Database\Entity\Item\Notification as EntityNotification;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
 use Hilos\Database\Exception\TableNotActivatedException;
+use Hilos\Database\Exception\Transaction\CrossConnectionWriteException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDelivery;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\Schema;
@@ -320,57 +322,29 @@ class NotificationDeliveries extends Objects
     }
 
     /**
-     * Loads a delivery row by its primary id, or null when absent.
-     *
-     * The admin retry re-entry point (HIL-201): the retry action carries the delivery
-     * id, and this resolves the single row to reset and re-queue.
-     *
-     * @param int $id Delivery row id
-     * @return ?ObjectNotificationDelivery The delivery object, or null when none exists
-     * @throws TableNotActivatedException When the project has not activated the delivery table
-     * @throws DatabaseException If the database query fails
-     * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     */
-    public function findById(int $id): ?ObjectNotificationDelivery
-    {
-        if (isset($this->objects[$id])) {
-            return $this->objects[$id];
-        }
-
-        $this->requireActivatedTable();
-
-        $entity = static::entityClass()::getById($id);
-        if ($entity === null || $entity->id === null) {
-            return null;
-        }
-
-        $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
-
-        return $this->objects[$entity->id];
-    }
-
-    /**
      * Resets a failed delivery back to pending for a fresh channel attempt (HIL-201).
      *
-     * Clears the terminal state so the channel agent that receives the re-queued
-     * deliver signal drives the row anew: status to pending, attempts to zero, and
-     * the last error and delivered time cleared.
+     * Clears the terminal state so the channel agent drives the row anew: status to
+     * pending, attempts to zero, and the last error and delivered time cleared. The
+     * row is judged as the table holds it, not as the loaded object remembers it, and
+     * the object's diff baseline is refreshed from the saved row before the update
+     * ({@see ObjectNotificationDelivery::resetForRetry()}).
      *
-     * @param ObjectNotificationDelivery $delivery Loaded failed delivery row
-     * @throws DatabaseException If the update query fails
+     * @param ObjectNotificationDelivery $delivery Loaded delivery row, possibly behind the table
+     * @throws TableNotActivatedException When the project has not activated the delivery table
+     * @throws ValidationException When the saved row is gone, is not failed, or its notification is gone
+     * @throws ObjectGetIdStringNotImplementedException When the delivery has never been saved
+     * @throws DatabaseException When a read or the update query fails
+     * @throws InvalidArgumentException When the entity query or the queued DB-sync signal is invalid
+     * @throws CrossConnectionWriteException When another connection holds an open application level
      * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
-     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
-     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws WriteNotAllowedException When no truth source in this process may write that row, or a coordinate is rewritten
      */
     public function resetForRetry(ObjectNotificationDelivery $delivery): void
     {
-        $delivery->status = DeliveryStatus::PENDING;
-        $delivery->attempts = 0;
-        $delivery->lastError = null;
-        $delivery->deliveredAt = null;
-        $delivery->updatedAt = TimeHelper::nowMs();
-        $delivery->sync();
+        $this->requireActivatedTable();
+        $delivery->resetForRetry();
     }
 
     /**

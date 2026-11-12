@@ -11,8 +11,9 @@ use Hilos\Core\Topology\AgentSignalRouteRegistry;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Notification\Delivery\DTO\NotificationDeliveryRetrySignalData;
 
-/** Resolves channel and saved delivery owners without reading a notification or recipient. */
+/** Resolves channel, saved delivery and retry owners without reading a notification or recipient. */
 final class DeliveryOwnerResolver
 {
     /**
@@ -40,6 +41,31 @@ final class DeliveryOwnerResolver
     }
 
     /**
+     * Finds the owner of a saved delivery for a retry request (HIL-1910).
+     *
+     * The owner is the one {@see forDelivery()} names, and only when the channel's retry signal has
+     * exactly one registration, on that same worker type, carrying {@see NotificationDeliveryRetrySignalData}
+     * and the index field the descriptor declares. Nothing is read but the saved coordinates, the descriptor
+     * and the registry; a missing or disagreeing retry route is no owner rather than a fallback to the
+     * delivery signal.
+     *
+     * @param NotificationDeliveryIdentity $delivery Saved delivery coordinates
+     * @return ?AgentId Current owner, or null when no unique descriptor, delivery route and retry route agree
+     * @throws EnvException When the descriptor's pool configuration is unreadable or invalid
+     * @throws InvalidArgumentException When the saved key or pool width cannot be reduced
+     */
+    public static function forRetry(NotificationDeliveryIdentity $delivery): ?AgentId
+    {
+        $owner = self::forDelivery($delivery);
+        $descriptor = self::descriptorForChannel($delivery->channel);
+        if ($owner === null || $descriptor === null || !self::retryRouteAgrees($descriptor, $owner->type)) {
+            return null;
+        }
+
+        return $owner;
+    }
+
+    /**
      * Reads only descriptor and agent declarations, without reducing a delivery key.
      *
      * @param string $channel Registered channel name
@@ -54,17 +80,8 @@ final class DeliveryOwnerResolver
 
         $signal = $descriptor->deliverSignalName();
         $agents = Hilos::appClass()::AGENTS;
-        $agentType = AgentSignalRouteRegistry::routes($agents)[$signal] ?? null;
+        $agentType = self::uniqueRouteOwner($signal);
         if ($agentType === null) {
-            return null;
-        }
-        $routeCount = 0;
-        foreach ($agents as $type => $entry) {
-            if (isset(AgentSignalRouteRegistry::routes([$type => $entry])[$signal])) {
-                $routeCount++;
-            }
-        }
-        if ($routeCount !== 1) {
             return null;
         }
 
@@ -83,6 +100,51 @@ final class DeliveryOwnerResolver
         }
 
         return $owner->type;
+    }
+
+    /**
+     * @param string $signal Agent-signal name
+     * @return ?string Type of the only registered agent that declares the signal, or null when none or several do
+     */
+    private static function uniqueRouteOwner(string $signal): ?string
+    {
+        $agents = Hilos::appClass()::AGENTS;
+        $agentType = AgentSignalRouteRegistry::routes($agents)[$signal] ?? null;
+        if ($agentType === null) {
+            return null;
+        }
+        $routeCount = 0;
+        foreach ($agents as $type => $entry) {
+            if (isset(AgentSignalRouteRegistry::routes([$type => $entry])[$signal])) {
+                $routeCount++;
+            }
+        }
+
+        return $routeCount === 1 ? $agentType : null;
+    }
+
+    /**
+     * @param AbstractDeliveryChannel $descriptor Descriptor with a unique name and delivery signal
+     * @param string $ownerType Agent type that owns the channel's deliveries
+     * @return bool Whether the retry signal is unique among descriptors, registered once, on the owner,
+     *              with the retry DTO and the descriptor's index field
+     */
+    private static function retryRouteAgrees(AbstractDeliveryChannel $descriptor, string $ownerType): bool
+    {
+        $signal = $descriptor->retrySignalName();
+        if ($signal === '' || $signal === $descriptor->deliverSignalName() || self::uniqueRouteOwner($signal) !== $ownerType) {
+            return false;
+        }
+        $sharing = array_filter(Hilos::notificationChannelRegistryClass()::all(), static fn (AbstractDeliveryChannel $other): bool =>
+            $other->retrySignalName() === $signal);
+        if (count($sharing) !== 1) {
+            return false;
+        }
+
+        $owner = [$ownerType => Hilos::appClass()::AGENTS[$ownerType]];
+
+        return (AgentSignalRouteRegistry::dtoRoutes($owner)[$signal] ?? null) === NotificationDeliveryRetrySignalData::class
+            && (AgentSignalRouteRegistry::indexFields($owner)[$signal] ?? null) === $descriptor->indexField();
     }
 
     /**

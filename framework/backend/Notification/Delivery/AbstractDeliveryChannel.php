@@ -10,6 +10,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Notification\Delivery\DTO\NotificationDeliveryRetrySignalData;
 
 /**
  * AbstractDeliveryChannel - the descriptor a channel leaf implements to be dispatchable (HIL-196).
@@ -74,6 +75,18 @@ abstract class AbstractDeliveryChannel
      * @return string Delivery agent-signal name
      */
     abstract public function deliverSignalName(): string;
+
+    /**
+     * The agent signal that takes one failed delivery of this channel back for another try (HIL-1910).
+     *
+     * The channel leaf declares the matching route in its agent's AGENT_SIGNALS, carried by
+     * {@see NotificationDeliveryRetrySignalData} with {@see AgentSignalConfigKey::INDEX_FIELD} set to
+     * `shardKey` for a pooled channel. The notifications library only finds the owner and
+     * hands the request over by this name; the owner of the row resets it.
+     *
+     * @return string Retry agent-signal name
+     */
+    abstract public function retrySignalName(): string;
 
     /**
      * Resolves the recipient's address for this channel, or null when unreachable.

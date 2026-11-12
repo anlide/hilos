@@ -176,6 +176,7 @@ final class NotificationDeliveryApiIntegrationTest extends NotificationDeliveryA
     /** Each mounted item action delegates the existing transition and persists its own outcome. */
     public function testItemActionsPersistAttemptsFailureResetAndSettlement(): void
     {
+        $this->insertNotification(11);
         $id = Hilos::$db->notificationDeliveries->actions->createPending(11, 'test-channel', 91)->id;
         self::assertInstanceOf(NotificationDeliveryActions::class, Hilos::$db->notificationDeliveries[$id]->actions);
         Hilos::$db->notificationDeliveries[$id]->actions->beginAttempt();
@@ -243,6 +244,7 @@ final class NotificationDeliveryApiIntegrationTest extends NotificationDeliveryA
     /** An Update-only writer cannot create or remove, and the Remove writer drops cached membership too. */
     public function testSeparateUpdateAndRemoveGrantsAndDeleteInvalidateTheHeldWrapper(): void
     {
+        $this->insertNotification(11);
         $id = Hilos::$db->notificationDeliveries->actions->createPending(11, 'test-channel', 9)->id;
         $held = Hilos::$db->notificationDeliveries[$id];
         self::assertSame($held, Hilos::$db->notificationDeliveries[$id]);
@@ -293,5 +295,15 @@ final class NotificationDeliveryApiIntegrationTest extends NotificationDeliveryA
             ExecutionContext::pop($token);
             TruthSourceRegistry::unregisterAgent($agentId);
         }
+    }
+
+    /** @param int $notificationId Saved notification a retry reset requires behind its delivery */
+    private function insertNotification(int $notificationId): void
+    {
+        Database::sql("INSERT INTO hilos_user (id, name) VALUES (1910, 'Retry recipient')");
+        Database::sql(
+            'INSERT INTO hilos_notification (id, user_id, type, title, created_at) VALUES (?, 1910, ?, ?, 1)',
+            [$notificationId, 'test.retry', 'Retry notification'],
+        );
     }
 }

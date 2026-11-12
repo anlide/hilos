@@ -12,11 +12,9 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
-use Hilos\Database\Entity\Item\Notification as EntityNotification;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
-use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDelivery;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\View\Collection\NotificationDeliveries;
 use Hilos\Hilos;
@@ -97,46 +95,6 @@ class NotificationDispatcher
                 new NotificationDeliveryIdentity($delivery->id, $notificationId, $name, $routingKey),
             );
         }
-    }
-
-    /**
-     * Re-queues a failed delivery for a fresh channel attempt (HIL-201).
-     *
-     * The admin retry mechanic: the row is reset to pending with zero attempts and
-     * the channel's deliver signal is queued again, exactly as an original dispatch
-     * would. No-op (the row is left as-is) when it cannot be delivered again — the
-     * channel is no longer registered or the underlying notification is gone.
-     *
-     * @param ObjectNotificationDelivery $delivery Loaded failed delivery row
-     * @throws DatabaseException When the row reset fails
-     * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws DbCollectionNotReadableException When nothing here reads the deliveries collection, or its readiness is on its way
-     * @throws HilosException When the row reset, pool configuration or signal payload validation refuses the handoff
-     */
-    public function requeue(ObjectNotificationDelivery $delivery): void
-    {
-        if ($delivery->id === null) {
-            return;
-        }
-        $deliveries = $this->deliveries();
-        $identity = $deliveries->readIdentity($delivery->id);
-        if ($identity === null || $identity->channel === '') {
-            return;
-        }
-
-        $descriptor = Hilos::notificationChannelRegistryClass()::get($identity->channel);
-        if ($descriptor === null) {
-            return;
-        }
-
-        if (EntityNotification::getById($identity->notificationId)?->user_id === null) {
-            return;
-        }
-        $deliveries[$delivery->id]->actions->resetForRetry();
-        $this->queueDeliver(
-            $descriptor,
-            $identity,
-        );
     }
 
     /**

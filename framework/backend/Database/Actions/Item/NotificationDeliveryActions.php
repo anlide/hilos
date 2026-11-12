@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Item;
 
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
@@ -42,10 +43,15 @@ class NotificationDeliveryActions extends DbActions
         $this->deliveryCollection()->recordFailure($this->object, $error, $maxAttempts);
     }
 
-    /** @throws HilosException When ownership, persistence or announcement refuses the reset */
+    /**
+     * Resets the saved failed row to pending.
+     * The object reads the saved row first and runs the Update guard on itself before refreshing its baseline.
+     *
+     * @throws ValidationException When the saved row is gone, is not failed, or its notification is gone
+     * @throws HilosException When ownership, persistence or announcement refuses the reset
+     */
     public function resetForRetry(): void
     {
-        $this->ensureCanWrite();
         $this->deliveryCollection()->resetForRetry($this->object);
     }
 

@@ -8,6 +8,8 @@ use Closure;
 use Hilos\BaseDTO;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\HilosAgentType;
+use Hilos\Notification\Delivery\DTO\NotificationDeliveryRetrySignalData;
 use Hilos\Push\PushSubscriptionAction;
 use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Core\Action\HandoverAskInterface;
@@ -132,6 +134,33 @@ final class HandoverAskReceiptTest extends TestCase
         self::assertSame([['accept-push', 'request-push']], HandoverReceiptTestAgent::$seen);
         self::assertSame('accept-push', HandoverReceiptTestAgent::$lastChange->origin);
         self::assertSame('request-push', HandoverReceiptTestAgent::$lastChange->originRequestId);
+    }
+
+    /**
+     * The library's retry ask to a delivery channel is the second hop of the admin's request: it
+     * crosses the envelope whole and its handler runs under the admin's origin through the same
+     * receipt, with nothing set by hand on the way (HIL-1910).
+     */
+    public function testDeliveryRetrySecondHopKeepsOriginAndReplyFieldsAcrossTheEnvelope(): void
+    {
+        $ask = new NotificationDeliveryRetrySignalData(
+            41, 17, 'email', 0, 1, HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE,
+            'accept-retry', 'request-retry', HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY, null,
+        );
+        $message = new DaemonAgentMessageDTO(HandoverReceiptTestManager::AGENT_ID, new SignalDTO(
+            new SignalSource(SignalSource::AGENT, HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName(HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY),
+            new AgentSignalData($ask),
+        ));
+        $restored = DaemonAgentMessageDTO::fromArray(json_decode($message->toJson(), true, flags: JSON_THROW_ON_ERROR));
+        self::assertInstanceOf(AgentSignalData::class, $restored->signal->data);
+        self::assertInstanceOf(NotificationDeliveryRetrySignalData::class, $restored->signal->data->data);
+        self::assertSame($ask->toArray(), $restored->signal->data->data->toArray());
+        $this->deliver(new HandoverReceiptTestManager(), $restored->signal->data->data);
+        self::assertSame([['accept-retry', 'request-retry']], HandoverReceiptTestAgent::$seen);
+        self::assertSame('accept-retry', HandoverReceiptTestAgent::$lastChange->origin);
+        self::assertSame('request-retry', HandoverReceiptTestAgent::$lastChange->originRequestId);
     }
 
     /**

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Notification\Delivery;
 
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\DeliveryChannelRegistry;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
@@ -13,6 +15,8 @@ use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationTypeDescriptor;
 use Hilos\Notification\NotificationTypeRegistry;
+use Hilos\Push\Delivery\PushDeliveryChannel;
+use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -130,6 +134,12 @@ final class DeliveryChannelTest extends TestCase
                 return 'project_deliver';
             }
 
+            /** @return string Project retry signal */
+            public function retrySignalName(): string
+            {
+                return 'project_retry';
+            }
+
             /**
              * @param int $userId Recipient user id
              * @return ?string Internal project delivery token
@@ -163,6 +173,32 @@ final class DeliveryChannelTest extends TestCase
         self::assertSame(1, $channel->poolSize());
         self::assertSame(1, $channel->ownerIndexFor(7));
         self::assertSame(1, $channel->shardKeyFor(7, 42));
+    }
+
+    /**
+     * Each built-in channel names its own retry signal, apart from its deliver signal.
+     *
+     * @param AbstractDeliveryChannel $channel Fresh built-in descriptor
+     * @param string $deliverSignal Deliver signal the descriptor already names
+     * @param string $retrySignal Retry signal the descriptor must name
+     */
+    #[DataProvider('builtInChannels')]
+    public function testBuiltInChannelNamesItsRetrySignal(
+        AbstractDeliveryChannel $channel,
+        string $deliverSignal,
+        string $retrySignal,
+    ): void {
+        self::assertSame($deliverSignal, $channel->deliverSignalName());
+        self::assertSame($retrySignal, $channel->retrySignalName());
+        self::assertNotSame($channel->deliverSignalName(), $channel->retrySignalName());
+    }
+
+    /** @return iterable<string, array{AbstractDeliveryChannel, string, string}> Fresh built-in descriptors */
+    public static function builtInChannels(): iterable
+    {
+        yield 'email' => [new MailDeliveryChannel(), HilosSignalConstants::HILOS_MAIL_DELIVER, 'hilos_mail_delivery_retry'];
+        yield 'sms' => [new SmsDeliveryChannel(), HilosSignalConstants::HILOS_SMS_DELIVER, 'hilos_sms_delivery_retry'];
+        yield 'push' => [new PushDeliveryChannel(), HilosSignalConstants::HILOS_PUSH_DELIVER, 'hilos_push_delivery_retry'];
     }
 
     public function testChannelRegistryBaseIsEmptyAndSubclassComposes(): void
@@ -219,6 +255,11 @@ final class DeliveryTestSingletonChannel extends AbstractDeliveryChannel
         return 'hilos_notification_deliver_telegram';
     }
 
+    public function retrySignalName(): string
+    {
+        return 'hilos_notification_retry_telegram';
+    }
+
     public function resolveAddress(int $userId): ?string
     {
         return $userId === 7 ? 'tg-7' : null;
@@ -238,6 +279,11 @@ final class DeliveryTestPooledChannel extends AbstractDeliveryChannel
     public function deliverSignalName(): string
     {
         return 'hilos_notification_deliver_email';
+    }
+
+    public function retrySignalName(): string
+    {
+        return 'hilos_notification_retry_email';
     }
 
     public function resolveAddress(int $userId): ?string

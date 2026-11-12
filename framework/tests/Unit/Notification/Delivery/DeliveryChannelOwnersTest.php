@@ -191,6 +191,12 @@ final class OwnersTestChannel extends AbstractDeliveryChannel
         return $this->pooled ? OwnersPoolAgent::SIGNAL : OwnersSingletonAgent::SIGNAL;
     }
 
+    /** @return string Retry signal matching this case's declared owner shape */
+    public function retrySignalName(): string
+    {
+        return $this->deliverSignalName() . '_retry';
+    }
+
     /** @return bool Whether the declared owner is indexed */
     public function isPooled(): bool
     {

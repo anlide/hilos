@@ -294,8 +294,9 @@ is no permission for another DB changing writer.
 
 The [ordinary transition table](account-operations.md#ordinary-transitions)
 addresses each remaining path. The channel or shard owns retention and leaves
-pending rows untouched. Delivery retry moves to the channel
-(not in the code yet — HIL-1910). A known push
+pending rows untouched. Delivery retry is the channel's too: the library passes
+the request to the owner of the row, which resets it and answers the page
+(HIL-1910). A known push
 device is renewed by its personal owner (HIL-1905); the library temporarily
 rebinds a foreign endpoint in place through `rebindForeignLegacy()`. HIL-1906
 will replace that path with deletion by the former owner and creation at the
@@ -454,15 +455,23 @@ the same idempotent write are one ask with two callers.
 (reply name, accept key, request id, action, success sentence) through
 `HandoverGatekeeperTrait::forward()`, which calls `deferActionReply()` only when
 `currentActionRequestId()` is not null — an untracked submit owes no ack. The
-library answers with `HandoverAnswerSignalData::to($ask, $refusal)`, and
-`HandoverGatekeeperTrait::answerHandover()` turns it into the ack in three
-branches: `sendActionSuccess()`, `sendActionFail($done->error)` with the
+library does not write the row. It reads the identity the row was saved with,
+finds its owner through `DeliveryOwnerResolver::forRetry()` and passes the
+request on to the channel or shard as a `NotificationDeliveryRetrySignalData`,
+with the page's handover fields unchanged. Only a request it could not pass on
+is answered by the library, with `HandoverAnswerSignalData::to($ask, $refusal)`.
+Otherwise the owner of the row judges it where it writes it — the freeze, the
+saved coordinates, the shard, and the status in the reset itself — resets it in
+a transaction of its own and sends the one answer straight to the page under
+the reply name it was given: one answer per request, from whichever side ends
+it. `HandoverGatekeeperTrait::answerHandover()` turns the answer into the ack in
+three branches: `sendActionSuccess()`, `sendActionFail($done->error)` with the
 failure's class and text beside it on an ADMIN page, and for an untracked submit
 the overridable `answerUntracked()`, whose default is
 `sendToUser(SignalConstants::ACTION_ERROR, acceptKey, new
 PageActionErrorSignalData(...))`. The reason is a string,
-`HandoverAnswerSignalData::$error`, which is what statement 3 asks for; the
-writer builds it with `Hilos\Core\Action\ActionRefusal` — `said()` for a
+`HandoverAnswerSignalData::$error`, which is what statement 3 asks for; whoever
+answers builds it with `Hilos\Core\Action\ActionRefusal` — `said()` for a
 sentence of its own, `fromThrowable()` for a failure, which passes the same door
 a page action's failure does.
 
@@ -835,9 +844,10 @@ Answer `SUBSCRIPTION_PAGE_ERROR`. An empty list is a claim about the data.
   [Session Ownership](#session-ownership).
 - `framework/backend/Notification/Library/AbstractNotificationsLibraryAgent.php` —
   the third (HIL-771): the notifications library, which creates notification
-  and delivery rows, retains delivery `Add`/`Update` including retry until
-  HIL-1910, brings a push endpoint into being or marks it gone, and only reads
-  the channel preferences (HIL-1408).
+  and delivery rows and holds only `Add` on the deliveries — an admin retry is
+  passed to the channel or shard that owns the row (HIL-1910) — brings a push
+  endpoint into being or marks it gone, and only reads the channel preferences
+  (HIL-1408).
   Marking a letter read, choosing a channel and dropping a device are the
   person's agent's. It is the worked example of a library founded on an entity
   that had *no owner at all* — the emit seam wrote from whatever worker called

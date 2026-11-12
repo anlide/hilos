@@ -594,6 +594,12 @@ final class DeliveryBootstrapChannel extends AbstractDeliveryChannel
         return $this->pooled ? DeliveryBootstrapPoolAgent::SIGNAL : DeliveryBootstrapSingletonAgent::SIGNAL;
     }
 
+    /** @return string Retry signal matching the declared owner */
+    public function retrySignalName(): string
+    {
+        return $this->deliverSignalName() . '_retry';
+    }
+
     /** @return bool Whether this channel uses indexed owners */
     public function isPooled(): bool
     {

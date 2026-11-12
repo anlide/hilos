@@ -476,7 +476,7 @@ final class Hilos extends HilosFacade
         HilosDbContext::dataExports => ['HIL-1952'],
         HilosDbContext::identities => ['HIL-1952', 'HIL-1999'],
         HilosDbContext::legalAcceptances => ['HIL-1952'],
-        HilosDbContext::notificationDeliveries => ['HIL-1910', 'HIL-1952'],
+        HilosDbContext::notificationDeliveries => ['HIL-1952'],
         HilosDbContext::notificationPreferences => ['HIL-1952'],
         HilosDbContext::notifications => ['HIL-1952'],
         HilosDbContext::passkeyCredentials => ['HIL-1952', 'HIL-1999'],

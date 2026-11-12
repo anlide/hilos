@@ -101,6 +101,7 @@ use Hilos\Moderation\Library\ModerationRulesLibraryAgent;
 use Hilos\Moderation\Library\ModerationRulesLibraryAgentDaemon;
 use Hilos\Moderation\ModerationAgent;
 use Hilos\Moderation\ModerationAgentDaemon;
+use Hilos\Notification\Delivery\DTO\NotificationDeliveryRetrySignalData;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleAddActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceDisableActionDTO;
@@ -570,7 +571,7 @@ final class RobloxGameServerTopologyRegistryTest extends TestCase
             'dataExports' => ['HIL-1952'],
             'identities' => ['HIL-1952', 'HIL-1999'],
             'legalAcceptances' => ['HIL-1952'],
-            'notificationDeliveries' => ['HIL-1910', 'HIL-1952'],
+            'notificationDeliveries' => ['HIL-1952'],
             'notificationPreferences' => ['HIL-1952'],
             'notifications' => ['HIL-1952'],
             'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],
@@ -593,6 +594,21 @@ final class RobloxGameServerTopologyRegistryTest extends TestCase
         }
         Hilos::validateTopology();
         self::assertSame([], Hilos::SHARED_RT_OWNERS);
+    }
+
+    /** Each registered delivery channel's shard owner takes the retry request by shard key with the retry payload. */
+    public function testDeliveryRetryRoutesBelongToTheThreeRegisteredChannels(): void
+    {
+        $owners = [
+            HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY => HilosAgentType::HILOS_MAIL,
+            HilosSignalConstants::HILOS_SMS_DELIVERY_RETRY => HilosAgentType::HILOS_SMS,
+            HilosSignalConstants::HILOS_PUSH_DELIVERY_RETRY => HilosAgentType::HILOS_PUSH,
+        ];
+        foreach ($owners as $signal => $owner) {
+            self::assertSame($owner, Hilos::getAgentSignalRoutes()[$signal]);
+            self::assertSame(NotificationDeliveryRetrySignalData::shardKey, Hilos::getAgentSignalIndexFields()[$signal]);
+            self::assertSame(NotificationDeliveryRetrySignalData::class, Hilos::getAgentSignalDtoRoutes()[$signal]);
+        }
     }
 
     /** Startup validates this project's real registry rather than a synthetic facade. */

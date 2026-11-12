@@ -49,7 +49,8 @@ use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
-use Hilos\Notification\Delivery\DeliveryStatus;
+use Hilos\Notification\Delivery\DeliveryOwnerResolver;
+use Hilos\Notification\Delivery\DTO\NotificationDeliveryRetrySignalData;
 use Hilos\Notification\Delivery\NotificationDispatcher;
 use Hilos\Notification\DeferredNotificationQueue;
 use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
@@ -81,6 +82,7 @@ use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Command\TestOnlyCommandRegistry;
+use Hilos\WiringRefusal;
 use Throwable;
 
 /**
@@ -108,17 +110,18 @@ use Throwable;
  * project's registry. Unlike theirs, its project half is empty - no claim over a project's own
  * tables, no rows of its own to add - so a subclass usually adds nothing but its name.
  *
- * The library creates delivery rows and still resets them for retry until HIL-1910.
- * Each channel or shard ({@see AbstractDeliveryChannelAgent}) updates its own attempts and
- * removes its expired terminal rows; retention never runs through this library.
+ * The library creates delivery rows and nothing more of them: an admin retry is passed on to the
+ * channel or shard that owns the row ({@see AbstractDeliveryChannelAgent}), which resets it, as it
+ * updates its own attempts and removes its expired terminal rows; retention never runs through this
+ * library.
  */
 abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
 {
     use HandoverGatekeeperTrait;
 
     /**
-     * Creating a notification, the operations over the delivery journal, and a push subscription
-     * brought into being or temporarily rebound from another person until HIL-1906.
+     * Creating a notification and its delivery rows, and a push subscription brought into being
+     * or temporarily rebound from another person until HIL-1906.
      *
      * Nothing may write a framework collection until somebody says who owns it, so a project that
      * never registers this agent simply has no notifications - rather than notifications written
@@ -128,16 +131,17 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * a device are that person's agent's. The channel settings are not claimed at all: this
      * library only reads them ({@see self::READS_DB}).
      *
-     * Delivery rows are created here and still reset for retry here until HIL-1910. Their
-     * channel or shard updates attempts and removes expired terminal rows; this library has no
-     * Remove grant. Push creation stays here; renewal, expiry and removal belong to the personal
-     * owner. Only the foreign in-place rebind keeps the library Update until HIL-1906.
+     * Delivery rows are only created here. Their channel or shard updates attempts, resets a
+     * failed row an admin retries and removes expired terminal rows; this library has neither an
+     * Update nor a Remove grant over them. Push creation stays here; renewal, expiry and removal
+     * belong to the personal owner. Only the foreign in-place rebind keeps the library Update until
+     * HIL-1906.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
         HilosDbContext::notifications => [TruthSourceOperation::Add],
-        HilosDbContext::notificationDeliveries => [TruthSourceOperation::Add, TruthSourceOperation::Update],
+        HilosDbContext::notificationDeliveries => [TruthSourceOperation::Add],
         HilosDbContext::pushSubscriptions => [TruthSourceOperation::Add, TruthSourceOperation::Update],
     ];
 
@@ -164,7 +168,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * The second is the admin retry, and it arrives as a frame for a different reason: the
      * action stayed on {@see AbstractHilosCommunicationsDeliveriesPage}, because the ADMIN
      * level closing it lives on a page and an agent action has none. So that page keeps the
-     * door and this library keeps the journal, and the retry crosses between them.
+     * door, this library names the row's owner, and the retry crosses on to it.
      *
      * The third is sent by {@see BackupAgent} (HIL-846): the letters a restore left while nobody
      * could be told, offered from the backup directory they were written to, because in a cluster
@@ -271,7 +275,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * @throws AgentUnknownSignalException When the name is not one this library declares
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws HilosException When the notification cannot be written or delivered
-     * @throws InvalidArgumentException When the retry answer or a hand-over receipt cannot be named or queued
+     * @throws InvalidArgumentException When the retry ask or refusal, or a hand-over receipt, cannot be named or queued
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
@@ -330,74 +334,95 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Re-queues one failed delivery for an admin, and tells the page what became of it.
+     * Passes one admin retry on to the channel or shard that owns the delivery row (HIL-1910).
      *
-     * The body of the retry, whole, from where a page used to run it (HIL-201, moved by
-     * HIL-771): the row is looked up, judged, reset to pending with no attempts behind it and
-     * re-dispatched through {@see NotificationDispatcher}. What changed is only WHERE the
-     * judging happens - here, in the same process and the same breath as the write, instead of
-     * in whichever worker served the admin's socket.
+     * The library writes nothing here. It reads the identity the row was saved with, asks
+     * {@see DeliveryOwnerResolver::forRetry()} whose row that is now, and sends the owner a
+     * {@see NotificationDeliveryRetrySignalData} carrying that snapshot and the admin's request
+     * unchanged; the owner judges the row, resets it and answers the page itself
+     * ({@see AbstractDeliveryChannelAgent}). Whether the row is failed is the owner's question,
+     * asked of the row it is about to write, not of anything read here.
      *
-     * Both refusals keep their sentences word for word, because they are what the admin reads:
-     * a row that is not there, and a row that is not failed. Neither is an exception - the ask
-     * came in as a frame, and a throw here would answer the caller with silence.
+     * The library answers only a request it could not pass on - a row that is not there, a channel
+     * with no owner to take it - and once the ask has left it owes the page nothing: one answer per
+     * request, from whichever side ends it. Neither refusal is an exception - the request came in
+     * as a frame, and a throw here would answer the page with silence.
      *
-     * @param DeliveryRetrySignalData $retry Which delivery to re-queue, and who is waiting
-     * @throws InvalidArgumentException When the answer cannot be named or queued
+     * @param DeliveryRetrySignalData $retry Which delivery to retry, and who is waiting
+     * @throws InvalidArgumentException When the ask or the refusal cannot be named or queued
      */
     private function retryDelivery(DeliveryRetrySignalData $retry): void
     {
-        $this->sendToAgent(
-            $retry->replySignal,
-            HandoverAnswerSignalData::to($retry, $this->requeue($retry->deliveryId)),
-        );
+        $refusal = $this->passRetryOn($retry);
+        if ($refusal !== null) {
+            $this->sendToAgent($retry->replySignal, HandoverAnswerSignalData::to($retry, $refusal));
+        }
     }
 
     /**
-     * Resets and re-dispatches one journal row, or says why it cannot be.
+     * Addresses the retry to the current owner of the saved row, or says why it cannot be.
      *
-     * @param int $deliveryId Delivery journal row the admin picked
-     * @return ?ActionRefusal Why the row was not re-queued, or null when it was
+     * The ask is built inside the judgement and sent outside it, so a failure to queue it is not
+     * mistaken for a refusal the page would then be told on top of the owner's answer. An expected
+     * refusal is said; a failure becomes the refusal a page may read, and one held back from the
+     * page is logged here.
+     *
+     * @param DeliveryRetrySignalData $retry Which delivery to retry, and who is waiting
+     * @return ?ActionRefusal Why the retry was not passed on, or null when the owner has it
+     * @throws InvalidArgumentException When the ask cannot be named or queued
      */
-    private function requeue(int $deliveryId): ?ActionRefusal
+    private function passRetryOn(DeliveryRetrySignalData $retry): ?ActionRefusal
     {
         try {
-            $delivery = $this->deliveries()->findById($deliveryId);
-            if ($delivery === null) {
-                return ActionRefusal::said("Unknown delivery: {$deliveryId}");
+            $saved = Hilos::$db->notificationDeliveries->readIdentity($retry->deliveryId);
+            if ($saved === null) {
+                return ActionRefusal::said("Unknown delivery: {$retry->deliveryId}");
             }
-
-            if ($delivery->status !== DeliveryStatus::FAILED) {
-                return ActionRefusal::said('Only failed deliveries can be retried');
+            $owner = DeliveryOwnerResolver::forRetry($saved);
+            $descriptor = Hilos::notificationChannelRegistryClass()::get($saved->channel);
+            if ($owner === null || $descriptor === null) {
+                return ActionRefusal::said('Delivery channel is unavailable');
             }
-
-            $this->dispatcher->requeue($delivery);
-        } catch (DatabaseException $e) {
-            // The same refusal the dispatcher would have put on the wire had this been thrown on
-            // the page: the placeholder for the person, the failure beside it for an admin. Caught
-            // rather than let out, because an ask that arrived as a frame is answered or it hangs.
-            $this->logAgentError("Delivery retry failed for #{$deliveryId}: {$e->getMessage()}");
-
-            return ActionRefusal::fromThrowable($e);
+            $ask = new NotificationDeliveryRetrySignalData(
+                $saved->deliveryId,
+                $saved->notificationId,
+                $saved->channel,
+                $saved->routingKey,
+                $owner->index === null ? null : (int)$owner->index,
+                $retry->replySignal,
+                $retry->acceptKey,
+                $retry->requestId,
+                $retry->action,
+                $retry->successMessage,
+            );
+        } catch (WiringRefusal $refusal) {
+            // Answered rather than raised, like the failures below: the page waits on this answer. The
+            // refusal's own words name a collection nobody here reads, so they ride only as the detail.
+            return $this->retryFailure($retry, $refusal);
+        } catch (Throwable $e) {
+            return $this->retryFailure($retry, $e);
         }
+
+        $this->sendToAgent($descriptor->retrySignalName(), $ask);
 
         return null;
     }
 
     /**
-     * Resolves the framework-owned notification-deliveries object collection.
+     * Reduces a retry that failed before it was passed on to the refusal the page may read.
      *
-     * @return ObjectNotificationDeliveries Delivery persistence primitives
-     * @throws LogicException When the collection is missing or misconfigured
+     * @param DeliveryRetrySignalData $retry Request that failed
+     * @param Throwable $e Failure raised while reading the row or naming its owner
+     * @return ActionRefusal Refusal to answer the page with
      */
-    private function deliveries(): ObjectNotificationDeliveries
+    private function retryFailure(DeliveryRetrySignalData $retry, Throwable $e): ActionRefusal
     {
-        $collection = Hilos::$db?->getObjectCollection(HilosDbContext::notificationDeliveries);
-        if (!$collection instanceof ObjectNotificationDeliveries) {
-            throw new LogicException('Notification deliveries object collection is not configured');
+        $refusal = ActionRefusal::fromThrowable($e);
+        if ($refusal->isInternal()) {
+            $this->logAgentError("Delivery retry failed for #{$retry->deliveryId}: {$e->getMessage()}");
         }
 
-        return $collection;
+        return $refusal;
     }
 
     /**

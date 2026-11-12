@@ -41,6 +41,7 @@ use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
 use Hilos\Notification\Delivery\DeliveryAttempt;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Notification\Delivery\DTO\NotificationDeliveryRetrySignalData;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 
 /**
@@ -77,9 +78,10 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_MAIL;
 
     /**
-     * Pool routes: both intakes are fanned across the pool by the recipient's shard key.
+     * Pool routes: both intakes and the retry request are fanned across the pool by the recipient's shard key.
      *  - HILOS_MAIL_DELIVER (input A) carries a notification delivery;
-     *  - HILOS_MAIL_SEND (input B) carries a raw send.
+     *  - HILOS_MAIL_SEND (input B) carries a raw send;
+     *  - HILOS_MAIL_DELIVERY_RETRY carries the library's request to take a failed delivery back (HIL-1910).
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_MAIL_DELIVER => [
@@ -89,6 +91,10 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
         HilosSignalConstants::HILOS_MAIL_SEND => [
             AgentSignalConfigKey::INDEX_FIELD => MailSendSignalData::shardKey,
             AgentSignalConfigKey::DTO => MailSendSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY => [
+            AgentSignalConfigKey::INDEX_FIELD => NotificationDeliveryRetrySignalData::shardKey,
+            AgentSignalConfigKey::DTO => NotificationDeliveryRetrySignalData::class,
         ],
     ];
 

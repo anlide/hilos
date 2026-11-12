@@ -90,6 +90,14 @@ class SmsDeliveryChannel extends AbstractDeliveryChannel
     }
 
     /**
+     * @return string The SMS pool's failed-delivery retry agent signal
+     */
+    public function retrySignalName(): string
+    {
+        return HilosSignalConstants::HILOS_SMS_DELIVERY_RETRY;
+    }
+
+    /**
      * Resolves the recipient's verified SMS number from the framework identities.
      *
      * @param int $userId Recipient user id

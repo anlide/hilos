@@ -26,6 +26,7 @@ use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
 use Hilos\Notification\Delivery\DeliveryAttempt;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Notification\Delivery\DTO\NotificationDeliveryRetrySignalData;
 use Hilos\Push\Exception\PushException;
 use Hilos\Push\PushChannelConfig;
 use Hilos\Push\WebPushRequestFactory;
@@ -67,12 +68,17 @@ class PushDeliveryChannelAgent extends AbstractDeliveryChannelAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_PUSH;
 
     /**
-     * Pool route: the notification-delivery signal, fanned across the pool by the recipient's shard key.
+     * Pool routes: both the notification-delivery signal and the library's request to take a failed delivery
+     * back (HIL-1910) are fanned across the pool by the recipient's shard key.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_PUSH_DELIVER => [
             AgentSignalConfigKey::INDEX_FIELD => NotificationDeliverSignalData::shardKey,
             AgentSignalConfigKey::DTO => NotificationDeliverSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_PUSH_DELIVERY_RETRY => [
+            AgentSignalConfigKey::INDEX_FIELD => NotificationDeliveryRetrySignalData::shardKey,
+            AgentSignalConfigKey::DTO => NotificationDeliveryRetrySignalData::class,
         ],
     ];
 

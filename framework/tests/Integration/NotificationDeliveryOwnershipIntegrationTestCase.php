@@ -234,6 +234,11 @@ final class OwnershipChannel extends AbstractDeliveryChannel
         return $this->signal;
     }
 
+    public function retrySignalName(): string
+    {
+        return $this->signal . '_retry';
+    }
+
     public function resolveAddress(int $userId): ?string
     {
         TestCase::fail('The write guard must never look up a recipient address');

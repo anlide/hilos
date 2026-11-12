@@ -7,6 +7,8 @@ namespace Hilos\Notification\Delivery;
 use DateTimeImmutable;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Action\ActionRefusal;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Daemon\Cron\CronRule;
@@ -19,6 +21,7 @@ use Hilos\Core\TruthSource\DbWriterPartition;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
@@ -32,10 +35,12 @@ use Hilos\Mail\Exception\MailBusyException;
 use Hilos\Mail\Exception\MailTemplateNotInCatalogException;
 use Hilos\Mail\Exception\MailTemplateParamMissingException;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Notification\Delivery\DTO\NotificationDeliveryRetrySignalData;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Sms\Exception\SmsTemplateNotInCatalogException;
 use Hilos\Sms\Exception\SmsTemplateParamMissingException;
+use Hilos\WiringRefusal;
 use Throwable;
 
 /**
@@ -59,9 +64,10 @@ use Throwable;
  * Hilos::AGENTS, as a monopolistic singleton or an indexed pool, via its daemon
  * ({@see AbstractDeliveryChannelAgentDaemon}).
  *
- * The library ({@see AbstractNotificationsLibraryAgent}) creates delivery rows and still retries
- * them until HIL-1910. Each channel or shard updates its own attempts and removes its expired
- * terminal rows. The claim is {@see self::OWNS_DB} and is merged down every subclass.
+ * The library ({@see AbstractNotificationsLibraryAgent}) creates delivery rows and passes an admin
+ * retry on to their owner. Each channel or shard updates its own attempts, resets its own failed row
+ * for that retry and removes its expired terminal rows. The claim is {@see self::OWNS_DB} and is
+ * merged down every subclass.
  *
  * Under a freeze that silences the writers the roster walk leaves running
  * ({@see ProtectedModeRuntime::silencesUnstoppedWriters()}) the pipeline drops everything it
@@ -83,8 +89,8 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
 
     /**
      * Updates and removes this channel/shard's rows; the library creates them.
-     * The per-item partition proof constrains both operations to the saved owner coordinates.
-     * Library retry remains a separate transitional Update grant until HIL-1910.
+     * The per-item partition proof constrains both operations to the saved owner coordinates,
+     * the reset of a row an admin retries included; the library holds no Update beside it.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
@@ -207,12 +213,13 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
     }
 
     /**
-     * Handles this channel's durable intake and ignores unrelated signal names.
+     * Handles this channel's durable intake and its retry request, and ignores unrelated signal names.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender identity, unused
      * @param string $name Routed agent-signal name
-     * @throws InvalidAgentSignalPayloadException When the deliver name carries another payload type
+     * @throws InvalidAgentSignalPayloadException When the deliver or retry name carries another payload type
+     * @throws InvalidArgumentException When the answer to a retry request cannot be named or queued
      * @throws HilosException When saved coordinates cannot be read or the pool configuration is invalid
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
@@ -224,6 +231,14 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
                     throw new InvalidAgentSignalPayloadException($name, NotificationDeliverSignalData::class, $payload);
                 }
                 $this->admitDelivery($payload);
+                break;
+
+            case $this->channel()->retrySignalName():
+                $payload = $data->data;
+                if (!$payload instanceof NotificationDeliveryRetrySignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, NotificationDeliveryRetrySignalData::class, $payload);
+                }
+                $this->retryDelivery($payload);
         }
     }
 
@@ -370,6 +385,102 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
         }
 
         $this->ops[$saved->deliveryId] ??= $saved;
+    }
+
+    /**
+     * Takes one failed delivery back for an admin, then answers the page that asked (HIL-1910).
+     *
+     * The library addressed this instance by the identity the row was saved with, and the row
+     * may have moved on since; so the request is judged here, where the row is written
+     * ({@see self::takeBack()}). Exactly one answer leaves, straight to the page, under the
+     * reply name the page put on its ask and with its accept key and request id. It is queued
+     * outside the judgement, so a failure to queue it cannot answer a second time.
+     *
+     * @param NotificationDeliveryRetrySignalData $retry Which delivery, as the library saw it, and who is waiting
+     * @throws InvalidArgumentException When the answer cannot be named or queued
+     */
+    private function retryDelivery(NotificationDeliveryRetrySignalData $retry): void
+    {
+        $this->sendToAgent($retry->replySignal, HandoverAnswerSignalData::to($retry, $this->takeBack($retry)));
+    }
+
+    /**
+     * Resets the saved failed row and queues it on this instance, or says why not.
+     *
+     * A freeze that silences the pipeline refuses before anything is read. Then the row must
+     * still stand under the same four coordinates the request names, and the current pool must
+     * still give it to this instance under the shard key the request was routed by. The reset
+     * judges the saved status and the notification behind the row itself. It runs in a
+     * transaction of its own, so a write or an announcement that fails takes the row back with
+     * it: a refusal leaves the row as it was. Only a reset that stands puts the saved identity
+     * into the queue, in place of anything this instance still held under the id; the next tick
+     * starts it like an adopted pending row, with no deliver frame and no transport opened here.
+     * An expected refusal is said; a failure becomes the refusal a page may read, and one held
+     * back from the page is logged here.
+     *
+     * @param NotificationDeliveryRetrySignalData $retry Saved coordinates the library addressed this instance by
+     * @return ?ActionRefusal Why the delivery was not taken back, or null when it waits in this instance's queue
+     */
+    private function takeBack(NotificationDeliveryRetrySignalData $retry): ?ActionRefusal
+    {
+        if ($this->freezeSilencesDeliveries()) {
+            return ActionRefusal::said('Delivery retry is unavailable during maintenance');
+        }
+        try {
+            $saved = Hilos::$db->notificationDeliveries->readIdentity($retry->deliveryId);
+            if ($saved === null) {
+                return ActionRefusal::said("Unknown delivery: {$retry->deliveryId}");
+            }
+            if (!$this->retryReachedOwner($retry, $saved)) {
+                return ActionRefusal::said('Delivery retry reached a different channel or shard');
+            }
+            Database::transaction(EntityNotificationDelivery::getDatabaseName(), static function () use ($saved): void {
+                Hilos::$db->notificationDeliveries[$saved->deliveryId]->actions->resetForRetry();
+            });
+        } catch (WiringRefusal $refusal) {
+            // Answered rather than raised, like the failures below: the page waits on this answer. The
+            // refusal's own words name a collection nobody here reads, so they ride only as the detail.
+            return $this->retryFailure($retry, $refusal);
+        } catch (Throwable $e) {
+            return $this->retryFailure($retry, $e);
+        }
+
+        $this->finishOp($saved->deliveryId);
+        $this->ops[$saved->deliveryId] = $saved;
+
+        return null;
+    }
+
+    /**
+     * Reduces a failed retry to the refusal the page may read, logging the failure the page is not told.
+     *
+     * @param NotificationDeliveryRetrySignalData $retry Request that failed
+     * @param Throwable $e Failure raised while judging or resetting the row
+     * @return ActionRefusal Refusal to answer the page with
+     */
+    private function retryFailure(NotificationDeliveryRetrySignalData $retry, Throwable $e): ActionRefusal
+    {
+        $refusal = ActionRefusal::fromThrowable($e);
+        if ($refusal->isInternal()) {
+            $this->logAgentError("Delivery retry failed for #{$retry->deliveryId}: {$e->getMessage()}");
+        }
+
+        return $refusal;
+    }
+
+    /**
+     * @param NotificationDeliveryRetrySignalData $retry Coordinates and shard key the library addressed this instance by
+     * @param NotificationDeliveryIdentity $saved Fresh saved coordinates under the same id
+     * @return bool Whether the request names the saved row unchanged and the current pool routes it to this instance
+     * @throws EnvException When the descriptor's pool configuration is unreadable or invalid
+     * @throws InvalidArgumentException When the saved key or pool width cannot be reduced
+     */
+    private function retryReachedOwner(NotificationDeliveryRetrySignalData $retry, NotificationDeliveryIdentity $saved): bool
+    {
+        return $saved->deliveryId === $retry->deliveryId && $saved->notificationId === $retry->notificationId
+            && $saved->channel === $retry->channel && $saved->routingKey === $retry->routingKey
+            && $this->ownsIdentity($saved)
+            && $retry->shardKey === ($this->agentIndex === null ? null : (int)$this->agentIndex);
     }
 
     /**

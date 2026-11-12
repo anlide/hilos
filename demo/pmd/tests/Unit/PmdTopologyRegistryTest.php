@@ -50,6 +50,7 @@ use Hilos\Database\Object\Item\Session;
 use Hilos\Database\Object\Item\User;
 use Hilos\Database\Pages\HilosPageCatalog;
 use Hilos\Database\Pages\PageCatalogConstants;
+use Hilos\Notification\Delivery\DTO\NotificationDeliveryRetrySignalData;
 use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
 use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
 use Hilos\Database\Context\HilosDbContext;
@@ -337,6 +338,22 @@ final class PmdTopologyRegistryTest extends TestCase
         self::assertSame(['HIL-1906', 'HIL-1952'], Hilos::SHARED_DB_OWNERS[PmdDbContext::pushSubscriptions]);
     }
 
+    /** The inherited mail shard owner takes the delivery retry request by shard key; no other channel opens here. */
+    public function testDeliveryRetryRouteIsOpenOnlyForTheRegisteredMailChannel(): void
+    {
+        self::assertSame(HilosAgentType::HILOS_MAIL, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY]);
+        self::assertSame(
+            NotificationDeliveryRetrySignalData::shardKey,
+            Hilos::getAgentSignalIndexFields()[HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY],
+        );
+        self::assertSame(
+            NotificationDeliveryRetrySignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY],
+        );
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_SMS_DELIVERY_RETRY, Hilos::getAgentSignalRoutes());
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_PUSH_DELIVERY_RETRY, Hilos::getAgentSignalRoutes());
+    }
+
     /** Startup validates this project's real registry rather than a synthetic facade. */
     public function testProjectTopologyPassesStartupValidation(): void
     {
@@ -349,7 +366,7 @@ final class PmdTopologyRegistryTest extends TestCase
         self::assertSame(['HIL-1906', 'HIL-1952'], Hilos::SHARED_DB_OWNERS[HilosDbContext::pushSubscriptions]);
         Hilos::validateTopology();
 
-        self::assertSame(['HIL-1910', 'HIL-1952'], Hilos::SHARED_DB_OWNERS['notificationDeliveries']);
+        self::assertSame(['HIL-1952'], Hilos::SHARED_DB_OWNERS['notificationDeliveries']);
     }
 
     /** Every declared feature has its required project bindings. */
