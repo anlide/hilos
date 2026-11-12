@@ -4,12 +4,20 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Definition\StatusFeature;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
@@ -39,6 +47,11 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Item\RtItem;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Status\DTO\StatusAddUpdateSignalData;
+use Hilos\Status\DTO\StatusScheduleWorkSignalData;
+use Hilos\Status\DTO\StatusSubscribeActionDTO;
 use Hilos\Status\StatusAgent;
 use Hilos\Status\StatusComponentState;
 use Hilos\Status\StatusMaintenanceObservation;
@@ -49,6 +62,7 @@ use Hilos\Status\StatusPublicFiles;
 use Hilos\Status\StatusPublicSnapshot;
 use Hilos\Status\StatusPublicWork;
 use Hilos\Status\StatusSettingsCatalog;
+use Hilos\Status\StatusTestCommandConstants;
 use Hilos\Tests\Fixtures\StatusPublicVolume;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -850,6 +864,97 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
         self::assertSame($this->now, $current->startedAt);
     }
 
+    /** @return iterable<string, array{string}> Public refusals that can precede the first occupied tick */
+    public static function refusedEntries(): iterable
+    {
+        yield 'subscribe' => ['subscribe'];
+        yield 'work write' => ['work write'];
+        yield 'work start' => ['work start'];
+        yield 'incident write' => ['incident write'];
+        yield 'silence remove' => ['silence remove'];
+    }
+
+    /** @param string $entry Public handler to refuse before observing the actual start */
+    #[DataProvider('refusedEntries')]
+    public function testARefusedEntryBeforeTheFirstFreezeTickStillClassifiesTheAnnouncement(string $entry): void
+    {
+        $work = Database::transaction(DatabaseNames::PRIMARY, fn() => Hilos::$db->statusWorks->actions->create(
+            'Upgrade', null, $this->now, $this->now + 10000, $this->now - 2000, ['service'],
+        ));
+        $this->settle($this->now - 1000);
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->queuedFrames();
+        $before = Hilos::$rt->hilosStatusMaintenance['current']->toArray();
+
+        if ($entry === 'subscribe') {
+            try {
+                $this->owner->onAgentAction('ak-status', HilosSignalConstants::STATUS_SUBSCRIBE,
+                    new StatusSubscribeActionDTO('reader@example.test'));
+                self::fail('The frozen subscription must refuse');
+            } catch (ValidationException $failure) {
+                self::assertSame('Status subscriptions are unavailable. Try again later.', $failure->getMessage());
+            }
+        } elseif ($entry === 'work write') {
+            $ask = new StatusScheduleWorkSignalData(
+                title: 'Another upgrade', description: null, componentKeys: ['service'],
+                startsAt: $this->now + 20000, endsAt: $this->now + 30000,
+                replySignal: HilosSignalConstants::HILOS_STATUS_WORK_WRITE_DONE,
+                acceptKey: 'ak-status', requestId: 'refused-status',
+                action: HilosSignalConstants::HILOS_STATUS_WORK_SCHEDULE, successMessage: null,
+            );
+            $this->owner->onSignalAgent(new AgentSignalData($ask), 'gatekeeper', HilosSignalConstants::STATUS_SCHEDULE_WORK);
+        } elseif ($entry === 'incident write') {
+            $ask = new StatusAddUpdateSignalData(
+                incidentId: 1, text: 'Team update', replySignal: HilosSignalConstants::HILOS_STATUS_WRITE_DONE,
+                acceptKey: 'ak-status', requestId: 'refused-status',
+                action: HilosSignalConstants::HILOS_STATUS_ADD_UPDATE, successMessage: null,
+            );
+            $this->owner->onSignalAgent(new AgentSignalData($ask), 'gatekeeper', HilosSignalConstants::STATUS_ADD_UPDATE);
+        } else {
+            $command = match ($entry) {
+                'work start' => CliCommands::STATUS_TEST_WORK_START,
+                'silence remove' => CliCommands::STATUS_TEST_SILENCE_REMOVE,
+            };
+            $publicId = $entry === 'work start' ? $work->publicId : str_repeat('a', 32);
+            $this->owner->onSignalCommand(new CommandRequestDTO('cid-status', $command,
+                [StatusTestCommandConstants::FIELD_PUBLIC_ID => $publicId]), 'cli', $command);
+        }
+
+        $frames = $this->queuedFrames();
+        self::assertSame($before, Hilos::$rt->hilosStatusMaintenance['current']->toArray());
+        self::assertNotContains(SignalConstants::RT_SYNC_UPDATED,
+            array_map(static fn (SignalDTO $frame): string => $frame->signalName->getName(), $frames));
+        if ($entry === 'work write' || $entry === 'incident write') {
+            $replySignal = $entry === 'work write' ? HilosSignalConstants::HILOS_STATUS_WORK_WRITE_DONE
+                : HilosSignalConstants::HILOS_STATUS_WRITE_DONE;
+            $answers = array_values(array_filter($frames, static fn (SignalDTO $frame): bool =>
+                $frame->signalName->getName() === $replySignal));
+            self::assertCount(1, $answers);
+            self::assertInstanceOf(AgentSignalData::class, $answers[0]->data);
+            $answer = $answers[0]->data->data;
+            self::assertInstanceOf(HandoverAnswerSignalData::class, $answer);
+            self::assertSame('ak-status', $answer->acceptKey);
+            self::assertSame('refused-status', $answer->requestId);
+            self::assertSame('Status changes are unavailable during maintenance or while runtime state is unavailable.', $answer->error);
+        } elseif ($entry === 'work start' || $entry === 'silence remove') {
+            $replies = array_values(array_filter($frames, static fn (SignalDTO $frame): bool =>
+                $frame->signalType->getType() === SignalTypeConstants::COMMAND_REPLY));
+            self::assertCount(1, $replies);
+            $reply = $replies[0]->data;
+            self::assertInstanceOf(CommandReplyDTO::class, $reply);
+            self::assertSame('cid-status', $reply->correlationId);
+            self::assertFalse($reply->isOk());
+            self::assertSame('Status changes are unavailable during maintenance or while runtime state is unavailable.',
+                $reply->payload[CommandConstants::FIELD_MESSAGE]);
+        }
+
+        $this->owner->tickAt($this->now + 100);
+        $current = Hilos::$rt->hilosStatusMaintenance['current'];
+        self::assertTrue($current->announcementKnown);
+        self::assertSame($work->publicId, $current->workPublicId);
+        self::assertSame($this->now, $current->startedAt);
+    }
+
     /** @return list<array<string, mixed>> Independent persisted maintenance facts */
     private function rows(): array
     {
@@ -872,6 +977,16 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
             }
         }
         return $names;
+    }
+
+    /** @return list<SignalDTO> All frames queued since the previous drain */
+    private function queuedFrames(): array
+    {
+        $frames = [];
+        while (($frame = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $frames[] = $frame;
+        }
+        return $frames;
     }
 
     /** @param int $at Tick clock at the start of a finite owner build */

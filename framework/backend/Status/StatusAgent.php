@@ -621,6 +621,22 @@ final class StatusAgent extends AbstractHilosAgent
     }
 
     /**
+     * Public subscription entries refuse without changing freeze observation or delivery state.
+     *
+     * @throws HilosException When runtime state, the owned source or its readiness is unavailable
+     */
+    private function requireSubscriptionsOpen(): void
+    {
+        if ($this->freezeVerdict() !== null || Hilos::$db === null
+            || !SourceInterestRegistry::isReady(SourceChange::KIND_DB, HilosDbContext::statusSubscribers)) {
+            throw new ValidationException(self::SUBSCRIPTIONS_UNAVAILABLE);
+        }
+    }
+
+    /**
+     * Internal delivery applies transitions so a freeze between recipients clears the same portion's queue.
+     * Cleared work is never resumed after lift.
+     *
      * @throws HilosException When runtime state, the owned source or its readiness is unavailable
      */
     private function requireSubscriptionsAvailable(): void
@@ -641,7 +657,7 @@ final class StatusAgent extends AbstractHilosAgent
      */
     private function subscribe(string $acceptKey, StatusSubscribeActionDTO $dto): StatusSubscriptionReplyDTO
     {
-        $this->requireSubscriptionsAvailable();
+        $this->requireSubscriptionsOpen();
         $links = StatusSubscriptionLink::fromEnvironment();
         $connections = Hilos::$rt->sessionConnectionsSource();
         if ($connections === null || $connections->getCollectionName() === null
@@ -718,7 +734,7 @@ final class StatusAgent extends AbstractHilosAgent
      */
     private function confirmSubscription(StatusConfirmSubscriptionActionDTO $dto): StatusSubscriptionReplyDTO
     {
-        $this->requireSubscriptionsAvailable();
+        $this->requireSubscriptionsOpen();
         $this->subscriptionTransaction(function () use ($dto): void {
             $subscriberId = Hilos::$db->statusSubscribers->findByConfirmationToken($dto->token)?->id;
             if ($subscriberId === null
@@ -736,7 +752,7 @@ final class StatusAgent extends AbstractHilosAgent
      */
     private function previewUnsubscribe(StatusUnsubscribePreviewActionDTO $dto): StatusUnsubscribePreviewReplyDTO
     {
-        $this->requireSubscriptionsAvailable();
+        $this->requireSubscriptionsOpen();
         $subscriberId = Hilos::$db->statusSubscribers->findByUnsubscribeToken($dto->token)?->id;
         if ($subscriberId === null) {
             throw new ValidationException(self::INVALID_SUBSCRIPTION_LINK);
@@ -751,7 +767,7 @@ final class StatusAgent extends AbstractHilosAgent
      */
     private function unsubscribe(StatusUnsubscribeActionDTO $dto): StatusSubscriptionReplyDTO
     {
-        $this->requireSubscriptionsAvailable();
+        $this->requireSubscriptionsOpen();
         $this->subscriptionTransaction(function () use ($dto): void {
             $subscriberId = Hilos::$db->statusSubscribers->findByUnsubscribeToken($dto->token)?->id;
             if ($subscriberId !== null) {
@@ -800,7 +816,7 @@ final class StatusAgent extends AbstractHilosAgent
         try {
             PageAccessGate::assertAction(AbstractHilosStatusSubscribersPage::class, $ask->acceptKey,
                 HilosSignalConstants::HILOS_STATUS_SUBSCRIBER_REMOVE);
-            $this->requireSubscriptionsAvailable();
+            $this->requireSubscriptionsOpen();
             Database::transaction(DatabaseNames::PRIMARY, function () use ($ask): void {
                 if (!isset(Hilos::$db->statusSubscribers[$ask->subscriberId])) {
                     throw new ValidationException('This status subscriber no longer exists.');
@@ -838,8 +854,7 @@ final class StatusAgent extends AbstractHilosAgent
     private function workWrite(StatusScheduleWorkSignalData|StatusChangeWorkSignalData|StatusCancelWorkSignalData $ask): ?ActionRefusal
     {
         try {
-            $this->refreshFreeze();
-            if ($this->wasFrozen || Hilos::$db === null) {
+            if ($this->freezeVerdict() !== null || Hilos::$db === null) {
                 return ActionRefusal::said(self::CHANGES_UNAVAILABLE);
             }
             $action = match (true) {
@@ -940,8 +955,7 @@ final class StatusAgent extends AbstractHilosAgent
         if (!is_string($publicId) || $publicId === '') {
             return CommandReplyDTO::error($data->correlationId, 'Name the maintenance announcement by its public id.');
         }
-        $this->refreshFreeze();
-        if ($this->wasFrozen || Hilos::$db === null) {
+        if ($this->freezeVerdict() !== null || Hilos::$db === null) {
             return CommandReplyDTO::error($data->correlationId, self::CHANGES_UNAVAILABLE);
         }
         $this->reconcileMaintenanceBeforeWrite(TimeHelper::nowMs());
@@ -1092,8 +1106,7 @@ final class StatusAgent extends AbstractHilosAgent
         StatusCancelPublicationSignalData|StatusPublishNowSignalData|StatusAddUpdateSignalData $ask,
     ): ?ActionRefusal {
         try {
-            $this->refreshFreeze();
-            if ($this->wasFrozen) {
+            if ($this->freezeVerdict() !== null) {
                 return ActionRefusal::said(self::CHANGES_UNAVAILABLE);
             }
             $this->reconcileMaintenanceBeforeWrite(TimeHelper::nowMs());
@@ -1694,8 +1707,7 @@ final class StatusAgent extends AbstractHilosAgent
         if (!is_string($id) || preg_match(StatusPublicSilencePeriod::PUBLIC_ID_PATTERN, $id) !== 1) {
             return CommandReplyDTO::error($request->correlationId, 'Name the closed silence period by its public id.');
         }
-        $this->refreshFreeze();
-        if ($this->wasFrozen || Hilos::$db === null) {
+        if ($this->freezeVerdict() !== null || Hilos::$db === null) {
             return CommandReplyDTO::error($request->correlationId, self::CHANGES_UNAVAILABLE);
         }
         if ($this->publicHeld || $this->publicCommandCorrelationId !== null) {
@@ -2358,15 +2370,29 @@ final class StatusAgent extends AbstractHilosAgent
     }
 
     /**
-     * Null means this process holds no runtime state and must wait, just as during an active freeze.
+     * Reads the freeze without invalidating publication, resetting queues or changing observation buffers.
+     * Refusing entry handlers use this to preserve the first occupied classification.
+     *
+     * @return ?StatusComponentState Null while inactive, otherwise the occupied or unknown verdict
+     * @throws HilosException When the freeze runtime cannot be read
+     */
+    private function freezeVerdict(): ?StatusComponentState
+    {
+        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+        return $freeze === null || $freeze->staleSince() !== null ? StatusComponentState::UNKNOWN
+            : ($freeze->phase === ProtectedModeRuntime::PHASE_INACTIVE ? null : StatusComponentState::MAINTENANCE);
+    }
+
+    /**
+     * A transition raises publicInvalidated, read by advanceMaintenance at its first occupied decision.
+     * First reads here follow advanceMaintenance in onStart, tickAt, reconcileMaintenanceBeforeWrite, applyPicturePortion and heartbeatNow.
+     * onStop ends the instance; handlers that only refuse use freezeVerdict.
      *
      * @throws HilosException When the freeze runtime cannot be read
      */
     private function refreshFreeze(): void
     {
-        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
-        $state = $freeze === null || $freeze->staleSince() !== null ? StatusComponentState::UNKNOWN
-            : ($freeze->phase === ProtectedModeRuntime::PHASE_INACTIVE ? null : StatusComponentState::MAINTENANCE);
+        $state = $this->freezeVerdict();
         if ($state !== $this->freezeState) {
             $this->freezeState = $state;
             $this->publicInvalidated = true;
