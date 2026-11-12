@@ -376,13 +376,15 @@ The core module owns the `hilosStatusWorks` state and row resolver and exposes
 the named create, edit and cancel actions. Editing uses the shared row edit
 session, table-row edit source and focus-return path; the baseline contains the
 text, component list and both times, and the live row version is sent as
-`expectedVersion`. Date-time inputs use the reader's explicit IANA zone through
-`localDateTimeValue()` and `parseLocalDateTimeValue()`. Parsing strictly checks
-the Gregorian calendar and round-trips to whole seconds; DST gaps and folds
-that do not identify one moment are rejected instead of guessed. Action frames
-continue to carry epoch milliseconds UTC. Cancellation remains bound to the
-focused row's immutable public id; an unrelated late acknowledgement cannot
-retarget another dialog. Vue uses the standard Status admin
+`expectedVersion`. The work window is a `DateTimePicker` datetime range,
+`windowPicker`, made on each opening in the reader's IANA zone captured then.
+A repeated hour resolves only to the chosen or the loaded occurrence, and a
+DST gap is rejected instead of guessed. Until HIL-1980–1982 adopt the picker,
+native views read and write the form's `startsAt`/`endsAt` text projected from
+and into its parts. Action frames continue to carry epoch milliseconds UTC.
+Cancellation remains bound to the focused row's immutable public id; an
+unrelated late acknowledgement cannot retarget another dialog. Vue uses the
+standard Status admin
 page, viewport table, create/edit/cancel modals and action notices; React draws
 the same pages, table and modals over the same core controllers. Chat and
 Binance mount thin Vue wrappers, Tasks and Ecommerce Shop thin React wrappers,

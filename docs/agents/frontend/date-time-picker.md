@@ -28,9 +28,11 @@ subsecond precision; `parseLocalDateTimeValue()` returns `null` for gaps and
 folds as well as invalid input. They are not the precise adapter specified
 below. The existing [calendar engine](../../../framework/frontend/core/src/timeZone/calendarPeriods.ts)
 supplies Gregorian coordinates, explicit `Intl` field reading and IANA offset
-intervals. The current [maintenance form](../../../framework/frontend/core/src/admin/status/hilosStatusWorkActions.ts)
-uses the old helpers and has its own limited preservation of an unchanged saved
-second; that is not the picker's general precision policy.
+intervals. The [maintenance form](../../../framework/frontend/core/src/admin/status/hilosStatusWorkActions.ts)
+keeps its window in one picker per opening, `windowPicker`, rather than in
+these helpers. Until the maintenance dialogs adopt that picker, the native
+views read the `startsAt`/`endsAt` text the form projects from the picker's
+parts and write such text back into them.
 
 This document changes no executable code, package exports, DB fields or
 migrations, runtime item fields, wire signals, DTOs, topology, product routes
@@ -1079,8 +1081,8 @@ function submitPair(
 ```
 
 When `hasPair()` is false, Save is unavailable and Enter sends nothing. These
-functions illustrate the future form boundary, not a second value store or
-business validator. (not in the code yet — HIL-1979)
+functions illustrate the form boundary, not a second value store or business
+validator.
 
 ## SDK view imports
 
@@ -1110,8 +1112,9 @@ does not reinterpret the open draft. Use a datetime range with seconds,
 wire's `startsAt` and `endsAt` as epoch milliseconds. Form/server rules decide
 period ordering and inclusivity; the picker does not decide whether work is
 allowed or whether windows overlap. The form owns explicit resets and accepted
-per-edge merges into the controller.
-(not in the code yet — HIL-1979)
+per-edge merges into the controller. The form exposes that controller as
+`windowPicker`; until the dialogs below adopt it, native views use the
+form's `startsAt`/`endsAt` text projected from and into its parts.
 
 Adopt that integration in the two maintenance dialogs, preserving the form
 refusal row and the hint about maintenance windows. Each view owns its own
@@ -1127,10 +1130,11 @@ Shared Gregorian math and its `/base` exports are implemented by HIL-1966.
 Exact zone facts and their standard `/base` adapter are implemented by HIL-1967.
 HIL-1968 implemented picker values, draft, factors, controller and core exports.
 HIL-1969 implemented `picker.calendar`, atomic range selection, navigation and
-its `/base` types. The remaining markers name the implementation owner at each
-boundary: the SDK field/calendar/narrow sequences HIL-1970–1972,
-HIL-1973–1975 and HIL-1976–1978 for Vue, React and Angular; and HIL-1979–1982
-for maintenance integration and adoption. Do not invent new internal file
+its `/base` types. The SDK field/calendar/narrow sequences are implemented by
+HIL-1970–1972, HIL-1973–1975 and HIL-1976–1978 for Vue, React and Angular.
+HIL-1979 implemented the maintenance form integration. The remaining markers
+name HIL-1980–1982 for maintenance adoption and HIL-1983 for the final
+cross-layer cleanup. Do not invent new internal file
 names from this contract or implement a neighboring leaf to make an example
 import resolve.
 

@@ -31,6 +31,12 @@ import { Socket } from '../../status/fixtures.js'
 import { harness, overview } from './fixtures.js'
 import { normalizeTableRow } from '../../../src/state/normalizer.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
+import type { DateTimePickerController } from '../../../src/primitives/dateTimePicker.js'
+import type {
+  DateTimePickerEdge,
+  DateTimePickerNumericPart,
+} from '../../../src/primitives/dateTimePickerValue.js'
+import { applyServerTime } from '../../../src/session/serverClock.js'
 
 const work = {
   id: 'opaque-public-id',
@@ -1023,4 +1029,479 @@ describe('Works create, edit and cancel', () => {
       h.dispose()
     }
   })
+})
+
+/** The six numeric parts of a window edge, in the order of the native text. */
+const windowParts: readonly DateTimePickerNumericPart[] = [
+  'year',
+  'month',
+  'day',
+  'hour',
+  'minute',
+  'second',
+]
+
+/**
+ * The texts of an edge's numeric parts, in the order of the native text.
+ *
+ * @param picker The window picker of one opening.
+ * @param edge The edge to read.
+ */
+function edgeTexts(
+  picker: DateTimePickerController<'datetime', 'range'>,
+  edge: DateTimePickerEdge,
+): (string | undefined)[] {
+  const endpoint = picker.state.get()[edge]
+  return windowParts.map(
+    (name) => endpoint.parts.find((part) => part.part === name)?.text,
+  )
+}
+
+const refusal = {
+  reason: 'This announcement changed. Review it before saving.',
+  errorType: 'StaleWork',
+  errorDetail: 'Version mismatch',
+  errorCode: 'stale',
+}
+
+describe('Works window picker', () => {
+  it('makes one picker per opening in the opening zone, with the calendar starting on the server day', () => {
+    vi.setSystemTime(Date.UTC(2031, 0, 1, 14, 50))
+    applyServerTime(Date.UTC(2031, 0, 1, 15, 10))
+    const h = setup('Asia/Tokyo')
+    try {
+      h.window()
+      expect(h.create.windowPicker.get()).toBeNull()
+      expect(h.edit.windowPicker.get()).toBeNull()
+      h.create.open()
+      const first = h.create.windowPicker.get()!
+      expect(first.labels).toMatchObject({ from: 'Starts', to: 'Ends' })
+      expect(first.state.get().start.parts.map((part) => part.part)).toContain(
+        'second',
+      )
+      first.calendar.open()
+      const days = first.calendar.state.get().grid!.weeks.flat()
+      expect(days.find((day) => day?.today)?.date).toBe('2031-01-02')
+      expect(days.find((day) => day?.date === '2031-01-01')?.disabled).toBe(
+        true,
+      )
+      expect(days.find((day) => day?.date === '2031-01-02')?.disabled).toBe(
+        false,
+      )
+      h.create.patchForm({ startsAt: '2031-01-02T09:00:00' })
+      expect(first.state.get().start.result).toEqual({
+        status: 'valid',
+        value: Date.UTC(2031, 0, 2),
+      })
+      h.create.close()
+      h.create.open()
+      const second = h.create.windowPicker.get()!
+      expect(second).not.toBe(first)
+      expect(h.create.form.get().startsAt).toBe('')
+      const old = first.state.get()
+      first.setPartText('start', 'year', '2040')
+      first.stepPart('end', 'day', 1)
+      expect(first.state.get()).toBe(old)
+      expect(edgeTexts(second, 'start')).toEqual(['', '', '', '', '', ''])
+      h.edit.open('7')
+      const edited = h.edit.windowPicker.get()!
+      expect(edited).not.toBe(second)
+      expect(h.edit.form.get().startsAt).toBe('2031-01-02T12:04:05')
+      h.edit.open('7')
+      expect(h.edit.windowPicker.get()).not.toBe(edited)
+      edited.setPartText('start', 'hour', '13')
+      expect(h.edit.form.get().startsAt).toBe('2031-01-02T12:04:05')
+      expect(h.edit.dirty.get()).toBe(false)
+    } finally {
+      h.dispose()
+      applyServerTime(Date.now())
+    }
+  })
+
+  it('keeps an unfinished edge from scheduling while the form counts as changed', async () => {
+    const h = setup()
+    try {
+      h.window()
+      h.create.open()
+      h.create.windowPicker.get()!.setPartText('end', 'day', '02')
+      expect(h.create.dirty.get()).toBe(true)
+      expect(h.create.form.get().endsAt).toBe('')
+      h.create.patchForm(filledForm)
+      expect(h.create.canSubmit.get()).toBe(true)
+      h.create.windowPicker.get()!.setPartText('start', 'minute', '')
+      expect(h.create.form.get().startsAt).toBe('')
+      expect(h.create.form.get().endsAt).toBe(filledForm.endsAt)
+      expect(h.create.dirty.get()).toBe(true)
+      expect(h.create.canSubmit.get()).toBe(false)
+      expect(await h.create.submit()).toBe(false)
+      expect(h.sent).toEqual([])
+    } finally {
+      h.dispose()
+    }
+  })
+
+  it('refuses a skipped hour and an unchosen repeated hour, then sends exactly the chosen occurrence', async () => {
+    const h = setup('America/New_York')
+    try {
+      h.window()
+      h.create.open()
+      h.create.patchForm(filledForm)
+      expect(h.create.canSubmit.get()).toBe(true)
+      const picker = h.create.windowPicker.get()!
+      h.create.patchForm({
+        startsAt: '2031-03-09T02:30:00',
+        endsAt: '2031-03-09T04:00:00',
+      })
+      expect(picker.state.get().start.result).toEqual({ status: 'gap' })
+      expect(h.create.form.get().startsAt).toBe('2031-03-09T02:30:00')
+      expect(h.create.canSubmit.get()).toBe(false)
+      expect(await h.create.submit()).toBe(false)
+      h.create.patchForm({
+        startsAt: '2031-11-02T01:30:00',
+        endsAt: '2031-11-02T04:00:00',
+      })
+      expect(picker.state.get().start.result.status).toBe('ambiguous')
+      expect(h.create.canSubmit.get()).toBe(false)
+      expect(await h.create.submit()).toBe(false)
+      expect(h.sent).toEqual([])
+      const late = Date.UTC(2031, 10, 2, 6, 30)
+      expect(
+        picker.state.get().start.offsetChoices.map((choice) => choice.epochMs),
+      ).toEqual([Date.UTC(2031, 10, 2, 5, 30), late])
+      picker.selectOffset('start', late)
+      expect(h.create.canSubmit.get()).toBe(true)
+      const pending = h.create.submit()
+      expect(h.sent[0]?.data).toMatchObject({
+        startsAt: late,
+        endsAt: Date.UTC(2031, 10, 2, 9),
+      })
+      h.answer(true)
+      expect(await pending).toBe(true)
+    } finally {
+      h.dispose()
+    }
+  })
+
+  it('saves a loaded second occurrence of a repeated hour unchanged when only the title changes', async () => {
+    const h = setup('America/New_York')
+    const repeated = {
+      ...announcement,
+      startsAt: Date.UTC(2031, 10, 2, 6, 30),
+      endsAt: Date.UTC(2031, 10, 2, 9),
+    }
+    try {
+      h.window([row(repeated)])
+      h.edit.open('7')
+      expect(h.edit.form.get().startsAt).toBe('2031-11-02T01:30:00')
+      h.edit.patchForm({ title: 'Draft' })
+      h.edit.patchForm({
+        startsAt: '2031-11-02T01:30:00',
+        endsAt: '2031-11-02T04:00:00',
+      })
+      expect(h.edit.canSave.get()).toBe(true)
+      const pending = h.edit.submit()
+      expect(h.sent[0]?.data).toMatchObject({
+        title: 'Draft',
+        startsAt: repeated.startsAt,
+        endsAt: repeated.endsAt,
+      })
+      h.answer(true)
+      expect(await pending).toBe(true)
+    } finally {
+      h.dispose()
+    }
+  })
+
+  it('keeps unedited milliseconds when the minutes change in the picker or in the native text', async () => {
+    const h = setup()
+    const precise = {
+      ...announcement,
+      startsAt: Date.UTC(2031, 0, 2, 6, 5, 42, 123),
+      endsAt: Date.UTC(2031, 0, 2, 8),
+    }
+    try {
+      h.window([row(precise)])
+      h.edit.open('7')
+      h.edit.windowPicker.get()!.setPartText('start', 'minute', '10')
+      let pending = h.edit.submit()
+      expect(h.sent[0]?.data).toMatchObject({
+        startsAt: Date.UTC(2031, 0, 2, 6, 10, 42, 123),
+        endsAt: precise.endsAt,
+      })
+      h.answer(true)
+      expect(await pending).toBe(true)
+      h.edit.open('7')
+      h.edit.patchForm({ startsAt: '2031-01-02T06:10:42' })
+      pending = h.edit.submit()
+      expect(h.sent[1]?.data).toMatchObject({
+        startsAt: Date.UTC(2031, 0, 2, 6, 10, 42, 123),
+        endsAt: precise.endsAt,
+      })
+      h.answer(true)
+      expect(await pending).toBe(true)
+    } finally {
+      h.dispose()
+    }
+  })
+
+  it('takes their start into its own edge, keeping the unfinished end and the opening zone', () => {
+    const h = setup('America/New_York')
+    try {
+      h.window()
+      h.edit.open('7')
+      const picker = h.edit.windowPicker.get()!
+      picker.setPartText('start', 'hour', '20')
+      picker.setPartText('end', 'minute', '')
+      const end = edgeTexts(picker, 'end')
+      h.setZone('Asia/Tokyo')
+      const theirs = Date.UTC(2031, 0, 2, 2)
+      h.update({ startsAt: theirs, version: 2 })
+      expect(h.edit.state.get().fields.startsAt.conflict).toBe(true)
+      h.edit.takeTheirs()
+      expect(h.edit.state.get().conflict).toBe(false)
+      expect(picker.state.get().start.result).toEqual({
+        status: 'valid',
+        value: theirs,
+      })
+      expect(h.edit.form.get().startsAt).toBe('2031-01-01T21:00:00')
+      expect(edgeTexts(picker, 'end')).toEqual(end)
+      expect(h.edit.form.get().endsAt).toBe('')
+      expect(h.edit.timeZone.get()).toBe('America/New_York')
+      expect(h.edit.windowPicker.get()).toBe(picker)
+    } finally {
+      h.dispose()
+    }
+  })
+
+  it('lands a silent change of the untouched end without touching the start draft', () => {
+    const h = setup()
+    try {
+      h.window()
+      h.edit.open('7')
+      const picker = h.edit.windowPicker.get()!
+      picker.setPartText('start', 'minute', '')
+      const start = picker.state.get().start
+      const theirs = Date.UTC(2031, 0, 2, 6)
+      h.update({ endsAt: theirs, version: 2 })
+      expect(h.edit.state.get().conflict).toBe(false)
+      expect(picker.state.get().end.result).toEqual({
+        status: 'valid',
+        value: theirs,
+      })
+      expect(h.edit.form.get().endsAt).toBe('2031-01-02T06:00:00')
+      expect(picker.state.get().start).toEqual(start)
+    } finally {
+      h.dispose()
+    }
+  })
+
+  it('leaves the picker untouched on Keep mine and sends the kept edge', async () => {
+    const h = setup()
+    try {
+      h.window()
+      h.edit.open('7')
+      const picker = h.edit.windowPicker.get()!
+      picker.setPartText('start', 'hour', '02')
+      h.update({ startsAt: Date.UTC(2031, 0, 2, 1), version: 2 })
+      expect(h.edit.state.get().fields.startsAt.conflict).toBe(true)
+      const snapshot = picker.state.get()
+      h.edit.keepMine()
+      expect(picker.state.get()).toBe(snapshot)
+      expect(h.edit.canSave.get()).toBe(true)
+      const pending = h.edit.submit()
+      expect(h.sent[0]?.data).toMatchObject({
+        expectedVersion: 2,
+        startsAt: Date.UTC(2031, 0, 2, 2, 4, 5),
+        endsAt: announcement.endsAt,
+      })
+      h.answer(true)
+      expect(await pending).toBe(true)
+    } finally {
+      h.dispose()
+    }
+  })
+
+  it.each([
+    {
+      passes: 'the saved moment',
+      draft: '2031-01-02T05:04:05',
+      theirs: Date.UTC(2031, 0, 1, 3, 4, 5),
+      text: '2031-01-02T03:30:05',
+    },
+    {
+      passes: 'their moment',
+      draft: '2031-01-02T05:20:05',
+      theirs: Date.UTC(2031, 0, 2, 3, 20, 5),
+      text: '2031-01-02T03:45:05',
+    },
+  ])(
+    'keeps a standing start conflict when native text passes $passes part by part',
+    ({ draft, theirs, text }) => {
+      const h = setup()
+      try {
+        h.window()
+        h.edit.open('7')
+        h.edit.patchForm({ startsAt: draft })
+        h.update({ startsAt: theirs, version: 2 })
+        expect(h.edit.state.get().fields.startsAt.conflict).toBe(true)
+        h.edit.patchForm({ startsAt: text })
+        expect(h.edit.state.get().fields.startsAt.conflict).toBe(true)
+        expect(h.edit.form.get().startsAt).toBe(text)
+        expect(h.edit.canSave.get()).toBe(false)
+      } finally {
+        h.dispose()
+      }
+    },
+  )
+
+  it.each(['create', 'edit'] as const)(
+    'refuses picker edits while the %s request is in flight and takes them after the answer',
+    async (operation) => {
+      const h = setup()
+      try {
+        h.window()
+        if (operation === 'create') {
+          h.create.open()
+          h.create.patchForm(filledForm)
+        } else {
+          h.edit.open('7')
+          h.edit.patchForm({ title: 'Draft' })
+        }
+        const controller = h[operation]
+        const picker = controller.windowPicker.get()!
+        const pending = controller.submit()
+        const snapshot = picker.state.get()
+        picker.setPartText('start', 'minute', '30')
+        picker.stepPart('end', 'hour', 1)
+        expect(picker.state.get()).toBe(snapshot)
+        h.answer(false, refusal)
+        expect(await pending).toBe(false)
+        picker.setPartText('start', 'minute', '30')
+        picker.stepPart('end', 'hour', 1)
+        expect(edgeTexts(picker, 'start')[4]).toBe('30')
+        expect(edgeTexts(picker, 'end')[3]).toBe('05')
+      } finally {
+        h.dispose()
+      }
+    },
+  )
+
+  it('lands an incoming edge while the edit request is in flight', async () => {
+    const h = setup()
+    try {
+      h.window()
+      h.edit.open('7')
+      h.edit.patchForm({ title: 'Draft' })
+      const picker = h.edit.windowPicker.get()!
+      const pending = h.edit.submit()
+      const theirs = Date.UTC(2031, 0, 2, 6)
+      h.update({ endsAt: theirs, version: 2 })
+      expect(picker.state.get().end.result).toEqual({
+        status: 'valid',
+        value: theirs,
+      })
+      h.answer(false, refusal)
+      expect(await pending).toBe(false)
+      expect(h.edit.form.get().endsAt).toBe('2031-01-02T06:00:00')
+    } finally {
+      h.dispose()
+    }
+  })
+
+  it('keeps the picker, its zone and its draft through a reader-zone change', () => {
+    const h = setup('America/New_York')
+    try {
+      h.window()
+      h.create.open()
+      const created = h.create.windowPicker.get()!
+      created.setPartText('start', 'minute', '30')
+      h.edit.open('7')
+      const edited = h.edit.windowPicker.get()!
+      edited.setPartText('start', 'minute', '30')
+      const drafts = [created.state.get(), edited.state.get()]
+      h.setZone('Asia/Tokyo')
+      expect(h.create.windowPicker.get()).toBe(created)
+      expect(h.edit.windowPicker.get()).toBe(edited)
+      expect([created.state.get(), edited.state.get()]).toEqual(drafts)
+      expect(h.create.timeZone.get()).toBe('America/New_York')
+      expect(h.edit.timeZone.get()).toBe('America/New_York')
+      expect(h.edit.form.get().startsAt).toBe('2031-01-01T22:30:05')
+      h.create.patchForm({ startsAt: '2031-01-02T03:04:05' })
+      expect(created.state.get().start.result).toEqual({
+        status: 'valid',
+        value: Date.UTC(2031, 0, 2, 8, 4, 5),
+      })
+    } finally {
+      h.dispose()
+    }
+  })
+
+  it('bridges native text into the parts and clears the edge on empty or foreign text', () => {
+    const h = setup()
+    try {
+      h.window()
+      h.create.open()
+      const picker = h.create.windowPicker.get()!
+      h.create.patchForm({ startsAt: '2031-01-02T03:04' })
+      expect(edgeTexts(picker, 'start')).toEqual([
+        '2031',
+        '01',
+        '02',
+        '03',
+        '04',
+        '00',
+      ])
+      expect(h.create.form.get().startsAt).toBe('2031-01-02T03:04:00')
+      for (const text of ['', 'nonsense']) {
+        h.create.patchForm({ startsAt: '2031-01-02T03:04:05' })
+        h.create.patchForm({ startsAt: text })
+        expect(picker.state.get().start.result).toEqual({ status: 'empty' })
+        expect(edgeTexts(picker, 'start')).toEqual(['', '', '', '', '', ''])
+        expect(h.create.form.get().startsAt).toBe('')
+      }
+    } finally {
+      h.dispose()
+    }
+  })
+
+  it.each(['create', 'edit'] as const)(
+    'keeps a late %s answer off the next opening and releases the picker on dispose',
+    async (operation) => {
+      const h = setup()
+      try {
+        h.window()
+        const reopen = (): void => {
+          if (operation === 'create') h.create.open()
+          else h.edit.open('7')
+        }
+        reopen()
+        const controller = h[operation]
+        controller.patchForm({ ...filledForm, title: 'Draft' })
+        const old = controller.windowPicker.get()!
+        const pending = controller.submit()
+        vi.advanceTimersByTime(1000)
+        expect(await pending).toBe(false)
+        controller.close()
+        reopen()
+        const fresh = controller.windowPicker.get()!
+        expect(fresh).not.toBe(old)
+        fresh.setPartText('start', 'minute', '30')
+        const snapshot = fresh.state.get()
+        const form = controller.form.get()
+        h.answer(true)
+        await Promise.resolve()
+        expect(fresh.state.get()).toBe(snapshot)
+        expect(controller.form.get()).toEqual(form)
+        expect(controller.opened.get()).toBe(true)
+        expect(controller.success.get()).toBeNull()
+        controller.dispose()
+        expect(controller.windowPicker.get()).toBe(fresh)
+        fresh.setPartText('start', 'minute', '45')
+        fresh.stepPart('end', 'hour', 1)
+        expect(fresh.state.get()).toBe(snapshot)
+      } finally {
+        h.dispose()
+      }
+    },
+  )
 })
