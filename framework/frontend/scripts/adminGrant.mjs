@@ -4,7 +4,12 @@ const ADMIN_CREATE_COMMAND = 'admin:create'
 const ADMIN_GRANT_COMMAND = 'admin:grant'
 const ADMIN_REVOKE_COMMAND = 'admin:revoke'
 
-const sendCommand = createStandCommandChannel({ timeoutMs: 5_000 })
+// The middle of the command channel's nested windows, a hand-kept copy of
+// CommandChannelWindows::CALLER_WAIT_SECONDS. The reply to these commands comes from an
+// agent, not from the master, so the caller waits as long as the CLI does.
+const REPLY_TIMEOUT_MS = 15_000
+
+const sendCommand = createStandCommandChannel({ timeoutMs: REPLY_TIMEOUT_MS })
 
 /**
  * Create or find the account named by a browser session and grant it admin.

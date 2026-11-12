@@ -75,8 +75,10 @@ until the node stops, and a freed one goes to the next agent that needs one.
 
 An agent that finds no free worker of its type waits in the master's register until one connects,
 with the frames addressed to it held meanwhile. One queue serves both types (HIL-998, HIL-1671).
-A monopolistic agent waits for the worker raised for it. A regular agent waits only when this
-master has already launched a regular process that has not registered yet. No process is launched
+A monopolistic agent waits for a worker; free ones are owed to the queue first: a direct start
+takes a free monopolistic worker only while more are free than wait, otherwise it orders its own
+and joins the tail. A regular agent waits only when this master has already launched a regular
+process that has not registered yet. No process is launched
 for the wait: the minimum, the maximum and the replacement of the dead stay with
 `ensureMinWorkers()`, and with no such process the start is refused as before. The wait ends
 seated on a worker of the agent's type, or refused after `WorkerServer::WORKER_CONNECT_WAIT_SECONDS`

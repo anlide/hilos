@@ -2145,6 +2145,7 @@ abstract class WorkerServer extends AbstractServer implements
      * @param ?string $agentIndex Agent index (optional)
      * @param bool $placedByLeader True when this node hosts the agent because placement said so
      * @param ?int $preferredWorkerId Worker to hand it back to when that worker is still able to take it
+     * @param bool $seatFromQueue True only for the queue's own seat, which takes any free worker
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
      * @throws NoSuitableWorkerException If no suitable worker is available
      * @throws HilosException Whatever the project's agent-daemon factory raises
@@ -2154,6 +2155,7 @@ abstract class WorkerServer extends AbstractServer implements
         ?string $agentIndex,
         bool $placedByLeader,
         ?int $preferredWorkerId = null,
+        bool $seatFromQueue = false,
     ): void {
         // Build agent ID
         $agentId = $this->buildAgentId($agentType, $agentIndex);
@@ -2275,11 +2277,25 @@ abstract class WorkerServer extends AbstractServer implements
             return;
         }
 
-        // Select appropriate worker
-        $workerClient = $this->selectWorkerForAgent(
-            $agentDaemon->requiresMonopolisticProcess(),
-            $preferredWorkerId,
-        );
+        // Select appropriate worker. While agents wait in the queue, the free monopolistic workers
+        // are theirs first: a direct start takes one only while more are free than wait, and
+        // otherwise finds none and orders its own below, joining the tail - it never takes the
+        // worker a waiting agent was raised for. The queue's own seat takes any free one.
+        $workerClient = null;
+        if ($agentDaemon->requiresMonopolisticProcess() && !$seatFromQueue) {
+            $free = $this->freeMonopolisticWorkerCount();
+            $waiting = $this->workerWaitCounts[WorkerConstants::TYPE_MONOPOLISTIC];
+            if ($free > $waiting) {
+                $workerClient = $this->selectWorkerForAgent(true, $preferredWorkerId);
+            } elseif ($free > 0) {
+                Logger::info("Monopolistic pool: agent {$agentId} leaves {$free} free worker(s) to {$waiting} waiting agent(s) and orders its own");
+            }
+        } else {
+            $workerClient = $this->selectWorkerForAgent(
+                $agentDaemon->requiresMonopolisticProcess(),
+                $preferredWorkerId,
+            );
+        }
 
         // No suitable worker: a monopolistic agent orders one and waits for it (HIL-998), and a
         // regular agent waits for a regular worker already launched and not yet connected
@@ -2362,7 +2378,9 @@ abstract class WorkerServer extends AbstractServer implements
      * {@see self::WORKER_CONNECT_WAIT_SECONDS} for a worker to connect; the frames the master
      * holds for it keep no clock of their own and end on the verdict this wait gives. The worker
      * is not the agent's: whichever waiting agent is first when a free monopolistic worker exists
-     * takes it ({@see advanceAgentsAwaitingWorker()}).
+     * takes it ({@see advanceAgentsAwaitingWorker()}), but the pool owes the queue one worker per
+     * waiter: a direct start takes a free monopolistic worker only while more are free than wait
+     * ({@see startAgentInternal()}).
      *
      * @param string $agentId Agent that found no worker
      * @param string $agentType Agent type
@@ -2593,7 +2611,12 @@ abstract class WorkerServer extends AbstractServer implements
     {
         $workerType = $this->workerTypeName($awaiting->requiresMonopolistic);
         try {
-            $this->startAgentInternal($awaiting->agentType, $awaiting->agentIndex, $awaiting->placedByLeader);
+            $this->startAgentInternal(
+                $awaiting->agentType,
+                $awaiting->agentIndex,
+                $awaiting->placedByLeader,
+                seatFromQueue: true,
+            );
         } catch (Throwable $e) {
             Logger::error("Worker wait: agent {$awaiting->agentId} could not be seated on a {$workerType} worker: {$e->getMessage()}");
             $this->refuseAwaitingAgent($awaiting->agentId, $e);
@@ -2942,6 +2965,33 @@ abstract class WorkerServer extends AbstractServer implements
 
         // Return random worker from minimum load candidates
         return $minLoadCandidates[array_rand($minLoadCandidates)];
+    }
+
+    /**
+     * Counts the monopolistic workers {@see selectWorkerForAgent()} would offer a monopolistic agent now.
+     *
+     * The same pick, counted instead of chosen: registered, not closing, monopolistic and holding
+     * no agent. A walk over this master's links with nothing read from outside them, so it costs
+     * the master loop what the pick itself does.
+     *
+     * @return int Number of free monopolistic workers
+     */
+    private function freeMonopolisticWorkerCount(): int
+    {
+        $free = 0;
+        foreach ($this->clients as $client) {
+            if (
+                $client instanceof WorkerClient
+                && $client->isRegistered()
+                && !$client->shouldClose()
+                && $client->isMonopolistic()
+                && $this->agentManager->getAgentCountOnWorker($client->getWorkerIndex(), true) === 0
+            ) {
+                $free++;
+            }
+        }
+
+        return $free;
     }
 
     /**

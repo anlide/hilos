@@ -122,6 +122,73 @@ final class WorkerServerPoolGrowthTest extends TestCase
         $this->assertSame(-self::FIRST_WORKER_INDEX, $manager->getAgentWorkerId(self::MONOPOLISTIC_TYPE));
     }
 
+    /**
+     * The worker raised for a waiting agent registers before the pass that would seat it, and a
+     * direct start of another monopolistic agent comes in between: it leaves that worker to the
+     * queue and orders its own, so neither agent is refused and no held frame is dropped.
+     */
+    public function testADirectStartLeavesTheFreeWorkerToTheAgentWaitingForIt(): void
+    {
+        $manager = new PoolGrowthTestAgentManagerDaemon();
+        $startSink = new PoolGrowthTestStartSink();
+        $manager->registerAgentStartSink($startSink);
+        $server = $this->buildServer($manager);
+        $server->startAgentPublic(self::MONOPOLISTIC_TYPE);
+        $first = $server->addWorker(self::FIRST_WORKER_INDEX);
+
+        $server->startAgentPublic(self::SECOND_MONOPOLISTIC_TYPE);
+
+        $this->assertSame([true, true], $server->orderedWorkers);
+        $this->assertTrue($server->isAgentAwaitingWorker(self::SECOND_MONOPOLISTIC_TYPE));
+        $this->assertSame([], $first->startedAgentTypes);
+
+        $server->advancePublic();
+
+        $this->assertSame([self::MONOPOLISTIC_TYPE], $first->startedAgentTypes);
+        $this->assertFalse($server->isAgentAwaitingWorker(self::MONOPOLISTIC_TYPE));
+        $this->assertTrue($server->isAgentAwaitingWorker(self::SECOND_MONOPOLISTIC_TYPE));
+
+        $second = $server->addWorker(self::SECOND_WORKER_INDEX);
+        $server->advancePublic();
+
+        $this->assertSame([self::SECOND_MONOPOLISTIC_TYPE], $second->startedAgentTypes);
+        $this->assertFalse($server->isAgentAwaitingWorker(self::SECOND_MONOPOLISTIC_TYPE));
+        $this->assertSame([], $startSink->failedAgentIds);
+    }
+
+    /**
+     * With more monopolistic workers free than agents waiting, a direct start takes one of them at
+     * once and the queue still has a worker for every agent in it.
+     */
+    public function testADirectStartTakesAFreeWorkerWhenMoreAreFreeThanWaiting(): void
+    {
+        $manager = new PoolGrowthTestAgentManagerDaemon();
+        $server = $this->buildServer($manager);
+        $server->startAgentPublic(self::MONOPOLISTIC_TYPE);
+        $first = $server->addWorker(self::FIRST_WORKER_INDEX);
+        $second = $server->addWorker(self::SECOND_WORKER_INDEX);
+
+        $server->startAgentPublic(self::SECOND_MONOPOLISTIC_TYPE);
+
+        $this->assertSame([true], $server->orderedWorkers);
+        $this->assertFalse($server->isAgentAwaitingWorker(self::SECOND_MONOPOLISTIC_TYPE));
+        $this->assertSame(
+            [self::SECOND_MONOPOLISTIC_TYPE],
+            [...$first->startedAgentTypes, ...$second->startedAgentTypes],
+        );
+
+        $server->advancePublic();
+
+        $this->assertFalse($server->isAgentAwaitingWorker(self::MONOPOLISTIC_TYPE));
+        $this->assertCount(1, $first->startedAgentTypes);
+        $this->assertCount(1, $second->startedAgentTypes);
+        $this->assertEqualsCanonicalizing(
+            [self::MONOPOLISTIC_TYPE, self::SECOND_MONOPOLISTIC_TYPE],
+            [...$first->startedAgentTypes, ...$second->startedAgentTypes],
+        );
+        $this->assertSame([true], $server->orderedWorkers);
+    }
+
     public function testOneWorkerSeatsOneAgentAndTheOtherKeepsWaiting(): void
     {
         $manager = new PoolGrowthTestAgentManagerDaemon();

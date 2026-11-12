@@ -57,11 +57,12 @@ use Hilos\Socket\Client\CommandClient;
  * clock seconds - was weighed and declined in favor of these wall-clock windows, to be
  * reopened if the flake returns with the windows at this size.
  *
- * **The middle window has a copy in TypeScript, and it cannot be otherwise.** The e2e client
- * is Node reaching the command port over TCP - Playwright has no PHP to run, so nothing there
- * can read a PHP constant. The copy lives in each demo's `tests/e2e/helpers/protectedMode.ts`
- * as `REPLY_TIMEOUT_MS` and names this class in its comment; a change to
- * {@see self::CALLER_WAIT_SECONDS} has to be carried there by hand.
+ * **The middle window has copies in JavaScript and TypeScript, and it cannot be otherwise.** The
+ * e2e client is Node reaching the command port over TCP - Playwright has no PHP to run, so
+ * nothing there can read a PHP constant. The copies live in `framework/frontend/scripts/protectedMode.mjs`,
+ * `framework/frontend/scripts/adminGrant.mjs`, `framework/frontend/scripts/daemonMoments.mjs` and
+ * `demo/ecommerce-shop/tests/e2e/helpers/throttle.ts`, each as `REPLY_TIMEOUT_MS` naming this
+ * class in its comment; a change to {@see self::CALLER_WAIT_SECONDS} has to be carried there by hand.
  */
 final class CommandChannelWindows
 {
