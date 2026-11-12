@@ -19,7 +19,7 @@ final readonly class SecondFactorProofCheck
      * @param bool $proven Whether the code proved the person
      * @param bool $missed Whether the code was checked and matched nothing; an app code refused under the lock is not
      * @param ?int $lockMisses Wrong app codes the lock was put on, when this miss put it; null otherwise
-     * @param ?int $lockUntil End of that lock (unix seconds), when this miss put it; null otherwise
+     * @param ?int $lockUntil End of that lock (epoch milliseconds), when this miss put it; null otherwise
      * @param ?string $refusal Words the code is refused in, or null when it proved the person
      */
     public function __construct(

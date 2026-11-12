@@ -6,6 +6,7 @@ namespace Hilos\Auth\SecondFactor;
 
 use DateTimeImmutable;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
@@ -45,7 +46,7 @@ final class SecondFactorResetNotifier
      *
      * @param int $userId Person whose second factor is to be removed
      * @param string $token Token of the cancel link
-     * @param int $effectiveAtSec Moment the removal takes effect (Unix seconds)
+     * @param int $effectiveAtMs Moment the removal takes effect (epoch milliseconds)
      * @throws InvalidArgumentException When the recipient View is invalid or the emit signal cannot be queued
      * @throws EnvException When the cancel link or server text configuration cannot be read
      * @throws EnvInvalidValueException When the server text mode is invalid
@@ -53,7 +54,7 @@ final class SecondFactorResetNotifier
      * @throws DatabaseException When loading the recipient fails
      * @throws LogicException When the users collection is not configured
      */
-    public static function requested(int $userId, string $token, int $effectiveAtSec): void
+    public static function requested(int $userId, string $token, int $effectiveAtMs): void
     {
         if (Hilos::$notify === null) {
             return;
@@ -65,7 +66,7 @@ final class SecondFactorResetNotifier
             SecondFactorNotificationType::RESET_REQUESTED,
             'Removal of two-step verification requested',
             'Someone asked to remove two-step verification from your account. It will be removed on '
-                . new DateTimeImmutable('@' . $effectiveAtSec)
+                . DateTimeImmutable::createFromTimestamp(intdiv($effectiveAtMs, TimeConstants::MS_PER_SECOND))
                     ->setTimezone(TimeHelper::serverTextTimeZone($userId))->format(self::DATE_FORMAT)
                 . '. If this was not you, cancel it: ' . $url,
             $url,
@@ -77,7 +78,7 @@ final class SecondFactorResetNotifier
      *
      * @param int $userId Person whose second factor is to be removed
      * @param string $token Token of the cancel link
-     * @param int $effectiveAtSec Moment the removal takes effect (Unix seconds)
+     * @param int $effectiveAtMs Moment the removal takes effect (epoch milliseconds)
      * @throws InvalidArgumentException When the recipient View is invalid or the emit signal cannot be queued
      * @throws EnvException When the cancel link or server text configuration cannot be read
      * @throws EnvInvalidValueException When the server text mode is invalid
@@ -85,7 +86,7 @@ final class SecondFactorResetNotifier
      * @throws DatabaseException When loading the recipient fails
      * @throws LogicException When the users collection is not configured
      */
-    public static function reminder(int $userId, string $token, int $effectiveAtSec): void
+    public static function reminder(int $userId, string $token, int $effectiveAtMs): void
     {
         if (Hilos::$notify === null) {
             return;
@@ -97,7 +98,7 @@ final class SecondFactorResetNotifier
             SecondFactorNotificationType::RESET_REMINDER,
             'Two-step verification will be removed',
             'Two-step verification on your account will be removed on '
-                . new DateTimeImmutable('@' . $effectiveAtSec)
+                . DateTimeImmutable::createFromTimestamp(intdiv($effectiveAtMs, TimeConstants::MS_PER_SECOND))
                     ->setTimezone(TimeHelper::serverTextTimeZone($userId))->format(self::DATE_FORMAT)
                 . '. If this was not you, cancel it: ' . $url,
             $url,

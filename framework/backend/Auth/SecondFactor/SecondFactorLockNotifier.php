@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Auth\SecondFactor;
 
 use DateTimeImmutable;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
@@ -44,7 +45,7 @@ final class SecondFactorLockNotifier
      *
      * @param int $userId Person whose app codes are locked
      * @param int $misses Wrong app codes that put the lock
-     * @param int $untilSec End of the lock (Unix seconds)
+     * @param int $untilMs End of the lock (epoch milliseconds)
      * @throws InvalidArgumentException When the recipient View is invalid or the emit signal cannot be queued
      * @throws EnvException When the server text configuration cannot be read
      * @throws EnvInvalidValueException When the server text mode is invalid
@@ -52,7 +53,7 @@ final class SecondFactorLockNotifier
      * @throws DatabaseException When loading the recipient fails
      * @throws LogicException When the users collection is not configured
      */
-    public static function locked(int $userId, int $misses, int $untilSec): void
+    public static function locked(int $userId, int $misses, int $untilMs): void
     {
         Hilos::$notify?->emit(new NotificationDraft(
             userId: $userId,
@@ -62,7 +63,8 @@ final class SecondFactorLockNotifier
             body: sprintf(
                 self::BODY,
                 $misses,
-                new DateTimeImmutable('@' . $untilSec)->setTimezone(TimeHelper::serverTextTimeZone($userId))->format(self::DATE_FORMAT),
+                DateTimeImmutable::createFromTimestamp(intdiv($untilMs, TimeConstants::MS_PER_SECOND))
+                    ->setTimezone(TimeHelper::serverTextTimeZone($userId))->format(self::DATE_FORMAT),
             ),
             data: null,
         ));

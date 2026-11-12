@@ -35,6 +35,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
 use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
 use Hilos\Users\DTO\UserPasswordChangeSignalData;
+use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
@@ -231,7 +232,7 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         Hilos::$db->secondFactorTrusts->actions->trust(
             $other->id,
             self::USER_ID,
-            date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY),
+            TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
         );
 
         $this->dispatch(new SessionEndActionDTO((int)$other->id));
@@ -258,7 +259,7 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         $other = $this->session(self::OTHER_TOKEN, self::OTHER_ACCEPT_KEY);
         $admin = $this->session(self::ADMIN_TOKEN, self::ADMIN_ACCEPT_KEY, self::ADMIN_ID);
         $signedOut = Hilos::$db->sessions->actions->createAnonymous('44444444444444444444444444444444');
-        $until = date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY);
+        $until = TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         foreach ([$current, $other, $signedOut] as $session) {
             Hilos::$db->secondFactorTrusts->actions->trust($session->id, self::USER_ID, $until);
         }
@@ -291,7 +292,7 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         $current = $this->session(self::CURRENT_TOKEN, self::CURRENT_ACCEPT_KEY);
         $other = $this->session(self::OTHER_TOKEN, self::OTHER_ACCEPT_KEY);
         $admin = $this->session(self::ADMIN_TOKEN, self::ADMIN_ACCEPT_KEY, self::ADMIN_ID);
-        $until = date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY);
+        $until = TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         Hilos::$db->secondFactorTrusts->actions->trust($current->id, self::USER_ID, $until);
         Hilos::$db->secondFactorTrusts->actions->trust($other->id, self::USER_ID, $until);
 
@@ -387,7 +388,7 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
     {
         $current = $this->session(self::CURRENT_TOKEN, self::CURRENT_ACCEPT_KEY);
         $other = $this->session(self::OTHER_TOKEN, self::OTHER_ACCEPT_KEY);
-        $until = date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY);
+        $until = TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         Hilos::$db->secondFactorTrusts->actions->trust($current->id, self::USER_ID, $until);
         Hilos::$db->secondFactorTrusts->actions->trust($other->id, self::USER_ID, $until);
         $password = Hilos::$db->identities->createPasswordIdentity(self::USER_ID, 'person@example.test', 'old-password-1407');

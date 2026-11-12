@@ -31,12 +31,12 @@ use Hilos\Database\SqlParamCollection;
  * @property int $userId
  * @property ?int $resetWaitDays
  * @property ?int $pendingResetWaitDays
- * @property ?string $pendingResetWaitFrom
+ * @property ?int $pendingResetWaitFrom Epoch milliseconds, or null when nothing is parked
  * @property int $appCodeMisses
- * @property ?string $appCodeMissesFrom
+ * @property ?int $appCodeMissesFrom Epoch milliseconds, or null when no window is open
  * @property int $appCodeLockStep
- * @property ?string $appCodeLockedUntil
- * @property string $updatedAt
+ * @property ?int $appCodeLockedUntil Epoch milliseconds, or null when app codes are not locked
+ * @property int $updatedAt Epoch milliseconds
  */
 class SecondFactorSetting extends Object_
 {
@@ -88,12 +88,12 @@ class SecondFactorSetting extends Object_
             self::userId => $this->entity->user_id = (int)$value,
             self::resetWaitDays => $this->entity->reset_wait_days = $value === null ? null : (int)$value,
             self::pendingResetWaitDays => $this->entity->pending_reset_wait_days = $value === null ? null : (int)$value,
-            self::pendingResetWaitFrom => $this->entity->pending_reset_wait_from = $value === null ? null : (string)$value,
+            self::pendingResetWaitFrom => $this->entity->pending_reset_wait_from = $value === null ? null : (int)$value,
             self::appCodeMisses => $this->entity->app_code_misses = (int)$value,
-            self::appCodeMissesFrom => $this->entity->app_code_misses_from = $value === null ? null : (string)$value,
+            self::appCodeMissesFrom => $this->entity->app_code_misses_from = $value === null ? null : (int)$value,
             self::appCodeLockStep => $this->entity->app_code_lock_step = (int)$value,
-            self::appCodeLockedUntil => $this->entity->app_code_locked_until = $value === null ? null : (string)$value,
-            self::updatedAt => $this->entity->updated_at = (string)$value,
+            self::appCodeLockedUntil => $this->entity->app_code_locked_until = $value === null ? null : (int)$value,
+            self::updatedAt => $this->entity->updated_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -129,13 +129,13 @@ class SecondFactorSetting extends Object_
      * is re-read afterwards, because the ceiling is judged by it, and goes back with the row if
      * a transaction around the miss does not commit.
      *
-     * @param string $windowEnded Moment a window must have begun after to be still open (SQL datetime)
-     * @param string $now Moment of the miss, which opens a new window (SQL datetime)
+     * @param int $windowEnded Moment a window must have begun after to be still open (epoch milliseconds)
+     * @param int $now Moment of the miss, which opens a new window (epoch milliseconds)
      * @return int Wrong app codes in the window after this one
      * @throws DatabaseException When the update or the read-back fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
-    public function countAppCodeMiss(string $windowEnded, string $now): int
+    public function countAppCodeMiss(int $windowEnded, int $now): int
     {
         DbWriteGuard::guardItemWrite(
             static::getCollectionKey(),
@@ -147,10 +147,10 @@ class SecondFactorSetting extends Object_
         $windowOpens = '`' . EntitySecondFactorSetting::app_code_misses_from . '` IS NULL OR `'
             . EntitySecondFactorSetting::app_code_misses_from . '` <= ?';
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string($windowEnded));
-        $params->add(SqlParam::string($windowEnded));
-        $params->add(SqlParam::string($now));
-        $params->add(SqlParam::string($now));
+        $params->add(SqlParam::int($windowEnded));
+        $params->add(SqlParam::int($windowEnded));
+        $params->add(SqlParam::int($now));
+        $params->add(SqlParam::int($now));
         $params->add(SqlParam::int($this->entity->user_id));
         Database::sql(
             'UPDATE `' . EntitySecondFactorSetting::_table . '` SET `' . EntitySecondFactorSetting::app_code_misses
@@ -178,8 +178,8 @@ class SecondFactorSetting extends Object_
             (int)$row[EntitySecondFactorSetting::app_code_misses],
             $row[EntitySecondFactorSetting::app_code_misses_from] === null
                 ? null
-                : (string)$row[EntitySecondFactorSetting::app_code_misses_from],
-            (string)$row[EntitySecondFactorSetting::updated_at],
+                : (int)$row[EntitySecondFactorSetting::app_code_misses_from],
+            (int)$row[EntitySecondFactorSetting::updated_at],
         );
         Database::onRollback(function () use ($stored): void {
             $this->mirrorMisses(...$stored);
@@ -199,8 +199,8 @@ class SecondFactorSetting extends Object_
      *
      * @param int $atMisses Ceiling the window has to hold for the lock to be put
      * @param int $step Step of the lock on the ladder
-     * @param string $until End of the lock (SQL datetime)
-     * @param string $now Moment of the lock (SQL datetime)
+     * @param int $until End of the lock (epoch milliseconds)
+     * @param int $now Moment of the lock (epoch milliseconds)
      * @return bool True when this call put the lock, false when another miss put it already
      * @throws DatabaseException When the update, the row count or the re-announcement fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
@@ -209,7 +209,7 @@ class SecondFactorSetting extends Object_
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws ObjectGetIdStringNotImplementedException If the primary key is null during the re-announcement
      */
-    public function lockAppCodes(int $atMisses, int $step, string $until, string $now): bool
+    public function lockAppCodes(int $atMisses, int $step, int $until, int $now): bool
     {
         DbWriteGuard::guardItemWrite(
             static::getCollectionKey(),
@@ -220,8 +220,8 @@ class SecondFactorSetting extends Object_
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::int($step));
-        $params->add(SqlParam::string($until));
-        $params->add(SqlParam::string($now));
+        $params->add(SqlParam::int($until));
+        $params->add(SqlParam::int($now));
         $params->add(SqlParam::int($this->entity->user_id));
         $params->add(SqlParam::int($atMisses));
         Database::sql(
@@ -250,10 +250,10 @@ class SecondFactorSetting extends Object_
      * Puts the miss count, its window and the row's stamp the database answered into the mirror.
      *
      * @param int $misses Wrong app codes in the window
-     * @param ?string $missesFrom Beginning of the window (SQL datetime), or null when none is open
-     * @param string $updatedAt Row's stamp (SQL datetime)
+     * @param ?int $missesFrom Beginning of the window (epoch milliseconds), or null when none is open
+     * @param int $updatedAt Row's stamp (epoch milliseconds)
      */
-    private function mirrorMisses(int $misses, ?string $missesFrom, string $updatedAt): void
+    private function mirrorMisses(int $misses, ?int $missesFrom, int $updatedAt): void
     {
         $this->entity->app_code_misses = $misses;
         $this->entity->app_code_misses_from = $missesFrom;

@@ -31,14 +31,14 @@ final class UserSecondFactorResetRemindSignalData extends BaseDTO implements Sig
     /**
      * @param int $userId Person whose removal it is, and the index of the agent the request is for
      * @param int $resetId Removal owing a reminder
-     * @param string $notifiedBefore An announcement at or before this moment is stale (SQL datetime)
+     * @param int $notifiedBefore An announcement at or before this moment is stale (epoch milliseconds)
      * @param string $replySignal Agent signal the agent answers the library under
      * @throws InvalidFormatException When the person id is not positive
      */
     public function __construct(
         public readonly int $userId,
         public readonly int $resetId,
-        public readonly string $notifiedBefore,
+        public readonly int $notifiedBefore,
         public readonly string $replySignal,
     ) {
         if ($userId <= 0) {
@@ -56,7 +56,7 @@ final class UserSecondFactorResetRemindSignalData extends BaseDTO implements Sig
         return new static(
             userId: self::requireInt($data, self::userId),
             resetId: self::requireInt($data, self::resetId),
-            notifiedBefore: self::requireString($data, self::notifiedBefore),
+            notifiedBefore: self::requireInt($data, self::notifiedBefore),
             replySignal: self::requireString($data, self::replySignal),
         );
     }

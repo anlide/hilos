@@ -775,7 +775,7 @@ final class SettingsLibraryAgent extends AbstractAgent
             return;
         }
 
-        $savedAt = time();
+        $savedAt = TimeHelper::nowMs();
         $policyAfter = $this->secondFactorPolicy();
         $touchesTrustDays = $this->touchesTrustDays($ask);
         $shortened = $touchesTrustDays && $policyAfter !== null

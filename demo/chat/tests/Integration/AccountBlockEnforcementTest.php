@@ -190,7 +190,7 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $library = $this->sessionsLibrary();
         $sessionId = $this->underAgent($library, function () use ($userId): int {
             $session = Hilos::$db->sessions->actions->createAnonymous(RandomHelper::secureHex(16));
-            $until = date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY);
+            $until = TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
             Hilos::$db->secondFactorTrusts->actions->trust($session->id, $userId, $until);
             Hilos::$db->secondFactorTrusts->actions->trust(0, $userId, $until);
 
@@ -635,7 +635,7 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $library = $this->sessionsLibrary();
         $otherSessionId = $this->underAgent($library, static function () use ($userId, $currentSessionId): int {
             $other = Hilos::$db->sessions->actions->createAnonymous(RandomHelper::hex(16));
-            $until = date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY);
+            $until = TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
             Hilos::$db->secondFactorTrusts->actions->trust($currentSessionId, $userId, $until);
             Hilos::$db->secondFactorTrusts->actions->trust($other->id, $userId, $until);
 

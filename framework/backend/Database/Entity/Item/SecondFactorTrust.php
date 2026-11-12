@@ -15,7 +15,8 @@ use Hilos\Database\PhpType;
  * "Don't ask again on this device" (HIL-494): the pair of a browser and a person the
  * second-factor step is skipped for until `trusted_until`. The browser is its session ROW
  * (`session_id`), which outlives the token rotated on every sign-in; the person is part of
- * the key because one browser may serve two people.
+ * the key because one browser may serve two people. The moments are signed epoch milliseconds
+ * (HIL-1922), and 0 is the epoch rather than absence.
  *
  * @method static EntitySecondFactorTrusts get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntitySecondFactorTrusts getAll()
@@ -44,8 +45,8 @@ class SecondFactorTrust extends Entity
         self::id => PhpType::INTEGER->value,
         self::session_id => PhpType::INTEGER->value,
         self::user_id => PhpType::INTEGER->value,
-        self::trusted_until => PhpType::DATETIME->value,
-        self::created_at => PhpType::DATETIME->value,
+        self::trusted_until => PhpType::INTEGER->value,
+        self::created_at => PhpType::INTEGER->value,
     ];
 
     public const array _foreign = [
@@ -72,6 +73,6 @@ class SecondFactorTrust extends Entity
     public ?int $id = null;
     public int $session_id;
     public int $user_id;
-    public string $trusted_until;
-    public string $created_at;
+    public int $trusted_until;
+    public int $created_at;
 }

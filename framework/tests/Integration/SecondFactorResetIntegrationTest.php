@@ -78,9 +78,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
 {
     use PersonAgentFrames;
 
-    private const string CREATED_AT = '2026-09-24 09:00:00';
-
-    /** The session row keeps epoch milliseconds, unlike the reminder frame that carries the text above. */
+    /** Epoch milliseconds of 2026-09-24 09:00:00 UTC, shared by the session row and the reminder bound. */
     private const int SESSION_CREATED_AT = 1790240400000;
 
     private const string SESSION_TOKEN = 'cc00000000000000000000000000cc94';
@@ -289,8 +287,11 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
 
         $reset = Hilos::$db->secondFactorResets->liveOf(self::USER_ID);
         $this->assertNotNull($reset);
-        $waited = (int)strtotime($reset->effectiveAt) - (int)strtotime($reset->requestedAt);
-        $this->assertEqualsWithDelta(SecondFactorSettings::DEFAULT_RESET_WAIT_DAYS * 86400, $waited, 2);
+        $this->assertEqualsWithDelta(
+            SecondFactorSettings::DEFAULT_RESET_WAIT_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+            $reset->effectiveAt - $reset->requestedAt,
+            2 * TimeConstants::MS_PER_SECOND,
+        );
         $announcement = $this->announcement(SecondFactorNotificationType::RESET_REQUESTED);
         $url = $announcement?->data['url'] ?? null;
         $this->assertIsString($url, 'The announcement carries the cancel link');
@@ -309,6 +310,66 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     }
 
     /**
+     * dueBy takes a live removal at its deadline and not one millisecond before, a repeated
+     * request names that deadline's date, and the profile repeats the stored milliseconds.
+     */
+    public function testDueBoundaryAndProfileKeepTheStoredMilliseconds(): void
+    {
+        $this->connectFirstApp();
+        $this->drain();
+        $this->act(
+            self::ACCEPT_KEY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST,
+            new ProfileSecondFactorResetRequestActionDTO(),
+        );
+
+        $stored = Database::sql(
+            'SELECT `id`, `requested_at`, `effective_at` FROM `hilos_second_factor_reset` WHERE `user_id` = ?',
+            [self::USER_ID],
+        )->firstRow();
+        $this->assertNotNull($stored);
+        $resetId = (int)$stored['id'];
+        $requestedAt = (int)$stored['requested_at'];
+        $effectiveAt = (int)$stored['effective_at'];
+        $profile = $this->lastState()?->reset;
+        $this->assertNotNull($profile);
+        $this->assertSame($requestedAt, $profile[SecondFactorStateSignalData::requestedAt]);
+        $this->assertSame($effectiveAt, $profile[SecondFactorStateSignalData::effectiveAt]);
+
+        $deadline = 1767312000123;
+        Database::sqlRun(
+            'UPDATE `hilos_second_factor_reset` SET `effective_at` = ? WHERE `id` = ?',
+            [$deadline, $resetId],
+        );
+        Hilos::$db->secondFactorResets->getObjectCollection()?->clearInMemory();
+        Hilos::$db->secondFactorResets->clearCache();
+        try {
+            $this->act(
+                self::ACCEPT_KEY,
+                HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST,
+                new ProfileSecondFactorResetRequestActionDTO(),
+            );
+            $this->fail('A second removal request must be refused');
+        } catch (ValidationException $exception) {
+            $this->assertSame(
+                sprintf(SecondFactorMessages::RESET_ALREADY_REQUESTED, '2026-01-02 00:00:00'),
+                $exception->getMessage(),
+            );
+        }
+
+        $due = [];
+        foreach (Hilos::$db->secondFactorResets->dueBy($deadline) as $reset) {
+            $due[] = (int)$reset->id;
+        }
+        $this->assertSame([$resetId], $due);
+        $early = [];
+        foreach (Hilos::$db->secondFactorResets->dueBy($deadline - 1) as $reset) {
+            $early[] = (int)$reset->id;
+        }
+        $this->assertSame([], $early);
+    }
+
+    /**
      * The sweep carries a due removal out and reminds of one still waiting; the removal carried out
      * takes the browser trust with the factor (HIL-1407).
      *
@@ -322,7 +383,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         $firstToken = $this->tokenOf($this->announcement(SecondFactorNotificationType::RESET_REQUESTED));
         Database::sqlRun(
             'UPDATE `hilos_second_factor_reset` SET `notified_at` = ? WHERE `user_id` = ?',
-            [date('Y-m-d H:i:s', time() - 2 * 86400), self::USER_ID],
+            [TimeHelper::nowMs() - 2 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND, self::USER_ID],
         );
         Hilos::$db->secondFactorResets->getObjectCollection()?->clearInMemory();
         Hilos::$db->secondFactorResets->clearCache();
@@ -339,7 +400,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
 
         Database::sqlRun(
             'UPDATE `hilos_second_factor_reset` SET `effective_at` = ? WHERE `user_id` = ?',
-            [date('Y-m-d H:i:s', time() - 60), self::USER_ID],
+            [TimeHelper::nowMs() - 60 * TimeConstants::MS_PER_SECOND, self::USER_ID],
         );
         Hilos::$db->secondFactorResets->getObjectCollection()?->clearInMemory();
         Hilos::$db->secondFactorResets->clearCache();
@@ -402,7 +463,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     {
         $this->connectFirstApp();
         $this->act(self::ACCEPT_KEY, HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST, new ProfileSecondFactorResetRequestActionDTO());
-        $stale = date('Y-m-d H:i:s', time() - 2 * 86400);
+        $stale = TimeHelper::nowMs() - 2 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         Database::sqlRun(
             'UPDATE `hilos_second_factor_reset` SET `cancel_token` = NULL, `notified_at` = ? WHERE `user_id` = ?',
             [$stale, self::USER_ID],
@@ -434,7 +495,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
      */
     public function testAMarkedReminderWithoutItsRemovalOrTokenKeepsTheRefusal(): void
     {
-        $reset = Hilos::$db->secondFactorResets->actions->request(self::USER_ID, '2036-01-01 00:00:00', 'cancel-token');
+        $reset = Hilos::$db->secondFactorResets->actions->request(self::USER_ID, 2082758400000, 'cancel-token');
         Database::sqlRun('UPDATE `hilos_second_factor_reset` SET `cancel_token` = NULL WHERE `id` = ?', [(int)$reset->id]);
         self::assertArrayNotHasKey(9999, Hilos::$db->secondFactorResets);
         $this->drain();
@@ -443,7 +504,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
             $request = new UserSecondFactorResetRemindSignalData(
                 self::USER_ID,
                 $resetId,
-                self::CREATED_AT,
+                self::SESSION_CREATED_AT,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE,
             );
             try {
@@ -559,7 +620,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         Hilos::$setting = new SettingsAccessor(SecondFactorResetTurnedOffTestCatalog::class);
         Database::sqlRun(
             'UPDATE `hilos_second_factor_reset` SET `effective_at` = ? WHERE `user_id` = ?',
-            [date('Y-m-d H:i:s', time() - 60), self::USER_ID],
+            [TimeHelper::nowMs() - 60 * TimeConstants::MS_PER_SECOND, self::USER_ID],
         );
         Hilos::$db->secondFactorResets->getObjectCollection()?->clearInMemory();
         Hilos::$db->secondFactorResets->clearCache();
@@ -585,7 +646,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         $token = $this->tokenOf($this->announcement(SecondFactorNotificationType::RESET_REQUESTED));
         Database::sqlRun(
             'UPDATE `hilos_second_factor_reset` SET `notified_at` = ? WHERE `user_id` = ?',
-            [date('Y-m-d H:i:s', time() - 2 * 86400), self::USER_ID],
+            [TimeHelper::nowMs() - 2 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND, self::USER_ID],
         );
         Hilos::$db->secondFactorResets->getObjectCollection()?->clearInMemory();
         Hilos::$db->secondFactorResets->clearCache();
@@ -835,7 +896,11 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     private function trustThisBrowser(): int
     {
         $sessionId = (int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->id;
-        Hilos::$db->secondFactorTrusts->actions->trust($sessionId, self::USER_ID, date('Y-m-d H:i:s', time() + 30 * 86400));
+        Hilos::$db->secondFactorTrusts->actions->trust(
+            $sessionId,
+            self::USER_ID,
+            TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
         $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, self::USER_ID, 30));
 
         return $sessionId;

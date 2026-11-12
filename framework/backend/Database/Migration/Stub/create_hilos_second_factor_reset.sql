@@ -14,16 +14,20 @@
 -- reminder sweep reads. A request is live while both `canceled_at` and `completed_at`
 -- are NULL; the writes that set either carry that condition, so a cancel and the
 -- removal racing each other end with exactly one of them.
+--
+-- `requested_at`, `effective_at`, `notified_at`, `canceled_at` and `completed_at` are signed BIGINT
+-- epoch milliseconds (HIL-1922), with no time zone and no database writer: the application stamps
+-- each one. NULL is the absence of that moment, and 0 is the epoch rather than absence.
 
 CREATE TABLE `hilos_second_factor_reset` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `user_id` INT UNSIGNED NOT NULL,
-    `requested_at` TIMESTAMP NOT NULL,
-    `effective_at` TIMESTAMP NOT NULL,
+    `requested_at` BIGINT NOT NULL,
+    `effective_at` BIGINT NOT NULL,
     `cancel_token` CHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL DEFAULT NULL,
-    `notified_at` TIMESTAMP NOT NULL,
-    `canceled_at` TIMESTAMP NULL DEFAULT NULL,
-    `completed_at` TIMESTAMP NULL DEFAULT NULL,
+    `notified_at` BIGINT NOT NULL,
+    `canceled_at` BIGINT NULL DEFAULT NULL,
+    `completed_at` BIGINT NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_second_factor_reset_effective` (`effective_at`),
     KEY `idx_second_factor_reset_user` (`user_id`),

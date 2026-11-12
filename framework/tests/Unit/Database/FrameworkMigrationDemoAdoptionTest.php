@@ -214,6 +214,41 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                         'downSha256' => 'd7276ca07e8844fd7267ae973c0be04fc3428635bb729b19df1dc75d6cd52551',
                         'requires' => ['20261110021316313226_HIL-1923_notification_moments/push_subscription'],
                     ],
+                    'second_factor' => [
+                        'changeId' => '20261111235717678237_HIL-1922_second_factor_moments',
+                        'file' => '014_framework_change_d387464f16783b3b26bc52ebfa8b58854d4fac281f71c95c06777b3ac2d71601',
+                        'upSha256' => '9ab179260b9273ed84d44f9bdc2ceb2af92f5880519bd8ccdaea347bb6a6ed6c',
+                        'downSha256' => '2aa7867882c78c7bb3b26b7fde839d5323ba17d064f7b5f1146f3bc7985d1ae0',
+                        'requires' => [],
+                    ],
+                    'second_factor_backup_code' => [
+                        'changeId' => '20261111235717678237_HIL-1922_second_factor_moments',
+                        'file' => '015_framework_change_97fb53ec00e51e213c862962f7bd493a885a3a467f4d176dced9ea1c84cbf362',
+                        'upSha256' => '470a756947e89840cb217a0457e18fe3a71401c36602f6d8c47196c618abadce',
+                        'downSha256' => 'b63ed8ffb9da7646503e98f164725fd19e5016377e445ab987734555c25ac29c',
+                        'requires' => [],
+                    ],
+                    'second_factor_reset' => [
+                        'changeId' => '20261111235717678237_HIL-1922_second_factor_moments',
+                        'file' => '016_framework_change_346bda9673657fc06dedcc0844f72895bbf359f5e2dd902916f461bda98abda3',
+                        'upSha256' => '134375d6e708cb7033774b2b9a748669bd38300eba898a35e6346a215499ae12',
+                        'downSha256' => '87b677c3ec11a3ce89fbe8be5aab57d08bce13aa5d5a5044d36cf2af42491495',
+                        'requires' => [],
+                    ],
+                    'second_factor_setting' => [
+                        'changeId' => '20261111235717678237_HIL-1922_second_factor_moments',
+                        'file' => '017_framework_change_1ad8d64213f87ea1f207ec1285856075df39ffbe5364c75819b3babe7f14103c',
+                        'upSha256' => '4751b552baafb5158e62bcfdb4c8221b22dbf83770bfd794edf2a30757e0e104',
+                        'downSha256' => '1272afe53346cf9ace26dd70ed8e9bd2315e469a3063b860bbd95184e7244c9f',
+                        'requires' => [],
+                    ],
+                    'second_factor_trust' => [
+                        'changeId' => '20261111235717678237_HIL-1922_second_factor_moments',
+                        'file' => '018_framework_change_959e3d8c2f78d3c4389b579b7bc373ee21541a6f5f1398c849a41f8ecc8ffc07',
+                        'upSha256' => '418c137c3d6c2b7ef5e6630ded73bfcd08be2887e0dcb73ca253b1268bc09913',
+                        'downSha256' => '72c5f64129fa520c3451a2a4d4141117d762357c029a5d735b2aafc56db9b971',
+                        'requires' => [],
+                    ],
                 ];
                 $origins = [$origin];
                 $coveredParts = $origin->parts;
@@ -793,8 +828,34 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('push_subscription')->downPath)),
                 $source->afterStubDownSha256);
             $origins[] = $change;
+            $secondFactorMomentIndices = [159, 116, 116, 97, 97, 99];
+            $secondFactorMomentParts = [
+                'second_factor' => 'd387464f16783b3b26bc52ebfa8b58854d4fac281f71c95c06777b3ac2d71601',
+                'second_factor_backup_code' => '97fb53ec00e51e213c862962f7bd493a885a3a467f4d176dced9ea1c84cbf362',
+                'second_factor_reset' => '346bda9673657fc06dedcc0844f72895bbf359f5e2dd902916f461bda98abda3',
+                'second_factor_setting' => '1ad8d64213f87ea1f207ec1285856075df39ffbe5364c75819b3babe7f14103c',
+                'second_factor_trust' => '959e3d8c2f78d3c4389b579b7bc373ee21541a6f5f1398c849a41f8ecc8ffc07',
+            ];
+            foreach (array_keys($secondFactorMomentParts) as $offset => $key) {
+                $base = $project->root . '/' . sprintf('%03d', $secondFactorMomentIndices[$index] + $offset)
+                    . '_framework_change_' . $secondFactorMomentParts[$key];
+                $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+                self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+                self::assertSame([$key], $change->units);
+                self::assertCount(1, $change->parts);
+                self::assertSame('20261111235717678237_HIL-1922_second_factor_moments/' . $key, $change->parts[0]->key());
+                $source = $catalog->part($change->parts[0]->changeId, $key);
+                self::assertFalse($source->introducesUnit);
+                self::assertSame([], $source->requires);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
+                    $source->afterStubUpSha256);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
+                    $source->afterStubDownSha256);
+                $origins[] = $change;
+            }
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
+        $this->assertLaterSecondFactorMomentTracks($projects, $catalog, $schema);
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);
         self::assertSame([[], [], [], [], [], [], [], [], [], [], [], []], array_column($plans, 'publications'));
     }
@@ -932,19 +993,109 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('push_subscription')->downPath)),
             $source->afterStubDownSha256,
         );
+        $momentParts = [
+            'second_factor' => 'd387464f16783b3b26bc52ebfa8b58854d4fac281f71c95c06777b3ac2d71601',
+            'second_factor_backup_code' => '97fb53ec00e51e213c862962f7bd493a885a3a467f4d176dced9ea1c84cbf362',
+            'second_factor_reset' => '346bda9673657fc06dedcc0844f72895bbf359f5e2dd902916f461bda98abda3',
+            'second_factor_setting' => '1ad8d64213f87ea1f207ec1285856075df39ffbe5364c75819b3babe7f14103c',
+            'second_factor_trust' => '959e3d8c2f78d3c4389b579b7bc373ee21541a6f5f1398c849a41f8ecc8ffc07',
+        ];
+        $momentChanges = [];
+        $momentFiles = [];
+        foreach (array_keys($momentParts) as $offset => $key) {
+            $momentBase = $root . '/' . sprintf('%03d', 3 + $offset) . '_framework_change_' . $momentParts[$key];
+            $moment = $catalog->verifyPair(FsPath::read($momentBase . '.sql'), FsPath::read($momentBase . '_down.sql'));
+            self::assertSame(FrameworkMigrationOrigin::CHANGE, $moment->kind);
+            self::assertSame([$key], $moment->units);
+            self::assertSame('20261111235717678237_HIL-1922_second_factor_moments/' . $key, $moment->parts[0]->key());
+            $momentSource = $catalog->part($moment->parts[0]->changeId, $key);
+            self::assertFalse($momentSource->introducesUnit);
+            self::assertSame([], $momentSource->requires);
+            self::assertSame(
+                FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
+                $momentSource->afterStubUpSha256,
+            );
+            self::assertSame(
+                FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
+                $momentSource->afterStubDownSha256,
+            );
+            $momentChanges[] = $moment;
+            $momentFiles[] = $momentBase . '.sql';
+            $momentFiles[] = $momentBase . '_down.sql';
+        }
         self::assertSame([
             $base . '.sql',
             $base . '_down.sql',
             $changeBase . '.sql',
             $changeBase . '_down.sql',
+            ...$momentFiles,
         ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);
+        $momentPartsOnDisk = array_merge(...array_map(
+            static fn (FrameworkMigrationOrigin $moment): array => $moment->parts,
+            $momentChanges,
+        ));
         self::assertSame(
             $this->partRecords($catalog->partsForUnits($selectedUnits)),
-            $this->partRecords([...$origin->parts, ...$change->parts]),
+            $this->partRecords([...$origin->parts, ...$change->parts, ...$momentPartsOnDisk]),
         );
-        self::assertSame([], $catalog->missingParts($selectedUnits, [$origin, $change]));
+        self::assertSame([], $catalog->missingParts($selectedUnits, [$origin, $change, ...$momentChanges]));
+    }
+
+    /**
+     * Baseline projects whose tracks are not enumerated pair by pair still receive the five parts.
+     *
+     * @param list<object> $projects Registered projects in registry order
+     */
+    private function assertLaterSecondFactorMomentTracks(
+        array $projects,
+        FrameworkMigrationCatalog $catalog,
+        FrameworkSchemaCatalog $schema,
+    ): void {
+        $starts = [7 => 16, 9 => 7, 10 => 3];
+        $parts = [
+            'second_factor' => 'd387464f16783b3b26bc52ebfa8b58854d4fac281f71c95c06777b3ac2d71601',
+            'second_factor_backup_code' => '97fb53ec00e51e213c862962f7bd493a885a3a467f4d176dced9ea1c84cbf362',
+            'second_factor_reset' => '346bda9673657fc06dedcc0844f72895bbf359f5e2dd902916f461bda98abda3',
+            'second_factor_setting' => '1ad8d64213f87ea1f207ec1285856075df39ffbe5364c75819b3babe7f14103c',
+            'second_factor_trust' => '959e3d8c2f78d3c4389b579b7bc373ee21541a6f5f1398c849a41f8ecc8ffc07',
+        ];
+        foreach ($starts as $index => $first) {
+            $project = $projects[$index];
+            $seen = [];
+            foreach (array_keys($parts) as $offset => $key) {
+                $base = $project->root . '/' . sprintf('%03d', $first + $offset) . '_framework_change_' . $parts[$key];
+                $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+                self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+                self::assertSame([$key], $change->units);
+                self::assertSame('20261111235717678237_HIL-1922_second_factor_moments/' . $key, $change->parts[0]->key());
+                $source = $catalog->part($change->parts[0]->changeId, $key);
+                self::assertFalse($source->introducesUnit);
+                self::assertSame([], $source->requires);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
+                    $source->afterStubUpSha256);
+                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
+                    $source->afterStubDownSha256);
+                $seen[] = $change;
+            }
+            $selected = array_column($schema->selectedUnits($project->facade), 'key');
+            $onDisk = [];
+            foreach (glob($project->root . '/*_down.sql') as $down) {
+                $up = substr($down, 0, -strlen('_down.sql')) . '.sql';
+                $onDisk[] = $catalog->verifyPair(FsPath::read($up), FsPath::read($down));
+            }
+            self::assertSame([], $catalog->missingParts($selected, $onDisk));
+            $keys = [];
+            foreach ($onDisk as $origin) {
+                foreach ($origin->parts as $part) {
+                    $keys[] = $part->key();
+                }
+            }
+            foreach ($seen as $change) {
+                self::assertContains($change->parts[0]->key(), $keys);
+            }
+        }
     }
 
     /**
@@ -1062,15 +1213,53 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             return $catalog->part($changeId, $unit);
         }, $baselinePartKeys);
         self::assertSame($this->partRecords($baselineParts), $this->partRecords($origin->parts));
-        self::assertSame([$base . '.sql', $base . '_down.sql'], glob($root . '/*.sql'));
+        $momentParts = [
+            'second_factor' => 'd387464f16783b3b26bc52ebfa8b58854d4fac281f71c95c06777b3ac2d71601',
+            'second_factor_backup_code' => '97fb53ec00e51e213c862962f7bd493a885a3a467f4d176dced9ea1c84cbf362',
+            'second_factor_reset' => '346bda9673657fc06dedcc0844f72895bbf359f5e2dd902916f461bda98abda3',
+            'second_factor_setting' => '1ad8d64213f87ea1f207ec1285856075df39ffbe5364c75819b3babe7f14103c',
+            'second_factor_trust' => '959e3d8c2f78d3c4389b579b7bc373ee21541a6f5f1398c849a41f8ecc8ffc07',
+        ];
+        $momentChanges = [];
+        $momentFiles = [];
+        foreach (array_keys($momentParts) as $offset => $key) {
+            $momentBase = $root . '/' . sprintf('%03d', 2 + $offset) . '_framework_change_' . $momentParts[$key];
+            $moment = $catalog->verifyPair(FsPath::read($momentBase . '.sql'), FsPath::read($momentBase . '_down.sql'));
+            self::assertSame(FrameworkMigrationOrigin::CHANGE, $moment->kind);
+            self::assertSame([$key], $moment->units);
+            self::assertSame('20261111235717678237_HIL-1922_second_factor_moments/' . $key, $moment->parts[0]->key());
+            $momentSource = $catalog->part($moment->parts[0]->changeId, $key);
+            self::assertFalse($momentSource->introducesUnit);
+            self::assertSame([], $momentSource->requires);
+            self::assertSame(
+                FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
+                $momentSource->afterStubUpSha256,
+            );
+            self::assertSame(
+                FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
+                $momentSource->afterStubDownSha256,
+            );
+            $momentChanges[] = $moment;
+            $momentFiles[] = $momentBase . '.sql';
+            $momentFiles[] = $momentBase . '_down.sql';
+        }
+        self::assertSame([
+            $base . '.sql',
+            $base . '_down.sql',
+            ...$momentFiles,
+        ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);
         self::assertContains('language', $selectedUnits);
+        $momentPartsOnDisk = array_merge(...array_map(
+            static fn (FrameworkMigrationOrigin $moment): array => $moment->parts,
+            $momentChanges,
+        ));
         self::assertSame(
             $this->partRecords($catalog->partsForUnits($selectedUnits)),
-            $this->partRecords($origin->parts),
+            $this->partRecords([...$origin->parts, ...$momentPartsOnDisk]),
         );
-        self::assertSame([], $catalog->missingParts($selectedUnits, [$origin]));
+        self::assertSame([], $catalog->missingParts($selectedUnits, [$origin, ...$momentChanges]));
     }
 
     /**

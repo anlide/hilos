@@ -686,7 +686,7 @@ final class AdminSessionsEndActionsTest extends HilosSessionIntegrationTestCase
         Hilos::$db->secondFactorTrusts->actions->trust(
             $session->id,
             $userId,
-            date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY),
+            TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
         );
     }
 

@@ -9,6 +9,7 @@ use Hilos\Auth\SecondFactor\SecondFactorLockNotifier;
 use Hilos\Auth\SecondFactor\SecondFactorNotificationType;
 use Hilos\Auth\SecondFactor\SecondFactorResetNotifier;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Database\Database;
 use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Environment\EnvAccessor;
@@ -77,7 +78,7 @@ final class ServerTextTimeZoneIntegrationTest extends FrameworkRollbackIntegrati
             $this->assertNull(Hilos::$rt);
             $this->assertDatedNotifications(
                 $userId,
-                new DateTimeImmutable('2026-01-15T12:00:00Z')->getTimestamp(),
+                new DateTimeImmutable('2026-01-15T12:00:00Z')->getTimestamp() * TimeConstants::MS_PER_SECOND,
                 match ($expected) {
                     'Europe/Warsaw' => '2026-01-15 13:00 +01:00 (Europe/Warsaw)',
                     'Asia/Tokyo' => '2026-01-15 21:00 +09:00 (Asia/Tokyo)',
@@ -138,7 +139,11 @@ final class ServerTextTimeZoneIntegrationTest extends FrameworkRollbackIntegrati
                 $moment = new DateTimeImmutable($utc);
                 $local = $moment->setTimezone(TimeHelper::serverTextTimeZone(1));
 
-                $this->assertDatedNotifications(1, $moment->getTimestamp(), $expected . ' (Europe/Warsaw)');
+                $this->assertDatedNotifications(
+                    1,
+                    $moment->getTimestamp() * TimeConstants::MS_PER_SECOND,
+                    $expected . ' (Europe/Warsaw)',
+                );
                 $this->assertSame($expected, $local->format('Y-m-d H:i P'));
                 $this->assertSame($moment->getTimestamp(), $local->getTimestamp());
                 $this->assertSame($utc, $moment->format('Y-m-d\TH:i:s\Z'));
@@ -159,9 +164,9 @@ final class ServerTextTimeZoneIntegrationTest extends FrameworkRollbackIntegrati
             Hilos::$db = null;
             Hilos::$rt = null;
 
-            SecondFactorLockNotifier::locked(1578, 3, 1800000000);
-            SecondFactorResetNotifier::requested(1578, 'cancel-token', 1800000000);
-            SecondFactorResetNotifier::reminder(1578, 'cancel-token', 1800000000);
+            SecondFactorLockNotifier::locked(1578, 3, 1800000000000);
+            SecondFactorResetNotifier::requested(1578, 'cancel-token', 1800000000000);
+            SecondFactorResetNotifier::reminder(1578, 'cancel-token', 1800000000000);
             SecondFactorResetNotifier::canceled(1578);
             SecondFactorResetNotifier::completed(1578);
 
@@ -219,10 +224,10 @@ final class ServerTextTimeZoneIntegrationTest extends FrameworkRollbackIntegrati
 
     /**
      * @param int $userId Real recipient View key
-     * @param int $momentSec Fixed absolute end of a lock or removal
+     * @param int $momentMs Fixed absolute end of a lock or removal (epoch milliseconds)
      * @param string $expectedTime Independently specified local time, offset and zone
      */
-    private function assertDatedNotifications(int $userId, int $momentSec, string $expectedTime): void
+    private function assertDatedNotifications(int $userId, int $momentMs, string $expectedTime): void
     {
         $previousNotify = Hilos::$notify;
         $previousCancelUrl = getenv(EnvConstants::HILOS_SECOND_FACTOR_CANCEL_URL->name);
@@ -233,9 +238,9 @@ final class ServerTextTimeZoneIntegrationTest extends FrameworkRollbackIntegrati
             $token = 'cancel-token';
             $url = 'https://example.test/cancel-second-factor?token=cancel-token';
 
-            SecondFactorLockNotifier::locked($userId, 3, $momentSec);
-            SecondFactorResetNotifier::requested($userId, $token, $momentSec);
-            SecondFactorResetNotifier::reminder($userId, $token, $momentSec);
+            SecondFactorLockNotifier::locked($userId, 3, $momentMs);
+            SecondFactorResetNotifier::requested($userId, $token, $momentMs);
+            SecondFactorResetNotifier::reminder($userId, $token, $momentMs);
 
             $this->assertCount(3, $capture->drafts);
             [$locked, $requested, $reminder] = $capture->drafts;

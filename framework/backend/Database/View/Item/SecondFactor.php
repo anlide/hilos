@@ -23,9 +23,9 @@ use Hilos\HilosException;
  * @property-read int $userId
  * @property-read string $label
  * @property-read ?int $lastUsedStep
- * @property-read ?string $confirmedAt
- * @property-read ?string $lastUsedAt
- * @property-read string $createdAt
+ * @property-read ?int $confirmedAt
+ * @property-read ?int $lastUsedAt
+ * @property-read int $createdAt
  * @property-read SecondFactorActions $actions
  */
 class SecondFactor extends DbItem

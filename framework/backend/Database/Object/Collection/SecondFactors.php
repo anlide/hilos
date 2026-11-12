@@ -88,7 +88,7 @@ class SecondFactors extends Objects
         $factor = static::OBJECT_CLASS::create();
         $factor->userId = $userId;
         $factor->label = $label;
-        $factor->createdAt = TimeHelper::getSqlDateTime();
+        $factor->createdAt = TimeHelper::nowMs();
         $factor->sync();
 
         $id = $factor->id;

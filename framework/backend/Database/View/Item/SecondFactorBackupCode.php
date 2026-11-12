@@ -18,8 +18,8 @@ use Hilos\HilosException;
  * @extends DbItem<ObjectSecondFactorBackupCode>
  * @property-read ?int $id
  * @property-read int $userId
- * @property-read ?string $usedAt
- * @property-read string $createdAt
+ * @property-read ?int $usedAt
+ * @property-read int $createdAt
  * @property-read SecondFactorBackupCodeActions $actions
  */
 class SecondFactorBackupCode extends DbItem

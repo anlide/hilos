@@ -161,8 +161,8 @@ final class FrameworkDataExportSections
         }
         $writer->section('second_factor', [
             'connected' => $since !== null,
-            'since' => DataExportTime::iso($since, $timeZone),
-            'lastUsedAt' => DataExportTime::iso($lastUsedAt, $timeZone),
+            'since' => $since === null ? null : DataExportTime::isoMs($since, $timeZone),
+            'lastUsedAt' => $lastUsedAt === null ? null : DataExportTime::isoMs($lastUsedAt, $timeZone),
             'backupCodesLeft' => $backupCodesLeft,
         ]);
 

@@ -76,7 +76,7 @@ class SecondFactorResets extends Objects
      * stays out of the ORM columns. The caller commits the two together.
      *
      * @param int $userId Person whose second factor is to be removed
-     * @param string $effectiveAt Moment the removal is carried out (SQL datetime)
+     * @param int $effectiveAt Moment the removal is carried out (epoch milliseconds)
      * @param string $cancelToken Token the cancel link carries
      * @return ObjectSecondFactorReset The request
      * @throws DatabaseException When the insert or the token write fails
@@ -86,9 +86,9 @@ class SecondFactorResets extends Objects
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws ObjectGetIdStringNotImplementedException If the inserted row has no primary key
      */
-    public function request(int $userId, string $effectiveAt, string $cancelToken): ObjectSecondFactorReset
+    public function request(int $userId, int $effectiveAt, string $cancelToken): ObjectSecondFactorReset
     {
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
         $reset = static::OBJECT_CLASS::create();
         $reset->userId = $userId;
         $reset->requestedAt = $now;
@@ -159,12 +159,12 @@ class SecondFactorResets extends Objects
     /**
      * The standing requests whose removal time has come.
      *
-     * @param string $now Current moment (SQL datetime)
+     * @param int $now Current moment (epoch milliseconds)
      * @return list<ObjectSecondFactorReset> Requests due, oldest first
      * @throws DatabaseException When the lookup fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
-    public function dueBy(string $now): array
+    public function dueBy(int $now): array
     {
         return $this->hydrateAll(static::entityClass()::get(
             '`' . EntitySecondFactorReset::effective_at . '` <= ? AND ' . self::LIVE_CONDITION,
@@ -176,13 +176,13 @@ class SecondFactorResets extends Objects
     /**
      * The standing requests not announced since a moment, and not due yet.
      *
-     * @param string $now Current moment (SQL datetime)
-     * @param string $notifiedBefore Announcements at or before this moment are stale (SQL datetime)
+     * @param int $now Current moment (epoch milliseconds)
+     * @param int $notifiedBefore Announcements at or before this moment are stale (epoch milliseconds)
      * @return list<ObjectSecondFactorReset> Requests owing a reminder
      * @throws DatabaseException When the lookup fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
-    public function reminderDueBy(string $now, string $notifiedBefore): array
+    public function reminderDueBy(int $now, int $notifiedBefore): array
     {
         return $this->hydrateAll(static::entityClass()::get(
             '`' . EntitySecondFactorReset::effective_at . '` > ? AND `' . EntitySecondFactorReset::notified_at

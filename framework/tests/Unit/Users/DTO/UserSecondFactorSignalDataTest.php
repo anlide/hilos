@@ -31,7 +31,10 @@ use PHPUnit\Framework\TestCase;
 /** The frames that carry a person's second factor to their agent and back survive the wire whole (HIL-1406). */
 final class UserSecondFactorSignalDataTest extends TestCase
 {
-    private const int LOCK_UNTIL_SEC = 1_790_000_000;
+    private const int LOCK_UNTIL_MS = 1_790_000_000_000;
+
+    /** Bound the reminder frame carries (epoch milliseconds of 2026-10-09 12:00:00 UTC). */
+    private const int NOTIFIED_BEFORE_MS = 1_791_547_200_000;
 
     public function testAProofAskAndAMissThatPutTheLockRoundTrip(): void
     {
@@ -49,7 +52,7 @@ final class UserSecondFactorSignalDataTest extends TestCase
             action: HilosSignalConstants::HILOS_CONFIRM_SECOND_FACTOR,
             successMessage: null,
         );
-        $done = new UserSecondFactorProveDoneSignalData($ask, true, 5, self::LOCK_UNTIL_SEC, false, 'locked', null, null);
+        $done = new UserSecondFactorProveDoneSignalData($ask, true, 5, self::LOCK_UNTIL_MS, false, 'locked', null, null);
 
         $restored = UserSecondFactorProveDoneSignalData::fromArray(self::overTheWire($done->toArray()));
 
@@ -57,7 +60,7 @@ final class UserSecondFactorSignalDataTest extends TestCase
         self::assertTrue($restored->ask->cancelReset);
         self::assertTrue($restored->ask->trustDevice);
         self::assertSame(5, $restored->lockMisses);
-        self::assertSame(self::LOCK_UNTIL_SEC, $restored->lockUntil);
+        self::assertSame(self::LOCK_UNTIL_MS, $restored->lockUntil);
     }
 
     public function testAProofOfAnOperationAndItsRefusalRoundTrip(): void
@@ -189,7 +192,7 @@ final class UserSecondFactorSignalDataTest extends TestCase
         $request = new UserSecondFactorResetRemindSignalData(
             7,
             33,
-            '2026-10-09 12:00:00',
+            self::NOTIFIED_BEFORE_MS,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE,
         );
         $done = new UserSecondFactorResetRemindDoneSignalData($request, false, null, null, null);
@@ -197,8 +200,66 @@ final class UserSecondFactorSignalDataTest extends TestCase
         $restored = UserSecondFactorResetRemindDoneSignalData::fromArray(self::overTheWire($done->toArray()));
 
         self::assertEquals($done, $restored);
-        self::assertSame('2026-10-09 12:00:00', $restored->request->notifiedBefore);
+        self::assertSame(self::NOTIFIED_BEFORE_MS, $restored->request->notifiedBefore);
         self::assertFalse($restored->marked);
+    }
+
+    /**
+     * A SQL datetime is not a millisecond bound, on the request or nested in its answer.
+     */
+    public function testAReminderRefusesASqlStringBound(): void
+    {
+        $request = [
+            UserSecondFactorResetRemindSignalData::userId => 7,
+            UserSecondFactorResetRemindSignalData::resetId => 33,
+            UserSecondFactorResetRemindSignalData::notifiedBefore => '2026-10-10 09:00:00',
+            UserSecondFactorResetRemindSignalData::replySignal => HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE,
+        ];
+
+        try {
+            UserSecondFactorResetRemindSignalData::fromArray($request);
+            self::fail('A SQL datetime is not a millisecond bound');
+        } catch (InvalidFormatException $exception) {
+            self::assertStringContainsString(UserSecondFactorResetRemindSignalData::notifiedBefore, $exception->getMessage());
+        }
+
+        try {
+            UserSecondFactorResetRemindDoneSignalData::fromArray([
+                UserSecondFactorResetRemindDoneSignalData::request => $request,
+                UserSecondFactorResetRemindDoneSignalData::marked => false,
+            ]);
+            self::fail('A SQL datetime nested in the answer is not a millisecond bound');
+        } catch (InvalidFormatException $exception) {
+            self::assertStringContainsString(UserSecondFactorResetRemindSignalData::notifiedBefore, $exception->getMessage());
+        }
+    }
+
+    /** @return iterable<string, array{int}> Bounds a reminder may carry */
+    public static function reminderBoundsOnTheIntegerEdge(): iterable
+    {
+        yield 'zero' => [0];
+        yield 'negative' => [-1];
+    }
+
+    /**
+     * @param int $notifiedBefore Bound the wire keeps as an integer
+     */
+    #[DataProvider('reminderBoundsOnTheIntegerEdge')]
+    public function testAZeroOrNegativeReminderBoundRoundTrips(int $notifiedBefore): void
+    {
+        $request = new UserSecondFactorResetRemindSignalData(
+            7,
+            33,
+            $notifiedBefore,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE,
+        );
+        $done = new UserSecondFactorResetRemindDoneSignalData($request, false, null, null, null);
+
+        $restoredRequest = UserSecondFactorResetRemindSignalData::fromArray(self::overTheWire($request->toArray()));
+        $restored = UserSecondFactorResetRemindDoneSignalData::fromArray(self::overTheWire($done->toArray()));
+
+        self::assertSame($notifiedBefore, $restoredRequest->notifiedBefore);
+        self::assertSame($notifiedBefore, $restored->request->notifiedBefore);
     }
 
     /** @return iterable<string, array{?int}> Lock ends the answer may carry */

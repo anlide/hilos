@@ -18,17 +18,22 @@
 -- passed since it and the ladder starts again.
 --
 -- Keyed by the person: there is one choice per account.
+--
+-- `pending_reset_wait_from`, `app_code_misses_from`, `app_code_locked_until` and `updated_at` are
+-- signed BIGINT epoch milliseconds (HIL-1922), with no time zone and no database writer: the
+-- application stamps each one. NULL is the absence of that moment, and 0 is the epoch rather
+-- than absence. `app_code_lock_step` stays a step of the ladder, not a moment.
 
 CREATE TABLE `hilos_second_factor_setting` (
     `user_id` INT UNSIGNED NOT NULL,
     `reset_wait_days` SMALLINT UNSIGNED DEFAULT NULL,
     `pending_reset_wait_days` SMALLINT UNSIGNED DEFAULT NULL,
-    `pending_reset_wait_from` TIMESTAMP NULL DEFAULT NULL,
+    `pending_reset_wait_from` BIGINT NULL DEFAULT NULL,
     `app_code_misses` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
-    `app_code_misses_from` TIMESTAMP NULL DEFAULT NULL,
+    `app_code_misses_from` BIGINT NULL DEFAULT NULL,
     `app_code_lock_step` TINYINT UNSIGNED NOT NULL DEFAULT 0,
-    `app_code_locked_until` TIMESTAMP NULL DEFAULT NULL,
-    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `app_code_locked_until` BIGINT NULL DEFAULT NULL,
+    `updated_at` BIGINT NOT NULL,
     PRIMARY KEY (`user_id`),
     CONSTRAINT `fk_second_factor_setting_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

@@ -82,7 +82,7 @@ class SecondFactorBackupCodes extends Objects
     {
         $this->deleteForUser($userId);
 
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
         foreach ($codes as $code) {
             $row = static::OBJECT_CLASS::create();
             $row->userId = $userId;

@@ -35,7 +35,7 @@ class SecondFactorSettingsActions extends DbActions
      * @param int $userId Person
      * @param ?int $days Wait in force in days, or null for the administrator's default
      * @param ?int $pendingDays Shorter wait parked, or null when none is
-     * @param ?string $pendingFrom Moment the parked wait takes over (SQL datetime), or null when none is parked
+     * @param ?int $pendingFrom Moment the parked wait takes over (epoch milliseconds), or null when none is parked
      * @throws CreateNotAllowedException When the truth source rejects the insert
      * @throws WriteNotAllowedException When the truth source rejects the update
      * @throws LogicException When the object collection entity class is not configured
@@ -44,7 +44,7 @@ class SecondFactorSettingsActions extends DbActions
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws ObjectGetIdStringNotImplementedException If the row has no primary key
      */
-    public function setResetWait(int $userId, ?int $days, ?int $pendingDays, ?string $pendingFrom): void
+    public function setResetWait(int $userId, ?int $days, ?int $pendingDays, ?int $pendingFrom): void
     {
         $this->ensureCanCreateInSet((string)$userId);
 
@@ -81,7 +81,7 @@ class SecondFactorSettingsActions extends DbActions
      * @param int $userId Person
      * @param int $atMisses Ceiling the window has to hold for the lock to be put
      * @param int $step Step of the lock on the ladder
-     * @param string $until End of the lock (SQL datetime)
+     * @param int $until End of the lock (epoch milliseconds)
      * @return bool True when this call put the lock, false when another miss put it already or the person has no row
      * @throws WriteNotAllowedException When the truth source rejects the update
      * @throws CreateNotAllowedException Never for a persisted row; declared by the re-announcing sync
@@ -91,7 +91,7 @@ class SecondFactorSettingsActions extends DbActions
      * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
      * @throws ObjectGetIdStringNotImplementedException If the row has no primary key
      */
-    public function lockAppCodes(int $userId, int $atMisses, int $step, string $until): bool
+    public function lockAppCodes(int $userId, int $atMisses, int $step, int $until): bool
     {
         $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Update);
 
@@ -102,7 +102,7 @@ class SecondFactorSettingsActions extends DbActions
      * Lifts a person's app-code lock with its step, the miss count and its window (HIL-1285).
      *
      * @param int $userId Person
-     * @return ?string End of the lifted lock (SQL datetime) when it was still in force, or null when none was
+     * @return ?int End of the lifted lock (epoch milliseconds) when it was still in force, or null when none was
      * @throws WriteNotAllowedException When the truth source rejects the update
      * @throws CreateNotAllowedException Never for a persisted row; declared by the sync
      * @throws LogicException When the object collection entity class is not configured
@@ -111,7 +111,7 @@ class SecondFactorSettingsActions extends DbActions
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws ObjectGetIdStringNotImplementedException If the row has no primary key
      */
-    public function unlockAppCodes(int $userId): ?string
+    public function unlockAppCodes(int $userId): ?int
     {
         $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Update);
 

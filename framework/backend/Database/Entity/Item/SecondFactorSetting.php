@@ -20,6 +20,8 @@ use Hilos\Database\PhpType;
  * `app_code_misses` in the window `app_code_misses_from` opened, and the lock the ceiling
  * put on app codes - its step on the ladder and `app_code_locked_until`, kept after it
  * runs out so the next lock knows whether the ladder starts again. Keyed by the person.
+ * The moments are signed epoch milliseconds (HIL-1922): null is absence, and 0 is the epoch.
+ * `app_code_lock_step` stays a step of the ladder, not a moment.
  *
  * @method static EntitySecondFactorSettings get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntitySecondFactorSettings getAll()
@@ -56,12 +58,12 @@ class SecondFactorSetting extends Entity
         self::user_id => PhpType::INTEGER->value,
         self::reset_wait_days => PhpType::INTEGER->value,
         self::pending_reset_wait_days => PhpType::INTEGER->value,
-        self::pending_reset_wait_from => PhpType::DATETIME->value,
+        self::pending_reset_wait_from => PhpType::INTEGER->value,
         self::app_code_misses => PhpType::INTEGER->value,
-        self::app_code_misses_from => PhpType::DATETIME->value,
+        self::app_code_misses_from => PhpType::INTEGER->value,
         self::app_code_lock_step => PhpType::INTEGER->value,
-        self::app_code_locked_until => PhpType::DATETIME->value,
-        self::updated_at => PhpType::DATETIME->value,
+        self::app_code_locked_until => PhpType::INTEGER->value,
+        self::updated_at => PhpType::INTEGER->value,
     ];
 
     public const array _foreign = [
@@ -93,10 +95,10 @@ class SecondFactorSetting extends Entity
     public int $user_id;
     public ?int $reset_wait_days = null;
     public ?int $pending_reset_wait_days = null;
-    public ?string $pending_reset_wait_from = null;
+    public ?int $pending_reset_wait_from = null;
     public int $app_code_misses = 0;
-    public ?string $app_code_misses_from = null;
+    public ?int $app_code_misses_from = null;
     public int $app_code_lock_step = 0;
-    public ?string $app_code_locked_until = null;
-    public string $updated_at;
+    public ?int $app_code_locked_until = null;
+    public int $updated_at;
 }

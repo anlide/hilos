@@ -21,11 +21,11 @@ use Hilos\HilosException;
  * @extends DbItem<ObjectSecondFactorReset>
  * @property-read ?int $id
  * @property-read int $userId
- * @property-read string $requestedAt
- * @property-read string $effectiveAt
- * @property-read string $notifiedAt
- * @property-read ?string $canceledAt
- * @property-read ?string $completedAt
+ * @property-read int $requestedAt
+ * @property-read int $effectiveAt
+ * @property-read int $notifiedAt
+ * @property-read ?int $canceledAt
+ * @property-read ?int $completedAt
  * @property-read SecondFactorResetActions $actions
  */
 class SecondFactorReset extends DbItem

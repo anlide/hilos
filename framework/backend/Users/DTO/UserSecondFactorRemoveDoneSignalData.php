@@ -34,7 +34,7 @@ final class UserSecondFactorRemoveDoneSignalData extends BaseDTO implements Sign
      * @param UserSecondFactorRemoveSignalData $ask The ask being answered, untouched
      * @param bool $missed Whether the proof was checked and matched nothing
      * @param ?int $lockMisses Wrong app codes the lock was put on, when this miss put it; null otherwise
-     * @param ?int $lockUntil End of that lock (unix seconds), when this miss put it; null otherwise
+     * @param ?int $lockUntil End of that lock (epoch milliseconds), when this miss put it; null otherwise
      * @param bool $switchedOff Whether the app was the last and the factor went whole
      * @param ?string $error Why the app was not disconnected, or null when it was
      * @param ?string $errorType Class name of the failure the refusal stands for, or null when nothing was held back

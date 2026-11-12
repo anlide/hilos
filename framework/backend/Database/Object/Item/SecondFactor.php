@@ -35,9 +35,9 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property int $userId
  * @property string $label
  * @property-read ?int $lastUsedStep
- * @property ?string $confirmedAt
- * @property-read ?string $lastUsedAt
- * @property string $createdAt
+ * @property ?int $confirmedAt Epoch milliseconds, or null when the enrolment is not finished
+ * @property-read ?int $lastUsedAt Epoch milliseconds, or null when no code was accepted
+ * @property int $createdAt Epoch milliseconds
  */
 class SecondFactor extends Object_
 {
@@ -87,8 +87,8 @@ class SecondFactor extends Object_
         match ($property) {
             self::userId => $this->entity->user_id = (int)$value,
             self::label => $this->entity->label = (string)$value,
-            self::confirmedAt => $this->entity->confirmed_at = $value === null ? null : (string)$value,
-            self::createdAt => $this->entity->created_at = (string)$value,
+            self::confirmedAt => $this->entity->confirmed_at = $value === null ? null : (int)$value,
+            self::createdAt => $this->entity->created_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -190,10 +190,10 @@ class SecondFactor extends Object_
             TruthSourceOperation::Update,
         );
 
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::int($step));
-        $params->add(SqlParam::string($now));
+        $params->add(SqlParam::int($now));
         $params->add(SqlParam::int($this->entity->id));
         $params->add(SqlParam::int($step));
         Database::sql(

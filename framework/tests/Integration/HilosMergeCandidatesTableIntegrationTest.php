@@ -23,6 +23,7 @@ use Hilos\HilosException;
 use Hilos\Tables\Users\HilosMergeCandidatesTable;
 use Hilos\Tables\Users\HilosMergeCandidateTableRow;
 use Hilos\Tables\Users\HilosUserTableRow;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * The framework window of merge candidates over the framework's own tables (HIL-411, HIL-1201).
@@ -81,7 +82,7 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
         $change = SourceChange::dbCreated(HilosDbContext::secondFactors, $id, [ObjectSecondFactor::userId => self::BETA]);
         self::assertFalse($table->buildMutationForSourceEvent($change)->row->toArray()[HilosMergeCandidatesTable::FIELD_HAS_SECOND_FACTOR]);
         $factor->actions->confirm('App');
-        $change = SourceChange::dbUpdated(HilosDbContext::secondFactors, $id, [ObjectSecondFactor::confirmedAt => date('Y-m-d H:i:s')]);
+        $change = SourceChange::dbUpdated(HilosDbContext::secondFactors, $id, [ObjectSecondFactor::confirmedAt => TimeHelper::nowMs()]);
         self::assertTrue($table->buildMutationForSourceEvent($change)->row->toArray()[HilosMergeCandidatesTable::FIELD_HAS_SECOND_FACTOR]);
         $factor->actions->delete();
         $change = SourceChange::dbDeleted(HilosDbContext::secondFactors, $id, [ObjectSecondFactor::userId => self::BETA]);

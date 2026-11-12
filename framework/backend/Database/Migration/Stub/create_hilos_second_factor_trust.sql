@@ -10,13 +10,16 @@
 -- of the key because one browser may be used by two people, and trusting it for one of
 -- them says nothing about the other. Signing out does not lower a trust; switching the
 -- second factor off and a completed reset do.
+--
+-- `trusted_until` and `created_at` are signed BIGINT epoch milliseconds (HIL-1922), with no time
+-- zone and no database writer: the application stamps each one. 0 is the epoch rather than absence.
 
 CREATE TABLE `hilos_second_factor_trust` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `session_id` INT UNSIGNED NOT NULL,
     `user_id` INT UNSIGNED NOT NULL,
-    `trusted_until` TIMESTAMP NOT NULL,
-    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `trusted_until` BIGINT NOT NULL,
+    `created_at` BIGINT NOT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_second_factor_trust` (`session_id`, `user_id`),
     KEY `idx_second_factor_trust_user` (`user_id`),

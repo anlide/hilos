@@ -17,7 +17,8 @@ use Hilos\Database\PhpType;
  * carried out at `effective_at`, announced on every channel meanwhile - `notified_at` is
  * the last announcement. The cancel link carries one token, stored as it is, and every
  * reminder repeats that same link (HIL-1302). Live while neither `canceled_at` nor
- * `completed_at` is set.
+ * `completed_at` is set. The moments are signed epoch milliseconds (HIL-1922): null is
+ * absence, and 0 is the epoch.
  *
  * The `cancel_token` column is DB-only: it is intentionally absent from _columns and from
  * the object/view ORM layer, and is read and written only through the object's own
@@ -61,11 +62,11 @@ class SecondFactorReset extends Entity
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::user_id => PhpType::INTEGER->value,
-        self::requested_at => PhpType::DATETIME->value,
-        self::effective_at => PhpType::DATETIME->value,
-        self::notified_at => PhpType::DATETIME->value,
-        self::canceled_at => PhpType::DATETIME->value,
-        self::completed_at => PhpType::DATETIME->value,
+        self::requested_at => PhpType::INTEGER->value,
+        self::effective_at => PhpType::INTEGER->value,
+        self::notified_at => PhpType::INTEGER->value,
+        self::canceled_at => PhpType::INTEGER->value,
+        self::completed_at => PhpType::INTEGER->value,
     ];
 
     public const array _foreign = [
@@ -86,9 +87,9 @@ class SecondFactorReset extends Entity
 
     public ?int $id = null;
     public int $user_id;
-    public string $requested_at;
-    public string $effective_at;
-    public string $notified_at;
-    public ?string $canceled_at = null;
-    public ?string $completed_at = null;
+    public int $requested_at;
+    public int $effective_at;
+    public int $notified_at;
+    public ?int $canceled_at = null;
+    public ?int $completed_at = null;
 }

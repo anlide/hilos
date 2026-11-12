@@ -345,7 +345,8 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
         $due = $this->nextAgentFrameNamed(HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE);
         $id = $due->data->receiptId;
         self::assertNotNull($id);
-        Database::sqlRun('UPDATE `hilos_second_factor_reset` SET `canceled_at` = NOW() WHERE `user_id` = ?', [$userId]);
+        Database::sqlRun('UPDATE `hilos_second_factor_reset` SET `canceled_at` = ? WHERE `user_id` = ?',
+            [TimeHelper::nowMs(), $userId]);
         $worker->handleDaemonMessage(new DaemonAgentMessageDTO($person, $due));
         self::assertSame(0, $this->logCount($id));
         self::assertSame(1, (int)$this->receipt($id)['open_handovers']);
@@ -1019,11 +1020,23 @@ final class JournalReceiptCronIntegrationTest extends IntegrationTestCase
     {
         $userId = (int)Hilos::$db->users->actions->createWithName('Cron factor target')->id;
         $this->userIds[] = $userId;
-        Database::sqlRun('INSERT INTO `hilos_second_factor` (`user_id`, `label`, `confirmed_at`) VALUES (?, ?, NOW())',
-            [$userId, 'Cron test app']);
-        Database::sqlRun('INSERT INTO `hilos_second_factor_reset`'
+        $now = TimeHelper::nowMs();
+        Database::sqlRun(
+            'INSERT INTO `hilos_second_factor` (`user_id`, `label`, `confirmed_at`, `created_at`) VALUES (?, ?, ?, ?)',
+            [$userId, 'Cron test app', $now, $now],
+        );
+        Database::sqlRun(
+            'INSERT INTO `hilos_second_factor_reset`'
             . ' (`user_id`, `requested_at`, `effective_at`, `cancel_token`, `notified_at`)'
-            . ' VALUES (?, NOW(), DATE_SUB(NOW(), INTERVAL 1 DAY), ?, NOW())', [$userId, 'cron-cancel-token']);
+            . ' VALUES (?, ?, ?, ?, ?)',
+            [
+                $userId,
+                $now,
+                $now - TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+                'cron-cancel-token',
+                $now,
+            ],
+        );
         return $userId;
     }
 

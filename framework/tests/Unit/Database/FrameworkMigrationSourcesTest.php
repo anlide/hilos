@@ -176,6 +176,34 @@ final class FrameworkMigrationSourcesTest extends TestCase
         $catalog->verifyCurrentStubs(['push_subscription']);
     }
 
+    /** Guards the five second-factor moment parts and the stubs they leave current. */
+    public function testRealSecondFactorMomentsCarryFivePartsWithEmptyChainsAndCurrentStubHashes(): void
+    {
+        $schema = new FrameworkSchemaCatalog();
+        $catalog = new FrameworkMigrationCatalog($schema);
+        $change = '20261111235717678237_HIL-1922_second_factor_moments';
+        $units = [
+            'second_factor',
+            'second_factor_backup_code',
+            'second_factor_reset',
+            'second_factor_setting',
+            'second_factor_trust',
+        ];
+        $parts = $catalog->partsForUnits($units);
+        $this->assertSame(
+            array_map(static fn (string $unit): string => $change . '/' . $unit, $units),
+            array_map(static fn (FrameworkMigrationPart $part): string => $part->key(), $parts),
+        );
+        foreach ($parts as $part) {
+            $this->assertSame([], $part->requires);
+            $this->assertFalse($part->introducesUnit);
+            $unit = $schema->unit($part->unit);
+            $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->upPath)), $part->afterStubUpSha256);
+            $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->downPath)), $part->afterStubDownSha256);
+        }
+        $catalog->verifyCurrentStubs($units);
+    }
+
     public function testErasureStorageUnitsAreIntroducedOnceInDependencyOrder(): void
     {
         $schema = new FrameworkSchemaCatalog();

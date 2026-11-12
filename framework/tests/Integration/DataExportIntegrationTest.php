@@ -192,9 +192,10 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         Database::sqlRun("INSERT INTO hilos_access_log (user_id, event, ip_address, occurred_at) VALUES "
             . "(7, 'new_address', '2001:db8::7', 1767312000456), (7, 'sign_in', '192.0.2.7', 1767225600123), "
             . "(8, 'sign_in', '192.0.2.8', 1767225600123)");
-        Database::sqlRun("INSERT INTO hilos_second_factor (user_id, label, secret, confirmed_at) "
-            . "VALUES (7, 'My app', 'TOTP_SECRET', '2026-01-02 00:00:00')");
-        Database::sqlRun("INSERT INTO hilos_second_factor_backup_code (user_id, code) VALUES (7, 'BACKUP_CODE')");
+        Database::sqlRun('INSERT INTO hilos_second_factor (user_id, label, secret, confirmed_at, last_used_at, created_at) '
+            . "VALUES (7, 'My app', 'TOTP_SECRET', 1767312000000, NULL, 1767225600000)");
+        Database::sqlRun('INSERT INTO hilos_second_factor_backup_code (user_id, code, created_at) '
+            . "VALUES (7, 'BACKUP_CODE', 1767225600000)");
         Database::sqlRun("INSERT INTO hilos_push_subscription (user_id, endpoint, p256dh, auth, endpoint_hash, "
             . "device_name, user_agent, `created_at`, `revision`) VALUES "
             . "(7, 'https://SECRET_ENDPOINT', 'P256DH_SECRET', 'AUTH_SECRET', REPEAT('a', 64), 'My device', 'RAW_USER_AGENT', 1767225600123, 1)");
@@ -243,8 +244,12 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             ],
             self::section($archive, 'access_log'),
         );
-        self::assertSame(1, self::section($archive, 'second_factor')['backupCodesLeft']);
-        self::assertTrue(self::section($archive, 'second_factor')['connected']);
+        self::assertSame([
+            'connected' => true,
+            'since' => '2026-01-02T00:00:00.000+00:00',
+            'lastUsedAt' => null,
+            'backupCodesLeft' => 1,
+        ], self::section($archive, 'second_factor'));
         self::assertCount(1, self::section($archive, 'notifications'));
         self::assertSame('My notification', self::section($archive, 'notifications')[0]['title']);
         self::assertSame('2026-01-01T00:00:00.123+00:00', self::section($archive, 'notifications')[0]['createdAt']);
@@ -322,6 +327,46 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame('It is kept for 7 days. Open Profile › Your data to download it.', $announcements[0]->body);
         self::assertSame(['url' => '/profile/data'], $announcements[0]->data);
         self::assertNull($announcements[0]->channels);
+    }
+
+    /**
+     * An unconfirmed factor is an absent moment in the export, and epoch zero is a recorded moment.
+     */
+    public function testSecondFactorExportSeparatesAbsenceFromEpochZero(): void
+    {
+        Database::sqlRun(
+            'INSERT INTO hilos_second_factor (user_id, label, secret, confirmed_at, last_used_at, created_at) '
+            . "VALUES (7, 'Unconfirmed', 'TOTP_SECRET', NULL, NULL, 1767225600123)",
+        );
+        $absent = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        $agent = new DataExportTestAgent();
+        $agent->onStart();
+        $agent->onTick();
+
+        self::assertSame(DataExportState::READY, $absent->state);
+        $absentArchive = new PharData($this->directory . '/' . $absent->storedName);
+        self::assertSame([
+            'connected' => false,
+            'since' => null,
+            'lastUsedAt' => null,
+            'backupCodesLeft' => 0,
+        ], self::section($absentArchive, 'second_factor'));
+
+        Database::sqlRun(
+            'INSERT INTO hilos_second_factor (user_id, label, secret, confirmed_at, last_used_at, created_at) '
+            . 'VALUES (8, \'Epoch\', \'TOTP_SECRET\', 0, 0, 1767225600123)',
+        );
+        $epoch = Hilos::$db->dataExports->actions->order(8, '2026-01-02 00:00:00');
+        $agent->onTick();
+
+        self::assertSame(DataExportState::READY, $epoch->state);
+        $epochArchive = new PharData($this->directory . '/' . $epoch->storedName);
+        self::assertSame([
+            'connected' => true,
+            'since' => '1970-01-01T00:00:00.000+00:00',
+            'lastUsedAt' => '1970-01-01T00:00:00.000+00:00',
+            'backupCodesLeft' => 0,
+        ], self::section($epochArchive, 'second_factor'));
     }
 
     /** @return iterable<string, array{string, string, string}> Mode, the zone it gives person 7, and 23:30 UTC in that zone */

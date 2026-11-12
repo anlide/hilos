@@ -24,12 +24,12 @@ final readonly class SecondFactorResetWait
     /**
      * @param ?int $days The person's wait in force, or null for the administrator's default
      * @param ?int $pendingDays A shorter wait parked, or null when none is
-     * @param ?int $pendingFromSec Moment the parked wait takes over (Unix seconds), or null
+     * @param ?int $pendingFrom Moment the parked wait takes over (epoch milliseconds), or null
      */
     public function __construct(
         public ?int $days,
         public ?int $pendingDays,
-        public ?int $pendingFromSec,
+        public ?int $pendingFrom,
     ) {
     }
 
@@ -47,12 +47,11 @@ final readonly class SecondFactorResetWait
         }
 
         $setting = Hilos::$db->secondFactorSettings[$userId];
-        $from = $setting->pendingResetWaitFrom;
 
         return new self(
             $setting->resetWaitDays,
             $setting->pendingResetWaitDays,
-            $from === null ? null : (int)strtotime($from),
+            $setting->pendingResetWaitFrom,
         );
     }
 
@@ -60,12 +59,12 @@ final readonly class SecondFactorResetWait
      * The wait in force now, in days, held within the administrator's bounds.
      *
      * @param SecondFactorPolicy $policy Administrator's bounds and default
-     * @param int $nowSec Current moment (Unix seconds)
+     * @param int $nowMs Current moment (epoch milliseconds)
      * @return int Days a removal asked for now waits
      */
-    public function effectiveDays(SecondFactorPolicy $policy, int $nowSec): int
+    public function effectiveDays(SecondFactorPolicy $policy, int $nowMs): int
     {
-        $days = $this->pendingDays !== null && $this->pendingFromSec !== null && $this->pendingFromSec <= $nowSec
+        $days = $this->pendingDays !== null && $this->pendingFrom !== null && $this->pendingFrom <= $nowMs
             ? $this->pendingDays
             : ($this->days ?? $policy->resetWaitDefaultDays);
 
@@ -83,16 +82,20 @@ final readonly class SecondFactorResetWait
      *
      * @param int $requestedDays Wait the person asked for, already within the bounds
      * @param SecondFactorPolicy $policy Administrator's bounds and default
-     * @param int $nowSec Current moment (Unix seconds)
+     * @param int $nowMs Current moment (epoch milliseconds)
      * @return self The choice to store
      */
-    public function withRequested(int $requestedDays, SecondFactorPolicy $policy, int $nowSec): self
+    public function withRequested(int $requestedDays, SecondFactorPolicy $policy, int $nowMs): self
     {
-        $current = $this->effectiveDays($policy, $nowSec);
+        $current = $this->effectiveDays($policy, $nowMs);
         if ($requestedDays >= $current) {
             return new self($requestedDays, null, null);
         }
 
-        return new self($current, $requestedDays, $nowSec + $current * TimeConstants::SECONDS_PER_DAY);
+        return new self(
+            $current,
+            $requestedDays,
+            $nowMs + $current * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
     }
 }

@@ -32,7 +32,7 @@ class SecondFactorResetsActions extends DbActions
      * Opens a delayed removal of a person's second factor.
      *
      * @param int $userId Person whose second factor is to be removed
-     * @param string $effectiveAt Moment the removal is carried out (SQL datetime)
+     * @param int $effectiveAt Moment the removal is carried out (epoch milliseconds)
      * @param string $cancelToken Token the cancel link carries
      * @return SecondFactorReset The request
      * @throws CreateNotAllowedException When the truth source rejects the insert
@@ -43,7 +43,7 @@ class SecondFactorResetsActions extends DbActions
      * @throws ObjectGetIdStringNotImplementedException If the inserted row has no primary key
      * @throws CallbackNotSetException When the collection cannot wrap the created object as a DB item
      */
-    public function request(int $userId, string $effectiveAt, string $cancelToken): SecondFactorReset
+    public function request(int $userId, int $effectiveAt, string $cancelToken): SecondFactorReset
     {
         $this->ensureCanCreateInSet((string)$userId);
 

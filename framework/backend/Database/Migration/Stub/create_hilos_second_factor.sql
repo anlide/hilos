@@ -21,6 +21,10 @@
 -- so two workers accepting the same code race in the database and one of them loses.
 --
 -- user_id points at hilos_user with RESTRICT; erasure removes the factor first.
+--
+-- `confirmed_at`, `last_used_at` and `created_at` are signed BIGINT epoch milliseconds (HIL-1922),
+-- with no time zone and no database writer: the application stamps each one. NULL is the absence
+-- of that moment, and 0 is the epoch rather than absence.
 
 CREATE TABLE `hilos_second_factor` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -28,9 +32,9 @@ CREATE TABLE `hilos_second_factor` (
     `label` VARCHAR(64) NOT NULL,
     `secret` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
     `last_used_step` BIGINT UNSIGNED DEFAULT NULL,
-    `confirmed_at` TIMESTAMP NULL DEFAULT NULL,
-    `last_used_at` TIMESTAMP NULL DEFAULT NULL,
-    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `confirmed_at` BIGINT NULL DEFAULT NULL,
+    `last_used_at` BIGINT NULL DEFAULT NULL,
+    `created_at` BIGINT NOT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_second_factor_user` (`user_id`),
     CONSTRAINT `fk_second_factor_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT

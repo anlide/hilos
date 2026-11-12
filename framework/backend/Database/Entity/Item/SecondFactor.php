@@ -16,7 +16,8 @@ use Hilos\Database\PhpType;
  * One authenticator app a person enrolled as their second factor (HIL-494).
  * `confirmed_at` NULL is an enrolment not finished yet - such a row is no second factor
  * anywhere. `last_used_step` is the replay guard: the 30-second step of the last code
- * accepted from this app.
+ * accepted from this app. The moments are signed epoch milliseconds (HIL-1922): null is
+ * absence, and 0 is the epoch.
  *
  * The `secret` column (the shared TOTP secret in base32) is DB-only: it is intentionally
  * absent from _columns and from the object/view ORM layer, and is read and written only
@@ -67,9 +68,9 @@ class SecondFactor extends Entity
         self::user_id => PhpType::INTEGER->value,
         self::label => PhpType::STRING->value,
         self::last_used_step => PhpType::INTEGER->value,
-        self::confirmed_at => PhpType::DATETIME->value,
-        self::last_used_at => PhpType::DATETIME->value,
-        self::created_at => PhpType::DATETIME->value,
+        self::confirmed_at => PhpType::INTEGER->value,
+        self::last_used_at => PhpType::INTEGER->value,
+        self::created_at => PhpType::INTEGER->value,
     ];
 
     public const array _foreign = [
@@ -91,7 +92,7 @@ class SecondFactor extends Entity
     public int $user_id;
     public string $label;
     public ?int $last_used_step = null;
-    public ?string $confirmed_at = null;
-    public ?string $last_used_at = null;
-    public string $created_at;
+    public ?int $confirmed_at = null;
+    public ?int $last_used_at = null;
+    public int $created_at;
 }

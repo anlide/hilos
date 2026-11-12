@@ -206,6 +206,19 @@ final class ProfileActionDTOTest extends TestCase
         AuthSecondFactorTrustDaysApplySignalData::fromArray(['trustDays' => 7]);
     }
 
+    /** A saved moment that is not a whole second comes back as the same millisecond count. */
+    public function testTrustDeadlineHandoverKeepsMilliseconds(): void
+    {
+        $savedAt = 1_780_000_123;
+        $dto = new AuthSecondFactorTrustDaysApplySignalData(7, $savedAt, 'reply', 'accept', null, 'setting_update', null);
+        $restored = AuthSecondFactorTrustDaysApplySignalData::fromJson($dto->toJson());
+
+        self::assertSame($savedAt, $dto->toArray()['savedAt']);
+        self::assertSame($savedAt, $restored->savedAt);
+        self::assertSame(7, $restored->trustDays);
+        self::assertSame($dto->toArray(), $restored->toArray());
+    }
+
     /** The session holder receives the original answer address of the write that switched impersonation off. */
     public function testImpersonationOffHandoverRoundTrips(): void
     {

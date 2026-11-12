@@ -87,7 +87,9 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     private const int SESSION_CREATED_AT = 1790416800000;
 
     private const int SECOND_FACTOR_WAIT_UNTIL = 2082758400000;
-    private const string FUTURE = '2036-01-01 00:00:00';
+
+    /** 2036-01-01 00:00:00 UTC, the moment the old SQL date named. */
+    private const int FUTURE = 2082758400000;
     private const int DELETION_FUTURE = 2082758400000;
 
     /** Session signed in as the person. */

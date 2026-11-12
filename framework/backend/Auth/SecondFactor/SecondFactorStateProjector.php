@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Auth\SecondFactor;
 
 use Hilos\Auth\SecondFactor\DTO\SecondFactorStateSignalData;
-use Hilos\Constants\TimeConstants;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -33,7 +32,7 @@ final class SecondFactorStateProjector
     {
         $policy = SecondFactorPolicy::current();
         $wait = SecondFactorResetWait::of($userId);
-        $now = time();
+        $now = TimeHelper::nowMs();
 
         $authenticators = [];
         foreach (Hilos::$db->secondFactors->confirmedOf($userId) as $factor) {
@@ -41,19 +40,18 @@ final class SecondFactorStateProjector
             if ($id === null) {
                 continue;
             }
-            $lastUsedAt = $factor->lastUsedAt;
             $authenticators[] = [
                 SecondFactorStateSignalData::id => $id,
                 SecondFactorStateSignalData::label => $factor->label,
-                SecondFactorStateSignalData::createdAt => TimeHelper::sqlToMs($factor->createdAt),
-                SecondFactorStateSignalData::lastUsedAt => $lastUsedAt === null ? null : TimeHelper::sqlToMs($lastUsedAt),
+                SecondFactorStateSignalData::createdAt => $factor->createdAt,
+                SecondFactorStateSignalData::lastUsedAt => $factor->lastUsedAt,
             ];
         }
 
         $codes = Hilos::$db->secondFactorBackupCodes->listByUser($userId);
         $left = count(array_filter($codes, static fn ($code): bool => $code->usedAt === null));
         $reset = Hilos::$db->secondFactorResets->liveOf($userId);
-        $pendingActive = $wait->pendingDays !== null && $wait->pendingFromSec !== null && $wait->pendingFromSec > $now;
+        $pendingActive = $wait->pendingDays !== null && $wait->pendingFrom !== null && $wait->pendingFrom > $now;
 
         return new SecondFactorStateSignalData(
             $policy->enabled,
@@ -64,16 +62,14 @@ final class SecondFactorStateProjector
             [
                 SecondFactorStateSignalData::days => $wait->effectiveDays($policy, $now),
                 SecondFactorStateSignalData::pendingDays => $pendingActive ? $wait->pendingDays : null,
-                SecondFactorStateSignalData::pendingFrom => $pendingActive
-                    ? (int)$wait->pendingFromSec * TimeConstants::MS_PER_SECOND
-                    : null,
+                SecondFactorStateSignalData::pendingFrom => $pendingActive ? $wait->pendingFrom : null,
                 SecondFactorStateSignalData::defaultDays => $policy->resetWaitDefaultDays,
                 SecondFactorStateSignalData::minDays => $policy->resetWaitMinDays,
                 SecondFactorStateSignalData::maxDays => $policy->resetWaitMaxDays,
             ],
             $reset === null ? null : [
-                SecondFactorStateSignalData::requestedAt => TimeHelper::sqlToMs($reset->requestedAt),
-                SecondFactorStateSignalData::effectiveAt => TimeHelper::sqlToMs($reset->effectiveAt),
+                SecondFactorStateSignalData::requestedAt => $reset->requestedAt,
+                SecondFactorStateSignalData::effectiveAt => $reset->effectiveAt,
             ],
         );
     }

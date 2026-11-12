@@ -52,7 +52,7 @@ final class SecondFactorResetSweeper
      */
     public function sweep(): void
     {
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
 
         foreach (Hilos::$db->secondFactorResets->dueBy($now) as $reset) {
             if (!$this->addressable($reset->userId)) {
@@ -69,7 +69,7 @@ final class SecondFactorResetSweeper
             );
         }
 
-        $staleBefore = date('Y-m-d H:i:s', time() - TimeConstants::SECONDS_PER_DAY);
+        $staleBefore = $now - TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         foreach (Hilos::$db->secondFactorResets->reminderDueBy($now, $staleBefore) as $reset) {
             if ($reset->readCancelToken() === null) {
                 throw new LogicException('A standing second-factor removal ' . $reset->id . ' has no cancel token');

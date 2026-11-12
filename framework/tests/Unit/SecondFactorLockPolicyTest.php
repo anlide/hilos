@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Auth\SecondFactor\SecondFactorLockPolicy;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
@@ -23,10 +24,10 @@ final class SecondFactorLockPolicyTest extends TestCase
     /** @var list<int> Ladder these cases judge against, short enough to reach the end of */
     private const array STEPS = [60, 600, 3600];
 
-    /** A moment the cases count from (Unix seconds). */
-    private const int NOW = 1_800_000_000;
+    /** A moment the cases count from (epoch milliseconds). */
+    private const int NOW = 1_800_000_000_000;
 
-    /** A day, as the cool-down of the ladder is. */
+    /** A day in seconds, as the cool-down of the ladder and the longest wait text are. */
     private const int DAY = 86400;
 
     /** @var list<string> Environment names this case sets and has to unset again */
@@ -95,9 +96,9 @@ final class SecondFactorLockPolicyTest extends TestCase
         foreach (self::STEPS as $ignored) {
             $step = $policy->nextStep($step, $until, $now);
             $locks[] = $policy->lockSecondsFor($step);
-            $until = $now + $policy->lockSecondsFor($step);
+            $until = $now + $policy->lockSecondsFor($step) * TimeConstants::MS_PER_SECOND;
             // The next ten misses come an hour after this lock ends: well within a day.
-            $now = $until + 3600;
+            $now = $until + TimeConstants::SECONDS_PER_HOUR * TimeConstants::MS_PER_SECOND;
         }
 
         $this->assertSame(self::STEPS, $locks);
@@ -111,7 +112,11 @@ final class SecondFactorLockPolicyTest extends TestCase
         // However many locks come within a day of each other, the step the row keeps stays on the ladder.
         $step = $last;
         for ($lock = 0; $lock < 300; $lock++) {
-            $step = $policy->nextStep($step, self::NOW, self::NOW + 60);
+            $step = $policy->nextStep(
+                $step,
+                self::NOW,
+                self::NOW + TimeConstants::SECONDS_PER_MINUTE * TimeConstants::MS_PER_SECOND,
+            );
         }
         $this->assertSame($last, $step);
         $this->assertSame(self::STEPS[$last - 1], $policy->lockSecondsFor($step));
@@ -122,8 +127,21 @@ final class SecondFactorLockPolicyTest extends TestCase
     {
         $policy = $this->policy();
 
-        $this->assertSame(3, $policy->nextStep(2, self::NOW, self::NOW + self::DAY - 1));
-        $this->assertSame(1, $policy->nextStep(2, self::NOW, self::NOW + self::DAY));
+        $dayMs = self::DAY * TimeConstants::MS_PER_SECOND;
+        $this->assertSame(3, $policy->nextStep(2, self::NOW, self::NOW + $dayMs - TimeConstants::MS_PER_SECOND));
+        $this->assertSame(1, $policy->nextStep(2, self::NOW, self::NOW + $dayMs));
+    }
+
+    /**
+     * One millisecond before a day the ladder stays; the day itself starts it again.
+     */
+    public function testOneMillisecondBeforeADayHoldsTheStepAndTheDayStartsAgain(): void
+    {
+        $policy = $this->policy();
+
+        $dayMs = self::DAY * TimeConstants::MS_PER_SECOND;
+        $this->assertSame(3, $policy->nextStep(2, self::NOW, self::NOW + $dayMs - 1));
+        $this->assertSame(1, $policy->nextStep(2, self::NOW, self::NOW + $dayMs));
     }
 
     public function testAPersonNeverLockedStartsOnTheFirstStep(): void

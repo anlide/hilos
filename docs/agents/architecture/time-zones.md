@@ -86,7 +86,7 @@ signed `BIGINT` or milliseconds.
 | Sessions and verifier circle | 6 | Implemented |
 | Identity, OAuth provider and passkey | 7 | Implemented |
 | Verification, registration, step-up and auth blocks | 10 | Implemented |
-| Second factor, trust, reset and backup codes | 16 | (not in the code yet — HIL-1922) |
+| Second factor, trust, reset and backup codes | 16 | Implemented |
 | Notifications, preferences, deliveries and push, including keyset anchors | 10 | Implemented |
 | People, access log, deletion, photo, rename and merge | 9 | Implemented |
 | Legal acceptances and both export queues; preserve the finished file's IANA-zone snapshot | 7 | (not in the code yet — HIL-1925) |

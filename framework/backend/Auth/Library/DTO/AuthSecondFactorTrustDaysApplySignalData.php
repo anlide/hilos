@@ -13,7 +13,7 @@ final class AuthSecondFactorTrustDaysApplySignalData extends BaseDTO implements 
 {
     /**
      * @param int $trustDays New trust term in days
-     * @param int $savedAt Epoch seconds of the successful setting write
+     * @param int $savedAt Epoch milliseconds of the successful setting write
      * @param string $replySignal Agent signal name for the original answer
      * @param string $acceptKey Initiating connection
      * @param ?string $requestId Tracked browser submit, if any

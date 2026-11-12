@@ -13,6 +13,7 @@ use Hilos\Database\PhpType;
  * SecondFactorBackupCode Entity - represents the hilos_second_factor_backup_code table row.
  *
  * One one-shot backup code of a person's second factor (HIL-494). `used_at` burns the code.
+ * The moments are signed epoch milliseconds (HIL-1922): null is absence, and 0 is the epoch.
  *
  * The `code` column is DB-only: it is intentionally absent from _columns and from the
  * object/view ORM layer, and is read and written only through the collection's and the
@@ -49,8 +50,8 @@ class SecondFactorBackupCode extends Entity
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::user_id => PhpType::INTEGER->value,
-        self::used_at => PhpType::DATETIME->value,
-        self::created_at => PhpType::DATETIME->value,
+        self::used_at => PhpType::INTEGER->value,
+        self::created_at => PhpType::INTEGER->value,
     ];
 
     public const array _foreign = [
@@ -69,6 +70,6 @@ class SecondFactorBackupCode extends Entity
 
     public ?int $id = null;
     public int $user_id;
-    public ?string $used_at = null;
-    public string $created_at;
+    public ?int $used_at = null;
+    public int $created_at;
 }

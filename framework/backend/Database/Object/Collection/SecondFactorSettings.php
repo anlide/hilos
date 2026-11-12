@@ -9,6 +9,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Constants\TimeConstants;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\SecondFactorSetting as EntitySecondFactorSetting;
@@ -65,7 +66,7 @@ class SecondFactorSettings extends Objects
      * @param int $userId Person
      * @param ?int $days Wait in force in days, or null for the administrator's default
      * @param ?int $pendingDays Shorter wait parked, or null when none is
-     * @param ?string $pendingFrom Moment the parked wait takes over (SQL datetime), or null when none is parked
+     * @param ?int $pendingFrom Moment the parked wait takes over (epoch milliseconds), or null when none is parked
      * @throws DatabaseException When the lookup or the write fails
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
      * @throws WriteNotAllowedException When no truth source in this process may write that row
@@ -74,7 +75,7 @@ class SecondFactorSettings extends Objects
      * @throws ObjectGetIdStringNotImplementedException If the row has no primary key
      * @throws LogicException When the collection class constants are not configured
      */
-    public function setResetWait(int $userId, ?int $days, ?int $pendingDays, ?string $pendingFrom): void
+    public function setResetWait(int $userId, ?int $days, ?int $pendingDays, ?int $pendingFrom): void
     {
         $setting = $this->offsetGet($userId);
         $isNew = $setting === null;
@@ -86,7 +87,7 @@ class SecondFactorSettings extends Objects
         $setting->resetWaitDays = $days;
         $setting->pendingResetWaitDays = $pendingDays;
         $setting->pendingResetWaitFrom = $pendingFrom;
-        $setting->updatedAt = TimeHelper::getSqlDateTime();
+        $setting->updatedAt = TimeHelper::nowMs();
         $setting->sync();
 
         if ($isNew) {
@@ -118,14 +119,14 @@ class SecondFactorSettings extends Objects
         if ($setting === null) {
             $setting = static::OBJECT_CLASS::create();
             $setting->userId = $userId;
-            $setting->updatedAt = TimeHelper::getSqlDateTime();
+            $setting->updatedAt = TimeHelper::nowMs();
             $setting->sync();
             $this[$userId] = $setting;
         }
 
-        $now = time();
+        $now = TimeHelper::nowMs();
 
-        return $setting->countAppCodeMiss(date('Y-m-d H:i:s', $now - $windowSeconds), date('Y-m-d H:i:s', $now));
+        return $setting->countAppCodeMiss($now - $windowSeconds * TimeConstants::MS_PER_SECOND, $now);
     }
 
     /**
@@ -134,7 +135,7 @@ class SecondFactorSettings extends Objects
      * @param int $userId Person
      * @param int $atMisses Ceiling the window has to hold for the lock to be put
      * @param int $step Step of the lock on the ladder
-     * @param string $until End of the lock (SQL datetime)
+     * @param int $until End of the lock (epoch milliseconds)
      * @return bool True when this call put the lock, false when another miss put it already or the person has no row
      * @throws DatabaseException When the lookup, the update, the row count or the re-announcement fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
@@ -144,14 +145,14 @@ class SecondFactorSettings extends Objects
      * @throws ObjectGetIdStringNotImplementedException If the row has no primary key
      * @throws LogicException When the collection class constants are not configured
      */
-    public function lockAppCodes(int $userId, int $atMisses, int $step, string $until): bool
+    public function lockAppCodes(int $userId, int $atMisses, int $step, int $until): bool
     {
         $setting = $this->offsetGet($userId);
         if ($setting === null) {
             return false;
         }
 
-        return $setting->lockAppCodes($atMisses, $step, $until, TimeHelper::getSqlDateTime());
+        return $setting->lockAppCodes($atMisses, $step, $until, TimeHelper::nowMs());
     }
 
     /**
@@ -160,7 +161,7 @@ class SecondFactorSettings extends Objects
      * A person with no row has nothing to lift and nothing is written.
      *
      * @param int $userId Person
-     * @return ?string End of the lifted lock (SQL datetime) when it was still in force, or null when none was
+     * @return ?int End of the lifted lock (epoch milliseconds) when it was still in force, or null when none was
      * @throws DatabaseException When the lookup or the write fails
      * @throws CreateNotAllowedException Never for a persisted row; declared by the sync
      * @throws WriteNotAllowedException When no truth source in this process may write that row
@@ -169,7 +170,7 @@ class SecondFactorSettings extends Objects
      * @throws ObjectGetIdStringNotImplementedException If the row has no primary key
      * @throws LogicException When the collection class constants are not configured
      */
-    public function unlockAppCodes(int $userId): ?string
+    public function unlockAppCodes(int $userId): ?int
     {
         $setting = $this->offsetGet($userId);
         if ($setting === null) {
@@ -180,11 +181,12 @@ class SecondFactorSettings extends Objects
         $setting->appCodeMisses = 0;
         $setting->appCodeMissesFrom = null;
         $setting->appCodeLockStep = 0;
+        $now = TimeHelper::nowMs();
         $setting->appCodeLockedUntil = null;
-        $setting->updatedAt = TimeHelper::getSqlDateTime();
+        $setting->updatedAt = $now;
         $setting->sync();
 
-        return $until !== null && strtotime($until) > time() ? $until : null;
+        return $until !== null && $until > $now ? $until : null;
     }
 
     /**

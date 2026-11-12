@@ -49,7 +49,7 @@ class SecondFactorActions extends DbActions
         }
 
         $this->object->label = $label;
-        $this->object->confirmedAt = TimeHelper::getSqlDateTime();
+        $this->object->confirmedAt = TimeHelper::nowMs();
         $this->object->sync();
     }
 

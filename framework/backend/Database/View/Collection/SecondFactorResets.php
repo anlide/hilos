@@ -73,13 +73,13 @@ class SecondFactorResets extends DbCollection
     /**
      * The standing requests whose removal time has come.
      *
-     * @param string $now Current moment (SQL datetime)
+     * @param int $now Current moment (epoch milliseconds)
      * @return list<SecondFactorReset> Requests due, oldest first
      * @throws DatabaseException When the lookup fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction or an object type does not match
      * @throws LogicException When collection class constants are not configured
      */
-    public function dueBy(string $now): array
+    public function dueBy(int $now): array
     {
         return $this->itemsFor($this->objectCollection->dueBy($now));
     }
@@ -87,14 +87,14 @@ class SecondFactorResets extends DbCollection
     /**
      * The standing requests not announced since a moment, and not due yet.
      *
-     * @param string $now Current moment (SQL datetime)
-     * @param string $notifiedBefore Announcements at or before this moment are stale (SQL datetime)
+     * @param int $now Current moment (epoch milliseconds)
+     * @param int $notifiedBefore Announcements at or before this moment are stale (epoch milliseconds)
      * @return list<SecondFactorReset> Requests owing a reminder
      * @throws DatabaseException When the lookup fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction or an object type does not match
      * @throws LogicException When collection class constants are not configured
      */
-    public function reminderDueBy(string $now, string $notifiedBefore): array
+    public function reminderDueBy(int $now, int $notifiedBefore): array
     {
         return $this->itemsFor($this->objectCollection->reminderDueBy($now, $notifiedBefore));
     }

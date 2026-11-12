@@ -937,20 +937,24 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
             self::seedFactor(self::LOSER_USER_ID);
         }
         self::seedFactor(self::LOSER_USER_ID, false);
+        $now = TimeHelper::nowMs();
+        $until = $now + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         foreach ([self::SURVIVOR_USER_ID, self::LOSER_USER_ID] as $userId) {
             Database::sqlRun(
-                'INSERT INTO hilos_second_factor_backup_code (user_id, code, used_at) VALUES (?, ?, NULL), (?, ?, NOW())',
-                [$userId, 'live' . $userId, $userId, 'spent' . $userId],
+                'INSERT INTO hilos_second_factor_backup_code (user_id, code, used_at, created_at)'
+                    . ' VALUES (?, ?, NULL, ?), (?, ?, ?, ?)',
+                [$userId, 'live' . $userId, $now, $userId, 'spent' . $userId, $now, $now],
             );
             Database::sqlRun(
-                'INSERT INTO hilos_second_factor_trust (session_id, user_id, trusted_until) VALUES (1, ?, NOW() + INTERVAL 1 DAY)',
-                [$userId],
+                'INSERT INTO hilos_second_factor_trust (session_id, user_id, trusted_until, created_at) VALUES (1, ?, ?, ?)',
+                [$userId, $until, $now],
             );
         }
         Database::sqlRun(
-            'INSERT INTO hilos_second_factor_setting (user_id, reset_wait_days, pending_reset_wait_days, pending_reset_wait_from)'
-                . ' VALUES (?, 20, 1, NOW() + INTERVAL 1 DAY)',
-            [self::LOSER_USER_ID],
+            'INSERT INTO hilos_second_factor_setting'
+                . ' (user_id, reset_wait_days, pending_reset_wait_days, pending_reset_wait_from, updated_at)'
+                . ' VALUES (?, 20, 1, ?, ?)',
+            [self::LOSER_USER_ID, $until, $now],
         );
         self::seedReset(self::LOSER_USER_ID, false);
         self::seedSession('a1000000000000000000000000001293a', self::SURVIVOR_USER_ID);
@@ -1062,7 +1066,10 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     public function testSecondFactorTransferRollsBackWithTheProjectRows(): void
     {
         self::seedFactor(self::LOSER_USER_ID);
-        Database::sqlRun('INSERT INTO hilos_second_factor_backup_code (user_id, code) VALUES (?, ?)', [self::LOSER_USER_ID, 'rollback']);
+        Database::sqlRun(
+            'INSERT INTO hilos_second_factor_backup_code (user_id, code, created_at) VALUES (?, ?, ?)',
+            [self::LOSER_USER_ID, 'rollback', TimeHelper::nowMs()],
+        );
         $agent = new AccountMergeRouteTestAgent();
         $agent->failTheRowMove = true;
         $this->consumeQueuedSeedFrames();
@@ -1084,7 +1091,10 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         $request = $this->browserRequest();
         self::seedFactor(self::LOSER_USER_ID, false);
         self::assertSame([], Hilos::$db->secondFactors->confirmedOf(self::LOSER_USER_ID));
-        Database::sqlRun('UPDATE hilos_second_factor SET confirmed_at = NOW() WHERE user_id = ?', [self::LOSER_USER_ID]);
+        Database::sqlRun(
+            'UPDATE hilos_second_factor SET confirmed_at = ? WHERE user_id = ?',
+            [TimeHelper::nowMs(), self::LOSER_USER_ID],
+        );
         (new AccountMergeRouteTestAgent())->onSignalAgent(new AgentSignalData($request), '', HilosSignalConstants::HILOS_ACCOUNT_MERGE);
         self::assertStringContainsString('protection changed', $this->consumeMergeAnswer()->error);
         self::assertNull(self::survivorOf(self::LOSER_USER_ID));
@@ -1097,9 +1107,10 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
      */
     private static function seedFactor(int $userId, bool $confirmed = true): void
     {
+        $now = TimeHelper::nowMs();
         Database::sqlRun(
-            'INSERT INTO hilos_second_factor (user_id, label, secret, confirmed_at) VALUES (?, ?, ?, ?)',
-            [$userId, 'merge-app', Base32::encode(str_repeat((string)$userId, 10)), $confirmed ? date('Y-m-d H:i:s') : null],
+            'INSERT INTO hilos_second_factor (user_id, label, secret, confirmed_at, created_at) VALUES (?, ?, ?, ?, ?)',
+            [$userId, 'merge-app', Base32::encode(str_repeat((string)$userId, 10)), $confirmed ? $now : null, $now],
         );
     }
 
@@ -1110,10 +1121,17 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
      */
     private static function seedReset(int $userId, bool $live): void
     {
+        $now = TimeHelper::nowMs();
         Database::sqlRun(
             'INSERT INTO hilos_second_factor_reset (user_id, requested_at, effective_at, notified_at, canceled_at)'
-                . ' VALUES (?, NOW(), NOW() + INTERVAL 1 DAY, NOW(), ?)',
-            [$userId, $live ? null : date('Y-m-d H:i:s')],
+                . ' VALUES (?, ?, ?, ?, ?)',
+            [
+                $userId,
+                $now,
+                $now + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+                $now,
+                $live ? null : $now,
+            ],
         );
     }
 

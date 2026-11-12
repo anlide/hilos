@@ -118,13 +118,17 @@ final class SecondFactorLockPolicy
      * after lock would outgrow the column that keeps it, and the lock would stop being put.
      *
      * @param int $lastStep Step of the last lock, 0 when there was none
-     * @param ?int $lastLockedUntilSec End of the last lock (Unix seconds), or null when there was none
-     * @param int $nowSec Now (Unix seconds)
+     * @param ?int $lastLockedUntilMs End of the last lock (epoch milliseconds), or null when there was none
+     * @param int $nowMs Now (epoch milliseconds)
      * @return int Step of the next lock, from 1
      */
-    public function nextStep(int $lastStep, ?int $lastLockedUntilSec, int $nowSec): int
+    public function nextStep(int $lastStep, ?int $lastLockedUntilMs, int $nowMs): int
     {
-        if ($lastStep < 1 || $lastLockedUntilSec === null || $nowSec - $lastLockedUntilSec >= self::STEP_COOLDOWN_SECONDS) {
+        if (
+            $lastStep < 1
+            || $lastLockedUntilMs === null
+            || $nowMs - $lastLockedUntilMs >= self::STEP_COOLDOWN_SECONDS * TimeConstants::MS_PER_SECOND
+        ) {
             return 1;
         }
 

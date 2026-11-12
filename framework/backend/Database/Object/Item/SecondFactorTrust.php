@@ -20,8 +20,8 @@ use Hilos\Database\Object\Item\Object_;
  * @property-read ?int $id
  * @property int $sessionId
  * @property int $userId
- * @property string $trustedUntil
- * @property string $createdAt
+ * @property int $trustedUntil Epoch milliseconds
+ * @property int $createdAt Epoch milliseconds
  */
 class SecondFactorTrust extends Object_
 {
@@ -64,8 +64,8 @@ class SecondFactorTrust extends Object_
         match ($property) {
             self::sessionId => $this->entity->session_id = (int)$value,
             self::userId => $this->entity->user_id = (int)$value,
-            self::trustedUntil => $this->entity->trusted_until = (string)$value,
-            self::createdAt => $this->entity->created_at = (string)$value,
+            self::trustedUntil => $this->entity->trusted_until = (int)$value,
+            self::createdAt => $this->entity->created_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }

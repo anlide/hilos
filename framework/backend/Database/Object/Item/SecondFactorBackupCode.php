@@ -31,8 +31,8 @@ use Hilos\Utils\Helpers\TimeHelper;
  *
  * @property-read ?int $id
  * @property int $userId
- * @property-read ?string $usedAt
- * @property string $createdAt
+ * @property-read ?int $usedAt Epoch milliseconds, or null while the code is unspent
+ * @property int $createdAt Epoch milliseconds
  */
 class SecondFactorBackupCode extends Object_
 {
@@ -74,7 +74,7 @@ class SecondFactorBackupCode extends Object_
     {
         match ($property) {
             self::userId => $this->entity->user_id = (int)$value,
-            self::createdAt => $this->entity->created_at = (string)$value,
+            self::createdAt => $this->entity->created_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -170,9 +170,9 @@ class SecondFactorBackupCode extends Object_
             TruthSourceOperation::Update,
         );
 
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string($now));
+        $params->add(SqlParam::int($now));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
             'UPDATE `' . EntitySecondFactorBackupCode::_table . '` SET `' . EntitySecondFactorBackupCode::used_at

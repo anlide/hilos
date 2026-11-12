@@ -1,0 +1,46 @@
+{
+    "format": 1,
+    "id": "20261111235717678237_HIL-1922_second_factor_moments",
+    "parts": [
+        {
+            "unit": "second_factor",
+            "up": "second_factor.sql",
+            "down": "second_factor_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "10fc53eab5f1c592951a64962b24306df7407e07b0afff19bd2dc6aa5101a308",
+            "afterStubDownSha256": "7e8dae363f4a01ab648929a41ec2bcc44ff4f714cd71b737c1e6d5e8c8c71544"
+        },
+        {
+            "unit": "second_factor_backup_code",
+            "up": "second_factor_backup_code.sql",
+            "down": "second_factor_backup_code_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "3c66cf28f00f2bf0bb8723666be7a6d43a3cc34acb066cedd2f1e439bf8f8ba5",
+            "afterStubDownSha256": "a4793c47b5e99334f8b918fe36b3c04b177be37e774674c2609975a994775a1f"
+        },
+        {
+            "unit": "second_factor_reset",
+            "up": "second_factor_reset.sql",
+            "down": "second_factor_reset_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "42962a397b16a629f783effa9917b4c8f40111da74535b8a58c971b8a1ec6ec7",
+            "afterStubDownSha256": "5f64a912bcd28b9ca21b023806d6b1da931768d7384750c231053981bef94054"
+        },
+        {
+            "unit": "second_factor_setting",
+            "up": "second_factor_setting.sql",
+            "down": "second_factor_setting_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "241ce481fa75a9c3597cad0226c3a5e6b214fd3a929cd0029d188ce1532b6d87",
+            "afterStubDownSha256": "a537a86d68493b21610b6d058565024d2c1aa5528606b98f42bdc68e6beb765a"
+        },
+        {
+            "unit": "second_factor_trust",
+            "up": "second_factor_trust.sql",
+            "down": "second_factor_trust_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "30bad6fdbef73c3f53d765737ecfd63b12b7a7a7b177c863ef107ff14b26fd33",
+            "afterStubDownSha256": "0c93c04f06655b62c05128a1c6c5e71e1a0dfce9a951a4ab88c99202ca6ad477"
+        }
+    ]
+}

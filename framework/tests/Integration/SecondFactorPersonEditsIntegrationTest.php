@@ -10,6 +10,7 @@ use Hilos\Auth\SecondFactor\BackupCodeGenerator;
 use Hilos\Auth\SecondFactor\SecondFactorMessages;
 use Hilos\Auth\SecondFactor\Totp;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
@@ -37,6 +38,7 @@ use Hilos\Users\DTO\UserSecondFactorResetDueDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetDueSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindSignalData;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * A person's second factor is edited by that person's agent, and only brought into being by the
@@ -69,8 +71,8 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
     /** Wrong app codes that lock, as the environment sets them by default. */
     private const int CEILING = 10;
 
-    /** A moment a removal is still waiting at (SQL datetime). */
-    private const string FUTURE = '2036-01-01 00:00:00';
+    /** A moment a removal is still waiting at (epoch milliseconds of 2036-01-01 00:00:00 UTC). */
+    private const int FUTURE = 2082758400000;
 
     private SecondFactorEditsTestUsersLibrary $users;
 
@@ -290,17 +292,78 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
         $reset = Hilos::$db->secondFactorResets->actions->request($userId, self::FUTURE, "cancel-{$userId}");
         Database::sqlRun(
             'UPDATE `hilos_second_factor_reset` SET `notified_at` = ? WHERE `id` = ?',
-            [date('Y-m-d H:i:s', time() - 2 * 86400), (int)$reset->id],
+            [
+                TimeHelper::nowMs() - 2 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+                (int)$reset->id,
+            ],
         );
         Hilos::$db->secondFactorResets->getObjectCollection()?->clearInMemory();
         Hilos::$db->secondFactorResets->clearCache();
-        $staleBefore = date('Y-m-d H:i:s', time() - 86400);
+        $staleBefore = TimeHelper::nowMs() - TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
 
         $marked = $this->remind($userId, (int)$reset->id, $staleBefore);
         self::assertNull($marked->error);
         self::assertTrue($marked->marked);
 
         self::assertFalse($this->remind($userId, (int)$reset->id, $staleBefore)->marked, 'The frame sent again marks nothing');
+    }
+
+    /**
+     * A reminder is due on the inclusive bounds of its deadline and its last announcement, and the
+     * frame that marks it does so once.
+     */
+    public function testReminderBoundaryKeepsFixedMillisecondsAndMarksOnce(): void
+    {
+        $userId = self::seedPerson();
+        self::seedApp($userId, self::SECRET_BYTES);
+        $resetId = (int)Hilos::$db->secondFactorResets->actions->request($userId, self::FUTURE, "cancel-{$userId}")->id;
+        $now = 1767312000123;
+        $notifiedBefore = 1767225600456;
+
+        Database::sqlRun(
+            'UPDATE `hilos_second_factor_reset` SET `effective_at` = ?, `notified_at` = ? WHERE `id` = ?',
+            [$now + 1, $notifiedBefore, $resetId],
+        );
+        $this->dropLoadedResets();
+        self::assertSame([$resetId], $this->reminderIds($now, $notifiedBefore));
+
+        Database::sqlRun(
+            'UPDATE `hilos_second_factor_reset` SET `effective_at` = ? WHERE `id` = ?',
+            [$now, $resetId],
+        );
+        $this->dropLoadedResets();
+        self::assertSame([], $this->reminderIds($now, $notifiedBefore), 'A deadline at now is not waiting');
+
+        Database::sqlRun(
+            'UPDATE `hilos_second_factor_reset` SET `effective_at` = ?, `notified_at` = ? WHERE `id` = ?',
+            [$now + 1, $notifiedBefore + 1, $resetId],
+        );
+        $this->dropLoadedResets();
+        self::assertSame([], $this->reminderIds($now, $notifiedBefore), 'An announcement after the bound is fresh');
+
+        Database::sqlRun(
+            'UPDATE `hilos_second_factor_reset` SET `notified_at` = ? WHERE `id` = ?',
+            [$notifiedBefore, $resetId],
+        );
+        $this->dropLoadedResets();
+        self::assertSame([$resetId], $this->reminderIds($now, $notifiedBefore));
+
+        $marked = $this->remind($userId, $resetId, $notifiedBefore);
+        self::assertNull($marked->error);
+        self::assertTrue($marked->marked);
+        self::assertSame([], $this->reminderIds($now, $notifiedBefore));
+        $notifiedAt = (int)Database::sql(
+            'SELECT `notified_at` FROM `hilos_second_factor_reset` WHERE `id` = ?',
+            [$resetId],
+        )->field('notified_at');
+        self::assertGreaterThan($notifiedBefore, $notifiedAt);
+
+        $repeated = $this->remind($userId, $resetId, $notifiedBefore);
+        self::assertFalse($repeated->marked);
+        self::assertSame($notifiedAt, (int)Database::sql(
+            'SELECT `notified_at` FROM `hilos_second_factor_reset` WHERE `id` = ?',
+            [$resetId],
+        )->field('notified_at'));
     }
 
     /**
@@ -427,11 +490,11 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
     /**
      * @param int $userId Person whose removal it is
      * @param int $resetId Removal owing a reminder
-     * @param string $staleBefore An announcement at or before this moment is stale (SQL datetime)
+     * @param int $staleBefore An announcement at or before this moment is stale (epoch milliseconds)
      * @return UserSecondFactorResetRemindDoneSignalData The agent's answer
      * @throws HilosException When the frame cannot be queued or the agent fails
      */
-    private function remind(int $userId, int $resetId, string $staleBefore): UserSecondFactorResetRemindDoneSignalData
+    private function remind(int $userId, int $resetId, int $staleBefore): UserSecondFactorResetRemindDoneSignalData
     {
         $answer = $this->carry(
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND,
@@ -446,6 +509,30 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
         self::assertInstanceOf(UserSecondFactorResetRemindDoneSignalData::class, $answer);
 
         return $answer;
+    }
+
+    /**
+     * Drops reset rows the case loaded, so the next read sees a raw update.
+     */
+    private function dropLoadedResets(): void
+    {
+        Hilos::$db->secondFactorResets->getObjectCollection()?->clearInMemory();
+        Hilos::$db->secondFactorResets->clearCache();
+    }
+
+    /**
+     * @param int $now Current moment (epoch milliseconds)
+     * @param int $notifiedBefore Announcements at or before this moment are stale (epoch milliseconds)
+     * @return list<int> Removal ids the reminder sweep would take
+     */
+    private function reminderIds(int $now, int $notifiedBefore): array
+    {
+        $ids = [];
+        foreach (Hilos::$db->secondFactorResets->reminderDueBy($now, $notifiedBefore) as $reset) {
+            $ids[] = (int)$reset->id;
+        }
+
+        return $ids;
     }
 
     /**
@@ -557,14 +644,14 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
     /**
      * @param int $resetId Removal to read
      * @param string $column Ending column, canceled_at or completed_at
-     * @return ?string The moment stored there now, past every loaded row
+     * @return ?int The moment stored there now, past every loaded row (epoch milliseconds)
      * @throws DatabaseException When the query fails
      */
-    private static function endedAt(int $resetId, string $column): ?string
+    private static function endedAt(int $resetId, string $column): ?int
     {
         $row = Database::sql("SELECT `{$column}` AS ended FROM `hilos_second_factor_reset` WHERE `id` = ?", [$resetId])->firstRow();
 
-        return $row === null || $row['ended'] === null ? null : (string)$row['ended'];
+        return $row === null || $row['ended'] === null ? null : (int)$row['ended'];
     }
 }
 

@@ -397,7 +397,7 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
         $this->prepareChange(withCode: true);
         $currentSessionId = (int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->id;
         $otherSessionId = (int)Hilos::$db->sessions->findByToken(self::OTHER_SESSION_TOKEN)?->id;
-        $until = date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY);
+        $until = TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         Hilos::$db->secondFactorTrusts->actions->trust($currentSessionId, self::USER_ID, $until);
         Hilos::$db->secondFactorTrusts->actions->trust($otherSessionId, self::USER_ID, $until);
         $password = Hilos::$db->identities->findPasswordByUser(self::USER_ID);
@@ -463,7 +463,7 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
         $this->prepareChange(withCode: true);
         $currentId = (int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->id;
         $otherId = (int)Hilos::$db->sessions->findByToken(self::OTHER_SESSION_TOKEN)?->id;
-        $until = date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY);
+        $until = TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         Hilos::$db->secondFactorTrusts->actions->trust($currentId, self::USER_ID, $until);
         Hilos::$db->secondFactorTrusts->actions->trust($otherId, self::USER_ID, $until);
         $this->submit(

@@ -6,6 +6,7 @@ namespace Hilos\Auth\SecondFactor;
 
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Database\Database;
 use Hilos\Database\View\Item\SecondFactor;
 use Hilos\Hilos;
@@ -108,7 +109,7 @@ final class SecondFactorPersonEdits
         $ttl = Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int();
         if (
             $pending === null
-            || strtotime($pending->createdAt) < time() - $ttl
+            || $pending->createdAt < TimeHelper::nowMs() - $ttl * TimeConstants::MS_PER_SECOND
             || ($ask->authenticatorId !== null && $ask->authenticatorId !== $pending->id)
         ) {
             return new UserSecondFactorEnrollConfirmDoneSignalData($ask, false, false, SecondFactorMessages::SETUP_EXPIRED, null, null);
@@ -220,12 +221,16 @@ final class SecondFactorPersonEdits
      */
     public function writeWait(UserSecondFactorWaitWriteSignalData $ask): UserSecondFactorWaitWriteDoneSignalData
     {
-        $wait = SecondFactorResetWait::of($this->userId)->withRequested($ask->days, SecondFactorPolicy::current(), time());
+        $wait = SecondFactorResetWait::of($this->userId)->withRequested(
+            $ask->days,
+            SecondFactorPolicy::current(),
+            TimeHelper::nowMs(),
+        );
         Hilos::$db->secondFactorSettings->actions->setResetWait(
             $this->userId,
             $wait->days,
             $wait->pendingDays,
-            $wait->pendingFromSec === null ? null : date('Y-m-d H:i:s', $wait->pendingFromSec),
+            $wait->pendingFrom,
         );
 
         return new UserSecondFactorWaitWriteDoneSignalData($ask, null, null, null);
@@ -303,7 +308,7 @@ final class SecondFactorPersonEdits
 
         return new UserSecondFactorUnlockDoneSignalData(
             $request,
-            $lockedUntil === null ? null : TimeHelper::sqlToMs($lockedUntil),
+            $lockedUntil,
             null,
             null,
             null,
@@ -338,14 +343,19 @@ final class SecondFactorPersonEdits
         $lockedUntil = isset(Hilos::$db->secondFactorSettings[$this->userId])
             ? Hilos::$db->secondFactorSettings[$this->userId]->appCodeLockedUntil
             : null;
-        $left = $lockedUntil === null ? 0 : (int)strtotime($lockedUntil) - time();
-        if ($left > 0) {
+        $nowMs = TimeHelper::nowMs();
+        if ($lockedUntil !== null && $lockedUntil > $nowMs) {
             return new SecondFactorProofCheck(
                 false,
                 false,
                 null,
                 null,
-                sprintf(SecondFactorMessages::APP_CODES_LOCKED, SecondFactorLockPolicy::fromEnv()->waitText($left)),
+                sprintf(
+                    SecondFactorMessages::APP_CODES_LOCKED,
+                    SecondFactorLockPolicy::fromEnv()->waitText(
+                        (int)ceil(($lockedUntil - $nowMs) / TimeConstants::MS_PER_SECOND),
+                    ),
+                ),
             );
         }
 
@@ -359,24 +369,27 @@ final class SecondFactorPersonEdits
             return new SecondFactorProofCheck(false, true, null, null, SecondFactorMessages::INVALID_CODE);
         }
 
-        $now = time();
+        $nowMs = TimeHelper::nowMs();
         $setting = Hilos::$db->secondFactorSettings[$this->userId];
         $lastUntil = $setting->appCodeLockedUntil;
-        $step = $policy->nextStep((int)$setting->appCodeLockStep, $lastUntil === null ? null : (int)strtotime($lastUntil), $now);
-        $untilSec = $now + $policy->lockSecondsFor($step);
+        $step = $policy->nextStep((int)$setting->appCodeLockStep, $lastUntil, $nowMs);
+        $untilMs = $nowMs + $policy->lockSecondsFor($step) * TimeConstants::MS_PER_SECOND;
         $locked = Hilos::$db->secondFactorSettings->actions->lockAppCodes(
             $this->userId,
             $policy->misses(),
             $step,
-            date('Y-m-d H:i:s', $untilSec),
+            $untilMs,
         );
 
         return new SecondFactorProofCheck(
             false,
             true,
             $locked ? $misses : null,
-            $locked ? $untilSec : null,
-            sprintf(SecondFactorMessages::APP_CODES_LOCKED, $policy->waitText($untilSec - $now)),
+            $locked ? $untilMs : null,
+            sprintf(
+                SecondFactorMessages::APP_CODES_LOCKED,
+                $policy->waitText((int)ceil(($untilMs - $nowMs) / TimeConstants::MS_PER_SECOND)),
+            ),
         );
     }
 

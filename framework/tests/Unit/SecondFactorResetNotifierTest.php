@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Auth\SecondFactor\SecondFactorNotificationType;
 use Hilos\Auth\SecondFactor\SecondFactorResetNotifier;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
@@ -29,8 +30,11 @@ final class SecondFactorResetNotifierTest extends TestCase
     /** Person both notices are addressed to. */
     private const int USER_ID = 7;
 
-    /** Moment both notices name (Unix seconds). */
-    private const int EFFECTIVE_AT_SEC = 1800000000;
+    /** Moment both notices name (epoch milliseconds). */
+    private const int EFFECTIVE_AT_MS = 1_800_000_000_000;
+
+    /** Moment between two seconds (epoch milliseconds of 2026-01-15 12:34:56.456 UTC). */
+    private const int FRACTIONAL_EFFECTIVE_AT_MS = 1_768_480_496_456;
 
     /** @var ?HilosNotifier Notifier the suite had, put back so this file does not decide the next one */
     private ?HilosNotifier $previousNotify = null;
@@ -60,8 +64,8 @@ final class SecondFactorResetNotifierTest extends TestCase
             Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
             putenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name . '=utc');
 
-            SecondFactorResetNotifier::requested(self::USER_ID, self::TOKEN, self::EFFECTIVE_AT_SEC);
-            SecondFactorResetNotifier::reminder(self::USER_ID, self::TOKEN, self::EFFECTIVE_AT_SEC);
+            SecondFactorResetNotifier::requested(self::USER_ID, self::TOKEN, self::EFFECTIVE_AT_MS);
+            SecondFactorResetNotifier::reminder(self::USER_ID, self::TOKEN, self::EFFECTIVE_AT_MS);
 
             self::assertCount(2, $capture->drafts);
             $requested = $capture->drafts[0];
@@ -76,6 +80,38 @@ final class SecondFactorResetNotifierTest extends TestCase
             self::assertStringContainsString($url, (string)$requested->body);
             self::assertStringContainsString($url, (string)$reminder->body);
             self::assertStringContainsString(self::TOKEN, $url);
+        } finally {
+            Hilos::$env = $previousEnv;
+            putenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name . ($previousMode === false ? '' : '=' . $previousMode));
+        }
+    }
+
+    /**
+     * A moment between seconds is written as the minute of the second below it.
+     */
+    public function testAFractionalSecondIsWrittenAsTheSameMinute(): void
+    {
+        $capture = new SecondFactorResetNotifierCapture();
+        Hilos::$notify = $capture;
+        $previousEnv = Hilos::$env;
+        $previousMode = getenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name);
+        try {
+            Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
+            putenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name . '=utc');
+
+            SecondFactorResetNotifier::requested(self::USER_ID, self::TOKEN, self::FRACTIONAL_EFFECTIVE_AT_MS);
+            SecondFactorResetNotifier::reminder(self::USER_ID, self::TOKEN, self::FRACTIONAL_EFFECTIVE_AT_MS);
+            SecondFactorResetNotifier::requested(
+                self::USER_ID,
+                self::TOKEN,
+                self::FRACTIONAL_EFFECTIVE_AT_MS - TimeConstants::MS_PER_SECOND,
+            );
+
+            self::assertCount(3, $capture->drafts);
+            $writtenMinute = '2026-01-15 12:34 +00:00 (UTC)';
+            self::assertStringContainsString($writtenMinute, (string)$capture->drafts[0]->body);
+            self::assertStringContainsString($writtenMinute, (string)$capture->drafts[1]->body);
+            self::assertStringContainsString($writtenMinute, (string)$capture->drafts[2]->body);
         } finally {
             Hilos::$env = $previousEnv;
             putenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name . ($previousMode === false ? '' : '=' . $previousMode));

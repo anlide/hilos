@@ -233,7 +233,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
                 AuthFlowStep::SECOND_FACTOR_RESET_REQUESTED,
                 new SecondFactorStepData(
                     SecondFactorPolicy::current()->trustDeviceDays(),
-                    TimeHelper::sqlToMs($reset->effectiveAt),
+                    $reset->effectiveAt,
                 ),
                 null,
             ),
@@ -287,18 +287,21 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     {
         $standing = Hilos::$db->secondFactorResets->liveOf($userId);
         if ($standing !== null) {
-            throw new ValidationException(sprintf(SecondFactorMessages::RESET_ALREADY_REQUESTED, $standing->effectiveAt));
+            throw new ValidationException(sprintf(
+                SecondFactorMessages::RESET_ALREADY_REQUESTED,
+                gmdate('Y-m-d H:i:s', intdiv($standing->effectiveAt, TimeConstants::MS_PER_SECOND)),
+            ));
         }
 
-        $now = time();
-        $effectiveAtSec = $now + SecondFactorResetWait::of($userId)->effectiveDays(SecondFactorPolicy::current(), $now)
-            * TimeConstants::SECONDS_PER_DAY;
+        $nowMs = TimeHelper::nowMs();
+        $effectiveAtMs = $nowMs + SecondFactorResetWait::of($userId)->effectiveDays(SecondFactorPolicy::current(), $nowMs)
+            * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         $token = RandomHelper::secureHex(self::TOKEN_BYTES);
         Database::transactionStart();
         try {
             $reset = Hilos::$db->secondFactorResets->actions->request(
                 $userId,
-                date('Y-m-d H:i:s', $effectiveAtSec),
+                $effectiveAtMs,
                 $token,
             );
             Database::transactionCommit();
@@ -306,7 +309,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
             Database::transactionRollback();
             throw $failure;
         }
-        SecondFactorResetNotifier::requested($userId, $token, $effectiveAtSec);
+        SecondFactorResetNotifier::requested($userId, $token, $effectiveAtMs);
 
         return $reset;
     }
@@ -786,7 +789,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
         if ($token === null) {
             throw new LogicException('A standing second-factor removal ' . $request->resetId . ' has no cancel token');
         }
-        SecondFactorResetNotifier::reminder($request->userId, $token, (int)strtotime($reset->effectiveAt));
+        SecondFactorResetNotifier::reminder($request->userId, $token, $reset->effectiveAt);
     }
 
     /**
@@ -904,12 +907,12 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      *
      * @param int $userId Person whose app codes are locked
      * @param ?int $misses Wrong app codes the lock was put on, or null when this miss put none
-     * @param ?int $untilSec End of the lock (unix seconds), or null when this miss put none
+     * @param ?int $untilMs End of the lock (epoch milliseconds), or null when this miss put none
      */
-    private function mailLock(int $userId, ?int $misses, ?int $untilSec): void
+    private function mailLock(int $userId, ?int $misses, ?int $untilMs): void
     {
-        if ($misses !== null && $untilSec !== null) {
-            $this->followUp(fn () => SecondFactorLockNotifier::locked($userId, $misses, $untilSec), 'lock letter', $userId);
+        if ($misses !== null && $untilMs !== null) {
+            $this->followUp(fn () => SecondFactorLockNotifier::locked($userId, $misses, $untilMs), 'lock letter', $userId);
         }
     }
 

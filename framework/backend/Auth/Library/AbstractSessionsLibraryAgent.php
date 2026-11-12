@@ -6446,10 +6446,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             Hilos::$db->accessLogEntries->actions->rePointToUser($loserId, $survivorId);
             if ($secondFactorFate === SecondFactorFate::BOTH) {
                 $policy = SecondFactorPolicy::current();
-                $now = time();
+                $nowMs = TimeHelper::nowMs();
                 $waitDays = max(
-                    SecondFactorResetWait::of($survivorId)->effectiveDays($policy, $now),
-                    SecondFactorResetWait::of($loserId)->effectiveDays($policy, $now),
+                    SecondFactorResetWait::of($survivorId)->effectiveDays($policy, $nowMs),
+                    SecondFactorResetWait::of($loserId)->effectiveDays($policy, $nowMs),
                 );
                 Hilos::$db->secondFactors->actions->rePointConfirmedToUser($loserId, $survivorId);
                 Hilos::$db->secondFactorBackupCodes->actions->rePointToUser($loserId, $survivorId);
@@ -7752,9 +7752,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             if ($ask->trustDays === 0) {
                 Hilos::$db->secondFactorTrusts->actions->deleteAll();
             } else {
-                $savedAtSql = date('Y-m-d H:i:s', $ask->savedAt);
-                $limitSql = date('Y-m-d H:i:s', $ask->savedAt + $ask->trustDays * TimeConstants::SECONDS_PER_DAY);
-                Hilos::$db->secondFactorTrusts->actions->capLiveUntil($limitSql, $savedAtSql);
+                $savedAtMs = $ask->savedAt;
+                $limitMs = $savedAtMs + $ask->trustDays * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
+                Hilos::$db->secondFactorTrusts->actions->capLiveUntil($limitMs, $savedAtMs);
             }
         } catch (WiringRefusal $refusal) {
             $this->logAgentError("Second-factor trust term is not wired: {$refusal->getMessage()}");
@@ -8032,7 +8032,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 HandshakeResponseSignalData::trustDeviceDays => SecondFactorPolicy::current()->trustDeviceDays(),
                 HandshakeResponseSignalData::resetEffectiveAt => $reset === null
                     ? null
-                    : TimeHelper::sqlToMs($reset->effectiveAt),
+                    : $reset->effectiveAt,
             ],
         ];
     }
@@ -8094,7 +8094,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         Hilos::$db->secondFactorTrusts->actions->trust(
             $sessionId,
             $userId,
-            date('Y-m-d H:i:s', time() + $days * TimeConstants::SECONDS_PER_DAY),
+            TimeHelper::nowMs() + $days * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
         );
     }
 

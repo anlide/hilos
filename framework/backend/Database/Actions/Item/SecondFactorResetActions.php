@@ -69,7 +69,7 @@ class SecondFactorResetActions extends DbActions
      * Conditional, like {@see cancel()} and {@see complete()}: of two marks of the same day exactly
      * one answers true, and only that one is followed by the reminder.
      *
-     * @param string $notifiedBefore An announcement at or before this moment is stale (SQL datetime)
+     * @param int $notifiedBefore An announcement at or before this moment is stale (epoch milliseconds)
      * @return bool True when this call marked the request, false when it no longer stands or was reminded since
      * @throws ObjectCollectionNullException When the action is detached from its object collection
      * @throws ObjectGetIdStringNotImplementedException When the request cannot expose its id string
@@ -79,7 +79,7 @@ class SecondFactorResetActions extends DbActions
      * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      */
-    public function remind(string $notifiedBefore): bool
+    public function remind(int $notifiedBefore): bool
     {
         $this->ensureCanWrite();
 

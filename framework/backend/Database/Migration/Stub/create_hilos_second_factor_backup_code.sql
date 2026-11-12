@@ -15,13 +15,17 @@
 --
 -- `used_at` burns a code. The write that burns it carries `used_at IS NULL`, so the
 -- same code typed in two tabs at once passes exactly once.
+--
+-- `used_at` and `created_at` are signed BIGINT epoch milliseconds (HIL-1922), with no time zone
+-- and no database writer: the application stamps each one. NULL `used_at` is an unspent code,
+-- and 0 is the epoch rather than absence.
 
 CREATE TABLE `hilos_second_factor_backup_code` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `user_id` INT UNSIGNED NOT NULL,
     `code` VARCHAR(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
-    `used_at` TIMESTAMP NULL DEFAULT NULL,
-    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `used_at` BIGINT NULL DEFAULT NULL,
+    `created_at` BIGINT NOT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_second_factor_backup_code_user` (`user_id`),
     CONSTRAINT `fk_second_factor_backup_code_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT

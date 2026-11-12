@@ -16,8 +16,8 @@ use Hilos\HilosException;
  * @property-read ?int $id
  * @property-read int $sessionId
  * @property-read int $userId
- * @property-read string $trustedUntil
- * @property-read string $createdAt
+ * @property-read int $trustedUntil
+ * @property-read int $createdAt
  */
 class SecondFactorTrust extends DbItem
 {

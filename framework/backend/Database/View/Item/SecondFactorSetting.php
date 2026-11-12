@@ -16,12 +16,12 @@ use Hilos\HilosException;
  * @property-read int $userId
  * @property-read ?int $resetWaitDays
  * @property-read ?int $pendingResetWaitDays
- * @property-read ?string $pendingResetWaitFrom
+ * @property-read ?int $pendingResetWaitFrom
  * @property-read int $appCodeMisses
- * @property-read ?string $appCodeMissesFrom
+ * @property-read ?int $appCodeMissesFrom
  * @property-read int $appCodeLockStep
- * @property-read ?string $appCodeLockedUntil
- * @property-read string $updatedAt
+ * @property-read ?int $appCodeLockedUntil
+ * @property-read int $updatedAt
  */
 class SecondFactorSetting extends DbItem
 {

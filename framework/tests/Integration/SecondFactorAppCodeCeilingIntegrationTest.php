@@ -12,6 +12,7 @@ use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\BackupCodeGenerator;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorCodesShowActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorEnrollConfirmActionDTO;
+use Hilos\Auth\SecondFactor\SecondFactorLockPolicy;
 use Hilos\Auth\SecondFactor\SecondFactorMessages;
 use Hilos\Auth\SecondFactor\SecondFactorNotificationType;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
@@ -24,6 +25,7 @@ use Hilos\Auth\StepUp\StepUpSettingsCatalog;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
@@ -302,7 +304,11 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
         $this->lockByProfile('1 h');
         $setting = Hilos::$db->secondFactorSettings[self::USER_ID];
         $this->assertSame(2, $setting->appCodeLockStep);
-        $this->assertEqualsWithDelta(time() + 3600, strtotime((string)$setting->appCodeLockedUntil), 5);
+        $this->assertEqualsWithDelta(
+            TimeHelper::nowMs() + 3600 * TimeConstants::MS_PER_SECOND,
+            $setting->appCodeLockedUntil,
+            5 * TimeConstants::MS_PER_SECOND,
+        );
 
         $this->endLockSecondsAgo(86400 + 60);
         $this->lockByProfile();
@@ -336,7 +342,7 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
         for ($miss = 1; $miss <= self::CEILING; $miss++) {
             $this->assertSame($miss, $actions->countAppCodeMiss(self::USER_ID, 86400));
         }
-        $until = date('Y-m-d H:i:s', time() + 900);
+        $until = TimeHelper::nowMs() + 900 * TimeConstants::MS_PER_SECOND;
 
         $this->assertTrue($actions->lockAppCodes(self::USER_ID, self::CEILING, 1, $until));
         $this->assertFalse($actions->lockAppCodes(self::USER_ID, self::CEILING, 1, $until));
@@ -355,7 +361,7 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
             $actions->countAppCodeMiss(self::USER_ID, 86400);
         }
         $setting = $this->settingObject();
-        $setting->appCodeMissesFrom = date('Y-m-d H:i:s', time() - 86400);
+        $setting->appCodeMissesFrom = TimeHelper::nowMs() - TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         $setting->sync();
 
         $this->assertSame(1, $actions->countAppCodeMiss(self::USER_ID, 86400));
@@ -371,7 +377,7 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
         $this->lockByProfile();
         $until = Hilos::$db->secondFactorSettings[self::USER_ID]->appCodeLockedUntil;
         $this->assertNotNull($until);
-        $this->assertIsString($until);
+        $this->assertIsInt($until);
 
         $reply = $this->unlock(self::USER_ID);
 
@@ -379,7 +385,7 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
         $this->assertSame([
             SecondFactorUnlockCommandConstants::FIELD_USER_ID => self::USER_ID,
             SecondFactorUnlockCommandConstants::FIELD_WAS_LOCKED => true,
-            SecondFactorUnlockCommandConstants::FIELD_LOCKED_UNTIL => TimeHelper::sqlToMs($until),
+            SecondFactorUnlockCommandConstants::FIELD_LOCKED_UNTIL => $until,
         ], $reply->payload);
         $setting = Hilos::$db->secondFactorSettings[self::USER_ID];
         $this->assertSame([0, null, 0, null], [
@@ -390,6 +396,81 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
         ]);
         $this->profileCode($this->currentCode());
         $this->assertSame(1, $this->lockNotices(), 'The lift is not announced');
+    }
+
+    /**
+     * A miss window and a lock keep their milliseconds, one miss puts the one lock and its one
+     * notice, a backup code still passes, and a second unlock finds the lock gone.
+     */
+    public function testLockWindowAndRemainderKeepMilliseconds(): void
+    {
+        $windowFrom = 1767225600123;
+        $openedAt = 1767312000456;
+        Hilos::$db->secondFactorSettings->actions->countAppCodeMiss(self::USER_ID, TimeConstants::SECONDS_PER_DAY);
+        $setting = $this->settingObject();
+        $setting->appCodeMisses = 3;
+        $setting->appCodeMissesFrom = $windowFrom;
+        $setting->sync();
+
+        $this->assertSame(4, $setting->countAppCodeMiss($windowFrom - 1, $openedAt));
+        $this->assertSame($windowFrom, $setting->appCodeMissesFrom);
+        $this->assertSame(1, $setting->countAppCodeMiss($windowFrom, $openedAt));
+        $this->assertSame($openedAt, $setting->appCodeMissesFrom);
+        $this->assertSame(456, $openedAt % TimeConstants::MS_PER_SECOND);
+        $this->assertSame($openedAt, (int)Database::sql(
+            'SELECT `app_code_misses_from` FROM `hilos_second_factor_setting` WHERE `user_id` = ?',
+            [self::USER_ID],
+        )->field('app_code_misses_from'));
+
+        $this->lockByProfile();
+        $this->assertFalse(Hilos::$db->secondFactorSettings->actions->lockAppCodes(
+            self::USER_ID,
+            self::CEILING,
+            1,
+            1767312000123,
+        ));
+
+        $now = TimeHelper::nowMs();
+        $until = $now + (10 * TimeConstants::SECONDS_PER_MINUTE + 30) * TimeConstants::MS_PER_SECOND + 500;
+        if ($until % TimeConstants::MS_PER_SECOND === 0) {
+            $until++;
+        }
+        $locked = $this->settingObject();
+        $locked->appCodeLockedUntil = $until;
+        $locked->sync();
+        $this->assertSame($until, (int)Database::sql(
+            'SELECT `app_code_locked_until` FROM `hilos_second_factor_setting` WHERE `user_id` = ?',
+            [self::USER_ID],
+        )->field('app_code_locked_until'));
+        $this->assertNotSame(0, $until % TimeConstants::MS_PER_SECOND);
+
+        $secondsLeft = (int)ceil(($until - TimeHelper::nowMs()) / TimeConstants::MS_PER_SECOND);
+        $this->assertRefused(
+            $this->lockedFor(SecondFactorLockPolicy::fromEnv()->waitText($secondsLeft)),
+            fn () => $this->profileCode($this->currentCode()),
+        );
+        $this->assertSame(1, $this->lockNotices());
+
+        $this->holdSignIn();
+        $this->signInCode(BackupCodeGenerator::display(self::BACKUP_CODE), backupCode: true);
+        $this->forwardToHolder();
+        $this->assertNull(self::sessionRow(self::SIGN_IN_TOKEN), 'The backup code signed the person in and rotated the token');
+        $this->assertSame(1, $this->lockNotices());
+
+        $reply = $this->unlock(self::USER_ID);
+        $this->assertTrue($reply->isOk());
+        $this->assertSame([
+            SecondFactorUnlockCommandConstants::FIELD_USER_ID => self::USER_ID,
+            SecondFactorUnlockCommandConstants::FIELD_WAS_LOCKED => true,
+            SecondFactorUnlockCommandConstants::FIELD_LOCKED_UNTIL => $until,
+        ], $reply->payload);
+        $again = $this->unlock(self::USER_ID);
+        $this->assertTrue($again->isOk());
+        $this->assertSame([
+            SecondFactorUnlockCommandConstants::FIELD_USER_ID => self::USER_ID,
+            SecondFactorUnlockCommandConstants::FIELD_WAS_LOCKED => false,
+            SecondFactorUnlockCommandConstants::FIELD_LOCKED_UNTIL => null,
+        ], $again->payload);
     }
 
     /**
@@ -496,7 +577,7 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
     private function endLockSecondsAgo(int $seconds): void
     {
         $setting = $this->settingObject();
-        $setting->appCodeLockedUntil = date('Y-m-d H:i:s', time() - $seconds);
+        $setting->appCodeLockedUntil = TimeHelper::nowMs() - $seconds * TimeConstants::MS_PER_SECOND;
         $setting->sync();
     }
 

@@ -63,7 +63,7 @@ class SecondFactorTrusts extends Objects
      *
      * @param int $sessionId Session row of the browser
      * @param int $userId Person the browser is trusted for
-     * @param string $until Moment the trust runs out (SQL datetime)
+     * @param int $until Moment the trust runs out (epoch milliseconds)
      * @throws DatabaseException When the lookup or the write fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
@@ -71,7 +71,7 @@ class SecondFactorTrusts extends Objects
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws ObjectGetIdStringNotImplementedException If the inserted row has no primary key
      */
-    public function trust(int $sessionId, int $userId, string $until): void
+    public function trust(int $sessionId, int $userId, int $until): void
     {
         $existing = $this->find($sessionId, $userId);
         if ($existing !== null) {
@@ -85,7 +85,7 @@ class SecondFactorTrusts extends Objects
         $trust->sessionId = $sessionId;
         $trust->userId = $userId;
         $trust->trustedUntil = $until;
-        $trust->createdAt = TimeHelper::getSqlDateTime();
+        $trust->createdAt = TimeHelper::nowMs();
         $trust->sync();
 
         if ($trust->id !== null) {
@@ -110,30 +110,30 @@ class SecondFactorTrusts extends Objects
         }
 
         $trust = $this->find($sessionId, $userId);
-        $now = time();
-        $until = date('Y-m-d H:i:s', $now + $allowedDays * TimeConstants::SECONDS_PER_DAY);
+        $now = TimeHelper::nowMs();
+        $until = $now + $allowedDays * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
 
-        return $trust !== null && $trust->trustedUntil > date('Y-m-d H:i:s', $now) && $trust->trustedUntil <= $until;
+        return $trust !== null && $trust->trustedUntil > $now && $trust->trustedUntil <= $until;
     }
 
     /**
      * Limits trusts live at the save moment without lengthening any row.
      *
-     * @param string $limitSql New latest expiry (SQL datetime)
-     * @param string $savedAtSql Setting save moment (SQL datetime)
+     * @param int $limitMs New latest expiry (epoch milliseconds)
+     * @param int $savedAtMs Setting save moment (epoch milliseconds)
      * @throws DatabaseException When a lookup or update fails
      * @throws InvalidArgumentException When a query or sync announcement is invalid
      * @throws WriteNotAllowedException When this process cannot write a row
      * @throws SourceChangeSubscriberException Whatever a store subscriber raises
      * @throws ObjectGetIdStringNotImplementedException When a row id cannot be named
      */
-    public function capLiveUntil(string $limitSql, string $savedAtSql): void
+    public function capLiveUntil(int $limitMs, int $savedAtMs): void
     {
         $where = '`' . EntitySecondFactorTrust::trusted_until . '` > ? AND `'
             . EntitySecondFactorTrust::trusted_until . '` > ? AND `'
             . EntitySecondFactorTrust::created_at . '` <= ?';
-        foreach ($this->hydrateAll(static::entityClass()::get($where, [$limitSql, $savedAtSql, $savedAtSql])) as $trust) {
-            $trust->trustedUntil = $limitSql;
+        foreach ($this->hydrateAll(static::entityClass()::get($where, [$limitMs, $savedAtMs, $savedAtMs])) as $trust) {
+            $trust->trustedUntil = $limitMs;
             $trust->sync();
         }
     }

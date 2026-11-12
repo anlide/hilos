@@ -37,6 +37,7 @@ use Hilos\Users\DTO\UserStepUpCreditDoneSignalData;
 use Hilos\Users\DTO\UserStepUpCreditSignalData;
 use Hilos\Users\DTO\UserStepUpRecordDoneSignalData;
 use Hilos\Users\DTO\UserStepUpRecordSignalData;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * A person's step-up confirmations and the trust of their browsers are written by that person's agent (HIL-1407).
@@ -401,7 +402,7 @@ final class PersonStepUpTrustEditsIntegrationTest extends HilosSessionIntegratio
             static fn () => Hilos::$db->secondFactorTrusts->actions->trust(
                 $sessionId,
                 $userId,
-                date('Y-m-d H:i:s', time() + self::TRUST_DAYS * TimeConstants::SECONDS_PER_DAY),
+                TimeHelper::nowMs() + self::TRUST_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
             ),
         );
         self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, $userId, self::TRUST_DAYS));

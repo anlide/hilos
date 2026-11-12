@@ -34,7 +34,7 @@ class SecondFactorTrustsActions extends DbActions
      *
      * @param int $sessionId Session row of the browser
      * @param int $userId Person the browser is trusted for
-     * @param string $until Moment the trust runs out (SQL datetime)
+     * @param int $until Moment the trust runs out (epoch milliseconds)
      * @throws CreateNotAllowedException When the truth source rejects the insert
      * @throws WriteNotAllowedException When the truth source rejects the update
      * @throws DatabaseException When the lookup or the write fails
@@ -42,7 +42,7 @@ class SecondFactorTrustsActions extends DbActions
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws ObjectGetIdStringNotImplementedException If the inserted row has no primary key
      */
-    public function trust(int $sessionId, int $userId, string $until): void
+    public function trust(int $sessionId, int $userId, int $until): void
     {
         $this->ensureCanCreateInSet((string)$userId);
 
@@ -68,14 +68,14 @@ class SecondFactorTrustsActions extends DbActions
     /**
      * Caps trusts that were live when the setting was saved; a retry never extends one.
      *
-     * @param string $limitSql New latest expiry (SQL datetime)
-     * @param string $savedAtSql Moment the setting was saved (SQL datetime)
+     * @param int $limitMs New latest expiry (epoch milliseconds)
+     * @param int $savedAtMs Moment the setting was saved (epoch milliseconds)
      * @throws HilosException When ownership, lookup, transaction, or writing fails
      */
-    public function capLiveUntil(string $limitSql, string $savedAtSql): void
+    public function capLiveUntil(int $limitMs, int $savedAtMs): void
     {
         $this->ensureCanWrite(TruthSourceOperation::Update);
-        $this->writeAtomically(fn () => $this->objectCollection->capLiveUntil($limitSql, $savedAtSql));
+        $this->writeAtomically(fn () => $this->objectCollection->capLiveUntil($limitMs, $savedAtMs));
     }
 
     /**

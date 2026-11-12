@@ -33,11 +33,11 @@ use Hilos\Utils\Helpers\TimeHelper;
  *
  * @property-read ?int $id
  * @property int $userId
- * @property string $requestedAt
- * @property string $effectiveAt
- * @property string $notifiedAt
- * @property-read ?string $canceledAt
- * @property-read ?string $completedAt
+ * @property int $requestedAt Epoch milliseconds
+ * @property int $effectiveAt Epoch milliseconds
+ * @property int $notifiedAt Epoch milliseconds
+ * @property-read ?int $canceledAt Epoch milliseconds, or null while the request stands
+ * @property-read ?int $completedAt Epoch milliseconds, or null while the request stands
  */
 class SecondFactorReset extends Object_
 {
@@ -86,9 +86,9 @@ class SecondFactorReset extends Object_
     {
         match ($property) {
             self::userId => $this->entity->user_id = (int)$value,
-            self::requestedAt => $this->entity->requested_at = (string)$value,
-            self::effectiveAt => $this->entity->effective_at = (string)$value,
-            self::notifiedAt => $this->entity->notified_at = (string)$value,
+            self::requestedAt => $this->entity->requested_at = (int)$value,
+            self::effectiveAt => $this->entity->effective_at = (int)$value,
+            self::notifiedAt => $this->entity->notified_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -207,7 +207,7 @@ class SecondFactorReset extends Object_
      * exactly one changes the row and one reminder goes out. The winner's row is re-announced
      * through {@see sync()}, as {@see end()} does. An unpersisted request answers false.
      *
-     * @param string $notifiedBefore An announcement at or before this moment is stale (SQL datetime)
+     * @param int $notifiedBefore An announcement at or before this moment is stale (epoch milliseconds)
      * @return bool True when this call marked the request
      * @throws DatabaseException When the update, the row count or the re-announcement fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
@@ -216,7 +216,7 @@ class SecondFactorReset extends Object_
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws ObjectGetIdStringNotImplementedException If the primary key is null during the re-announcement
      */
-    public function remind(string $notifiedBefore): bool
+    public function remind(int $notifiedBefore): bool
     {
         if ($this->entity->id === null) {
             return false;
@@ -229,11 +229,11 @@ class SecondFactorReset extends Object_
             TruthSourceOperation::Update,
         );
 
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string($now));
+        $params->add(SqlParam::int($now));
         $params->add(SqlParam::int($this->entity->id));
-        $params->add(SqlParam::string($notifiedBefore));
+        $params->add(SqlParam::int($notifiedBefore));
         Database::sql(
             'UPDATE `' . EntitySecondFactorReset::_table . '` SET `' . EntitySecondFactorReset::notified_at . '` = ? WHERE `'
                 . EntitySecondFactorReset::id . '` = ?'
@@ -280,9 +280,9 @@ class SecondFactorReset extends Object_
             TruthSourceOperation::Update,
         );
 
-        $now = TimeHelper::getSqlDateTime();
+        $now = TimeHelper::nowMs();
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string($now));
+        $params->add(SqlParam::int($now));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
             'UPDATE `' . EntitySecondFactorReset::_table . '` SET `' . $column . '` = ? WHERE `'
