@@ -743,9 +743,9 @@ remains its default shell.
 Startup refuses a missing page or agent; the topology tests check that the
 six migration files are present after registration.
 The section's e2e are organized into five family specs in binance-btc-tracker
-(Vue), tasks (React) and preferans (Angular): language, country, locale,
-language-names and country-names. `i18n-overview.spec.ts` also lives in
-binance-btc-tracker, tasks and preferans. Shared browser checks live in
+(Vue), file-gallery-manager (React) and preferans (Angular): language, country,
+locale, language-names and country-names. `i18n-overview.spec.ts` also lives in
+binance-btc-tracker, file-gallery-manager and preferans. Shared browser checks live in
 `framework/frontend/e2e/i18n.ts`; test-scoped fixtures and command wrappers live
 in `framework/frontend/scripts/i18nFixtures.mjs` and
 `framework/frontend/scripts/i18n.mjs`. Setup and cleanup call the `test:i18n:*`

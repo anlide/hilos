@@ -85,6 +85,7 @@ final class PhpunitIssueGateTest extends TestCase
             $root . '/demo/chat/tests/phpunit.xml',
             $root . '/demo/concert-tickets/tests/phpunit.xml',
             $root . '/demo/ecommerce-shop/tests/phpunit.xml',
+            $root . '/demo/file-gallery-manager/tests/phpunit.xml',
             $root . '/demo/online-testing/tests/phpunit.xml',
             $root . '/demo/pmd/tests/phpunit.xml',
             $root . '/demo/polls/tests/phpunit.xml',

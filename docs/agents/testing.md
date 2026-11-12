@@ -246,7 +246,7 @@ looks suspiciously cheap, the guards' own log lines are the first place to check
 
 It is **not** part of the inner loop. The two-window coverage lives in chat's
 bots and PMD's profile, settings and users specs (Vue), the `users.spec.ts` of
-ecommerce-shop (React), concert-tickets's `profile.spec.ts` (Angular — edits in another
+file-gallery-manager (React), concert-tickets's `profile.spec.ts` (Angular — edits in another
 tab of the same session) and online-testing's `users.spec.ts` (Angular) —
 representative paths per view layer. The **a11y** coverage is the same kind of
 separate, rarely-run category — an `a11y.spec.ts` per demo asserting the
@@ -605,13 +605,13 @@ merely because a directory or README exists.
 | React | `tasks` | Active |
 | React | `ecommerce-shop` | Active |
 | React | `solar-system-model` | Active |
-| React | `file-gallery-manager` | Planned (not in the code yet — HIL-2019) |
+| React | `file-gallery-manager` | Active |
 | Angular | `polls` | Active |
 | Angular | `online-testing` | Active |
 | Angular | `preferans` | Active |
 | Angular | `concert-tickets` | Active |
 
-The planned rows' markers cover each activation's complete obligation: an
+Each activation in this table covers its complete obligation: an
 application shell with an empty home page, AUTH/sign-in, working Analytics in
 the administrative section, ordinary local/test stands, the command interface
 below, and registration in the existing runner and stand registry. Each new
@@ -629,7 +629,12 @@ and authenticated access to its administration and Analytics. Its public header
 has no sign-in control; sign-in opens as a form in place on `/hilos`, a page
 closed to a guest. The Model product itself is outside this activation phase.
 
-Today only `file-gallery-manager` has a `composer.json` stub without scripts.
+File Gallery Manager is an active React carrier. Its home page is empty, its
+header opens sign-in with its own control, and its administration and Analytics
+are for authenticated people. It carries the transferred i18n lifecycle,
+Daemon, Change Log, Communications and Users specs. The gallery product itself
+is outside this activation phase.
+
 [`framework-projects.json`](../../framework-projects.json)
 lists the active projects; [`scripts/test-suite.php`](../../scripts/test-suite.php)
 and [`scripts/test-stands.php`](../../scripts/test-stands.php) register their
@@ -778,9 +783,9 @@ or a container memory limit.
 | concert-tickets | DB | One of three data nodes is lost and returned | Writes continue through the survivors without restarting Hilos; the returned member catches up and takes new connections only when Synced. | (not in the code yet — HIL-2041) |
 
 Acceptance proves Hilos and database failures separately, keeping the other
-layer healthy (not in the code yet — HIL-2043). New fleets enter after ordinary
-activation HIL-2019 (HIL-2017 and HIL-2021 have landed) and phase-one acceptance
-HIL-2023, with isolation in every instance extending HIL-2015: their octets are the third block of
+layer healthy (not in the code yet — HIL-2043). New fleets enter after phase-one
+acceptance HIL-2023 (the ordinary activations HIL-2017, HIL-2019 and HIL-2021 have
+landed), with isolation in every instance extending HIL-2015: their octets are the third block of
 `scripts/stand-instance.php`, the variables `HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER`,
 `HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER` and
 `HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER` with default octets 225, 227 and 229, and the

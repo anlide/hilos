@@ -1,0 +1,34 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Demo\FileGalleryManager\Agents\Hilos;
+
+use Demo\FileGalleryManager\Database\FileGalleryManagerDbContext;
+use Demo\FileGalleryManager\Hilos;
+use Hilos\DataExport\AbstractDataExportAgent;
+use Hilos\DataExport\DataExportWriter;
+use Hilos\HilosException;
+
+/** Exports only the project's records belonging to the person. */
+final class DataExportAgent extends AbstractDataExportAgent
+{
+    public const array READS_DB = [
+        ...parent::READS_DB,
+        FileGalleryManagerDbContext::users,
+    ];
+
+    /**
+     * @param int $userId Person whose profile is exported
+     * @param DataExportWriter $writer Archive serialization boundary
+     * @throws HilosException When the record cannot be exported
+     */
+    protected function applyAccountExport(int $userId, DataExportWriter $writer): void
+    {
+        $writer->section('file-gallery-manager', [
+            'profile' => [
+                'name' => isset(Hilos::$db->users[$userId]) ? Hilos::$db->users[$userId]->name : null,
+            ],
+        ]);
+    }
+}

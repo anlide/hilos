@@ -66,6 +66,7 @@ final class E2eFullPointingTest extends TestCase
         'concert-tickets',
         'solar-system-model',
         'roblox-game-server',
+        'file-gallery-manager',
     ];
 
     /**

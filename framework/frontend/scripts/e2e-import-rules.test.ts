@@ -16,6 +16,7 @@ const demos = [
   'chat',
   'concert-tickets',
   'ecommerce-shop',
+  'file-gallery-manager',
   'online-testing',
   'pmd',
   'polls',

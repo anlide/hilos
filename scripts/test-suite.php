@@ -117,6 +117,7 @@ $demos = [
     'preferans' => ['check' => 15, 'php' => 15, 'e2e' => 360],
     'concert-tickets' => ['check' => 15, 'php' => 20, 'e2e' => 420],
     'solar-system-model' => ['check' => 9, 'php' => 15, 'e2e' => 480],
+    'file-gallery-manager' => ['check' => 9, 'php' => 15, 'e2e' => 420],
 ];
 
 $steps = [

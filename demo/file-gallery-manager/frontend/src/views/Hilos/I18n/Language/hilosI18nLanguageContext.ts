@@ -1,0 +1,10 @@
+import { type HilosI18nLanguageContext } from '@hilos/core/admin/i18n'
+import { actions, connection } from '../../../../bootstrap/connection.js'
+import { scopes } from '../../../../bootstrap/session.js'
+
+/** This project's binding for the framework language pages. */
+export const hilosI18nLanguageContext: HilosI18nLanguageContext = {
+  connection,
+  scopes,
+  actions,
+}

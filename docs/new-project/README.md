@@ -293,8 +293,8 @@ registry of taken host ports:
 | roblox-game-server cluster (not in the code yet — HIL-2029) | — | — | — | — | — | 10.225 |
 | solar-system-model local | 33077 | 8210/8211/8212 | 8220 | https 8216 | 5181 | 10.206 |
 | solar-system-model test | 33078 | 8213/8214/8215 | — | http 8217 / https 8218 | — | 10.216 |
-| file-gallery-manager local (not in the code yet — HIL-2019) | 33079 | 8230/8231/8232 | 8240 | https 8236 | 5182 | 10.207 |
-| file-gallery-manager test (not in the code yet — HIL-2019) | 33080 | 8233/8234/8235 | — | http 8237 / https 8238 | — | 10.217 |
+| file-gallery-manager local | 33079 | 8230/8231/8232 | 8240 | https 8236 | 5182 | 10.207 |
+| file-gallery-manager test | 33080 | 8233/8234/8235 | — | http 8237 / https 8238 | — | 10.217 |
 | file-gallery-manager cluster (not in the code yet — HIL-2032) | — | — | — | — | — | 10.227 |
 | preferans local | 33081 | 8250/8251/8252 | 8260 | https 8256 | 5183 | 10.208 |
 | preferans test | 33082 | 8253/8254/8255 | — | http 8257 / https 8258 | — | 10.218 |

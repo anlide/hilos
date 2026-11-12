@@ -1,0 +1,10 @@
+import { type HilosI18nCountryContext } from '@hilos/core/admin/i18n'
+import { actions, connection } from '../../../../bootstrap/connection.js'
+import { scopes } from '../../../../bootstrap/session.js'
+
+/** This project's binding for the framework country pages. */
+export const hilosI18nCountryContext: HilosI18nCountryContext = {
+  connection,
+  scopes,
+  actions,
+}

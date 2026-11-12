@@ -250,8 +250,9 @@ to keep each action and its visible outcome readable.
 A new entity or an independent behavioral boundary can justify a new scenario;
 a ticket name or an individual CRUD command cannot. Putting one test per
 action under a shared `describe` does not make an entity journey. The language
-and country lifecycle tests in `demo/tasks/tests/e2e/tests/i18n-language.spec.ts`
-and `i18n-country.spec.ts` show one test-scoped fixture and administrator across
+and country lifecycle tests in
+`demo/file-gallery-manager/tests/e2e/tests/i18n-language.spec.ts` and
+`i18n-country.spec.ts` show one test-scoped fixture and administrator across
 named steps. Their independent live, identity and multi-tab scenarios remain
 separate tests. No test depends on a previous test completing successfully.
 
@@ -545,8 +546,8 @@ additions before execution, rather than freezing their file list today.
 |---|---|---|
 | `pmd` / Vue | **Table geometry:** `pmd/table-geometry` (moved from chat in HIL-2016 slice 13). **Account/profile/security:** `pmd/{profile,profile-data,profile-time-zone,profile-session-time-zone,profile-photo}` (moved from chat in HIL-2016 slice 9); `pmd/{rename-moderation,account-deletion,account-merge,second-factor-mail}` (moved from chat in slice 10); `pmd/security-center` (moved from chat in slice 11). **Analytics:** `pmd/{analytics,analytics-browser-session}` (moved from chat in slice 11). **People/settings/Appearance:** `pmd/{users,settings,appearance}` (moved from binance-btc-tracker in HIL-2016 slice 12). | PMD active; all sixteen specs moved in slices 9–13. |
 | `roblox-game-server` / Vue | **Change Log/Moderation/Communications:** `roblox-game-server/{change-log,change-log-table,change-log-tables,moderation,communications}` (moved from chat in HIL-2017). **Theme:** `roblox-game-server/{theme-account,theme-guest}` (moved from chat in HIL-2017). **Daemon/Backup/Logs/maintenance:** `roblox-game-server/{daemon,backup,backup-reopen,logs,logs-rotation,maintenance-restore,maintenance-words}` (moved from binance-btc-tracker in HIL-2017). | Roblox Game Server active; all fourteen specs moved in HIL-2017. |
-| `solar-system-model` / React | **Account/profile:** `solar-system-model/{profile,profile-data,profile-time-zone,profile-photo,account-deletion}` (moved from tasks). **Theme/Analytics:** `solar-system-model/{theme-account,theme-guest,analytics,analytics-browser-session}` (moved from tasks). **Table geometry:** `solar-system-model/table-geometry` — the entire independent Geometry area split out of `ecommerce-shop/users`, with its React frontend fixture; the Users scenarios, F-001 included, stay in `ecommerce-shop/users` for the `file-gallery-manager` row. | Solar active; all ten specs moved. |
-| `file-gallery-manager` / React | **i18n lifecycle:** `tasks/{i18n-country-names,i18n-country,i18n-language-names,i18n-language,i18n-locale,i18n-overview}`. **Daemon/Change Log/Communications:** `tasks/{daemon,change-log,change-log-table,change-log-tables,communications}`. **Users:** the entire Users remainder of `ecommerce-shop/users` after Geometry is separated, including F-001. | (not in the code yet — HIL-2019) |
+| `solar-system-model` / React | **Account/profile:** `solar-system-model/{profile,profile-data,profile-time-zone,profile-photo,account-deletion}` (moved from tasks). **Theme/Analytics:** `solar-system-model/{theme-account,theme-guest,analytics,analytics-browser-session}` (moved from tasks). **Table geometry:** `solar-system-model/table-geometry` — the entire independent Geometry area split out of `ecommerce-shop/users`, with its React frontend fixture; the Users scenarios, F-001 included, moved on whole to `file-gallery-manager/users`. | Solar active; all ten specs moved. |
+| `file-gallery-manager` / React | **i18n lifecycle:** `file-gallery-manager/{i18n-country-names,i18n-country,i18n-language-names,i18n-language,i18n-locale,i18n-overview}` (moved from tasks). **Daemon/Change Log/Communications:** `file-gallery-manager/{daemon,change-log,change-log-table,change-log-tables,communications}` (moved from tasks). **Users:** `file-gallery-manager/users` — the entire Users remainder of `ecommerce-shop/users` after Geometry was separated, including F-001 (moved from ecommerce-shop). | Gallery active; all twelve specs moved. |
 | `preferans` / Angular | **i18n lifecycle:** `preferans/{i18n-country-names,i18n-country,i18n-language-names,i18n-language,i18n-locale,i18n-overview}`. **Theme/Appearance:** `preferans/{theme-account,theme-guest,appearance}`. **Analytics:** `preferans/{analytics,analytics-browser-session}`. | Active; transferred from polls (HIL-2020) |
 | `concert-tickets` / Angular | **Daemon/Change Log:** `concert-tickets/{daemon,change-log,change-log-table,change-log-tables}`. **Profile/account deletion:** `concert-tickets/{profile,profile-data,profile-time-zone,profile-photo,account-deletion}`. | Active; transferred from polls (HIL-2021) |
 
@@ -556,8 +557,9 @@ Geometry and Users were independent areas sharing one file, not a license to
 divide arbitrary assertions. Geometry now lives in
 [`table-geometry.spec.ts`](../../../demo/solar-system-model/tests/e2e/tests/table-geometry.spec.ts)
 of the Solar System Model, and
-[`users.spec.ts`](../../../demo/ecommerce-shop/tests/e2e/tests/users.spec.ts)
-of the shop keeps only Users. Geometry's fixture moves with its consumer.
+the Users remainder of the shop moved whole to
+[`users.spec.ts`](../../../demo/file-gallery-manager/tests/e2e/tests/users.spec.ts)
+of File Gallery Manager. Geometry's fixture moves with its consumer.
 The existing examples are
 [`TableGeometryFixture.vue`](../../../demo/pmd/frontend/tests/tableGeometry/TableGeometryFixture.vue)
 and
@@ -641,7 +643,7 @@ polls (Angular) → online-testing (Angular).
 | Cluster browser — Analytics and Moderation across all three masters | online-testing: tests/e2e/cluster/live/analytics.spec.ts, tests/e2e/cluster/live/moderation.spec.ts, playwright.cluster.config.ts | online-testing | HIL-1423, HIL-1639 |
 | Tables | binance-btc-tracker: table-lag, table-refusal | binance-btc-tracker | HIL-1223 |
 | Notifications and communications | binance-btc-tracker: notifications, communications | binance-btc-tracker | HIL-1224 |
-| The operations half of tasks | ecommerce-shop: users, settings, notifications, protected-mode, maintenance, backup-reopen | ecommerce-shop | HIL-1225 |
+| The operations half of tasks | ecommerce-shop: settings, notifications, protected-mode, maintenance, backup-reopen; file-gallery-manager: users | ecommerce-shop, file-gallery-manager | HIL-1225 |
 | The operations half of polls | online-testing: users, settings, notifications, protected-mode, maintenance, logs | online-testing | HIL-1226 |
 | Sign-in on the server — third-party providers and their failures, codes over Telegram, SMS and phone, sign-in by a code and by a link, sign-up in several tabs of one browser | tasks: auth, oauth, phone-codes, admin-view-mode (the sign-in methods viewer case) | tasks | HIL-1324 |
 | Step-up, session rotation, passkey | tasks: step-up, session-rotation, passkey | tasks | HIL-1324 |
@@ -649,15 +651,15 @@ polls (Angular) → online-testing (Angular).
 | Second factor | polls: second-factor | polls | HIL-1325 |
 | Legal | polls: legal-admin, legal-reconsent, legal-terms, legal-consent, legal-agreements | polls | HIL-1325 |
 | Data and privacy | polls: data-export, privacy-erase, impersonation-settings | polls | HIL-1325 |
-| Languages and countries — each kit | the 25 i18n-* areas across binance-btc-tracker, tasks, polls and preferans; Preferans carries the six transferred lifecycle specs | binance-btc-tracker (Vue), tasks (React), polls and preferans (Angular) | HIL-1504 |
+| Languages and countries — each kit | the 25 i18n-* areas across binance-btc-tracker, file-gallery-manager, polls and preferans; Preferans and File Gallery Manager carry the six transferred lifecycle specs | binance-btc-tracker (Vue), file-gallery-manager (React), polls and preferans (Angular) | HIL-1504 |
 
 tasks switched on Ways to sign in (`/profile/sign-in`) to carry them (HIL-1324);
 polls switched on Ways to sign in, Sessions and Agreements of the profile, and its
 Terms gained a substantial and an editorial revision, to carry them (HIL-1325).
 
 The current Daemon screen specs live where their views are mounted:
-binance-btc-tracker (Vue), tasks (React) and concert-tickets (Angular, moved from
-polls in HIL-2021). Ecommerce-shop also
+binance-btc-tracker (Vue), file-gallery-manager (React) and concert-tickets
+(Angular, moved from polls in HIL-2021). Ecommerce-shop also
 activates the feature without `LOGS` and carries a standalone smoke of its own.
 Online-testing has the backend feature without a UI. Chat checks the section's accessibility
 in its existing `tests/e2e/tests/a11y.spec.ts`. The matrix above moves the three
@@ -771,15 +773,15 @@ never received.
 The full production build/head sweep already checks every emitted entrypoint.
 
 The current shared Change Log receipt and history scenarios live in
-roblox-game-server (Vue), tasks (React) and concert-tickets (Angular, moved from polls
-in HIL-2021).
+roblox-game-server (Vue), file-gallery-manager (React) and concert-tickets
+(Angular, moved from polls in HIL-2021).
 They cover an administrator blocking a person from
 that person's card: the column's value is journaled in every demo, and the
 signed-in person is the author (a registration receipt has no author because it
 comes from a guest). roblox-game-server additionally covers the adopted Vue
 section head, overview tiles, four section links with Back, and direct Feed and
-Noisy columns entry through F5. Tasks checks the React section head through the
-shared owner-page checks. Concert Tickets checks the Angular section and table heads; its
+Noisy columns entry through F5. File Gallery Manager checks the React section
+head through the shared owner-page checks. Concert Tickets checks the Angular section and table heads; its
 table paths cover direct entry, reload/F5, Back and Forward, with receipt/history
 links, record-filter clearing, the old-address refusal and the Noisy page.
 Only chat carries `change-log-bot.spec.ts` (`spec-owner: demo`): a bot's
@@ -791,9 +793,10 @@ binance-btc-tracker additionally carries the separate cluster proof in
 reads identically through every master (HIL-1465).
 
 The current languages and countries coverage spans the same 25
-`i18n-*.spec.ts` areas across binance-btc-tracker (Vue), tasks (React), polls
-(Angular) and preferans (Angular). Preferans carries the six lifecycle specs
-transferred from polls; the other i18n areas stay with their current owners, and
+`i18n-*.spec.ts` areas across binance-btc-tracker (Vue), file-gallery-manager
+(React), polls (Angular) and preferans (Angular). Preferans carries the six
+lifecycle specs transferred from polls and File Gallery Manager the six
+transferred from tasks; the other i18n areas stay with their current owners, and
 Vue's i18n stays in binance-btc-tracker. Their test titles match but for the
 country head scenarios of `i18n-country-card` and `i18n-country-name-write`,
 which each kit splits its own way. The Vue kit moved from chat to
@@ -1786,9 +1789,10 @@ socket opens.
 live in `framework/frontend/e2e/i18nOverview.ts` and are exported from
 `framework/frontend/e2e/index.ts`. The first compares both tiles with one
 wire summary; the second collects summaries from the `page_response` of the
-`hilos_i18n` root. Binance's, Tasks' and Preferans' overview specs call them:
+`hilos_i18n` root. The overview specs of Binance, File Gallery Manager and
+Preferans call them:
 `demo/binance-btc-tracker/tests/e2e/tests/i18n-overview.spec.ts`,
-`demo/tasks/tests/e2e/tests/i18n-overview.spec.ts` and
+`demo/file-gallery-manager/tests/e2e/tests/i18n-overview.spec.ts` and
 `demo/preferans/tests/e2e/tests/i18n-overview.spec.ts`.
 
 ### The Change Log section — names and checks
