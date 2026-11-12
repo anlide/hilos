@@ -27,6 +27,7 @@ use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
@@ -70,6 +71,8 @@ use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRenewDoneSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRenewSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
 use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
@@ -151,9 +154,10 @@ use Throwable;
  * or a code, a device key or a second-factor code, or credited to a refused sign-in of a blocked
  * person ({@see StepUpConfirmations}); the trust when the second factor goes, when the password is
  * changed or recovered, when the person is blocked and when the person's sessions are ended. It
- * applies the stored trust restrictions to the person's trusts on a service frame from any sender
- * (HIL-1900) and by itself at every start (HIL-1901), a folded account included: that one answers
- * and stops again. It
+ * extends a standing trust on the sessions library's frame when the second factor is confirmed
+ * again (HIL-1907). It applies the stored trust restrictions to the person's trusts on a service
+ * frame from any sender (HIL-1900) and by itself at every start (HIL-1901), a folded account
+ * included: that one answers and stops again. It
  * writes the person's notification edits too (HIL-1408): one notification marked read or all of
  * them, a channel turned on or off, this browser's push subscription dropped, a push device
  * removed. It cancels a standing request to delete the account and sets or removes the profile
@@ -294,6 +298,10 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE => [
             AgentSignalConfigKey::INDEX_FIELD => UserBrowserTrustRevokeSignalData::userId,
             AgentSignalConfigKey::DTO => UserBrowserTrustRevokeSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW => [
+            AgentSignalConfigKey::INDEX_FIELD => UserBrowserTrustRenewSignalData::userId,
+            AgentSignalConfigKey::DTO => UserBrowserTrustRenewSignalData::class,
         ],
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT => [
             AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorTrustRestrictSignalData::userId,
@@ -468,7 +476,8 @@ abstract class AbstractUserAgent extends AbstractAgent
      * it: the browser action, the sweep or the operator's command waits on the answer (HIL-1406).
      * A confirmation recorded and a trust taken away are answered as a flag is (HIL-1407): the
      * browser action waits on a confirmation, and the sessions library reads a refusal of a credit or
-     * of a trust into its log. A notification marked read, a channel turned on or off, and a push
+     * of a trust into its log. A standing trust extended is answered the same way, with whether the
+     * pair stood (HIL-1907). A notification marked read, a channel turned on or off, and a push
      * subscription dropped or a device removed are answered the same way (HIL-1408): the notifications
      * library waits on the answer, and the tabs hear a read or a channel change only after the write.
      * A push endpoint another person subscribes is released and answered to that library too, by a
@@ -489,6 +498,7 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws AgentException When the frame names another person
      * @throws InvalidArgumentException When the answer frame cannot be named or queued
+     * @throws InvalidFormatException When a renewal answer is both renewed and refused
      * @throws DatabaseException When the folded-account lookup fails
      * @throws LogicException When the folded-account collection cannot be read
      */
@@ -890,6 +900,21 @@ abstract class AbstractUserAgent extends AbstractAgent
                     $trustRevoke,
                     $this->flagRefusal(fn () => $this->revokeBrowserTrust($trustRevoke->sessionId, $trustRevoke->others), 'Browser trust revoke'),
                 ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW:
+                $trustRenew = $data->data;
+                if (!$trustRenew instanceof UserBrowserTrustRenewSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserBrowserTrustRenewSignalData::class, $trustRenew);
+                }
+
+                $this->refuseAnotherPerson($trustRenew->userId, $name);
+                $renewed = false;
+                $refusal = $this->flagRefusal(function () use ($trustRenew, &$renewed): void {
+                    $renewed = $this->renewBrowserTrust($trustRenew);
+                }, 'Browser trust renewal');
+                $this->sendToAgent($trustRenew->replySignal, UserBrowserTrustRenewDoneSignalData::to($trustRenew, $renewed, $refusal));
 
                 return;
 
@@ -1530,6 +1555,23 @@ abstract class AbstractUserAgent extends AbstractAgent
         }
 
         Hilos::$db->secondFactorTrusts->actions->deleteForPair($sessionId, $this->userId);
+    }
+
+    /**
+     * Extends the standing trust of a browser the sessions library found at a confirmation (HIL-1907).
+     *
+     * The pair takes the end and the grant the frame names - the moment the second factor was
+     * confirmed, not the moment of this write - and the stored restrictions are applied to the
+     * person in the same transaction. A pair granted later already is left as it is; a missing pair
+     * is not created, the library creates it. Not final, for the reason {@see self::renamePerson()} gives.
+     *
+     * @param UserBrowserTrustRenewSignalData $ask The library's request: the browser, the new end and the grant
+     * @return bool Whether the pair stands - extended now or granted later already; false when there is none
+     * @throws HilosException On truth-source, lookup, transaction or write failure while extending the trust
+     */
+    protected function renewBrowserTrust(UserBrowserTrustRenewSignalData $ask): bool
+    {
+        return Hilos::$db->secondFactorTrusts->actions->renew($ask->sessionId, $this->userId, $ask->trustedUntil, $ask->grantedAt);
     }
 
     /**

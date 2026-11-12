@@ -9,6 +9,8 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\DatabaseException;
+use Hilos\Users\DTO\UserBrowserTrustRenewDoneSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRenewSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
@@ -25,7 +27,8 @@ use PHPUnit\Framework\TestCase;
  * The frames that carry a person's step-up confirmations and browser trust to their agent survive the wire whole (HIL-1407).
  *
  * A confirmed operation and the browser it is confirmed in are named together or not at all, and
- * one browser losing its trust is named by a session row.
+ * one browser losing its trust is named by a session row. A trust extended names its browser and
+ * a grant before its end, and an answer that it was extended carries no refusal (HIL-1907).
  */
 final class UserStepUpTrustSignalDataTest extends TestCase
 {
@@ -119,6 +122,75 @@ final class UserStepUpTrustSignalDataTest extends TestCase
         $this->expectException(InvalidFormatException::class);
 
         new UserBrowserTrustRevokeSignalData(7, 0, false, HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE_DONE);
+    }
+
+    public function testATrustRenewAndItsAnswersRoundTrip(): void
+    {
+        $request = new UserBrowserTrustRenewSignalData(
+            userId: 7,
+            sessionId: 41,
+            trustedUntil: 1_800_000_000_000,
+            grantedAt: 1_790_000_000_000,
+            replySignal: HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW_DONE,
+        );
+        $answers = [
+            UserBrowserTrustRenewDoneSignalData::to($request, true, null),
+            UserBrowserTrustRenewDoneSignalData::to($request, false, null),
+            UserBrowserTrustRenewDoneSignalData::to($request, true, ActionRefusal::said('This account was merged into another one')),
+        ];
+
+        foreach ($answers as $done) {
+            $restored = UserBrowserTrustRenewDoneSignalData::fromArray(self::overTheWire($done->toArray()));
+
+            self::assertEquals($done, $restored);
+            self::assertSame(1_800_000_000_000, $restored->request->trustedUntil);
+            self::assertSame(1_790_000_000_000, $restored->request->grantedAt);
+        }
+        self::assertTrue($answers[0]->renewed);
+        self::assertFalse($answers[1]->renewed);
+        self::assertNull($answers[1]->error);
+        self::assertFalse($answers[2]->renewed);
+        self::assertSame('This account was merged into another one', $answers[2]->error);
+    }
+
+    public function testARenewNamesABrowserAndAGrantBeforeItsEnd(): void
+    {
+        $broken = [
+            'no browser' => [0, 1_800_000_000_000, 1_790_000_000_000],
+            'no grant' => [41, 1_800_000_000_000, 0],
+            'an end at the grant' => [41, 1_790_000_000_000, 1_790_000_000_000],
+            'an end before the grant' => [41, 1_780_000_000_000, 1_790_000_000_000],
+        ];
+
+        foreach ($broken as $case => [$sessionId, $trustedUntil, $grantedAt]) {
+            try {
+                new UserBrowserTrustRenewSignalData(
+                    7,
+                    $sessionId,
+                    $trustedUntil,
+                    $grantedAt,
+                    HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW_DONE,
+                );
+                self::fail('A renewal with ' . $case . ' is refused');
+            } catch (InvalidFormatException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
+    public function testARenewedAnswerCarriesNoRefusal(): void
+    {
+        $request = new UserBrowserTrustRenewSignalData(
+            7,
+            41,
+            1_800_000_000_000,
+            1_790_000_000_000,
+            HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW_DONE,
+        );
+
+        $this->expectException(InvalidFormatException::class);
+
+        new UserBrowserTrustRenewDoneSignalData(request: $request, renewed: true, error: 'x', errorType: null, errorDetail: null);
     }
 
     public function testAFrameForNoPersonIsRefused(): void

@@ -51,6 +51,7 @@ final class UserAgent extends AbstractUserAgent
      * @throws InvalidAgentSignalPayloadException When the payload differs from its declaration
      * @throws AgentException When the frame names another person or its unlink answer cannot be built
      * @throws InvalidArgumentException When an inherited answer cannot be named or queued
+     * @throws InvalidFormatException When an inherited renewal answer is both renewed and refused
      * @throws DatabaseException When the folded-account lookup fails
      * @throws LogicException When the folded-account collection cannot be read
      */

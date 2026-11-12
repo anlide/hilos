@@ -599,7 +599,7 @@ final class Hilos extends HilosFacade
         HilosDbContext::secondFactorBackupCodes => ['HIL-1952', 'HIL-1999'],
         HilosDbContext::secondFactorResets => ['HIL-1952', 'HIL-1999'],
         HilosDbContext::secondFactorSettings => ['HIL-1952', 'HIL-1999'],
-        HilosDbContext::secondFactorTrusts => ['HIL-1907', 'HIL-1908', 'HIL-1909', 'HIL-1952', 'HIL-1999'],
+        HilosDbContext::secondFactorTrusts => ['HIL-1908', 'HIL-1909', 'HIL-1952', 'HIL-1999'],
         HilosDbContext::secondFactors => ['HIL-1952', 'HIL-1999'],
         HilosDbContext::stepUps => ['HIL-1952'],
         HilosDbContext::userPhotos => ['HIL-1952'],

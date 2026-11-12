@@ -50,6 +50,7 @@ use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserAdminCommandSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRenewSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
@@ -325,6 +326,7 @@ final class AbstractUserAgentTest extends TestCase
             HilosSignalConstants::HILOS_USER_STEP_UP_RECORD => UserStepUpRecordSignalData::class,
             HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT => UserStepUpCreditSignalData::class,
             HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE => UserBrowserTrustRevokeSignalData::class,
+            HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW => UserBrowserTrustRenewSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT => UserSecondFactorTrustRestrictSignalData::class,
             HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL => UserAccountDeletionCancelSignalData::class,
             HilosSignalConstants::HILOS_USER_PHOTO_PUT => UserPhotoPutSignalData::class,

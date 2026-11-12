@@ -31,6 +31,8 @@ use Hilos\HilosException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRenewDoneSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRenewSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
 use Hilos\Users\DTO\UserStepUpCreditDoneSignalData;
@@ -47,6 +49,10 @@ use Hilos\Utils\Helpers\TimeHelper;
  * away either. The same writes handed to the person's agent go through, and the agent answers
  * every frame - a refused one included. A frame naming another person is refused rather than
  * written, and an account folded into another one is credited nothing.
+ *
+ * A trust the sessions library finds standing at a confirmation is extended by the agent too
+ * (HIL-1907), to the end and the grant the frame names; the agent creates no missing pair and says
+ * so, and the users library extending one itself is refused by the truth source.
  *
  * The sessions library keeps its claim over every browser's trust whole - it creates one on the way
  * in and applies the days an administrator sets to every person at once - so the truth source does
@@ -310,20 +316,117 @@ final class PersonStepUpTrustEditsIntegrationTest extends HilosSessionIntegratio
     }
 
     /**
+     * A pair the holder found standing takes the end and the grant the frame names; the moment it was
+     * first written stays.
+     *
+     * @throws HilosException When a fixture row cannot be written or a frame fails
+     */
+    public function testThePersonsAgentRenewsATrustAndAnswers(): void
+    {
+        $userId = $this->seedSignedInPerson();
+        $sessionId = $this->trust(self::SESSION_TOKEN, $userId);
+        [$createdAt, $grantedAt] = self::trustRow($sessionId, $userId);
+        $confirmedAt = $grantedAt + TimeConstants::MS_PER_SECOND;
+        $until = $confirmedAt + self::TRUST_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
+        $ask = $this->renew($userId, $sessionId, $until, $confirmedAt);
+
+        $answer = $this->carry($this->sessions, HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW, $ask);
+
+        self::assertInstanceOf(UserBrowserTrustRenewDoneSignalData::class, $answer);
+        self::assertSame($ask->toArray(), $answer->request->toArray());
+        self::assertTrue($answer->renewed);
+        self::assertNull($answer->error);
+        self::assertSame([$createdAt, $confirmedAt, $until], self::trustRow($sessionId, $userId));
+    }
+
+    /**
+     * @throws HilosException When a fixture row cannot be written or a frame fails
+     */
+    public function testARenewalOfAMissingPairWritesNothingAndSaysSo(): void
+    {
+        $userId = $this->seedSignedInPerson();
+        $sessionId = (int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->id;
+        $confirmedAt = TimeHelper::nowMs();
+        $until = $confirmedAt + self::TRUST_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
+
+        $answer = $this->carry(
+            $this->sessions,
+            HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW,
+            $this->renew($userId, $sessionId, $until, $confirmedAt),
+        );
+
+        self::assertInstanceOf(UserBrowserTrustRenewDoneSignalData::class, $answer);
+        self::assertFalse($answer->renewed);
+        self::assertNull($answer->error);
+        self::assertSame(0, (int)Database::sql(
+            'SELECT COUNT(*) AS `trusts` FROM `hilos_second_factor_trust` WHERE `user_id` = ?',
+            [$userId],
+        )->row()['trusts']);
+    }
+
+    /**
+     * @throws HilosException When a fixture row cannot be written
+     */
+    public function testARenewalForAnotherPersonIsRefusedRatherThanWritten(): void
+    {
+        $userId = $this->seedSignedInPerson();
+        $otherId = self::seedPerson();
+        $sessionId = $this->trust(self::SESSION_TOKEN, $otherId);
+        $standing = self::trustRow($sessionId, $otherId);
+        $confirmedAt = $standing[1] + TimeConstants::MS_PER_SECOND;
+        $until = $confirmedAt + self::TRUST_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
+
+        $this->expectException(AgentException::class);
+        try {
+            $this->asPerson($userId, fn ($agent) => $agent->onSignalAgent(
+                new AgentSignalData(data: $this->renew($otherId, $sessionId, $until, $confirmedAt)),
+                '',
+                HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW,
+            ));
+        } finally {
+            self::assertSame($standing, self::trustRow($sessionId, $otherId));
+        }
+    }
+
+    /**
+     * @throws HilosException When a fixture row cannot be written or read
+     */
+    public function testTheUsersLibraryRenewingATrustItselfIsRefused(): void
+    {
+        $userId = $this->seedSignedInPerson();
+        $sessionId = $this->trust(self::SESSION_TOKEN, $userId);
+        $standing = self::trustRow($sessionId, $userId);
+        $confirmedAt = $standing[1] + TimeConstants::MS_PER_SECOND;
+        $until = $confirmedAt + self::TRUST_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
+
+        $this->expectException(WriteNotAllowedException::class);
+        try {
+            ExecutionContext::run(
+                new ExecutionFrame(agentId: $this->users->getId()),
+                static fn () => Hilos::$db->secondFactorTrusts->actions->renew($sessionId, $userId, $until, $confirmedAt),
+            );
+        } finally {
+            self::assertSame($standing, self::trustRow($sessionId, $userId));
+        }
+    }
+
+    /**
      * Sends one frame the way a library does, hands it to the person's agent and takes its answer.
      *
      * Every other signal the agent queued is kept in {@see $carried}, by name.
      *
      * @param AbstractAgent $sender Library the frame leaves from
      * @param string $name Agent-signal name the frame travels under
-     * @param UserStepUpRecordSignalData|UserStepUpCreditSignalData|UserBrowserTrustRevokeSignalData|UserBlockWriteSignalData $frame The frame
+     * @param UserStepUpRecordSignalData|UserStepUpCreditSignalData|UserBrowserTrustRevokeSignalData|UserBrowserTrustRenewSignalData
+     *     |UserBlockWriteSignalData $frame The frame
      * @return mixed Payload of the answer, under the reply name the frame carries
      * @throws HilosException When the frame cannot be queued or the agent fails
      */
     private function carry(
         AbstractAgent $sender,
         string $name,
-        UserStepUpRecordSignalData|UserStepUpCreditSignalData|UserBrowserTrustRevokeSignalData|UserBlockWriteSignalData $frame,
+        UserStepUpRecordSignalData|UserStepUpCreditSignalData|UserBrowserTrustRevokeSignalData|UserBrowserTrustRenewSignalData
+            |UserBlockWriteSignalData $frame,
     ): mixed {
         // What the fixtures announced on the way in is nobody's business here.
         while (Hilos::$sr->getNextQueuedSignal() !== null) {
@@ -387,6 +490,24 @@ final class PersonStepUpTrustEditsIntegrationTest extends HilosSessionIntegratio
     }
 
     /**
+     * @param int $userId Person the browser is trusted for
+     * @param int $sessionId Session row of the browser
+     * @param int $until Moment the extended trust runs out (epoch milliseconds)
+     * @param int $confirmedAt Moment the second factor was confirmed (epoch milliseconds)
+     * @return UserBrowserTrustRenewSignalData The ask the sessions library sends when it finds the pair standing
+     */
+    private function renew(int $userId, int $sessionId, int $until, int $confirmedAt): UserBrowserTrustRenewSignalData
+    {
+        return new UserBrowserTrustRenewSignalData(
+            userId: $userId,
+            sessionId: $sessionId,
+            trustedUntil: $until,
+            grantedAt: $confirmedAt,
+            replySignal: HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW_DONE,
+        );
+    }
+
+    /**
      * Trusts the browser of one session for the person, the way a sign-in let through does.
      *
      * @param string $sessionToken Session of the browser
@@ -403,11 +524,30 @@ final class PersonStepUpTrustEditsIntegrationTest extends HilosSessionIntegratio
                 $sessionId,
                 $userId,
                 TimeHelper::nowMs() + self::TRUST_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+                TimeHelper::nowMs(),
             ),
         );
         self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, $userId, self::TRUST_DAYS));
 
         return $sessionId;
+    }
+
+    /**
+     * @param int $sessionId Session row of the browser
+     * @param int $userId Person the browser is trusted for
+     * @return array{int, int, int} First written, last granted and end of the pair's stored trust
+     * @throws DatabaseException When the read fails
+     */
+    private static function trustRow(int $sessionId, int $userId): array
+    {
+        $row = Database::sql(
+            'SELECT `created_at`, `granted_at`, `trusted_until` FROM `hilos_second_factor_trust`'
+                . ' WHERE `session_id` = ? AND `user_id` = ?',
+            [$sessionId, $userId],
+        )->row();
+        self::assertNotNull($row, 'The pair has a stored trust');
+
+        return [(int)$row['created_at'], (int)$row['granted_at'], (int)$row['trusted_until']];
     }
 
     /**

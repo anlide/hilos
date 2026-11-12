@@ -754,7 +754,7 @@ final class SecondFactorMomentStorageIntegrationTest extends FrameworkIntegratio
 
             return;
         }
-        Hilos::$db->secondFactorTrusts->actions->trust(1, self::USER_ID, $supplied);
+        Hilos::$db->secondFactorTrusts->actions->trust(1, self::USER_ID, $supplied, TimeHelper::nowMs());
     }
 
     /**

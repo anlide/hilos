@@ -160,7 +160,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'secondFactorBackupCodes' => ['HIL-1952', 'HIL-1999'],
             'secondFactorResets' => ['HIL-1952', 'HIL-1999'],
             'secondFactorSettings' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorTrusts' => ['HIL-1907', 'HIL-1908', 'HIL-1909', 'HIL-1952', 'HIL-1999'],
+            'secondFactorTrusts' => ['HIL-1908', 'HIL-1909', 'HIL-1952', 'HIL-1999'],
             'stepUps' => ['HIL-1952'],
             'accountDeletions' => ['HIL-1952'],
             'legalAcceptances' => ['HIL-1952'],
@@ -285,14 +285,12 @@ final class DbWriterTransitionCatalogTest extends TestCase
         CatalogRetiredPushRenewalHilos::validateTopology();
     }
 
-    /** Renewal and policy paths share Update; terminal deletion keeps Remove after ordinary work. */
+    /** The term's path holds Update; terminal deletion keeps Remove after ordinary work. */
     public function testTrustSharedUsesAndTerminalRights(): void
     {
         $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['secondFactorTrusts']);
         self::assertSame([
-            '', 'HIL-1907,HIL-1908,HIL-1909,HIL-1952,HIL-1999', 'HIL-1907,HIL-1908,HIL-1952,HIL-1999',
-            'HIL-1907,HIL-1909,HIL-1952,HIL-1999', 'HIL-1907,HIL-1952,HIL-1999',
-            'HIL-1908,HIL-1909,HIL-1952,HIL-1999', 'HIL-1908,HIL-1952,HIL-1999',
+            '', 'HIL-1908,HIL-1909,HIL-1952,HIL-1999', 'HIL-1908,HIL-1952,HIL-1999',
             'HIL-1909,HIL-1952,HIL-1999', 'HIL-1952,HIL-1999', 'HIL-1999',
         ], array_keys($states));
         foreach ($states as $pending => $state) {
@@ -565,10 +563,6 @@ final class DbWriterTransitionCatalogTest extends TestCase
                 '' => ['person:set:add,remove,update'],
             ],
             'secondFactorTrusts' => [
-                'HIL-1907,HIL-1908,HIL-1909,HIL-1952,HIL-1999' => ['person:set:remove,update', 'holder:whole:add,remove,update'],
-                'HIL-1907,HIL-1908,HIL-1952,HIL-1999' => ['person:set:remove,update', 'holder:whole:add,remove,update'],
-                'HIL-1907,HIL-1909,HIL-1952,HIL-1999' => ['person:set:remove,update', 'holder:whole:add,remove,update'],
-                'HIL-1907,HIL-1952,HIL-1999' => ['person:set:remove,update', 'holder:whole:add,remove,update'],
                 'HIL-1908,HIL-1909,HIL-1952,HIL-1999' => ['person:set:remove,update', 'holder:whole:add,remove,update'],
                 'HIL-1908,HIL-1952,HIL-1999' => ['person:set:remove,update', 'holder:whole:add,remove,update'],
                 'HIL-1909,HIL-1952,HIL-1999' => ['person:set:remove,update', 'holder:whole:add,remove'],

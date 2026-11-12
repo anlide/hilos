@@ -1699,6 +1699,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 // Sign-in's own frames (HIL-623): the users library waits for the throttle
                 // verdict, and the mail agent and the node-scoped throttle answer on their own
@@ -1732,6 +1733,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_STEP_UP_RECORD => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE => HilosAgentType::HILOS_USER,
+                HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_PHOTO_PUT => HilosAgentType::HILOS_USER,
@@ -2057,7 +2059,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             'secondFactorBackupCodes' => ['HIL-1952', 'HIL-1999'],
             'secondFactorResets' => ['HIL-1952', 'HIL-1999'],
             'secondFactorSettings' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorTrusts' => ['HIL-1907', 'HIL-1908', 'HIL-1909', 'HIL-1952', 'HIL-1999'],
+            'secondFactorTrusts' => ['HIL-1908', 'HIL-1909', 'HIL-1952', 'HIL-1999'],
             'secondFactors' => ['HIL-1952', 'HIL-1999'],
             'stepUps' => ['HIL-1952'],
             'userPhotos' => ['HIL-1952'],

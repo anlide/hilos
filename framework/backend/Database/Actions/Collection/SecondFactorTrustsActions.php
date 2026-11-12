@@ -8,6 +8,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\ExternalWriterException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Database;
@@ -25,7 +26,9 @@ use Throwable;
  *
  * Trusting a browser for a person, taking every trust of a person out, and applying the stored
  * trust restrictions to the trusts of one person (HIL-1900), on a request for one of them or at
- * the start of the person's agent (HIL-1901).
+ * the start of the person's agent (HIL-1901). The session holder creates a trust a pair has none
+ * of yet and leaves a standing one as it is; the person's agent extends a standing trust to the
+ * moment the second factor was confirmed again and applies the restrictions with it (HIL-1907).
  *
  * @extends DbActions<SecondFactorTrust, ObjectSecondFactorTrusts>
  * @property-read DbCollectionSecondFactorTrusts $collection
@@ -34,23 +37,61 @@ use Throwable;
 class SecondFactorTrustsActions extends DbActions
 {
     /**
-     * Trusts a browser for a person until a moment, writing the pair or moving its end.
+     * Trusts a browser for a person until a moment, when the pair has no trust yet (HIL-1907).
+     *
+     * A standing pair is left as it is and nothing is written ({@see ObjectSecondFactorTrusts::trust()}):
+     * the session holder that creates trusts on the way in asks the person's agent to extend it.
      *
      * @param int $sessionId Session row of the browser
      * @param int $userId Person the browser is trusted for
      * @param int $until Moment the trust runs out (epoch milliseconds)
+     * @param int $grantedAt Moment the second factor was confirmed with the trust asked for (epoch milliseconds)
+     * @return bool Whether the pair was written now; false when it stands already
      * @throws CreateNotAllowedException When the truth source rejects the insert
-     * @throws WriteNotAllowedException When the truth source rejects the update
+     * @throws ExternalWriterException When the mounted Entity declares an external database writer
      * @throws DatabaseException When the lookup or the write fails
      * @throws InvalidArgumentException When a query or the queued DB-sync signal is invalid
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws ObjectGetIdStringNotImplementedException If the inserted row has no primary key
      */
-    public function trust(int $sessionId, int $userId, int $until): void
+    public function trust(int $sessionId, int $userId, int $until, int $grantedAt): bool
     {
         $this->ensureCanCreateInSet((string)$userId);
 
-        $this->objectCollection->trust($sessionId, $userId, $until);
+        return $this->objectCollection->trust($sessionId, $userId, $until, $grantedAt);
+    }
+
+    /**
+     * Extends the standing trust of a browser for a person, and applies the stored restrictions to the person, in one transaction (HIL-1907).
+     *
+     * The person's agent extends the pair the session holder found standing at the confirmation
+     * ({@see ObjectSecondFactorTrusts::renew()}). While the pair stands, every stored restriction is
+     * applied to the person's trusts in the same transaction, so one saved at the confirmation or
+     * later cuts or takes out the extended pair at once ({@see applySavedRestrictions()}). With no
+     * pair nothing is written, and with nothing to cut or take out the application writes nothing.
+     *
+     * @param int $sessionId Session row of the browser
+     * @param int $userId Person the browser is trusted for
+     * @param int $until Moment the trust runs out (epoch milliseconds)
+     * @param int $grantedAt Moment the second factor was confirmed with the trust asked for (epoch milliseconds)
+     * @return bool Whether the pair stands - extended now or granted later already; false when there is none
+     * @throws WriteNotAllowedException When the truth source rejects an edit or a removal of the person's trusts
+     * @throws DatabaseException When a lookup or a write fails
+     * @throws HilosException When the restrictions, the transaction or a row write fails
+     */
+    public function renew(int $sessionId, int $userId, int $until, int $grantedAt): bool
+    {
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Update);
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);
+        $renewed = false;
+        $this->writeAtomically(function () use ($sessionId, $userId, $until, $grantedAt, &$renewed): void {
+            $renewed = $this->objectCollection->renew($sessionId, $userId, $until, $grantedAt);
+            if ($renewed) {
+                $this->objectCollection->applyRestrictions($userId);
+            }
+        });
+
+        return $renewed;
     }
 
     /**

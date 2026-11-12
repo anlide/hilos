@@ -79,6 +79,8 @@ use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRenewDoneSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRenewSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
 use Hilos\Users\DTO\UserSecondFactorTrustRestrictDoneSignalData;
@@ -356,12 +358,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * because the sign-in feature alone mounts their table.
      *
      * The browsers trusted to skip the second-factor step (HIL-494) are claimed outright too. A
-     * trust is keyed by the session row and written when a sign-in this library grants is let
+     * trust is keyed by the session row and created when a sign-in this library grants is let
      * through, because what a browser is let into is decided here; its days an administrator sets
      * are applied to every person's trusts at once, and the merge and the erasure move and remove
-     * them. Taking one person's trust away - the second factor switched off, the password changed
-     * or recovered, the person blocked, the person's sessions ended - is the person's agent's
-     * (HIL-1407); this library asks for the last of these by frame.
+     * them. A standing pair is not extended here: the person's agent extends it on this library's
+     * frame (HIL-1907), and the update stays in the claim for the days only (HIL-1908). Taking one
+     * person's trust away - the second factor switched off, the password changed or recovered, the
+     * person blocked, the person's sessions ended - is the person's agent's (HIL-1407); this
+     * library asks for the last of these by frame.
      *
      * The rest are borrowed for the account erasure and merge: set operations held by this library
      * in one transaction, a declared shape in docs/agents/architecture/instance-owners.md#operations-over-many-instances.
@@ -386,8 +390,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosDbContext::accountOperations => [TruthSourceOperation::Add, TruthSourceOperation::Update],
         HilosDbContext::accountOperationAssignments => [TruthSourceOperation::Add],
         // Created on the way in, capped or erased by the days an administrator sets for every person, moved by the merge
-        // and removed by the erasure: operations over many people. One person's trust is taken away by their agent (HIL-1407).
-        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
+        // and removed by the erasure: operations over many people. A standing pair is extended by the person's agent on
+        // this library's frame (HIL-1907); Update stays for the days (HIL-1908). One person's trust is taken away by their
+        // agent (HIL-1407). See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::secondFactorTrusts => TruthSourceOperation::ALL,
         // The loser's block in the merge transaction and the erased person's row:
         // set operations of this library. The admin flag and the block are written by the person's agent.
@@ -596,6 +601,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE => UserBlockWriteDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT_DONE => UserStepUpCreditDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE_DONE => UserBrowserTrustRevokeDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW_DONE => UserBrowserTrustRenewDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT_DONE => UserSecondFactorTrustRestrictDoneSignalData::class,
     ];
 
@@ -4173,7 +4179,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * more of that agent that are only logged when refused - a credit to a refused sign-in and a
      * trust taken from ended sessions (HIL-1407). One more of that agent answers a frame of the
      * trust restriction sweep, and the master's word about agents that are gone reaches the sweep
-     * too, so a person whose agent fell is not waited for (HIL-1901).
+     * too, so a person whose agent fell is not waited for (HIL-1901). The last of that agent
+     * answers a trust renewal: a refusal is logged, and a pair the agent no longer found is
+     * written again while the confirmation still holds (HIL-1907).
      *
      * The switch is the framework's rather than a project's because what each frame means
      * is: the users library ends a ceremony by saying what happened, and the order this
@@ -4446,6 +4454,21 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     $this->logAgentError(
                         "Browser trust revoke for #{$revoked->request->userId} refused: " . ($revoked->errorDetail ?? $revoked->error),
                     );
+                }
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW_DONE:
+                $renewal = $data->data;
+                if (!$renewal instanceof UserBrowserTrustRenewDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserBrowserTrustRenewDoneSignalData::class, $renewal);
+                }
+                if ($renewal->error !== null) {
+                    $this->logAgentError(
+                        "Browser trust renewal for #{$renewal->request->userId} refused: " . ($renewal->errorDetail ?? $renewal->error),
+                    );
+                } elseif (!$renewal->renewed) {
+                    $this->regrantTrust($renewal->request);
                 }
 
                 return;
@@ -8167,9 +8190,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Trusts a browser for a person after the second factor was shown on it (HIL-494).
      *
+     * The confirmation is the trust's grant, and the days the policy gives run from it. A pair the
+     * person has no trust for yet is written here; a standing one is extended by the person's agent
+     * ({@see grantTrust()}, HIL-1907).
+     *
      * @param int $sessionId Session row of the browser
      * @param int $userId Person who asked not to be asked again
-     * @throws HilosException On database or settings failure
+     * @throws HilosException On database or settings failure, or when the renewal cannot be asked for
+     * @throws InvalidArgumentException When the renewal frame cannot be named or queued
      */
     private function trustBrowser(int $sessionId, int $userId): void
     {
@@ -8178,11 +8206,80 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        Hilos::$db->secondFactorTrusts->actions->trust(
+        $grantedAt = TimeHelper::nowMs();
+        $this->grantTrust(
             $sessionId,
             $userId,
-            TimeHelper::nowMs() + $days * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+            $grantedAt + $days * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+            $grantedAt,
         );
+    }
+
+    /**
+     * Creates the trust of a browser for a person, or asks the person's agent to extend the standing one (HIL-1907).
+     *
+     * This library writes a pair only when the person has no trust for it yet. A standing pair -
+     * live, run out or cut by a restriction - is left as it is: the person's agent moves it to the
+     * confirmation in its own transaction, and nobody waits on that, because the sign-in was
+     * answered before. A person who can no longer be addressed is not asked, and the browser stays
+     * untrusted ({@see askPersonAgent()}).
+     *
+     * @param int $sessionId Session row of the browser
+     * @param int $userId Person the browser is trusted for
+     * @param int $until Moment the trust runs out (epoch milliseconds)
+     * @param int $grantedAt Moment the second factor was confirmed with the trust asked for (epoch milliseconds)
+     * @throws HilosException On database failure, or when the renewal cannot be asked for
+     * @throws InvalidArgumentException When the renewal frame cannot be named or queued
+     */
+    private function grantTrust(int $sessionId, int $userId, int $until, int $grantedAt): void
+    {
+        if (Hilos::$db->secondFactorTrusts->actions->trust($sessionId, $userId, $until, $grantedAt)) {
+            return;
+        }
+
+        $this->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW, new UserBrowserTrustRenewSignalData(
+            $userId,
+            $sessionId,
+            $until,
+            $grantedAt,
+            HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW_DONE,
+        ));
+    }
+
+    /**
+     * Creates the trust again when the person's agent found no pair to extend, while the confirmation still holds (HIL-1907).
+     *
+     * The pair went between the confirmation and the agent's turn - a restriction took it out, or
+     * it was taken away. It is written again with the confirmation's end and grant only while the
+     * browser is still signed in as the person, the person's password has not changed since the
+     * confirmation, the person still has a confirmed authenticator and the policy still gives days;
+     * otherwise it is gone for good, the ordinary end of a revoke, and nothing is logged. The
+     * password covers every way the agent takes the pairs of other browsers without signing them
+     * out - a change with or without ending the other sessions, and a recovery: each goes through
+     * the agent writing the new password, which marks the moment of the change. A change in the
+     * same millisecond counts as after. The two moments come from two clocks, this library's and
+     * the agent's, so on a cluster the comparison narrows the gap by the skew between nodes and
+     * does not seal it. A pair written again meanwhile by a later confirmation is asked to be
+     * extended once more, and the agent answers that it stands, since its grant is the later one.
+     *
+     * @param UserBrowserTrustRenewSignalData $ask The renewal the person's agent found no pair for
+     * @throws HilosException On database or settings failure, or when the renewal cannot be asked for
+     * @throws InvalidArgumentException When the renewal frame cannot be named or queued
+     */
+    private function regrantTrust(UserBrowserTrustRenewSignalData $ask): void
+    {
+        if (!isset(Hilos::$db->sessions[$ask->sessionId]) || Hilos::$db->sessions[$ask->sessionId]->userId !== $ask->userId) {
+            return;
+        }
+        $password = Hilos::$db->identities->findPasswordByUser($ask->userId);
+        if ($password?->passwordChangedAt !== null && $password->passwordChangedAt >= $ask->grantedAt) {
+            return;
+        }
+        if (Hilos::$db->secondFactors->confirmedOf($ask->userId) === [] || SecondFactorPolicy::current()->trustDeviceDays() === null) {
+            return;
+        }
+
+        $this->grantTrust($ask->sessionId, $ask->userId, $ask->trustedUntil, $ask->grantedAt);
     }
 
     /**

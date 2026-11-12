@@ -142,6 +142,8 @@ use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRenewDoneSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRenewSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
 use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
@@ -1146,6 +1148,24 @@ final class HilosSignalConstants
      * Only a refusal is read, into the holder's log. Carried by {@see UserBrowserTrustRevokeDoneSignalData}.
      */
     public const string HILOS_USER_BROWSER_TRUST_REVOKE_DONE = 'hilos_user_browser_trust_revoke_done';
+
+    /**
+     * Sessions library → the person's agent: extend the standing trust of this browser to the moment it was confirmed (HIL-1907).
+     *
+     * Sent when the second factor is confirmed with "trust this browser" and the pair of the browser
+     * and the person already stands - live, expired or cut by a restriction. The holder only creates
+     * a missing pair; the person's agent extends a standing one and applies the stored restrictions.
+     * Carried by {@see UserBrowserTrustRenewSignalData}.
+     */
+    public const string HILOS_USER_BROWSER_TRUST_RENEW = 'hilos_user_browser_trust_renew';
+
+    /**
+     * The person's agent → sessions library: the trust is extended, there is no pair to extend, or why not (HIL-1907).
+     *
+     * The request comes back whole. The holder reads a refusal into its log and a missing pair from
+     * renewed being false. Carried by {@see UserBrowserTrustRenewDoneSignalData}.
+     */
+    public const string HILOS_USER_BROWSER_TRUST_RENEW_DONE = 'hilos_user_browser_trust_renew_done';
 
     /**
      * Any agent → the person's agent: apply the stored trust restrictions to the person's trusts (HIL-1900).

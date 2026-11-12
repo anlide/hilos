@@ -28,10 +28,11 @@ use Hilos\Utils\Helpers\TimeHelper;
 /**
  * SecondFactorTrusts object collection - the browsers a person asked not to be asked on again (HIL-494).
  *
- * One row per (session row, person). {@see trust()} writes or extends it and stamps that moment
- * as the trust's last grant, {@see isTrusted()} is the question the sign-in gate asks, and
- * {@see deleteForUser()} takes every trust of a person out when the second factor is switched
- * off or reset.
+ * One row per (session row, person). {@see trust()} writes a pair the person has none of yet and
+ * stamps the confirmation as its grant, and leaves a standing pair as it is. {@see renew()} is the
+ * person's agent extending a standing pair to the moment the second factor was confirmed again
+ * (HIL-1907). {@see isTrusted()} is the question the sign-in gate asks, and {@see deleteForUser()}
+ * takes every trust of a person out when the second factor is switched off or reset.
  *
  * A trust restriction ({@see SecondFactorTrustRestrictions}, HIL-1900) applies to every trust
  * last granted no later than the restriction was saved: such a trust lives no longer than the
@@ -74,42 +75,77 @@ class SecondFactorTrusts extends Objects
     }
 
     /**
-     * Trusts a browser for a person until a moment, writing the pair or moving its end.
-     * Either way the pair is granted now; the moment it was first written stays as it was.
+     * Trusts a browser for a person until a moment, when the pair has no trust yet (HIL-1907).
+     *
+     * The new pair is written now and takes the confirmation as its grant. A standing pair - live,
+     * run out or cut by a restriction - is left as it is and nothing is written: extending it is
+     * the person's agent's ({@see renew()}).
      *
      * @param int $sessionId Session row of the browser
      * @param int $userId Person the browser is trusted for
      * @param int $until Moment the trust runs out (epoch milliseconds)
+     * @param int $grantedAt Moment the second factor was confirmed with the trust asked for (epoch milliseconds)
+     * @return bool Whether the pair was written now; false when it stands already
      * @throws DatabaseException When the lookup or the write fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
-     * @throws WriteNotAllowedException When no truth source in this process may write that row
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws ObjectGetIdStringNotImplementedException If the inserted row has no primary key
      */
-    public function trust(int $sessionId, int $userId, int $until): void
+    public function trust(int $sessionId, int $userId, int $until, int $grantedAt): bool
     {
-        $now = TimeHelper::nowMs();
-        $existing = $this->find($sessionId, $userId);
-        if ($existing !== null) {
-            $existing->trustedUntil = $until;
-            $existing->grantedAt = $now;
-            $existing->sync();
-
-            return;
+        if ($this->find($sessionId, $userId) !== null) {
+            return false;
         }
 
         $trust = static::OBJECT_CLASS::create();
         $trust->sessionId = $sessionId;
         $trust->userId = $userId;
         $trust->trustedUntil = $until;
-        $trust->createdAt = $now;
-        $trust->grantedAt = $now;
+        $trust->createdAt = TimeHelper::nowMs();
+        $trust->grantedAt = $grantedAt;
         $trust->sync();
 
         if ($trust->id !== null) {
             $this[$trust->id] = $trust;
         }
+
+        return true;
+    }
+
+    /**
+     * Extends the standing trust of a browser for a person to the moment it was confirmed (HIL-1907).
+     *
+     * The pair takes the new end and the confirmation as its last grant; the moment it was first
+     * written stays as it was. A later grant already written is left as it is: taking the grant
+     * back would put the pair under an older restriction again. An equal grant ends the same way.
+     *
+     * @param int $sessionId Session row of the browser
+     * @param int $userId Person the browser is trusted for
+     * @param int $until Moment the trust runs out (epoch milliseconds)
+     * @param int $grantedAt Moment the second factor was confirmed with the trust asked for (epoch milliseconds)
+     * @return bool Whether the pair stands - extended now or granted later already; false when there is none
+     * @throws DatabaseException When the lookup or the write fails
+     * @throws InvalidArgumentException When the entity query or the queued DB-sync signal is invalid
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws ObjectGetIdStringNotImplementedException When the row id cannot be named
+     */
+    public function renew(int $sessionId, int $userId, int $until, int $grantedAt): bool
+    {
+        $existing = $this->find($sessionId, $userId);
+        if ($existing === null) {
+            return false;
+        }
+        if ($existing->grantedAt > $grantedAt) {
+            return true;
+        }
+
+        $existing->trustedUntil = $until;
+        $existing->grantedAt = $grantedAt;
+        $existing->sync();
+
+        return true;
     }
 
     /**
@@ -237,10 +273,11 @@ class SecondFactorTrusts extends Objects
      * and its first writing. Applying again, or in another order, changes nothing more: the cut is a
      * minimum and the removal is final.
      *
-     * The trusts and the restrictions are read from the table: the session holder grants and extends
-     * trusts in its own process and the settings library saves restrictions in its own, and a trust
-     * granted again a moment ago must be seen as granted after the restriction. The caller holds the
-     * transaction the writes stand or fall in, and the rows are written in id order.
+     * The trusts and the restrictions are read from the table: the session holder creates trusts in
+     * its own process and the settings library saves restrictions in its own, and a trust the
+     * person's agent extended a moment ago (HIL-1907) must be seen as granted after the restriction.
+     * The caller holds the transaction the writes stand or fall in, and the rows are written in id
+     * order.
      *
      * @param int $userId Person whose trusts the restrictions are applied to
      * @throws DatabaseException When a lookup or a write fails
@@ -252,7 +289,7 @@ class SecondFactorTrusts extends Objects
      */
     public function applyRestrictions(int $userId): void
     {
-        $personTrusts = static::entityClass()::get( // fresh-sql: the session holder grants and extends trusts in its own process.
+        $personTrusts = static::entityClass()::get( // fresh-sql: the session holder creates trusts in its own process.
             [EntitySecondFactorTrust::user_id => $userId],
             orderBy: [EntitySecondFactorTrust::id => SqlSortDirection::ASC],
         );

@@ -49,7 +49,7 @@ The transitions below do not make a future owner callable today.
 | `hilos_second_factor_backup_code` | users library `Add`; person's agent `Update`/`Remove`; holder `Update`/`Remove` for merge/erasure | one row per code, spent by a conditional write |
 | `hilos_second_factor_reset` | users library `Add`; person's agent `Update`/`Remove`; holder `Remove` for merge/erasure | removals: when asked, when due, the cancel token, last notice |
 | `hilos_second_factor_setting` | person's agent `Add`/`Update`; holder `Add`/`Update`/`Remove` for the merge's wait upsert and merge/erasure deletion | the person's removal wait and a shorter one not yet in force; the app-code miss count, its window, the lock step and its end |
-| `hilos_second_factor_trust` | holder `Add`/`Update`/`Remove` (create/renew, global term/switch-off, merge/erasure); person's agent `Update`/`Remove` for personal revocations and for applying the saved restrictions | a browser (session row) trusted for a person until a moment, and the moment it was last granted |
+| `hilos_second_factor_trust` | holder `Add` for the creation on the way in, `Update`/`Remove` for the global term, the switch-off and merge/erasure; person's agent `Update`/`Remove` for personal revocations, for applying the saved restrictions and for renewing a standing pair | a browser (session row) trusted for a person until a moment, and the moment it was last granted |
 | `hilos_second_factor_trust_restriction` | settings library `Add` in the transaction of the save that shortened the term or turned the factor off; no `Update` or `Remove`; the holder and the person's agent read it | one shortening: the save moment and a term of 0 to 365 days; trusts granted no later than the save live no longer than the save plus the term, and 0 takes them out |
 
 The personal edits moved in HIL-1406 are written by the person's agent
@@ -214,11 +214,13 @@ currently signed in. Unblocking does not restore one. Ordinary sign-out keeps
 the trust until its expiry or an explicit revocation.
 
 Who writes each of these today (HIL-1407). The session holder's `trust()`
-creates a new pair or extends an existing pair on the way in. It applies the
-administrator's term installation-wide, removes trusts on switch-off when
-requested, and removes them in merge and erasure; it claims all three
-operations for those paths. Taking one person's trust away is already that
-person's agent's, in the turn of the write that causes it:
+creates a new pair on the way in and leaves a standing pair as it is; the
+person's agent extends a standing pair on `hilos_user_browser_trust_renew`
+(HIL-1907, below). The holder applies the administrator's term
+installation-wide, removes trusts on switch-off when requested, and removes them
+in merge and erasure; it claims all three operations for those paths. Taking one
+person's trust away is already that person's agent's, in the turn of the write
+that causes it:
 
 - switching the factor off and a carried-out removal - in the transaction that
   takes the factor out (`SecondFactorPersonEdits`); the holder's `off` frame only
@@ -238,12 +240,44 @@ person's agent's, in the turn of the write that causes it:
 ### Trust Writes After The Ordinary Moves
 
 New trust creation on entry stays at the holder; renewal of an existing
-session/person pair goes to the personal owner, which owns every later write
-(not in the code yet — HIL-1907). The saved policy needed to apply a shorter
-term is retained, as the restrictions above (HIL-1900); the sessions holder's
-sweep and the owner's start recover missed application work (HIL-1901). Renewal
-and recovery are ownership and recovery obligations, not a declaration of new DB
-fields here.
+session/person pair belongs to the personal owner, which owns every later write
+(HIL-1907). A proof that asks to trust the browser is the trust's grant, and the
+policy's days run from it. A pair with no trust yet is written by the holder. A
+standing pair - live, run out or cut by a restriction - is left as it is: the
+holder's creation writes nothing and says the pair stands, and the holder sends
+the person's agent `hilos_user_browser_trust_renew`, naming the person, the
+session row, the new end, the moment of the confirmation and the signal the
+answer is sent under. A person who can no longer be addressed is not asked, and
+the browser stays untrusted. The browser was answered before all this; the
+sign-in does not wait on the renewal.
+
+In one transaction the agent moves the pair's end and its last grant to the
+confirmation - not to the moment of its own write - unless a later grant is
+written already, and applies the stored restrictions to the person, so one saved
+at the confirmation or later cuts or takes out the extended pair at once. It
+answers `hilos_user_browser_trust_renew_done` with `renewed`: true when the pair
+stands, extended now or granted later already; false when there is none. A
+refusal is logged by the holder naming the person and no session, and is not
+asked again. On `renewed` false the pair went between the confirmation and the
+agent's turn, and the holder writes it again, with the confirmation's end and
+grant, only while all four still hold: the session row exists and is signed in
+as the person, the person's password has not changed since the confirmation,
+the person has a confirmed app, and the policy still gives days. Otherwise it
+went for good - the ordinary end of a revoke - and nothing is logged. The
+password stands for every way the person's agent takes the pairs of the other
+browsers without signing them out - a change that ends the other sessions, one
+that does not, and a recovery: each goes through the agent's write of the new
+password, which marks the moment of the change, and a change in the same
+millisecond as the confirmation counts as after it. The confirmation is a moment
+of the holder's clock and the change one of the agent's; on a cluster these are
+two nodes, so the comparison narrows the gap and does not seal it. A pair
+written again meanwhile by a later confirmation is asked to be extended once
+more and answered that it stands, so the exchange ends.
+
+The saved policy needed to apply a shorter term is retained, as the restrictions
+above (HIL-1900); the sessions holder's sweep and the owner's start recover
+missed application work (HIL-1901). Renewal and recovery are ownership and
+recovery obligations, not a declaration of new DB fields here.
 
 The person's agent applies the stored restrictions on a service frame,
 `hilos_user_second_factor_trust_restrict`, which names the person, the
@@ -260,10 +294,18 @@ violates a restriction up to the one asked for, a trust violating one that
 applies to it when its term is 0 or it runs past its limit; the same test tells
 the sweep of HIL-1901 which work is unfinished. Today the sweep is what sends
 the frame; the term and the switch-off below do not yet (HIL-1908, HIL-1909).
-The application reads the person's trusts without locking their rows, so a
-holder extending a trust strictly between that read and the owner's write can
-have the extension cut; the outcome errs on the side of fewer trusts, never
-more, and the renewal moving to the owner (HIL-1907) removes the race.
+The holder no longer extends a trust - the renewal is the owner's own write
+(HIL-1907) - so the application meets no extension from another process. Three
+gaps remain. The creation: a pair the holder writes while the owner takes every
+trust of the person away survives that revocation when the insert lands after
+the owner's read, and only a stored mark of the revocation would close it. The
+skew of the cluster's clocks inside the window: the confirmation is a moment of
+the holder's clock and the password change one of the agent's, so a change that
+follows the confirmation by less than the skew can carry the earlier moment when
+the agent's clock runs behind, and the pair is written again. The merge of
+accounts: the holder itself deletes the survivor's pairs without signing its
+sessions out, and a pair written again between the renewal being sent and that
+step comes back (HIL-1999).
 
 Missed application is found in two places (HIL-1901). The sessions holder
 sweeps for it: the framework cron rule

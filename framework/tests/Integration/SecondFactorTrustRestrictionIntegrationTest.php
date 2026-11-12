@@ -25,6 +25,8 @@ use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Users\DTO\UserBrowserTrustRenewDoneSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRenewSignalData;
 use Hilos\Users\DTO\UserSecondFactorTrustRestrictDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorTrustRestrictSignalData;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -46,8 +48,9 @@ use Hilos\Utils\Helpers\TimeHelper;
  *
  * Every writer runs in its own frame and under the claims its own class declares: the settings library
  * for the restrictions, the sessions library - the holder that grants a browser's trust - for the
- * trusts, and the person's agent for applying the restrictions. The frames between them are carried
- * by the case. Moments are named relative to now and nothing waits for the clock.
+ * trusts, and the person's agent for extending a standing trust at a confirmation (HIL-1907) and for
+ * applying the restrictions. The frames between them are carried by the case. Moments are named
+ * relative to now and nothing waits for the clock.
  */
 final class SecondFactorTrustRestrictionIntegrationTest extends HilosSessionIntegrationTestCase
 {
@@ -166,31 +169,52 @@ final class SecondFactorTrustRestrictionIntegrationTest extends HilosSessionInte
     }
 
     /**
-     * A new pair is written and granted at the same moment.
+     * A new pair is granted at the confirmation it is given and written at the moment of the insert (HIL-1907).
      *
      * @throws HilosException When a fixture row cannot be written or read
      */
     public function testANewTrustIsGrantedWhenItIsWritten(): void
     {
         [$userId, $sessionId] = $this->seedSignedInPerson();
-        $until = TimeHelper::nowMs() + self::TRUST_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
+        $confirmedAt = TimeHelper::nowMs() - TimeConstants::MS_PER_SECOND;
+        $until = $confirmedAt + self::TRUST_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
 
         $before = TimeHelper::nowMs();
-        $this->trustAs($sessionId, $userId, $until);
+        $this->assertTrue($this->trustAs($sessionId, $userId, $until, $confirmedAt));
         $after = TimeHelper::nowMs();
 
         [$id, $createdAt, $grantedAt, $trustedUntil] = self::trustRow($sessionId, $userId);
-        self::assertGreaterThanOrEqual($before, $grantedAt);
-        self::assertLessThanOrEqual($after, $grantedAt);
-        self::assertSame($grantedAt, $createdAt);
+        self::assertSame($confirmedAt, $grantedAt);
+        self::assertGreaterThanOrEqual($before, $createdAt);
+        self::assertLessThanOrEqual($after, $createdAt);
         self::assertSame($until, $trustedUntil);
         self::assertSame($grantedAt, Hilos::$db->secondFactorTrusts[$id]->grantedAt);
     }
 
     /**
-     * Extending a pair grants it again and moves its end; the moment it was first written stays.
+     * The holder creating over a standing pair writes nothing and says the pair stands: extending
+     * it is the person's agent's (HIL-1907).
      *
      * @throws HilosException When a fixture row cannot be written or read
+     */
+    public function testTheHolderCreatingOverAStandingPairWritesNothing(): void
+    {
+        [$userId, $sessionId] = $this->seedSignedInPerson();
+        $confirmedAt = TimeHelper::nowMs() - self::DAY_MS;
+        $this->assertTrue($this->trustAs($sessionId, $userId, $confirmedAt + self::TRUST_DAYS * self::DAY_MS, $confirmedAt));
+        $standing = self::trustRow($sessionId, $userId);
+
+        $now = TimeHelper::nowMs();
+        $this->assertFalse($this->trustAs($sessionId, $userId, $now + self::TRUST_DAYS * self::DAY_MS, $now));
+
+        $this->assertSame($standing, self::trustRow($sessionId, $userId));
+    }
+
+    /**
+     * The person's agent extending a pair grants it at the confirmation and moves its end; the
+     * moment it was first written stays (HIL-1907).
+     *
+     * @throws HilosException When a fixture row cannot be written or read, or the frame fails
      */
     public function testExtendingATrustGrantsItAgainAndKeepsWhenItWasWritten(): void
     {
@@ -202,18 +226,16 @@ final class SecondFactorTrustRestrictionIntegrationTest extends HilosSessionInte
                 . ' VALUES (?, ?, ?, ?, ?)',
             [$sessionId, $userId, $writtenAt + self::TRUST_DAYS * $dayMs, $writtenAt, $writtenAt],
         );
-        $until = TimeHelper::nowMs() + self::TRUST_DAYS * $dayMs;
+        $confirmedAt = TimeHelper::nowMs();
+        $until = $confirmedAt + self::TRUST_DAYS * $dayMs;
 
-        $before = TimeHelper::nowMs();
-        $this->trustAs($sessionId, $userId, $until);
-        $after = TimeHelper::nowMs();
+        self::assertTrue($this->renewAs($sessionId, $userId, $until, $confirmedAt)->renewed);
 
         [$id, $createdAt, $grantedAt, $trustedUntil] = self::trustRow($sessionId, $userId);
         self::assertSame($writtenAt, $createdAt);
-        self::assertGreaterThanOrEqual($before, $grantedAt);
-        self::assertLessThanOrEqual($after, $grantedAt);
+        self::assertSame($confirmedAt, $grantedAt);
         self::assertSame($until, $trustedUntil);
-        self::assertSame($grantedAt, Hilos::$db->secondFactorTrusts[$id]->grantedAt);
+        self::assertSame($confirmedAt, Hilos::$db->secondFactorTrusts[$id]->grantedAt);
         self::assertSame($writtenAt, Hilos::$db->secondFactorTrusts[$id]->createdAt);
     }
 
@@ -317,9 +339,10 @@ final class SecondFactorTrustRestrictionIntegrationTest extends HilosSessionInte
     }
 
     /**
-     * Extending a pair after the save grants it again, and the older restriction no longer cuts it.
+     * The person's agent extending a pair after the save grants it again, and the older restriction no
+     * longer cuts it (HIL-1907).
      *
-     * @throws HilosException When a fixture row cannot be written or the frame fails
+     * @throws HilosException When a fixture row cannot be written or a frame fails
      */
     public function testATrustGrantedAgainAfterTheSaveIsNotCut(): void
     {
@@ -327,8 +350,9 @@ final class SecondFactorTrustRestrictionIntegrationTest extends HilosSessionInte
         [$userId, $sessionId] = $this->seedSignedInPerson();
         $trust = self::insertTrust($sessionId, $userId, $now - 2 * self::DAY_MS, $now + 28 * self::DAY_MS);
         $restrictionId = $this->recordAs($this->settings->getId(), $now - self::DAY_MS, 7);
-        $until = TimeHelper::nowMs() + self::TRUST_DAYS * self::DAY_MS;
-        $this->trustAs($sessionId, $userId, $until);
+        $confirmedAt = TimeHelper::nowMs();
+        $until = $confirmedAt + self::TRUST_DAYS * self::DAY_MS;
+        self::assertTrue($this->renewAs($sessionId, $userId, $until, $confirmedAt)->renewed);
         $granted = self::trustRows($userId);
         self::assertGreaterThan($now - self::DAY_MS, $granted[$trust][1]);
 
@@ -547,14 +571,59 @@ final class SecondFactorTrustRestrictionIntegrationTest extends HilosSessionInte
      * @param int $sessionId Session row of the browser
      * @param int $userId Person the browser is trusted for
      * @param int $until Moment the trust runs out (epoch milliseconds)
+     * @param int $grantedAt Moment the second factor was confirmed with the trust asked for (epoch milliseconds)
+     * @return bool Whether the pair was written; false when it stands already
      * @throws HilosException When the trust cannot be written
      */
-    private function trustAs(int $sessionId, int $userId, int $until): void
+    private function trustAs(int $sessionId, int $userId, int $until, int $grantedAt): bool
     {
-        ExecutionContext::run(
+        return ExecutionContext::run(
             new ExecutionFrame(agentId: $this->sessions->getId()),
-            static fn () => Hilos::$db->secondFactorTrusts->actions->trust($sessionId, $userId, $until),
+            static fn (): bool => Hilos::$db->secondFactorTrusts->actions->trust($sessionId, $userId, $until, $grantedAt),
         );
+    }
+
+    /**
+     * Extends a standing trust the way the sessions library asks for it at a confirmation: a frame the
+     * person's agent writes in its own frame and answers once (HIL-1907).
+     *
+     * @param int $sessionId Session row of the browser
+     * @param int $userId Person the browser is trusted for
+     * @param int $until Moment the extended trust runs out (epoch milliseconds)
+     * @param int $confirmedAt Moment the second factor was confirmed (epoch milliseconds)
+     * @return UserBrowserTrustRenewDoneSignalData The answer, carrying the request back whole
+     * @throws HilosException When the frame cannot be queued or the agent fails
+     */
+    private function renewAs(int $sessionId, int $userId, int $until, int $confirmedAt): UserBrowserTrustRenewDoneSignalData
+    {
+        // What the fixtures announced on the way in is nobody's business here.
+        while (Hilos::$sr->getNextQueuedSignal() !== null) {
+        }
+        $ask = new UserBrowserTrustRenewSignalData(
+            $userId,
+            $sessionId,
+            $until,
+            $confirmedAt,
+            HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW_DONE,
+        );
+        $this->sessions->sendToAgent(HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW, $ask);
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($signal);
+        $this->deliverToPerson($signal);
+
+        $answers = [];
+        while (($queued = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($queued->signalName->getName() === HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW_DONE) {
+                self::assertInstanceOf(AgentSignalData::class, $queued->data);
+                $answers[] = $queued->data->data;
+            }
+        }
+        self::assertCount(1, $answers, 'The agent answers the frame once');
+        self::assertInstanceOf(UserBrowserTrustRenewDoneSignalData::class, $answers[0]);
+        self::assertSame($ask->toArray(), $answers[0]->request->toArray());
+        self::assertNull($answers[0]->error);
+
+        return $answers[0];
     }
 
     /**

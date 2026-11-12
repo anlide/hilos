@@ -687,6 +687,7 @@ final class AdminSessionsEndActionsTest extends HilosSessionIntegrationTestCase
             $session->id,
             $userId,
             TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+            TimeHelper::nowMs(),
         );
     }
 

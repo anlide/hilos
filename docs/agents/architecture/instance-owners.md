@@ -118,10 +118,9 @@ taken away are the person's agent's too (HIL-1407): the holder hands the data-co
 credit of a refused blocked sign-in and the trust of the sessions it ended to the
 agent by frame, and the agent takes the trust away itself with the second factor,
 a changed or recovered password and the block. The holder currently creates
-or extends trust on the way in and applies the term to every person's trust at
-once.
-Creation stays there; renewal of an existing pair moves to the person
-(not in the code yet — HIL-1907). A saved policy is retained for application as
+trust on the way in and applies the term to every person's trust at once.
+Creation stays there; a standing pair is renewed by the person's agent on the
+holder's frame (HIL-1907). A saved policy is retained for application as
 a trust restriction (HIL-1900), which the personal owner applies on a service
 frame; missed work is found by the sessions holder's sweep, which sends that
 frame, and by the owner's own start, which applies the saved restrictions

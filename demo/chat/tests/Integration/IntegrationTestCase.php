@@ -77,6 +77,8 @@ use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRenewDoneSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRenewSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
 use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
@@ -628,6 +630,7 @@ abstract class IntegrationTestCase extends TestCase
                 || $frame instanceof UserStepUpRecordSignalData
                 || $frame instanceof UserStepUpCreditSignalData
                 || $frame instanceof UserBrowserTrustRevokeSignalData
+                || $frame instanceof UserBrowserTrustRenewSignalData
             ) {
                 $agent = $this->personAgent($frame->userId);
                 $this->underAgent($agent, static fn () => $agent->onSignalAgent($data, '', $name));
@@ -662,6 +665,7 @@ abstract class IntegrationTestCase extends TestCase
                 || $frame instanceof UserBlockWriteDoneSignalData
                 || $frame instanceof UserStepUpCreditDoneSignalData
                 || $frame instanceof UserBrowserTrustRevokeDoneSignalData
+                || $frame instanceof UserBrowserTrustRenewDoneSignalData
             ) {
                 $library = $this->sessionsLibrary();
                 $this->underAgent($library, static fn () => $library->onSignalAgent($data, '', $name));

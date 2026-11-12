@@ -233,6 +233,7 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
             $other->id,
             self::USER_ID,
             TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+            TimeHelper::nowMs(),
         );
 
         $this->dispatch(new SessionEndActionDTO((int)$other->id));
@@ -261,7 +262,7 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         $signedOut = Hilos::$db->sessions->actions->createAnonymous('44444444444444444444444444444444');
         $until = TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         foreach ([$current, $other, $signedOut] as $session) {
-            Hilos::$db->secondFactorTrusts->actions->trust($session->id, self::USER_ID, $until);
+            Hilos::$db->secondFactorTrusts->actions->trust($session->id, self::USER_ID, $until, TimeHelper::nowMs());
         }
 
         $this->dispatch(new SessionsEndOthersActionDTO());
@@ -293,8 +294,8 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         $other = $this->session(self::OTHER_TOKEN, self::OTHER_ACCEPT_KEY);
         $admin = $this->session(self::ADMIN_TOKEN, self::ADMIN_ACCEPT_KEY, self::ADMIN_ID);
         $until = TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
-        Hilos::$db->secondFactorTrusts->actions->trust($current->id, self::USER_ID, $until);
-        Hilos::$db->secondFactorTrusts->actions->trust($other->id, self::USER_ID, $until);
+        Hilos::$db->secondFactorTrusts->actions->trust($current->id, self::USER_ID, $until, TimeHelper::nowMs());
+        Hilos::$db->secondFactorTrusts->actions->trust($other->id, self::USER_ID, $until, TimeHelper::nowMs());
 
         new SessionsEndActionsAgent()->onSignalAgent(
             new AgentSignalData(new AuthOtherSessionsEndSignalData(self::USER_ID, self::CURRENT_TOKEN)),
@@ -389,8 +390,8 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         $current = $this->session(self::CURRENT_TOKEN, self::CURRENT_ACCEPT_KEY);
         $other = $this->session(self::OTHER_TOKEN, self::OTHER_ACCEPT_KEY);
         $until = TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
-        Hilos::$db->secondFactorTrusts->actions->trust($current->id, self::USER_ID, $until);
-        Hilos::$db->secondFactorTrusts->actions->trust($other->id, self::USER_ID, $until);
+        Hilos::$db->secondFactorTrusts->actions->trust($current->id, self::USER_ID, $until, TimeHelper::nowMs());
+        Hilos::$db->secondFactorTrusts->actions->trust($other->id, self::USER_ID, $until, TimeHelper::nowMs());
         $password = Hilos::$db->identities->createPasswordIdentity(self::USER_ID, 'person@example.test', 'old-password-1407');
 
         $this->asPerson(self::USER_ID, static fn ($agent) => $agent->onSignalAgent(

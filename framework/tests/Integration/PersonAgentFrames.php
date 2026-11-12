@@ -26,6 +26,7 @@ use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserAdminCommandSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRenewSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
 use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
 use Hilos\Users\DTO\UserNotificationReadSignalData;
@@ -161,6 +162,7 @@ trait PersonAgentFrames
             $ask instanceof UserStepUpRecordSignalData,
             $ask instanceof UserStepUpCreditSignalData,
             $ask instanceof UserBrowserTrustRevokeSignalData,
+            $ask instanceof UserBrowserTrustRenewSignalData,
             $ask instanceof UserSecondFactorTrustRestrictSignalData,
             $ask instanceof UserNotificationReadSignalData,
             $ask instanceof UserNotificationChannelSetSignalData,

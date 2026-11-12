@@ -1314,6 +1314,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
             $sessionId,
             self::USER_ID,
             TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+            TimeHelper::nowMs(),
         );
         $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, self::USER_ID, 30));
 

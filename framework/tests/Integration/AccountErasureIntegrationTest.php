@@ -813,7 +813,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         Hilos::$db->secondFactorBackupCodes->actions->issueSet($userId, ['abcdefghjk']);
         Hilos::$db->secondFactorResets->actions->request($userId, self::FUTURE, "cancel-{$userId}");
         Hilos::$db->secondFactorSettings->actions->setResetWait($userId, 10, null, null);
-        Hilos::$db->secondFactorTrusts->actions->trust($sessionId, $userId, self::FUTURE);
+        Hilos::$db->secondFactorTrusts->actions->trust($sessionId, $userId, self::FUTURE, TimeHelper::nowMs());
         Hilos::$db->stepUps->actions->confirm(
             ProtectedModeRuntime::hashSessionToken($token),
             $userId,
