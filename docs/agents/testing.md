@@ -33,8 +33,8 @@ Composer scripts live in the repo-root `composer.json`:
 | Script | What it does |
 |---|---|
 | `composer run test:framework:install-deps` | Install PHPUnit & framework dev deps inside the test container. |
-| `composer run test:framework:up` | Build the backup receiver image from the cache, start `mysql-framework-test`, `mysql-framework-remote-test`, `mysql-framework-catalog-test`, and `sshd-framework-test`, and wait until they are healthy. |
-| `composer run test:framework:databases` | Recreate the integration-piece and derived change-log schemas on both MariaDB services. Needs `up`. |
+| `composer run test:framework:up` | Build the backup receiver image from the cache, start `mysql-framework-test`, `mysql-framework-remote-test`, `mysql-framework-catalog-test`, `mysql-framework-restore-test`, and `sshd-framework-test`, and wait until they are healthy. |
+| `composer run test:framework:databases` | Recreate the integration-piece and derived change-log schemas on the three MariaDB services (`mysql-framework-test`, `mysql-framework-remote-test`, and `mysql-framework-restore-test`). Needs `up`. |
 | `composer run test:framework:piece -- <K>` | Run integration piece K on its own database: the classes whose crc32 of the short name lands on K, as defined in `scripts/framework-pieces.php`. Needs `up` and `databases`. |
 | `composer run test:framework:unit` | Run framework unit tests (`framework/tests/Unit`). |
 | `composer run test:framework:integration` | Run framework integration tests (`framework/tests/Integration`). Requires DB. |
@@ -65,6 +65,31 @@ primary and remote services. All four integration pieces share the
 `framework-integration-catalog` group and run sequentially: server-wide metadata
 observers on a shared service can see DDL from other piece schemas. Framework
 unit tests and other stands remain independent and may run in parallel.
+
+`mysql-framework-restore-test` is a fourth MariaDB service, owned by
+`BackupRestorerIntegrationTest` and `FullRestorePlannerIntegrationTest`. These
+fixtures verify full backup restore boundaries, planning rechecks, schema
+snapshots, and catalog drift. Running them against the shared primary service
+risked cross-talk from concurrent piece DDL and global server mutations:
+in particular, `BackupRestorerIntegrationTest` executes `SET GLOBAL sql_mode`,
+which now runs on this dedicated server rather than on the shared primary.
+The service is exposed to the test container via `HILOS_TEST_RESTORE_DB_HOST`.
+Unlike the catalog server, this endpoint provisions regular application
+credentials (`MYSQL_USER`/`MYSQL_PASSWORD`) and prepares the default journal
+schema and grants via `init-change-log-test.sh`. Both integration paths are
+supported: default DB and journal schemas after `test:framework:up` for
+standalone `test:framework:integration`, and piece schemas plus derived
+`-change-log` schemas prepared alongside the other endpoints by
+`test:framework:databases` before piece 1 runs. `FullRestorePlannerIntegrationTest`
+creates and drops its own owned schemas and accounts on this server through root
+connections. The two-server restore case in `BackupRestorerIntegrationTest`
+(`testEveryPreparedTargetIsImportedIntoItsConfiguredSchema`) continues to target
+the remote service under `hilos_remote` on secondary index 2, with the primary
+target on `mysql-framework-restore-test`. The service inherits the common test
+database template with tmpfs, healthcheck, container suffix, and unexposed host
+ports; teardown removes it via `test:framework:down` or wipes its volumes with
+`test:framework:down-volumes`.
+
 `MomentStorageSchemaIntegrationTest`
 uses the existing remote service for its own disposable pair of named schemas,
 with a root control connection to `information_schema`; it creates and removes

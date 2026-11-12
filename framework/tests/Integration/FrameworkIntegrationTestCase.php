@@ -11,6 +11,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseConnectionPolicy;
+use Hilos\Database\Migration;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
@@ -88,7 +89,7 @@ abstract class FrameworkIntegrationTestCase extends TestCase
 
         Database::configure(
             index: DatabaseConnectionDefaults::PRIMARY_INDEX,
-            host: Hilos::$env[EnvConstants::DB_HOST]->string(),
+            host: $this->primaryDatabaseHost(),
             user: Hilos::$env[EnvConstants::DB_USERNAME]->string(),
             password: Hilos::$env[EnvConstants::DB_PASSWORD]->string(),
             database: Hilos::$env[EnvConstants::DB_DATABASE]->string(),
@@ -138,13 +139,23 @@ abstract class FrameworkIntegrationTestCase extends TestCase
         parent::tearDown();
     }
 
+    /**
+     * Endpoint host for the primary database connection of this test.
+     */
+    protected function primaryDatabaseHost(): string
+    {
+        return Hilos::$env[EnvConstants::DB_HOST]->string();
+    }
+
     /** A closed secondary link must not enable a feature in the next primary-only fixture. */
     private static function resetDatabaseConnections(): void
     {
         foreach (Database::getConfiguredIndices() as $index) {
             Database::close($index);
             Schema::reset($index);
+            Migration::reset($index);
         }
+        Migration::reset();
         new ReflectionProperty(Database::class, 'configurations')->setValue(null, []);
         new ReflectionProperty(Database::class, 'databaseBindings')->setValue(null, []);
         new ReflectionProperty(Database::class, 'transactionIndex')->setValue(null, null);

@@ -38,6 +38,20 @@ final class FullRestorePlannerIntegrationTest extends FrameworkIntegrationTestCa
     private DatabaseConnectionConfig $base;
     private array $previousMigration;
 
+    /**
+     * Dedicated restore endpoint isolated from concurrent DDL and global setting mutations.
+     */
+    protected function primaryDatabaseHost(): string
+    {
+        $restoreHost = getenv('HILOS_TEST_RESTORE_DB_HOST');
+        $this->assertIsString($restoreHost, 'The restore fixture needs its dedicated restore server');
+        $this->assertNotSame('', $restoreHost);
+        $this->assertNotSame(Hilos::$env[EnvConstants::DB_HOST]->string(), $restoreHost);
+        $this->assertNotSame(getenv('HILOS_TEST_CATALOG_DB_HOST'), $restoreHost);
+
+        return $restoreHost;
+    }
+
     /** Creates a real late table pair and history, plus an old full dump and the exact source track. */
     protected function setUp(): void
     {
@@ -176,7 +190,7 @@ final class FullRestorePlannerIntegrationTest extends FrameworkIntegrationTestCa
         }
         $this->assertSame(7, (int)Database::sql('SELECT id FROM moderator_prompt_piece')->field('id'));
         $this->assertCount(5, Database::sql('SELECT * FROM hilos_setting')->rows());
-        new ReflectionProperty(Migration::class, 'initialized')->setValue(null, []);
+        Migration::reset();
         Migration::migrateUp();
         $this->assertSame([109, 110], Migration::appliedIndices());
         $this->assertSame([], Database::sql("SHOW TABLES LIKE 'moderator_prompt_piece'")->rows());
@@ -558,6 +572,9 @@ final class FullRestorePlannerIntegrationTest extends FrameworkIntegrationTestCa
             'dependency' => Database::sql('CREATE VIEW ' . ChangeLogDatabase::identifier($this->external) . '.dependent AS SELECT id FROM '
                 . ChangeLogDatabase::identifier($this->database) . '.parent'),
             'session mode' => Database::sql("SET SESSION sql_mode = 'NO_FIELD_OPTIONS'"),
+            'external catalog' => Database::sql(
+                'CREATE VIEW ' . ChangeLogDatabase::identifier($this->external) . '.external_drift AS SELECT 1 AS id'
+            ),
             'session CHECK enforcement' => Database::sql('SET SESSION check_constraint_checks = OFF'),
         };
         $this->expectException(RestoreFailedException::class);
@@ -572,6 +589,7 @@ final class FullRestorePlannerIntegrationTest extends FrameworkIntegrationTestCa
         yield ['track'];
         yield ['dependency'];
         yield ['session mode'];
+        yield ['external catalog'];
         yield ['session CHECK enforcement'];
     }
 

@@ -32,14 +32,16 @@ class Migration
     private static string $migrationName = 'main';
 
     /**
-     * Whether the migration table is ensured, keyed by database connection index.
+     * Whether the migration table is ensured, keyed by target connection key.
      *
-     * Per connection, not per process: the `migration` table lives inside each database,
+     * Per connection endpoint, not per process: the `migration` table lives inside each database,
      * so a once-per-process flag makes the second connection migrated in one process skip
      * initialize() and then fail in getCurrentIndex() on a table that was never created.
      * A restore migrating every connection it imported is the first caller to hit that.
+     * Keyed by connection index, host, port and database to avoid cache leakage between
+     * re-pointed connections with the same index.
      *
-     * @var array<int, bool> Connection index => migration table ensured
+     * @var array<string|int, bool> Connection index or target key => migration table ensured
      */
     private static array $initialized = [];
 
@@ -107,6 +109,27 @@ class Migration
     }
 
     /**
+     * Resets the initialization cache for a connection index or for all connections.
+     *
+     * @param ?int $index Connection index to reset, or null to reset all connections
+     */
+    public static function reset(?int $index = null): void
+    {
+        if ($index === null) {
+            self::$initialized = [];
+            return;
+        }
+
+        unset(self::$initialized[$index]);
+        $prefix = $index . '@';
+        foreach (array_keys(self::$initialized) as $key) {
+            if (is_string($key) && str_starts_with($key, $prefix)) {
+                unset(self::$initialized[$key]);
+            }
+        }
+    }
+
+    /**
      * Ensures the four framework tables every migrated database carries: `migration`, the
      * rollout claim's, the admin view mode latch's and the database marker's.
      *
@@ -125,7 +148,9 @@ class Migration
     public static function initialize(): void
     {
         $connectionIndex = Database::getCurrentIndex();
-        if (self::$initialized[$connectionIndex] ?? false) {
+        $config = Database::getConnectionConfig($connectionIndex);
+        $targetKey = $connectionIndex . '@' . $config->host . ':' . $config->port . '/' . $config->database;
+        if (self::$initialized[$targetKey] ?? false) {
             return;
         }
 
@@ -167,7 +192,7 @@ class Migration
             ) ' . DatabaseConnectionDefaults::DDL_TABLE_SUFFIX
         );
 
-        self::$initialized[$connectionIndex] = true;
+        self::$initialized[$targetKey] = true;
     }
 
     /**

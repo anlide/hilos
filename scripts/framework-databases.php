@@ -19,7 +19,7 @@ $script = <<<'SH'
     SH;
 
 chdir(dirname(__DIR__));
-foreach (['mysql-framework-test', 'mysql-framework-remote-test'] as $service) {
+foreach (['mysql-framework-test', 'mysql-framework-remote-test', 'mysql-framework-restore-test'] as $service) {
     $command = 'docker compose -f framework/docker/docker-compose.yml exec -T ' . escapeshellarg($service) . ' sh -c '
         . escapeshellarg($script) . ' sh ' . implode(' ', array_map('escapeshellarg', $databases));
     passthru($command, $status);

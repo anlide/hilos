@@ -159,6 +159,20 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
     /** Previous operation-log address; every case writes its evidence in its own fixture store. */
     private string|false $previousLogFile = false;
 
+    /**
+     * Dedicated restore endpoint isolated from concurrent DDL and global setting mutations.
+     */
+    protected function primaryDatabaseHost(): string
+    {
+        $restoreHost = getenv('HILOS_TEST_RESTORE_DB_HOST');
+        $this->assertIsString($restoreHost, 'The restore fixture needs its dedicated restore server');
+        $this->assertNotSame('', $restoreHost);
+        $this->assertNotSame(Hilos::$env[EnvConstants::DB_HOST]->string(), $restoreHost);
+        $this->assertNotSame(getenv('HILOS_TEST_CATALOG_DB_HOST'), $restoreHost);
+
+        return $restoreHost;
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -768,7 +782,7 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
     /** @return iterable<string, array{string}> Proof dimensions changed at the connected apply boundary */
     public static function lateProofChanges(): iterable
     {
-        foreach (['schema', 'history', 'track', 'dependency'] as $change) {
+        foreach (['schema', 'history', 'track', 'dependency', 'external catalog'] as $change) {
             yield $change => [$change];
         }
     }
@@ -793,6 +807,9 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
                             . self::CODE_MIGRATION_INDEX . '_up.sql', "SELECT 1;\n"),
                         'dependency' => Database::sql('CREATE VIEW `' . self::INDEPENDENT_TABLE . '_view` AS SELECT id FROM `'
                             . self::LATE_TABLE . '`'),
+                        'external catalog' => Database::sql(
+                            'CREATE VIEW `' . $this->databaseName() . '-change-log`.`restore_catalog_drift` AS SELECT 1 AS id'
+                        ),
                     };
                     $expectedHistory = Migration::appliedIndices();
                 });
@@ -806,6 +823,7 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
             $this->assertSame([['id' => '13']], Database::sql('SELECT * FROM `' . self::INDEPENDENT_TABLE . '`')->rows());
         } finally {
             Database::sql('DROP VIEW IF EXISTS `' . self::INDEPENDENT_TABLE . '_view`');
+            Database::sql('DROP VIEW IF EXISTS `' . $this->databaseName() . '-change-log`.`restore_catalog_drift`');
             DatabaseMarker::clear();
         }
     }

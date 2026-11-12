@@ -191,6 +191,20 @@ services:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
       TZ: UTC
 
+  # Only BackupRestorerIntegrationTest and FullRestorePlannerIntegrationTest write here.
+  mysql-framework-restore-test:
+    <<: *framework-test-database
+    container_name: hilos-mysql-framework-restore-test${HILOS_STAND_SUFFIX:-}
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      MYSQL_DATABASE: ${MYSQL_FRAMEWORK_TEST_DATABASE:-hilos-framework-test}
+      MYSQL_USER: ${MYSQL_USER:-hilos}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hilos_pass}
+      TZ: UTC
+    volumes:
+      - ./mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
+      - ./mysql/init-change-log-test.sh:/docker-entrypoint-initdb.d/init-change-log-test.sh:ro
+
   # Backup receiver: the far side of a shipping run (BACKUP_SHIP_TARGET). No host
   # ports — only the CLI runner talks to it, over the stack's own network, and the
   # stand keeps its promise of not reaching outside. The key pair and the
@@ -247,6 +261,7 @@ services:
       HILOS_TEST_REMOTE_DB_USERNAME: hilos_remote
       HILOS_TEST_REMOTE_DB_PASSWORD: hilos_remote_pass
       HILOS_TEST_CATALOG_DB_HOST: mysql-framework-catalog-test
+      HILOS_TEST_RESTORE_DB_HOST: mysql-framework-restore-test
     networks:
       - hilos-framework-test-network
     profiles: [test]
