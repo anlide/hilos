@@ -1,11 +1,11 @@
 // HilosDateTimePicker — an accessible segmented date, time, or date-time field.
 // Driven by a headless DateTimePickerController; inputs render individual parts
 // (day, month, hour, etc.) with keyboard navigation, live hints and validation.
-// The wide panel mounts inside this root. Narrow layout, Done and edge chips
-// belong to a later leaf.
+// The panel mounts inside this root; the narrow view opens it in flow under the field.
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { FocusEvent, KeyboardEvent, MouseEvent, ReactElement } from 'react'
 import {
+  bindNarrowScreen,
   bindPopupDismiss,
   revealPickerPanel,
   subscribeSignal,
@@ -17,7 +17,10 @@ import {
   type DateTimePickerPart,
 } from '@hilos/core/base'
 
-import { useDateTimePickerPartKeys } from './dateTimePickerPartKeys.js'
+import {
+  dateTimePickerPartInputMode,
+  useDateTimePickerPartKeys,
+} from './dateTimePickerPartKeys.js'
 import { HilosDateTimePickerPanel } from './HilosDateTimePickerPanel.js'
 import { useSignal } from './useSignal.js'
 
@@ -49,6 +52,16 @@ interface LockFocusTarget {
 // React warns when an input provides value without onChange or readOnly; input is handled via keyboard.
 function ignoreChange(): void {}
 
+// A one-off read without a standing listener, so the first render is already
+// narrow, including the nested panel, whose effect runs before the field's.
+function readNarrowScreen(): boolean {
+  let narrow = false
+  bindNarrowScreen((value) => {
+    narrow = value
+  })()
+  return narrow
+}
+
 function isInvalid(
   endpoint: DateTimePickerEndpointSnapshot<DateTimePickerKind>,
 ): boolean {
@@ -77,6 +90,16 @@ export function HilosDateTimePicker({
     part: DateTimePickerPart
     input: HTMLInputElement
   } | null>(null)
+  const [narrow, setNarrow] = useState(readNarrowScreen)
+  const narrowRef = useRef(narrow)
+  const pendingNarrowFocus = useRef<{
+    source: PickerOwner
+    root: HTMLElement
+    target: HTMLElement
+  } | null>(null)
+  const fieldPress = useRef<{ source: PickerOwner; opens: boolean } | null>(
+    null,
+  )
   const rootRef = useRef<HTMLDivElement>(null)
   const groupRef = useRef<HTMLDivElement>(null)
   const openerRef = useRef<HTMLButtonElement>(null)
@@ -104,19 +127,31 @@ export function HilosDateTimePicker({
 
   // After the effect above, so that effect still sees the source as active
   // before this hook's layout effect moves focus.
-  const onPartKeyDown = useDateTimePickerPartKeys(picker, groupRef)
+  const { onPartKeyDown, partInputRef } = useDateTimePickerPartKeys(
+    picker,
+    groupRef,
+  )
 
-  useEffect(() => {
-    const group = groupRef.current
-    if (!group) return
-    // Synthetic React onBeforeInput does not observe native beforeinput reliably.
-    function cancel(event: Event): void {
-      event.preventDefault()
+  // One width subscription for the component's life, whatever its picker.
+  // The focused control is remembered before the responsive render can drop it.
+  useLayoutEffect(() => {
+    function onNarrow(value: boolean): void {
+      if (value === narrowRef.current) return
+      narrowRef.current = value
+      const root = rootRef.current
+      const target = root?.ownerDocument.activeElement
+      if (
+        ownerRef.current.picker.calendar.state.get().open &&
+        root !== undefined &&
+        root !== null &&
+        target instanceof HTMLElement &&
+        root.contains(target)
+      ) {
+        pendingNarrowFocus.current = { source: ownerRef.current, root, target }
+      }
+      setNarrow(value)
     }
-    group.addEventListener('beforeinput', cancel)
-    return () => {
-      group.removeEventListener('beforeinput', cancel)
-    }
+    return bindNarrowScreen(onNarrow)
   }, [])
 
   // Close belongs to the effect that is actually leaving. StrictMode replays
@@ -158,6 +193,8 @@ export function HilosDateTimePicker({
       if (root === null) return
       returnFocusRef.current = true
       wasOpenRef.current = true
+      // The narrow panel closes only through its own controls.
+      if (narrow) return undefined
       const ownerPicker = picker
       return bindPopupDismiss(root, () => {
         const owner = ownerRef.current
@@ -180,7 +217,7 @@ export function HilosDateTimePicker({
       }
     }
     wasOpenRef.current = false
-  }, [calendar.open, picker])
+  }, [calendar.open, picker, narrow])
 
   // A blocked control can lose focus while React commits `disabled`. Remember
   // the target when the signal changes, before that commit.
@@ -234,12 +271,38 @@ export function HilosDateTimePicker({
       ?.focus({ preventScroll: true })
   })
 
-  function isCurrent(target: EventTarget | null): boolean {
+  // A width change that detached the focused control leaves focus on body.
+  // Focus the person moved elsewhere in the meantime stays where it is.
+  useLayoutEffect(() => {
+    const pending = pendingNarrowFocus.current
+    if (pending === null) return
+    pendingNarrowFocus.current = null
     const root = rootRef.current
-    const owner = ownerRef.current
+    if (
+      root !== pending.root ||
+      ownerRef.current !== pending.source ||
+      !pending.source.active ||
+      !root.isConnected ||
+      !pending.source.picker.calendar.state.get().open ||
+      pending.target.isConnected ||
+      root.ownerDocument.activeElement !== root.ownerDocument.body
+    ) {
+      return
+    }
+    root
+      .querySelector<HTMLElement>('[role="dialog"]')
+      ?.focus({ preventScroll: true })
+  })
+
+  function isCurrent(
+    target: EventTarget | null,
+    source: PickerOwner = ownerRef.current,
+  ): boolean {
+    const root = rootRef.current
     return (
-      owner.active &&
-      owner.picker === picker &&
+      source === ownerRef.current &&
+      source.active &&
+      source.picker === picker &&
       root !== null &&
       root.isConnected &&
       root.contains(target as Node | null)
@@ -293,6 +356,37 @@ export function HilosDateTimePicker({
     if (!isCurrent(event.currentTarget)) return
     if (focused?.input === event.currentTarget) setFocused(null)
     picker.leavePart(edge, part)
+  }
+
+  // Narrow only: a press on the closed field opens the panel instead of the
+  // screen keyboard, and a press on the open field closes it. The gesture
+  // belongs to the owner that saw the mousedown.
+  function onFieldMouseDown(event: MouseEvent<HTMLDivElement>): void {
+    const source = ownerRef.current
+    const opens =
+      narrowRef.current &&
+      !source.picker.calendar.state.get().open &&
+      focused === null &&
+      isCurrent(event.target, source)
+    fieldPress.current = { source, opens }
+    if (opens) event.preventDefault()
+  }
+
+  function onFieldClick(event: MouseEvent<HTMLDivElement>): void {
+    const press = fieldPress.current
+    fieldPress.current = null
+    if (
+      press === null ||
+      !narrowRef.current ||
+      !isCurrent(event.target, press.source)
+    ) {
+      return
+    }
+    if (press.opens) press.source.picker.calendar.open()
+    else if (press.source.picker.calendar.state.get().open) {
+      returnFocusRef.current = !(event.target instanceof HTMLInputElement)
+      press.source.picker.calendar.close()
+    }
   }
 
   function toggleCalendar(event: MouseEvent<HTMLButtonElement>): void {
@@ -354,7 +448,8 @@ export function HilosDateTimePicker({
       >
         <div
           className={[
-            'input-group input-group-sm flex-nowrap',
+            'input-group flex-nowrap',
+            narrow ? 'input-group-lg' : 'input-group-sm',
             invalid ? 'has-validation' : '',
           ]
             .filter(Boolean)
@@ -367,10 +462,18 @@ export function HilosDateTimePicker({
             role="group"
             aria-labelledby={`${id}-label`}
             data-id={dataId}
+            onMouseDown={onFieldMouseDown}
+            onClick={onFieldClick}
           >
             {endpoints.map(({ edge, snapshot }) => (
               <Fragment key={edge}>
-                <div className="d-inline-flex align-items-center flex-nowrap text-nowrap">
+                <div
+                  className={`d-inline-flex align-items-center ${
+                    narrow
+                      ? 'w-100 mw-100 flex-wrap'
+                      : 'flex-nowrap text-nowrap'
+                  }`}
+                >
                   {snapshot.parts.map((part, index) => (
                     <div
                       key={part.part}
@@ -389,19 +492,27 @@ export function HilosDateTimePicker({
                         type="text"
                         role="spinbutton"
                         autoComplete="off"
+                        inputMode={dateTimePickerPartInputMode(part.part)}
                         spellCheck={false}
                         size={Math.max(
                           part.text.length,
                           part.placeholder.length,
                         )}
                         value={part.text || part.placeholder}
-                        className={`border-0 text-center p-0 ${
+                        ref={partInputRef(edge, part.part, (target) =>
+                          isCurrent(target),
+                        )}
+                        className={[
+                          'border-0 text-center',
+                          narrow
+                            ? 'form-control form-control-lg w-auto px-2 py-2'
+                            : 'p-0',
                           focused?.edge === edge && focused.part === part.part
                             ? 'text-bg-primary'
                             : part.text === ''
                               ? 'bg-transparent text-body-tertiary'
-                              : 'bg-transparent text-body'
-                        }`}
+                              : 'bg-transparent text-body',
+                        ].join(' ')}
                         aria-label={partLabel(edge, part.label)}
                         aria-valuemin={part.valueMin}
                         aria-valuemax={part.valueMax}
@@ -478,6 +589,7 @@ export function HilosDateTimePicker({
             calendar={calendar}
             state={state}
             blocked={blocked}
+            narrow={narrow}
             describedBy={describedBy}
           />
         )}

@@ -1,9 +1,11 @@
-// Wide calendar and time panel for HilosDateTimePicker. The field owns opening,
-// dismissal and focus return; this view draws one open snapshot and talks to
-// the same headless controller. It is not a modal and it is not exported.
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+// Calendar and time panel for HilosDateTimePicker at either width; the narrow
+// one lies in flow under the field. The field owns opening, dismissal and
+// focus return; this view draws one open snapshot and talks to the same
+// headless controller. It is not a modal and it is not exported.
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { FocusEvent, KeyboardEvent, MouseEvent, ReactElement } from 'react'
 import {
+  revealNarrowPickerPanel,
   revealPickerPanel,
   type DateTimePickerCalendarSnapshot,
   type DateTimePickerController,
@@ -15,7 +17,10 @@ import {
   type DateTimePickerSnapshot,
 } from '@hilos/core/base'
 
-import { useDateTimePickerPartKeys } from './dateTimePickerPartKeys.js'
+import {
+  dateTimePickerPartInputMode,
+  useDateTimePickerPartKeys,
+} from './dateTimePickerPartKeys.js'
 
 const TIME_PARTS: readonly DateTimePickerPart[] = [
   'hour',
@@ -25,7 +30,7 @@ const TIME_PARTS: readonly DateTimePickerPart[] = [
 ]
 const DATE_PARTS: readonly DateTimePickerPart[] = ['year', 'month', 'day']
 
-/** Props for the wide panel mounted under an open field. */
+/** Props for the panel mounted under an open field. */
 export interface HilosDateTimePickerPanelProps {
   /** The field's controller. The panel never disposes it. */
   picker: DateTimePickerController<DateTimePickerKind, DateTimePickerCount>
@@ -37,6 +42,8 @@ export interface HilosDateTimePickerPanelProps {
   state: DateTimePickerSnapshot<DateTimePickerKind, DateTimePickerCount>
   /** Disabled or busy: parts, arrows and radios are unavailable. */
   blocked: boolean
+  /** The field's narrow layout: in flow under the field, edge buttons and Done. */
+  narrow: boolean
   /** Description ids supplied by the mounting form, joined after the reason. */
   describedBy?: string
 }
@@ -58,8 +65,16 @@ function hasDate(
   )
 }
 
+function endpointText(
+  snapshot: DateTimePickerEndpointSnapshot<DateTimePickerKind>,
+): string {
+  return snapshot.parts
+    .map((part) => part.prefix + (part.text || part.placeholder))
+    .join('')
+}
+
 /**
- * The wide date, time, or date-time panel.
+ * The date, time, or date-time panel at either width.
  *
  * @param props The controller, snapshots, and the field's description ids.
  * @returns The dialog, or the time rows when the kind has no grid.
@@ -70,6 +85,7 @@ export function HilosDateTimePickerPanel({
   calendar,
   state,
   blocked,
+  narrow,
   describedBy,
 }: HilosDateTimePickerPanelProps): ReactElement {
   const panelRef = useRef<HTMLDivElement>(null)
@@ -79,7 +95,10 @@ export function HilosDateTimePickerPanel({
     edge: DateTimePickerEdge
     part: DateTimePickerPart
   } | null>(null)
-  const onPartKeyDown = useDateTimePickerPartKeys(picker, panelRef)
+  const { onPartKeyDown, partInputRef } = useDateTimePickerPartKeys(
+    picker,
+    panelRef,
+  )
   const hasGrid = calendar.grid !== null
 
   // The first commit reveals. A later commit reveals only when a grid key
@@ -93,28 +112,29 @@ export function HilosDateTimePickerPanel({
     if (!picker.calendar.state.get().open) return
     if (!opening && pending !== element) return
     didReveal.current = true
-    revealPickerPanel(element)
+    if (opening && narrow) {
+      revealNarrowPickerPanel(
+        element,
+        element.ownerDocument.getElementById(`${id}-label`) ?? element,
+      )
+    } else {
+      revealPickerPanel(element)
+    }
   })
 
   useEffect(() => {
     const panel = panelRef.current
     if (panel === null) return
     const grid = panel.querySelector<HTMLElement>('[role="grid"]')
-    // beforeinput does not surface reliably through React's synthetic event,
-    // and pointerleave does not bubble, so React's pointer-out emulation never
+    // pointerleave does not bubble, so React's pointer-out emulation never
     // sees a leave dispatched on the grid itself.
-    function cancelInput(event: Event): void {
-      event.preventDefault()
-    }
     function leaveGrid(): void {
       if (panel === null || !panel.isConnected) return
       if (!picker.calendar.state.get().open) return
       picker.calendar.hoverDay(null)
     }
-    panel.addEventListener('beforeinput', cancelInput)
     grid?.addEventListener('pointerleave', leaveGrid)
     return () => {
-      panel.removeEventListener('beforeinput', cancelInput)
       grid?.removeEventListener('pointerleave', leaveGrid)
     }
   }, [picker, hasGrid])
@@ -154,9 +174,10 @@ export function HilosDateTimePickerPanel({
     picker.kind === 'date'
       ? []
       : endpoints
-          .filter(
-            ({ edge, snapshot }) =>
-              edge === 'start' || picker.kind === 'time' || hasDate(snapshot),
+          .filter(({ edge, snapshot }) =>
+            narrow && calendar.grid !== null
+              ? edge === calendar.activeEdge
+              : edge === 'start' || picker.kind === 'time' || hasDate(snapshot),
           )
           .map(({ edge, snapshot }) => ({
             edge,
@@ -241,14 +262,48 @@ export function HilosDateTimePickerPanel({
           ? picker.labels.chooseTime
           : picker.labels.chooseDate
       }
-      className="position-absolute top-100 start-0 z-3 mt-1 border rounded-3 shadow bg-body p-2"
+      className={
+        narrow
+          ? 'mt-2 border rounded-3 bg-body p-2'
+          : 'position-absolute top-100 start-0 z-3 mt-1 border rounded-3 shadow bg-body p-2'
+      }
     >
       {grid !== null && (
         <>
+          {narrow && picker.count === 'range' && (
+            <div className="row g-2 mb-2">
+              {endpoints.map(({ edge, snapshot }) => (
+                <div key={edge} className="col-6">
+                  <button
+                    type="button"
+                    className={`btn btn-sm w-100 text-start ${
+                      calendar.activeEdge === edge
+                        ? 'btn-outline-primary active'
+                        : 'btn-outline-secondary'
+                    }`}
+                    aria-pressed={calendar.activeEdge === edge}
+                    onClick={(event) => {
+                      if (!isCurrent(event.currentTarget)) return
+                      picker.calendar.setActiveEdge(edge)
+                    }}
+                  >
+                    <span className="d-block small opacity-75">
+                      {picker.labels[edge === 'start' ? 'from' : 'to']}
+                    </span>
+                    <span className="small">{endpointText(snapshot)}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="d-flex align-items-center gap-1 mb-1">
             <button
               type="button"
-              className="btn btn-sm btn-link text-body-secondary"
+              className={
+                narrow
+                  ? 'btn btn-lg btn-outline-secondary'
+                  : 'btn btn-sm btn-link text-body-secondary'
+              }
               aria-label={picker.labels.previousMonth}
               disabled={!grid.canPreviousMonth}
               onClick={(event) => {
@@ -267,7 +322,11 @@ export function HilosDateTimePickerPanel({
             </div>
             <button
               type="button"
-              className="btn btn-sm btn-link text-body-secondary"
+              className={
+                narrow
+                  ? 'btn btn-lg btn-outline-secondary'
+                  : 'btn btn-sm btn-link text-body-secondary'
+              }
               aria-label={picker.labels.nextMonth}
               disabled={!grid.canNextMonth}
               onClick={(event) => {
@@ -340,7 +399,8 @@ export function HilosDateTimePickerPanel({
                           type="button"
                           role="gridcell"
                           className={[
-                            'btn btn-sm w-100 px-2',
+                            'btn w-100',
+                            narrow ? 'btn-lg px-0' : 'btn-sm px-2',
                             day.selected ? 'btn-primary' : '',
                             !day.selected && day.disabled
                               ? 'text-body-tertiary'
@@ -407,11 +467,22 @@ export function HilosDateTimePickerPanel({
                     :
                   </span>
                 )}
-                <div className="d-flex flex-column align-items-center">
+                <div
+                  className={[
+                    'd-flex flex-column align-items-center',
+                    narrow ? 'gap-1' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                >
                   <button
                     type="button"
                     tabIndex={-1}
-                    className="btn btn-link btn-sm p-0 lh-1 text-body-secondary"
+                    className={
+                      narrow
+                        ? 'btn btn-lg btn-outline-secondary'
+                        : 'btn btn-link btn-sm p-0 lh-1 text-body-secondary'
+                    }
                     aria-label={`${picker.labels.increase} ${partLabel(edge, part.label)}`}
                     disabled={blocked}
                     onClick={(event) => stepPart(event, edge, part.part, 1)}
@@ -422,11 +493,16 @@ export function HilosDateTimePickerPanel({
                     type="text"
                     role="spinbutton"
                     autoComplete="off"
+                    inputMode={dateTimePickerPartInputMode(part.part)}
                     spellCheck={false}
                     size={Math.max(part.text.length, part.placeholder.length)}
                     value={part.text || part.placeholder}
+                    ref={partInputRef(edge, part.part, isCurrent)}
                     className={[
-                      'border-0 text-center p-0',
+                      'border-0 text-center',
+                      narrow
+                        ? 'form-control form-control-lg w-auto px-2 py-2'
+                        : 'p-0',
                       focused?.edge === edge && focused.part === part.part
                         ? 'text-bg-primary'
                         : part.text === ''
@@ -454,7 +530,11 @@ export function HilosDateTimePickerPanel({
                   <button
                     type="button"
                     tabIndex={-1}
-                    className="btn btn-link btn-sm p-0 lh-1 text-body-secondary"
+                    className={
+                      narrow
+                        ? 'btn btn-lg btn-outline-secondary'
+                        : 'btn btn-link btn-sm p-0 lh-1 text-body-secondary'
+                    }
                     aria-label={`${picker.labels.decrease} ${partLabel(edge, part.label)}`}
                     disabled={blocked}
                     onClick={(event) => stepPart(event, edge, part.part, -1)}
@@ -483,12 +563,14 @@ export function HilosDateTimePickerPanel({
           )}
           {snapshot.offsetChoices.length > 0 && (
             <div
-              className="mb-2 btn-group-vertical btn-group-sm w-100"
+              className={`mb-2 btn-group-vertical w-100 ${
+                narrow ? 'btn-group-lg' : 'btn-group-sm'
+              }`}
               role="radiogroup"
               aria-label={partLabel(edge, picker.labels.chooseOffset)}
             >
               {snapshot.offsetChoices.map((choice, index) => (
-                <div key={choice.epochMs}>
+                <Fragment key={choice.epochMs}>
                   <input
                     id={`${id}-${edge}-offset-${index}`}
                     type="radio"
@@ -507,12 +589,24 @@ export function HilosDateTimePickerPanel({
                   >
                     {offsetText(index, choice.text)}
                   </label>
-                </div>
+                </Fragment>
               ))}
             </div>
           )}
         </div>
       ))}
+      {narrow && (
+        <button
+          type="button"
+          className="btn btn-lg btn-outline-secondary w-100 mt-2"
+          onClick={(event) => {
+            if (!isCurrent(event.currentTarget)) return
+            picker.calendar.close()
+          }}
+        >
+          {picker.labels.done}
+        </button>
+      )}
       {picker.count === 'range' && (
         <span className="visually-hidden" aria-live="polite">
           {`${picker.labels.chooseDate}: ${picker.labels[calendar.activeEdge === 'start' ? 'from' : 'to']}`}

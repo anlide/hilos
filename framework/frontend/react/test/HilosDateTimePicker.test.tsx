@@ -1,6 +1,7 @@
-// The React entry of HilosDateTimePicker's shared field and calendar cases
+// The React entry of HilosDateTimePicker's shared field, calendar and narrow cases
 // (../../test-support/dateTimePickerFieldCases.ts,
-// ../../test-support/dateTimePickerCalendarCases.ts): the steps and expectations
+// ../../test-support/dateTimePickerCalendarCases.ts,
+// ../../test-support/dateTimePickerNarrowCases.ts): the steps and expectations
 // live there, and this file only renders the real component and drives React's
 // lifecycle for them.
 import { act, render } from '@testing-library/react'
@@ -12,6 +13,7 @@ import {
   type DateTimePickerFieldInput,
   type DateTimePickerFieldView,
 } from '../../test-support/dateTimePickerFieldCases.js'
+import { registerDateTimePickerNarrowCases } from '../../test-support/dateTimePickerNarrowCases.js'
 import { HilosDateTimePicker } from '../src/HilosDateTimePicker.js'
 
 const environment = globalThis as typeof globalThis & {
@@ -108,3 +110,4 @@ registerDateTimePickerCalendarCases(
   { describe, it, expect },
   mountField,
 )
+registerDateTimePickerNarrowCases('React', { describe, it, expect }, mountField)

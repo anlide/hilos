@@ -10,7 +10,7 @@ import {
   type DateTimePickerKind,
   type WritableSignal,
 } from '@hilos/core/base'
-import { HilosDateTimePicker, useSignal } from '@hilos/react/base'
+import { HilosDateTimePicker, HilosModal, useSignal } from '@hilos/react/base'
 
 // Explicit examples of presentation factors; the browser locale supplies none.
 const FACTORS = {
@@ -94,6 +94,8 @@ export function DateTimePickerFixture(): React.JSX.Element {
   const [seconds, setSeconds] = useState(false)
   const [changes, setChanges] = useState(0)
   const [mountId, setMountId] = useState(0)
+  const [inModal, setInModal] = useState(false)
+  const [dark, setDark] = useState(false)
 
   const [busySignal] = useState(() => createSignal(false))
   const [disabledSignal] = useState(() => createSignal(false))
@@ -442,16 +444,49 @@ export function DateTimePickerFixture(): React.JSX.Element {
             Disabled
           </label>
         </div>
+        <div>
+          <input
+            id="fixture-dark"
+            type="checkbox"
+            className="btn-check"
+            data-id="fixture-dark"
+            checked={dark}
+            onChange={(e) => {
+              const nextDark = e.target.checked
+              setDark(nextDark)
+              document.documentElement.setAttribute(
+                'data-bs-theme',
+                nextDark ? 'dark' : 'light',
+              )
+            }}
+          />
+          <label
+            className="btn btn-lg btn-outline-secondary"
+            htmlFor="fixture-dark"
+          >
+            Dark theme
+          </label>
+        </div>
       </div>
       <div className="mb-4">
-        <HilosDateTimePicker
-          key={mountId}
-          picker={picker}
-          id="fixture-picker"
-          label={label}
-          dataId="fixture-picker"
-        />
+        {!inModal && (
+          <HilosDateTimePicker
+            key={mountId}
+            picker={picker}
+            id="fixture-picker"
+            label={label}
+            dataId="fixture-picker"
+          />
+        )}
       </div>
+      <button
+        type="button"
+        className="btn btn-lg btn-outline-primary"
+        data-id="fixture-open-modal"
+        onClick={() => setInModal(true)}
+      >
+        Open in modal
+      </button>
       <button
         type="button"
         className="btn btn-outline-primary"
@@ -494,6 +529,66 @@ export function DateTimePickerFixture(): React.JSX.Element {
           {changes}
         </output>
       </div>
+      <HilosModal
+        open={inModal}
+        title="Schedule maintenance"
+        onClose={() => setInModal(false)}
+        actions={({ requestClose }) => (
+          <>
+            <button
+              type="button"
+              className="btn btn-lg btn-secondary"
+              onClick={requestClose}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-lg btn-primary"
+              onClick={requestClose}
+            >
+              Schedule
+            </button>
+          </>
+        )}
+      >
+        <div className="mb-3">
+          <label className="form-label" htmlFor="fixture-modal-title">
+            Title
+          </label>
+          <input
+            id="fixture-modal-title"
+            type="text"
+            className="form-control form-control-lg"
+            data-id="fixture-modal-title"
+            defaultValue="Database upgrade"
+            data-autofocus
+          />
+        </div>
+        <HilosDateTimePicker
+          key={mountId}
+          picker={picker}
+          id="fixture-modal-picker"
+          label={label}
+          dataId="fixture-modal-picker"
+        />
+        <p className="form-text mt-2 mb-0">Choose when maintenance starts.</p>
+        <div className="mt-3">
+          <label className="form-label" htmlFor="fixture-modal-description">
+            What visitors read
+          </label>
+          <textarea
+            id="fixture-modal-description"
+            className="form-control form-control-lg"
+            data-id="fixture-modal-description"
+            rows={3}
+          />
+        </div>
+        <p className="small text-body-secondary mt-2 mb-0">
+          This is an advance announcement. It does not close the service; the
+          freeze in Maintenance starts the actual work.
+        </p>
+      </HilosModal>
     </main>
   )
 }
