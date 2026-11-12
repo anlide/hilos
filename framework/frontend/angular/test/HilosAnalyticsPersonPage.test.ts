@@ -6,19 +6,21 @@ import { TestBed } from '@angular/core/testing'
 import {
   computedSignal,
   createSignal,
-  formatAnalyticsTime,
   HilosPages,
   pageIdentity,
   resolveHilosPath,
   ScopeManager,
   sessionUserName,
   sessionUserPhoto,
-  type HilosAnalyticsBrowserSessionRow,
   type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
   type TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  formatAnalyticsTime,
+  type HilosAnalyticsBrowserSessionRow,
+} from '@hilos/core/admin/analytics'
 import { describe, expect, it, vi } from 'vitest'
 
 import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'

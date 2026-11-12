@@ -22,7 +22,7 @@ import {
   type HilosConnection,
   type ThemePick,
   type ThemeSettings,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { THEME_PICK_STORAGE_KEY } from '../../core/src/theme/themeBrowser.js'

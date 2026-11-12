@@ -1,6 +1,6 @@
 import { act, fireEvent, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { HilosPages } from '@hilos/core'
+import { HilosPages } from '@hilos/core/base'
 import { HilosI18nCountriesPage } from '../src/admin/i18n/lists/HilosI18nCountriesPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 import {

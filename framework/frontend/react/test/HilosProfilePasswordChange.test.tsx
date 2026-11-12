@@ -15,7 +15,7 @@ import {
   type ActionLifecycle,
   type HilosConnection,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosProfilePasswordChange } from '../src/profile/HilosProfilePasswordChange.js'
 
 afterEach(() => {

@@ -9,7 +9,7 @@ import {
   SIGNAL_PROFILE_PASSWORD_UPDATED,
   type ActionHandle,
   type ActionLifecycle,
-} from '../../src/index.js'
+} from '../../src/base/index.js'
 
 describe('profile sign-in methods', () => {
   it('dispatches each tracked action under its wire name with its payload', () => {

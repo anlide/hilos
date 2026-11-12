@@ -7,7 +7,7 @@
 // import builds the gate again, unlatched.
 import { describe, expect, it, vi } from 'vitest'
 
-import { type HilosConnection } from '../../src/index.js'
+import { type HilosConnection } from '../../src/base/index.js'
 import {
   SIGNAL_TYPE_PAGE_RESPONSE,
   SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,

@@ -7,7 +7,7 @@ import {
   formatAnalyticsTime,
   formatAnalyticsSessionNumber,
   readAnalyticsRouteId,
-} from '../../../src/index.js'
+} from '../../../src/admin/analytics/index.js'
 
 describe('Analytics labels', () => {
   it('formats source milliseconds as local date and time with seconds', () => {

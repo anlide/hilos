@@ -1,6 +1,7 @@
 import { act, fireEvent } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { createSignal, type HilosI18nCountryCard } from '@hilos/core'
+import { createSignal } from '@hilos/core/base'
+import { type HilosI18nCountryCard } from '@hilos/core/admin/i18n'
 import { HilosI18nCountrySwitchOn } from '../src/admin/i18n/details/HilosI18nCountrySwitchOn.js'
 import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 import { useSignal } from '../src/useSignal.js'

@@ -14,18 +14,20 @@ import {
   bindSessionScope,
   createSignal,
   hilosToasts,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   ActionResult,
   HilosConnection,
   HilosRouter,
-  HilosSettingPresetsContext,
   HilosSettingPresetsState,
-  HilosSettingPresetsVocabulary,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type {
+  HilosSettingPresetsContext,
+  HilosSettingPresetsVocabulary,
+} from '@hilos/core/admin/settings'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosSettingPresetsPage } from '../src/admin/settings/HilosSettingPresetsPage.js'

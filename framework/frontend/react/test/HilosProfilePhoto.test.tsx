@@ -17,7 +17,7 @@ import {
   type HilosProfilePhotoStep,
   type HilosUpload,
   type WritableSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, expect, it, vi } from 'vitest'
 import { HilosProfilePhoto } from '../src/profile/HilosProfilePhoto.js'
 

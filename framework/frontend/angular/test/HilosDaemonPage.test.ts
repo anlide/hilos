@@ -2,9 +2,8 @@ import { TestBed } from '@angular/core/testing'
 import {
   DAEMON_OVERVIEW_DATA,
   DAEMON_DATABASE_DATA,
-  HilosPages,
-  ScopeManager,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
+import { HilosPages, ScopeManager } from '@hilos/core/base'
 import { describe, expect, it, vi } from 'vitest'
 
 import { HilosDaemonPage } from '../src/admin/daemon/HilosDaemonPage.js'

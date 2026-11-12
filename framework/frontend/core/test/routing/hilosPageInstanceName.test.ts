@@ -5,7 +5,6 @@ import {
   pageInstanceName,
 } from '../../src/routing/hilosPageInstanceName.js'
 import { bindPageInstanceName as baseBinding } from '../../src/base/index.js'
-import { bindPageInstanceName as rootBinding } from '../../src/index.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import {
   computedSignal,
@@ -14,9 +13,8 @@ import {
 } from '../../src/state/signal.js'
 
 describe('bindPageInstanceName', () => {
-  it('shares one public binding implementation between root and base', () => {
+  it('shares one public binding implementation between base and its owner', () => {
     expect(baseBinding).toBe(bindPageInstanceName)
-    expect(rootBinding).toBe(bindPageInstanceName)
   })
 
   it('reacts to a late registration and to changes in its live source', () => {

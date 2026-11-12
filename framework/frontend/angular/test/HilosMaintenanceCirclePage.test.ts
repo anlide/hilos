@@ -13,7 +13,7 @@ import {
   bindSessionScope,
   createSignal,
   hilosToasts,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   ActionLifecycle,
@@ -25,7 +25,7 @@ import type {
   ProjectSignal,
   TableViewportController,
   WritableSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import {
   HILOS_MAINTENANCE_CIRCLE_COPY,
   HILOS_MAINTENANCE_DISABLE_COPY,

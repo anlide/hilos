@@ -29,7 +29,10 @@ import {
 import { bindSessionScope } from '../../src/session/sessionScope.js'
 import { applyServerTime } from '../../src/session/serverClock.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
-import { type HilosConnection, type ProjectSignal } from '../../src/index.js'
+import {
+  type HilosConnection,
+  type ProjectSignal,
+} from '../../src/base/index.js'
 import { change, clause, current, first } from './fixtures.js'
 
 /** One day, in ms. */

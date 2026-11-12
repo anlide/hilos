@@ -7,11 +7,11 @@
 // moment. The creation itself, from the table's main action, is covered with
 // the countries page.
 import { signal } from '@angular/core'
+import { HilosPages } from '@hilos/core/base'
 import {
-  HilosPages,
   createHilosI18nBuiltInCountryCodes,
   createHilosI18nCountryAdd,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosI18nCountryAdd } from '../src/admin/i18n/lists/HilosI18nCountryAdd.js'

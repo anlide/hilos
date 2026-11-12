@@ -15,14 +15,13 @@
 // above it with Save refused, focus returned home on close, and every other way
 // out as before.
 import { TestBed } from '@angular/core/testing'
+import { HilosPages, hilosToasts } from '@hilos/core/base'
 import {
   COUNTRY_CARD_DATA,
   HILOS_I18N_COUNTRY_DELETE_COPY,
   HILOS_I18N_COUNTRY_SWITCH_ON_COPY,
-  HilosPages,
-  hilosToasts,
-} from '@hilos/core'
-import type { PageSubscriptionError } from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import type { PageSubscriptionError } from '@hilos/core/base'
 import { describe, expect, it } from 'vitest'
 
 import { HilosI18nCountryPage } from '../src/admin/i18n/details/HilosI18nCountryPage.js'

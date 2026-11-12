@@ -1,12 +1,11 @@
-import { mount } from '@vue/test-utils'
+import { mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { h, markRaw } from 'vue'
+import { h, markRaw, nextTick, ref } from 'vue'
 import * as core from '@hilos/core/base'
 import {
   TableViewportController,
   bindTimeZoneState,
   createSignal,
-  hilosTableFrozenLabel,
 } from '@hilos/core/base'
 import type {
   ActionHandle,
@@ -18,6 +17,13 @@ import type {
   ProjectSignal,
   ReadonlySignal,
 } from '@hilos/core/base'
+
+import type {
+  TableLiveInput,
+  TableLiveView,
+} from '../../test-support/tableLiveFixtures.js'
+import { registerTableLiveFrozenCases } from '../../test-support/tableLiveFrozenCases.js'
+import { registerTableLiveRoomCases } from '../../test-support/tableLiveRoomCases.js'
 
 import HilosTableLive from './HilosTableLive.vue'
 
@@ -112,137 +118,93 @@ function deleteAction(label = 'Delete'): HilosTableBulkAction {
   }
 }
 
+/** Retain the wrapper before the shell first renders the real Live. */
+async function mountTableLive(input: TableLiveInput): Promise<TableLiveView> {
+  const host = document.createElement('div')
+  const ready = ref(false)
+  let wrapper: VueWrapper | undefined
+  const renderErrors: unknown[] = []
+  function checkErrors(): void {
+    if (renderErrors.length === 1) throw renderErrors.shift()
+    if (renderErrors.length > 1) {
+      const errors = renderErrors.splice(0)
+      throw new AggregateError(errors, 'Vue table live failed', {
+        cause: errors[0],
+      })
+    }
+  }
+  let released = false
+  async function unmount(): Promise<void> {
+    if (released) return
+    released = true
+    const errors: unknown[] = []
+    for (const release of [
+      () => wrapper?.unmount(),
+      () => nextTick(),
+      checkErrors,
+      () => host.remove(),
+    ]) {
+      try {
+        await release()
+      } catch (error) {
+        errors.push(error)
+      }
+    }
+    if (errors.length === 1) throw errors[0]
+    if (errors.length > 1)
+      throw new AggregateError(errors, 'Vue table live cleanup failed', {
+        cause: errors[0],
+      })
+  }
+  try {
+    document.body.appendChild(host)
+    wrapper = mount(
+      {
+        render: () =>
+          ready.value
+            ? h(HilosTableLive, {
+                controller: input.controller,
+                columns: input.columns,
+              })
+            : null,
+      },
+      {
+        attachTo: host,
+        global: {
+          config: { errorHandler: (error) => renderErrors.push(error) },
+        },
+      },
+    )
+    ready.value = true
+    await nextTick()
+    checkErrors()
+    return {
+      root: host,
+      unmount,
+      async change(action) {
+        action()
+        await nextTick()
+        checkErrors()
+      },
+    }
+  } catch (error) {
+    try {
+      await unmount()
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        'Vue table live setup and cleanup failed',
+        { cause: cleanupError },
+      )
+    }
+    throw error
+  }
+}
+
+registerTableLiveRoomCases('Vue', { describe, it, expect }, mountTableLive)
+registerTableLiveFrozenCases('Vue', { describe, it, expect }, mountTableLive)
+
 describe('HilosTableLive', () => {
-  it('stands exactly one hidden twin with nothing, one and three messages live', async () => {
-    const controller = makeController()
-    const wrapper = mountLive(controller)
-    expect(wrapper.findAll('[data-id="hilos-table-live-idle"]')).toHaveLength(1)
-
-    controller.ingestAnnounce('b', 'above', 2, true)
-    await wrapper.vm.$nextTick()
-    expect(wrapper.findAll('[data-id="hilos-table-live-idle"]')).toHaveLength(1)
-
-    liveThree(controller)
-    await wrapper.vm.$nextTick()
-    expect(wrapper.findAll('[data-id="hilos-table-live-idle"]')).toHaveLength(1)
-  })
-
-  it('keeps the twin out of sight and out of the accessibility tree', () => {
-    const wrapper = mountLive(makeController())
-    const twin = wrapper.get('[data-id="hilos-table-live-idle"]')
-
-    expect(twin.classes()).toContain('invisible')
-    expect(twin.attributes('aria-hidden')).toBe('true')
-    // The twin holds room and takes no focus, so there is no button inside it.
-    expect(twin.find('button').exists()).toBe(false)
-  })
-
-  it('lays the message out exactly as the twin, only placed over it', async () => {
-    const controller = makeController()
-    const wrapper = mountLive(controller)
-    controller.ingestAnnounce('b', 'above', 2, true)
-    await wrapper.vm.$nextTick()
-
-    const twin = wrapper.get('[data-id="hilos-table-live-idle"]')
-    const message = wrapper.get('[data-id="hilos-table-announce"]')
-    expect(layoutClasses(message.classes())).toEqual(
-      layoutClasses(twin.classes()),
-    )
-    // Out of the flow, so the message cannot add a pixel to the room.
-    expect(message.classes()).toContain('position-absolute')
-  })
-
-  it('draws no line with nothing to say, while the room still stands', () => {
-    const wrapper = mountLive(makeController())
-
-    expect(wrapper.find('[data-id="hilos-table-live-slot"]').exists()).toBe(
-      true,
-    )
-    expect(wrapper.find('.position-absolute').exists()).toBe(false)
-    expect(wrapper.get('[data-id="hilos-table-live-status"]').text()).toBe('')
-  })
-
-  it('gives the line to the senior message and the others their icons', () => {
-    const controller = makeController()
-    liveThree(controller)
-    const wrapper = mountLive(controller)
-
-    expect(wrapper.findAll('.position-absolute')).toHaveLength(1)
-    expect(wrapper.get('[data-id="hilos-table-pending-row"]').text()).toContain(
-      '1 row will move or leave',
-    )
-    expect(wrapper.find('[data-id="hilos-table-apply"]').exists()).toBe(true)
-    expect(wrapper.find('[data-id="hilos-table-announce"]').exists()).toBe(
-      false,
-    )
-    expect(wrapper.find('[data-id="hilos-table-stale"]').exists()).toBe(false)
-
-    const icons = wrapper.findAll('[data-id="hilos-table-live-rest"] i')
-    expect(icons.map((icon) => icon.classes())).toEqual([
-      ['bi', 'flex-shrink-0', 'bi-arrow-down-circle'],
-      ['bi', 'flex-shrink-0', 'bi-snow'],
-    ])
-    expect(
-      icons.every((icon) => icon.attributes('aria-hidden') === 'true'),
-    ).toBe(true)
-  })
-
-  it('speaks the senior sentence and names the rest in the region that always stands', () => {
-    const controller = makeController()
-    liveThree(controller)
-    const wrapper = mountLive(controller)
-
-    const status = wrapper.get('[data-id="hilos-table-live-status"]')
-    expect(status.attributes('role')).toBe('status')
-    expect(status.text()).toBe(
-      '1 row will move or leave. Also: new rows, a source is behind.',
-    )
-  })
-
-  it('keeps the live region off the line itself', () => {
-    const controller = makeController()
-    liveThree(controller)
-    const wrapper = mountLive(controller)
-
-    expect(
-      wrapper
-        .get('[data-id="hilos-table-pending-row"]')
-        .find('[role]')
-        .exists(),
-    ).toBe(false)
-  })
-
-  it('names the columns built from the quiet source on the freshness line', () => {
-    const controller = makeController()
-    controller.ingestDelta({
-      kind: 'row_stale',
-      rowKey: 'a',
-      staleSources: ['connections'],
-    })
-    const wrapper = mountLive(controller)
-
-    expect(wrapper.get('[data-id="hilos-table-stale"]').text()).toBe(
-      'Presence is not updating: the link to its source was lost. The other columns are live.',
-    )
-  })
-
-  it('says since when a frozen table has not updated, with the snowflake and no button', () => {
-    const controller = makeController()
-    const since = Date.now()
-    controller.ingestFrozen(since)
-    const wrapper = mountLive(controller)
-
-    const line = wrapper.get('[data-id="hilos-table-frozen"]')
-    expect(line.text()).toBe(hilosTableFrozenLabel(since))
-    expect(line.text()).toContain('This table has not updated since')
-    expect(line.classes()).toContain('alert-info')
-    expect(line.find('i').classes()).toContain('bi-snow')
-    expect(line.find('button').exists()).toBe(false)
-    expect(wrapper.get('[data-id="hilos-table-live-status"]').text()).toBe(
-      hilosTableFrozenLabel(since),
-    )
-  })
-
   it('updates the frozen line and announcement across UTC, Kyiv and Automatic without new table data', async () => {
     const resolved = new Intl.DateTimeFormat().resolvedOptions()
     vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
@@ -321,45 +283,6 @@ describe('HilosTableLive', () => {
       expect(callbacks).toHaveBeenCalledTimes(2)
       expect(listeners.size).toBe(0)
     }
-  })
-
-  it('keeps the frozen table as its snowflake after pending changes holding the line', () => {
-    const controller = makeController()
-    controller.ingestDelta({
-      kind: 'row_moved',
-      rowKey: 'a',
-      row: { rowKey: 'a', slots: { name: 'Alicia' } },
-    })
-    controller.ingestFrozen(Date.now())
-    const wrapper = mountLive(controller)
-
-    expect(wrapper.find('[data-id="hilos-table-pending-row"]').exists()).toBe(
-      true,
-    )
-    const icons = wrapper.findAll('[data-id="hilos-table-live-rest"] i')
-    expect(icons.map((icon) => icon.classes())).toEqual([
-      ['bi', 'flex-shrink-0', 'bi-snow'],
-    ])
-    expect(wrapper.get('[data-id="hilos-table-live-status"]').text()).toBe(
-      '1 row will move or leave. Also: the table stopped updating.',
-    )
-  })
-
-  it('drops the quiet source from the room while the table is frozen', () => {
-    const controller = makeController()
-    controller.ingestDelta({
-      kind: 'row_stale',
-      rowKey: 'a',
-      staleSources: ['connections'],
-    })
-    controller.ingestFrozen(Date.now())
-    const wrapper = mountLive(controller)
-
-    expect(wrapper.find('[data-id="hilos-table-frozen"]').exists()).toBe(true)
-    expect(wrapper.find('[data-id="hilos-table-stale"]').exists()).toBe(false)
-    expect(wrapper.find('[data-id="hilos-table-live-rest"]').exists()).toBe(
-      false,
-    )
   })
 
   it('draws running work on one line, the track along its bottom edge', () => {

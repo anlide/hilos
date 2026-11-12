@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import { useState } from 'react'
-import { type HilosLegalDocumentKey } from '@hilos/core'
+import { type HilosLegalDocumentKey } from '@hilos/core/base'
 import {
   consentTerms,
   consentTermsWithClauses,

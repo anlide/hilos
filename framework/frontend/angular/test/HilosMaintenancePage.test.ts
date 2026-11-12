@@ -4,13 +4,6 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionError,
-  HILOS_MAINTENANCE_DISABLE_COPY,
-  HILOS_MAINTENANCE_ENABLE_COPY,
-  HILOS_MAINTENANCE_PASS_COPY,
-  HILOS_MAINTENANCE_RESTORE_CLOSE_COPY,
-  HILOS_MAINTENANCE_RESTORE_OPEN_COPY,
-  HILOS_MAINTENANCE_RESTORE_PASS_COPY,
-  HILOS_MAINTENANCE_STATE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   MAINTENANCE_STATE_SIGNAL,
@@ -19,20 +12,29 @@ import {
   bindSessionScope,
   createSignal,
   hilosToasts,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  HILOS_MAINTENANCE_DISABLE_COPY,
+  HILOS_MAINTENANCE_ENABLE_COPY,
+  HILOS_MAINTENANCE_PASS_COPY,
+  HILOS_MAINTENANCE_RESTORE_CLOSE_COPY,
+  HILOS_MAINTENANCE_RESTORE_OPEN_COPY,
+  HILOS_MAINTENANCE_RESTORE_PASS_COPY,
+  HILOS_MAINTENANCE_STATE_COPY,
+} from '@hilos/core/admin/maintenance'
 import type {
   ActionHandle,
   ActionLifecycle,
   ActionResult,
   HilosConnection,
-  HilosMaintenanceContext,
   HilosMaintenanceState,
   HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
   WritableSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosMaintenanceContext } from '@hilos/core/admin/maintenance'
 import {
   HILOS_MAINTENANCE_WATCHDOG_COPY,
   hilosMaintenanceElapsed,

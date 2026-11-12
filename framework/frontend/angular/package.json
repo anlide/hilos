@@ -4,9 +4,6 @@
   "private": true,
   "type": "module",
   "description": "Angular view layer over @hilos/core — adapts the core stores to Angular via signals.",
-  "main": "./dist/fesm2022/hilos-angular.mjs",
-  "module": "./dist/fesm2022/hilos-angular.mjs",
-  "types": "./dist/types/hilos-angular.d.ts",
   "files": [
     "dist",
     "src/hilos-styles.scss",
@@ -40,7 +37,7 @@
     "check:templates": "ngc --noEmit -p tsconfig.build.json",
     "test": "vitest run",
     "prebuild": "node ../scripts/prebuild-sdk.mjs core",
-    "build": "ng-packagr -p ng-package.json -c tsconfig.build.json",
+    "build": "ng-packagr -p ng-package.json -c tsconfig.build.json && node bin/finalize-apf.mjs",
     "test:dist": "node test/packaging.smoke.mjs",
     "test:dist:consumer": "node test/packaging.consumer.mjs"
   },

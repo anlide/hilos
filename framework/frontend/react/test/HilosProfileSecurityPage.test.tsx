@@ -25,7 +25,7 @@ import {
   type HilosConnection,
   type HilosSecondFactorContext,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { profileSectionFixture } from '../../core/test/profile/profileSectionFixture.js'
 import { HilosProfileSecurityPage } from '../src/profile/HilosProfileSecurityPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

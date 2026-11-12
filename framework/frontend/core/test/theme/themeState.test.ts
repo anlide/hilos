@@ -13,7 +13,7 @@ import {
   type ConnectionState,
   type HilosConnection,
   type ProjectSignal,
-} from '../../src/index.js'
+} from '../../src/base/index.js'
 import { bindSessionScope } from '../../src/session/sessionScope.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { createSignal } from '../../src/state/signal.js'

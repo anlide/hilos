@@ -6,7 +6,7 @@ import {
 } from '../../../core/test/legal/publicHistoryComponent.js'
 import HilosLegalHistoryPage from './HilosLegalHistoryPage.vue'
 import { HilosLegalHistoryPage as Base } from '../base/index.js'
-import { HilosLegalHistoryPage as Root } from '../index.js'
+import { HilosLegalHistoryPage as Root } from '@hilos/vue/base'
 
 it('exports the same public component from base and root', () => {
   expect(Base).toBe(HilosLegalHistoryPage)

@@ -23,7 +23,7 @@ import {
   type HilosConnection,
   type HilosOAuthLogin,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosOAuthWaitModal } from '../src/auth/HilosOAuthWaitModal.js'

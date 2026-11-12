@@ -1,87 +1,70 @@
-// The Angular port of vue/src/HilosTableProgress.test.ts, under the same case
-// names the Vue reference and the React port run.
 import { Component } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { describe, expect, it } from 'vitest'
-import type { HilosTableProgress as HilosTableProgressState } from '@hilos/core'
-
+import {
+  registerTableProgressCases,
+  type TableProgressInput,
+  type TableProgressView,
+} from '../../test-support/tableProgressCases.js'
 import { HilosTableProgress } from '../src/HilosTableProgress.js'
 
-/** A host binding the bar and the accessible name of its track. */
+/** A host binding the real bar and its accessible name. */
 @Component({
   selector: 'test-table-progress-host',
   imports: [HilosTableProgress],
   template: `<hilos-table-progress [progress]="progress" [label]="label" />`,
 })
 class ProgressHost {
-  progress!: HilosTableProgressState
-  label = 'Work on this table'
+  progress!: TableProgressInput['progress']
+  label = ''
 }
 
-// A bar as the core hands it over: the fraction is already worked out there, so
-// these tests hand over the answer rather than the two numbers behind it.
-function progress(fraction: number | null): HilosTableProgressState {
-  return {
-    progressKey: 'nightly',
-    current: 34,
-    total: fraction === null ? null : 120,
-    fraction,
-    detail: {},
+/** Own the fixture before assigning inputs or running initial detection. */
+async function mountProgress(
+  input: TableProgressInput,
+): Promise<TableProgressView> {
+  const host = document.createElement('div')
+  let fixture: ComponentFixture<ProgressHost> | undefined
+  async function unmount(): Promise<void> {
+    const errors: unknown[] = []
+    for (const release of [
+      () => fixture?.destroy(),
+      () => {
+        TestBed.resetTestingModule()
+      },
+      () => host.remove(),
+    ]) {
+      try {
+        await release()
+      } catch (error) {
+        errors.push(error)
+      }
+    }
+    if (errors.length === 1) throw errors[0]
+    if (errors.length > 1)
+      throw new AggregateError(errors, 'Angular progress cleanup failed')
+  }
+  try {
+    document.body.appendChild(host)
+    fixture = TestBed.createComponent(ProgressHost)
+    host.appendChild(fixture.nativeElement as HTMLElement)
+    fixture.componentInstance.progress = input.progress
+    fixture.componentInstance.label = input.label
+    fixture.detectChanges()
+    await fixture.whenStable()
+    return { root: host, unmount }
+  } catch (error) {
+    try {
+      await unmount()
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        'Angular progress setup and cleanup failed',
+        { cause: cleanupError },
+      )
+    }
+    throw error
   }
 }
 
-function mountProgress(
-  fraction: number | null,
-  label = 'Work on this table',
-): ComponentFixture<ProgressHost> {
-  const fixture = TestBed.createComponent(ProgressHost)
-  fixture.componentInstance.progress = progress(fraction)
-  fixture.componentInstance.label = label
-  fixture.detectChanges()
-
-  return fixture
-}
-
-function track(fixture: ComponentFixture<unknown>): HTMLElement {
-  return (fixture.nativeElement as HTMLElement).querySelector(
-    '[role="progressbar"]',
-  ) as HTMLElement
-}
-
-function bar(fixture: ComponentFixture<unknown>): HTMLElement {
-  return (fixture.nativeElement as HTMLElement).querySelector(
-    '.progress-bar',
-  ) as HTMLElement
-}
-
-describe('HilosTableProgress', () => {
-  it('draws a known fraction as a percentage, in the width and in aria-valuenow', () => {
-    const fixture = mountProgress(0.284)
-
-    expect(track(fixture).getAttribute('aria-valuenow')).toBe('28')
-    expect(track(fixture).getAttribute('aria-valuemin')).toBe('0')
-    expect(track(fixture).getAttribute('aria-valuemax')).toBe('100')
-    expect(bar(fixture).style.getPropertyValue('--hilos-progress')).toBe('28')
-  })
-
-  it('draws work with no total as a striped track carrying no number', () => {
-    const fixture = mountProgress(null)
-
-    expect(bar(fixture).classList.contains('progress-bar-striped')).toBe(true)
-    expect(bar(fixture).classList.contains('progress-bar-animated')).toBe(true)
-    expect(bar(fixture).style.getPropertyValue('--hilos-progress')).toBe('100')
-    expect(track(fixture).hasAttribute('aria-valuenow')).toBe(false)
-  })
-
-  it('takes its accessible name from the place that draws it', () => {
-    const fixture = mountProgress(0.5, 'Work on this row')
-
-    expect(track(fixture).getAttribute('aria-label')).toBe('Work on this row')
-  })
-
-  it('puts the width class on the bar', () => {
-    const fixture = mountProgress(0.5)
-
-    expect(bar(fixture).classList.contains('hilos-progress')).toBe(true)
-  })
-})
+registerTableProgressCases('Angular', { describe, it, expect }, mountProgress)

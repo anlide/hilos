@@ -1,149 +1,82 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
-import { createSignal } from '@hilos/core'
-import type { HilosCrumb, HilosRouter } from '@hilos/core'
-
+import { act } from '@testing-library/react'
+import { createRoot, type Root } from 'react-dom/client'
+import { describe, expect, it } from 'vitest'
+import { HilosPages, resolveHilosPath } from '@hilos/core/base'
+import {
+  registerBreadcrumbCases,
+  type BreadcrumbInput,
+  type BreadcrumbView,
+} from '../../test-support/breadcrumbCases.js'
 import { HilosBreadcrumb } from '../src/HilosBreadcrumb.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
-const TRAIL: HilosCrumb[] = [
-  { page: 'hilos', label: 'Dashboard', to: '/hilos' },
-  { page: 'hilos_billing', label: 'Billing', to: '/hilos/billing' },
-]
-
-describe('HilosBreadcrumb', () => {
-  afterEach(cleanup)
-
-  it('renders nothing for an empty trail', () => {
-    const { container } = render(<HilosBreadcrumb crumbs={[]} />)
-    expect(container.querySelector('[data-id="hilos-breadcrumb"]')).toBeNull()
-  })
-
-  it('links every crumb but the last, which is the active page', () => {
-    render(<HilosBreadcrumb crumbs={TRAIL} />)
-
-    const link = screen.getByRole('link', { name: 'Dashboard' })
-    expect(link.getAttribute('href')).toBe('/hilos')
-
-    const active = screen.getByText('Billing')
-    expect(active.getAttribute('aria-current')).toBe('page')
-    expect(screen.queryByRole('link', { name: 'Billing' })).toBeNull()
-  })
-
-  it('draws a crumb with no address as text, keeping the chain whole', () => {
-    // A link that goes nowhere is worse than no link, but a missing link is
-    // worse still: the ancestry would renumber and name the wrong parent.
-    const { container } = render(
-      <HilosBreadcrumb
-        crumbs={[
-          { page: 'hilos', label: 'Dashboard', to: '/hilos' },
-          { page: 'unrouted', label: 'Section' },
-          { page: 'hilos_billing', label: 'Billing', to: '/hilos/billing' },
-        ]}
-      />,
+/** Mount the real breadcrumb and release its signal bridge before its host. */
+async function mountBreadcrumb(
+  { crumbs, label, router }: BreadcrumbInput,
+  className?: string,
+): Promise<BreadcrumbView> {
+  const host = document.body.appendChild(document.createElement('div'))
+  let root: Root | undefined
+  try {
+    root = createRoot(host)
+    const breadcrumb = (
+      <HilosBreadcrumb crumbs={crumbs} label={label} className={className} />
     )
-
-    expect(container.querySelectorAll('a')).toHaveLength(1)
-    const items = container.querySelectorAll('ol > li')
-    expect(items).toHaveLength(3)
-    expect(items[1].textContent).toBe('/Section')
-    expect(container.querySelectorAll('[aria-current="page"]')).toHaveLength(1)
-    expect(items[2].getAttribute('aria-current')).toBe('page')
-  })
-
-  it('marks the last crumb alone, whatever path the router stands at', () => {
-    // The router already stands at the first crumb's address: its link's own
-    // path match must not make it a second current page.
-    const router = {
-      currentPath: createSignal('/hilos'),
-      navigate: () => {},
-    } as unknown as HilosRouter
-    const { container } = render(
-      <HilosRouterContext.Provider value={router}>
-        <HilosBreadcrumb crumbs={TRAIL} />
-      </HilosRouterContext.Provider>,
+    act(() =>
+      root!.render(
+        router === undefined ? (
+          breadcrumb
+        ) : (
+          <HilosRouterContext.Provider value={router}>
+            {breadcrumb}
+          </HilosRouterContext.Provider>
+        ),
+      ),
     )
-
-    const current = container.querySelectorAll('[aria-current]')
-    expect(current).toHaveLength(1)
-    expect(current[0].tagName).toBe('LI')
-    expect(current[0].getAttribute('aria-current')).toBe('page')
-    expect(current[0].textContent).toBe('/Billing')
-    expect(
-      screen
-        .getByRole('link', { name: 'Dashboard' })
-        .hasAttribute('aria-current'),
-    ).toBe(false)
-  })
-
-  it('draws the last crumb as text even when it has an address', () => {
-    const { container } = render(<HilosBreadcrumb crumbs={TRAIL} />)
-
-    expect(
-      container.querySelector('[data-id="hilos-breadcrumb-hilos_billing"]'),
-    ).toBeNull()
-    expect(
-      [...container.querySelectorAll('a')].map((a) => a.textContent),
-    ).toEqual(['Dashboard'])
-  })
-
-  it('puts a silent slash before every crumb but the first', () => {
-    const { container } = render(
-      <HilosBreadcrumb
-        crumbs={[
-          { page: 'hilos', label: 'Dashboard', to: '/hilos' },
-          { page: 'unrouted', label: 'Section' },
-          { page: 'hilos_billing', label: 'Billing', to: '/hilos/billing' },
-        ]}
-      />,
-    )
-
-    const items = [...container.querySelectorAll('ol > li')]
-    expect(items).toHaveLength(3)
-    expect(container.querySelector('.breadcrumb-item')).toBeNull()
-    for (const item of items) {
-      expect(item.classList.contains('breadcrumb-item')).toBe(false)
+    return {
+      root: host,
+      async unmount() {
+        try {
+          act(() => root!.unmount())
+        } finally {
+          host.remove()
+        }
+      },
     }
-
-    expect(items[0].querySelector('span')).toBeNull()
-    for (const item of items.slice(1)) {
-      const slashes = item.querySelectorAll(':scope > span')
-      expect(slashes).toHaveLength(1)
-      expect(item.firstElementChild).toBe(slashes[0])
-      expect(slashes[0].textContent).toBe('/')
-      expect(slashes[0].getAttribute('aria-hidden')).toBe('true')
+  } catch (error) {
+    try {
+      act(() => root?.unmount())
+    } finally {
+      host.remove()
     }
-    // The slashes stay out of the links' names.
-    expect(screen.getByRole('link', { name: 'Dashboard' }).textContent).toBe(
-      'Dashboard',
+    throw error
+  }
+}
+
+registerBreadcrumbCases('React', { describe, it, expect }, mountBreadcrumb)
+
+// className is a React-only caller API, separate from shared trail behavior.
+describe('HilosBreadcrumb React API', () => {
+  it('passes caller classes to the navigation element', async () => {
+    const view = await mountBreadcrumb(
+      {
+        crumbs: [
+          {
+            page: HilosPages.DASHBOARD,
+            label: 'Dashboard',
+            to: resolveHilosPath(HilosPages.DASHBOARD),
+          },
+        ],
+      },
+      'caller-marker',
     )
-  })
-
-  it('names the navigation by the label it is given', () => {
-    render(<HilosBreadcrumb crumbs={TRAIL} label="Path to this page" />)
-
-    expect(
-      screen.getByRole('navigation', { name: 'Path to this page' }).dataset.id,
-    ).toBe('hilos-breadcrumb')
-  })
-
-  it('keeps its old name when no label is given', () => {
-    const { container } = render(<HilosBreadcrumb crumbs={TRAIL} />)
-
-    expect(
-      container
-        .querySelector('[data-id="hilos-breadcrumb"]')
-        ?.getAttribute('aria-label'),
-    ).toBe('breadcrumb')
-  })
-
-  it('passes caller classes to the navigation element', () => {
-    const { container } = render(
-      <HilosBreadcrumb crumbs={TRAIL} className="text-break" />,
-    )
-
-    const nav = container.querySelector('[data-id="hilos-breadcrumb"]')
-    expect(nav?.className).toBe('text-break')
-    expect(nav?.classList.contains('hilos-breadcrumb')).toBe(false)
+    try {
+      const nav = view.root.querySelector('nav[data-id="hilos-breadcrumb"]')
+      expect(nav).not.toBeNull()
+      expect(nav?.className).toBe('caller-marker')
+      expect(nav?.classList.contains('hilos-breadcrumb')).toBe(false)
+    } finally {
+      await view.unmount()
+    }
   })
 })

@@ -46,7 +46,7 @@ import {
   type HandshakeSignal,
   type HilosConnection,
   type ProjectSignal,
-} from '../../src/index.js'
+} from '../../src/base/index.js'
 
 const resolved = new Intl.DateTimeFormat().resolvedOptions()
 

@@ -10,16 +10,18 @@ import {
   type HilosConnection,
   type HilosRouter,
   type TableViewportController,
-  type HilosDaemonOverviewData,
-  type HilosDaemonPlacementRow,
   bindPageScope,
   createHilosRouter,
   hilosUnbuiltPages,
-  type HilosDaemonOverviewNode,
-  type HilosDaemonDatabaseData,
   type ProjectSignal,
   type TableRow,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  type HilosDaemonOverviewData,
+  type HilosDaemonPlacementRow,
+  type HilosDaemonOverviewNode,
+  type HilosDaemonDatabaseData,
+} from '@hilos/core/admin/daemon'
 import {
   act,
   cleanup,

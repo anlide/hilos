@@ -71,14 +71,15 @@ dependency the core takes — today also `qrcode-generator`, the QR library behi
 
 ## Public entrypoints and their graph
 
-Use the public subpath that owns the code. The compatibility root (`@hilos/core`,
-`@hilos/vue`, `@hilos/react`, `@hilos/angular`) retains the existing exports and
-their identities; it also reaches the admin implementations. A consumer keeping
-admin code out of its initial graph imports common code from `/base`, default
-view metadata from `/admin-views`, and implementations from `/admin/<section>`
-inside the page module loaded for that section.
+Use the public subpath that owns the code. The four SDK packages have no public
+`.` entry, root entry metadata or source `src/index.ts` barrel. Bare imports
+such as `import { HilosPages } from '@hilos/core'` are unsupported; import that
+symbol from `@hilos/core/base`. Common code comes from `/base`, default view
+metadata from `/admin-views`, and implementations from `/admin/<section>`
+inside the page module loaded for that section. The package manifests and public
+entry declarations define the supported owners and preserve shared identities.
 
-| Package | Runtime public subpaths beside the compatibility root |
+| Package | Runtime public subpaths |
 |---|---|
 | `@hilos/core` | `/base`, `/status`; `/admin/analytics`, `/admin/appearance`, `/admin/backup`, `/admin/change-log`, `/admin/communications`, `/admin/daemon`, `/admin/i18n`, `/admin/legal`, `/admin/logs`, `/admin/maintenance`, `/admin/moderation`, `/admin/security`, `/admin/settings`, `/admin/status`, `/admin/users` |
 | `@hilos/vue` | `/base`, `/admin-views`, `/status`; `/admin/analytics`, `/admin/appearance`, `/admin/backup`, `/admin/billing`, `/admin/change-log`, `/admin/communications`, `/admin/daemon`, `/admin/dashboard`, `/admin/i18n`, `/admin/legal`, `/admin/logs`, `/admin/maintenance`, `/admin/mcp-skills`, `/admin/moderation`, `/admin/roles`, `/admin/security`, `/admin/settings`, `/admin/sil`, `/admin/status`, `/admin/users` |
@@ -94,17 +95,14 @@ its types; it belongs in build configuration, never the browser entry.
 The React moderation section entry exports `HilosModerationPage`,
 `HilosModerationKindPage` and `HilosModerationKindRulesPage`, each with its
 `Props` type. Add, Edit and Delete forms stay internal to the Rules page. The
-React compatibility root exports only `HilosModerationPage` from moderation,
-preserving the existing `/base`, `/admin-views` and lazy section boundaries.
+`/base`, `/admin-views` and lazy section boundaries remain separate.
 Angular's APF `/admin/moderation` entry exports the same three page names,
 with a `context` input; its Add, Edit and Delete forms stay internal to Rules.
-Its compatibility root exports only `HilosModerationPage` from moderation.
 
 The dependency graph is acyclic: sections use base/shared/protocol code;
 `/admin-views` creates `lazyPage` descriptors with dynamic imports of the
-sections; base imports neither the admin implementations, the default map nor
-the compatibility root. A section entry can include several page modules and
-shared dependencies. A page selection is not a promise of exactly one chunk.
+sections; base imports neither the admin implementations nor the default map.
+A section entry can include several page modules and shared dependencies. A page selection is not a promise of exactly one chunk.
 
 Core, Vue and React declare `development`, `types`, `import` and `default`
 conditions for their runtime entries. Development resolves to source; the other
@@ -117,17 +115,24 @@ framework, so classes, state and tokens have one owner. This externalization is
 for the SDK library build; the consuming application bundles those dependencies.
 CSS imports are injected into the library output automatically.
 
-Angular uses real ng-packagr/APF secondary entries. Its source manifest stays
-plain (`main`/`module`/`types`), and local `base/`, `admin-views/` and
-`admin/<section>/package.json` forwarders point to the corresponding dist FESM
-and declaration. ng-packagr generates the published dist manifest's `types` and
-`default` exports, FESM2022 modules and implementation compiler maps. The pure
-compatibility barrel owns no implementation and has no compiler map. The thin
-`src/base.ts` forwards to `src/base/index.ts` so the APF compilation has one
-source root and one owner of each class/token. Do not add a second implementation
-to make a secondary entry work. Dev uses explicit consumer `paths`, production
-uses APF/AOT; both expose the same public symbols. The source Sass asset remains
-available at `@hilos/angular/src/hilos-styles.scss`.
+Core has 18 public exports: 17 runtime entries and the build-only entry above.
+Vue and React each have 23 runtime entries. Angular's source wrapper has no
+`exports` or root `main`/`module`/`types` metadata; its local `base/`,
+`admin-views/`, `status/` and `admin/<section>/package.json` forwarders point
+to the corresponding dist FESM and declaration.
+
+Angular uses real ng-packagr/APF secondary entries. Its required primary input,
+`src/apf-primary.ts`, contains only `export {}` and is internal, not a public
+entry. After ng-packagr generates the APF, `bin/finalize-apf.mjs` removes `.`
+and root `main`/`module`/`types`/`typings` metadata from `dist/package.json`.
+It validates the source-declared 23 runtime subpaths plus `./package.json`,
+their `types`/`default` targets and the shipped Sass asset. FESM2022 modules and
+implementation compiler maps remain. The thin `src/base.ts` forwards to
+`src/base/index.ts` so the APF compilation has one source root and one owner of
+each class/token. Do not add a second implementation to make a secondary entry
+work. Dev uses explicit consumer `paths`, production uses finalized APF/AOT;
+both expose the same public symbols. The source Sass asset remains available
+at `@hilos/angular/src/hilos-styles.scss`.
 
 Built consumers need no SDK source checkout: core carries `dist` and `bin`,
 Vue/React carry dist and provenance, and Angular carries its APF outputs, maps,
@@ -330,8 +335,8 @@ for each package, and copy / download actions. It uses the same License title,
 icon and subtitle. The core exports
 `HilosLicenseDependenciesController`, `createHilosLicenseDependencies(inventory)`
 and `HILOS_LICENSE_TABS` for the per-mount table state and the shared License /
-Dependencies navigation from `/base` and the compatibility root. Each view kit
-exports the page from `/base` and its compatibility root; React also exports
+Dependencies navigation from `@hilos/core/base`. Each view kit
+exports the page from its `/base` entry; React also exports
 `HilosLicenseDependenciesPageProps`.
 
 Terms and Privacy use the shared
@@ -353,10 +358,10 @@ button" indistinguishable from a deliberate choice.
 `HilosLegalHistoryPage` is the shared public history view in Vue, React and
 Angular. It takes the existing `HilosLegalContext`, a `document` key (`terms`
 or `privacy`), and optional `HilosStaticPageNavigation`. Each view kit exports
-the component from `/base` and its compatibility root. The core exports
+the component from its `/base` entry. The core exports
 `createHilosLegalHistory(context, document)` and
-`hilosPublicLegalNavigation(page, resolvePath)` from `/base` and its
-compatibility root. The history factory is inert until `start()`; mounted view
+`hilosPublicLegalNavigation(page, resolvePath)` from `@hilos/core/base`.
+The history factory is inert until `start()`; mounted view
 adapters start it and call its terminal `cleanup()` when they unmount. It owns
 the document and agreement projections, typed row resolver, native viewport
 controller and lazy revision-text reader. The first table window rides in the
@@ -418,8 +423,8 @@ Several tier-1 components are part of the contract, so pages never reinvent them
 - **`HilosFormError`** keeps a form refusal to one line with a details panel and
   holds its room with an invisible twin before any refusal exists;
 - **`HilosActionReason`** explains why an action is unavailable. It is exported
-  from `@hilos/vue/base`, `@hilos/react/base` and `@hilos/angular/base`, and from
-  each package's compatibility root; it adds no entrypoint. Its required
+  from `@hilos/vue/base`, `@hilos/react/base` and `@hilos/angular/base`;
+  it adds no entrypoint. Its required
   `reason: string | null` and optional `label` / `title` props default to
   `Why this action is unavailable` and `Action unavailable`. A non-null reason
   gives a native enabled question button whose `title` is the reason and whose
@@ -482,14 +487,13 @@ Several tier-1 components are part of the contract, so pages never reinvent them
 
 - **`HilosSendProgress`** draws one session code-send line and the timed Send again
   control above a profile code field (HIL-1186). Its text and lock rules come from
-  `@hilos/core` `primitives/sendProgress`; Vue, React, and Angular only render
-  them. It reserves the line and repeat row before the first send, opens the
+  `@hilos/core/base`; Vue, React, and Angular only render them. It reserves the line and repeat row before the first send, opens the
   complete line in `HilosModal`, and carries no live region of its own, so the
   changing line is never read twice. The profile windows announce it through a
   polite region of their own, beside the assertive one for refusals
   ([accessibility.md](accessibility.md), "Live regions");
 - the **upload field** (HIL-140) is three tags over one state: the page creates
-  `createHilosUploadField({ target })` from `@hilos/core` `primitives/uploadField`,
+  `createHilosUploadField({ target })` from `@hilos/core/base`,
   hands it to every tag, and disposes it itself. **`HilosUploadDrop`** wraps the
   project's own content as the drop and paste door; **`HilosUploadFiles`** draws a
   chip per file and, above the chips, the last refusal in a `HilosFormError`
@@ -503,8 +507,8 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   Angular only render them;
 
 - the **`HilosLayout`** application shell — the navbar (project brand and nav
-  slots, the admin gear, the live connection indicator, and, last, the sign-out
-  control), a full-width banner region below the nav — empty and zero-height
+  slots, the admin gear, the sign-out control and, last, the live connection
+  indicator), a full-width banner region below the nav — empty and zero-height
   while nothing is up — and a footer of the public framework pages, around the
   routed page content. The SDK draws sign-out while a person stands behind the
   session (`hilosSignedIn`, bound by `bootHilos`) and runs it as a tracked
@@ -536,7 +540,7 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   `navigation?: HilosStaticPageNavigation`. Calls that supply only `title` keep
   working: the frame renders its title and body without navigation. The public
   `HilosStaticPageNavigation` interface is exported as a type from
-  `@hilos/core/base` (and the compatibility root); it has `page: string`,
+  `@hilos/core/base`; it has `page: string`,
   `tabs: readonly HilosPageCrumb[]`, and `resolvePath: HilosPathResolver`, with
   optional `params?: Record<string, string>` (default `{}`) and `label?: string`
   (default `Page sections`). `page` marks the current tab, and `tabs` arrive in
@@ -552,8 +556,8 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   each kit's heading-id context. This keeps one `h1` and its existing table-name
   relationship. The frame remains available to a project with its own static
   page; this does not activate project routes or server catalog adoption. The
-  public pages are declared in `@hilos/core` (`HilosPages` / `HILOS_PAGE_ROUTES`)
-  and subscribe like any page. About, License and License Dependencies carry no
+  public pages are declared in `@hilos/core/base`
+  (`HilosPages` / `HILOS_PAGE_ROUTES`) and subscribe like any page. About, License and License Dependencies carry no
   server page payload; the project supplies their build snapshot as an input.
   Terms
   carries its current legal document and reader state; Privacy carries
@@ -574,7 +578,7 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   is built — **`HilosSkeleton`** in each view package, which `HilosView` also
   draws in a page's place while the page waits for its first answer;
 - **`HilosAvatar`** in each view package — a person's circle, with initials
-  from `formatInitials` in `@hilos/core`, one color and three sizes: `sm` for
+  from `formatInitials` in `@hilos/core/base`, one color and three sizes: `sm` for
   the header, `md` for the admin card, `lg` for the profile. The circle is
   hidden from screen readers; its surroundings carry the name, in the header
   as hidden text and a `title`. The project's header user area places it
@@ -585,7 +589,7 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   (HIL-1300); it is hidden from screen readers with the rest of the circle.
   `HilosProfilePhoto` in each view package draws the change-photo modal over
   `createHilosProfilePhotoFlow` from core (HIL-1205);
-- **Profile head state** — `@hilos/core/base` and the compatibility root export
+- **Profile head state** — `@hilos/core/base` exports
   `createHilosProfileHeadStore(context, name?)` and
   `HilosProfileHeadStore`. `HilosProfilePageContext` carries the connection,
   scopes and tracked actions. The store exposes readonly signals for the
@@ -604,8 +608,8 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   optional and unused, `root.summaries` remains an empty readonly map, and the
   section icon/id exports remain available for compatibility;
 - **`HilosProfileHead`** — the shared profile presentation exported from
-  `@hilos/vue/base`, `@hilos/react/base` and `@hilos/angular/base`, plus each
-  package's compatibility root. It adds no package entrypoint or eager admin
+  `@hilos/vue/base`, `@hilos/react/base` and `@hilos/angular/base`.
+  It adds no package entrypoint or eager admin
   import. Every kit requires `context: HilosProfilePageContext` and accepts an
   optional borrowed `HilosProfileHeadStore`; without a store, the component
   creates and owns the store lifecycle, and with the Overview's store it leaves

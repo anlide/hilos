@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-// Transform the compatibility graph during collection, outside the individual
+// Transform the base graph during collection, outside the individual
 // test's timer. resetModules below still evaluates it afresh under denied
 // storage; the fresh namespace and declaration assertions verify that boundary.
 import * as initialBase from '../../src/base/index.js'
-import * as initialRoot from '../../src/index.js'
 import {
   createHilosRowEdit,
   hilosSignalRowEditSource,
@@ -320,7 +319,7 @@ describe('profile rename tab memory', () => {
     },
   )
 
-  it('imports the owner, registry, root and base without reaching storage', async () => {
+  it('imports the owner, registry and base without reaching storage', async () => {
     vi.resetModules()
     const getter = vi.fn(() => {
       throw new DOMException('denied', 'SecurityError')
@@ -331,19 +330,17 @@ describe('profile rename tab memory', () => {
     })
     const owner = await import('../../src/profile/profileRenameMemory.js')
     const registry = await import('../../src/browser/browserValues.js')
-    const root = await import('../../src/index.js')
     const base = await import('../../src/base/index.js')
 
-    expect(root).not.toBe(initialRoot)
     expect(base).not.toBe(initialBase)
     expect(owner.PROFILE_RENAME_BROWSER_VALUE).not.toBe(
-      initialRoot.PROFILE_RENAME_BROWSER_VALUE,
+      initialBase.PROFILE_RENAME_BROWSER_VALUE,
     )
     expect(getter).not.toHaveBeenCalled()
     expect(registry.HILOS_BROWSER_VALUES).toContain(
       owner.PROFILE_RENAME_BROWSER_VALUE,
     )
-    for (const api of [root, base]) {
+    for (const api of [base]) {
       expect(api.readProfileRenameMemory).toBe(owner.readProfileRenameMemory)
       expect(api.profileRenameMemorySchema).toBe(
         owner.profileRenameMemorySchema,

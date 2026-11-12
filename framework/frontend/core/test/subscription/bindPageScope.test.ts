@@ -18,7 +18,7 @@ import {
   HilosConnection,
   type ConnectionState,
 } from '../../src/connection/HilosConnection.js'
-import { type ProjectSignal } from '../../src/index.js'
+import { type ProjectSignal } from '../../src/base/index.js'
 import { bindTableViewport } from '../../src/subscription/bindTableViewport.js'
 import { normalizeTableRow } from '../../src/state/normalizer.js'
 import { subscribeSignal } from '../../src/state/signal.js'

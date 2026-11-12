@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, within } from '@testing-library/react'
 import { StrictMode } from 'react'
-import { HilosPages, createSignal } from '@hilos/core'
+import { HilosPages, createSignal } from '@hilos/core/base'
 import * as core from '@hilos/core/base'
 import { bindTimeZoneState, hilosTimeZone } from '@hilos/core/base'
 import type {
@@ -9,9 +9,8 @@ import type {
   HilosChangeLogReceiptDialog,
   HilosChangeLogReceiptHeader,
   HilosChangeLogReceiptReader,
-  HilosRouter,
-  PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/admin/change-log'
+import type { HilosRouter, PageRouteMatch } from '@hilos/core/base'
 import type {
   HilosConnection,
   ProjectSignal,

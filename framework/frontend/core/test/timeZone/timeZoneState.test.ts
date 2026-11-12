@@ -3,7 +3,7 @@ import {
   type HandshakeSignal,
   type HilosConnection,
   type ProjectSignal,
-} from '../../src/index.js'
+} from '../../src/base/index.js'
 import {
   bindSessionScope,
   type SessionScopeOptions,

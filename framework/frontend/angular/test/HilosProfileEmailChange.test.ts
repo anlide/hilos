@@ -21,7 +21,7 @@ import {
   SIGNAL_PROFILE_FLOWS,
   type ActionLifecycle,
   type HilosConnection,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { type ModalController } from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HilosProfileEmailChange } from '../src/profile/HilosProfileEmailChange.js'

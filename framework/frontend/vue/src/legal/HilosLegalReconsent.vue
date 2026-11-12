@@ -161,6 +161,19 @@ function holdLinks(event: MouseEvent): void {
   }
 }
 
+function onShow(view: HilosLegalReconsentView): void {
+  if (held.value) return
+  emit('show', view)
+}
+function onLater(): void {
+  if (held.value) return
+  emit('later')
+}
+function onRetry(): void {
+  if (held.value) return
+  emit('retry')
+}
+
 function onSignOut(): void {
   if (signOutBusy.value) return
   void runSignOut(signOut())
@@ -289,9 +302,7 @@ function onKeepAccount(): void {
               class="btn btn-link btn-sm p-0"
               data-id="legal-reconsent-full-text"
               :data-document="row.section.document"
-              @click="
-                emit('show', { kind: 'text', document: row.section.document })
-              "
+              @click="onShow({ kind: 'text', document: row.section.document })"
             >
               {{ copy.fullText }}
             </button>
@@ -303,7 +314,7 @@ function onKeepAccount(): void {
                 data-id="legal-reconsent-compare"
                 :data-document="row.section.document"
                 @click="
-                  emit('show', {
+                  onShow({
                     kind: 'compare',
                     document: row.section.document,
                   })
@@ -377,13 +388,14 @@ function onKeepAccount(): void {
         <div
           class="d-flex flex-wrap gap-3 small mb-3"
           @click.capture="holdLinks"
+          @auxclick.capture="holdLinks"
         >
           <HilosLink
             :to="dataHref"
             data-id="legal-reconsent-data-link"
             :aria-disabled="held || undefined"
             :tabindex="held ? -1 : undefined"
-            @click="emit('later')"
+            @click="onLater"
           >
             {{ copy.dataLink }}
           </HilosLink>
@@ -393,7 +405,7 @@ function onKeepAccount(): void {
             data-id="legal-reconsent-delete-link"
             :aria-disabled="held || undefined"
             :tabindex="held ? -1 : undefined"
-            @click="emit('later')"
+            @click="onLater"
           >
             {{ copy.deleteLink }}
           </HilosLink>
@@ -404,7 +416,7 @@ function onKeepAccount(): void {
         type="button"
         class="btn btn-link btn-sm px-0 mb-3"
         data-id="legal-reconsent-back"
-        @click="emit('show', { kind: 'changes' })"
+        @click="onShow({ kind: 'changes' })"
       >
         {{ copy.backToChanges }}
       </button>
@@ -421,7 +433,8 @@ function onKeepAccount(): void {
         type="button"
         class="btn btn-outline-primary"
         data-id="legal-reconsent-retry"
-        @click="emit('retry')"
+        :disabled="held"
+        @click="onRetry"
       >
         {{ copy.retry }}
       </button>
@@ -431,7 +444,7 @@ function onKeepAccount(): void {
           class="btn btn-outline-secondary"
           data-id="legal-reconsent-back"
           :disabled="held"
-          @click="emit('show', { kind: 'changes' })"
+          @click="onShow({ kind: 'changes' })"
         >
           {{ copy.back }}
         </button>
@@ -440,7 +453,7 @@ function onKeepAccount(): void {
           class="btn btn-secondary"
           data-id="legal-reconsent-close"
           :disabled="held"
-          @click="emit('later')"
+          @click="onLater"
         >
           {{ copy.close }}
         </button>
@@ -452,7 +465,7 @@ function onKeepAccount(): void {
           class="btn btn-outline-danger"
           data-id="legal-reconsent-refuse"
           :disabled="variant === 'preview' || content === null || held"
-          @click="emit('show', { kind: 'refuse' })"
+          @click="onShow({ kind: 'refuse' })"
         >
           {{ copy.refuse }}
         </button>
@@ -462,7 +475,7 @@ function onKeepAccount(): void {
           class="btn btn-outline-secondary"
           data-id="legal-reconsent-later"
           :disabled="variant === 'preview' || held"
-          @click="emit('later')"
+          @click="onLater"
         >
           {{ copy.later }}
         </button>

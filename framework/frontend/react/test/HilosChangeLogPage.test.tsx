@@ -3,22 +3,24 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import {
   ActionLifecycle,
-  CHANGE_LOG_OVERVIEW_SECTION,
   HilosPages,
   ScopeManager,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import { CHANGE_LOG_OVERVIEW_SECTION } from '@hilos/core/admin/change-log'
 import type {
   ActionErrorSignal,
   ActionLifecycleSource,
   ActionSuccessSignal,
   ConnectionState,
-  HilosChangeLogOverview,
-  HilosChangeLogReceiptContext,
   HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type {
+  HilosChangeLogOverview,
+  HilosChangeLogReceiptContext,
+} from '@hilos/core/admin/change-log'
 
 import { HilosChangeLogPage } from '../src/admin/changeLog/HilosChangeLogPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

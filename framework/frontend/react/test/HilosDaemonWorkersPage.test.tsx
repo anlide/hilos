@@ -8,9 +8,9 @@ import {
   HilosPages,
   type HilosConnection,
   type HilosRouter,
-  type HilosDaemonNodeHeading,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import { type HilosDaemonNodeHeading } from '@hilos/core/admin/daemon'
 import { HilosDaemonWorkersPage } from '../src/admin/daemon/HilosDaemonWorkersPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 

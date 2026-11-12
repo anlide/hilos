@@ -5,8 +5,8 @@
 import { Component } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { describe, expect, it, vi } from 'vitest'
-import { TableViewportController } from '@hilos/core'
-import type { HilosTableFrame, TableViewportDescriptor } from '@hilos/core'
+import { TableViewportController } from '@hilos/core/base'
+import type { HilosTableFrame, TableViewportDescriptor } from '@hilos/core/base'
 
 import { HilosTableEmptyState } from '../src/HilosTableEmptyState.js'
 

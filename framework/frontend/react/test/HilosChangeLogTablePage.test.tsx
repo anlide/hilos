@@ -3,11 +3,13 @@ import { act, cleanup, screen, within } from '@testing-library/react'
 import {
   CHANGE_LOG_TABLE_COPY,
   CHANGE_LOG_TABLE_SECTION,
+} from '@hilos/core/admin/change-log'
+import {
   HilosPages,
   bindAdminAccess,
   bindSessionScope,
   hilosAdminAccess,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import {
   BOT,

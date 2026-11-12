@@ -5,8 +5,6 @@ import {
   HIDDEN_VALUE,
   HILOS_ROUTE_DECLARATIONS,
   HilosPages,
-  LOGS_FOLLOW_START_ACTION,
-  LOGS_READ_LINES_ACTION,
   LOG_LINES_APPENDED_SIGNAL,
   LOG_VIEWER_CATALOG_SIGNAL,
   ScopeManager,
@@ -19,7 +17,11 @@ import {
   type HilosRouter,
   type PageRouteMatch,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  LOGS_FOLLOW_START_ACTION,
+  LOGS_READ_LINES_ACTION,
+} from '@hilos/core/admin/logs'
 import { formatMoment } from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 

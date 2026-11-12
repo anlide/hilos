@@ -65,13 +65,6 @@ import {
   ACCOUNT_FROZEN_ERROR_CODE,
   ACCOUNT_STANDING_STRIP_COPY,
   HILOS_FROZEN_OPEN_PAGES,
-  createHilosUserStanding,
-  hilosStandingBadge,
-  hilosUserFrozenRow,
-  hilosUsersPath,
-  hilosLegalLapsedHref,
-  hilosLegalLapsedLabel,
-  HILOS_LEGAL_LAPSED_COPY,
   SIGNAL_ACCOUNT_STANDING_STATE,
   bindUploads,
   cancelUpload,
@@ -94,10 +87,21 @@ import {
   hilosBrowserTimeZone,
   type DeferredDelay,
   type DeferredFlagState,
-  logLineClock,
   formatMoment,
   type MomentFormatOptions,
-} from '../src/index.js'
+} from '../src/base/index.js'
+import {
+  createHilosUserStanding,
+  hilosStandingBadge,
+  hilosUserFrozenRow,
+  hilosUsersPath,
+} from '../src/admin/users/index.js'
+import {
+  hilosLegalLapsedHref,
+  hilosLegalLapsedLabel,
+  HILOS_LEGAL_LAPSED_COPY,
+} from '../src/admin/legal/index.js'
+import { logLineClock } from '../src/admin/logs/index.js'
 
 it('exports the @hilos/core public surface', () => {
   expect(logLineClock('2026-09-06T10:00:02.250Z')).toBe('10:00:02.250')

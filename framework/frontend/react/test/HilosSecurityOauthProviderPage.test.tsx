@@ -10,17 +10,17 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   ActionResult,
   HilosConnection,
   HilosRouter,
-  HilosSecurityOauthContext,
   PageRouteMatch,
   ProjectSignal,
   TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosSecurityOauthContext } from '@hilos/core/admin/security'
 
 import { HilosSecurityOauthProviderPage } from '../src/admin/security/HilosSecurityOauthProviderPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

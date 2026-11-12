@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { Fragment, StrictMode, type ReactNode } from 'react'
+import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
   FocusTrap,
@@ -13,7 +14,7 @@ import {
   hilosTablePlaceholder,
   registerFocusReturnFallback,
   subscribeSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   HilosConnection,
@@ -24,7 +25,12 @@ import type {
   HilosTableRowMessage,
   TableGeometryRegistration,
   TableViewportDescriptor,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  registerTableControllerReplacementCases,
+  type TableControllerReplacementInput,
+  type TableControllerReplacementView,
+} from '../../test-support/tableControllerReplacementCases.js'
 
 import { normalizeTableRow } from '../../core/src/state/normalizer.js'
 import { HilosModal } from '../src/HilosModal.js'
@@ -42,6 +48,75 @@ interface Row {
 const COLUMNS: HilosTableColumn[] = [
   { key: 'name', label: 'Name', sortable: true },
 ]
+
+/** Render and rerender the same unkeyed public component on one owned root. */
+async function mountReplacementTable(
+  input: TableControllerReplacementInput,
+): Promise<TableControllerReplacementView> {
+  const host = document.createElement('div')
+  const root = createRoot(host)
+  let released = false
+  async function unmount(): Promise<void> {
+    if (released) return
+    released = true
+    const errors: unknown[] = []
+    for (const release of [
+      () => act(async () => root.unmount()),
+      () => host.remove(),
+    ]) {
+      try {
+        await release()
+      } catch (error) {
+        errors.push(error)
+      }
+    }
+    if (errors.length === 1) throw errors[0]
+    if (errors.length > 1)
+      throw new AggregateError(
+        errors,
+        'React replacement table cleanup failed',
+        {
+          cause: errors[0],
+        },
+      )
+  }
+  async function renderController(
+    controller: TableViewportController<unknown>,
+  ): Promise<void> {
+    await act(async () => {
+      root.render(<HilosViewportTable controller={controller} />)
+    })
+  }
+  try {
+    document.body.appendChild(host)
+    await renderController(input.controller)
+    return {
+      root: host,
+      unmount,
+      replaceController: renderController,
+      async change(action) {
+        await act(async () => action())
+      },
+    }
+  } catch (error) {
+    try {
+      await unmount()
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        'React replacement table setup and cleanup failed',
+        { cause: cleanupError },
+      )
+    }
+    throw error
+  }
+}
+
+registerTableControllerReplacementCases(
+  'React',
+  { describe, it, expect },
+  mountReplacementTable,
+)
 
 const TWO_COLUMNS: HilosTableColumn[] = [
   { key: 'name', label: 'Name', sortable: true },

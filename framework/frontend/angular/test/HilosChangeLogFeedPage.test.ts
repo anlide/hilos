@@ -11,9 +11,6 @@ import { By } from '@angular/platform-browser'
 import {
   type TableViewportController,
   ActionLifecycle,
-  CHANGE_LOG_OVERVIEW_SECTION,
-  HILOS_CHANGE_LOG_ENTRY_READ,
-  HILOS_CHANGE_LOG_RECEIPT_READ,
   HilosPages,
   ScopeManager,
   createSignal,
@@ -21,15 +18,20 @@ import {
   type ActionLifecycleSource,
   type ActionSuccessSignal,
   type ConnectionState,
+  type HilosPageIdentity,
+  type HilosRouter,
+  type PageRouteMatch,
+} from '@hilos/core/base'
+import {
+  CHANGE_LOG_OVERVIEW_SECTION,
+  HILOS_CHANGE_LOG_ENTRY_READ,
+  HILOS_CHANGE_LOG_RECEIPT_READ,
   type HilosChangeLogEntry,
   type HilosChangeLogFeedRow,
   type HilosChangeLogOverview,
   type HilosChangeLogReceiptContext,
   type HilosChangeLogReceiptHeader,
-  type HilosPageIdentity,
-  type HilosRouter,
-  type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/admin/change-log'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosViewportTable } from '../src/HilosViewportTable.js'

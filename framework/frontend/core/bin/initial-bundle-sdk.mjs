@@ -92,18 +92,14 @@ function targetFile(directory, target, boundary = directory) {
 
 function publicEntry(name) {
   return (
-    ['.', './base', './admin-views', './status'].includes(name) ||
+    ['./base', './admin-views', './status'].includes(name) ||
     name.startsWith('./admin/')
   )
 }
 
 function boundaryVerdict(name) {
   if (name === './status') return 'public Status entrypoint'
-  return name === '.'
-    ? 'compatibility root'
-    : name.startsWith('./admin/')
-      ? ADMIN
-      : null
+  return name.startsWith('./admin/') ? ADMIN : null
 }
 
 // Read compiled ESM tokens, including imports inside template interpolations.
@@ -496,33 +492,19 @@ export function sdkEvidence(projectRoot) {
         pkg.manifest = json(join(pkg.directory, 'package.json'))
         pkg.exports = pkg.manifest.exports
         pkg.exportDirectory = pkg.directory
-        // A local Angular wrapper declares main/module, while ng-packagr owns
-        // exports on the generated APF manifest beside the actual output.
+        // Local Angular secondary forwarders point into the generated APF.
         if (layer === 'angular' && !pkg.exports) {
-          const root = targetFile(
-            pkg.directory,
-            pkg.manifest.module ?? pkg.manifest.main,
-          )
-          let parent = dirname(root)
-          while (inside(pkg.directory, parent)) {
-            const manifest = join(parent, 'package.json')
-            if (existsSync(manifest)) {
-              const generated = json(manifest)
-              if (generated.exports) {
-                pkg.exports = generated.exports
-                pkg.exportDirectory = parent
-                break
-              }
-            }
-            parent = dirname(parent)
-          }
+          const generatedPath = join(pkg.directory, 'dist/package.json')
+          if (!existsSync(generatedPath))
+            fail('missing generated Angular APF exports')
+          const generated = json(generatedPath)
+          pkg.exports = generated.exports
+          pkg.exportDirectory = join(pkg.directory, 'dist')
         }
         if (layer === 'angular' && !pkg.exports)
           fail('missing generated Angular APF exports')
         packages.set(layer, pkg)
-        for (const [name, target] of Object.entries(
-          pkg.exports ?? { '.': pkg.manifest.module ?? pkg.manifest.main },
-        )) {
+        for (const [name, target] of Object.entries(pkg.exports ?? {})) {
           if (!publicEntry(name)) continue
           const file = targetFile(
             pkg.exportDirectory,
@@ -530,12 +512,8 @@ export function sdkEvidence(projectRoot) {
             pkg.directory,
           )
           if (pkg.exportDirectory !== pkg.directory) {
-            const manifestDirectory =
-              name === '.' ? pkg.directory : join(pkg.directory, name.slice(2))
-            const wrapper =
-              name === '.'
-                ? pkg.manifest
-                : json(join(manifestDirectory, 'package.json'))
+            const manifestDirectory = join(pkg.directory, name.slice(2))
+            const wrapper = json(join(manifestDirectory, 'package.json'))
             const forwarded = targetFile(
               manifestDirectory,
               wrapper.module ?? wrapper.main,
@@ -612,7 +590,7 @@ export function sdkEvidence(projectRoot) {
     const { pkg, layer, path } = identify(id)
     if (entries.get(id)) return entries.get(id)
     if (layer === 'core') {
-      if (/^(?:src|dist)\/index\.[^/]+$/.test(path)) return 'compatibility root'
+      if (/^(?:src|dist)\/index\.[^/]+$/.test(path)) return UNKNOWN
       if (/^(?:src|dist)\/admin\//.test(path)) return ADMIN
       if (path.startsWith('src/')) {
         if (!pkg || !coreSources.has(id)) return UNKNOWN
@@ -630,7 +608,7 @@ export function sdkEvidence(projectRoot) {
           path,
         )
       )
-        return 'compatibility root'
+        return UNKNOWN
       if (/^src\/admin\/hilosAdminViews\.[^/]+$/.test(path)) return null
       if (/^(?:src|dist)\/admin\//.test(path)) return ADMIN
       if (/^src\//.test(path)) return null
@@ -765,10 +743,7 @@ export function sdkEvidence(projectRoot) {
   function expandable(file) {
     const { pkg, layer, path } = identify(file)
     return (
-      pkg &&
-      !STYLE.test(file) &&
-      (layer === 'core' || !path.startsWith('src/')) &&
-      entries.get(file) !== 'compatibility root'
+      pkg && !STYLE.test(file) && (layer === 'core' || !path.startsWith('src/'))
     )
   }
 
@@ -778,15 +753,14 @@ export function sdkEvidence(projectRoot) {
       .map(resolveModule)
   }
 
-  function validate(file, includeRoots = false) {
+  function validate(file) {
     const pending = [file]
     const visited = new Set()
     while (pending.length) {
       const target = pending.pop()
       if (visited.has(target)) continue
+      if (!expandable(target)) continue
       const { pkg } = identify(target)
-      if (!expandable(target) && !(includeRoots && pkg && !STYLE.test(target)))
-        continue
       visited.add(target)
       let entry
       try {
@@ -830,7 +804,7 @@ export function sdkEvidence(projectRoot) {
   }
 
   // Internal build-adapter proof, never a content permission. Even an admin or
-  // compatibility origin must have valid compiler evidence before attribution.
+  // unsupported origin must have valid compiler evidence before attribution.
   function angularForwarder(origin, code, outputExports) {
     if (!isAbsolute(origin) || clean(origin) !== slash(origin))
       fail('invalid Angular compiler entryPoint')
@@ -858,11 +832,10 @@ export function sdkEvidence(projectRoot) {
       compiledExportNames(readFileSync(file, 'utf8')),
       'forwarding APF exports',
     )
-    for (const target of validate(file, true)) {
+    for (const target of validate(file)) {
       for (const id of expand(target)) {
         const reason = verdict(id)
-        if (reason && reason !== ADMIN && reason !== 'compatibility root')
-          fail(`${id}: ${reason}`)
+        if (reason && reason !== ADMIN) fail(`${id}: ${reason}`)
       }
     }
     return syntax.imports

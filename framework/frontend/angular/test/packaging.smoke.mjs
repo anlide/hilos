@@ -13,10 +13,12 @@ import {
   runInInjectionContext,
 } from '@angular/core'
 import { sdkEvidence } from '../../core/bin/initial-bundle-sdk.mjs'
+import { validateApf } from '../bin/finalize-apf.mjs'
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dist = join(packageDir, 'dist')
 const manifest = JSON.parse(await readFile(join(dist, 'package.json'), 'utf8'))
+validateApf(packageDir, manifest)
 const graph = new Map()
 const entries = new Map()
 const typeFiles = new Map()
@@ -24,18 +26,25 @@ for (const [subpath, target] of Object.entries(manifest.exports)) {
   if (subpath === './package.json' || subpath.endsWith('.scss')) continue
   await readFile(join(dist, target.types))
   await readFile(join(dist, target.default))
-  const name =
-    subpath === '.' ? '@hilos/angular' : `@hilos/angular${subpath.slice(1)}`
+  const name = `@hilos/angular${subpath.slice(1)}`
   entries.set(name, target.default.replace(/^\.\//, ''))
   typeFiles.set(name, target.types)
 }
-assert.equal(entries.size, 24)
+assert.equal(entries.size, 23)
+for (const name of ['@hilos/angular', '@hilos/core']) {
+  assert.throws(
+    () => import.meta.resolve(name),
+    (error) =>
+      ['ERR_PACKAGE_PATH_NOT_EXPORTED', 'ERR_MODULE_NOT_FOUND'].includes(
+        error.code,
+      ),
+  )
+}
 // Resolve the actual published APF manifest, independently of the workspace's
 // file: forwarding manifests and the unit suite's source aliases.
 async function loadEntry(name) {
   return import(pathToFileURL(join(dist, entries.get(name))).href)
 }
-const root = await loadEntry('@hilos/angular')
 const base = await loadEntry('@hilos/angular/base')
 const { hilosAdminViews } = await loadEntry('@hilos/angular/admin-views')
 const { HilosAnalyticsPage } = await loadEntry('@hilos/angular/admin/analytics')
@@ -58,7 +67,6 @@ assert.deepEqual(Object.keys(status).sort(), [
 for (const [name, component] of Object.entries(status)) {
   assert.ok(component.ɵcmp, `Real Angular Status component: ${name}`)
   assert.equal(component.ɵcmp.standalone, true)
-  assert.equal(root[name], component, `Root/Status identity: ${name}`)
   assert.equal(name in base, false)
 }
 assert.deepEqual(Object.keys(publicStatus), ['HilosStatusPage'])
@@ -66,8 +74,7 @@ assert.ok(publicStatus.HilosStatusPage.ɵcmp)
 assert.equal(publicStatus.HilosStatusPage.ɵcmp.standalone, true)
 assert.ok(publicStatus.HilosStatusPage.ɵcmp.inputs.connection)
 assert.ok(publicStatus.HilosStatusPage.ɵcmp.inputs.actions)
-assert.equal(root.HilosPublicStatusPage, publicStatus.HilosStatusPage)
-assert.notEqual(root.HilosStatusPage, publicStatus.HilosStatusPage)
+assert.notEqual(status.HilosStatusPage, publicStatus.HilosStatusPage)
 assert.equal('HilosPublicStatusPage' in base, false)
 for (const name of [
   'HilosModerationPage',
@@ -84,26 +91,17 @@ assert.deepEqual(Object.keys(moderation).sort(), [
   'HilosModerationKindRulesPage',
   'HilosModerationPage',
 ])
-assert.equal(root.HilosModerationPage, moderation.HilosModerationPage)
-assert.equal('HilosModerationKindPage' in root, false)
-assert.equal('HilosModerationKindRulesPage' in root, false)
 for (const name of [
   'HilosModerationRuleAdd',
   'HilosModerationRuleEdit',
   'HilosModerationRuleDelete',
 ]) {
-  assert.equal(name in root, false)
   assert.equal(name in base, false)
+  assert.equal(name in moderation, false)
 }
 assert.equal(typeof base.HilosTableEmptyState, 'function')
-assert.equal(root.HilosTableEmptyState, base.HilosTableEmptyState)
 assert.notEqual(base.HilosTableText, undefined, 'HilosTableText')
 assert.equal(typeof base.HilosTableText, 'function', 'HilosTableText component')
-assert.equal(
-  root.HilosTableText,
-  base.HilosTableText,
-  'Root/base identity: HilosTableText',
-)
 for (const name of [
   'HilosTableValue',
   'HilosTableImage',
@@ -113,9 +111,7 @@ for (const name of [
   'createTableViewportGeometry',
 ]) {
   assert.equal(name in base, false, `Base must not export ${name}`)
-  assert.equal(name in root, false, `Root must not export ${name}`)
 }
-const coreRoot = await import('@hilos/core')
 const coreBase = await import('@hilos/core/base')
 const coreSettings = await import('@hilos/core/admin/settings')
 for (const name of [
@@ -136,16 +132,14 @@ for (const name of [
   'PROTECTED_MODE_FALLBACK_COPY',
   'PROTECTED_MODE_PASS_COPY',
 ]) {
-  assert.notEqual(coreRoot[name], undefined, name)
-  assert.equal(coreRoot[name], coreBase[name], `Core root/base: ${name}`)
+  assert.notEqual(coreBase[name], undefined, name)
 }
 for (const name of [
   'createHilosSettingsTable',
   'createHilosSettingsActions',
   'SETTING_KEY_FIELD',
 ]) {
-  assert.notEqual(coreRoot[name], undefined, name)
-  assert.equal(coreRoot[name], coreSettings[name], `Core root/section: ${name}`)
+  assert.notEqual(coreSettings[name], undefined, name)
 }
 // Follow actual compiled externals into core, including shared APF chunks.
 // A clean Angular source list alone cannot prove a clean common closure.
@@ -165,12 +159,31 @@ for (const entry of ['@hilos/angular/base', '@hilos/angular/admin-views']) {
     `${entry} must not contain admin or public Status`,
   )
 }
+const internalEntries = []
 for (const file of await readdir(join(dist, 'fesm2022'))) {
   if (!file.endsWith('.mjs')) continue
   const name = `fesm2022/${file}`
   const code = await readFile(join(dist, name), 'utf8')
   const syntax = ts.createSourceFile(name, code, ts.ScriptTarget.Latest, true)
   const modules = []
+  if (![...entries.values()].includes(name)) {
+    internalEntries.push(name)
+    assert.match(
+      await readFile(join(packageDir, 'src/apf-primary.ts'), 'utf8'),
+      /^export\s*\{\s*\}\s*;?\s*$/,
+    )
+    assert.ok(
+      syntax.statements.every(
+        (statement) =>
+          ts.isExportDeclaration(statement) &&
+          !statement.moduleSpecifier &&
+          statement.exportClause &&
+          ts.isNamedExports(statement.exportClause) &&
+          statement.exportClause.elements.length === 0,
+      ),
+      'Internal primary must be empty or contain only export {}',
+    )
+  }
   // ng-packagr emits pure compatibility reexports without a map. Named
   // reexports may become imports followed by a local export list; each local
   // name must still come from a declared public entrypoint, with no execution.
@@ -285,11 +298,12 @@ function acyclic(name, visiting = new Set(), visited = new Set()) {
 for (const name of graph.keys()) acyclic(name)
 const baseName = entries.get('@hilos/angular/base')
 const metadataName = entries.get('@hilos/angular/admin-views')
-const rootName = entries.get('@hilos/angular')
+assert.equal(internalEntries.length, 1)
+const primaryName = internalEntries[0]
 const baseChunks = closure(baseName)
 assert.ok(modules(baseChunks).length > 0)
 assert.ok(!modules(baseChunks).some((name) => name.startsWith('src/admin/')))
-assert.ok(!closure(baseName).has(rootName))
+assert.ok(!closure(baseName).has(primaryName))
 assert.deepEqual(modules(closure(metadataName)), [
   'src/admin/hilosAdminViews.ts',
 ])
@@ -302,7 +316,7 @@ assert.ok(
     source.startsWith('src/admin/'),
   ),
 )
-assert.ok(!publicStatusChunks.has(rootName))
+assert.ok(!publicStatusChunks.has(primaryName))
 assert.ok(!publicStatusChunks.has(metadataName))
 assert.ok(!publicStatusChunks.has(statusName))
 assert.ok(!graph.get(metadataName).dynamicImports.includes(statusName))
@@ -323,13 +337,15 @@ assert.ok(
 assert.ok(!publicInputs.some((id) => /\/src\/admin\/status\//.test(id)))
 assert.ok(
   !publicInputs.some(
-    (id) => publicEvidence.verdict(id) === 'compatibility root',
+    (id) =>
+      /\/(?:src|dist)\/index\.[^/]+$/.test(id) ||
+      id === join(dist, primaryName),
   ),
 )
 for (const [name, entry] of entries) {
   if (!name.startsWith('@hilos/angular/admin/')) continue
   const chunks = closure(entry)
-  assert.ok(!chunks.has(rootName), name)
+  assert.ok(!chunks.has(primaryName), name)
   assert.ok(!chunks.has(metadataName), name)
   const section = name.slice('@hilos/angular/admin/'.length)
   const sourceSection =
@@ -415,33 +431,33 @@ for (const name of Object.keys(status)) {
 }
 assert.equal(owners.get('src/public/HilosStatusPage.ts'), publicStatusName)
 assert.equal(graph.get(metadataName).dynamicImports.length, 29)
-for (const [name, value] of Object.entries(base)) {
-  assert.equal(root[name], value, `Root/base identity: ${name}`)
-}
 // The shared page head is a common primitive: it ships in the clean base
 // closure, which the root re-exports, not in an admin section.
 assert.notEqual(base.HilosPageHead, undefined, 'HilosPageHead')
 assert.notEqual(base.HilosLegalHistoryPage, undefined, 'HilosLegalHistoryPage')
-assert.equal(root.HilosLegalHistoryPage, base.HilosLegalHistoryPage)
 assert.ok(modules(closure(baseName)).includes('src/HilosPageHead.ts'))
 assert.notEqual(base.HilosDateTimePicker, undefined, 'HilosDateTimePicker')
 assert.ok(modules(closure(baseName)).includes('src/HilosDateTimePicker.ts'))
 assert.ok(base.HilosDateTimePicker.ɵcmp.inputs.picker)
 assert.equal(typeof base.HilosProfileHead, 'function', 'HilosProfileHead')
-assert.equal(root.HilosProfileHead, base.HilosProfileHead)
 assert.ok(base.HilosProfileHead.ɵcmp.inputs.context)
 assert.ok(base.HilosProfileHead.ɵcmp.inputs.store)
 assert.ok(modules(baseChunks).includes('src/profile/HilosProfileHead.ts'))
-assert.equal(root.HilosSettingsPage, HilosSettingsPage)
-assert.equal(root.HilosAnalyticsPage, HilosAnalyticsPage)
-assert.equal(root.HilosDashboardPage, HilosDashboardPage)
+for (const page of [
+  HilosSettingsPage,
+  HilosAnalyticsPage,
+  HilosDashboardPage,
+]) {
+  assert.ok(page.ɵcmp, 'Real compiled section page')
+  assert.equal(page.ɵcmp.standalone, true)
+}
 const router = {
   resolvePath: () => '/same-router',
   pageIdentity: coreBase.createSignal(undefined),
   dashboardSections: coreBase.createSignal(undefined),
 }
 const injector = createEnvironmentInjector(
-  [{ provide: root.HILOS_ROUTER, useValue: router }],
+  [{ provide: base.HILOS_ROUTER, useValue: router }],
   Injector.NULL,
 )
 try {
@@ -449,7 +465,7 @@ try {
   assert.equal(
     page.resolvePath(coreBase.HilosPages.USERS),
     '/same-router',
-    'Section reads the root-provided base token',
+    'Section reads the base-provided token',
   )
 } finally {
   injector.destroy()
@@ -471,5 +487,5 @@ assert.ok(
   ),
 )
 console.log(
-  'Angular dist: 24 APF entries, admin/public Status exports and compiled closures, moderation pages, base ownership, internal table image, acyclic graph, 29 lazy defaults and singleton injection verified',
+  'Angular dist: 23 APF entries, admin/public Status exports and compiled closures, moderation pages, base ownership, internal table image, acyclic graph, 29 lazy defaults and singleton injection verified',
 )

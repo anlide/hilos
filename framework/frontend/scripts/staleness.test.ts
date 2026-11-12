@@ -226,6 +226,110 @@ it.each([
   expect(sdkDistStale(join(dir, 'pkg')).stale).toBe(true)
 })
 
+/** A finalized APF with all declared secondary entries and copied Sass. */
+function completedAngular(): void {
+  writeAt('pkg/src/apf-primary.ts', OLD)
+  writeAt('pkg/package.json', OLD)
+  writeFileSync(
+    join(dir, 'pkg/package.json'),
+    JSON.stringify({ name: '@hilos/angular' }),
+  )
+  utimesSync(join(dir, 'pkg/package.json'), OLD, OLD)
+  const exports: Record<string, object> = {
+    './package.json': { default: './package.json' },
+  }
+  for (const name of [
+    'base',
+    'status',
+    'admin-views',
+    'admin/analytics',
+    'admin/appearance',
+    'admin/backup',
+    'admin/billing',
+    'admin/change-log',
+    'admin/communications',
+    'admin/daemon',
+    'admin/dashboard',
+    'admin/i18n',
+    'admin/legal',
+    'admin/logs',
+    'admin/maintenance',
+    'admin/mcp-skills',
+    'admin/moderation',
+    'admin/roles',
+    'admin/security',
+    'admin/settings',
+    'admin/sil',
+    'admin/status',
+    'admin/users',
+  ]) {
+    const declaration = writeAt(`pkg/${name}/ng-package.json`, OLD)
+    writeFileSync(
+      declaration,
+      JSON.stringify({ lib: { entryFile: '../src/entry.ts' } }),
+    )
+    utimesSync(declaration, OLD, OLD)
+    exports[`./${name}`] = {
+      types: `./types/${name}.d.ts`,
+      default: `./fesm2022/${name}.mjs`,
+    }
+    writeAt(`pkg/dist/types/${name}.d.ts`, NEW)
+    writeAt(`pkg/dist/fesm2022/${name}.mjs`, NEW)
+  }
+  writeAt('pkg/dist/src/hilos-styles.scss', NEW)
+  writeAt('pkg/dist/package.json', NEW)
+  writeFileSync(join(dir, 'pkg/dist/package.json'), JSON.stringify({ exports }))
+}
+
+it('skips a completed finalized Angular APF build', () => {
+  completedAngular()
+  expect(sdkDistStale(join(dir, 'pkg')).stale).toBe(false)
+})
+
+it.each([
+  'package.json',
+  'types/base.d.ts',
+  'fesm2022/admin/status.mjs',
+  'src/hilos-styles.scss',
+])('rebuilds fresh Angular APF missing %s', (name) => {
+  completedAngular()
+  rmSync(join(dir, 'pkg/dist', name))
+  expect(sdkDistStale(join(dir, 'pkg')).stale).toBe(true)
+})
+
+it.each([
+  'malformed',
+  'old primary',
+  'main',
+  'module',
+  'types',
+  'typings',
+  'missing secondary',
+  'wrong secondary',
+  'missing type condition',
+  'wrong target',
+])('rebuilds fresh Angular APF with %s', (fault) => {
+  completedAngular()
+  const file = join(dir, 'pkg/dist/package.json')
+  const manifest = JSON.parse(readFileSync(file, 'utf8'))
+  if (fault === 'old primary')
+    manifest.exports['.'] = manifest.exports['./base']
+  if (['main', 'module', 'types', 'typings'].includes(fault))
+    manifest[fault] = './primary.mjs'
+  if (fault === 'missing secondary') delete manifest.exports['./admin/status']
+  if (fault === 'wrong secondary') {
+    manifest.exports['./other'] = manifest.exports['./admin/status']
+    delete manifest.exports['./admin/status']
+  }
+  if (fault === 'missing type condition')
+    delete manifest.exports['./base'].types
+  if (fault === 'wrong target')
+    manifest.exports['./base'].default = '../outside.mjs'
+  writeFileSync(file, fault === 'malformed' ? '{' : JSON.stringify(manifest))
+  utimesSync(file, NEW, NEW)
+  expect(sdkDistStale(join(dir, 'pkg')).stale).toBe(true)
+})
+
 /** The lockfile/stamp quartet `installDecision` is asked about. */
 function installTarget(mode: string): {
   lockFile: string

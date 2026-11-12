@@ -16,7 +16,7 @@ import {
   type HilosLegalContext,
   type HilosRouter,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { readerTimeZone } from './readerTimeZone.js'
 
 /** The acceptance's person fields, as the server sent them to this viewer. */

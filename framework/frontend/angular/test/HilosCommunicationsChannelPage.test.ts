@@ -8,16 +8,16 @@ import {
   createSignal,
   pageIdentity,
   resolveHilosPath,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type { HilosChannelSummary } from '@hilos/core/admin/communications'
+import type { HilosCommunicationsContext } from '@hilos/core/admin/communications'
 import type {
-  HilosCommunicationsContext,
   HilosConnection,
   HilosPageIdentity,
   HilosPageKey,
   HilosRouter,
   PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosCommunicationsChannelPage } from '../src/admin/communications/HilosCommunicationsChannelPage.js'

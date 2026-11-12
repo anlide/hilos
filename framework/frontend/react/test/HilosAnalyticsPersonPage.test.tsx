@@ -5,17 +5,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   createSignal,
-  formatAnalyticsTime,
   HilosPages,
   pageIdentity,
   resolveHilosPath,
   ScopeManager,
-  type HilosAnalyticsBrowserSessionRow,
   type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
   type TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  formatAnalyticsTime,
+  type HilosAnalyticsBrowserSessionRow,
+} from '@hilos/core/admin/analytics'
 
 import { HilosAnalyticsPersonPage } from '../src/admin/analytics/HilosAnalyticsPersonPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

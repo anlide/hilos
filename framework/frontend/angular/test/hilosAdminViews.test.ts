@@ -1,4 +1,4 @@
-import { HilosPages, type LazyPageView } from '@hilos/core'
+import { HilosPages, type LazyPageView } from '@hilos/core/base'
 import type { Type } from '@angular/core'
 import { expect, it } from 'vitest'
 import { hilosAdminViews } from '@hilos/angular/admin-views'

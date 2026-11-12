@@ -11,7 +11,7 @@ import {
   type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosDaemonEnvOrphansPage } from '../src/admin/daemon/HilosDaemonEnvOrphansPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 

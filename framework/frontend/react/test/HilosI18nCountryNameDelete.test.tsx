@@ -1,12 +1,11 @@
 import { useState } from 'react'
 import { act, fireEvent } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import { HilosPages, hilosToasts } from '@hilos/core/base'
 import {
-  HilosPages,
   type HilosI18nCountryNameDeleteTarget,
   type HilosI18nNameRow,
-  hilosToasts,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { HilosI18nCountryNameDelete } from '../src/admin/i18n/details/HilosI18nCountryNameDelete.js'
 import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 import { harness, el, click, settle } from './hilosI18nHarness.js'

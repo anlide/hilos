@@ -8,26 +8,28 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   ActionLifecycle,
   HIDDEN_VALUE,
-  HILOS_APPEARANCE_SETTINGS_TABLE,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
-  HilosAppearanceSettingKey,
   HilosPages,
   ScopeManager,
   bindAdminAccess,
   bindSessionScope,
   createSignal,
   hilosToasts,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  HILOS_APPEARANCE_SETTINGS_TABLE,
+  HilosAppearanceSettingKey,
+} from '@hilos/core/admin/appearance'
 import type {
   Hideable,
-  HilosAppearanceContext,
   HilosConnection,
   HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
   ThemePosition,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosAppearanceContext } from '@hilos/core/admin/appearance'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosAppearancePage } from '../src/admin/appearance/HilosAppearancePage.js'

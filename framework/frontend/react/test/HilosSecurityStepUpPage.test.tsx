@@ -12,15 +12,15 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   Hideable,
   HilosConnection,
   HilosRouter,
-  HilosTwoFactorContext,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosTwoFactorContext } from '@hilos/core/admin/security'
 
 import { HilosSecurityStepUpPage } from '../src/admin/security/HilosSecurityStepUpPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

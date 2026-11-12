@@ -5,10 +5,8 @@
 // backdoor. The erasure case drives test:account:force-purge through the live daemon.
 import type { Page } from '@playwright/test'
 import { expect, test } from '../test.js'
-import {
-  HilosPages,
-  resolveHilosPath,
-} from '../../../../../framework/frontend/core/src/index.js'
+import { HilosPages } from '../../../../../framework/frontend/core/src/routing/hilosPages.js'
+import { resolveHilosPath } from '../../../../../framework/frontend/core/src/routing/hilosAdmin.js'
 import {
   PASSWORD,
   createTestUser,

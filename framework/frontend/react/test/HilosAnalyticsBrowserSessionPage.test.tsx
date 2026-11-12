@@ -9,7 +9,6 @@ import {
   createAppPageRouter,
   createHilosRouter,
   createSignal,
-  formatAnalyticsTime,
   HILOS_ROUTE_DECLARATIONS,
   HilosPages,
   pageIdentity,
@@ -18,14 +17,17 @@ import {
   ScopeManager,
   sessionUserName,
   USER_ENTITY_TYPE,
-  type HilosAnalyticsActionRow,
-  type HilosAnalyticsContext,
   type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
   type Scope,
   type TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  formatAnalyticsTime,
+  type HilosAnalyticsActionRow,
+  type HilosAnalyticsContext,
+} from '@hilos/core/admin/analytics'
 
 import { HilosAnalyticsBrowserSessionPage } from '../src/admin/analytics/HilosAnalyticsBrowserSessionPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

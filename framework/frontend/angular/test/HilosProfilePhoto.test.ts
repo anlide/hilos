@@ -10,7 +10,7 @@ import {
   type HilosProfilePhotoFlow,
   type HilosProfilePhotoStep,
   type ModalController,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, expect, it, vi } from 'vitest'
 import { HilosModal } from '../src/HilosModal.js'
 import { HilosProfilePhoto } from '../src/profile/HilosProfilePhoto.js'

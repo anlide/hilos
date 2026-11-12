@@ -1,54 +1,49 @@
 import { TestBed } from '@angular/core/testing'
+import type { HilosPageIdentity } from '@hilos/core/base'
+import { describe, expect, it } from 'vitest'
 import {
-  createSignal,
-  type HilosPageIdentity,
-  type HilosRouter,
-} from '@hilos/core'
-import { expect, it } from 'vitest'
+  createPageHeadingRouter,
+  registerPageHeadingCases,
+  type PageHeadingView,
+} from '../../test-support/pageHeadingCases.js'
 import { HilosPageHeading } from '../src/HilosPageHeading.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
-it('waits for catalog identity and keeps an unmounted parent as text', () => {
-  const pageIdentity = createSignal<HilosPageIdentity | undefined>(undefined)
-  const router = {
-    pageIdentity,
-    currentRoute: createSignal({
-      page: 'hilos_profile_sign_in',
-      params: {},
-      admin: false,
-    }),
-    currentPath: createSignal('/profile/sign-in'),
-    resolvePath: () => undefined,
-  } as unknown as HilosRouter
+/** Bind the real heading's input before its first change detection. */
+async function mountHeading(
+  identity?: HilosPageIdentity,
+): Promise<PageHeadingView> {
+  const { router, pageIdentity } = createPageHeadingRouter(identity)
   TestBed.configureTestingModule({
     providers: [{ provide: HILOS_ROUTER, useValue: router }],
   })
   const fixture = TestBed.createComponent(HilosPageHeading)
-  fixture.componentRef.setInput('dataId', 'test-heading')
-  fixture.detectChanges()
   const root = fixture.nativeElement as HTMLElement
-  expect(root.querySelector('[data-id="test-heading-skeleton"]')).not.toBeNull()
-  expect(root.querySelector('h1')).toBeNull()
-  const identity: HilosPageIdentity = {
-    label: 'Ways to sign in',
-    lead: 'Every way into this account.',
-    children: [],
-    breadcrumb: [
-      { page: 'hilos_profile', label: 'Profile' },
-      { page: 'hilos_profile_sign_in', label: 'Ways to sign in' },
-    ],
+  try {
+    fixture.componentRef.setInput('dataId', 'test-heading')
+    fixture.detectChanges()
+    return {
+      root,
+      async update(value) {
+        pageIdentity.set(value)
+        fixture.detectChanges()
+      },
+      async unmount() {
+        try {
+          fixture.destroy()
+        } finally {
+          root.remove()
+        }
+      },
+    }
+  } catch (error) {
+    try {
+      fixture.destroy()
+    } finally {
+      root.remove()
+    }
+    throw error
   }
-  pageIdentity.set(identity)
-  fixture.detectChanges()
-  expect(root.querySelector('h1')?.textContent?.trim()).toBe('Ways to sign in')
-  expect(
-    root.querySelector('[aria-label="breadcrumb"]')?.textContent,
-  ).toContain('Profile')
-  expect(root.querySelector('a')).toBeNull()
-  pageIdentity.set({
-    ...identity,
-    breadcrumb: [{ page: 'hilos_profile', label: 'Profile' }],
-  })
-  fixture.detectChanges()
-  expect(root.querySelector('[aria-label="breadcrumb"]')).toBeNull()
-})
+}
+
+registerPageHeadingCases('Angular', { describe, it, expect }, mountHeading)

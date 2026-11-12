@@ -98,8 +98,8 @@ shared behavior (the owner's decision, P-668). CSS snapshots and appearance
 checks do not become a shared behavioral contract: apply
 [the assertion rules below](#unit-and-component-assertions--behavior-accessibility-and-semantics).
 Shared fixtures read their existing owners through `@hilos/core/base` and
-`@hilos/core/admin/<section>`, not the compatibility root. Supporting vocabulary
-comes from its owner; checked values remain explicit examples under
+`@hilos/core/admin/<section>`; the SDK packages have no bare entry. Supporting
+vocabulary comes from its owner; checked values remain explicit examples under
 [Magic Values — Tests](../code-style/magic-values.md#tests). Do not invent a
 local page or error-code dictionary for the shared fixture.
 
@@ -137,12 +137,13 @@ checks belong to those future leaves, not to this documentation change:
    framework and leave three independent bodies alive. The pilots determine
    grouping, scope and leaf count. Basename overlap is not a completed inventory,
    and no timing measurements or bulk-migration readiness are claimed here.
-4. **Compatibility roots:** migrate each area's actual importers to `/base` and
-   `/admin/<section>` as that area moves, including justified framework-specific
-   tests. Removing the compatibility roots themselves remains HIL-1788. Before
-   that removal can proceed, verify that the actual importers have migrated and
-   connect its prerequisites to the approved migration work. This research
-   neither changes those dependencies nor declares that prerequisite fulfilled.
+4. **Compatibility roots (historical proposal):** HIL-1787 proposed moving each
+   area's actual importers to `/base` and `/admin/<section>` as that area moved,
+   including justified framework-specific tests, before removing the roots in
+   HIL-1788. The four roots have since been removed; current imports use their
+   existing public owners, including `/status` and `/admin-views` where needed.
+   The import-only migration does not replace the shared-contract rollout above
+   or authorize duplicate behavioral scenarios.
 
 ### Unit and component assertions — behavior, accessibility and semantics
 

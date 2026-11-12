@@ -8,18 +8,20 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   ActionResult,
   HilosConnection,
   HilosRouter,
-  HilosSettingPresetsContext,
   HilosSettingPresetsState,
-  HilosSettingPresetsVocabulary,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type {
+  HilosSettingPresetsContext,
+  HilosSettingPresetsVocabulary,
+} from '@hilos/core/admin/settings'
 
 import { HilosSettingPresetsPage } from '../src/admin/settings/HilosSettingPresetsPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

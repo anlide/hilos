@@ -1,6 +1,7 @@
 import { act, fireEvent } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { HilosPages, HILOS_I18N_LANGUAGE_DELETE_COPY } from '@hilos/core'
+import { HilosPages } from '@hilos/core/base'
+import { HILOS_I18N_LANGUAGE_DELETE_COPY } from '@hilos/core/admin/i18n'
 import { HilosI18nLanguagePage } from '../src/admin/i18n/details/HilosI18nLanguagePage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 import {

@@ -45,7 +45,7 @@ import { createCommandChannel } from '../../../../../framework/frontend/scripts/
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
-import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/index.js'
+import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/auth/authProtocol.js'
 
 // spec-owner: demo — carries this demo's Vue browser journeys for these shared pages
 

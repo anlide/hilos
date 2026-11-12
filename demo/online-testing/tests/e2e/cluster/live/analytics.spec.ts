@@ -31,7 +31,7 @@ import {
 } from '../../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { seedTestUser } from '../../../../../../framework/frontend/scripts/testUser.mjs'
-import { AUTH_ACTION_LOGIN } from '../../../../../../framework/frontend/core/src/index.js'
+import { AUTH_ACTION_LOGIN } from '../../../../../../framework/frontend/core/src/auth/authProtocol.js'
 
 // spec-owner: demo — carries Online Testing's Angular cluster browser journeys
 

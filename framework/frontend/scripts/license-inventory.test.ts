@@ -300,7 +300,7 @@ it('renders a module the demo can import and typecheck', () => {
   )
 
   expect(module).toContain(
-    "import type { HilosLicenseInventory } from '@hilos/core'",
+    "import type { HilosLicenseInventory } from '@hilos/core/base'",
   )
   expect(module).toContain(
     'export const hilosLicenseInventory: HilosLicenseInventory = {',

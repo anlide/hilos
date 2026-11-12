@@ -20,7 +20,7 @@ import {
   type HilosConnection,
   type DataExportNode,
   type HilosDataExportStore,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { type ModalController } from '@hilos/core/base'
 import { afterEach, expect, it, vi } from 'vitest'
 import { HilosDataExport } from '../src/profile/HilosDataExport.js'

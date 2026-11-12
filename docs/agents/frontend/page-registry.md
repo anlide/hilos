@@ -13,7 +13,7 @@ the app shell.
 
 The framework owns the repetitive half of this wiring, so a project declares
 only what is its own (its keys, routes, and entity-slot types) and binds the
-rest through three `@hilos/core` exports. A project does **not** re-implement
+rest through three `@hilos/core/base` exports. A project does **not** re-implement
 the page-subscription plumbing.
 
 ## The `pages/` folder
@@ -33,7 +33,7 @@ view files, which live in `views/<Page>/`:
   rows of the backend `PageConstants`. Each value is the subscription wire
   identity, so it must stay byte-for-byte equal to its backend page key. The
   framework `hilos_*` admin keys are **not** restated here — they come from
-  `@hilos/core` (`HilosPages` / `HILOS_ROUTE_DECLARATIONS`). `keys.ts` is the
+  `@hilos/core/base` (`HilosPages` / `HILOS_ROUTE_DECLARATIONS`). `keys.ts` is the
   single source of the page-key names: the app shell's page→view map and the
   router both import from it.
 - **`routes.ts` — the route registry.** The app's `APP_ROUTES` map (page key →
@@ -91,7 +91,7 @@ view files, which live in `views/<Page>/`:
   the returned function when it unmounts. The binder keeps the reactive source;
   `pageIdentity()` uses it for matching existing crumbs and the optional
   `pageHeadOwner` label while a page scope is active. It is exported from
-  `@hilos/core/base` and the compatibility root from the same implementation.
+  `@hilos/core/base`, with one implementation and registration state.
   `bootHilos` reads the identity inside its reactive title closure, and
   `resolvePageTitle` chooses project `pageTitles`, framework footer label, live
   owner label, then the page's catalog label. Country's Vue pages bind their
@@ -240,7 +240,7 @@ the four-page public prerender set described in
 
 ## What the SDK provides
 
-Three `@hilos/core` exports carry the half of the wiring that is identical in
+Three `@hilos/core/base` exports carry the half of the wiring that is identical in
 every project, so a project never restates it:
 
 - **`createAppPageRouter(appRoutes)`** — builds the app's router
@@ -276,7 +276,7 @@ The registry is consumed in two places at startup:
   payloads pass the parse boundary:
 
   ```ts
-  import { HilosConnection, PAGE_SIGNAL_SCHEMAS } from '@hilos/core'
+  import { HilosConnection, PAGE_SIGNAL_SCHEMAS } from '@hilos/core/base'
   // ...
   projectSchemas: { ...appSignalSchemas, ...PAGE_SIGNAL_SCHEMAS }
   ```
@@ -285,7 +285,7 @@ The registry is consumed in two places at startup:
   the returned manager to the navigator:
 
   ```ts
-  import { bindPageScope, createHilosRouter } from '@hilos/core'
+  import { bindPageScope, createHilosRouter } from '@hilos/core/base'
   import { scopes } from './session'
   import { router } from './pages/routes'
   import { pageEntityTypes } from './pages/entityTypes' // when the app has them
@@ -299,7 +299,7 @@ importing the keys from `pages/keys` — never the router:
 
 ```ts
 import { PAGE_MAIN } from './pages/keys'
-import { HilosPages } from '@hilos/core'
+import { HilosPages } from '@hilos/core/base'
 // ...
 const pages = { [PAGE_MAIN]: Main, [HilosPages.DASHBOARD]: Dashboard }
 ```

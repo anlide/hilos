@@ -7,14 +7,21 @@ import {
   TableViewportController,
   createSignal,
   hilosTableFrozenLabel,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   HilosTableBulkAccepted,
   HilosTableBulkAction,
   HilosTableColumn,
-} from '@hilos/core'
-import type { HilosTableProgress } from '@hilos/core/base'
+  HilosTableProgress,
+} from '@hilos/core/base'
+
+import type {
+  TableLiveInput,
+  TableLiveView,
+} from '../../test-support/tableLiveFixtures.js'
+import { registerTableLiveFrozenCases } from '../../test-support/tableLiveFrozenCases.js'
+import { registerTableLiveRoomCases } from '../../test-support/tableLiveRoomCases.js'
 
 import { HilosTableLive } from '../src/HilosTableLive.js'
 import {
@@ -39,22 +46,6 @@ const COLUMNS: HilosTableColumn[] = [
   { key: 'name', label: 'Name' },
   { key: 'presence', label: 'Presence', source: 'connections' },
 ]
-
-// The classes that place and color a row, which the twin and the message are
-// allowed to differ by; everything else is the layout both must share.
-const PLACEMENT = new Set([
-  'invisible',
-  'position-absolute',
-  'top-0',
-  'start-0',
-  'w-100',
-])
-
-function layoutClasses(element: Element): string[] {
-  return Array.from(element.classList)
-    .filter((name) => !PLACEMENT.has(name) && !name.startsWith('alert-'))
-    .sort()
-}
 
 function makeController(): TableViewportController<Row> {
   const controller = new TableViewportController<Row>({
@@ -182,156 +173,72 @@ function click(fixture: ComponentFixture<unknown>, selector: string): void {
   fixture.detectChanges()
 }
 
-function all(fixture: ComponentFixture<unknown>, selector: string): Element[] {
-  return Array.from(
-    (fixture.nativeElement as HTMLElement).querySelectorAll(selector),
-  )
+/** Own the fixture before input delivery and destroy before resetting TestBed. */
+async function mountTableLive(input: TableLiveInput): Promise<TableLiveView> {
+  const host = document.createElement('div')
+  let fixture: ComponentFixture<HilosTableLive<unknown>> | undefined
+  let released = false
+  async function unmount(): Promise<void> {
+    if (released) return
+    released = true
+    const errors: unknown[] = []
+    for (const release of [
+      () => fixture?.destroy(),
+      () => (fixture?.nativeElement as HTMLElement | undefined)?.remove(),
+      () => TestBed.resetTestingModule(),
+      () => host.remove(),
+    ]) {
+      try {
+        await release()
+      } catch (error) {
+        errors.push(error)
+      }
+    }
+    if (errors.length === 1) throw errors[0]
+    if (errors.length > 1)
+      throw new AggregateError(errors, 'Angular table live cleanup failed', {
+        cause: errors[0],
+      })
+  }
+  try {
+    document.body.appendChild(host)
+    fixture = TestBed.createComponent<HilosTableLive<unknown>>(HilosTableLive)
+    host.appendChild(fixture.nativeElement as HTMLElement)
+    fixture.componentRef.setInput('controller', input.controller)
+    fixture.componentRef.setInput('columns', input.columns)
+    fixture.detectChanges()
+    await fixture.whenStable()
+    return {
+      root: host,
+      unmount,
+      async change(action) {
+        action()
+        fixture!.detectChanges()
+        await fixture!.whenStable()
+      },
+    }
+  } catch (error) {
+    try {
+      await unmount()
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        'Angular table live setup and cleanup failed',
+        { cause: cleanupError },
+      )
+    }
+    throw error
+  }
 }
 
+registerTableLiveRoomCases('Angular', { describe, it, expect }, mountTableLive)
+registerTableLiveFrozenCases(
+  'Angular',
+  { describe, it, expect },
+  mountTableLive,
+)
+
 describe('HilosTableLive', () => {
-  it('stands exactly one hidden twin with nothing, one and three messages live', () => {
-    const controller = makeController()
-    const fixture = mountLive(controller)
-    expect(all(fixture, '[data-id="hilos-table-live-idle"]')).toHaveLength(1)
-
-    controller.ingestAnnounce('b', 'above', 2, true)
-    fixture.detectChanges()
-    expect(all(fixture, '[data-id="hilos-table-live-idle"]')).toHaveLength(1)
-
-    liveThree(controller)
-    fixture.detectChanges()
-    expect(all(fixture, '[data-id="hilos-table-live-idle"]')).toHaveLength(1)
-  })
-
-  it('keeps the twin out of sight and out of the accessibility tree', () => {
-    const fixture = mountLive(makeController())
-    const twin = query(
-      fixture,
-      '[data-id="hilos-table-live-idle"]',
-    ) as HTMLElement
-
-    expect(twin.classList.contains('invisible')).toBe(true)
-    expect(twin.getAttribute('aria-hidden')).toBe('true')
-    // The twin holds room and takes no focus, so there is no button inside it.
-    expect(twin.querySelector('button')).toBeNull()
-  })
-
-  it('lays the message out exactly as the twin, only placed over it', () => {
-    const controller = makeController()
-    const fixture = mountLive(controller)
-    controller.ingestAnnounce('b', 'above', 2, true)
-    fixture.detectChanges()
-
-    const twin = query(
-      fixture,
-      '[data-id="hilos-table-live-idle"]',
-    ) as HTMLElement
-    const message = query(
-      fixture,
-      '[data-id="hilos-table-announce"]',
-    ) as HTMLElement
-    expect(layoutClasses(message)).toEqual(layoutClasses(twin))
-    // Out of the flow, so the message cannot add a pixel to the room.
-    expect(message.classList.contains('position-absolute')).toBe(true)
-  })
-
-  it('draws no line with nothing to say, while the room still stands', () => {
-    const fixture = mountLive(makeController())
-
-    expect(query(fixture, '[data-id="hilos-table-live-slot"]')).not.toBeNull()
-    expect(query(fixture, '.position-absolute')).toBeNull()
-    expect(
-      query(fixture, '[data-id="hilos-table-live-status"]')?.textContent,
-    ).toBe('')
-  })
-
-  it('gives the line to the senior message and the others their icons', () => {
-    const controller = makeController()
-    liveThree(controller)
-    const fixture = mountLive(controller)
-
-    expect(all(fixture, '.position-absolute')).toHaveLength(1)
-    expect(
-      query(
-        fixture,
-        '[data-id="hilos-table-pending-row"]',
-      )?.textContent?.replace(/\s+/g, ' '),
-    ).toContain('1 row will move or leave')
-    expect(query(fixture, '[data-id="hilos-table-apply"]')).not.toBeNull()
-    expect(query(fixture, '[data-id="hilos-table-announce"]')).toBeNull()
-    expect(query(fixture, '[data-id="hilos-table-stale"]')).toBeNull()
-
-    // Sorted, because the order Angular writes a bound class list in is its own.
-    const icons = all(fixture, '[data-id="hilos-table-live-rest"] i')
-    expect(icons.map((icon) => Array.from(icon.classList).sort())).toEqual([
-      ['bi', 'bi-arrow-down-circle', 'flex-shrink-0'],
-      ['bi', 'bi-snow', 'flex-shrink-0'],
-    ])
-    expect(
-      icons.every((icon) => icon.getAttribute('aria-hidden') === 'true'),
-    ).toBe(true)
-  })
-
-  it('speaks the senior sentence and names the rest in the region that always stands', () => {
-    const controller = makeController()
-    liveThree(controller)
-    const fixture = mountLive(controller)
-
-    const status = query(
-      fixture,
-      '[data-id="hilos-table-live-status"]',
-    ) as HTMLElement
-    expect(status.getAttribute('role')).toBe('status')
-    expect(status.textContent).toBe(
-      '1 row will move or leave. Also: new rows, a source is behind.',
-    )
-  })
-
-  it('keeps the live region off the line itself', () => {
-    const controller = makeController()
-    liveThree(controller)
-    const fixture = mountLive(controller)
-
-    expect(
-      query(fixture, '[data-id="hilos-table-pending-row"]')?.querySelector(
-        '[role]',
-      ),
-    ).toBeNull()
-  })
-
-  it('names the columns built from the quiet source on the freshness line', () => {
-    const controller = makeController()
-    controller.ingestDelta({
-      kind: 'row_stale',
-      rowKey: 'a',
-      staleSources: ['connections'],
-    })
-    const fixture = mountLive(controller)
-
-    expect(
-      query(fixture, '[data-id="hilos-table-stale"]')?.textContent?.trim(),
-    ).toBe(
-      'Presence is not updating: the link to its source was lost. The other columns are live.',
-    )
-  })
-
-  it('says since when a frozen table has not updated, with the snowflake and no button', () => {
-    const controller = makeController()
-    const since = Date.now()
-    controller.ingestFrozen(since)
-    const fixture = mountLive(controller)
-
-    const line = query(fixture, '[data-id="hilos-table-frozen"]') as HTMLElement
-    expect(line.textContent?.trim()).toBe(hilosTableFrozenLabel(since))
-    expect(line.textContent).toContain('This table has not updated since')
-    expect(line.classList.contains('alert-info')).toBe(true)
-    expect(line.querySelector('i')?.classList.contains('bi-snow')).toBe(true)
-    expect(line.querySelector('button')).toBeNull()
-    expect(
-      query(fixture, '[data-id="hilos-table-live-status"]')?.textContent,
-    ).toBe(hilosTableFrozenLabel(since))
-  })
-
   it('reformats the frozen line for the live reader zone without replacing it', () => {
     const since = Date.parse('2026-10-09T23:30:00.000Z')
     const controller = makeController()
@@ -373,41 +280,6 @@ describe('HilosTableLive', () => {
       query(rebound, '[data-id="hilos-table-frozen"]')?.textContent?.trim(),
     ).toBe(hilosTableFrozenLabel(since))
     rebound.destroy()
-  })
-
-  it('keeps the frozen table as its snowflake after pending changes holding the line', () => {
-    const controller = makeController()
-    controller.ingestDelta({
-      kind: 'row_moved',
-      rowKey: 'a',
-      row: { rowKey: 'a', slots: { name: 'Alicia' } },
-    })
-    controller.ingestFrozen(Date.now())
-    const fixture = mountLive(controller)
-
-    expect(query(fixture, '[data-id="hilos-table-pending-row"]')).not.toBeNull()
-    const icons = all(fixture, '[data-id="hilos-table-live-rest"] i')
-    expect(icons.map((icon) => Array.from(icon.classList).sort())).toEqual([
-      ['bi', 'bi-snow', 'flex-shrink-0'],
-    ])
-    expect(
-      query(fixture, '[data-id="hilos-table-live-status"]')?.textContent,
-    ).toBe('1 row will move or leave. Also: the table stopped updating.')
-  })
-
-  it('drops the quiet source from the room while the table is frozen', () => {
-    const controller = makeController()
-    controller.ingestDelta({
-      kind: 'row_stale',
-      rowKey: 'a',
-      staleSources: ['connections'],
-    })
-    controller.ingestFrozen(Date.now())
-    const fixture = mountLive(controller)
-
-    expect(query(fixture, '[data-id="hilos-table-frozen"]')).not.toBeNull()
-    expect(query(fixture, '[data-id="hilos-table-stale"]')).toBeNull()
-    expect(query(fixture, '[data-id="hilos-table-live-rest"]')).toBeNull()
   })
 
   it('announces the supplied table progress phrase from the current bar', () => {

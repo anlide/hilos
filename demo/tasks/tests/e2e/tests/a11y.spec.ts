@@ -85,7 +85,7 @@ import {
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
-import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/index.js'
+import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/auth/authProtocol.js'
 
 // spec-owner: demo — carries Tasks' React browser journeys for these shared pages
 

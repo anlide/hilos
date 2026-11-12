@@ -50,6 +50,7 @@ withDefaults(
         <HilosLink
           v-else-if="crumb.to"
           :to="crumb.to"
+          :aria-current="null"
           :data-id="`hilos-breadcrumb-${crumb.page}`"
           >{{ crumb.label }}</HilosLink
         >

@@ -31,7 +31,7 @@ import {
   type HilosConnection,
   type HilosRouter,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosMagicLinkPage } from '../src/auth/HilosMagicLinkPage.js'

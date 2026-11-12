@@ -15,16 +15,16 @@ import {
   createSignal,
   pageIdentity,
   resolveHilosPath,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   Hideable,
-  HilosCommunicationsContext,
   HilosConnection,
   HilosPageKey,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosCommunicationsContext } from '@hilos/core/admin/communications'
 import { HIDDEN_VALUE } from '@hilos/core/base'
 import { afterEach, describe, expect, it } from 'vitest'
 

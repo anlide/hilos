@@ -34,7 +34,7 @@ import {
   type ProjectSignal,
   type ThemePick,
   type ThemeSettings,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosProfilePage } from '../src/profile/HilosProfilePage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 import { profileNameStatus, profileRenameTab } from './profileRenameHarness.js'

@@ -5,12 +5,12 @@ import {
   HilosPages,
   ScopeManager,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosConnection,
   HilosPageIdentity,
   HilosRouter,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type { ReactNode } from 'react'
 
 import { HilosLogsKeysPage } from '../src/admin/logs/HilosLogsKeysPage.js'

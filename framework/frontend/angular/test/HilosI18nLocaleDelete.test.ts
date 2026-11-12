@@ -6,8 +6,9 @@
 // busy action that holds every close, and a viewer of the admin view mode. The
 // dispatch is the core's and is tested there.
 import { signal } from '@angular/core'
-import { HilosPages, createHilosI18nLocaleDelete } from '@hilos/core'
-import type { HilosI18nLocaleDeleteTarget } from '@hilos/core'
+import { HilosPages } from '@hilos/core/base'
+import { createHilosI18nLocaleDelete } from '@hilos/core/admin/i18n'
+import type { HilosI18nLocaleDeleteTarget } from '@hilos/core/admin/i18n'
 import { describe, expect, it } from 'vitest'
 
 import { HilosI18nLocaleDelete } from '../src/admin/i18n/details/HilosI18nLocaleDelete.js'

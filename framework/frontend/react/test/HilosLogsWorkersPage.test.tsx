@@ -5,13 +5,13 @@ import {
   ScopeManager,
   WORKERS_HEADER_SIGNAL,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosConnection,
   HilosLogWorkersHeader,
   HilosRouter,
   PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosLogsWorkersPage } from '../src/admin/logs/HilosLogsWorkersPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { type HilosConnection, type ProjectSignal } from '../../src/index.js'
+import {
+  type HilosConnection,
+  type ProjectSignal,
+} from '../../src/base/index.js'
 import {
   ACCESS_LOSS_COPY,
   bindAccessLoss,

@@ -1,13 +1,13 @@
 // Pins the public surface: everything a React consumer may import from
 // '@hilos/react' is exported here. Behavior is covered by the module tests.
 import { expect, expectTypeOf, it } from 'vitest'
-import { HilosPages } from '@hilos/core'
+import { HilosPages } from '@hilos/core/base'
 import type {
   ActionLifecycle,
   HilosConnection,
   ReadonlySignal,
   ScopeManager,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosStatusComponentsContext,
   HilosStatusContext,
@@ -28,38 +28,10 @@ import {
   HilosLink,
   HilosMagicLinkPage,
   HilosOAuthCallbackPage,
-  HilosI18nPage,
-  HilosI18nLanguagesPage,
-  HilosI18nLanguagePage,
-  HilosI18nLanguageNamesPage,
-  HilosI18nLanguageLocalesPage,
-  HilosI18nCountriesPage,
-  HilosI18nCountryPage,
-  HilosI18nCountryNamesPage,
-  HilosChangeLogPage,
-  HilosChangeLogTablesPage,
-  HilosChangeLogTablePage,
-  HilosAnalyticsPage,
-  HilosAnalyticsPeoplePage,
-  HilosAnalyticsBrowserSessionsPage,
-  HilosAnalyticsBrowserSessionPage,
-  HilosAnalyticsPersonPage,
-  HilosAppearancePage,
-  hilosAdminViews,
   HilosPageHead,
   HilosPageHeadingIdContext,
   HilosRouterContext,
   HilosSkeleton,
-  HilosStatusComponentsPage,
-  HilosStatusIncidentModal,
-  HilosStatusPage,
-  HilosStatusRemoveSubscriberModal,
-  HilosStatusSubscribersPage,
-  HilosStatusWorksPage,
-  HilosStatusWorkModal,
-  HilosStatusCancelWorkModal,
-  HilosStatusHistoryPage,
-  HilosPublicStatusPage,
   HilosAvatar,
   HilosSwitch,
   HilosTableText,
@@ -70,7 +42,43 @@ import {
   useLookOnly,
   usePageInstanceName,
   useReconnectDragging,
-} from '../src/index.js'
+} from '@hilos/react/base'
+import {
+  HilosI18nPage,
+  HilosI18nLanguagesPage,
+  HilosI18nLanguagePage,
+  HilosI18nLanguageNamesPage,
+  HilosI18nLanguageLocalesPage,
+  HilosI18nCountriesPage,
+  HilosI18nCountryPage,
+  HilosI18nCountryNamesPage,
+} from '@hilos/react/admin/i18n'
+import {
+  HilosChangeLogPage,
+  HilosChangeLogTablesPage,
+  HilosChangeLogTablePage,
+} from '@hilos/react/admin/change-log'
+import {
+  HilosAnalyticsPage,
+  HilosAnalyticsPeoplePage,
+  HilosAnalyticsBrowserSessionsPage,
+  HilosAnalyticsBrowserSessionPage,
+  HilosAnalyticsPersonPage,
+} from '@hilos/react/admin/analytics'
+import { HilosAppearancePage } from '@hilos/react/admin/appearance'
+import { hilosAdminViews } from '@hilos/react/admin-views'
+import {
+  HilosStatusComponentsPage,
+  HilosStatusIncidentModal,
+  HilosStatusPage,
+  HilosStatusRemoveSubscriberModal,
+  HilosStatusSubscribersPage,
+  HilosStatusWorksPage,
+  HilosStatusWorkModal,
+  HilosStatusCancelWorkModal,
+  HilosStatusHistoryPage,
+} from '@hilos/react/admin/status'
+import { HilosStatusPage as HilosPublicStatusPage } from '@hilos/react/status'
 
 import type {
   HilosI18nPageProps,
@@ -81,16 +89,22 @@ import type {
   HilosI18nCountriesPageProps,
   HilosI18nCountryPageProps,
   HilosI18nCountryNamesPageProps,
+} from '@hilos/react/admin/i18n'
+import type {
   HilosChangeLogPageProps,
   HilosChangeLogTablesPageProps,
   HilosChangeLogTablePageProps,
+} from '@hilos/react/admin/change-log'
+import type {
   HilosAnalyticsPageProps,
   HilosAnalyticsPeoplePageProps,
   HilosAnalyticsBrowserSessionsPageProps,
   HilosAnalyticsBrowserSessionPageProps,
   HilosAnalyticsPersonPageProps,
-  HilosAppearancePageProps,
-  HilosPageHeadProps,
+} from '@hilos/react/admin/analytics'
+import type { HilosAppearancePageProps } from '@hilos/react/admin/appearance'
+import type { HilosPageHeadProps, HilosTableTextProps } from '@hilos/react/base'
+import type {
   HilosStatusComponentsPageProps,
   HilosStatusIncidentModalProps,
   HilosStatusPageProps,
@@ -100,8 +114,7 @@ import type {
   HilosStatusWorkModalProps,
   HilosStatusCancelWorkModalProps,
   HilosStatusHistoryPageProps,
-  HilosTableTextProps,
-} from '../src/index.js'
+} from '@hilos/react/admin/status'
 import * as status from '../src/admin/status/index.js'
 import * as publicStatus from '../src/status/index.js'
 import * as base from '../src/base/index.js'

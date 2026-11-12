@@ -4,7 +4,7 @@
   "deleteDestPath": true,
   "allowedNonPeerDependencies": ["@hilos/core"],
   "lib": {
-    "entryFile": "src/index.ts"
+    "entryFile": "src/apf-primary.ts"
   },
   "assets": ["src/hilos-styles.scss"]
 }

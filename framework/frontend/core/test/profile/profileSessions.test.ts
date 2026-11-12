@@ -7,7 +7,7 @@ import {
   resolveHilosProfileSessions,
   type ActionHandle,
   type ActionLifecycle,
-} from '../../src/index.js'
+} from '../../src/base/index.js'
 import { applyServerTime } from '../../src/session/serverClock.js'
 import { hilosTimeZone } from '../../src/timeZone/timeZoneState.js'
 

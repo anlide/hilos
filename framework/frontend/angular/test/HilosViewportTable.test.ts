@@ -12,6 +12,7 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   HilosPages,
+  HILOS_TABLE_ACTIONS_KEY,
   TABLE_VIEW_STORAGE_KEY,
   TableViewportController,
   createSignal,
@@ -20,7 +21,7 @@ import {
   ScopeManager,
   subscribeSignal,
   registerFocusReturnFallback,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   HilosConnection,
@@ -34,8 +35,12 @@ import type {
   HilosTableView,
   PageRouteMatch,
   TableViewportDescriptor,
-} from '@hilos/core'
-import { HILOS_TABLE_ACTIONS_KEY } from '@hilos/core/base'
+} from '@hilos/core/base'
+import {
+  registerTableControllerReplacementCases,
+  type TableControllerReplacementInput,
+  type TableControllerReplacementView,
+} from '../../test-support/tableControllerReplacementCases.js'
 
 import { normalizeTableRow } from '../../core/src/state/normalizer.js'
 import { HilosAdminPage } from '../src/HilosAdminPage.js'
@@ -57,6 +62,82 @@ interface Row {
 const COLUMNS: HilosTableColumn[] = [
   { key: 'name', label: 'Name', sortable: true },
 ]
+
+/** Keep one public fixture and deliver replacements through its real input. */
+async function mountReplacementTable(
+  input: TableControllerReplacementInput,
+): Promise<TableControllerReplacementView> {
+  const host = document.createElement('div')
+  let fixture: ComponentFixture<HilosViewportTable<unknown>> | undefined
+  let released = false
+  async function unmount(): Promise<void> {
+    if (released) return
+    released = true
+    const errors: unknown[] = []
+    for (const release of [
+      () => fixture?.destroy(),
+      () => (fixture?.nativeElement as HTMLElement | undefined)?.remove(),
+      () => TestBed.resetTestingModule(),
+      () => host.remove(),
+    ]) {
+      try {
+        await release()
+      } catch (error) {
+        errors.push(error)
+      }
+    }
+    if (errors.length === 1) throw errors[0]
+    if (errors.length > 1)
+      throw new AggregateError(
+        errors,
+        'Angular replacement table cleanup failed',
+        {
+          cause: errors[0],
+        },
+      )
+  }
+  async function settle(): Promise<void> {
+    fixture!.detectChanges()
+    await fixture!.whenStable()
+    fixture!.detectChanges()
+  }
+  try {
+    document.body.appendChild(host)
+    fixture = TestBed.createComponent(HilosViewportTable<unknown>)
+    host.appendChild(fixture.nativeElement as HTMLElement)
+    fixture.componentRef.setInput('controller', input.controller)
+    await settle()
+    return {
+      root: host,
+      unmount,
+      async replaceController(next) {
+        fixture!.componentRef.setInput('controller', next)
+        await settle()
+      },
+      async change(action) {
+        action()
+        if (!released) await settle()
+      },
+    }
+  } catch (error) {
+    try {
+      await unmount()
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        'Angular replacement table setup and cleanup failed',
+        { cause: cleanupError },
+      )
+    }
+    throw error
+  }
+}
+
+registerTableControllerReplacementCases(
+  'Angular',
+  { describe, it, expect },
+  mountReplacementTable,
+)
 
 const TWO_COLUMNS: HilosTableColumn[] = [
   { key: 'name', label: 'Name', sortable: true },

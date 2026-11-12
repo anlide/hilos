@@ -6,7 +6,7 @@
 // admin view mode, and a context replaced under open windows. The rules
 // themselves are the core's and are tested there; this file covers the Angular
 // wiring.
-import { HilosPages, hilosToasts } from '@hilos/core'
+import { HilosPages, hilosToasts } from '@hilos/core/base'
 import { describe, expect, it } from 'vitest'
 
 import { HilosI18nCountriesPage } from '../src/admin/i18n/lists/HilosI18nCountriesPage.js'

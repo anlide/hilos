@@ -3,9 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createHilosI18nBuiltInCountryCodes,
   createHilosI18nCountryAdd,
-  HilosPages,
-  hilosToasts,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { HilosPages, hilosToasts } from '@hilos/core/base'
 import { HilosI18nCountryAdd } from '../src/admin/i18n/lists/HilosI18nCountryAdd.js'
 import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 import { harness, el, click, change, settle } from './hilosI18nHarness.js'

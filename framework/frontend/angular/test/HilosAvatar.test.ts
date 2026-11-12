@@ -1,176 +1,43 @@
-import { TestBed, type ComponentFixture } from '@angular/core/testing'
-import type { HilosAvatarMark } from '@hilos/core'
+// Angular input, event and lifecycle delivery for the shared avatar cases.
+import { TestBed } from '@angular/core/testing'
 import { describe, expect, it } from 'vitest'
 
+import {
+  registerAvatarCases,
+  type WithAvatar,
+} from '../../test-support/avatarCases.js'
 import { HilosAvatar } from '../src/HilosAvatar.js'
 
-/**
- * Mount the avatar with the inputs a case sets.
- *
- * @param name The person's name.
- * @param size The optional size override.
- * @param mark The optional standing mark.
- * @param photo The optional photo URL.
- * @param icon The optional icon class.
- * @returns The mounted fixture.
- */
-function mount(
-  name: string,
-  size?: 'sm' | 'md' | 'lg',
-  mark?: HilosAvatarMark | null,
-  photo?: string | null,
-  icon?: string | null,
-): ComponentFixture<HilosAvatar> {
-  const fixture = TestBed.createComponent(HilosAvatar)
-  fixture.componentRef.setInput('name', name)
-  if (size !== undefined) fixture.componentRef.setInput('size', size)
-  if (mark !== undefined) fixture.componentRef.setInput('mark', mark)
-  if (photo !== undefined) fixture.componentRef.setInput('photo', photo)
-  if (icon !== undefined) fixture.componentRef.setInput('icon', icon)
-  fixture.detectChanges()
-
-  return fixture
+/** Reset TestBed even if component creation or an input update fails. */
+const withAvatar: WithAvatar = async (input, steps) => {
+  let element: HTMLElement | undefined
+  try {
+    const fixture = TestBed.createComponent(HilosAvatar)
+    element = fixture.nativeElement
+    for (const [key, value] of Object.entries(input)) {
+      fixture.componentRef.setInput(key, value)
+    }
+    fixture.detectChanges()
+    await steps({
+      root: element!,
+      async update(patch) {
+        for (const [key, value] of Object.entries(patch)) {
+          fixture.componentRef.setInput(key, value)
+        }
+        fixture.detectChanges()
+      },
+      async imageError(image) {
+        image.dispatchEvent(new Event('error'))
+        fixture.detectChanges()
+      },
+    })
+  } finally {
+    try {
+      TestBed.resetTestingModule()
+    } finally {
+      element?.remove()
+    }
+  }
 }
 
-function circle(fixture: ComponentFixture<HilosAvatar>): HTMLElement {
-  return (fixture.nativeElement as HTMLElement).querySelector(
-    '[data-id="hilos-avatar"]',
-  )!
-}
-
-describe('HilosAvatar', () => {
-  it('draws initials in a decorative circle of the default size', () => {
-    const drawn = circle(mount('Мария Ковалёва'))
-
-    expect(drawn.textContent?.trim()).toBe('МК')
-    expect(drawn.getAttribute('aria-hidden')).toBe('true')
-    expect(drawn.hasAttribute('role')).toBe(false)
-    expect(drawn.hasAttribute('tabindex')).toBe(false)
-    expect(drawn.hasAttribute('title')).toBe(false)
-    expect(drawn.classList.contains('hilos-avatar-sm')).toBe(true)
-  })
-
-  it.each(['', '🤖'])('draws the person icon for %j', (name) => {
-    const drawn = circle(mount(name))
-
-    expect(drawn.querySelector('i.bi-person')).not.toBeNull()
-    expect(drawn.textContent?.trim()).toBe('')
-  })
-
-  it.each(['sm', 'md', 'lg'] as const)('draws size %s', (size) => {
-    expect(
-      circle(mount('Alexander', size)).classList.contains(
-        `hilos-avatar-${size}`,
-      ),
-    ).toBe(true)
-  })
-
-  it('draws no mark by default', () => {
-    const drawn = circle(mount('Ada'))
-
-    expect(drawn.querySelector('[data-id="avatar-mark"]')).toBeNull()
-    expect(drawn.classList.contains('border')).toBe(false)
-  })
-
-  it.each([
-    [{ tone: 'warning', icon: 'bi-trash' }],
-    [{ tone: 'danger', icon: 'bi-people-fill' }],
-    [{ tone: 'info', icon: 'bi-people-fill' }],
-  ] as const)(
-    'rings the circle and puts the icon in its corner for %j (HIL-945)',
-    (mark) => {
-      const fixture = mount('Ada', undefined, mark)
-      const drawn = circle(fixture)
-
-      for (const name of [
-        'hilos-avatar-sm',
-        'position-relative',
-        'border',
-        'border-2',
-        `border-${mark.tone}`,
-      ]) {
-        expect(drawn.classList.contains(name)).toBe(true)
-      }
-      const icon = drawn.querySelector('[data-id="avatar-mark"]')!
-      for (const name of ['bi', mark.icon, `text-${mark.tone}-emphasis`]) {
-        expect(icon.classList.contains(name)).toBe(true)
-      }
-      expect(drawn.textContent?.trim()).toBe('A')
-      expect(drawn.getAttribute('aria-hidden')).toBe('true')
-
-      fixture.componentRef.setInput('mark', null)
-      fixture.detectChanges()
-      expect(
-        circle(fixture).querySelector('[data-id="avatar-mark"]'),
-      ).toBeNull()
-      expect(circle(fixture).classList.contains(`border-${mark.tone}`)).toBe(
-        false,
-      )
-    },
-  )
-
-  it('updates the initials and fallback when the name changes', () => {
-    const fixture = mount('Alexander Baranov')
-
-    expect(circle(fixture).textContent?.trim()).toBe('AB')
-    fixture.componentRef.setInput('name', 'Мария Ковалёва')
-    fixture.detectChanges()
-    expect(circle(fixture).textContent?.trim()).toBe('МК')
-    fixture.componentRef.setInput('name', '🤖')
-    fixture.detectChanges()
-    expect(circle(fixture).textContent?.trim()).toBe('')
-    expect(circle(fixture).querySelector('i.bi-person')).not.toBeNull()
-    fixture.componentRef.setInput('name', 'Alexander')
-    fixture.detectChanges()
-    expect(circle(fixture).textContent?.trim()).toBe('A')
-    expect(circle(fixture).querySelector('i.bi-person')).toBeNull()
-  })
-
-  it('shows a decorative photo, falls back on error, and tries the next photo', () => {
-    const fixture = mount('Ada Baranov', undefined, undefined, '/a.webp')
-    const image = circle(fixture).querySelector(
-      '[data-id="hilos-avatar-photo"]',
-    )!
-    expect(image.getAttribute('alt')).toBe('')
-    expect(image.getAttribute('src')).toBe('/a.webp')
-    expect(circle(fixture).textContent?.trim()).toBe('')
-
-    image.dispatchEvent(new Event('error'))
-    fixture.detectChanges()
-    expect(circle(fixture).querySelector('img')).toBeNull()
-    expect(circle(fixture).textContent?.trim()).toBe('AB')
-
-    fixture.componentRef.setInput('photo', '/b.webp')
-    fixture.detectChanges()
-    expect(circle(fixture).querySelector('img')?.getAttribute('src')).toBe(
-      '/b.webp',
-    )
-  })
-
-  it('draws the icon instead of the photo and the initials', () => {
-    const fixture = mount(
-      'Ada Baranov',
-      undefined,
-      undefined,
-      '/a.webp',
-      'bi-sign-merge-left',
-    )
-    const drawn = circle(fixture)
-    const icon = drawn.querySelector('[data-id="hilos-avatar-icon"]')!
-    expect(icon.classList.contains('bi')).toBe(true)
-    expect(icon.classList.contains('bi-sign-merge-left')).toBe(true)
-    expect(drawn.querySelector('img')).toBeNull()
-    expect(drawn.querySelector('i.bi-person')).toBeNull()
-    expect(drawn.textContent?.trim()).toBe('')
-    expect(drawn.getAttribute('aria-hidden')).toBe('true')
-
-    fixture.componentRef.setInput('icon', null)
-    fixture.detectChanges()
-    expect(
-      circle(fixture).querySelector('[data-id="hilos-avatar-icon"]'),
-    ).toBeNull()
-    expect(circle(fixture).querySelector('img')?.getAttribute('src')).toBe(
-      '/a.webp',
-    )
-  })
-})
+registerAvatarCases('Angular', { describe, it, expect }, withAvatar)

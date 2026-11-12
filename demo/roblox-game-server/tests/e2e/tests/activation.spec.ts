@@ -1,10 +1,8 @@
 import { expect, test } from '../test.js'
 
-import {
-  AUTH_ACTION_COMPLETE_REGISTRATION,
-  HilosPages,
-  resolveHilosPath,
-} from '../../../../../framework/frontend/core/src/index.js'
+import { AUTH_ACTION_COMPLETE_REGISTRATION } from '../../../../../framework/frontend/core/src/auth/authProtocol.js'
+import { HilosPages } from '../../../../../framework/frontend/core/src/routing/hilosPages.js'
+import { resolveHilosPath } from '../../../../../framework/frontend/core/src/routing/hilosAdmin.js'
 import {
   ANALYTICS_WRITER_TIMEOUT_MS,
   analyticsSessionLink,

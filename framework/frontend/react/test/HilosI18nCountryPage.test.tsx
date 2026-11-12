@@ -1,10 +1,7 @@
 import { act, fireEvent } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import {
-  HilosPages,
-  HILOS_I18N_COUNTRY_DELETE_COPY,
-  type PageSubscriptionError,
-} from '@hilos/core'
+import { HilosPages, type PageSubscriptionError } from '@hilos/core/base'
+import { HILOS_I18N_COUNTRY_DELETE_COPY } from '@hilos/core/admin/i18n'
 import { HilosI18nCountryPage } from '../src/admin/i18n/details/HilosI18nCountryPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 import {

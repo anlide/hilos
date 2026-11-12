@@ -24,13 +24,13 @@ import {
   entityCollection,
   USER_ENTITY_TYPE,
   userFromFields,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosRouter,
-  HilosUsersContext,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosUsersContext } from '@hilos/core/admin/users'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosUserPage } from '../src/admin/users/HilosUserPage.js'

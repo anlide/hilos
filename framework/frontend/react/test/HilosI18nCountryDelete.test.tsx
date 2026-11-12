@@ -1,13 +1,13 @@
 import { act, fireEvent } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import { createSignal } from '@hilos/core/base'
 import {
-  createSignal,
   HILOS_I18N_COUNTRY_DELETE_ACTION,
   HILOS_I18N_COUNTRY_ROW_DELETE_ACTION,
   type HilosI18nCountryRow,
   createHilosI18nCountryDelete,
   createHilosI18nCountryRowDelete,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { HilosI18nCountryDelete } from '../src/admin/i18n/details/HilosI18nCountryDelete.js'
 import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 import { useSignal } from '../src/useSignal.js'

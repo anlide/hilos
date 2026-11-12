@@ -19,7 +19,7 @@ import {
   type HilosSecondFactorContext,
   type ModalController,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HilosModal } from '../src/HilosModal.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'

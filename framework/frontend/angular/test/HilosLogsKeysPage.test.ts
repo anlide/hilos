@@ -9,7 +9,7 @@ import {
   type HilosLogKeysHeader,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosLogsKeysPage } from '../src/admin/logs/HilosLogsKeysPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'

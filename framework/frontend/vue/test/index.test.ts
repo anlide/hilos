@@ -13,12 +13,13 @@ import {
   hilosRouterKey,
   useConnectionState,
   useReconnectDragging,
-  HilosModerationPage,
-} from '../src/index.js'
+} from '@hilos/vue/base'
+import { HilosModerationPage } from '@hilos/vue/admin/moderation'
 import * as base from '../src/base/index.js'
 import { HilosStatusPage as AdminStatusPage } from '../src/admin/status/index.js'
 import { HilosStatusPage as PublicStatusPage } from '../src/status/index.js'
-import { HilosPublicStatusPage, HilosStatusPage } from '../src/index.js'
+import { HilosStatusPage as HilosPublicStatusPage } from '@hilos/vue/status'
+import { HilosStatusPage } from '@hilos/vue/admin/status'
 import * as moderation from '../src/admin/moderation/index.js'
 
 it('exports the @hilos/vue public surface', () => {
@@ -38,10 +39,8 @@ it('exports the shared page head once, from the base entry the root re-exports',
   expect(base.HilosPageHead).toBe(HilosPageHead)
 })
 
-it('exports the date-time picker from the base entry the root re-exports', async () => {
-  const root = await import('../src/index.js')
+it('exports the date-time picker from the base entry', () => {
   expect(base.HilosDateTimePicker).toBeTypeOf('object')
-  expect(base.HilosDateTimePicker).toBe(root.HilosDateTimePicker)
 })
 
 it('exports the profile head once, from the base entry the root re-exports', () => {

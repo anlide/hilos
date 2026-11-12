@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as initialBase from '../../src/base/index.js'
-import * as initialRoot from '../../src/index.js'
 import {
   eraseBrowserValues,
   HILOS_BROWSER_VALUES,
@@ -299,13 +298,8 @@ describe('table view browser preference', () => {
       Object.defineProperty(globalThis, key, { configurable: true, get: read })
     }
     const preference = await import('../../src/table/tableViewPreference.js')
-    const root = await import('../../src/index.js')
     const base = await import('../../src/base/index.js')
-    expect(root).not.toBe(initialRoot)
     expect(base).not.toBe(initialBase)
-    expect(root.bindTableViewPreference).toBe(
-      preference.bindTableViewPreference,
-    )
     expect(base.bindTableViewPreference).toBe(
       preference.bindTableViewPreference,
     )

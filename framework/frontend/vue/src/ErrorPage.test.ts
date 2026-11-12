@@ -1,363 +1,131 @@
-import { mount } from '@vue/test-utils'
-import { markRaw } from 'vue'
-import { afterEach, describe, expect, it } from 'vitest'
-import { AUTH_SURFACE_HEADING_ID, createSignal } from '@hilos/core/base'
-import type {
-  AuthGate,
-  HilosRouter,
-  PageRouteMatch,
-  PageSubscriptionError,
+// Vue lifecycle and providers for ErrorPage and HilosView's error/auth cases.
+import { createApp, h, markRaw, nextTick, shallowRef } from 'vue'
+import type { VNode } from 'vue'
+import { describe, expect, it } from 'vitest'
+import {
+  AUTH_SURFACE_HEADING_ID,
+  type HilosRouter,
+  type PageError,
 } from '@hilos/core/base'
 
+import {
+  registerErrorPageCases,
+  type ErrorPageView,
+} from '../../test-support/errorPageCases.js'
+import { DELETED } from '../../test-support/errorPageFixtures.js'
+import {
+  registerPageErrorViewCases,
+  type WithPageErrorView,
+} from '../../test-support/pageErrorViewCases.js'
 import ErrorPage from './ErrorPage.vue'
 import HilosView from './HilosView.vue'
 import { hilosRouterKey } from './hilosRouterKey.js'
 
-const NOT_FOUND: PageSubscriptionError = {
-  page: 'user',
-  httpCode: 404,
-  errorCode: 'not_found',
-  title: 'Page Not Found',
-  message: 'The page you are looking for does not exist.',
+/** Vue's exposed ref API has no corresponding imperative API in React. */
+interface ExposedErrorPageView extends ErrorPageView {
+  homeLink(): HTMLElement | null
 }
 
-const FORBIDDEN: PageSubscriptionError = {
-  page: 'user',
-  httpCode: 403,
-  errorCode: 'forbidden',
-  title: 'Forbidden',
-  message: 'You do not have access to this page.',
-}
-
-describe('ErrorPage', () => {
-  it('renders the HTTP code and server title', () => {
-    const wrapper = mount(ErrorPage, { props: { error: NOT_FOUND } })
-
-    const surface = wrapper.find('[data-id="page-error"]')
-    expect(surface.attributes('data-error-code')).toBe('404')
-    expect(surface.text()).toContain('404')
-    expect(surface.text()).toContain('Page Not Found')
-  })
-
-  it('renders server fallback wording for an unmapped status', () => {
-    const wrapper = mount(ErrorPage, {
-      props: {
-        error: {
-          ...NOT_FOUND,
-          httpCode: 418,
-          title: 'Error',
-          message: 'An error occurred.',
-        },
-      },
-    })
-
-    expect(wrapper.find('[data-id="page-error"]').text()).toContain('Error')
-  })
-
-  it('renders arbitrary server text literally for a known status', () => {
-    const wrapper = mount(ErrorPage, {
-      props: {
-        error: {
-          ...FORBIDDEN,
-          title: 'Server <b>title</b>',
-          message: 'Server <em>description</em> & details.',
-        },
-      },
-    })
-    const surface = wrapper.find('[data-id="page-error"]')
-    expect(surface.find('.lead').text()).toBe('Server <b>title</b>')
-    expect(surface.find('p.text-body-secondary').text()).toBe(
-      'Server <em>description</em> & details.',
-    )
-    expect(surface.find('b, em').exists()).toBe(false)
-    expect(surface.find('[data-id="page-error-home"]').attributes('href')).toBe(
-      '/',
-    )
-  })
-
-  it('refuses a 403 without calling the reader a guest', () => {
-    const wrapper = mount(ErrorPage, { props: { error: FORBIDDEN } })
-
-    const surface = wrapper.find('[data-id="page-error"]')
-    expect(surface.attributes('data-error-code')).toBe('403')
-    expect(surface.text()).toContain('Forbidden')
-    expect(surface.text()).toContain('You do not have access to this page.')
-    expect(surface.text()).not.toMatch(/guest/i)
-  })
-})
-
-/** The live 404 of a page whose resource was deleted while it stood open. */
-const DELETED: PageSubscriptionError = {
-  ...NOT_FOUND,
-  transitionMessage: 'It was deleted just now.',
-}
-
-describe('ErrorPage transition line', () => {
-  // The description is the paragraph right after the title: once the line is
-  // there, p.text-body-secondary names two paragraphs.
-  const DESCRIPTION = '.lead + p'
-  const LINE = '[data-id="page-error-transition-message"]'
-
-  it('draws the line under the description and before the way home', () => {
-    const wrapper = mount(ErrorPage, { props: { error: DELETED } })
-
-    const surface = wrapper.get('[data-id="page-error"]')
-    const description = surface.get(DESCRIPTION)
-    const line = surface.get(LINE)
-    const home = surface.get('[data-id="page-error-home"]')
-    expect(description.text()).toBe(NOT_FOUND.message)
-    expect(description.classes()).toEqual(['text-body-secondary', 'mb-1'])
-    expect(line.element.tagName).toBe('P')
-    expect(line.classes()).toEqual(['small', 'text-body-secondary'])
-    expect(line.text()).toBe('It was deleted just now.')
-    expect(description.element.nextElementSibling).toBe(line.element)
-    expect(line.element.nextElementSibling).toBe(home.element)
-    expect(surface.findAll('h1')).toHaveLength(1)
-    expect(surface.findAll('[data-id="page-error-home"]')).toHaveLength(1)
-  })
-
-  it('shows any server line literally, never as markup', () => {
-    const wrapper = mount(ErrorPage, {
-      props: {
-        error: { ...DELETED, transitionMessage: 'Gone <b>now</b> & for good' },
-      },
-    })
-
-    const line = wrapper.get(LINE)
-    expect(line.text()).toBe('Gone <b>now</b> & for good')
-    expect(line.find('b').exists()).toBe(false)
-    expect(line.element.innerHTML).toBe(
-      'Gone &lt;b&gt;now&lt;/b&gt; &amp; for good',
-    )
-  })
-
-  it('draws neither the line nor its margin for a refusal without the key', () => {
-    const wrapper = mount(ErrorPage, { props: { error: NOT_FOUND } })
-
-    const surface = wrapper.get('[data-id="page-error"]')
-    expect(surface.find(LINE).exists()).toBe(false)
-    expect(surface.get(DESCRIPTION).classes()).toEqual(['text-body-secondary'])
-    expect(surface.findAll('p')).toHaveLength(2)
-  })
-
-  it('takes the line away when the next refusal carries no key', async () => {
-    const wrapper = mount(ErrorPage, { props: { error: DELETED } })
-
-    await wrapper.setProps({ error: NOT_FOUND })
-    expect(wrapper.find(LINE).exists()).toBe(false)
-    expect(wrapper.get(DESCRIPTION).classes()).toEqual(['text-body-secondary'])
-
-    await wrapper.setProps({
-      error: { ...FORBIDDEN, transitionMessage: 'Moved.' },
-    })
-    expect(wrapper.get(LINE).text()).toBe('Moved.')
-    await wrapper.setProps({ error: FORBIDDEN })
-    expect(wrapper.find(LINE).exists()).toBe(false)
-    expect(wrapper.findAll('h1')).toHaveLength(1)
-    expect(wrapper.findAll('[data-id="page-error-home"]')).toHaveLength(1)
-  })
-
-  it('hands the anchor of its way home to the shell that draws it', () => {
-    const wrapper = mount(ErrorPage, { props: { error: DELETED } })
-
-    expect(wrapper.vm.homeLink()).toBe(
-      wrapper.get('[data-id="page-error-home"]').element,
-    )
-  })
-})
-
-function routerWith(pageError: PageSubscriptionError | null): HilosRouter {
-  return {
-    currentRoute: createSignal<PageRouteMatch>({
-      page: 'user',
-      params: {},
-      admin: false,
-    }),
-    currentPath: createSignal(''),
-    currentTitle: createSignal(''),
-    pageError: createSignal<PageSubscriptionError | null>(pageError),
-    pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
-    dashboardSections: createSignal(undefined),
-    resolvePath: () => '/user',
-    clearPageError: () => {},
-    denyCurrentPage: () => {},
-    awaitPageAnswer: () => {},
-    onLeave: () => () => {},
-    navigate: () => {},
-    replacePath: () => {},
-    start: () => {},
-    stop: () => {},
+/** One app lifetime for this entry's error surface and routed error/auth surface. */
+async function withErrorSurfaceApp(
+  renderSurface: () => VNode,
+  steps: (host: HTMLElement) => Promise<void>,
+  router?: HilosRouter,
+): Promise<void> {
+  const previousFocus = document.activeElement
+  const modalOpen = document.body.classList.contains('modal-open')
+  const host = document.body.appendChild(document.createElement('div'))
+  const app = createApp({ render: renderSurface })
+  if (router) app.provide(hilosRouterKey, router)
+  try {
+    const mountErrors: unknown[] = []
+    app.config.errorHandler = (failure) => mountErrors.push(failure)
+    app.mount(host)
+    app.config.errorHandler = undefined
+    if (mountErrors.length > 0) throw mountErrors[0]
+    await nextTick()
+    await nextTick()
+    await steps(host)
+  } finally {
+    try {
+      app.unmount()
+      await nextTick()
+    } finally {
+      host.remove()
+      document.body.classList.toggle('modal-open', modalOpen)
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected)
+        previousFocus.focus()
+    }
   }
 }
 
-const PAGES = { user: markRaw({ template: '<div data-id="user-page"></div>' }) }
-
-describe('HilosView page error', () => {
-  it('renders the error surface in place of the page when an error is set', () => {
-    const wrapper = mount(HilosView, {
-      props: { pages: PAGES },
-      global: {
-        provide: { [hilosRouterKey as symbol]: routerWith(NOT_FOUND) },
-      },
-    })
-
-    expect(wrapper.find('[data-id="page-error"]').exists()).toBe(true)
-    expect(wrapper.find('[data-id="user-page"]').exists()).toBe(false)
-  })
-
-  it('renders the mapped page when there is no error', () => {
-    const wrapper = mount(HilosView, {
-      props: { pages: PAGES },
-      global: { provide: { [hilosRouterKey as symbol]: routerWith(null) } },
-    })
-
-    expect(wrapper.find('[data-id="user-page"]').exists()).toBe(true)
-    expect(wrapper.find('[data-id="page-error"]').exists()).toBe(false)
-  })
-})
-
-const UNAUTHORIZED: PageSubscriptionError = {
-  page: 'user',
-  httpCode: 401,
-  errorCode: 'unauthorized',
-  title: 'Unauthorized',
-  message: 'Authentication required',
+/** Drive the real ErrorPage props and keep its exposed ref API local. */
+async function withErrorPage(
+  initialError: PageError,
+  steps: (view: ExposedErrorPageView) => Promise<void>,
+): Promise<void> {
+  const error = shallowRef(initialError)
+  const component = shallowRef<InstanceType<typeof ErrorPage> | null>(null)
+  await withErrorSurfaceApp(
+    () => h(ErrorPage, { error: error.value, ref: component }),
+    async (root) => {
+      await steps({
+        root,
+        async update(value) {
+          error.value = value
+          await nextTick()
+        },
+        homeLink: () => component.value?.homeLink() ?? null,
+      })
+    },
+  )
 }
 
-const AUTH_SURFACE = markRaw({
-  template: '<div data-id="auth-surface"></div>',
-})
-
-// The real surface names itself with a heading it owns; this one stands in for
-// it, id and all, so the frame has something to point at.
-const HEADED_AUTH_SURFACE = markRaw({
-  template: `<div data-id="auth-surface"><h2 id="${AUTH_SURFACE_HEADING_ID}">Confirm your email</h2></div>`,
-})
-
-// HilosModal teleports to <body>, so these assertions query the document and
-// the document has to start each case empty.
-afterEach(() => {
-  document.body.innerHTML = ''
-  document.body.classList.remove('modal-open')
-})
-
-function fakeAuthGate(open = false): AuthGate {
-  return {
-    modalOpen: createSignal(open),
-    requireAuth: () => {},
-    dismiss: () => {},
+/** Real outlet and modal; the small project components are controlled slot input. */
+const withPageErrorView: WithPageErrorView = async (input, steps) => {
+  const pages = {
+    user: markRaw({ render: () => h('div', { 'data-id': 'user-page' }) }),
   }
+  const authSurface = input.authSurface
+    ? markRaw({
+        render: () =>
+          h(
+            'div',
+            { 'data-id': 'auth-surface' },
+            input.authSurface?.heading === undefined
+              ? []
+              : [
+                  h(
+                    'h2',
+                    { id: AUTH_SURFACE_HEADING_ID },
+                    input.authSurface.heading,
+                  ),
+                ],
+          ),
+      })
+    : undefined
+  const flush = async (change?: () => void): Promise<void> => {
+    change?.()
+    await nextTick()
+    await nextTick()
+  }
+  await withErrorSurfaceApp(
+    () => h(HilosView, { pages, authSurface, authGate: input.authGate }),
+    async () => steps({ root: document.body, flush }),
+    input.router,
+  )
 }
 
-describe('HilosView auth gate', () => {
-  it('mounts the auth surface in place of ErrorPage on an anonymous 401', () => {
-    const wrapper = mount(HilosView, {
-      props: {
-        pages: PAGES,
-        authSurface: AUTH_SURFACE,
-        authGate: fakeAuthGate(),
-      },
-      global: {
-        provide: { [hilosRouterKey as symbol]: routerWith(UNAUTHORIZED) },
-      },
+registerErrorPageCases('Vue', { describe, it, expect }, withErrorPage)
+registerPageErrorViewCases('Vue', { describe, it, expect }, withPageErrorView)
+
+// This is the actual exposed Vue API; the shared cases already prove the link.
+describe('ErrorPage Vue exposed API', () => {
+  it('hands the anchor of its way home to the shell that draws it', async () => {
+    await withErrorPage(DELETED, async (view) => {
+      const home = view.root.querySelector('[data-id="page-error-home"]')
+      expect(home).not.toBeNull()
+      expect(view.homeLink()).toBe(home)
     })
-
-    expect(wrapper.find('[data-id="auth-surface"]').exists()).toBe(true)
-    expect(wrapper.find('[data-id="page-error"]').exists()).toBe(false)
-  })
-
-  it('still renders ErrorPage for a non-401 error', () => {
-    const wrapper = mount(HilosView, {
-      props: {
-        pages: PAGES,
-        authSurface: AUTH_SURFACE,
-        authGate: fakeAuthGate(),
-      },
-      global: {
-        provide: { [hilosRouterKey as symbol]: routerWith(NOT_FOUND) },
-      },
-    })
-
-    expect(wrapper.find('[data-id="page-error"]').exists()).toBe(true)
-    expect(wrapper.find('[data-id="auth-surface"]').exists()).toBe(false)
-  })
-
-  it('falls back to ErrorPage on a 401 when no surface is registered', () => {
-    const wrapper = mount(HilosView, {
-      props: { pages: PAGES },
-      global: {
-        provide: { [hilosRouterKey as symbol]: routerWith(UNAUTHORIZED) },
-      },
-    })
-
-    expect(wrapper.find('[data-id="page-error"]').exists()).toBe(true)
-  })
-
-  it('shows the auth surface in a modal when the gate opens', () => {
-    mount(HilosView, {
-      props: {
-        pages: PAGES,
-        authSurface: AUTH_SURFACE,
-        authGate: fakeAuthGate(true),
-      },
-      global: {
-        provide: { [hilosRouterKey as symbol]: routerWith(null) },
-      },
-      attachTo: document.body,
-    })
-
-    // The modal teleports to <body>; the live page still renders beneath it.
-    expect(document.body.querySelector('[data-id="modal"]')).not.toBeNull()
-    expect(
-      document.body.querySelector('[data-id="auth-surface"]'),
-    ).not.toBeNull()
-  })
-
-  it('names the modal with the heading the surface draws', () => {
-    mount(HilosView, {
-      props: {
-        pages: PAGES,
-        authSurface: HEADED_AUTH_SURFACE,
-        authGate: fakeAuthGate(true),
-      },
-      global: {
-        provide: { [hilosRouterKey as symbol]: routerWith(null) },
-      },
-      attachTo: document.body,
-    })
-
-    const dialog = document.body.querySelector('[data-id="modal"]')
-    expect(dialog?.getAttribute('aria-labelledby')).toBe(
-      AUTH_SURFACE_HEADING_ID,
-    )
-    expect(document.getElementById(AUTH_SURFACE_HEADING_ID)?.textContent).toBe(
-      'Confirm your email',
-    )
-    expect(dialog?.getAttribute('aria-label')).toBe('Sign in')
-  })
-
-  it('keeps the Sign in name for a surface that carries no heading', () => {
-    mount(HilosView, {
-      props: {
-        pages: PAGES,
-        authSurface: AUTH_SURFACE,
-        authGate: fakeAuthGate(true),
-      },
-      global: {
-        provide: { [hilosRouterKey as symbol]: routerWith(null) },
-      },
-      attachTo: document.body,
-    })
-
-    // Nothing carries the id, so aria-labelledby resolves to nothing and the
-    // accessible name falls through to the label the frame keeps as a safety
-    // net for a project surface of its own.
-    expect(document.getElementById(AUTH_SURFACE_HEADING_ID)).toBeNull()
-    expect(
-      document.body
-        .querySelector('[data-id="modal"]')
-        ?.getAttribute('aria-label'),
-    ).toBe('Sign in')
   })
 })

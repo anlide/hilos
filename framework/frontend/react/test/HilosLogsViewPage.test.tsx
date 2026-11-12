@@ -17,12 +17,14 @@ import {
   HilosPages,
   LOG_LINES_APPENDED_SIGNAL,
   LOG_VIEWER_CATALOG_SIGNAL,
-  LOGS_FOLLOW_START_ACTION,
-  LOGS_READ_LINES_ACTION,
   createPageRouter,
   createSignal,
+} from '@hilos/core/base'
+import {
+  LOGS_FOLLOW_START_ACTION,
+  LOGS_READ_LINES_ACTION,
   logLineClock,
-} from '@hilos/core'
+} from '@hilos/core/admin/logs'
 import {
   formatMoment,
   hilosBrowserTimeZone,
@@ -34,7 +36,7 @@ import type {
   HilosLogViewerCatalog,
   HilosRouter,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosLogsViewPage } from '../src/admin/logs/HilosLogsViewPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

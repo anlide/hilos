@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, render, screen } from '@testing-library/react'
-import { ScopeManager } from '@hilos/core'
+import { ScopeManager } from '@hilos/core/base'
 import { useEntity } from '../src/useEntity.js'
 
 const ref = { type: 'user', id: 1 }

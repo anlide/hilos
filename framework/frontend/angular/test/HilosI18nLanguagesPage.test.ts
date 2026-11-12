@@ -4,7 +4,7 @@
 // its own echo, the row windows, a viewer of the admin view mode, and a context
 // replaced under open windows. The rules themselves are the core's and are
 // tested there; this file covers the Angular wiring.
-import { HilosPages, hilosToasts } from '@hilos/core'
+import { HilosPages, hilosToasts } from '@hilos/core/base'
 import { describe, expect, it, vi } from 'vitest'
 
 import { HilosI18nLanguagesPage } from '../src/admin/i18n/lists/HilosI18nLanguagesPage.js'

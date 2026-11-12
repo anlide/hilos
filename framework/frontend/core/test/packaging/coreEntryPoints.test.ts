@@ -58,7 +58,7 @@ import * as restoreProgress from '../../src/connection/restoreProgress.js'
 import * as narrowScreen from '../../src/dom/narrowScreen.js'
 import * as popupEffects from '../../src/dom/popupEffects.js'
 import * as tableFocusReturn from '../../src/dom/tableFocusReturn.js'
-import * as core from '../../src/index.js'
+import { HilosConnection } from '../../src/connection/HilosConnection.js'
 import * as publicStatus from '../../src/status/index.js'
 import * as dateTimePicker from '../../src/primitives/dateTimePicker.js'
 import * as dateTimePickerFactors from '../../src/primitives/dateTimePickerFactors.js'
@@ -101,11 +101,8 @@ const publicEntries: Record<string, Record<string, unknown>> = {
     Object.entries(sections).map(([name, api]) => [`./admin/${name}`, api]),
   ),
 }
-const legacy = JSON.parse(
-  readFileSync(new URL('./legacyCoreExports.json', import.meta.url), 'utf8'),
-) as { value: string[]; type: string[] }
 /**
- * The values the reader's time zone adds past the snapshot, listed by hand so
+ * The values the reader's time zone exposes, listed by hand so
  * any other new export still fails the strict equality below.
  */
 const timeZoneValues = [
@@ -116,21 +113,6 @@ const timeZoneValues = [
   'readBrowserTimeZone',
   'resolveTimeZone',
 ]
-/** The viewer's new selectors, shared by the compatibility root and logs entry. */
-const logViewerValues = ['logViewerLatestBatchPath', 'logViewerStreamKeys']
-/** The i18n overview APIs shared by the compatibility root and section entry. */
-const i18nOverviewValues = [
-  'I18N_OVERVIEW_DATA',
-  'createHilosI18nOverview',
-  'i18nOverviewSchema',
-]
-const i18nOverviewTypes = ['HilosI18nOverview', 'HilosI18nOverviewContext']
-/** The legal overview APIs belong only to their lazy section. */
-const legalOverviewValues = [
-  'LEGAL_OVERVIEW_SECTION',
-  'legalOverviewSchema',
-  'createHilosLegalOverview',
-]
 const legalOverviewTypes = ['HilosLegalOverview']
 /** The shared revision reader belongs only to the lazy Legal section. */
 const legalRevisionValues = ['createHilosLegalRevision']
@@ -139,27 +121,15 @@ const userSessionsValues = ['createHilosUserSessions']
 const userSessionsTypes = ['HilosUserSession', 'HilosUserSessions']
 /** The distinct open-session field belongs only to the lazy Users section. */
 const userRowValues = ['USER_OPEN_SESSION_COUNT_FIELD']
-/** Document tab APIs shared by the compatibility root and lazy Legal entry. */
-const legalDocumentValues = [
-  'createHilosLegalDocument',
-  'createHilosLegalDocumentSetTable',
-  'createHilosLegalDocumentDeviationsTable',
-  'resolveHilosLegalDocumentSetRow',
-  'resolveHilosLegalDocumentDeviationRow',
-]
-const legalDocumentTypes = [
-  'HilosLegalDocumentSetRow',
-  'HilosLegalDocumentDeviationRow',
-]
-/** The page head's tab links resolver, shared by the compatibility root and base. */
+/** The page head's tab links resolver, shared by the base. */
 const pageHeadValues = ['hilosTabLinks']
-/** Public navigation types past the snapshot, shared by root and base. */
+/** Public navigation types, shared by base. */
 const pageHeadTypes = [
   'HilosPageHeadAction',
   'HilosPageTabLink',
   'HilosStaticPageNavigation',
 ]
-/** The local dependency window API, shared by the compatibility root and base. */
+/** The local dependency window API, shared by the base. */
 const licenseDependenciesValues = [
   'createHilosLicenseDependencies',
   'HILOS_LICENSE_TABS',
@@ -168,7 +138,7 @@ const licenseDependenciesTypes = [
   'HilosLicenseDependenciesController',
   'HilosTableAuxiliaryAction',
 ]
-/** Gregorian math belongs to base without extending the compatibility root. */
+/** Gregorian math belongs to base with independent source owners. */
 const calendarValues = [
   'parseCalendarDate',
   'createCalendarDate',
@@ -187,7 +157,7 @@ const calendarTypes = [
   'CalendarDateParts',
   'CalendarMonthMatrix',
 ]
-/** Exact zone facts belong to base without extending the compatibility root. */
+/** Exact zone facts belong to base with independent source owners. */
 const dateTimeZoneValues = ['createIntlDateTimeZoneAdapter']
 const dateTimeZoneTypes = [
   'LocalDateTimeParts',
@@ -232,7 +202,7 @@ const dateTimePickerTypes = [
   'DateTimePickerCalendarSpan',
   'DateTimePickerCalendarWeekday',
 ]
-/** Channel icons belong to base without extending the compatibility root. */
+/** Channel icons belong to base with independent source owners. */
 const notificationChannelValues = ['notificationChannelIcon']
 const popupEffectsValues = [
   'bindPopupDismiss',
@@ -269,7 +239,7 @@ const publicLegalTypes = [
   'HilosLegalPublicDocumentOptions',
   'HilosLegalPublicDocumentStore',
 ]
-/** Public history APIs shared by the compatibility root and base. */
+/** Public history APIs shared by the base. */
 const legalHistoryValues = [
   'LEGAL_TERMS_HISTORY_TABLE',
   'LEGAL_PRIVACY_HISTORY_TABLE',
@@ -283,10 +253,10 @@ const legalHistoryTypes = [
   'HilosLegalHistoryRow',
   'HilosLegalHistoryReader',
 ]
-/** The moment formatter's explicit additions to the frozen legacy snapshot. */
+/** The moment formatter's public declarations. */
 const momentValues = ['formatMoment']
 const momentTypes = ['MomentFormatOptions']
-/** One common live-loss controller, shared by base and the compatibility root. */
+/** One common live-loss controller, shared by base. */
 const accessLossValues = [
   'ACCESS_LOSS_COPY',
   'bindAccessLoss',
@@ -295,13 +265,13 @@ const accessLossValues = [
   'sessionAccessLossReason',
 ]
 const accessLossTypes = ['AccessLossReason']
-/** The profile picker is one shared base/root implementation and type owner. */
+/** The profile picker is one shared base implementation and type owner. */
 const timeZonePickerValues = ['createHilosTimeZonePicker']
 const timeZonePickerTypes = ['HilosTimeZonePicker', 'HilosTimeZonePickerRow']
-/** The staged profile head has one factory and type owner in root and base. */
+/** The staged profile head has one factory and type owner in base. */
 const profileHeadValues = ['createHilosProfileHeadStore']
 const profileHeadTypes = ['HilosProfileHeadStore']
-/** The held name snapshot has one eager owner, shared by root and base. */
+/** The held name snapshot has one eager owner, shared by base. */
 const profileNameStateValues = [
   'bindProfileNameState',
   'hilosProfileNameAccess',
@@ -325,7 +295,7 @@ const profileRenameMemoryValues = [
   'writeProfileRenameMemory',
 ]
 const profileRenameMemoryTypes = ['HilosProfileRenameMemory']
-/** Detached edit data is shared by root and base, owned by the row session. */
+/** Detached edit data is shared by base, owned by the row session. */
 const rowEditTypes = ['HilosRowEditCheckpoint']
 /** Pure line merging has one implementation and field-typed strategies. */
 const textLineMergeValues = ['mergeTextLines']
@@ -423,14 +393,14 @@ const analyticsSessionListTypes = [
   'HilosAnalyticsBrowserSessionListOptions',
   'HilosAnalyticsBrowserSessionListTable',
 ]
-/** Closed table text policy additions, shared by root and base. */
+/** Closed table text policy additions, shared by base. */
 const tableTextValues = ['hilosTableRowHeight', 'hilosTableTextClass']
 const tableTextTypes = [
   'HilosTableLineCount',
   'HilosTableTextRem',
   'HilosTableRowHeight',
 ]
-/** Local view declarations have one public owner in root and base. */
+/** Local view declarations have one public owner in base. */
 const tableViewValues = ['TABLE_VIEW_COPY', 'hilosTableViews']
 const tableViewTypes = ['HilosTableView', 'HilosTableViews']
 /** Browser preference binding and declaration share one eager implementation. */
@@ -439,23 +409,23 @@ const tableViewPreferenceValues = [
   'TABLE_VIEW_BROWSER_VALUE',
   'bindTableViewPreference',
 ]
-/** Table row message additions, shared by root and base. */
+/** Table row message additions, shared by base. */
 const tableRowMessageValues = ['hilosTableRowMessageCells']
 const tableRowMessageTypes = [
   'HilosTableRowMessage',
   'HilosTableRowMessageCell',
 ]
-/** Explicit table focus return additions, with one DOM owner for root and base. */
+/** Explicit table focus return additions, with one DOM owner for base. */
 const tableFocusReturnValues = ['captureTableFocusReturnTarget']
 const tableFocusReturnTypes = ['TableFocusReturnRow']
-/** New communications APIs stay on their lazy section, outside root and base. */
+/** New communications APIs stay on their lazy section, outside base. */
 const channelSummaryValues = [
   'CHANNEL_SUMMARY_DATA',
   'channelSummarySchema',
   'createHilosChannelSummary',
 ]
 const channelSummaryTypes = ['HilosChannelSummary']
-/** Frame APIs are lazy-section additions, without new root or base exports. */
+/** Frame APIs are lazy-section additions, without base exports. */
 const letterFrameValues = [
   'LETTER_FRAME_DATA',
   'LETTER_FRAME_FIELD',
@@ -478,14 +448,6 @@ const connectionInteractionValues = [
   'HILOS_INTERACTION_REGION_ATTR',
 ]
 const connectionInteractionTypes = ['ConnectionInteractionState']
-/**
- * The photo's own check frame gave way to the shared moderation one: the two
- * names it took out of the frozen snapshot and the three it added, by hand.
- */
-const moderationRemovedValues = [
-  'SIGNAL_PROFILE_PHOTO_CHECK',
-  'profilePhotoCheckSchema',
-]
 /** Retired empty-copy exports, kept out of the frozen compatibility snapshot. */
 const analyticsOverviewRemovedValues = [
   'ANALYTICS_OVERVIEW_EMPTY_TEXT',
@@ -496,16 +458,6 @@ const moderationValues = [
   'SIGNAL_MODERATION_CHECK',
   'moderationCheckSchema',
 ]
-const daemonNodeValues = [
-  'DAEMON_NODE_OVERVIEW_DATA',
-  'daemonNodeOverviewSchema',
-  'readHilosDaemonNodeOverview',
-  'readHilosDaemonEnvOrphansPage',
-  'DAEMON_WEBSOCKETS_DATA',
-  'daemonWebsocketsSchema',
-  'readHilosDaemonWebsockets',
-  'formatHilosNodeLabel',
-]
 /** Clock projection APIs belong to the lazy Daemon section. */
 const daemonClockValues = [
   'daemonNodeClockSchema',
@@ -513,7 +465,7 @@ const daemonClockValues = [
   'formatDaemonNodeClockWarning',
 ]
 const daemonClockTypes = ['HilosDaemonNodeClock']
-/** Approved Status exports; keep the legacy snapshot and base graph unchanged. */
+/** Approved Status exports; keep the base graph unchanged. */
 const statusValues = [
   'HILOS_STATUS_ACTION_COPY',
   'HILOS_STATUS_ADD_UPDATE_ACTION',
@@ -557,32 +509,6 @@ const statusValues = [
   'statusSubscriberCountsSchema',
   'statusSubscriberSchema',
   'statusSubscribersDataSchema',
-]
-const statusTypes = [
-  'HilosStatusActions',
-  'HilosStatusComponentRow',
-  'HilosStatusComponentState',
-  'HilosStatusComponentsContext',
-  'HilosStatusComponentsTable',
-  'HilosStatusContext',
-  'HilosStatusIncident',
-  'HilosStatusIncidentCard',
-  'HilosStatusIncidentController',
-  'HilosStatusIncidentDialog',
-  'HilosStatusIncidentOperation',
-  'HilosStatusIncidentUpdate',
-  'HilosStatusOverviewData',
-  'HilosStatusState',
-  'HilosStatusSubscriberController',
-  'HilosStatusSubscriberCountsData',
-  'HilosStatusSubscriberDialog',
-  'HilosStatusSubscriberRow',
-  'HilosStatusSubscribersActions',
-  'HilosStatusSubscribersContext',
-  'HilosStatusSubscribersData',
-  'HilosStatusSubscribersState',
-  'HilosStatusSubscribersTable',
-  'HilosStatusSummary',
 ]
 /** Works belongs only to the lazy Status section, past its compatibility API. */
 const statusWorksValues = [
@@ -694,37 +620,6 @@ const publicStatusValues = [
   'publicStatusWorkSchema',
   'readPublicStatusFiles',
 ]
-const publicStatusTypes = [
-  'PublicStatus',
-  'PublicStatusBanner',
-  'PublicStatusCandidate',
-  'PublicStatusComponent',
-  'PublicStatusDay',
-  'PublicStatusDayState',
-  'PublicStatusDayStrip',
-  'PublicStatusFetch',
-  'PublicStatusFile',
-  'PublicStatusFreshness',
-  'PublicStatusHeartbeat',
-  'PublicStatusHistoryEntry',
-  'PublicStatusMaintenancePeriod',
-  'PublicStatusMaintenanceView',
-  'PublicStatusOptions',
-  'PublicStatusOutage',
-  'PublicStatusOutageView',
-  'PublicStatusPair',
-  'PublicStatusReadResult',
-  'PublicStatusState',
-  'PublicStatusUpdate',
-  'PublicStatusWork',
-  'StatusSubscription',
-  'StatusSubscriptionAddress',
-  'StatusSubscriptionContext',
-  'StatusSubscriptionDraft',
-  'StatusSubscriptionOperation',
-  'StatusSubscriptionOptions',
-  'StatusSubscriptionStep',
-]
 /** Maintenance derivations are additions to /status only, beyond its legacy API. */
 const publicStatusDerivedValues = [
   'publicStatusCurrentMaintenance',
@@ -735,48 +630,8 @@ const publicStatusDerivedTypes = [
   'PublicStatusCurrentMaintenanceView',
   'PublicStatusWorkView',
 ]
-/** Restore-card selectors added on the maintenance frame. The frozen snapshot stays as it was. */
-const maintenanceFrameValues = [
-  'hilosMaintenanceOtherBrowserLine',
-  'hilosMaintenanceRestoreLadder',
-]
-/** Restore controls added beside the manual pass. The frozen snapshot stays as it was. */
-const maintenanceRestoreActionValues = [
-  'MAINTENANCE_RESTORE_CLOSE_ACTION',
-  'MAINTENANCE_RESTORE_OPEN_ACTION',
-  'MAINTENANCE_RESTORE_PASS_ACTION',
-]
-/** Restore dialog words, shared by the compatibility root and the section entry. */
-const maintenanceRestoreCopyValues = [
-  'HILOS_MAINTENANCE_RESTORE_CLOSE_COPY',
-  'HILOS_MAINTENANCE_RESTORE_OPEN_COPY',
-  'HILOS_MAINTENANCE_RESTORE_PASS_COPY',
-]
-const maintenanceFrameTypes = ['HilosMaintenanceRestoreLadder']
-/** The standard self-rename binding, shared by the compatibility root and base. */
-const profileRenameValues = [
-  'PROFILE_NAME_SET_ACTION',
-  'createHilosProfileRename',
-]
-/** The original deletion duration, shared by the compatibility root and base. */
+/** The original deletion duration, shared by the base. */
 const accountDeletionValues = ['accountDeletionGraceDays']
-/** Presentation copy shared by the user section and compatibility root. */
-const userOverviewValues = ['HILOS_USER_OVERVIEW_COPY', 'HILOS_USERS_LIST_COPY']
-/** Approved Moderation section exports; keep the legacy snapshot and base graph unchanged. */
-const adminModerationValues = [
-  'HILOS_MODERATION_COPY',
-  'HILOS_MODERATION_KINDS_TABLE',
-  'HILOS_MODERATION_KIND_SLOT',
-  'HilosModerationKindRowKey',
-  'createHilosModerationKindsTable',
-  'moderationKindPath',
-  'resolveHilosModerationKindRow',
-]
-const adminModerationTypes = [
-  'HilosModerationContext',
-  'HilosModerationKindRow',
-  'HilosModerationKindsTable',
-]
 /** Maintenance Words APIs stay exclusive to their lazy section. */
 const maintenanceWordsValues = [
   'HILOS_MAINTENANCE_WORDS_COLUMNS',
@@ -886,40 +741,6 @@ const adminModerationRuleEditTypes = [
   'HilosModerationRuleEditTarget',
   'HilosModerationRuleEdit',
 ]
-/** The standalone noisy-column viewport's explicit public additions. */
-const changeLogNoisyValues = [
-  'CHANGE_LOG_NOISY_COLUMN_FIELD',
-  'CHANGE_LOG_NOISY_REASON_FIELD',
-  'createHilosChangeLogNoisyColumnsTable',
-  'resolveHilosChangeLogNoisyColumnsRow',
-]
-const changeLogNoisyTypes = [
-  'HilosChangeLogNoisyColumnsRow',
-  'HilosChangeLogNoisyColumnsTable',
-]
-/** Explicit tracked-table metadata viewport and summary additions. */
-const changeLogTableMetadataValues = [
-  'CHANGE_LOG_TABLE_COLUMNS_NAME_FIELD',
-  'CHANGE_LOG_TABLE_COLUMNS_STORAGE_FIELD',
-  'CHANGE_LOG_TABLE_COLUMNS_MODE_FIELD',
-  'createHilosChangeLogTableColumnsTable',
-  'resolveHilosChangeLogTableColumnsRow',
-  'CHANGE_LOG_TABLE_TRIGGERS_NAME_FIELD',
-  'CHANGE_LOG_TABLE_TRIGGERS_OWNER_FIELD',
-  'CHANGE_LOG_TABLE_TRIGGERS_EVENT_FIELD',
-  'CHANGE_LOG_TABLE_TRIGGERS_WRITES_TO_FIELD',
-  'CHANGE_LOG_TABLE_TRIGGERS_MIGRATION_FIELD',
-  'createHilosChangeLogTableTriggersTable',
-  'resolveHilosChangeLogTableTriggersRow',
-  'changeLogTableJournalSince',
-  'changeLogTableColumnCounts',
-]
-const changeLogTableMetadataTypes = [
-  'HilosChangeLogTableColumnsRow',
-  'HilosChangeLogTableColumnsTable',
-  'HilosChangeLogTableTriggersRow',
-  'HilosChangeLogTableTriggersTable',
-]
 /** Additive presentation APIs belong only to the lazy Change Log section. */
 const changeLogPresentationValues = [
   'changeLogMutationBadge',
@@ -930,62 +751,6 @@ const changeLogPresentation = {
   changeLogMutationBadge,
   changeLogHistoryChangeLines,
 }
-/** Explicit backup run identity and Maintenance navigation additions. */
-const backupRunValues = [
-  'BACKUP_RUN_PROGRESS_DETAIL_BACKUP_ID',
-  'BACKUP_RUN_PROGRESS_DETAIL_ENV',
-  'BACKUP_RUN_PROGRESS_DETAIL_SCOPE',
-  'HILOS_BACKUP_CIRCLE_TAB_POINTER_COPY',
-  'HILOS_BACKUP_CIRCLE_TAB_POINTER_PATH',
-  'HILOS_BACKUP_MAINTENANCE_PATH',
-  'HILOS_BACKUP_VERIFICATION_COPY',
-  'formatBackupRunTitle',
-]
-const expectedValues = [
-  ...daemonNodeValues,
-  ...changeLogNoisyValues,
-  ...changeLogTableMetadataValues,
-  ...legacy.value.filter(
-    (name) =>
-      !moderationRemovedValues.includes(name) &&
-      !analyticsOverviewRemovedValues.includes(name),
-  ),
-  ...timeZoneValues,
-  ...logViewerValues,
-  ...i18nOverviewValues,
-  ...legalDocumentValues,
-  ...pageHeadValues,
-  ...licenseDependenciesValues,
-  ...publicLegalValues,
-  ...legalHistoryValues,
-  ...momentValues,
-  ...accessLossValues,
-  ...timeZonePickerValues,
-  ...profileHeadValues,
-  ...profileNameStateValues,
-  ...profileRenameMemoryValues,
-  ...textLineMergeValues,
-  ...tableTextValues,
-  ...tableViewValues,
-  ...tableViewPreferenceValues,
-  ...tableRowMessageValues,
-  ...tableFocusReturnValues,
-  ...moderationValues,
-  ...adminModerationValues,
-  ...connectionInteractionValues,
-  ...statusValues,
-  ...publicStatusValues,
-  ...profileRenameValues,
-  ...accountDeletionValues,
-  ...userOverviewValues,
-  ...maintenanceFrameValues,
-  ...maintenanceRestoreActionValues,
-  ...maintenanceRestoreCopyValues,
-  ...backupRunValues,
-  'hilosAnalyticsPerson',
-  'PROFILE_SESSION_BROWSER_TIME_ZONE_FIELD',
-  'hilosProfileDeviceKind',
-].sort()
 
 /**
  * Follow emitted ESM edges, so type-only imports never become fake runtime edges.
@@ -1042,29 +807,33 @@ function runtimeClosure(entry: string): string[] {
   return [...visited].map((file) => relative(sourceRoot, file)).sort()
 }
 
+const legalOverviewValues = [
+  'LEGAL_OVERVIEW_SECTION',
+  'legalOverviewSchema',
+  'createHilosLegalOverview',
+]
+
+const profileRenameValues = [
+  'PROFILE_NAME_SET_ACTION',
+  'createHilosProfileRename',
+]
+
 describe('core public entries', () => {
-  it('exports the local dependency controller from one implementation in root and base', () => {
-    expect(core.createHilosLicenseDependencies).toBe(
-      licenseDependencies.createHilosLicenseDependencies,
-    )
+  it('exports the local dependency controller from one implementation in base', () => {
     expect(base.createHilosLicenseDependencies).toBe(
       licenseDependencies.createHilosLicenseDependencies,
     )
-    expect(core.HILOS_LICENSE_TABS).toBe(licenseDependencies.HILOS_LICENSE_TABS)
     expect(base.HILOS_LICENSE_TABS).toBe(licenseDependencies.HILOS_LICENSE_TABS)
-    expect(core.HILOS_LICENSE_TABS).toEqual([
-      { page: core.HilosPages.LICENSE, label: 'License' },
-      { page: core.HilosPages.LICENSE_DEPENDENCIES, label: 'Dependencies' },
-    ])
-    expectTypeOf<core.HilosLicenseDependenciesController>().toEqualTypeOf<licenseDependencies.HilosLicenseDependenciesController>()
     expectTypeOf<base.HilosLicenseDependenciesController>().toEqualTypeOf<licenseDependencies.HilosLicenseDependenciesController>()
-    expectTypeOf<core.HilosTableAuxiliaryAction>().toEqualTypeOf<base.HilosTableAuxiliaryAction>()
+    expect(base.HILOS_LICENSE_TABS).toEqual([
+      { page: base.HilosPages.LICENSE, label: 'License' },
+      { page: base.HilosPages.LICENSE_DEPENDENCIES, label: 'Dependencies' },
+    ])
   })
 
-  it('exports public history from one implementation in root and base', () => {
+  it('exports public history from one implementation in base', () => {
     for (const name of legalHistoryValues) {
       const value = legalHistory[name as keyof typeof legalHistory]
-      expect(core[name as keyof typeof core], name).toBe(value)
       expect(base[name as keyof typeof base], name).toBe(value)
     }
   })
@@ -1077,17 +846,10 @@ describe('core public entries', () => {
     }
     expect(Object.keys(sections)).toHaveLength(15)
     expect(Object.keys(manifest.exports).sort()).toEqual(
-      [
-        '.',
-        './build/initial-bundle-budget',
-        ...Object.keys(publicEntries),
-      ].sort(),
+      ['./build/initial-bundle-budget', ...Object.keys(publicEntries)].sort(),
     )
-    for (const subpath of ['.', ...Object.keys(publicEntries)]) {
-      const entry =
-        subpath === '.'
-          ? 'index'
-          : `${subpath.slice(2).replace('change-log', 'changeLog')}/index`
+    for (const subpath of Object.keys(publicEntries)) {
+      const entry = `${subpath.slice(2).replace('change-log', 'changeLog')}/index`
       expect(manifest.exports[subpath]).toEqual({
         development: `./src/${entry}.ts`,
         types: `./dist/${entry}.d.ts`,
@@ -1104,32 +866,28 @@ describe('core public entries', () => {
     })
   })
 
-  it('removes retired Analytics overview copy from the root and section entries', () => {
+  it('removes retired Analytics overview copy from base and section entries', () => {
     for (const name of analyticsOverviewRemovedValues) {
-      expect(core, name).not.toHaveProperty(name)
       expect(analytics, name).not.toHaveProperty(name)
     }
   })
 
-  it('preserves every legacy value and one instance across root, base and sections', () => {
-    expect(Object.keys(core).sort()).toEqual(expectedValues)
-    const names = new Set<string>()
-    const root: Record<string, unknown> = core
+  it('preserves independent owners and shared values across base and sections', () => {
+    const sharedValues = new Map<string, unknown>()
     for (const [entry, api] of Object.entries(publicEntries)) {
       for (const [name, value] of Object.entries(api)) {
-        names.add(name)
+        if (sharedValues.has(name))
+          expect(value, `${entry}:${name}`).toBe(sharedValues.get(name))
+        else sharedValues.set(name, value)
         if (entry === './base' && calendarValues.includes(name)) {
-          expect(root, name).not.toHaveProperty(name)
           const owner: Record<string, unknown> =
             name === 'calendarMonthMatrix' ? calendarMatrix : calendarDates
           expect(value, name).toBe(owner[name])
         } else if (entry === './base' && dateTimeZoneValues.includes(name)) {
-          expect(root, name).not.toHaveProperty(name)
           expect(value, name).toBe(
             dateTimeZoneAdapter[name as keyof typeof dateTimeZoneAdapter],
           )
         } else if (entry === './base' && dateTimePickerValues.includes(name)) {
-          expect(root, name).not.toHaveProperty(name)
           const owner: Record<string, unknown> =
             name === 'createDateTimePickerController'
               ? dateTimePicker
@@ -1139,19 +897,16 @@ describe('core public entries', () => {
           entry === './base' &&
           notificationChannelValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(value, name).toBe(
             notificationPreferences[
               name as keyof typeof notificationPreferences
             ],
           )
         } else if (entry === './base' && popupEffectsValues.includes(name)) {
-          expect(root, name).not.toHaveProperty(name)
           expect(value, name).toBe(
             popupEffects[name as keyof typeof popupEffects],
           )
         } else if (entry === './base' && narrowScreenValues.includes(name)) {
-          expect(root, name).not.toHaveProperty(name)
           expect(value, name).toBe(
             narrowScreen[name as keyof typeof narrowScreen],
           )
@@ -1159,7 +914,6 @@ describe('core public entries', () => {
           entry === './status' &&
           publicStatusDerivedValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(value, name).toBe(
             publicStatusDerived[name as keyof typeof publicStatusDerived],
@@ -1173,7 +927,6 @@ describe('core public entries', () => {
             ...statusHistoryValues,
           ].includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           const owner: Record<string, unknown> = statusWorksValues.includes(
             name,
@@ -1189,7 +942,6 @@ describe('core public entries', () => {
           entry === './admin/analytics' &&
           analyticsOverviewValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(
@@ -1202,7 +954,6 @@ describe('core public entries', () => {
           entry === './admin/analytics' &&
           analyticsPeriodValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(
@@ -1215,7 +966,6 @@ describe('core public entries', () => {
           entry === './admin/analytics' &&
           analyticsPeopleValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(
@@ -1228,7 +978,6 @@ describe('core public entries', () => {
           entry === './admin/analytics' &&
           analyticsSessionListValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(
@@ -1241,7 +990,6 @@ describe('core public entries', () => {
           entry === './admin/legal' &&
           legalOverviewValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(value, name).toBe(
             legalOverview[name as keyof typeof legalOverview],
@@ -1250,27 +998,23 @@ describe('core public entries', () => {
           entry === './admin/legal' &&
           legalRevisionValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(value, name).toBe(legalModel[name as keyof typeof legalModel])
         } else if (
           entry === './admin/users' &&
           userSessionsValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(value, name).toBe(
             userSessions[name as keyof typeof userSessions],
           )
         } else if (entry === './admin/users' && userRowValues.includes(name)) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(value, name).toBe(userRows[name as keyof typeof userRows])
         } else if (
           entry === './admin/communications' &&
           channelSummaryValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(
@@ -1283,7 +1027,6 @@ describe('core public entries', () => {
           entry === './admin/communications' &&
           letterFrameValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(value, letterFrame[name as keyof typeof letterFrame]),
@@ -1293,7 +1036,6 @@ describe('core public entries', () => {
           entry === './admin/communications' &&
           letterFrameEditValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(
@@ -1306,7 +1048,6 @@ describe('core public entries', () => {
           entry === './admin/moderation' &&
           adminModerationRulesValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(
@@ -1319,7 +1060,6 @@ describe('core public entries', () => {
           entry === './admin/moderation' &&
           adminModerationRuleAddValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(
@@ -1332,7 +1072,6 @@ describe('core public entries', () => {
           entry === './admin/moderation' &&
           adminModerationRuleDeleteValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(
@@ -1345,7 +1084,6 @@ describe('core public entries', () => {
           entry === './admin/moderation' &&
           adminModerationRuleEditValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(
@@ -1358,7 +1096,6 @@ describe('core public entries', () => {
           entry === './admin/moderation' &&
           adminModerationKindValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(
@@ -1371,7 +1108,6 @@ describe('core public entries', () => {
           entry === './admin/maintenance' &&
           maintenanceWordsValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(
@@ -1384,7 +1120,6 @@ describe('core public entries', () => {
           entry === './admin/maintenance' &&
           maintenanceNodesValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(
@@ -1394,7 +1129,6 @@ describe('core public entries', () => {
             name,
           ).toBe(true)
         } else if (entry === './admin/logs' && logNodesValues.includes(name)) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(value, name).toBe(
             name === 'logsOverviewThresholdPassed'
@@ -1405,7 +1139,6 @@ describe('core public entries', () => {
           entry === './admin/maintenance' &&
           maintenanceWatchdogValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(value, name).toBe(
             maintenanceModel[name as keyof typeof maintenanceModel],
@@ -1414,7 +1147,6 @@ describe('core public entries', () => {
           entry === './admin/security' &&
           securityOverviewValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(
@@ -1427,7 +1159,6 @@ describe('core public entries', () => {
           entry === './admin/security' &&
           oauthProviderHeadValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(
@@ -1440,7 +1171,6 @@ describe('core public entries', () => {
           entry === './admin/security' &&
           oauthProviderValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(value, oauthProvider[name as keyof typeof oauthProvider]),
@@ -1450,7 +1180,6 @@ describe('core public entries', () => {
           entry === './admin/security' &&
           oauthFieldDisplayValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(
             Object.is(
@@ -1463,7 +1192,6 @@ describe('core public entries', () => {
           entry === './admin/change-log' &&
           changeLogPresentationValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(value, name).toBe(
             changeLogPresentation[name as keyof typeof changeLogPresentation],
@@ -1472,63 +1200,16 @@ describe('core public entries', () => {
           entry === './admin/daemon' &&
           daemonClockValues.includes(name)
         ) {
-          expect(root, name).not.toHaveProperty(name)
           expect(base, name).not.toHaveProperty(name)
           expect(value, name).toBe(daemonNode[name as keyof typeof daemonNode])
-        } else {
-          expect(Object.is(value, root[name]), name).toBe(true)
         }
       }
     }
-    expect([...names].sort()).toEqual(
-      [
-        ...expectedValues,
-        ...calendarValues,
-        ...dateTimeZoneValues,
-        ...dateTimePickerValues,
-        ...notificationChannelValues,
-        ...popupEffectsValues,
-        ...narrowScreenValues,
-        ...publicStatusDerivedValues,
-        ...analyticsOverviewValues,
-        ...analyticsPeriodValues,
-        ...analyticsPeopleValues,
-        ...analyticsSessionListValues,
-        ...legalOverviewValues,
-        ...legalRevisionValues,
-        ...userSessionsValues,
-        ...userRowValues,
-        ...channelSummaryValues,
-        ...letterFrameValues,
-        ...letterFrameEditValues,
-        ...adminModerationKindValues,
-        ...adminModerationRulesValues,
-        ...maintenanceWordsValues,
-        ...maintenanceNodesValues,
-        ...maintenanceWatchdogValues,
-        ...logNodesValues,
-        ...adminModerationRuleAddValues,
-        ...adminModerationRuleDeleteValues,
-        ...adminModerationRuleEditValues,
-        ...securityOverviewValues,
-        ...oauthProviderHeadValues,
-        ...oauthProviderValues,
-        ...oauthFieldDisplayValues,
-        ...statusWorksValues,
-        ...statusWorkActionValues,
-        ...statusWorkEditorValues,
-        ...statusHistoryValues,
-        ...changeLogPresentationValues,
-        ...daemonClockValues,
-      ].sort(),
-    )
+
     expect(base.hilosLegalDocumentLabel('terms')).toBe('Terms of use')
     expect(base.hilosLegalDocumentLabel('privacy')).toBe('Privacy policy')
     expect(base.hilosLegalDocumentLabel('project-key')).toBe('project-key')
     expect(legalAgreements.hilosLegalDocumentLabel).toBe(
-      legalDocumentLabel.hilosLegalDocumentLabel,
-    )
-    expect(core.hilosLegalDocumentLabel).toBe(
       legalDocumentLabel.hilosLegalDocumentLabel,
     )
     expect(base.hilosLegalDocumentLabel).toBe(
@@ -1542,9 +1223,6 @@ describe('core public entries', () => {
     )
     for (const name of timeZoneValues) {
       expect(base, name).toHaveProperty(name)
-      expect(Object.is(base[name as keyof typeof base], root[name]), name).toBe(
-        true,
-      )
     }
     for (const name of [
       ...pageHeadValues,
@@ -1568,16 +1246,7 @@ describe('core public entries', () => {
       ...accountDeletionValues,
     ]) {
       expect(base, name).toHaveProperty(name)
-      expect(Object.is(base[name as keyof typeof base], root[name]), name).toBe(
-        true,
-      )
     }
-    expect(base.PROFILE_SESSION_BROWSER_TIME_ZONE_FIELD).toBe(
-      core.PROFILE_SESSION_BROWSER_TIME_ZONE_FIELD,
-    )
-    expect(base.hilosProfileDeviceKind).toBe(core.hilosProfileDeviceKind)
-    expect(base.hilosTimeZone).toBe(core.hilosTimeZone)
-    expect(base.bindTimeZoneState).toBe(core.bindTimeZoneState)
     expect(base.createHilosTimeZonePicker).toBe(
       timeZonePicker.createHilosTimeZonePicker,
     )
@@ -1585,7 +1254,6 @@ describe('core public entries', () => {
       profileHead.createHilosProfileHeadStore,
     )
     expectTypeOf<base.HilosProfileHeadStore>().toEqualTypeOf<profileHead.HilosProfileHeadStore>()
-    expectTypeOf<core.HilosProfileHeadStore>().toEqualTypeOf<profileHead.HilosProfileHeadStore>()
     for (const name of profileNameStateValues) {
       const owner: Record<string, unknown> = profileNameState
       expect((base as Record<string, unknown>)[name], name).toBe(owner[name])
@@ -1594,7 +1262,7 @@ describe('core public entries', () => {
       const owner: Record<string, unknown> = profileRenameMemory
       expect((base as Record<string, unknown>)[name], name).toBe(owner[name])
     }
-    for (const api of [core, base]) {
+    for (const api of [base]) {
       expect(api.mergeTextLines).toBe(textLineMerge.mergeTextLines)
       expect(api).not.toHaveProperty('mergeRowEdit')
       expect(api.accountDeletionGraceDays).toBe(
@@ -1606,10 +1274,8 @@ describe('core public entries', () => {
     expect(base.captureTableFocusReturnTarget).toBe(
       tableFocusReturn.captureTableFocusReturnTarget,
     )
-    expect(base.hilosNotifications).toBe(core.hilosNotifications)
-    expect(base.hilosLegalReconsent).toBe(core.hilosLegalReconsent)
     expect(base.createHilosConnection().connection).toBeInstanceOf(
-      core.HilosConnection,
+      HilosConnection,
     )
     expect(backup.BACKUP_SIGNAL_SCHEMAS).toBe(base.BACKUP_SIGNAL_SCHEMAS)
     expect(logs.LOGS_SETTINGS_SIGNAL_SCHEMAS).toBe(
@@ -1637,7 +1303,6 @@ describe('core public entries', () => {
         expect((status as Record<string, unknown>)[name], name).toBe(
           (owner as Record<string, unknown>)[name],
         )
-        expect(core, name).not.toHaveProperty(name)
         expect(base, name).not.toHaveProperty(name)
       }
     expectTypeOf<status.HilosStatusWorkEdit>().toEqualTypeOf<statusWorkActions.HilosStatusWorkEdit>()
@@ -1646,15 +1311,13 @@ describe('core public entries', () => {
     expectTypeOf<status.HilosStatusHistoryRow>().toEqualTypeOf<statusHistory.HilosStatusHistoryRow>()
   })
 
-  it('shares all three geometry projections with logical focus return through root and base', () => {
-    expectTypeOf<core.TableProjection>().toEqualTypeOf<
+  it('shares all three geometry projections with logical focus return through base', () => {
+    expectTypeOf<base.TableProjection>().toEqualTypeOf<
       'wide' | 'card' | 'tiles'
     >()
-    expectTypeOf<base.TableProjection>().toEqualTypeOf<core.TableProjection>()
     expectTypeOf<
       base.TableFocusReturnRow['projection']
-    >().toEqualTypeOf<core.TableProjection>()
-    expectTypeOf<core.TableFocusReturnRow>().toEqualTypeOf<base.TableFocusReturnRow>()
+    >().toEqualTypeOf<base.TableProjection>()
   })
 
   it('shares the restore shell implementation with every compatibility path', async () => {
@@ -1669,11 +1332,11 @@ describe('core public entries', () => {
       'formatRestoreOutcomeLine',
       'formatRestorePhaseLine',
     ] as const) {
-      for (const api of [core, base, backup, former]) {
+      for (const api of [base, backup, former]) {
         expect(api[name], name).toBe(restoreProgress[name])
       }
     }
-    for (const api of [core, base, backup, former]) {
+    for (const api of [base, backup, former]) {
       expect(Object.keys(api)).not.toContain('PERCENT_SCALE')
     }
     expect(runtimeClosure('connection/restoreProgress.ts')).toEqual([
@@ -1711,7 +1374,7 @@ describe('core public entries', () => {
     expect(presets.test_presets).toBe(
       logs.LOGS_SETTINGS_SIGNAL_SCHEMAS[logs.LOG_SETTINGS_SIGNAL],
     )
-    for (const api of [core, base, maintenance, maintenanceModel]) {
+    for (const api of [base, maintenance, maintenanceModel]) {
       expect(api.maintenanceStateSchema).toBe(
         maintenance.maintenanceStateSchema,
       )
@@ -1743,7 +1406,6 @@ describe('core public entries', () => {
     expectTypeOf<publicStatus.PublicStatusWorkView>().toEqualTypeOf<publicStatusDerived.PublicStatusWorkView>()
     expectTypeOf<publicStatus.PublicStatusCurrentMaintenanceView>().toEqualTypeOf<publicStatusDerived.PublicStatusCurrentMaintenanceView>()
     for (const name of publicStatusDerivedValues) {
-      expect(core, name).not.toHaveProperty(name)
       expect(base, name).not.toHaveProperty(name)
       expect(status, name).not.toHaveProperty(name)
       expect(publicStatus[name as keyof typeof publicStatus]).toBe(
@@ -1753,17 +1415,14 @@ describe('core public entries', () => {
     for (const name of publicStatusValues) {
       expect(base, name).not.toHaveProperty(name)
       expect(status, name).not.toHaveProperty(name)
-      expect(core[name as keyof typeof core]).toBe(
-        publicStatus[name as keyof typeof publicStatus],
-      )
     }
     const closure = runtimeClosure('status/index.ts')
     expect(closure).not.toContain('index.ts')
     expect(closure.filter((file) => file.startsWith('admin/'))).toEqual([])
   })
 
-  it('preserves legacy types and resolves each entry to the same declaration', () => {
-    const entries = ['index.ts', 'base/index.ts', 'status/index.ts'].concat(
+  it('resolves every public entry to its independent declaration owners', () => {
+    const entries = ['base/index.ts', 'status/index.ts'].concat(
       Object.keys(sections).map(
         (section) =>
           `admin/${section.replace('change-log', 'changeLog')}/index.ts`,
@@ -1795,62 +1454,19 @@ describe('core public entries', () => {
           ]),
       )
     }
-    const root = exportsOf('index.ts')
+    const baseExports = exportsOf('base/index.ts')
     const shared = exportsOf('connection/restoreProgress.ts')
     const former = exportsOf('admin/backup/hilosBackups.ts')
+    const backupExports = exportsOf('admin/backup/index.ts')
     for (const name of [
       'HilosProgressAnchors',
       'HilosRestoreProgress',
       'HilosBackupProgressClock',
     ]) {
-      expect(shared.get(name), name).toBe(root.get(name))
-      expect(former.get(name), name).toBe(root.get(name))
+      expect(baseExports.get(name), name).toBe(shared.get(name))
+      expect(backupExports.get(name), name).toBe(shared.get(name))
+      expect(former.get(name), name).toBe(shared.get(name))
     }
-    expect(
-      [...root]
-        .filter(([, symbol]) => symbol.flags & ts.SymbolFlags.Type)
-        .map(([name]) => name)
-        .sort(),
-    ).toEqual(
-      [
-        ...legacy.type,
-        ...changeLogNoisyTypes,
-        ...changeLogTableMetadataTypes,
-        'HilosProfileRenameState',
-        'HilosProfileRenameFlowOptions',
-        'HilosAnalyticsPerson',
-        'HilosDaemonEnvOrphansPageState',
-        'HilosDaemonNodeOverviewData',
-        'HilosDaemonWebsocketsData',
-        'HilosProfileDeviceKind',
-        'HilosUsersTableOptions',
-        ...i18nOverviewTypes,
-        ...legalDocumentTypes,
-        ...pageHeadTypes,
-        ...licenseDependenciesTypes,
-        ...publicLegalTypes,
-        ...legalHistoryTypes,
-        ...momentTypes,
-        ...accessLossTypes,
-        ...timeZonePickerTypes,
-        ...profileHeadTypes,
-        ...profileNameStateTypes,
-        ...profileRenameMemoryTypes,
-        ...rowEditTypes,
-        ...textLineMergeTypes,
-        ...rowEditMergeTypes,
-        ...tableTextTypes,
-        ...tableViewTypes,
-        ...tableRowMessageTypes,
-        ...tableFocusReturnTypes,
-        ...connectionInteractionTypes,
-        ...statusTypes,
-        ...publicStatusTypes,
-        ...adminModerationTypes,
-        ...maintenanceFrameTypes,
-      ].sort(),
-    )
-    const baseExports = exportsOf('base/index.ts')
     for (const name of [
       ...pageHeadTypes,
       ...licenseDependenciesTypes,
@@ -1889,28 +1505,27 @@ describe('core public entries', () => {
       'HilosProfileDeviceKind',
       'hilosProfileDeviceKind',
     ]) {
-      expect(root.get(name), name).toBeDefined()
-      expect(baseExports.get(name), name).toBe(root.get(name))
+      expect(baseExports.get(name), name).toBeDefined()
     }
     const momentExports = exportsOf('format/moment.ts')
     for (const name of [...momentValues, ...momentTypes]) {
-      expect(root.get(name), name).toBe(momentExports.get(name))
+      expect(baseExports.get(name), name).toBe(momentExports.get(name))
     }
     const pickerExports = exportsOf('timeZone/timeZonePicker.ts')
     for (const name of [...timeZonePickerValues, ...timeZonePickerTypes]) {
-      expect(root.get(name), name).toBe(pickerExports.get(name))
+      expect(baseExports.get(name), name).toBe(pickerExports.get(name))
     }
     const profileHeadExports = exportsOf('profile/profileHead.ts')
     for (const name of [...profileHeadValues, ...profileHeadTypes]) {
-      expect(root.get(name), name).toBe(profileHeadExports.get(name))
+      expect(baseExports.get(name), name).toBe(profileHeadExports.get(name))
     }
     const nameStateExports = exportsOf('profile/profileNameState.ts')
     for (const name of [...profileNameStateValues, ...profileNameStateTypes]) {
-      expect(root.get(name), name).toBe(nameStateExports.get(name))
+      expect(baseExports.get(name), name).toBe(nameStateExports.get(name))
     }
     const rowEditExports = exportsOf('conflict/rowEditSession.ts')
     for (const name of rowEditTypes) {
-      expect(root.get(name), name).toBe(rowEditExports.get(name))
+      expect(baseExports.get(name), name).toBe(rowEditExports.get(name))
     }
     for (const [entry, names] of [
       [
@@ -1921,7 +1536,7 @@ describe('core public entries', () => {
     ] as const) {
       const owner = exportsOf(entry)
       for (const name of names) {
-        expect(root.get(name), name).toBe(owner.get(name))
+        expect(baseExports.get(name), name).toBe(owner.get(name))
       }
     }
     expectTypeOf<base.TextLineMergeResult>().toEqualTypeOf<
@@ -1943,20 +1558,19 @@ describe('core public entries', () => {
     }>()
     for (const name of ['formatTimeZoneChoiceMoment', 'formatSnapshotMoment']) {
       expect(momentExports.has(name), name).toBe(true)
-      expect(root.has(name), name).toBe(false)
       expect(baseExports.has(name), name).toBe(false)
     }
     const focusReturnExports = exportsOf('dom/tableFocusReturn.ts')
     for (const name of [...tableFocusReturnValues, ...tableFocusReturnTypes]) {
-      expect(root.get(name), name).toBe(focusReturnExports.get(name))
+      expect(baseExports.get(name), name).toBe(focusReturnExports.get(name))
     }
     const viewExports = exportsOf('table/tableView.ts')
     for (const name of [...tableViewValues, ...tableViewTypes]) {
-      expect(root.get(name), name).toBe(viewExports.get(name))
+      expect(baseExports.get(name), name).toBe(viewExports.get(name))
     }
     const preferenceExports = exportsOf('table/tableViewPreference.ts')
     for (const name of tableViewPreferenceValues) {
-      expect(root.get(name), name).toBe(preferenceExports.get(name))
+      expect(baseExports.get(name), name).toBe(preferenceExports.get(name))
     }
     const overviewExports = exportsOf(
       'admin/analytics/hilosAnalyticsOverview.ts',
@@ -1984,7 +1598,6 @@ describe('core public entries', () => {
     const userRowExports = exportsOf('admin/users/hilosUsers.ts')
     const daemonClockExports = exportsOf('admin/daemon/hilosDaemonNode.ts')
     const daemonClockNames = [...daemonClockValues, ...daemonClockTypes]
-    const names = new Set<string>()
     const summaryExports = exportsOf(
       'admin/communications/hilosCommunicationsChannel.ts',
     )
@@ -2111,22 +1724,23 @@ describe('core public entries', () => {
       ...dateTimePickerValues,
       ...dateTimePickerTypes,
     ]
-    for (const entry of entries.slice(1)) {
+    const sharedDeclarations = new Map<string, ts.Symbol>()
+    for (const entry of entries) {
       for (const [name, symbol] of exportsOf(entry)) {
+        if (sharedDeclarations.has(name))
+          expect(symbol, `${entry}:${name}`).toBe(sharedDeclarations.get(name))
+        else sharedDeclarations.set(name, symbol)
         if (entry === 'base/index.ts' && calendarNames.includes(name)) {
-          expect(root.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(calendarExports.get(name))
         } else if (
           entry === 'base/index.ts' &&
           dateTimeZoneNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(dateTimeZoneExports.get(name))
         } else if (
           entry === 'base/index.ts' &&
           dateTimePickerNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(
             dateTimePickerExports.get(name),
           )
@@ -2134,7 +1748,6 @@ describe('core public entries', () => {
           entry === 'base/index.ts' &&
           notificationChannelValues.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(
             notificationChannelExports.get(name),
           )
@@ -2142,19 +1755,16 @@ describe('core public entries', () => {
           entry === 'base/index.ts' &&
           popupEffectsValues.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(popupEffectsExports.get(name))
         } else if (
           entry === 'base/index.ts' &&
           narrowScreenValues.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(narrowScreenExports.get(name))
         } else if (
           entry === 'status/index.ts' &&
           publicDerivedNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(
             publicDerivedExports.get(name),
@@ -2168,7 +1778,6 @@ describe('core public entries', () => {
             ...historyNames,
           ].includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           const owner = workNames.includes(name)
             ? worksExports
@@ -2182,35 +1791,30 @@ describe('core public entries', () => {
           entry === 'admin/analytics/index.ts' &&
           overviewNames.includes(name)
         ) {
-          expect(root.get(name), name).toBeUndefined()
           expect(baseExports.get(name), name).toBeUndefined()
           expect(Object.is(symbol, overviewExports.get(name)), name).toBe(true)
         } else if (
           entry === 'admin/analytics/index.ts' &&
           periodNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(periodExports.get(name))
         } else if (
           entry === 'admin/analytics/index.ts' &&
           peopleNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(peopleExports.get(name))
         } else if (
           entry === 'admin/analytics/index.ts' &&
           sessionListNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(sessionListExports.get(name))
         } else if (
           entry === 'admin/legal/index.ts' &&
           legalOverviewNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(
             legalOverviewExports.get(name),
@@ -2219,7 +1823,6 @@ describe('core public entries', () => {
           entry === 'admin/legal/index.ts' &&
           legalRevisionValues.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(
             legalRevisionExports.get(name),
@@ -2228,105 +1831,90 @@ describe('core public entries', () => {
           entry === 'admin/users/index.ts' &&
           userSessionsNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(userSessionsExports.get(name))
         } else if (
           entry === 'admin/users/index.ts' &&
           userRowValues.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(userRowExports.get(name))
         } else if (
           entry === 'admin/communications/index.ts' &&
           sectionOnly.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(summaryExports.get(name))
         } else if (
           entry === 'admin/communications/index.ts' &&
           frameNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(frameExports.get(name))
         } else if (
           entry === 'admin/communications/index.ts' &&
           frameEditNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(frameEditExports.get(name))
         } else if (
           entry === 'admin/moderation/index.ts' &&
           rulesNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(rulesExports.get(name))
         } else if (
           entry === 'admin/moderation/index.ts' &&
           ruleAddNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(ruleAddExports.get(name))
         } else if (
           entry === 'admin/moderation/index.ts' &&
           ruleDeleteNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(ruleDeleteExports.get(name))
         } else if (
           entry === 'admin/moderation/index.ts' &&
           ruleEditNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(ruleEditExports.get(name))
         } else if (
           entry === 'admin/moderation/index.ts' &&
           kindNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(kindExports.get(name))
         } else if (
           entry === 'admin/maintenance/index.ts' &&
           wordsNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(wordsExports.get(name))
         } else if (
           entry === 'admin/maintenance/index.ts' &&
           nodesNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(nodesExports.get(name))
         } else if (
           entry === 'admin/maintenance/index.ts' &&
           watchdogNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(watchdogExports.get(name))
         } else if (
           entry === 'admin/logs/index.ts' &&
           logNodesNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(logNodesExports.get(name))
         } else if (
           entry === 'admin/security/index.ts' &&
           securityOverviewNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(
             securityOverviewExports.get(name),
@@ -2335,7 +1923,6 @@ describe('core public entries', () => {
           entry === 'admin/security/index.ts' &&
           oauthProviderHeadNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(
             oauthProviderHeadExports.get(name),
@@ -2344,7 +1931,6 @@ describe('core public entries', () => {
           entry === 'admin/security/index.ts' &&
           oauthProviderNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(
             oauthProviderExports.get(name),
@@ -2353,7 +1939,6 @@ describe('core public entries', () => {
           entry === 'admin/security/index.ts' &&
           oauthFieldDisplayNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(
             oauthFieldDisplayExports.get(name),
@@ -2362,7 +1947,6 @@ describe('core public entries', () => {
           entry === 'admin/changeLog/index.ts' &&
           changeLogPresentationNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(
             changeLogPresentationExports.get(name),
@@ -2371,59 +1955,11 @@ describe('core public entries', () => {
           entry === 'admin/daemon/index.ts' &&
           daemonClockNames.includes(name)
         ) {
-          expect(root.has(name), name).toBe(false)
           expect(baseExports.has(name), name).toBe(false)
           expect(symbol, `${entry}:${name}`).toBe(daemonClockExports.get(name))
-        } else {
-          expect(Object.is(symbol, root.get(name)), `${entry}:${name}`).toBe(
-            true,
-          )
         }
-        names.add(name)
       }
     }
-    expect([...names].sort()).toEqual(
-      [
-        ...root.keys(),
-        ...calendarNames,
-        ...dateTimeZoneNames,
-        ...dateTimePickerNames,
-        ...notificationChannelValues,
-        ...popupEffectsValues,
-        ...narrowScreenValues,
-        ...publicDerivedNames,
-        ...overviewNames,
-        ...periodNames,
-        ...peopleNames,
-        ...sessionListNames,
-        ...legalOverviewNames,
-        ...legalRevisionValues,
-        ...userSessionsNames,
-        ...userRowValues,
-        ...sectionOnly,
-        ...frameNames,
-        ...frameEditNames,
-        ...kindNames,
-        ...rulesNames,
-        ...wordsNames,
-        ...nodesNames,
-        ...watchdogNames,
-        ...logNodesNames,
-        ...ruleAddNames,
-        ...ruleDeleteNames,
-        ...ruleEditNames,
-        ...securityOverviewNames,
-        ...oauthProviderHeadNames,
-        ...oauthProviderNames,
-        ...oauthFieldDisplayNames,
-        ...workNames,
-        ...workActionNames,
-        ...statusWorkEditorValues,
-        ...historyNames,
-        ...changeLogPresentationNames,
-        ...daemonClockNames,
-      ].sort(),
-    )
   }, 30_000)
 
   it('keeps the entire base runtime closure free of public Status and admin implementations', () => {

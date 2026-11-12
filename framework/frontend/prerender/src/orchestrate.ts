@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { resolvePageTitle } from '@hilos/core'
+import { resolvePageTitle } from '@hilos/core/base'
 
 import { discoverPublicRoutes } from './discovery.js'
 import type { PrerenderConfig } from './types.js'

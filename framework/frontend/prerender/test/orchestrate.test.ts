@@ -14,7 +14,7 @@ import {
   HILOS_FOOTER_LINKS,
   HILOS_PAGE_ROUTES,
   resolvePageTitle,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { prerenderPublicRoutes } from '../src/orchestrate.js'

@@ -15,7 +15,7 @@ import {
 } from '../../../src/admin/settings/hilosSettingPresets.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { type ActionHandle } from '../../../src/connection/actionLifecycle.js'
-import { type ProjectSignal } from '../../../src/index.js'
+import { type ProjectSignal } from '../../../src/base/index.js'
 
 const SIGNAL = 'subscription_page_hilos_logs_settings'
 

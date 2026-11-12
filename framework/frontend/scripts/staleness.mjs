@@ -15,6 +15,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { validateApf } from '../angular/bin/finalize-apf.mjs'
 
 /**
  * Source and build configuration inputs of one SDK package. Secondary Angular
@@ -168,6 +169,12 @@ export function sdkDistStale(packageDir) {
       }
     }
     target(manifest.exports)
+    if (manifest.name === '@hilos/angular') {
+      validateApf(
+        packageDir,
+        JSON.parse(readFileSync(join(dist, 'package.json'), 'utf8')),
+      )
+    }
     if (manifest.name === '@hilos/core') {
       const proof = JSON.parse(
         readFileSync(join(dist, 'core-provenance.json'), 'utf8'),

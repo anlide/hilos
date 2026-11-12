@@ -3,13 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionError,
   HIDDEN_VALUE,
-  HILOS_MAINTENANCE_DISABLE_COPY,
-  HILOS_MAINTENANCE_ENABLE_COPY,
-  HILOS_MAINTENANCE_PASS_COPY,
-  HILOS_MAINTENANCE_RESTORE_CLOSE_COPY,
-  HILOS_MAINTENANCE_RESTORE_OPEN_COPY,
-  HILOS_MAINTENANCE_RESTORE_PASS_COPY,
-  HILOS_MAINTENANCE_STATE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   MAINTENANCE_STATE_SIGNAL,
@@ -17,9 +10,18 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-  hilosMaintenanceOtherBrowserLine,
   hilosToasts,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  HILOS_MAINTENANCE_DISABLE_COPY,
+  HILOS_MAINTENANCE_ENABLE_COPY,
+  HILOS_MAINTENANCE_PASS_COPY,
+  HILOS_MAINTENANCE_RESTORE_CLOSE_COPY,
+  HILOS_MAINTENANCE_RESTORE_OPEN_COPY,
+  HILOS_MAINTENANCE_RESTORE_PASS_COPY,
+  HILOS_MAINTENANCE_STATE_COPY,
+  hilosMaintenanceOtherBrowserLine,
+} from '@hilos/core/admin/maintenance'
 import {
   formatMoment,
   hilosBrowserTimeZone,
@@ -31,13 +33,13 @@ import type {
   ActionLifecycle,
   ActionResult,
   HilosConnection,
-  HilosMaintenanceContext,
   HilosMaintenanceState,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
   WritableSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosMaintenanceContext } from '@hilos/core/admin/maintenance'
 
 import { HilosMaintenancePage } from '../src/admin/maintenance/HilosMaintenancePage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

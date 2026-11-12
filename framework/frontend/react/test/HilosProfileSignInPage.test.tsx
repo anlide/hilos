@@ -27,7 +27,7 @@ import {
   type HilosConnection,
   type HilosProfileSignInMethod,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { profileSectionFixture } from '../../core/test/profile/profileSectionFixture.js'
 import { HilosProfileSignInPage } from '../src/profile/HilosProfileSignInPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

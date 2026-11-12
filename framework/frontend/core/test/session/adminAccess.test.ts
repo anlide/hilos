@@ -9,7 +9,10 @@ import {
   type SessionScopeOptions,
 } from '../../src/session/sessionScope.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
-import { type HilosConnection, type ProjectSignal } from '../../src/index.js'
+import {
+  type HilosConnection,
+  type ProjectSignal,
+} from '../../src/base/index.js'
 
 /** A connection double replaying handshake responses into the session scope. */
 function fakeConnection() {

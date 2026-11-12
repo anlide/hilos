@@ -23,7 +23,7 @@ import {
   type HilosConnection,
   type HilosSecondFactorContext,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { type ModalController } from '@hilos/core/base'
 import { afterEach, expect, it, vi } from 'vitest'
 import { profileSectionFixture } from '../../core/test/profile/profileSectionFixture.js'

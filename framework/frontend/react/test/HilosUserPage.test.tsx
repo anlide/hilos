@@ -21,13 +21,13 @@ import {
   formatMoment,
   USER_ENTITY_TYPE,
   userFromFields,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosRouter,
-  HilosUsersContext,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosUsersContext } from '@hilos/core/admin/users'
 
 import { HilosUserPage } from '../src/admin/users/HilosUserPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

@@ -10,12 +10,12 @@ import {
   HIDDEN_VALUE,
   HilosPages,
   ScopeManager,
-  type HilosLegalAcceptanceRow,
   type HilosLegalAcceptancesExportNode,
   type HilosLegalContext,
   type HilosRouter,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import { type HilosLegalAcceptanceRow } from '@hilos/core/admin/legal'
 import {
   bindTestTimeZone,
   type TimeZoneTestBinding,

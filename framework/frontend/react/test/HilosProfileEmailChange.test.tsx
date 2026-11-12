@@ -19,7 +19,7 @@ import {
   type ActionLifecycle,
   type HilosConnection,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosProfileEmailChange } from '../src/profile/HilosProfileEmailChange.js'
 
 afterEach(() => {

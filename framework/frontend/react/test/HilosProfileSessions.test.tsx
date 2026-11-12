@@ -7,7 +7,7 @@ import {
   type ActionHandle,
   type HilosProfileSession,
   type HilosProfileSessionActions,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { hilosTimeZone } from '@hilos/core/base'
 import { HilosProfileSessions } from '../src/profile/HilosProfileSessions.js'
 import { readerTimeZone } from './readerTimeZone.js'

@@ -13,20 +13,20 @@ import {
   ActionLifecycle,
   HIDDEN_VALUE,
   HilosPages,
-  HilosSecondFactorSettingKey,
   ScopeManager,
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import { HilosSecondFactorSettingKey } from '@hilos/core/admin/security'
 import type {
   Hideable,
   HilosConnection,
   HilosRouter,
-  HilosTwoFactorContext,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosTwoFactorContext } from '@hilos/core/admin/security'
 
 import { afterEach, describe, expect, it } from 'vitest'
 

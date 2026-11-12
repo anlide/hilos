@@ -25,7 +25,8 @@ import {
   HilosDaemonEnvMismatchPage,
 } from '../src/admin/daemon/index.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
-import { DAEMON_OVERVIEW_DATA, type TableRow } from '@hilos/core'
+import { DAEMON_OVERVIEW_DATA } from '@hilos/core/admin/daemon'
+import { type TableRow } from '@hilos/core/base'
 import {
   daemonHarness,
   daemonNode,

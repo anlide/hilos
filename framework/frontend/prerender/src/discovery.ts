@@ -3,7 +3,7 @@
 // with no route or no component is a build error, not a silent skip — shipping a
 // footer link that leads nowhere is a misconfiguration (HIL-211 Flow Q3).
 
-import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES } from '@hilos/core'
+import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES } from '@hilos/core/base'
 
 import type { ResolvedPublicPage } from './types.js'
 

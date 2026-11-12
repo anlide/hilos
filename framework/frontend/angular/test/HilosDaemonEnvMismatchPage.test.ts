@@ -1,10 +1,8 @@
 import {
   DAEMON_ENV_MISMATCH_DATA,
-  HIDDEN_VALUE,
-  HilosPages,
-  ScopeManager,
   type HilosDaemonEnvMismatchSummary,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
+import { HIDDEN_VALUE, HilosPages, ScopeManager } from '@hilos/core/base'
 import { describe, expect, it } from 'vitest'
 
 import { HilosDaemonEnvMismatchPage } from '../src/admin/daemon/HilosDaemonEnvMismatchPage.js'

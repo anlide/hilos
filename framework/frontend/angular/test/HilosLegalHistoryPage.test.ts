@@ -6,7 +6,7 @@ import {
 } from '../../core/test/legal/publicHistoryComponent.js'
 import { HilosLegalHistoryPage } from '../src/public/HilosLegalHistoryPage.js'
 import { HilosLegalHistoryPage as Base } from '../src/base/index.js'
-import { HilosLegalHistoryPage as Root } from '../src/index.js'
+import { HilosLegalHistoryPage as Root } from '@hilos/angular/base'
 
 it('exports the same public component from base and root', () => {
   expect(Base).toBe(HilosLegalHistoryPage)

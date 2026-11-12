@@ -27,7 +27,7 @@ import {
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
-import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/index.js'
+import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/auth/authProtocol.js'
 
 // What the Analytics section proves, the same on every kit: a person's card leads
 // to their browser sessions, a session lists its actions in source order, and no

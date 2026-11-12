@@ -9,16 +9,13 @@
 // the invisible twins out of forms, controls, locators and the accessibility
 // tree, and a viewer of the admin view mode. The verdicts are the core's.
 import { signal } from '@angular/core'
-import {
-  HilosPages,
-  computedSignal,
-  createHilosI18nLanguageLocalesTable,
-} from '@hilos/core'
+import { HilosPages, computedSignal } from '@hilos/core/base'
+import { createHilosI18nLanguageLocalesTable } from '@hilos/core/admin/i18n'
 import type {
   HilosI18nLanguageCard,
   HilosI18nLocaleRow,
   HilosI18nLocaleWindowMode,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosI18nLocaleWindow } from '../src/admin/i18n/details/HilosI18nLocaleWindow.js'

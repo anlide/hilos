@@ -4,8 +4,6 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { By } from '@angular/platform-browser'
 import {
   ActionLifecycle,
-  CHANGE_LOG_TABLE_COPY,
-  CHANGE_LOG_TABLE_SECTION,
   HilosPages,
   ScopeManager,
   bindAdminAccess,
@@ -13,10 +11,14 @@ import {
   createSignal,
   pageIdentity,
   hilosAdminAccess,
-  type HilosChangeLogReceiptContext,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  CHANGE_LOG_TABLE_COPY,
+  CHANGE_LOG_TABLE_SECTION,
+  type HilosChangeLogReceiptContext,
+} from '@hilos/core/admin/change-log'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosChangeLogTablePage } from '../src/admin/changeLog/HilosChangeLogTablePage.js'

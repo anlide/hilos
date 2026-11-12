@@ -8,12 +8,11 @@
 // session bound in place of the old one. The session itself is the core's and
 // is tested there.
 import { signal } from '@angular/core'
+import { HILOS_VIEW_MODE_STRIP_TEXT_ID, HilosPages } from '@hilos/core/base'
 import {
-  HILOS_VIEW_MODE_STRIP_TEXT_ID,
-  HilosPages,
   createHilosI18nCountryCard,
   createHilosI18nCountryCardWindow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { describe, expect, it } from 'vitest'
 
 import { HilosI18nCountryWindow } from '../src/admin/i18n/details/HilosI18nCountryWindow.js'

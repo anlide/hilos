@@ -5,7 +5,7 @@ import {
   AUTH_ACTION_DISMISS_SESSION_ACK,
   HilosPages,
   resolveHilosPath,
-} from '../../../../../framework/frontend/core/src/index.js'
+} from '../../../../../framework/frontend/core/src/base/index.js'
 import {
   ANALYTICS_WRITER_TIMEOUT_MS,
   analyticsSessionLink,

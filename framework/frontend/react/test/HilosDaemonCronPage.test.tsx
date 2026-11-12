@@ -11,11 +11,11 @@ import {
   ingest,
   type HilosConnection,
   type HilosRouter,
-  type HilosDaemonNodeHeading,
   type PageRouteMatch,
   type TableViewportController,
   type TableViewportDescriptor,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import { type HilosDaemonNodeHeading } from '@hilos/core/admin/daemon'
 import {
   bindAdminAccess,
   hilosAdminAccess,

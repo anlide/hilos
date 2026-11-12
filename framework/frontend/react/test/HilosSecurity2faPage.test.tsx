@@ -11,19 +11,19 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   ActionLifecycle,
   HilosPages,
-  HilosSecondFactorSettingKey,
   ScopeManager,
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import { HilosSecondFactorSettingKey } from '@hilos/core/admin/security'
 import type {
   HilosConnection,
   HilosRouter,
-  HilosTwoFactorContext,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosTwoFactorContext } from '@hilos/core/admin/security'
 
 import { HilosSecurity2faPage } from '../src/admin/security/HilosSecurity2faPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

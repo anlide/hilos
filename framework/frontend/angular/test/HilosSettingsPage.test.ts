@@ -16,17 +16,17 @@ import {
   bindSessionScope,
   createAppPageRouter,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   Hideable,
   HilosConnection,
   HilosPageIdentity,
   HilosRouter,
-  HilosSettingsContext,
   PageRouteMatch,
   ProjectSignal,
   TableViewportDescriptor,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosSettingsContext } from '@hilos/core/admin/settings'
 import { HIDDEN_VALUE } from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'

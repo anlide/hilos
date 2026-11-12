@@ -256,7 +256,7 @@ returns `null` when the browser cannot say.
 
 Each tab keeps the three inputs as one snapshot in
 [timeZoneState.ts](../../../framework/frontend/core/src/timeZone/timeZoneState.ts)
-and projects it into three read-only signals, exported from `@hilos/core` and
+and projects it into three read-only signals, exported from
 `@hilos/core/base`: `hilosTimeZone`, the effective zone, always a usable name;
 `hilosOwnTimeZone`, the person's own usable choice, where `null` is Automatic, a
 guest, or a name this engine cannot use; and `hilosBrowserTimeZone`, what the
@@ -638,7 +638,7 @@ when the reader zone changes.
 
 `formatMoment(moment, options?)` is the core formatter for moment display in
 every SDK and demo. The same function and `MomentFormatOptions` type are
-exported from `@hilos/core` and `@hilos/core/base`. The input is a finite epoch
+exported from `@hilos/core/base`. The input is a finite epoch
 millisecond value in the `Date` range or a complete ISO UTC timestamp with `T`
 and `Z`. It does not accept a `Date`, a calendar date, a local or offset
 timestamp, or a numeric string, and it never guesses that a number is in
@@ -704,9 +704,8 @@ success or new fan-out; the existing session echo supplies the selected mark
 across tabs.
 
 Core's [`createHilosTimeZonePicker()`](../../../framework/frontend/core/src/timeZone/timeZonePicker.ts)
-and its types are exported from the
-[core root](../../../framework/frontend/core/src/index.ts) and
-[base](../../../framework/frontend/core/src/base/index.ts) barrels. Search
+and its types are exported from
+[`@hilos/core/base`](../../../framework/frontend/core/src/base/index.ts). Search
 normalizes a copy, ignoring case and treating underscores as spaces; saved names
 remain exact. Selection follows the confirmed account value. Automatic is a separate
 `null` choice, labeled from the browser zone, then the project zone, then UTC;
@@ -736,8 +735,8 @@ while its window is open. Its internal
 [`formatTimeZoneChoiceMoment()`](../../../framework/frontend/core/src/format/moment.ts)
 uses the same strict parser and `Intl` engine as the live formatter, with an
 `en-GB` two-digit hour and minute with `hourCycle: 'h23'`, and returns `null`
-for an unusable zone, moment or `Intl` formatter. It is not exported from the
-core root or base barrels: [`formatMoment()`](../../../framework/frontend/core/src/format/moment.ts)
+for an unusable zone, moment or `Intl` formatter. It is not exported from
+`@hilos/core/base`: [`formatMoment()`](../../../framework/frontend/core/src/format/moment.ts)
 remains the live reader entry, while `formatSnapshotMoment()` keeps an accepted
 snapshot's captured zone. The preview does not add a public time-zone override
 or shift the moment with `toLocal()`.
@@ -766,8 +765,8 @@ and reads the current `hilosTimeZone` on every call. Analytics uses the narrow
 internal `formatSnapshotMoment(moment, timeZone, options)` entry for labels that
 belong to an accepted snapshot. It shares the same strict parser and `Intl`
 engine, but its explicit zone does not extend the public `MomentFormatOptions`
-contract. The named entry is not re-exported from the core root, base or package
-barrels. For a `calendar` label, pass the snapshot's `asOfTs` as `options.now`;
+contract. The named entry is not re-exported from any public core entry. For a
+`calendar` label, pass the snapshot's `asOfTs` as `options.now`;
 without that reference the helper returns `null` instead of reading the live
 clock. Invalid moments or zones return `null`, while caller errors in `locale`
 or `format` remain visible.

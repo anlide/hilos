@@ -4,26 +4,30 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   type TableViewportController,
   ActionLifecycle,
-  CHANGE_LOG_OVERVIEW_SECTION,
-  HILOS_CHANGE_LOG_ENTRY_READ,
-  HILOS_CHANGE_LOG_RECEIPT_READ,
   HilosPages,
   ScopeManager,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  CHANGE_LOG_OVERVIEW_SECTION,
+  HILOS_CHANGE_LOG_ENTRY_READ,
+  HILOS_CHANGE_LOG_RECEIPT_READ,
+} from '@hilos/core/admin/change-log'
 import type {
   ActionErrorSignal,
   ActionLifecycleSource,
   ActionSuccessSignal,
   ConnectionState,
+  HilosPageIdentity,
+  HilosRouter,
+  PageRouteMatch,
+} from '@hilos/core/base'
+import type {
   HilosChangeLogEntry,
   HilosChangeLogOverview,
   HilosChangeLogReceiptContext,
   HilosChangeLogReceiptHeader,
-  HilosPageIdentity,
-  HilosRouter,
-  PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/admin/change-log'
 
 import { HilosChangeLogFeedPage } from '../src/admin/changeLog/HilosChangeLogFeedPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

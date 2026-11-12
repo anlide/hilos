@@ -4,7 +4,7 @@ import {
   NOTIFICATION_ACTION_CHANNEL_SET,
   type HilosConnection,
   type HilosPushEnvironment,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import {
   act,
   cleanup,

@@ -19,7 +19,7 @@ import {
   type HilosConnection,
   type HilosOAuthLogin,
   type HilosRouter,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 

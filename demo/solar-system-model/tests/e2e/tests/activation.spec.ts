@@ -3,9 +3,9 @@ import { expect, test } from '../test.js'
 import {
   AUTH_ACTION_COMPLETE_REGISTRATION,
   AUTH_ACTION_DISMISS_SESSION_ACK,
-  HilosPages,
-  resolveHilosPath,
-} from '../../../../../framework/frontend/core/src/index.js'
+} from '../../../../../framework/frontend/core/src/auth/authProtocol.js'
+import { HilosPages } from '../../../../../framework/frontend/core/src/routing/hilosPages.js'
+import { resolveHilosPath } from '../../../../../framework/frontend/core/src/routing/hilosAdmin.js'
 import {
   ANALYTICS_WRITER_TIMEOUT_MS,
   analyticsSessionLink,

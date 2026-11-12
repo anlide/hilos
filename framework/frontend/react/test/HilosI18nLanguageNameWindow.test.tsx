@@ -2,10 +2,10 @@ import { act, fireEvent } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import {
   createHilosI18nLanguageNameWindow,
-  createSignal,
   type HilosI18nLanguageCard,
   type HilosI18nNameRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { createSignal } from '@hilos/core/base'
 import { HilosI18nLanguageNameWindow } from '../src/admin/i18n/details/HilosI18nLanguageNameWindow.js'
 import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 import {

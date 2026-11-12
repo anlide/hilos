@@ -646,7 +646,7 @@ describe('the shared client closure measurement', () => {
     '/app/src/admin/people.ts',
     '/hilos/framework/frontend/vue/dist/opaque-shared.js',
   ])(
-    'refuses actual admin/compatibility/unproven input IDs despite neutral output names: %s',
+    'refuses actual admin/unsupported/unproven input IDs despite neutral output names: %s',
     (id) => {
       const report = measureInitialBundle(
         graph([chunk('main.js', [], [], [id])]),
@@ -686,7 +686,7 @@ describe('the shared client closure measurement', () => {
       join(pkg, 'package.json'),
       JSON.stringify({
         exports: {
-          '.': { import: './dist/index.js' },
+          './base': { import: './dist/base.js' },
           './admin/users': {
             development: './src/admin/users.ts',
             import: './dist/admin/users.js',
@@ -695,10 +695,10 @@ describe('the shared client closure measurement', () => {
         },
       }),
     )
-    for (const path of ['index.js', 'admin/users.js', 'admin-views.js'])
+    for (const path of ['base.js', 'admin/users.js', 'admin-views.js'])
       writeFileSync(join(pkg, 'dist', path), '')
     provenance(pkg, {
-      'index.js': { modules: ['src/index.ts'] },
+      'base.js': { modules: ['src/base/index.ts'] },
       'admin/users.js': { modules: ['src/admin/users.ts'] },
       'admin-views.js': { modules: ['src/admin/hilosAdminViews.ts'] },
     })
@@ -708,18 +708,24 @@ describe('the shared client closure measurement', () => {
           'main.js',
           [],
           [],
-          ['@hilos/vue', '@hilos/vue/admin/users', '@hilos/vue/admin-views'],
+          [
+            '@hilos/vue/base',
+            '@hilos/vue/admin/users',
+            '@hilos/vue/admin-views',
+          ],
         ),
       ]),
     )
     expect(report.initial.modules).toEqual([
       join(pkg, 'dist/admin-views.js'),
       join(pkg, 'dist/admin/users.js'),
-      join(pkg, 'dist/index.js'),
+      join(pkg, 'dist/base.js'),
       join(pkg, 'src/admin/hilosAdminViews.ts'),
       join(pkg, 'src/admin/users.ts'),
+      join(pkg, 'src/base/index.ts'),
     ])
-    expect(checkInitialBundleBudget(report).errors).toHaveLength(3)
+    expect(checkInitialBundleBudget(report).errors).toHaveLength(2)
+    expect(() => inputReport('@hilos/vue')).toThrow('has no production export')
     expect(() =>
       measureInitialBundle(
         graph([chunk('main.js', [], [], ['@hilos/vue/absent'])]),
@@ -811,7 +817,6 @@ function bundledSdk(layer) {
     join(pkg, 'package.json'),
     JSON.stringify({
       exports: {
-        '.': { import: './dist/root.js' },
         './base': {
           development: './src/base/index.ts',
           import: './dist/entry.js',
@@ -1103,7 +1108,9 @@ describe('core tsc source/output ownership', () => {
     const id = name.startsWith('@') ? name : join(pkg, name)
     expect(
       errors(id).some((error) =>
-        /compatibility root|admin implementation/.test(error),
+        /unproven SDK output composition|has no production export|admin implementation/.test(
+          error,
+        ),
       ),
     ).toBe(true)
   })
@@ -1301,7 +1308,9 @@ describe('core tsc source/output ownership', () => {
       } else
         expect(
           checkInitialBundleBudget(report).errors.some((error) =>
-            /compatibility root|admin implementation/.test(error),
+            /unproven SDK output composition|has no production export|admin implementation/.test(
+              error,
+            ),
           ),
         ).toBe(true)
     },
@@ -1383,9 +1392,9 @@ describe.each(['vue', 'react'])('%s compiled source composition', (layer) => {
     },
   )
 
-  it('rejects a compatibility root even when it only reexports clean base', () => {
+  it('rejects a bare package even when an old file only reexports clean base', () => {
     bundledSdk(layer)
-    expect(errors(`@hilos/${layer}`)[0]).toContain('compatibility root')
+    expect(() => errors(`@hilos/${layer}`)).toThrow('has no production export')
   })
 
   it.each([
@@ -1522,7 +1531,6 @@ function angularSdk(published = false) {
   const apf = published ? pkg : join(pkg, 'dist')
   mkdirSync(join(apf, 'fesm2022'), { recursive: true })
   const entries = {
-    '.': './fesm2022/root.mjs',
     './base': './fesm2022/primitive.mjs',
     './admin-views': './fesm2022/metadata.mjs',
     './admin/users': './fesm2022/section.mjs',
@@ -1544,7 +1552,6 @@ function angularSdk(published = false) {
       join(pkg, 'package.json'),
       JSON.stringify({
         name: '@hilos/angular',
-        module: './dist/fesm2022/root.mjs',
       }),
     )
     for (const [name, target] of Object.entries(entries)) {
@@ -1605,7 +1612,7 @@ describe.each([false, true])(
       expect(
         inputReport('@hilos/angular/admin-views').initial.modules,
       ).not.toContain(join(pkg, 'src/admin/users/Page.ts'))
-      expect(errors('@hilos/angular')[0]).toContain('compatibility root')
+      expect(() => errors('@hilos/angular')).toThrow('has no production export')
       expect(
         errors('@hilos/angular/admin/users').some((error) =>
           error.includes('admin implementation'),
@@ -2096,6 +2103,13 @@ describe.each([false, true])(
         changeStats(fixture.dist, (stats) => {
           stats.outputs['main.js'].imports.at(-1).kind = 'import-statement'
         })
+        if (entry === 'root') {
+          expect(() =>
+            runInitialBundleBudget(['angular', fixture.dist]),
+          ).toThrow('is not a generated APF public export')
+          rmSync(directory, { recursive: true })
+          continue
+        }
         const refused = runInitialBundleBudget(['angular', fixture.dist])
         expect(
           refused.initial.chunks.find((row) => row.fileName === 'forward.js')
@@ -2105,9 +2119,7 @@ describe.each([false, true])(
           expect.stringContaining(fixture.owner.file),
         )
         expect(refused.budget.errors).toContainEqual(
-          expect.stringContaining(
-            entry === 'root' ? 'compatibility root' : 'admin implementation',
-          ),
+          expect.stringContaining('admin implementation'),
         )
         rmSync(directory, { recursive: true })
       }

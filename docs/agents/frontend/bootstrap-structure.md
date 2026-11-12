@@ -13,7 +13,7 @@ re-implement in a project what the core boot helpers already do.
 
 ## The composition root
 
-A Hilos SPA boots in one shape, lifted into `@hilos/core` so a project
+A Hilos SPA boots in one shape, exposed through `@hilos/core/base` so a project
 configures rather than re-implements:
 
 - `createHilosConnection(options)` — the single connection, with the framework
@@ -105,7 +105,7 @@ src/
 
 ```ts
 // bootstrap/connection.ts
-import { createHilosConnection } from '@hilos/core'
+import { createHilosConnection } from '@hilos/core/base'
 
 export const { connection } = createHilosConnection({
   // Optional override; defaults to same-origin /ws (proxied in dev and prod)
@@ -115,7 +115,7 @@ export const { connection } = createHilosConnection({
 
 ```ts
 // bootstrap/session.ts
-import { ScopeManager, sessionUserName } from '@hilos/core'
+import { ScopeManager, sessionUserName } from '@hilos/core/base'
 
 export const scopes = new ScopeManager()
 export const currentUserName = sessionUserName(scopes)
@@ -132,8 +132,8 @@ component (`App`) stays in `src/app/`, as the Angular layout already places it.
   `bootstrap/`.
 - Re-implementing the handshake-response ingest, the current-user selector, or
   the boot sequence in the project — use `bindSessionScope` / `sessionUserName`
-  and `bootHilos` from `@hilos/core`. Minting the session cookie in the project
-  is wrong too: the daemon issues it on the handshake.
+  and `bootHilos` from `@hilos/core/base`. Minting the session cookie in the
+  project is wrong too: the daemon issues it on the handshake.
 - Calling `connection.connect()` by hand — `bootHilos` opens the socket after the
   scopes are bound.
 - A barrel `index.ts` inside `bootstrap/`.

@@ -17,16 +17,16 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   Hideable,
   HilosConnection,
   HilosRouter,
-  HilosSecurityOauthContext,
   PageRouteMatch,
   ProjectSignal,
   TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosSecurityOauthContext } from '@hilos/core/admin/security'
 import { HIDDEN_VALUE } from '@hilos/core/base'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'

@@ -15,7 +15,7 @@ import {
   createSignal,
   createAppPageRouter,
   hilosToasts,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   ActionLifecycle,
@@ -24,7 +24,7 @@ import type {
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosSecuritySignInMethodsPage } from '../src/admin/security/HilosSecuritySignInMethodsPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

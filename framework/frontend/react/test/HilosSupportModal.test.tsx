@@ -1,215 +1,48 @@
-import { afterEach, describe, expect, it } from 'vitest'
+// React input, event and lifecycle delivery for the shared support dialog cases.
 import { cleanup, fireEvent, render } from '@testing-library/react'
-import { HILOS_SUPPORT_REFUSAL } from '@hilos/core'
+import { describe, expect, it } from 'vitest'
 
+import {
+  registerSupportModalCases,
+  type WithSupportModal,
+} from '../../test-support/supportModalCases.js'
 import { HilosSupportModal } from '../src/public/HilosSupportModal.js'
 
-// The React peer of vue/src/public/HilosSupportModal.test.ts: the same cases by
-// the same names, so a drift between the two view layers shows up as one of them
-// failing rather than as a dialog nobody compared. It portals to <body>, so
-// assertions query the document rather than the render.
-afterEach(() => {
-  cleanup()
-  document.body.classList.remove('modal-open')
-})
-
-/** Mount the dialog already open, which is the only state it is read in. */
-function mountOpen(): ReturnType<typeof render> {
-  return render(<HilosSupportModal open onClose={() => {}} />)
-}
-
-/** One tier button out of the portalled dialog. */
-function tier(key: string): HTMLButtonElement {
-  const button = document.querySelector<HTMLButtonElement>(
-    `[data-id="hilos-about-tier-${key}"]`,
+/** Release React's roots and portals even when render or a later step throws. */
+const withSupportModal: WithSupportModal = async (initialOpen, steps) => {
+  const originalNodes = new Set(document.body.childNodes)
+  const modalOpen = document.body.classList.contains('modal-open')
+  const previousFocus = document.activeElement
+  const container = document.body.appendChild(document.createElement('div'))
+  let rerender: ReturnType<typeof render>['rerender'] | undefined
+  const modal = (open: boolean) => (
+    <HilosSupportModal open={open} onClose={() => rerender?.(modal(false))} />
   )
-  if (button === null) {
-    throw new Error(`no tier button for ${key}`)
+  try {
+    const view = render(modal(initialOpen), { container })
+    rerender = view.rerender
+    await steps({
+      root: document.body,
+      async update(open) {
+        view.rerender(modal(open))
+      },
+      async click(target) {
+        fireEvent.click(target)
+      },
+    })
+  } finally {
+    try {
+      cleanup()
+    } finally {
+      for (const node of [...document.body.childNodes]) {
+        if (!originalNodes.has(node)) node.remove()
+      }
+      document.body.classList.toggle('modal-open', modalOpen)
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+        previousFocus.focus()
+      }
+    }
   }
-
-  return button
 }
 
-/**
- * Take a tier, the way a person does.
- *
- * @param key The tier to press.
- */
-function pick(key: string): void {
-  fireEvent.click(tier(key))
-}
-
-/** Press the primary answer — the one that raises the refusal. */
-function subscribe(): void {
-  fireEvent.click(
-    document.querySelector('[data-id="hilos-about-subscribe"]') as HTMLElement,
-  )
-}
-
-/** The refusal plates on screen; the count is what the assertions are about. */
-function refusals(): NodeListOf<Element> {
-  return document.querySelectorAll('[data-id="hilos-about-refusal"]')
-}
-
-/** The live region that does the announcing, whatever it currently holds. */
-function region(): Element | null {
-  return document.querySelector('[data-id="hilos-about-live-assertive"]')
-}
-
-describe('HilosSupportModal', () => {
-  it('opens on the drawn default tier with the primary answer live', () => {
-    mountOpen()
-
-    const buttons = document.querySelectorAll('[data-id^="hilos-about-tier-"]')
-    expect(buttons).toHaveLength(3)
-
-    expect(tier('medium').getAttribute('aria-pressed')).toBe('true')
-    expect(tier('small').getAttribute('aria-pressed')).toBe('false')
-    expect(tier('large').getAttribute('aria-pressed')).toBe('false')
-
-    expect(
-      tier('small').querySelector('.fw-semibold')?.textContent?.trim(),
-    ).toBe('€0.20 / month')
-    expect(
-      tier('medium').querySelector('.fw-semibold')?.textContent?.trim(),
-    ).toBe('€2 / month')
-    expect(
-      tier('large').querySelector('.fw-semibold')?.textContent?.trim(),
-    ).toBe('€20 / month')
-
-    expect(tier('small').textContent).not.toContain('Small')
-    expect(tier('small').textContent).not.toContain('Coffee')
-    expect(tier('medium').textContent).not.toContain('Medium')
-    expect(tier('medium').textContent).not.toContain('Beer')
-    expect(tier('large').textContent).not.toContain('Large')
-    expect(tier('large').textContent).not.toContain('Patron')
-
-    expect(
-      tier('small').querySelector('i')?.classList.contains('bi-heart'),
-    ).toBe(true)
-    expect(
-      tier('medium').querySelector('i')?.classList.contains('bi-heart'),
-    ).toBe(true)
-    expect(
-      tier('large').querySelector('i')?.classList.contains('bi-heart'),
-    ).toBe(true)
-
-    expect(
-      tier('small').querySelector('.text-body-secondary')?.textContent,
-    ).toContain('Thank you — these coins add up to a server')
-
-    // The region stands there before it has anything to say.
-    expect(region()).not.toBeNull()
-    expect(region()?.textContent?.trim()).toBe('')
-    // A screen whose whole subject is the absence of dead buttons opens with none.
-    expect(
-      document
-        .querySelector('[data-id="hilos-about-subscribe"]')
-        ?.hasAttribute('disabled'),
-    ).toBe(false)
-    expect(refusals()).toHaveLength(0)
-  })
-
-  it('answers a subscribe attempt with the refusal, in the core’s own words', () => {
-    mountOpen()
-
-    subscribe()
-
-    expect(refusals()).toHaveLength(1)
-    expect(refusals()[0]?.textContent).toContain(HILOS_SUPPORT_REFUSAL)
-    // The plate shows; the region speaks. A role arriving together with its own
-    // text announces nothing, so the plate carries none (accessibility.md).
-    expect(refusals()[0]?.getAttribute('role')).toBeNull()
-    expect(region()?.textContent).toContain(HILOS_SUPPORT_REFUSAL)
-  })
-
-  it('re-states the same refusal on a second attempt rather than stacking one', () => {
-    mountOpen()
-
-    subscribe()
-    subscribe()
-
-    expect(refusals()).toHaveLength(1)
-  })
-
-  it('clears the refusal when another tier is chosen', () => {
-    mountOpen()
-
-    subscribe()
-    expect(refusals()).toHaveLength(1)
-    pick('large')
-
-    expect(refusals()).toHaveLength(0)
-    expect(region()?.textContent?.trim()).toBe('')
-    expect(tier('large').getAttribute('aria-pressed')).toBe('true')
-    expect(tier('medium').getAttribute('aria-pressed')).toBe('false')
-  })
-
-  it('starts clean when it is opened again', () => {
-    const { rerender } = mountOpen()
-
-    subscribe()
-    pick('small')
-    expect(tier('small').getAttribute('aria-pressed')).toBe('true')
-    subscribe()
-    expect(refusals()).toHaveLength(1)
-
-    rerender(<HilosSupportModal open={false} onClose={() => {}} />)
-    rerender(<HilosSupportModal open onClose={() => {}} />)
-
-    expect(refusals()).toHaveLength(0)
-    expect(tier('medium').getAttribute('aria-pressed')).toBe('true')
-  })
-
-  it('keeps the invisible refusal twin standing in both resting and refused states', () => {
-    mountOpen()
-
-    expect(
-      document.querySelectorAll('[data-id="hilos-about-refusal-idle"]'),
-    ).toHaveLength(1)
-
-    subscribe()
-
-    expect(
-      document.querySelectorAll('[data-id="hilos-about-refusal-idle"]'),
-    ).toHaveLength(1)
-  })
-
-  it('shows the explanation note at rest and hides it when refused', () => {
-    mountOpen()
-
-    expect(
-      document.querySelectorAll('[data-id="hilos-about-note"]'),
-    ).toHaveLength(1)
-    expect(
-      document.querySelector('[data-id="hilos-about-note"]')?.textContent,
-    ).toContain('A subscription unlocks nothing')
-    expect(refusals()).toHaveLength(0)
-
-    subscribe()
-
-    expect(
-      document.querySelectorAll('[data-id="hilos-about-note"]'),
-    ).toHaveLength(0)
-    expect(refusals()).toHaveLength(1)
-  })
-
-  it('marks the idle twin aria-hidden while the visible plate carries no role', () => {
-    mountOpen()
-
-    const idleTwin = document.querySelector(
-      '[data-id="hilos-about-refusal-idle"]',
-    )
-    expect(idleTwin).not.toBeNull()
-    expect(idleTwin?.getAttribute('aria-hidden')).toBe('true')
-    expect(idleTwin?.classList.contains('invisible')).toBe(true)
-
-    subscribe()
-
-    const activeRefusal = document.querySelector(
-      '[data-id="hilos-about-refusal"]',
-    )
-    expect(activeRefusal).not.toBeNull()
-    expect(activeRefusal?.getAttribute('role')).toBeNull()
-  })
-})
+registerSupportModalCases('React', { describe, it, expect }, withSupportModal)

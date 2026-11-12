@@ -1,6 +1,6 @@
 import { act, fireEvent } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { HilosPages, type PageSubscriptionError } from '@hilos/core'
+import { HilosPages, type PageSubscriptionError } from '@hilos/core/base'
 import { HilosI18nCountryNamesPage } from '../src/admin/i18n/details/HilosI18nCountryNamesPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 import {

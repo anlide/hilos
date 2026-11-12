@@ -2,10 +2,9 @@ import { act, fireEvent } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import {
   createHilosI18nLanguageRowWindow,
-  createSignal,
   type HilosI18nLanguageRow,
-  type TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { createSignal, type TableViewportController } from '@hilos/core/base'
 import { HilosI18nLanguageWindow } from '../src/admin/i18n/details/HilosI18nLanguageWindow.js'
 import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 import {

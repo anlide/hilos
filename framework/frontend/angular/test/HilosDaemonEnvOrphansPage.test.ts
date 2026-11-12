@@ -1,4 +1,4 @@
-import { HIDDEN_VALUE, HilosPages } from '@hilos/core'
+import { HIDDEN_VALUE, HilosPages } from '@hilos/core/base'
 import { describe, expect, it } from 'vitest'
 
 import { HilosDaemonEnvOrphansPage } from '../src/admin/daemon/HilosDaemonEnvOrphansPage.js'

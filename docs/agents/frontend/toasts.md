@@ -118,7 +118,7 @@ is covered (mount the host yourself only in an app that does not use the
 framework shell):
 
 ```ts
-import { hilosToasts } from '@hilos/core'
+import { hilosToasts } from '@hilos/core/base'
 
 hilosToasts.push('Password changed.', { severity: 'success' })
 hilosToasts.push(reason, { severity: 'error' })

@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest'
 import {
   type HilosI18nLanguageNameDeleteTarget,
   type HilosI18nNameRow,
-  hilosToasts,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { hilosToasts } from '@hilos/core/base'
 import { HilosI18nLanguageNameDelete } from '../src/admin/i18n/details/HilosI18nLanguageNameDelete.js'
 import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 import { harness, el, click, settle } from './hilosI18nHarness.js'

@@ -1,10 +1,9 @@
+import { createSignal, type TableViewportController } from '@hilos/core/base'
 import {
-  createSignal,
-  type TableViewportController,
   type HilosI18nNameRow,
   type HilosI18nLocaleRow,
   type HilosI18nLocaleTemplates,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { vi } from 'vitest'
 
 export const nameRow: HilosI18nNameRow = {

@@ -12,14 +12,14 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosConnection,
   HilosRouter,
-  HilosTwoFactorContext,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosTwoFactorContext } from '@hilos/core/admin/security'
 
 import { afterEach, describe, expect, it } from 'vitest'
 

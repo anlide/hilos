@@ -4,16 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Vue view layer over @hilos/core \u2014 the Hilos frontend SDK.",
-  "main": "./dist/index.js",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "exports": {
-    ".": {
-      "development": "./src/index.ts",
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "default": "./dist/index.js"
-    },
     "./base": {
       "development": "./src/base/index.ts",
       "types": "./dist/base/index.d.ts",

@@ -7,16 +7,28 @@ import { cp, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import process from 'node:process'
+import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 
 const consumer = resolve(process.argv[2])
+const installed = createRequire(join(consumer, 'package.json'))
+for (const name of ['@hilos/angular', '@hilos/core']) {
+  assert.throws(
+    () => installed.resolve(name),
+    (error) =>
+      [
+        'ERR_PACKAGE_PATH_NOT_EXPORTED',
+        'ERR_MODULE_NOT_FOUND',
+        'MODULE_NOT_FOUND',
+      ].includes(error.code),
+  )
+}
 const temporary = await mkdtemp(join(tmpdir(), 'hilos-angular-consumer-'))
 try {
   const fixture = join(temporary, 'fixture.ts')
   await writeFile(
     fixture,
     `
-    import * as root from '@hilos/angular'
     import * as base from '@hilos/angular/base'
     import { hilosAdminViews } from '@hilos/angular/admin-views'
     import { HilosAnalyticsPage } from '@hilos/angular/admin/analytics'
@@ -46,9 +58,9 @@ try {
     } from '@hilos/core/base'
     import type { HilosModerationRulesContext } from '@hilos/core/admin/moderation'
     import type { HilosStatusContext } from '@hilos/core/admin/status'
-    import * as coreRoot from '@hilos/core'
     import * as coreBase from '@hilos/core/base'
     import * as coreSettings from '@hilos/core/admin/settings'
+    import * as coreBackup from '@hilos/core/admin/backup'
     @Component({
       selector: 'hilos-moderation-consumer',
       standalone: true,
@@ -174,7 +186,6 @@ try {
     }
     type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends
       (<T>() => T extends B ? 1 : 2) ? true : false
-    const sameHead: Same<typeof root.HilosProfileHead, typeof HilosProfileHead> = true
     const headContext: Same<ReturnType<HilosProfileHead['context']>, HilosProfilePageContext> = true
     const headStore: Same<ReturnType<HilosProfileHead['store']>, HilosProfileHeadStore | undefined> = true
     const statusContext: Same<ReturnType<HilosStatusPage['context']>, HilosStatusContext> = true
@@ -193,7 +204,7 @@ try {
       readonly context!: HilosProfilePageContext
       readonly store!: HilosProfileHeadStore
     }
-    const sameCore = ${[
+    const baseValues = ${[
       'HilosConnection',
       'ScopeManager',
       'createHilosRouter',
@@ -211,22 +222,16 @@ try {
       'PROTECTED_MODE_FALLBACK_COPY',
       'PROTECTED_MODE_PASS_COPY',
     ]
-      .map(
-        (name) =>
-          `coreRoot.${name} !== undefined && coreRoot.${name} === coreBase.${name}`,
-      )
+      .map((name) => `coreBase.${name} !== undefined`)
       .join(' && ')}
-    const sameCoreSection = ${[
+    const sectionValues = ${[
       'createHilosSettingsTable',
       'createHilosSettingsActions',
       'SETTING_KEY_FIELD',
     ]
-      .map(
-        (name) =>
-          `coreRoot.${name} !== undefined && coreRoot.${name} === coreSettings.${name}`,
-      )
+      .map((name) => `coreSettings.${name} !== undefined`)
       .join(' && ')}
-    const sameTokens = ${[
+    const tokenValues = ${[
       'HILOS_ROUTER',
       'HILOS_AUTH_GATE',
       'HILOS_PAGE_HEADING_ID',
@@ -240,24 +245,21 @@ try {
       'HilosProfileHead',
       'HilosTableEmptyState',
     ]
-      .map((name) => `root.${name} === base.${name}`)
-      .join(' && ')} && root.HilosTableText !== undefined &&
-      root.HilosTableText === base.HilosTableText
-    const samePages = root.HilosSettingsPage === HilosSettingsPage &&
-      root.HilosAnalyticsPage === HilosAnalyticsPage &&
-      root.HilosDashboardPage === HilosDashboardPage &&
-      root.HilosModerationPage === HilosModerationPage &&
-      root.HilosStatusPage === HilosStatusPage &&
-      root.HilosPublicStatusPage === PublicStatusPage &&
+      .map((name) => `base.${name} !== undefined`)
+      .join(' && ')} && base.HilosTableText !== undefined
+    const pages = [HilosSettingsPage, HilosAnalyticsPage, HilosDashboardPage, HilosModerationPage, HilosStatusPage, PublicStatusPage].every(page => typeof page === 'function') &&
       !Object.is(HilosStatusPage, PublicStatusPage) &&
       !('HilosStatusPage' in base) && !('HilosPublicStatusPage' in base)
+    const sharedRestore = ['BACKUP_SIGNAL_SCHEMAS', 'backupProgressPercent', 'createBackupProgressClock', 'createHilosRestoreProgress', 'formatBackupProgressLabel', 'formatRestoreOutcomeLine', 'formatRestorePhaseLine'].every(
+      name => coreBase[name as keyof typeof coreBase] !== undefined && coreBase[name as keyof typeof coreBase] === coreBackup[name as keyof typeof coreBackup],
+    )
     class DashboardProbe extends HilosDashboardPage {
       sameRouter(): boolean {
         return this.resolvePath(coreBase.HilosPages.USERS) === '/same'
       }
     }
     const environment = createEnvironmentInjector([
-      { provide: root.HILOS_ROUTER, useValue: {
+      { provide: base.HILOS_ROUTER, useValue: {
         resolvePath: () => '/same',
         pageIdentity: coreBase.createSignal(undefined),
         dashboardSections: coreBase.createSignal(undefined),
@@ -265,7 +267,7 @@ try {
     ], Injector.NULL as EnvironmentInjector)
     const injected = runInInjectionContext(environment, () => {
       const page = new DashboardProbe()
-      return page instanceof root.HilosDashboardPage && page.sameRouter()
+      return page instanceof HilosDashboardPage && page.sameRouter()
     })
     environment.destroy()
     const defaults = Object.values(hilosAdminViews())
@@ -274,10 +276,11 @@ try {
       return view.load()
     })).then((pages: unknown[]) => pages.length === 29 && pages.every(page => typeof page === 'function'))
     Object.assign(globalThis, { hilosAngularIdentity: {
-      sameCore,
-      sameCoreSection,
-      sameTokens,
-      samePages,
+      baseValues,
+      sectionValues,
+      tokenValues,
+      pages,
+      sharedRestore,
       injected,
       loaded,
       moderationPages: [HilosModerationPage, HilosModerationKindPage, HilosModerationKindRulesPage],
@@ -289,7 +292,7 @@ try {
       tableTextHost: HilosTableTextConsumer,
       tableTilesHost: HilosTableTilesConsumer,
       profileHeadHost: HilosProfileHeadConsumer,
-      headTypes: sameHead && headContext && headStore,
+      headTypes: headContext && headStore,
     } })
   `,
   )
@@ -304,9 +307,11 @@ try {
           '@angular/core': [join(consumer, 'node_modules/@angular/core')],
           '@angular/common': [join(consumer, 'node_modules/@angular/common')],
           tslib: [join(consumer, 'node_modules/tslib')],
-          '@hilos/core': [join(consumer, 'node_modules/@hilos/core')],
           '@hilos/core/base': [
             join(consumer, 'node_modules/@hilos/core/dist/base'),
+          ],
+          '@hilos/core/admin/backup': [
+            join(consumer, 'node_modules/@hilos/core/dist/admin/backup'),
           ],
           '@hilos/core/admin/settings': [
             join(consumer, 'node_modules/@hilos/core/dist/admin/settings'),
@@ -317,7 +322,6 @@ try {
           '@hilos/core/admin/status': [
             join(consumer, 'node_modules/@hilos/core/dist/admin/status'),
           ],
-          '@hilos/angular': [join(consumer, 'node_modules/@hilos/angular')],
           '@hilos/angular/*': [join(consumer, 'node_modules/@hilos/angular/*')],
         },
       },
@@ -375,15 +379,16 @@ try {
     'Consumer build must load the shipped Angular Sass asset',
   )
   assert.ok(
-    styles.includes('.hilos-table-tile'),
-    'Shipped Angular Sass asset must carry the tile rules',
+    styles.includes('.hilos-table-record-space'),
+    'Shipped Angular Sass asset must carry the measured record reserve',
   )
   await import(pathToFileURL(join(browser, main)).href)
   const result = globalThis.hilosAngularIdentity
-  assert.equal(result.sameCore, true)
-  assert.equal(result.sameCoreSection, true)
-  assert.equal(result.sameTokens, true)
-  assert.equal(result.samePages, true)
+  assert.equal(result.baseValues, true)
+  assert.equal(result.sectionValues, true)
+  assert.equal(result.tokenValues, true)
+  assert.equal(result.pages, true)
+  assert.equal(result.sharedRestore, true)
   assert.equal(result.injected, true)
   assert.equal(result.moderationPages.length, 3)
   assert.ok(result.moderationHost.ɵcmp, 'Real AOT contextual moderation host')

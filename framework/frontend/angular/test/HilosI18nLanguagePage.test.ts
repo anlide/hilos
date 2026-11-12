@@ -4,13 +4,13 @@
 // the deletion that returns to the list only after its ack, a viewer of the
 // admin view mode, and a new language or context under open windows. The
 // verdicts themselves are the core's and are tested there.
+import { HilosPages } from '@hilos/core/base'
 import {
   HILOS_I18N_LANGUAGE_DELETE_COPY,
   HILOS_I18N_LANGUAGE_MARKS,
   HILOS_I18N_LANGUAGE_SWITCH_ON_COPY,
   HILOS_I18N_LANGUAGE_WINDOW_COPY,
-  HilosPages,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { describe, expect, it } from 'vitest'
 
 import { HilosI18nLanguagePage } from '../src/admin/i18n/details/HilosI18nLanguagePage.js'

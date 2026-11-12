@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { TableViewportController } from '@hilos/core'
-import type { HilosTableFrame, TableViewportDescriptor } from '@hilos/core'
+import { TableViewportController } from '@hilos/core/base'
+import type { HilosTableFrame, TableViewportDescriptor } from '@hilos/core/base'
 
 import { HilosTableEmptyState } from '../src/HilosTableEmptyState.js'
 

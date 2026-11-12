@@ -11,7 +11,7 @@ import {
   type ActionHandle,
   type ActionLifecycle,
   type HilosConnection,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type { HilosStaticPageNavigation } from '@hilos/core/base'
 
 import {

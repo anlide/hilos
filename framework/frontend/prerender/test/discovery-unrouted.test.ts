@@ -3,7 +3,7 @@
 // the real one routes every footer page, so this state cannot arise from it.
 import { expect, it, vi } from 'vitest'
 
-vi.mock('@hilos/core', () => ({
+vi.mock('@hilos/core/base', () => ({
   HILOS_FOOTER_LINKS: [{ page: 'ghost', label: 'Ghost' }],
   HILOS_PAGE_ROUTES: {},
 }))

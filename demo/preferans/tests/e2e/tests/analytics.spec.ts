@@ -37,7 +37,7 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
-import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/index.js'
+import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/auth/authProtocol.js'
 
 const sendCommand = createStandCommandChannel({ timeoutMs: 5_000 })
 

@@ -5,12 +5,11 @@
 // dirty close, focus returned to the opener, a viewer of the admin view mode,
 // and the row let go when the view ends. The merge itself is the core's.
 import { signal } from '@angular/core'
+import { createSignal, type TableViewportController } from '@hilos/core/base'
 import {
   createHilosI18nLanguageRowWindow,
-  createSignal,
   type HilosI18nLanguageRow,
-  type TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { describe, expect, it } from 'vitest'
 
 import { HilosI18nLanguageWindow } from '../src/admin/i18n/details/HilosI18nLanguageWindow.js'

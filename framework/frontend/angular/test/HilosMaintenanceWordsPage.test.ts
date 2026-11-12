@@ -5,13 +5,13 @@
 // shared section head.
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { describe, expect, it, vi } from 'vitest'
-import { HilosPages, ScopeManager, createSignal } from '@hilos/core'
+import { HilosPages, ScopeManager, createSignal } from '@hilos/core/base'
 import type {
   HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
   TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import {
   HILOS_MAINTENANCE_WORDS_COPY,
   type HilosMaintenanceContext,

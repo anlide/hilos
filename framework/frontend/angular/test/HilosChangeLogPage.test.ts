@@ -10,7 +10,6 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { By } from '@angular/platform-browser'
 import {
   ActionLifecycle,
-  CHANGE_LOG_OVERVIEW_SECTION,
   HilosPages,
   ScopeManager,
   createSignal,
@@ -18,12 +17,15 @@ import {
   type ActionLifecycleSource,
   type ActionSuccessSignal,
   type ConnectionState,
-  type HilosChangeLogOverview,
-  type HilosChangeLogReceiptContext,
   type HilosPageIdentity,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  CHANGE_LOG_OVERVIEW_SECTION,
+  type HilosChangeLogOverview,
+  type HilosChangeLogReceiptContext,
+} from '@hilos/core/admin/change-log'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosChangeLogPage } from '../src/admin/changeLog/HilosChangeLogPage.js'

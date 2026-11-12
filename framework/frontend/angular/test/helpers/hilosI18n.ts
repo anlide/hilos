@@ -13,7 +13,6 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   type TableViewportController,
   ActionLifecycle,
-  COUNTRY_CARD_DATA,
   HilosPages,
   PageSubscription,
   ScopeManager,
@@ -23,9 +22,16 @@ import {
   createSignal,
   hilosToasts,
   pageIdentity,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import { COUNTRY_CARD_DATA } from '@hilos/core/admin/i18n'
 import type {
   HilosConnection,
+  HilosRouter,
+  PageRouteMatch,
+  PageSubscriptionError,
+  Scope,
+} from '@hilos/core/base'
+import type {
   HilosI18nCountryCard,
   HilosI18nCountryRow,
   HilosI18nLanguageCard,
@@ -35,11 +41,7 @@ import type {
   HilosI18nLocaleRow,
   HilosI18nLocaleTemplates,
   HilosI18nNameRow,
-  HilosRouter,
-  PageRouteMatch,
-  PageSubscriptionError,
-  Scope,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { afterEach, vi } from 'vitest'
 
 import { HilosView } from '../../src/HilosView.js'

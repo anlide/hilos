@@ -6,7 +6,7 @@ import {
   bindSessionScope,
   type ActionLifecycle,
   type ActionResult,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type { HilosStaticPageNavigation } from '@hilos/core/base'
 import {
   first,

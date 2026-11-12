@@ -1,6 +1,6 @@
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSSRApp, h, nextTick, ref, shallowRef } from 'vue'
+import { createApp, createSSRApp, h, nextTick, ref, shallowRef } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import {
   createSignal,
@@ -23,6 +23,11 @@ import type {
   TableViewportDescriptor,
   TableViewportGeometryView,
 } from '@hilos/core/base'
+import {
+  registerTableControllerReplacementCases,
+  type TableControllerReplacementInput,
+  type TableControllerReplacementView,
+} from '../../test-support/tableControllerReplacementCases.js'
 
 import HilosModal from './HilosModal.vue'
 import HilosTableRecordCard from './HilosTableRecordCard.vue'
@@ -49,6 +54,69 @@ interface Row {
 const COLUMNS: HilosTableColumn[] = [
   { key: 'name', label: 'Name', sortable: true },
 ]
+
+/** The app handle precedes rendering; its unkeyed public child only changes props. */
+async function mountReplacementTable(
+  input: TableControllerReplacementInput,
+): Promise<TableControllerReplacementView> {
+  const host = document.createElement('div')
+  const controller = shallowRef(input.controller)
+  const app = createApp({
+    setup: () => () => h(HilosViewportTable, { controller: controller.value }),
+  })
+  let released = false
+  function unmount(): void {
+    if (released) return
+    released = true
+    const errors: unknown[] = []
+    for (const release of [() => app.unmount(), () => host.remove()]) {
+      try {
+        release()
+      } catch (error) {
+        errors.push(error)
+      }
+    }
+    if (errors.length === 1) throw errors[0]
+    if (errors.length > 1)
+      throw new AggregateError(errors, 'Vue replacement table cleanup failed', {
+        cause: errors[0],
+      })
+  }
+  try {
+    document.body.appendChild(host)
+    app.mount(host)
+    await nextTick()
+    return {
+      root: host,
+      unmount,
+      async replaceController(next) {
+        controller.value = next
+        await nextTick()
+      },
+      async change(action) {
+        action()
+        await nextTick()
+      },
+    }
+  } catch (error) {
+    try {
+      unmount()
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        'Vue replacement table setup and cleanup failed',
+        { cause: cleanupError },
+      )
+    }
+    throw error
+  }
+}
+
+registerTableControllerReplacementCases(
+  'Vue',
+  { describe, it, expect },
+  mountReplacementTable,
+)
 
 /**
  * The sender of the declared operation, which this file never presses: the column

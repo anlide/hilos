@@ -3,9 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   createHilosI18nBuiltInLanguages,
   createHilosI18nLanguageAdd,
-  HilosPages,
-  hilosToasts,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { HilosPages, hilosToasts } from '@hilos/core/base'
 import { HilosI18nLanguageAdd } from '../src/admin/i18n/lists/HilosI18nLanguageAdd.js'
 import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 import { harness, el, click, change, settle } from './hilosI18nHarness.js'

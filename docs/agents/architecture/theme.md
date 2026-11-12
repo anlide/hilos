@@ -205,8 +205,10 @@ a later opening or apply a local choice.
 
 Both account controls check current availability before sending: switching is
 on, the person is signed in and the session is not impersonating someone.
-Switching off, sign-out or impersonation closes an open surface. The server
-checks admission again. The Vue, React and Angular controls do this.
+Switching off, sign-out or impersonation closes an open surface. Sign-out returns
+focus to the icon; a takeover does not, because the same change turns the icon
+off natively and the browser cannot keep focus on it. The server checks admission
+again. The Vue, React and Angular controls do this.
 
 ## Before The App Loads
 

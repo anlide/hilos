@@ -11,17 +11,17 @@ import {
   bindSessionScope,
   createAppPageRouter,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ConnectionState,
   HilosConnection,
   HilosPageIdentity,
   HilosRouter,
-  HilosSettingsContext,
   PageRouteMatch,
   ProjectSignal,
   TableViewportDescriptor,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosSettingsContext } from '@hilos/core/admin/settings'
 
 import { HilosSettingsPage } from '../src/admin/settings/HilosSettingsPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

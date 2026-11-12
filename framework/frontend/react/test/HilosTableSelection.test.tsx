@@ -1,419 +1,104 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { ActionError, TableViewportController, createSignal } from '@hilos/core'
+import { describe, expect, it } from 'vitest'
+import { act } from '@testing-library/react'
+import { createRoot, type Root } from 'react-dom/client'
 import type {
-  ActionHandle,
-  HilosTableBulkAccepted,
-  HilosTableBulkAction,
-  HilosTableFrame,
-  HilosTableSelectionTarget,
-  TableViewportDescriptor,
-} from '@hilos/core'
+  TableSelectionInput,
+  TableSelectionMountOptions,
+  TableSelectionView,
+} from '../../test-support/tableSelectionFixtures.js'
+import { registerTableSelectionStateCases } from '../../test-support/tableSelectionStateCases.js'
+import { registerTableSelectionConfirmCases } from '../../test-support/tableSelectionConfirmCases.js'
 
 import { HilosTableSelection } from '../src/HilosTableSelection.js'
 import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 
-// The React port of vue/src/HilosTableSelection.test.ts, under the same case
-// names. The confirmation portals to <body>, so every query reads the document
-// rather than the render.
-
-afterEach(() => {
-  cleanup()
-  document.body.classList.remove('modal-open')
-})
-
-const COLUMNS = [{ key: 'name', label: 'Name' }]
-
-function byId(id: string): HTMLElement | null {
-  return document.querySelector(`[data-id="${id}"]`)
-}
-
-/** The handle an accepted run answers with: the key its bar and report carry. */
-function accepted(progressKey: string): ActionHandle<HilosTableBulkAccepted> {
-  return {
-    requestId: 'req-1',
-    loading: createSignal(false),
-    done: Promise.resolve({ reply: { progressKey, total: 2 } }),
-  }
-}
-
-/** The handle a refused run answers with: the sentence the page sent back. */
-function refused(): ActionHandle<HilosTableBulkAccepted> {
-  return {
-    requestId: 'req-1',
-    loading: createSignal(false),
-    done: Promise.reject(
-      new ActionError('backups_delete', 'fail', 'The node is frozen'),
-    ),
-  }
-}
-
-/** A real tracked handle whose acceptance or refusal the test controls. */
-function pendingBulk() {
-  let resolve!: (result: { reply: HilosTableBulkAccepted }) => void
-  let reject!: (error: ActionError) => void
-  const handle: ActionHandle<HilosTableBulkAccepted> = {
-    requestId: 'bulk-pending',
-    loading: createSignal(false),
-    done: new Promise((yes, no) => {
-      resolve = yes
-      reject = no
-    }),
-  }
-  return { handle, resolve, reject }
-}
-
-/**
- * One declared operation that records what it was asked to run over.
- *
- * @param asked The targets it was called with, in order.
- * @param handle What the send answers with.
- */
-function deleteAction(
-  asked: HilosTableSelectionTarget[],
-  handle: () => ActionHandle<HilosTableBulkAccepted> = () => accepted('run-1'),
-): HilosTableBulkAction {
-  return {
-    key: 'delete',
-    label: 'Delete',
-    refusalTitle: "Couldn't delete the marked rows",
-    danger: true,
-    run: (target) => {
-      asked.push(target)
-
-      return handle()
-    },
-  }
-}
-
-function makeController(
-  actions: readonly HilosTableBulkAction[],
-): TableViewportController<unknown> {
-  const frame: HilosTableFrame = {
-    title: 'Backups',
-    columns: COLUMNS,
-    bulkActions: actions,
-  }
-  const sent: TableViewportDescriptor[] = []
-  const controller = new TableViewportController<unknown>({
-    resolve: (raw) => ({ name: String(raw.slots['name']) }),
-    sendViewport: (descriptor) => sent.push(descriptor),
-    frame,
-  })
-  controller.ingestWindow(
-    [
-      { rowKey: 'a', slots: { name: 'Alice' } },
-      { rowKey: 'b', slots: { name: 'Bob' } },
-    ],
-    2,
-    true,
-    null,
-    null,
-    10,
-  )
-
-  return controller
-}
-
-interface PanelOptions {
-  shown?: boolean
-}
-
-function panel(
-  controller: TableViewportController<unknown>,
-  options: PanelOptions = {},
-) {
-  return (
-    <HilosTableSelection
-      controller={controller}
-      shown={options.shown ?? true}
-    />
-  )
-}
-
-function renderPanel(
-  controller: TableViewportController<unknown>,
-  options: PanelOptions = {},
-) {
-  return render(panel(controller, options))
-}
-
-/** Press a button and wait out the promises the send settles through. */
-async function press(id: string): Promise<void> {
-  await act(async () => {
-    fireEvent.click(byId(id) as HTMLElement)
-    await new Promise((resolve) => setTimeout(resolve, 0))
-  })
-}
-
-describe('HilosTableSelection', () => {
-  it('counts the marked rows of this page, and says the condition in words', () => {
-    const controller = makeController([deleteAction([])])
-    controller.selectRow('a', true)
-    renderPanel(controller)
-
-    expect(byId('hilos-table-selection-count')?.textContent).toBe(
-      '1 marked on this page',
+/** Retain the native root before React first renders the real component. */
+async function mountTableSelection(
+  input: TableSelectionInput,
+  options: TableSelectionMountOptions,
+): Promise<TableSelectionView> {
+  const host = document.createElement('div')
+  let root: Root | undefined
+  function renderSelection(shown: boolean) {
+    const panel = (
+      <HilosTableSelection controller={input.controller} shown={shown} />
     )
-    expect(byId('hilos-table-select-all-filtered')).not.toBeNull()
-
-    act(() => controller.selectAllByFilter())
-
-    // The size of a large set is a ceiling rather than a count, so the panel says
-    // what it is sure of; and the button that took the condition is gone, because
-    // pressing it again would change nothing.
-    expect(byId('hilos-table-selection-count')?.textContent).toBe(
-      'All rows matching the filter',
+    return options.adminViewMode === undefined ? (
+      panel
+    ) : (
+      <HilosAdminViewModeContext.Provider value={options.adminViewMode}>
+        {panel}
+      </HilosAdminViewModeContext.Provider>
     )
-    expect(byId('hilos-table-select-all-filtered')).toBeNull()
-  })
-
-  it('drops the marks through the core', () => {
-    const controller = makeController([deleteAction([])])
-    controller.selectRow('a', true)
-    renderPanel(controller)
-
-    fireEvent.click(byId('hilos-table-selection-clear') as HTMLElement)
-
-    expect(controller.selection.count.get()).toBe(0)
-  })
-
-  it('disables the declared operations while a run is going', () => {
-    const controller = makeController([deleteAction([])])
-    controller.selectRow('a', true)
-    renderPanel(controller)
-
-    expect(
-      (byId('hilos-table-bulk-delete') as HTMLButtonElement).disabled,
-    ).toBe(false)
-
-    act(() =>
-      controller.ingestProgress({
-        scope: 'bulk',
-        progressKey: 'run-1',
-        current: 1,
-        total: 4,
-      }),
-    )
-
-    expect(
-      (byId('hilos-table-bulk-delete') as HTMLButtonElement).disabled,
-    ).toBe(true)
-  })
-
-  it('confirms every operation and sends the target the core gives at that moment', async () => {
-    const asked: HilosTableSelectionTarget[] = []
-    const controller = makeController([deleteAction(asked)])
-    controller.selectRow('a', true)
-    renderPanel(controller)
-
-    fireEvent.click(byId('hilos-table-bulk-delete') as HTMLElement)
-    expect(byId('modal')).not.toBeNull()
-    expect(document.body.textContent).toContain(
-      '1 row on this page will be affected',
-    )
-    expect(asked).toHaveLength(0)
-
-    // Between the press and the confirmation the reader marked one more row: the
-    // target is read HERE, so the run takes both.
-    act(() => controller.selectRow('b', true))
-
-    await press('hilos-table-bulk-confirm')
-
-    expect(asked).toEqual([{ kind: 'rows', rowKeys: ['a', 'b'] }])
-    expect(byId('modal')).toBeNull()
-  })
-
-  it('keeps the confirmation open with the refusal it was answered with', async () => {
-    const asked: HilosTableSelectionTarget[] = []
-    const controller = makeController([deleteAction(asked, refused)])
-    controller.selectRow('a', true)
-    renderPanel(controller)
-
-    fireEvent.click(byId('hilos-table-bulk-delete') as HTMLElement)
-    await press('hilos-table-bulk-confirm')
-
-    expect(byId('modal')).not.toBeNull()
-    expect(document.body.textContent).toContain('The node is frozen')
-  })
-
-  it('holds every exit until acceptance, keeps a refused confirmation, and closes on ack while progress continues', async () => {
-    const asked: HilosTableSelectionTarget[] = []
-    let pending = pendingBulk()
-    const controller = makeController([
-      deleteAction(asked, () => pending.handle),
-    ])
-    controller.selectRow('a', true)
-    const view = renderPanel(controller)
-    fireEvent.click(byId('hilos-table-bulk-delete')!)
-    const modal = byId('modal')!
-    const body = modal.querySelector('fieldset .modal-body > fieldset')!
-    const room = byId('hilos-action-error-slot')
-    const cancel = [...modal.querySelectorAll('button')].find(
-      (button) => button.textContent === 'Cancel',
-    )!
-    const close = byId('modal-close')!
-    const confirm = byId('hilos-table-bulk-confirm')!
-    expect(body.matches(':disabled')).toBe(false)
-
-    fireEvent.click(confirm)
-    expect(pending.handle.loading.get()).toBe(false)
-    expect(controller.progress.bulk.get()).toBeNull()
-    expect(body.matches(':disabled')).toBe(true)
-    expect(cancel.matches(':disabled')).toBe(true)
-    expect(close.matches(':disabled')).toBe(true)
-    expect(confirm.getAttribute('aria-busy')).toBe('true')
-    expect(confirm.closest('fieldset:disabled')).toBeNull()
-    for (const gesture of [
-      () => fireEvent.click(cancel),
-      () => fireEvent.click(close),
-      () => fireEvent.keyDown(modal, { key: 'Escape' }),
-      () => fireEvent.click(modal),
+  }
+  let released = false
+  async function unmount(): Promise<void> {
+    if (released) return
+    released = true
+    const errors: unknown[] = []
+    for (const release of [
+      () =>
+        act(async () => {
+          root?.unmount()
+        }),
+      () => host.remove(),
     ]) {
-      gesture()
-      expect(byId('modal')).toBe(modal)
+      try {
+        await release()
+      } catch (error) {
+        errors.push(error)
+      }
     }
-    fireEvent.click(confirm)
-    fireEvent.keyDown(confirm, { key: 'Enter' })
-    fireEvent.click(confirm)
-    expect(asked).toEqual([{ kind: 'rows', rowKeys: ['a'] }])
-
-    // The strip can disappear while the confirmation is still waiting.
-    view.rerender(panel(controller, { shown: false }))
-    expect(byId('modal')).toBe(modal)
-    await act(async () => {
-      pending.reject(
-        new ActionError('backups_delete', 'fail', 'The node is frozen'),
-      )
-    })
-    expect(byId('modal')).toBe(modal)
-    expect(modal.querySelector('.modal-body > fieldset')).toBe(body)
-    expect(byId('hilos-action-error-slot')).toBe(room)
-    expect(document.body.textContent).toContain('The node is frozen')
-    expect(body.matches(':disabled')).toBe(false)
-    expect(cancel.matches(':disabled')).toBe(false)
-    expect(close.matches(':disabled')).toBe(false)
-    expect(confirm.getAttribute('aria-busy')).toBeNull()
-    expect(byId('modal-confirm')).toBeNull()
-
-    pending = pendingBulk()
-    fireEvent.click(confirm)
-    expect(asked).toHaveLength(2)
-    act(() => {
-      controller.ingestProgress({
-        scope: 'bulk',
-        progressKey: 'run-1',
-        current: 1,
-        total: 4,
+    if (errors.length === 1) throw errors[0]
+    if (errors.length > 1)
+      throw new AggregateError(errors, 'React table selection cleanup failed', {
+        cause: errors[0],
       })
-    })
+  }
+  try {
+    document.body.appendChild(host)
+    root = createRoot(host)
     await act(async () => {
-      pending.resolve({ reply: { progressKey: 'run-1', total: 4 } })
+      root!.render(renderSelection(input.shown))
     })
-    expect(byId('modal')).toBeNull()
-    expect(controller.progress.bulk.get()).toEqual({
-      progressKey: 'run-1',
-      current: 1,
-      total: 4,
-      fraction: 0.25,
-      detail: {},
-    })
-    expect(byId('hilos-table-bulk-delete')?.matches(':disabled')).toBe(true)
-    expect(document.body.classList.contains('modal-open')).toBe(false)
-  })
+    return {
+      root: host,
+      unmount,
+      async updateShown(shown) {
+        await act(async () => {
+          root!.render(renderSelection(shown))
+        })
+      },
+      async settle() {
+        if (released) return
+        await act(async () => {})
+      },
+      async change(action) {
+        await act(async () => action())
+      },
+    }
+  } catch (error) {
+    try {
+      await unmount()
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        'React table selection setup and cleanup failed',
+        { cause: cleanupError },
+      )
+    }
+    throw error
+  }
+}
 
-  it('heads the refusal details with what the refused operation failed to do', async () => {
-    const controller = makeController([deleteAction([], refused)])
-    controller.selectRow('a', true)
-    renderPanel(controller)
+registerTableSelectionStateCases(
+  'React',
+  { describe, it, expect },
+  mountTableSelection,
+)
 
-    fireEvent.click(byId('hilos-table-bulk-delete') as HTMLElement)
-    await press('hilos-table-bulk-confirm')
-    await press('hilos-action-error-details')
-
-    const titles = [...document.querySelectorAll('[role="dialog"]')].map(
-      (dialog) => dialog.getAttribute('aria-label'),
-    )
-    expect(titles).toContain("Couldn't delete the marked rows")
-  })
-
-  it('keeps an open confirmation when the panel stops standing', () => {
-    const controller = makeController([deleteAction([])])
-    controller.selectRow('a', true)
-    const view = renderPanel(controller)
-
-    fireEvent.click(byId('hilos-table-bulk-delete') as HTMLElement)
-    expect(byId('modal')).not.toBeNull()
-
-    // The strip goes when the marks do — a window can arrive with none of them
-    // left — and the dialog holds the focus and the page's scroll lock, neither of
-    // which is the strip's to hand back on its way out.
-    view.rerender(panel(controller, { shown: false }))
-
-    const panelEl = byId('hilos-table-selection')
-    expect(panelEl?.classList.contains('invisible')).toBe(true)
-    expect(panelEl?.getAttribute('aria-hidden')).toBe('true')
-    expect(byId('modal')).not.toBeNull()
-  })
-
-  it('names itself to a screen reader as one group', () => {
-    const controller = makeController([deleteAction([])])
-    renderPanel(controller)
-
-    const group = byId('hilos-table-selection')
-    expect(group?.getAttribute('role')).toBe('group')
-    expect(group?.getAttribute('aria-label')).toBe('Selection')
-  })
-})
-
-describe('HilosTableSelection in the admin view mode', () => {
-  it('disables the operations and keeps the marks live', () => {
-    const asked: HilosTableSelectionTarget[] = []
-    const controller = makeController([deleteAction(asked)])
-    controller.selectRow('a', true)
-    render(
-      <HilosAdminViewModeContext.Provider value>
-        {panel(controller)}
-      </HilosAdminViewModeContext.Provider>,
-    )
-
-    const operation = byId('hilos-table-bulk-delete') as HTMLButtonElement
-    expect(operation.disabled).toBe(true)
-    expect(operation.getAttribute('aria-describedby')).toBe(
-      'hilos-view-mode-strip-text',
-    )
-
-    const selectAll = byId(
-      'hilos-table-select-all-filtered',
-    ) as HTMLButtonElement
-    const clear = byId('hilos-table-selection-clear') as HTMLButtonElement
-    expect(selectAll.disabled).toBe(false)
-    expect(clear.disabled).toBe(false)
-
-    fireEvent.click(selectAll)
-    expect(controller.selection.target.get()?.kind).toBe('filter')
-    fireEvent.click(clear)
-    expect(controller.selection.count.get()).toBe(0)
-    expect(asked).toEqual([])
-  })
-
-  it('leaves the operations untouched outside the mode', () => {
-    const controller = makeController([deleteAction([])])
-    controller.selectRow('a', true)
-
-    const { unmount } = renderPanel(controller)
-    const outside = byId('hilos-table-bulk-delete') as HTMLButtonElement
-    expect(outside.disabled).toBe(false)
-    expect(outside.getAttribute('aria-describedby')).toBeNull()
-    unmount()
-
-    render(
-      <HilosAdminViewModeContext.Provider value={false}>
-        {panel(controller)}
-      </HilosAdminViewModeContext.Provider>,
-    )
-    const off = byId('hilos-table-bulk-delete') as HTMLButtonElement
-    expect(off.disabled).toBe(false)
-    expect(off.getAttribute('aria-describedby')).toBeNull()
-  })
-})
+registerTableSelectionConfirmCases(
+  'React',
+  { describe, it, expect },
+  mountTableSelection,
+)

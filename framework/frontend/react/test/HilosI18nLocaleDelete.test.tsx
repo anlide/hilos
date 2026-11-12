@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest'
 import {
   createHilosI18nLocaleDelete,
   type HilosI18nLocaleDeleteTarget,
-  hilosToasts,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { hilosToasts } from '@hilos/core/base'
 import { HilosI18nLocaleDelete } from '../src/admin/i18n/details/HilosI18nLocaleDelete.js'
 import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 import { harness, el, click, settle } from './hilosI18nHarness.js'

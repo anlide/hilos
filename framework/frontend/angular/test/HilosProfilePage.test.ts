@@ -30,7 +30,7 @@ import {
   type ProjectSignal,
   type ThemePick,
   type ThemeSettings,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { By } from '@angular/platform-browser'
 import { HilosProfilePage } from '../src/profile/HilosProfilePage.js'

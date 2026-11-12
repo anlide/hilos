@@ -17,14 +17,14 @@ import {
   bindSessionScope,
   createSignal,
   createAppPageRouter,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosConnection,
   HilosRouter,
-  HilosSecurityOauthContext,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosSecurityOauthContext } from '@hilos/core/admin/security'
 
 import { afterEach, describe, expect, it } from 'vitest'
 

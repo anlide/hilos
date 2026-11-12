@@ -7,7 +7,7 @@ import {
   type ActionHandle,
   type HilosProfileSession,
   type HilosProfileSessionActions,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { type ModalController } from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HilosProfileSessions } from '../src/profile/HilosProfileSessions.js'

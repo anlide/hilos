@@ -10,7 +10,7 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   ActionLifecycle,
@@ -21,7 +21,7 @@ import type {
   PageRouteMatch,
   ProjectSignal,
   TableViewportDescriptor,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import {
   formatMoment,
   hilosBrowserTimeZone,

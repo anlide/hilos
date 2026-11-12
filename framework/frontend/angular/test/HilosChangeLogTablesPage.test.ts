@@ -9,17 +9,19 @@ import {
   CHANGE_LOG_COLUMN_MODES,
   CHANGE_LOG_NOISY_COLUMNS_SECTION,
   CHANGE_LOG_TABLES_UNTRACKED_NOTE,
+  type HilosChangeLogContext,
+} from '@hilos/core/admin/change-log'
+import {
   HilosPages,
   ScopeManager,
   bindAdminAccess,
   bindSessionScope,
   createSignal,
   hilosAdminAccess,
-  type HilosChangeLogContext,
   type HilosPageIdentity,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosChangeLogTablesPage } from '../src/admin/changeLog/HilosChangeLogTablesPage.js'

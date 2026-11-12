@@ -1,7 +1,7 @@
 // discoverPublicRoutes against the real framework catalog: every footer link
 // resolves to its route + component, and a missing component is a build error.
 // The defensive unrouted-link branch is covered in discovery-unrouted.test.ts.
-import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES } from '@hilos/core'
+import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES } from '@hilos/core/base'
 import { expect, it } from 'vitest'
 
 import { discoverPublicRoutes } from '../src/discovery.js'

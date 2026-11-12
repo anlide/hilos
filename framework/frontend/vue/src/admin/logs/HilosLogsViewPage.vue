@@ -23,7 +23,7 @@ Bootstrap classes only, save the one pre-wrap declaration the pane calls for
 because Bootstrap has no utility for it (styling-rules.md, same exception as
 HilosActionError). -->
 <script setup lang="ts">
-import { formatMoment } from '@hilos/core'
+import { formatMoment } from '@hilos/core/base'
 import { formatHilosNodeLabel } from '@hilos/core/admin/daemon'
 import {
   createHilosLogViewer,

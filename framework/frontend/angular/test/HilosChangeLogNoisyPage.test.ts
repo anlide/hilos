@@ -8,17 +8,19 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   CHANGE_LOG_NOISY_COLUMNS_EMPTY,
   CHANGE_LOG_NOISY_COLUMNS_SECTION,
+  type HilosChangeLogContext,
+} from '@hilos/core/admin/change-log'
+import {
   HilosPages,
   ScopeManager,
   bindAdminAccess,
   bindSessionScope,
   createSignal,
   hilosAdminAccess,
-  type HilosChangeLogContext,
   type HilosPageIdentity,
   type HilosRouter,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosChangeLogNoisyPage } from '../src/admin/changeLog/HilosChangeLogNoisyPage.js'

@@ -2,10 +2,10 @@ import { act } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   createHilosI18nNamesTable,
-  createSignal,
   HILOS_I18N_COUNTRY_NAMES,
   HILOS_I18N_LANGUAGE_NAMES,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { createSignal } from '@hilos/core/base'
 import { HilosI18nNamesTable } from '../src/admin/i18n/details/HilosI18nNamesTable.js'
 import { harness, el, click } from './hilosI18nHarness.js'
 import { nameRow } from './hilosI18nDetailsHarness.js'

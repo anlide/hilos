@@ -2,19 +2,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, screen, within } from '@testing-library/react'
 import {
   ActionLifecycle,
-  HILOS_CHANGE_LOG_RECEIPT_READ,
-  CHANGE_LOG_TABLE_COPY as copy,
   HilosPages,
   bindAdminAccess,
   bindSessionScope,
   hilosAdminAccess,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  HILOS_CHANGE_LOG_RECEIPT_READ,
+  CHANGE_LOG_TABLE_COPY as copy,
+} from '@hilos/core/admin/change-log'
 import type {
   ActionErrorSignal,
   ActionLifecycleSource,
   ActionSuccessSignal,
   ConnectionState,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosChangeLogTableHistoryPage } from '../src/admin/changeLog/HilosChangeLogTableHistoryPage.js'
 import {

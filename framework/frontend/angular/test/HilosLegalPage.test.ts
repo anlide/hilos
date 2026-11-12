@@ -14,7 +14,7 @@ import {
   type HilosLegalContext,
   type HilosRouter,
   type TableRow,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { type HilosLegalOverview } from '@hilos/core/admin/legal'
 import { HilosLegalPage } from '../src/admin/legal/HilosLegalPage.js'
 import { HilosLegalDocumentPage } from '../src/admin/legal/HilosLegalDocumentPage.js'

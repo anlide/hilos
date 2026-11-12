@@ -11,7 +11,7 @@ import {
   type ActionLifecycle,
   type ActionResult,
   type HilosLegalContext,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type { HilosStaticPageNavigation } from '@hilos/core/base'
 import { afterEach, expect, it, vi } from 'vitest'
 import {

@@ -6,7 +6,7 @@ import {
   type HilosI18nLanguageCard,
   type HilosI18nLocaleRow,
   hilosI18nLocaleWindowMode,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { HilosI18nLocaleWindow } from '../src/admin/i18n/details/HilosI18nLocaleWindow.js'
 import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 import {

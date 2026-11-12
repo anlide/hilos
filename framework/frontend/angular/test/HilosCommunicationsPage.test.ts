@@ -9,14 +9,14 @@ import {
   ScopeManager,
   createSignal,
   resolveHilosPath,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosCommunicationsContext } from '@hilos/core/admin/communications'
 import type {
-  HilosCommunicationsContext,
   HilosConnection,
   HilosRouter,
   HilosPageKey,
   PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { describe, expect, it } from 'vitest'
 
 import { HilosCommunicationsPage } from '../src/admin/communications/HilosCommunicationsPage.js'

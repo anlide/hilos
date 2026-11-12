@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { ActionError, createSignal, hilosToasts } from '@hilos/core'
-import type { ActionHandle, ActionResult } from '@hilos/core'
+import { ActionError, createSignal, hilosToasts } from '@hilos/core/base'
+import type { ActionHandle, ActionResult } from '@hilos/core/base'
 
 import { useTrackedAction } from '../src/useTrackedAction.js'
 

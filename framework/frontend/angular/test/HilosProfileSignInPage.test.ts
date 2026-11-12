@@ -24,7 +24,7 @@ import {
   type HilosConnection,
   type HilosProfileSignInMethod,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { profileSectionFixture } from '../../core/test/profile/profileSectionFixture.js'
 import { HilosProfileSignInPage } from '../src/profile/HilosProfileSignInPage.js'

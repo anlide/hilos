@@ -1,32 +1,18 @@
 // Pins the public surface: everything an Angular consumer may import from
 // '@hilos/angular' is exported here. Behavior is covered by the module tests.
-import { HilosPages } from '@hilos/core'
+import { HilosPages } from '@hilos/core/base'
 import { expect, it } from 'vitest'
 import {
   ConflictActions,
   ConflictHeader,
   ErrorPage,
   HILOS_AUTH_GATE,
-  HilosAnalyticsBrowserSessionPage,
-  HilosAnalyticsBrowserSessionsPage,
-  HilosAnalyticsPage,
-  HilosAnalyticsPeoplePage,
-  HilosAppearancePage,
-  HilosAnalyticsPersonPage,
-  HilosChangeLogPage,
-  HilosChangeLogTablePage,
-  HilosChangeLogTablesPage,
   HILOS_PAGE_HEADING_ID,
   HILOS_ROUTER,
   HILOS_TAKEOVER_VIEW_ONLY,
   HilosAdminPage,
   HilosAuthSurface,
   HilosBreadcrumb,
-  HilosDashboardPage,
-  HilosLegalDocumentSetPage,
-  HilosLegalDocumentDeviationsPage,
-  HilosLegalDocumentRevisionsPage,
-  HilosLegalRevisionTextPage,
   HilosDropdown,
   HilosFormError,
   HilosSendProgress,
@@ -39,16 +25,48 @@ import {
   HilosMagicLinkPage,
   HilosMaintenance,
   HilosModal,
-  HilosModerationPage,
   HilosOAuthCallbackPage,
   HilosPageHead,
   HilosProfileHead,
   HilosProfileTheme,
-  HilosSettingsPage,
   HilosSkeleton,
   HilosAvatar,
   HilosHiddenMark,
   HilosHideable,
+  HilosSwitch,
+  HilosThemeMenu,
+  HilosView,
+  HilosViewportTable,
+  HilosTableEmptyState,
+  HilosTableText,
+  LoadingButton,
+  connectionStateSignal,
+  createHilosTrackedAction,
+  injectLookOnly,
+} from '@hilos/angular/base'
+import {
+  HilosAnalyticsBrowserSessionPage,
+  HilosAnalyticsBrowserSessionsPage,
+  HilosAnalyticsPage,
+  HilosAnalyticsPeoplePage,
+  HilosAnalyticsPersonPage,
+} from '@hilos/angular/admin/analytics'
+import { HilosAppearancePage } from '@hilos/angular/admin/appearance'
+import {
+  HilosChangeLogPage,
+  HilosChangeLogTablePage,
+  HilosChangeLogTablesPage,
+} from '@hilos/angular/admin/change-log'
+import { HilosDashboardPage } from '@hilos/angular/admin/dashboard'
+import {
+  HilosLegalDocumentSetPage,
+  HilosLegalDocumentDeviationsPage,
+  HilosLegalDocumentRevisionsPage,
+  HilosLegalRevisionTextPage,
+} from '@hilos/angular/admin/legal'
+import { HilosModerationPage } from '@hilos/angular/admin/moderation'
+import { HilosSettingsPage } from '@hilos/angular/admin/settings'
+import {
   HilosI18nCountriesPage,
   HilosI18nCountryNamesPage,
   HilosI18nCountryPage,
@@ -57,21 +75,9 @@ import {
   HilosI18nLanguagePage,
   HilosI18nLanguagesPage,
   HilosI18nPage,
-  HilosSwitch,
-  HilosThemeMenu,
-  HilosUserPage,
-  HilosUsersPage,
-  HilosView,
-  HilosViewportTable,
-  HilosTableEmptyState,
-  HilosTableText,
-  LoadingButton,
-  connectionStateSignal,
-  createHilosTrackedAction,
-  hilosAdminViews,
-  injectLookOnly,
-} from '../src/index.js'
-import * as root from '../src/index.js'
+} from '@hilos/angular/admin/i18n'
+import { HilosUserPage, HilosUsersPage } from '@hilos/angular/admin/users'
+import { hilosAdminViews } from '@hilos/angular/admin-views'
 import * as base from '../src/base/index.js'
 import * as legal from '@hilos/angular/admin/legal'
 import * as moderation from '@hilos/angular/admin/moderation'
@@ -120,8 +126,6 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosModerationPage).toBeTypeOf('function')
   expect(HilosModerationPage).toBe(moderation.HilosModerationPage)
   expect(moderation.HilosModerationKindRulesPage).toBeTypeOf('function')
-  expect(root).not.toHaveProperty('HilosModerationKindPage')
-  expect(root).not.toHaveProperty('HilosModerationKindRulesPage')
   expect(base).not.toHaveProperty('HilosModerationPage')
   expect(base).not.toHaveProperty('HilosModerationKindRulesPage')
   for (const name of [
@@ -130,7 +134,6 @@ it('exports the @hilos/angular public surface', () => {
     'HilosModerationRuleDelete',
   ]) {
     expect(moderation).not.toHaveProperty(name)
-    expect(root).not.toHaveProperty(name)
     expect(base).not.toHaveProperty(name)
   }
   expect(HilosTableText).toBeTypeOf('function')
@@ -149,9 +152,7 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosLegalRevisionTextPage).toBeTypeOf('function')
   expect(HilosLegalRevisionTextPage).toBe(legal.HilosLegalRevisionTextPage)
   expect(legal).not.toHaveProperty('HilosLegalRevisionPageShell')
-  expect(root).not.toHaveProperty('HilosLegalRevisionPageShell')
   expect(legal).not.toHaveProperty('HilosLegalDocumentPageShell')
-  expect(root).not.toHaveProperty('HilosLegalDocumentPageShell')
   expect(HilosAppearancePage).toBeTypeOf('function')
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.APPEARANCE)
   expect(HilosUsersPage).toBeTypeOf('function')
@@ -223,12 +224,22 @@ it('exports table text once without exposing its mount internals', () => {
     'createTableViewportGeometry',
   ]) {
     expect(base).not.toHaveProperty(name)
-    expect(root).not.toHaveProperty(name)
   }
 })
 
-it('exports the built Status views through their section and root while keeping context pages out of defaults', async () => {
+it('exports the Status owners through their section while keeping context pages out of defaults', async () => {
   const status = await import('@hilos/angular/admin/status')
+  const owners = {
+    ...(await import('../src/admin/status/HilosStatusPage.js')),
+    ...(await import('../src/admin/status/HilosStatusComponentsPage.js')),
+    ...(await import('../src/admin/status/HilosStatusHistoryPage.js')),
+    ...(await import('../src/admin/status/HilosStatusIncidentModal.js')),
+    ...(await import('../src/admin/status/HilosStatusSubscribersPage.js')),
+    ...(await import('../src/admin/status/HilosStatusRemoveSubscriberModal.js')),
+    ...(await import('../src/admin/status/HilosStatusWorksPage.js')),
+    ...(await import('../src/admin/status/HilosStatusWorkModal.js')),
+    ...(await import('../src/admin/status/HilosStatusCancelWorkModal.js')),
+  }
   expect(Object.keys(status).sort()).toEqual([
     'HilosStatusCancelWorkModal',
     'HilosStatusComponentsPage',
@@ -252,7 +263,7 @@ it('exports the built Status views through their section and root while keeping 
     'HilosStatusCancelWorkModal',
   ] as const) {
     expect(status[name]).toBeTypeOf('function')
-    expect(root[name]).toBe(status[name])
+    expect(status[name]).toBe(owners[name])
     expect(base).not.toHaveProperty(name)
   }
   for (const page of [
@@ -269,8 +280,9 @@ it('exports the public Status alias from its own section without changing the ad
   const status = await import('@hilos/angular/status')
   const admin = await import('@hilos/angular/admin/status')
   expect(Object.keys(status)).toEqual(['HilosStatusPage'])
-  expect(root.HilosPublicStatusPage).toBe(status.HilosStatusPage)
-  expect(root.HilosStatusPage).toBe(admin.HilosStatusPage)
+  const owner = await import('../src/public/HilosStatusPage.js')
+  expect(status.HilosStatusPage).toBe(owner.HilosStatusPage)
+  expect(status.HilosStatusPage).not.toBe(admin.HilosStatusPage)
   expect(base).not.toHaveProperty('HilosPublicStatusPage')
   expect(hilosAdminViews()).not.toHaveProperty(HilosPages.PUBLIC_STATUS)
 })

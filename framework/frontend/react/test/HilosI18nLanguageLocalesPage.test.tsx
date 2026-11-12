@@ -1,6 +1,6 @@
 import { act } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { HilosPages } from '@hilos/core'
+import { HilosPages } from '@hilos/core/base'
 import { HilosI18nLanguageLocalesPage } from '../src/admin/i18n/details/HilosI18nLanguageLocalesPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 import {

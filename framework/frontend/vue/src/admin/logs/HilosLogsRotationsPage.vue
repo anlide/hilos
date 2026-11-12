@@ -19,7 +19,7 @@ empty-state discrimination and the wording are the core headless's
 (hilosLogRotations); this view owns only the markup, so a project mounts it by passing
 its HilosLogRotationsContext. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { formatMoment } from '@hilos/core'
+import { formatMoment } from '@hilos/core/base'
 import { formatHilosNodeLabel } from '@hilos/core/admin/daemon'
 import {
   createHilosLogRotationsActions,

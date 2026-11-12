@@ -35,7 +35,7 @@ import {
   type PageRouteMatch,
   type ProjectSignal,
   type TableViewportDescriptor,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { formatMoment } from '@hilos/core/base'
 import { afterEach, describe, expect, it } from 'vitest'
 

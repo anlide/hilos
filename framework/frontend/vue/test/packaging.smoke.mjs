@@ -45,7 +45,22 @@ function assertAcyclic(entry, visiting = new Set(), visited = new Set()) {
   visited.add(entry)
 }
 
-assertAcyclic('index.js')
+for (const entry of Object.keys(graph)) assertAcyclic(entry)
+for (const source of [
+  'src/hilosRouterKey.ts',
+  'src/auth/hilosAuthGateKey.ts',
+  'src/hilosPageHeading.ts',
+  'src/hilosAdminViewMode.ts',
+  'src/hilosTableSelectionEdge.ts',
+  'src/hilosViewLayer.ts',
+]) {
+  assert.equal(
+    Object.values(graph).filter((chunk) => chunk.modules.includes(source))
+      .length,
+    1,
+    `Singleton compiler owner: ${source}`,
+  )
+}
 const base = closure('base.js')
 assert.ok(modules(base).includes('src/base/index.ts'))
 assert.ok(!modules(base).some((id) => id.startsWith('src/admin/')))
@@ -75,6 +90,14 @@ assert.deepEqual(
   [],
 )
 
+assert.equal(Object.keys(manifest.exports).length, 23)
+for (const name of ['@hilos/vue', '@hilos/core']) {
+  assert.throws(
+    () => import.meta.resolve(name),
+    /ERR_PACKAGE_PATH_NOT_EXPORTED/,
+  )
+}
+
 // Type-check an installed consumer against emitted declarations, with no source
 // alias and no fixture written into the repository.
 const typeFixture = join(packageDir, 'test/__packaging_types__.ts')
@@ -82,7 +105,6 @@ const typeSource = `
   import { HilosProfileHead, HilosTableText } from '@hilos/vue/base'
   import { HilosStatusPage, HilosStatusComponentsPage, HilosStatusIncidentModal, HilosStatusSubscribersPage, HilosStatusRemoveSubscriberModal, HilosStatusWorksPage, HilosStatusWorkModal, HilosStatusCancelWorkModal } from '@hilos/vue/admin/status'
   import { HilosStatusPage as PublicStatusPage } from '@hilos/vue/status'
-  import { HilosProfileHead as RootProfileHead, HilosPublicStatusPage } from '@hilos/vue'
   import type { ActionLifecycle, HilosConnection, HilosProfileHeadStore, HilosProfilePageContext } from '@hilos/core/base'
   import { HilosModerationPage, HilosModerationKindRulesPage } from '@hilos/vue/admin/moderation'
   import type { HilosStatusContext, HilosStatusIncidentController, HilosStatusSubscribersContext, HilosStatusSubscriberController, HilosStatusWorksContext, HilosStatusWorksState, HilosStatusWorkCreate, HilosStatusWorkEdit, HilosStatusWorkCancel } from '@hilos/core/admin/status'
@@ -105,7 +127,6 @@ const typeSource = `
   type ProfileHeadProps = InstanceType<typeof HilosProfileHead>['$props']
   const profileContext: Same<ProfileHeadProps['context'], HilosProfilePageContext> = true
   const profileStore: Same<ProfileHeadProps['store'], HilosProfileHeadStore | undefined> = true
-  const profileRoot: Same<typeof HilosProfileHead, typeof RootProfileHead> = true
   declare const context: HilosProfilePageContext
   declare const store: HilosProfileHeadStore
   const ownedHead: ProfileHeadProps = { context }
@@ -114,7 +135,6 @@ const typeSource = `
   const missingProfileContext: ProfileHeadProps = {}
   void profileContext
   void profileStore
-  void profileRoot
   void ownedHead
   void borrowedHead
   void missingProfileContext
@@ -149,7 +169,6 @@ const typeSource = `
   const missingRemove: RemoveProps = {}
   const publicConnection: Same<PublicProps['connection'], HilosConnection> = true
   const publicActions: Same<PublicProps['actions'], ActionLifecycle> = true
-  const publicAlias: Same<typeof PublicStatusPage, typeof HilosPublicStatusPage> = true
   declare const connection: HilosConnection
   declare const actions: ActionLifecycle
   const coldStatus: PublicProps = { connection, actions }
@@ -287,16 +306,16 @@ try {
         load(id) {
           if (id !== fixture) return
           return `
-            import * as root from '@hilos/vue'
             import * as base from '@hilos/vue/base'
             import { hilosAdminViews } from '@hilos/vue/admin-views'
             import { HilosSettingsPage } from '@hilos/vue/admin/settings'
             import { HilosStatusPage as PublicStatusPage } from '@hilos/vue/status'
-            import * as coreRoot from '@hilos/core'
             import * as coreBase from '@hilos/core/base'
             import * as coreSettings from '@hilos/core/admin/settings'
+            import * as coreBackup from '@hilos/core/admin/backup'
+            import * as adminStatus from '@hilos/vue/admin/status'
             import { HilosPages } from '@hilos/core/base'
-            export const sameCore = ${[
+            export const baseValues = ${[
               'HilosConnection',
               'ScopeManager',
               'createHilosRouter',
@@ -314,22 +333,16 @@ try {
               'PROTECTED_MODE_FALLBACK_COPY',
               'PROTECTED_MODE_PASS_COPY',
             ]
-              .map(
-                (key) =>
-                  `coreRoot.${key} !== undefined && coreRoot.${key} === coreBase.${key}`,
-              )
+              .map((key) => `coreBase.${key} !== undefined`)
               .join(' && ')}
-            export const sameCoreSection = ${[
+            export const sectionValues = ${[
               'createHilosSettingsTable',
               'createHilosSettingsActions',
               'SETTING_KEY_FIELD',
             ]
-              .map(
-                (key) =>
-                  `coreRoot.${key} !== undefined && coreRoot.${key} === coreSettings.${key}`,
-              )
+              .map((key) => `coreSettings.${key} !== undefined`)
               .join(' && ')}
-            export const sameTokens = ${[
+            export const tokenValues = ${[
               'hilosRouterKey',
               'hilosAuthGateKey',
               'hilosPageHeadingIdKey',
@@ -338,30 +351,29 @@ try {
               'hilosTableSelectionEdgeKey',
               'HILOS_VIEW_LAYER',
             ]
-              .map(
-                (key) =>
-                  `root.${key} !== undefined && root.${key} === base.${key}`,
-              )
+              .map((key) => `base.${key} !== undefined`)
               .join(' && ')}
-            export const samePage = root.HilosSettingsPage === HilosSettingsPage
-            export const sameHistory = root.HilosLegalHistoryPage !== undefined && root.HilosLegalHistoryPage === base.HilosLegalHistoryPage
-            export const samePublicStatus = root.HilosPublicStatusPage === PublicStatusPage &&
-              PublicStatusPage !== root.HilosStatusPage && !('HilosPublicStatusPage' in base) &&
+            export const settingsPage = typeof HilosSettingsPage === 'object'
+            export const historyPage = base.HilosLegalHistoryPage !== undefined
+            export const samePublicStatus =               PublicStatusPage !== adminStatus.HilosStatusPage && !('HilosPublicStatusPage' in base) &&
               !(HilosPages.PUBLIC_STATUS in hilosAdminViews())
             export const samePageHead =
-              root.HilosPageHead !== undefined && root.HilosPageHead === base.HilosPageHead
+              base.HilosPageHead !== undefined
             export const sameProfileHead =
-              root.HilosProfileHead !== undefined && root.HilosProfileHead === base.HilosProfileHead
+              base.HilosProfileHead !== undefined
             export const sameTableText =
-              root.HilosTableText !== undefined && root.HilosTableText === base.HilosTableText
+              base.HilosTableText !== undefined
             export const privateText = ${[
               'HilosTableValue',
               'hilosTableTextKey',
               'useTableTextReading',
               'useTableTextOverflow',
             ]
-              .map((name) => `!('${name}' in root) && !('${name}' in base)`)
+              .map((name) => `!('${name}' in base)`)
               .join(' && ')}
+            export const sharedRestore = ['BACKUP_SIGNAL_SCHEMAS', 'backupProgressPercent', 'createBackupProgressClock', 'createHilosRestoreProgress', 'formatBackupProgressLabel', 'formatRestoreOutcomeLine', 'formatRestorePhaseLine'].every(
+              key => coreBase[key] !== undefined && coreBase[key] === coreBackup[key],
+            )
             export const descriptors = Object.values(hilosAdminViews()).every(
               view => view.kind === 'lazy-page' && typeof view.load === 'function',
             )
@@ -372,13 +384,12 @@ try {
             export async function loadStatus() {
               const section = await import('@hilos/vue/admin/status')
               return ['HilosStatusPage', 'HilosStatusComponentsPage', 'HilosStatusIncidentModal', 'HilosStatusSubscribersPage', 'HilosStatusRemoveSubscriberModal', 'HilosStatusWorksPage', 'HilosStatusWorkModal', 'HilosStatusCancelWorkModal'].every(
-                key => section[key] !== undefined && section[key] === root[key],
+                key => typeof section[key] === 'object',
               ) && !(HilosPages.STATUS in hilosAdminViews()) && !(HilosPages.STATUS_COMPONENTS in hilosAdminViews()) && !(HilosPages.STATUS_WORKS in hilosAdminViews())
             }
             export async function loadModeration() {
               const section = await import('@hilos/vue/admin/moderation')
               return section.HilosModerationPage !== undefined &&
-                section.HilosModerationPage === root.HilosModerationPage &&
                 !(HilosPages.MODERATION in hilosAdminViews())
             }
             export async function loadDefaults() {
@@ -396,16 +407,17 @@ try {
     },
   })
   const consumer = await import(pathToFileURL(join(output, 'fixture.mjs')).href)
-  assert.equal(consumer.sameCore, true)
-  assert.equal(consumer.sameCoreSection, true)
-  assert.equal(consumer.sameTokens, true)
-  assert.equal(consumer.samePage, true)
-  assert.equal(consumer.sameHistory, true)
+  assert.equal(consumer.baseValues, true)
+  assert.equal(consumer.sectionValues, true)
+  assert.equal(consumer.tokenValues, true)
+  assert.equal(consumer.settingsPage, true)
+  assert.equal(consumer.historyPage, true)
   assert.equal(consumer.samePublicStatus, true)
   assert.equal(consumer.samePageHead, true)
   assert.equal(consumer.sameProfileHead, true)
   assert.equal(consumer.sameTableText, true)
   assert.equal(consumer.privateText, true)
+  assert.equal(consumer.sharedRestore, true)
   assert.equal(consumer.descriptors, true)
   assert.equal(await consumer.loadDashboard(), true)
   assert.equal(await consumer.loadStatus(), true)

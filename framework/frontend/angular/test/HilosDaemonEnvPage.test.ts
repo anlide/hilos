@@ -2,11 +2,9 @@ import { openNodePage } from './helpers/hilosDaemonNode.js'
 import {
   DAEMON_ENV_ENVIRONMENT_DATA,
   DAEMON_ENV_NODE_SILENT_DATA,
-  HIDDEN_VALUE,
-  HilosPages,
-  ScopeManager,
   type HilosDaemonEnvKeyRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
+import { HIDDEN_VALUE, HilosPages, ScopeManager } from '@hilos/core/base'
 import { describe, expect, it } from 'vitest'
 
 import { HilosDaemonEnvPage } from '../src/admin/daemon/HilosDaemonEnvPage.js'

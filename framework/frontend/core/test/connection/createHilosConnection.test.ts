@@ -207,17 +207,6 @@ describe('createHilosConnection', () => {
       }
     }
     expect(unknown).not.toHaveBeenCalled()
-
-    const core = await import('../../src/index.js')
-    const rootGroups = Object.entries(core).filter(([name]) =>
-      name.endsWith('_SIGNAL_SCHEMAS'),
-    )
-    expect(baseGroups.map(([name]) => name).sort()).toEqual(
-      rootGroups.map(([name]) => name).sort(),
-    )
-    for (const [name, schemas] of rootGroups) {
-      expect(base[name as keyof typeof base]).toBe(schemas)
-    }
   })
 
   it('merges every signal schema group @hilos/core exports', async () => {
@@ -226,7 +215,7 @@ describe('createHilosConnection', () => {
     // schema answers an empty payload with projectSignal or parseFailure; only a
     // schema nobody merged answers unknownSignal.
     const { connection, socket } = openConnection()
-    const core = await import('../../src/index.js')
+    const core = await import('../../src/base/index.js')
     const groups = Object.entries(core).filter(([name]) =>
       name.endsWith('_SIGNAL_SCHEMAS'),
     ) as [string, ProjectSignalSchemas][]

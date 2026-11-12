@@ -151,8 +151,8 @@ the only environment that uses the dev server.
 All six demos defer their admin page implementations with explicit
 `lazyPage(() => import(...).then(...))` bindings. Common shell code comes from
 the SDK's `/base`, default lazy metadata from `/admin-views`, and a wrapper's
-admin implementation from `/admin/<section>`. The compatibility root remains
-available, but reaches more code than an initial performance consumer wants.
+admin implementation from `/admin/<section>`. The four SDK packages have no
+public bare entry; consumers use these existing owner subpaths.
 The package graph and conditions are in
 [sdk-packaging.md](sdk-packaging.md#public-entrypoints-and-their-graph).
 
@@ -240,7 +240,7 @@ The supported build-reader shape is deliberately narrower than the runtime
 
 - The installed production core supplies its verified framework route flags.
   The configured project route input has one direct, imported
-  `createAppPageRouter(map)` call (core root or base), with a literal map or a
+  `createAppPageRouter(map)` call from `@hilos/core/base`, with a literal map or a
   same-file `const` map. Every route has literal `path` and `admin` values;
   keys can resolve through stable constants/imports.
 - The configured outlet input has exactly one literal `const pages` (Vue/React)
@@ -460,13 +460,18 @@ evidence of completion by itself.
 `sdkDistStale` also checks every public production/type target in package exports
 and, for core, every source owner's JS, declaration, map and receipt with matching
 source/output/map hashes. Missing or uncertain evidence in those checks rebuilds.
-This completeness check follows the source manifest's `exports`: Angular's plain
-source manifest has none, so it does not independently enumerate all secondary
-FESMs/types. Installed APF targets, compiler maps and source snapshots are checked
-by the production graph proof and package smoke checks. The prebuild skip alone
-is not that proof. The Angular layer's `prebuild-sdk.mjs core` mode never installs:
-it runs inside the workspace build already in progress and only builds core if
-needed.
+For core, Vue and React this completeness check follows the source manifest's
+`exports`. Angular's source wrapper has none: `sdkDistStale` validates the
+finalized `dist/package.json` against the source secondary-entry declarations,
+including all 23 runtime subpaths, `./package.json`, production/type targets and
+the Sass asset. Missing, old, pre-finalized or incomplete APF output rebuilds,
+including interruption between ng-packagr and `bin/finalize-apf.mjs`. The
+finalizer removes `.` and root `main`/`module`/`types`/`typings` metadata while
+preserving secondary owners. Installed APF compiler maps and source snapshots
+are also checked by the production graph proof and package smoke checks. The
+prebuild skip alone is not that proof. The Angular layer's
+`prebuild-sdk.mjs core` mode never installs: it runs inside the workspace build
+already in progress and only builds core if needed.
 
 An install is skippable when
 `node_modules` carries a stamp naming the sha256 of the current

@@ -1,6 +1,6 @@
 import { act, fireEvent } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { createHilosI18nCountryRowWindow } from '@hilos/core'
+import { createHilosI18nCountryRowWindow } from '@hilos/core/admin/i18n'
 import { HilosI18nCountryWindow } from '../src/admin/i18n/details/HilosI18nCountryWindow.js'
 import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 import {

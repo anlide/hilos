@@ -7,9 +7,9 @@ import {
   ingest,
   ScopeManager,
   type HilosConnection,
-  type HilosDaemonEnvMismatchSummary,
   type HilosRouter,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import { type HilosDaemonEnvMismatchSummary } from '@hilos/core/admin/daemon'
 import { HilosDaemonEnvMismatchPage } from '../src/admin/daemon/HilosDaemonEnvMismatchPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 

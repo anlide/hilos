@@ -25,7 +25,10 @@ import {
 import { applyServerTime } from '../../src/session/serverClock.js'
 import { bindSessionScope } from '../../src/session/sessionScope.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
-import { type HilosConnection, type ProjectSignal } from '../../src/index.js'
+import {
+  type HilosConnection,
+  type ProjectSignal,
+} from '../../src/base/index.js'
 
 /** One day, in ms. */
 const DAY_MS = 86_400_000

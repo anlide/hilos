@@ -1,7 +1,5 @@
 import {
   ActionError,
-  DAEMON_NODE_DATA,
-  DAEMON_PROCESSES_REPORTED_DATA,
   HilosPages,
   createSignal,
   bindAdminAccess,
@@ -9,7 +7,11 @@ import {
   type ActionHandle,
   type ActionLifecycle,
   type ActionResult,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  DAEMON_NODE_DATA,
+  DAEMON_PROCESSES_REPORTED_DATA,
+} from '@hilos/core/admin/daemon'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosDaemonAgentsPage } from '../src/admin/daemon/HilosDaemonAgentsPage.js'

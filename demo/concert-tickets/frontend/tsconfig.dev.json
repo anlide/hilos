@@ -31,7 +31,6 @@
     "paths": {
       "@angular/core": ["./node_modules/@angular/core"],
       "@angular/common": ["./node_modules/@angular/common"],
-      "@hilos/angular": ["../../../framework/frontend/angular/src/index.ts"],
       "@hilos/angular/base": [
         "../../../framework/frontend/angular/src/base/index.ts"
       ],
@@ -104,7 +103,6 @@
       "@hilos/core/status": [
         "../../../framework/frontend/core/src/status/index.ts"
       ],
-      "@hilos/core": ["../../../framework/frontend/core/src/index.ts"],
       "@hilos/core/base": [
         "../../../framework/frontend/core/src/base/index.ts"
       ],

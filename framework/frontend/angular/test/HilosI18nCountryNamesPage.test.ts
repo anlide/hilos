@@ -15,8 +15,8 @@
 // in place of the shared head and the table, the name window and its draft kept
 // above it with Save refused, focus returned home from an opener the table took
 // away, and every other way out as before.
-import { HilosPages } from '@hilos/core'
-import type { PageSubscriptionError } from '@hilos/core'
+import { HilosPages } from '@hilos/core/base'
+import type { PageSubscriptionError } from '@hilos/core/base'
 import { describe, expect, it } from 'vitest'
 
 import { HilosI18nCountryNamesPage } from '../src/admin/i18n/details/HilosI18nCountryNamesPage.js'

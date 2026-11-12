@@ -203,8 +203,9 @@ export class App {
 `@hilos/angular/admin/settings`; its context type comes from
 `@hilos/core/admin/settings`. Eager classes remain valid map values. Construction
 starts no import, and a loaded component mounts only after a permitting server
-reply. The compatibility root still works, while performance consumers use
-subpaths. See [page bindings](../agents/frontend/page-module-structure.md#binding-eager-and-lazy-page-modules)
+reply. Supported imports use `/base`, `/admin-views`, `/status` and
+`/admin/<section>`; the package has no public bare entry. See
+[page bindings](../agents/frontend/page-module-structure.md#binding-eager-and-lazy-page-modules)
 and [runtime semantics](../agents/frontend/multiframework-core.md#page-code-and-first-answer-state)
 for the outlet cache, continuous skeleton deadline, refusals and failed-ESM retry
 limits.
@@ -301,8 +302,11 @@ declarables as program inputs:
 
 - **Production** uses the app/server production tsconfigs without SDK source
   redirects. Local `file:` installs resolve the plain package and secondary-entry
-  forwarders to dist FESMs/types; the published APF dist manifest has generated
-  `types`/`default` exports. Rebuild the SDK before e2e/prod.
+  forwarders to dist FESMs/types. After ng-packagr, `bin/finalize-apf.mjs`
+  removes `.` and root `main`/`module`/`types`/`typings` metadata from the APF
+  dist manifest and validates its 23 runtime subpaths plus `./package.json`,
+  `types`/`default` targets and Sass asset. The required `src/apf-primary.ts`
+  contains only `export {}` and is internal. Rebuild the SDK before e2e/prod.
 - **Dev** (`ng serve` and the `development` build it drives) uses
   `tsconfig.dev.json`. Every public SDK alias resolves directly to its real
   framework source root outside `node_modules`. The two Angular pins stay on
@@ -312,7 +316,6 @@ declarables as program inputs:
   "paths": {
     "@angular/core": ["./node_modules/@angular/core"],
     "@angular/common": ["./node_modules/@angular/common"],
-    "@hilos/angular": ["../../../framework/frontend/angular/src/index.ts"],
     "@hilos/angular/base": ["../../../framework/frontend/angular/src/base/index.ts"],
     "@hilos/angular/admin-views": ["../../../framework/frontend/angular/src/admin/hilosAdminViews.ts"],
     "@hilos/angular/admin/analytics": ["../../../framework/frontend/angular/src/admin/analytics/index.ts"],
@@ -328,6 +331,7 @@ declarables as program inputs:
     "@hilos/angular/admin/logs": ["../../../framework/frontend/angular/src/admin/logs/index.ts"],
     "@hilos/angular/admin/maintenance": ["../../../framework/frontend/angular/src/admin/maintenance/index.ts"],
     "@hilos/angular/admin/mcp-skills": ["../../../framework/frontend/angular/src/admin/mcpSkills/index.ts"],
+    "@hilos/angular/admin/moderation": ["../../../framework/frontend/angular/src/admin/moderation/index.ts"],
     "@hilos/angular/admin/roles": ["../../../framework/frontend/angular/src/admin/roles/index.ts"],
     "@hilos/angular/admin/security": ["../../../framework/frontend/angular/src/admin/security/index.ts"],
     "@hilos/angular/admin/settings": ["../../../framework/frontend/angular/src/admin/settings/index.ts"],
@@ -335,7 +339,6 @@ declarables as program inputs:
     "@hilos/angular/admin/status": ["../../../framework/frontend/angular/src/admin/status/index.ts"],
     "@hilos/angular/admin/users": ["../../../framework/frontend/angular/src/admin/users/index.ts"],
     "@hilos/angular/status": ["../../../framework/frontend/angular/src/status/index.ts"],
-    "@hilos/core": ["../../../framework/frontend/core/src/index.ts"],
     "@hilos/core/base": ["../../../framework/frontend/core/src/base/index.ts"],
     "@hilos/core/status": ["../../../framework/frontend/core/src/status/index.ts"],
     "@hilos/core/admin/i18n": ["../../../framework/frontend/core/src/admin/i18n/index.ts"],
@@ -351,6 +354,7 @@ declarables as program inputs:
     "@hilos/core/admin/change-log": ["../../../framework/frontend/core/src/admin/changeLog/index.ts"],
     "@hilos/core/admin/analytics": ["../../../framework/frontend/core/src/admin/analytics/index.ts"],
     "@hilos/core/admin/legal": ["../../../framework/frontend/core/src/admin/legal/index.ts"],
+    "@hilos/core/admin/moderation": ["../../../framework/frontend/core/src/admin/moderation/index.ts"],
     "@hilos/core/admin/status": ["../../../framework/frontend/core/src/admin/status/index.ts"]
   }
   ```
@@ -405,8 +409,11 @@ declarables as program inputs:
 **Why `paths`, not the package `development` export condition (the Vite demos'
 mechanism):** ng-packagr generates the dist `exports` and warns if the source
 package.json declares conflicting `types`/`default` conditions. So
-`@hilos/angular`'s source package stays plain (`main`/`module`/`types`) and the
-dev-source redirect lives in the consumer's `tsconfig.dev.json`.
+`@hilos/angular`'s source wrapper declares neither `exports` nor root
+`main`/`module`/`types` metadata. Secondary-entry forwarders serve local
+production installs, the finalized dist manifest declares the published APF
+exports, and the dev-source redirect lives in the consumer's `tsconfig.dev.json`.
+Do not add bare SDK aliases to that config.
 
 ### The duplicate-copy collapse — NG0203 / NG3004
 

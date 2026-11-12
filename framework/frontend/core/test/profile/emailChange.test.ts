@@ -21,7 +21,7 @@ import {
   type ActionHandle,
   type ActionLifecycle,
   type HilosConnection,
-} from '../../src/index.js'
+} from '../../src/base/index.js'
 
 const SKIP = { required: false, purpose: 'change your email' }
 const ASK = { required: true, purpose: 'change your email', method: 'password' }

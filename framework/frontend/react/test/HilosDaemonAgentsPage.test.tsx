@@ -21,9 +21,9 @@ import {
   HilosPages,
   type HilosConnection,
   type HilosRouter,
-  type HilosDaemonNodeHeading,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import { type HilosDaemonNodeHeading } from '@hilos/core/admin/daemon'
 import { HilosDaemonAgentsPage } from '../src/admin/daemon/HilosDaemonAgentsPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 

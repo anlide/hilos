@@ -19,11 +19,9 @@ import {
   watchSocketFrames,
   type SocketFrame,
 } from '../../../../../framework/frontend/e2e/index.js'
-import {
-  AUTH_ACTION_LOGIN,
-  HilosPages,
-  resolveHilosPath,
-} from '../../../../../framework/frontend/core/src/index.js'
+import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/auth/authProtocol.js'
+import { HilosPages } from '../../../../../framework/frontend/core/src/routing/hilosPages.js'
+import { resolveHilosPath } from '../../../../../framework/frontend/core/src/routing/hilosAdmin.js'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'

@@ -14,15 +14,15 @@ import {
   entityCollection,
   USER_ENTITY_TYPE,
   userFromFields,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionLifecycleSource,
   Hideable,
   HilosRouter,
-  HilosUsersContext,
   PageRouteMatch,
   TableViewportDescriptor,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosUsersContext } from '@hilos/core/admin/users'
 
 import { HilosUsersPage } from '../src/admin/users/HilosUsersPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

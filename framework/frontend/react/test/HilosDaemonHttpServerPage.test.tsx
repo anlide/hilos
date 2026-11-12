@@ -3,16 +3,18 @@ import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ingest,
-  type HilosDaemonHttpSummary,
   ScopeManager,
   pageIdentity,
   createSignal,
   HilosPages,
   type HilosConnection,
   type HilosRouter,
-  type HilosDaemonNodeHeading,
   type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  type HilosDaemonHttpSummary,
+  type HilosDaemonNodeHeading,
+} from '@hilos/core/admin/daemon'
 import { HilosDaemonHttpServerPage } from '../src/admin/daemon/HilosDaemonHttpServerPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 

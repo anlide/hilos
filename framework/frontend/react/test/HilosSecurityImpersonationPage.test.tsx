@@ -11,17 +11,14 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   ActionLifecycle,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
-  HilosImpersonationSettingKey,
   HilosPages,
   ScopeManager,
   createSignal,
   hilosToasts,
-} from '@hilos/core'
-import type {
-  HilosImpersonationContext,
-  HilosRouter,
-  PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import { HilosImpersonationSettingKey } from '@hilos/core/admin/security'
+import type { HilosImpersonationContext } from '@hilos/core/admin/security'
+import type { HilosRouter, PageRouteMatch } from '@hilos/core/base'
 
 import { HilosSecurityImpersonationPage } from '../src/admin/security/HilosSecurityImpersonationPage.js'
 import { HilosTakeoverViewOnlyContext } from '../src/hilosLookOnly.js'

@@ -33,6 +33,7 @@ import {
   effect,
   input,
   signal,
+  untracked,
   viewChild,
   viewChildren,
 } from '@angular/core'
@@ -418,7 +419,8 @@ export class HilosToastHost {
       const onVisibility = (): void => {
         this.setHold('tab', document.hidden)
       }
-      onVisibility()
+      // Attaching the viewer must not track the holds this effect writes.
+      untracked(onVisibility)
       window.addEventListener('resize', onResize)
       document.addEventListener('visibilitychange', onVisibility)
       onCleanup(() => {

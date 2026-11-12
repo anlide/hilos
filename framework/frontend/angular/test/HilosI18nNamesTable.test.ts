@@ -6,21 +6,22 @@
 // included. The frame and the expandable rule are the core's and tested there.
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core'
 import { TestBed } from '@angular/core/testing'
+import { ScopeManager, createSignal } from '@hilos/core/base'
 import {
   HILOS_I18N_COUNTRY_NAMES,
   HILOS_I18N_LANGUAGE_NAMES,
-  ScopeManager,
   createHilosI18nNamesTable,
-  createSignal,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import type {
   ActionLifecycle,
   HilosConnection,
-  HilosI18nNameRow,
-  HilosI18nNamesTarget,
   TableRow,
   TableViewportController,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type {
+  HilosI18nNameRow,
+  HilosI18nNamesTarget,
+} from '@hilos/core/admin/i18n'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { HilosI18nNamesTable } from '../src/admin/i18n/details/HilosI18nNamesTable.js'

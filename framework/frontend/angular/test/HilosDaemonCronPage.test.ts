@@ -4,6 +4,8 @@ import {
   DAEMON_CRON_NEXT_RUN_FIELD,
   DAEMON_CRON_REPORTED_DATA,
   DAEMON_NODE_DATA,
+} from '@hilos/core/admin/daemon'
+import {
   HilosPages,
   ScopeManager,
   bindAdminAccess,
@@ -12,7 +14,7 @@ import {
   type HilosConnection,
   type TableRow,
   type TableSortOrder,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { describe, expect, it, vi } from 'vitest'
 
 import { HilosDaemonCronPage } from '../src/admin/daemon/HilosDaemonCronPage.js'

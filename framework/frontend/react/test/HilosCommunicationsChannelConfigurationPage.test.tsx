@@ -14,14 +14,14 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosCommunicationsContext } from '@hilos/core/admin/communications'
 import type {
-  HilosCommunicationsContext,
   HilosConnection,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosCommunicationsChannelConfigurationPage } from '../src/admin/communications/HilosCommunicationsChannelConfigurationPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

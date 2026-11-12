@@ -1,44 +1,44 @@
-import { HIDDEN_VALUE } from '@hilos/core/base'
+// Vue projection and lifecycle for the shared Hideable scenarios.
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { h } from 'vue'
 
+import {
+  registerHideableCases,
+  type HideableInput,
+  type HideableView,
+} from '../../test-support/hideableCases.js'
 import HilosHideable from './HilosHideable.vue'
 
-describe('HilosHideable', () => {
-  it('prints a value that is not hidden as text when given no slot', () => {
-    const wrapper = mount(HilosHideable, { props: { value: 'Olena' } })
-
-    expect(wrapper.text()).toBe('Olena')
-    expect(wrapper.find('[data-id="hilos-hidden"]').exists()).toBe(false)
-  })
-
-  it('hands a value that is not hidden to the slot', () => {
+/** Mount the real component, translating projection into a scoped slot. */
+async function mountHideable(input: HideableInput): Promise<HideableView> {
+  const host = document.body.appendChild(document.createElement('div'))
+  try {
+    const renderValue = input.renderValue
     const wrapper = mount(HilosHideable, {
-      props: { value: 'olena@example.com' },
-      slots: {
-        default: ({ value }: { value: unknown }) =>
-          h('code', { 'data-id': 'shown' }, String(value).toUpperCase()),
-      },
+      attachTo: host,
+      props: { value: input.value },
+      slots: renderValue
+        ? {
+            default: ({ value }: { value: unknown }) =>
+              h('code', { 'data-id': 'shown' }, renderValue(value)),
+          }
+        : {},
     })
-
-    expect(wrapper.get('[data-id="shown"]').text()).toBe('OLENA@EXAMPLE.COM')
-  })
-
-  it('draws the hidden mark for a hidden value and never calls the slot', () => {
-    let called = false
-    const wrapper = mount(HilosHideable, {
-      props: { value: HIDDEN_VALUE },
-      slots: {
-        default: () => {
-          called = true
-
-          return h('code', 'never')
-        },
+    return {
+      root: host,
+      async unmount() {
+        try {
+          wrapper.unmount()
+        } finally {
+          host.remove()
+        }
       },
-    })
+    }
+  } catch (error) {
+    host.remove()
+    throw error
+  }
+}
 
-    expect(wrapper.get('[data-id="hilos-hidden"]').text()).toBe('Hidden')
-    expect(called).toBe(false)
-  })
-})
+registerHideableCases('Vue', { describe, it, expect }, mountHideable)

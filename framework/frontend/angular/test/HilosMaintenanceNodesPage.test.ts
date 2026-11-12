@@ -13,7 +13,7 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   HilosConnection,
   HilosPageIdentity,
@@ -22,7 +22,7 @@ import type {
   ProjectSignal,
   TableViewportController,
   WritableSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import {
   HILOS_MAINTENANCE_NODES_COPY,
   type HilosMaintenanceContext,

@@ -13,7 +13,7 @@ import {
   type ActionLifecycle,
   type HilosConnection,
   type HilosProfileRename as HilosProfileRenameBinding,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HILOS_CONNECTION_INTERACTION } from '../src/hilosConnectionInteraction.js'
 import { HilosProfileRename } from '../src/profile/HilosProfileRename.js'

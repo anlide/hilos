@@ -2,12 +2,11 @@ import { act, fireEvent } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import {
   HILOS_I18N_COUNTRY_NAME_COPY,
-  HilosPages,
   createHilosI18nCountryNameWindow,
-  createSignal,
   type HilosI18nCountryCard,
   type HilosI18nNameRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
+import { HilosPages, createSignal } from '@hilos/core/base'
 import { HilosI18nCountryNameWindow } from '../src/admin/i18n/details/HilosI18nCountryNameWindow.js'
 import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 import {

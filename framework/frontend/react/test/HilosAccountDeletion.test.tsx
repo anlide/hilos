@@ -18,7 +18,7 @@ import {
   type HilosRouter,
   type HilosSecondFactorContext,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosAccountDeletion } from '../src/profile/HilosAccountDeletion.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 

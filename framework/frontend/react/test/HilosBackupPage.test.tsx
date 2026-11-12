@@ -13,7 +13,7 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import {
   createAppPageRouter,
   formatMoment,
@@ -30,12 +30,12 @@ import type {
   ActionHandle,
   ActionLifecycle,
   ActionResult,
-  HilosBackupsContext,
   HilosConnection,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosBackupsContext } from '@hilos/core/admin/backup'
 
 import { HilosBackupPage } from '../src/admin/backup/HilosBackupPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

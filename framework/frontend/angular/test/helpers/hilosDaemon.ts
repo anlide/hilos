@@ -11,10 +11,12 @@ import {
   type HilosRouter,
   type PageRouteMatch,
   type ActionLifecycle,
+  type TableRow,
+} from '@hilos/core/base'
+import {
   type HilosDaemonOverviewNode,
   type HilosDaemonOverviewData,
-  type TableRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/daemon'
 import { vi } from 'vitest'
 
 import { HILOS_ROUTER } from '../../src/hilosRouterToken.js'

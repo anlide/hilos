@@ -18,7 +18,7 @@ import {
   SIGNAL_TYPE_PAGE_RESPONSE,
   ScopeManager,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { hilosBrowserTimeZone, hilosTimeZone } from '@hilos/core/base'
 import type { HilosLogNodeRow } from '@hilos/core/admin/logs'
 import type {
@@ -28,7 +28,7 @@ import type {
   HilosLogsOverviewNode,
   HilosRouter,
   PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
 import { HilosLogsPage } from '../src/admin/logs/HilosLogsPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'

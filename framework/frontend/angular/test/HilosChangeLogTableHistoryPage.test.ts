@@ -3,9 +3,6 @@ import { Component, signal } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   ActionLifecycle,
-  CHANGE_LOG_TABLE_COPY,
-  CHANGE_LOG_TABLE_SECTION,
-  HILOS_CHANGE_LOG_RECEIPT_READ,
   HilosPages,
   ScopeManager,
   bindAdminAccess,
@@ -17,13 +14,18 @@ import {
   type ActionLifecycleSource,
   type ActionSuccessSignal,
   type ConnectionState,
-  type HilosChangeLogReceiptContext,
   type HilosPageIdentity,
   type HilosRouter,
   type PageError,
   type PageRouteMatch,
   type TableRowFragment,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import {
+  CHANGE_LOG_TABLE_COPY,
+  CHANGE_LOG_TABLE_SECTION,
+  HILOS_CHANGE_LOG_RECEIPT_READ,
+  type HilosChangeLogReceiptContext,
+} from '@hilos/core/admin/change-log'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosChangeLogTableHistoryPage } from '../src/admin/changeLog/HilosChangeLogTableHistoryPage.js'

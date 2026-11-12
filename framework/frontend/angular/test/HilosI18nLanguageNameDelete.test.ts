@@ -6,11 +6,11 @@
 // the admin view mode who opens and reads it but cannot confirm. The dispatch is
 // the core's and is tested there.
 import { signal } from '@angular/core'
-import { HilosPages } from '@hilos/core'
+import { HilosPages } from '@hilos/core/base'
 import type {
   HilosI18nLanguageNameDeleteTarget,
   HilosI18nNameRow,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { describe, expect, it } from 'vitest'
 
 import { HilosI18nLanguageNameDelete } from '../src/admin/i18n/details/HilosI18nLanguageNameDelete.js'

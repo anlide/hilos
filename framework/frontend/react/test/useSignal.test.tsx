@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, render, screen } from '@testing-library/react'
-import { createSignal } from '@hilos/core'
-import type { ReadonlySignal } from '@hilos/core'
+import { createSignal } from '@hilos/core/base'
+import type { ReadonlySignal } from '@hilos/core/base'
 import { useSignal } from '../src/useSignal.js'
 
 function Probe({ source }: { source: ReadonlySignal<number> }) {

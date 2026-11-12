@@ -6,7 +6,6 @@ import {
   type TableViewportController,
   ActionLifecycle,
   bindAdminAccess,
-  COUNTRY_CARD_DATA,
   createAppPageRouter,
   createHilosRouter,
   createSignal,
@@ -16,6 +15,11 @@ import {
   PageSubscription,
   ScopeManager,
   type HilosConnection,
+  type HilosRouter,
+  type PageRouteMatch,
+} from '@hilos/core/base'
+import {
+  COUNTRY_CARD_DATA,
   type HilosI18nCountryCard,
   type HilosI18nCountryContext,
   type HilosI18nCountryRow,
@@ -24,9 +28,7 @@ import {
   type HilosI18nLanguageRow,
   type HilosI18nNameRow,
   type HilosI18nLocaleRow,
-  type HilosRouter,
-  type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { HilosView } from '../src/HilosView.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'

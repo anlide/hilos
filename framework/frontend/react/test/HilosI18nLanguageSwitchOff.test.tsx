@@ -1,6 +1,7 @@
 import { act, fireEvent } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { createSignal, type HilosI18nLanguageCard } from '@hilos/core'
+import { createSignal } from '@hilos/core/base'
+import { type HilosI18nLanguageCard } from '@hilos/core/admin/i18n'
 import { HilosI18nLanguageSwitchOff } from '../src/admin/i18n/details/HilosI18nLanguageSwitchOff.js'
 import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 import { useSignal } from '../src/useSignal.js'

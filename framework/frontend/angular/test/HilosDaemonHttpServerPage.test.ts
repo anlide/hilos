@@ -1,10 +1,6 @@
 import { openNodePage } from './helpers/hilosDaemonNode.js'
-import {
-  DAEMON_HTTP_DATA,
-  DAEMON_NODE_DATA,
-  HilosPages,
-  ScopeManager,
-} from '@hilos/core'
+import { DAEMON_HTTP_DATA, DAEMON_NODE_DATA } from '@hilos/core/admin/daemon'
+import { HilosPages, ScopeManager } from '@hilos/core/base'
 import { describe, expect, it, vi } from 'vitest'
 
 import { HilosDaemonHttpServerPage } from '../src/admin/daemon/HilosDaemonHttpServerPage.js'

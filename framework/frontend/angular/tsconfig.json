@@ -3,7 +3,6 @@
   "compilerOptions": {
     "experimentalDecorators": true,
     "paths": {
-      "@hilos/angular": ["./src/index.ts"],
       "@hilos/angular/base": ["./src/base/index.ts"],
       "@hilos/angular/admin-views": ["./src/admin/hilosAdminViews.ts"],
       "@hilos/angular/admin/analytics": ["./src/admin/analytics/index.ts"],

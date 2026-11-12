@@ -1,65 +1,62 @@
-import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import type { HilosTableProgress } from '@hilos/core/base'
-
+import { createApp, h, nextTick, type App } from 'vue'
+import {
+  registerTableProgressCases,
+  type TableProgressInput,
+  type TableProgressView,
+} from '../../test-support/tableProgressCases.js'
 import HilosTableProgressBar from './HilosTableProgress.vue'
 
-// A bar as the core hands it over: the fraction is already worked out there, so
-// these tests hand over the answer rather than the two numbers behind it.
-function progress(fraction: number | null): HilosTableProgress {
-  return {
-    progressKey: 'nightly',
-    current: 34,
-    total: fraction === null ? null : 120,
-    fraction,
-    detail: {},
+/** Retain the native app before mounting or flushing the real component. */
+async function mountProgress(
+  input: TableProgressInput,
+): Promise<TableProgressView> {
+  const host = document.createElement('div')
+  let app: App | undefined
+  const renderErrors: unknown[] = []
+  function checkErrors(): void {
+    if (renderErrors.length === 1) throw renderErrors.shift()
+    if (renderErrors.length > 1)
+      throw new AggregateError(renderErrors.splice(0), 'Vue progress failed')
+  }
+  async function unmount(): Promise<void> {
+    const errors: unknown[] = []
+    for (const release of [
+      () => app?.unmount(),
+      () => nextTick(),
+      checkErrors,
+      () => host.remove(),
+    ]) {
+      try {
+        await release()
+      } catch (error) {
+        errors.push(error)
+      }
+    }
+    if (errors.length === 1) throw errors[0]
+    if (errors.length > 1)
+      throw new AggregateError(errors, 'Vue progress cleanup failed')
+  }
+  try {
+    document.body.appendChild(host)
+    app = createApp({ render: () => h(HilosTableProgressBar, input) })
+    app.config.errorHandler = (error) => renderErrors.push(error)
+    app.mount(host)
+    await nextTick()
+    checkErrors()
+    return { root: host, unmount }
+  } catch (error) {
+    try {
+      await unmount()
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        'Vue progress setup and cleanup failed',
+        { cause: cleanupError },
+      )
+    }
+    throw error
   }
 }
 
-describe('HilosTableProgress', () => {
-  it('draws a known fraction as a percentage, in the width and in aria-valuenow', () => {
-    const wrapper = mount(HilosTableProgressBar, {
-      props: { progress: progress(0.284), label: 'Work on this table' },
-    })
-
-    const track = wrapper.get('[role="progressbar"]')
-    expect(track.attributes('aria-valuenow')).toBe('28')
-    expect(track.attributes('aria-valuemin')).toBe('0')
-    expect(track.attributes('aria-valuemax')).toBe('100')
-    expect(wrapper.get('.progress-bar').attributes('style')).toContain(
-      '--hilos-progress: 28',
-    )
-  })
-
-  it('draws work with no total as a striped track carrying no number', () => {
-    const wrapper = mount(HilosTableProgressBar, {
-      props: { progress: progress(null), label: 'Work on this table' },
-    })
-
-    const bar = wrapper.get('.progress-bar')
-    expect(bar.classes()).toContain('progress-bar-striped')
-    expect(bar.classes()).toContain('progress-bar-animated')
-    expect(bar.attributes('style')).toContain('--hilos-progress: 100')
-    expect(
-      wrapper.get('[role="progressbar"]').attributes('aria-valuenow'),
-    ).toBeUndefined()
-  })
-
-  it('takes its accessible name from the place that draws it', () => {
-    const wrapper = mount(HilosTableProgressBar, {
-      props: { progress: progress(0.5), label: 'Work on this row' },
-    })
-
-    expect(wrapper.get('[role="progressbar"]').attributes('aria-label')).toBe(
-      'Work on this row',
-    )
-  })
-
-  it('puts the width class on the bar', () => {
-    const wrapper = mount(HilosTableProgressBar, {
-      props: { progress: progress(0.5), label: 'Work on this table' },
-    })
-
-    expect(wrapper.get('.progress-bar').classes()).toContain('hilos-progress')
-  })
-})
+registerTableProgressCases('Vue', { describe, it, expect }, mountProgress)

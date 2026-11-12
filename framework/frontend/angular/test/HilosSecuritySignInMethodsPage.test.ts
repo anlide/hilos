@@ -30,7 +30,7 @@ import {
   type HilosRouter,
   type PageRouteMatch,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { HilosSecuritySignInMethodsPage } from '../src/admin/security/HilosSecuritySignInMethodsPage.js'

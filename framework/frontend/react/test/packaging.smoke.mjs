@@ -46,6 +46,21 @@ function assertAcyclic(entry, visiting = new Set(), visited = new Set()) {
 }
 
 for (const entry of Object.keys(graph)) assertAcyclic(entry)
+for (const source of [
+  'src/hilosRouterContext.ts',
+  'src/auth/hilosAuthGateContext.ts',
+  'src/hilosPageHeadingContext.ts',
+  'src/hilosLookOnly.ts',
+  'src/hilosTableSelectionEdge.ts',
+  'src/hilosViewLayer.ts',
+]) {
+  assert.equal(
+    Object.values(graph).filter((chunk) => chunk.modules.includes(source))
+      .length,
+    1,
+    `Singleton compiler owner: ${source}`,
+  )
+}
 const base = closure('base.js')
 assert.ok(modules(base).includes('src/base/index.ts'))
 assert.ok(!modules(base).some((id) => id.startsWith('src/admin/')))
@@ -65,11 +80,18 @@ assert.ok(
   ),
 )
 
+assert.equal(Object.keys(manifest.exports).length, 23)
+for (const name of ['@hilos/react', '@hilos/core']) {
+  assert.throws(
+    () => import.meta.resolve(name),
+    /ERR_PACKAGE_PATH_NOT_EXPORTED/,
+  )
+}
+
 // Check installed declarations without source aliases or a file in the tree.
 const typeFixture = join(packageDir, 'test/__packaging_types__.ts')
 const typeSource = `
   import { HilosProfileHead, type HilosProfileHeadProps } from '@hilos/react/base'
-  import { HilosProfileHead as RootHead, type HilosProfileHeadProps as RootProps } from '@hilos/react'
   import type { HilosProfileHeadStore, HilosProfilePageContext } from '@hilos/core/base'
   import {
     HilosModerationPage,
@@ -84,7 +106,6 @@ const typeSource = `
     HilosStatusPage as PublicStatusPage,
     type HilosStatusPageProps as PublicStatusProps,
   } from '@hilos/react/status'
-  import { HilosPublicStatusPage } from '@hilos/react'
   import type { ActionLifecycle, HilosConnection } from '@hilos/core/base'
   import {
     HilosStatusPage,
@@ -106,26 +127,6 @@ const typeSource = `
     type HilosStatusCancelWorkModalProps,
     type HilosStatusHistoryPageProps,
   } from '@hilos/react/admin/status'
-  import {
-    HilosStatusPage as RootStatusPage,
-    HilosStatusComponentsPage as RootComponentsPage,
-    HilosStatusIncidentModal as RootIncidentModal,
-    HilosStatusSubscribersPage as RootSubscribersPage,
-    HilosStatusRemoveSubscriberModal as RootRemoveSubscriberModal,
-    HilosStatusWorksPage as RootWorksPage,
-    HilosStatusWorkModal as RootWorkModal,
-    HilosStatusCancelWorkModal as RootCancelWorkModal,
-    HilosStatusHistoryPage as RootHistoryPage,
-    type HilosStatusPageProps as RootStatusProps,
-    type HilosStatusComponentsPageProps as RootComponentsProps,
-    type HilosStatusIncidentModalProps as RootIncidentProps,
-    type HilosStatusSubscribersPageProps as RootSubscribersProps,
-    type HilosStatusRemoveSubscriberModalProps as RootRemoveSubscriberProps,
-    type HilosStatusWorksPageProps as RootWorksProps,
-    type HilosStatusWorkModalProps as RootWorkProps,
-    type HilosStatusCancelWorkModalProps as RootCancelWorkProps,
-    type HilosStatusHistoryPageProps as RootHistoryProps,
-  } from '@hilos/react'
   import type {
     HilosStatusComponentsContext,
     HilosStatusContext,
@@ -139,11 +140,11 @@ const typeSource = `
     HilosStatusWorksState,
   } from '@hilos/core/admin/status'
   // @ts-expect-error Moderation Props belong only to the section entry.
-  import type { HilosModerationPageProps as RootModerationProps } from '@hilos/react'
+  import type { HilosModerationPageProps as BaseModerationProps } from '@hilos/react/base'
   // @ts-expect-error Overview Props belong only to the section entry.
-  import type { HilosModerationKindPageProps as RootKindProps } from '@hilos/react'
+  import type { HilosModerationKindPageProps as BaseKindProps } from '@hilos/react/base'
   // @ts-expect-error Rules Props belong only to the section entry.
-  import type { HilosModerationKindRulesPageProps as RootRulesProps } from '@hilos/react'
+  import type { HilosModerationKindRulesPageProps as BaseRulesProps } from '@hilos/react/base'
   type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends
     (<T>() => T extends B ? 1 : 2) ? true : false
   const moderationContextType: Same<HilosModerationPageProps['context'], HilosModerationContext> = true
@@ -171,29 +172,10 @@ const typeSource = `
   const cancelWorkProps: Same<Parameters<typeof HilosStatusCancelWorkModal>[0], HilosStatusCancelWorkModalProps> = true
   const historyContext: Same<HilosStatusHistoryPageProps['context'], HilosStatusContext> = true
   const historyProps: Same<Parameters<typeof HilosStatusHistoryPage>[0], HilosStatusHistoryPageProps> = true
-  const rootStatus: Same<typeof HilosStatusPage, typeof RootStatusPage> = true
-  const rootComponents: Same<typeof HilosStatusComponentsPage, typeof RootComponentsPage> = true
-  const rootIncident: Same<typeof HilosStatusIncidentModal, typeof RootIncidentModal> = true
-  const rootSubscribers: Same<typeof HilosStatusSubscribersPage, typeof RootSubscribersPage> = true
-  const rootRemoveSubscriber: Same<typeof HilosStatusRemoveSubscriberModal, typeof RootRemoveSubscriberModal> = true
-  const rootWorks: Same<typeof HilosStatusWorksPage, typeof RootWorksPage> = true
-  const rootWork: Same<typeof HilosStatusWorkModal, typeof RootWorkModal> = true
-  const rootCancelWork: Same<typeof HilosStatusCancelWorkModal, typeof RootCancelWorkModal> = true
-  const rootHistory: Same<typeof HilosStatusHistoryPage, typeof RootHistoryPage> = true
-  const rootStatusProps: Same<HilosStatusPageProps, RootStatusProps> = true
-  const rootComponentsProps: Same<HilosStatusComponentsPageProps, RootComponentsProps> = true
-  const rootIncidentProps: Same<HilosStatusIncidentModalProps, RootIncidentProps> = true
-  const rootSubscribersProps: Same<HilosStatusSubscribersPageProps, RootSubscribersProps> = true
-  const rootRemoveSubscriberProps: Same<HilosStatusRemoveSubscriberModalProps, RootRemoveSubscriberProps> = true
-  const rootWorksProps: Same<HilosStatusWorksPageProps, RootWorksProps> = true
-  const rootWorkProps: Same<HilosStatusWorkModalProps, RootWorkProps> = true
-  const rootCancelWorkProps: Same<HilosStatusCancelWorkModalProps, RootCancelWorkProps> = true
-  const rootHistoryProps: Same<HilosStatusHistoryPageProps, RootHistoryProps> = true
   const publicConnection: Same<PublicStatusProps['connection'], HilosConnection> = true
   const publicActions: Same<PublicStatusProps['actions'], ActionLifecycle> = true
   const publicProps: Same<Parameters<typeof PublicStatusPage>[0], PublicStatusProps> = true
-  const publicAlias: Same<typeof PublicStatusPage, typeof HilosPublicStatusPage> = true
-  const publicApart: Same<PublicStatusProps, RootStatusProps> = false
+  const publicApart: Same<PublicStatusProps, HilosStatusPageProps> = false
   declare const publicConnectionValue: HilosConnection
   declare const publicActionsValue: ActionLifecycle
   const coldStatus: PublicStatusProps = { connection: publicConnectionValue, actions: publicActionsValue }
@@ -228,8 +210,6 @@ const typeSource = `
   const contextType: Same<HilosProfileHeadProps['context'], HilosProfilePageContext> = true
   const storeType: Same<HilosProfileHeadProps['store'], HilosProfileHeadStore | undefined> = true
   const componentProps: Same<Parameters<typeof HilosProfileHead>[0], HilosProfileHeadProps> = true
-  const rootProps: Same<HilosProfileHeadProps, RootProps> = true
-  const rootComponent: Same<typeof HilosProfileHead, typeof RootHead> = true
   declare const context: HilosProfilePageContext
   declare const store: HilosProfileHeadStore
   const owned: HilosProfileHeadProps = { context }
@@ -239,8 +219,6 @@ const typeSource = `
   void contextType
   void storeType
   void componentProps
-  void rootProps
-  void rootComponent
   void owned
   void borrowed
   void missingContext
@@ -269,24 +247,6 @@ const typeSource = `
   void cancelWorkProps
   void historyContext
   void historyProps
-  void rootStatus
-  void rootComponents
-  void rootIncident
-  void rootSubscribers
-  void rootRemoveSubscriber
-  void rootWorks
-  void rootWork
-  void rootCancelWork
-  void rootHistory
-  void rootStatusProps
-  void rootComponentsProps
-  void rootIncidentProps
-  void rootSubscribersProps
-  void rootRemoveSubscriberProps
-  void rootWorksProps
-  void rootWorkProps
-  void rootCancelWorkProps
-  void rootHistoryProps
   void statusPageProps
   void missingStatusContext
   void componentsPageProps
@@ -304,7 +264,6 @@ const typeSource = `
   void publicConnection
   void publicActions
   void publicProps
-  void publicAlias
   void publicApart
   void coldStatus
   void missingPublicActions
@@ -447,18 +406,18 @@ try {
         load(id) {
           if (id !== fixture) return
           return `
-            import * as root from '@hilos/react'
             import * as base from '@hilos/react/base'
             import { hilosAdminViews } from '@hilos/react/admin-views'
             import { HilosSettingsPage } from '@hilos/react/admin/settings'
             import * as moderation from '@hilos/react/admin/moderation'
             import { HilosStatusPage as PublicStatusPage } from '@hilos/react/status'
             import { HilosModerationPage, HilosModerationKindPage, HilosModerationKindRulesPage } from '@hilos/react/admin/moderation'
-            import * as coreRoot from '@hilos/core'
             import * as coreBase from '@hilos/core/base'
             import * as coreSettings from '@hilos/core/admin/settings'
+            import * as coreBackup from '@hilos/core/admin/backup'
+            import * as adminStatus from '@hilos/react/admin/status'
             import { HilosPages } from '@hilos/core/base'
-            export const sameCore = ${[
+            export const baseValues = ${[
               'HilosConnection',
               'ScopeManager',
               'createHilosRouter',
@@ -476,22 +435,16 @@ try {
               'PROTECTED_MODE_FALLBACK_COPY',
               'PROTECTED_MODE_PASS_COPY',
             ]
-              .map(
-                (key) =>
-                  `coreRoot.${key} !== undefined && coreRoot.${key} === coreBase.${key}`,
-              )
+              .map((key) => `coreBase.${key} !== undefined`)
               .join(' && ')}
-            export const sameCoreSection = ${[
+            export const sectionValues = ${[
               'createHilosSettingsTable',
               'createHilosSettingsActions',
               'SETTING_KEY_FIELD',
             ]
-              .map(
-                (key) =>
-                  `coreRoot.${key} !== undefined && coreRoot.${key} === coreSettings.${key}`,
-              )
+              .map((key) => `coreSettings.${key} !== undefined`)
               .join(' && ')}
-            export const sameTokens = ${[
+            export const tokenValues = ${[
               'HilosRouterContext',
               'HilosAuthGateContext',
               'HilosPageHeadingIdContext',
@@ -503,30 +456,30 @@ try {
               'usePageInstanceName',
               'HilosProfileHead',
             ]
-              .map(
-                (key) =>
-                  `root.${key} !== undefined && root.${key} === base.${key}`,
-              )
+              .map((key) => `base.${key} !== undefined`)
               .join(' && ')}
-            export const samePage = root.HilosSettingsPage === HilosSettingsPage
-            export const sameModerationPage = root.HilosModerationPage !== undefined && root.HilosModerationPage === HilosModerationPage
+            export const settingsPage = typeof HilosSettingsPage === 'function'
+            export const moderationPage = typeof HilosModerationPage === 'function'
             export const moderationBoundary = typeof HilosModerationKindPage === 'function'
               && typeof HilosModerationKindRulesPage === 'function'
               && Object.keys(moderation).sort().join(',') === 'HilosModerationKindPage,HilosModerationKindRulesPage,HilosModerationPage'
-              && !('HilosModerationKindPage' in root)
-              && !('HilosModerationKindRulesPage' in root)
               && !('HilosModerationPage' in base)
               && !('HilosModerationKindPage' in base)
               && !('HilosModerationKindRulesPage' in base)
-              && !('HilosModerationRuleAdd' in root)
-              && !('HilosModerationRuleEdit' in root)
-              && !('HilosModerationRuleDelete' in root)
-            export const sameHistory = root.HilosLegalHistoryPage !== undefined && root.HilosLegalHistoryPage === base.HilosLegalHistoryPage
+              && !('HilosModerationRuleAdd' in moderation)
+              && !('HilosModerationRuleAdd' in base)
+              && !('HilosModerationRuleEdit' in moderation)
+              && !('HilosModerationRuleEdit' in base)
+              && !('HilosModerationRuleDelete' in moderation)
+              && !('HilosModerationRuleDelete' in base)
+            export const historyPage = base.HilosLegalHistoryPage !== undefined
             export const samePublicStatus = typeof PublicStatusPage === 'function' &&
-              root.HilosPublicStatusPage === PublicStatusPage &&
-              PublicStatusPage !== root.HilosStatusPage &&
+                            PublicStatusPage !== adminStatus.HilosStatusPage &&
               !('HilosPublicStatusPage' in base) &&
               !(HilosPages.PUBLIC_STATUS in hilosAdminViews())
+            export const sharedRestore = ['BACKUP_SIGNAL_SCHEMAS', 'backupProgressPercent', 'createBackupProgressClock', 'createHilosRestoreProgress', 'formatBackupProgressLabel', 'formatRestoreOutcomeLine', 'formatRestorePhaseLine'].every(
+              key => coreBase[key] !== undefined && coreBase[key] === coreBackup[key],
+            )
             export const descriptors = Object.values(hilosAdminViews()).every(
               view => view.kind === 'lazy-page' && typeof view.load === 'function',
             )
@@ -547,7 +500,7 @@ try {
                 'HilosStatusCancelWorkModal',
                 'HilosStatusHistoryPage',
               ].every(
-                key => section[key] !== undefined && section[key] === root[key] && !(key in base),
+                key => typeof section[key] === 'function' && !(key in base),
               ) && !(HilosPages.STATUS in hilosAdminViews())
                 && !(HilosPages.STATUS_COMPONENTS in hilosAdminViews())
                 && !(HilosPages.STATUS_SUBSCRIBERS in hilosAdminViews())
@@ -569,14 +522,15 @@ try {
     },
   })
   const consumer = await import(pathToFileURL(join(output, 'fixture.mjs')).href)
-  assert.equal(consumer.sameCore, true)
-  assert.equal(consumer.sameCoreSection, true)
-  assert.equal(consumer.sameTokens, true)
-  assert.equal(consumer.samePage, true)
-  assert.equal(consumer.sameModerationPage, true)
+  assert.equal(consumer.baseValues, true)
+  assert.equal(consumer.sectionValues, true)
+  assert.equal(consumer.tokenValues, true)
+  assert.equal(consumer.settingsPage, true)
+  assert.equal(consumer.moderationPage, true)
   assert.equal(consumer.moderationBoundary, true)
-  assert.equal(consumer.sameHistory, true)
+  assert.equal(consumer.historyPage, true)
   assert.equal(consumer.samePublicStatus, true)
+  assert.equal(consumer.sharedRestore, true)
   assert.equal(consumer.descriptors, true)
   assert.equal(await consumer.loadDashboard(), true)
   assert.equal(await consumer.loadStatus(), true)

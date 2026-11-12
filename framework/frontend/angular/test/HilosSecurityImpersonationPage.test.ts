@@ -12,21 +12,21 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   ActionLifecycle,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
-  HilosImpersonationSettingKey,
   HilosPages,
   ScopeManager,
   bindAdminAccess,
   bindSessionScope,
   createSignal,
   hilosToasts,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import { HilosImpersonationSettingKey } from '@hilos/core/admin/security'
 import type {
   HilosConnection,
-  HilosImpersonationContext,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosImpersonationContext } from '@hilos/core/admin/security'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { HilosSecurityImpersonationPage } from '../src/admin/security/HilosSecurityImpersonationPage.js'

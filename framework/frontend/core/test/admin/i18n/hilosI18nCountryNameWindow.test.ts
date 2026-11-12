@@ -4,7 +4,7 @@ import {
   type HilosI18nCountryCard,
   type HilosI18nCountryContext,
 } from '../../../src/admin/i18n/hilosI18nCountry.js'
-import { createHilosI18nCountryNameWindow } from '../../../src/index.js'
+import { createHilosI18nCountryNameWindow } from '../../../src/admin/i18n/index.js'
 import {
   HILOS_I18N_COUNTRY_NAMES,
   type HilosI18nNameRow,

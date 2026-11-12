@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { StrictMode, useState, type ReactNode } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { StrictMode, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
@@ -12,26 +12,17 @@ import {
   bindImpersonation,
   bindLegalReconsent,
   createSignal,
-  DEFAULT_IMPERSONATION_POLICY,
-  formatCalendarDate,
-  HILOS_IMPERSONATION_STRIP_TEXT_ID,
-  HILOS_CONNECTION_STATUS_TEXT_ID,
-  HILOS_INTERACTION_BLOCKED_ATTR,
-  HILOS_INTERACTION_REGION_ATTR,
-  HILOS_VIEW_MODE_STRIP_TEXT_ID,
-  HilosPages,
   bindSessionScope,
   bindSignOut,
-  bindThemeState,
-  hilosAccessLossReason,
+  hilosLegalReconsent,
+  hilosLegalReconsentOpen,
   hilosToasts,
   IMPERSONATION_ACTION_STOP,
+  offsetMs,
   PROTECTED_MODE_INACTIVE,
   RT_STALENESS_FRESH,
-  rtStalenessCompactLabel,
-  rtStalenessLabel,
   ScopeManager,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionErrorSignal,
   ActionLifecycleSource,
@@ -42,43 +33,68 @@ import type {
   PageRouteMatch,
   ProjectSignal,
   ProtectedModeStatus,
-} from '@hilos/core'
+} from '@hilos/core/base'
 
-import { THEME_SETTINGS_STORAGE_KEY } from '../../core/src/theme/themeBrowser.js'
-import { reconsentContent } from '../../core/test/legal/reconsentFixture.js'
+import { registerLayoutConnectionPageCases } from '../../test-support/layoutConnectionPageCases.js'
+import { registerLayoutConnectionModalCases } from '../../test-support/layoutConnectionModalCases.js'
+import { registerLayoutConnectionContextCases } from '../../test-support/layoutConnectionContextCases.js'
+import {
+  mountLayoutConnection,
+  mountStandaloneConnection,
+} from './layoutConnectionMount.js'
+import { registerLayoutBlockedLiveCases } from '../../test-support/layoutBlockedLiveCases.js'
+import { registerLayoutBlockedCases } from '../../test-support/layoutBlockedCases.js'
+import { registerLayoutStandingCancelCases } from '../../test-support/layoutStandingCancelCases.js'
+import { registerLayoutStandingChromeCases } from '../../test-support/layoutStandingChromeCases.js'
+import { registerLayoutStandingIdentityCases } from '../../test-support/layoutStandingIdentityCases.js'
+import { registerLayoutProtectedResidueCases } from '../../test-support/layoutProtectedResidueCases.js'
+import { registerLayoutCompactStalenessCases } from '../../test-support/layoutCompactStalenessCases.js'
+import { registerLayoutControlOrderCases } from '../../test-support/layoutControlOrderCases.js'
+import { registerLayoutStandingMomentCases } from '../../test-support/layoutStandingMomentCases.js'
+import { registerLayoutStandingVisibilityCases } from '../../test-support/layoutStandingVisibilityCases.js'
+import { registerLayoutReconsentReminderCases } from '../../test-support/layoutReconsentReminderCases.js'
+import { registerLayoutReconsentFrozenCases } from '../../test-support/layoutReconsentFrozenCases.js'
+import { registerLayoutReconsentLoadingCases } from '../../test-support/layoutReconsentLoadingCases.js'
+import { registerLayoutReconsentAcceptanceCases } from '../../test-support/layoutReconsentAcceptanceCases.js'
+import {
+  layoutReconsentHandshake,
+  layoutReconsentSession,
+} from '../../test-support/layoutReconsentFixtures.js'
+import {
+  layoutStandingGreeting,
+  layoutStandingSession,
+  STANDING_NOW,
+} from '../../test-support/layoutStandingFixtures.js'
+import {
+  BLOCKED_GREETING,
+  layoutBlockedSession,
+} from '../../test-support/layoutBlockedFixtures.js'
+import { layoutChromeConnection } from '../../test-support/layoutChromeFixtures.js'
+import { registerLayoutImpersonationCases } from '../../test-support/layoutImpersonationCases.js'
+import { registerLayoutSignOutCases } from '../../test-support/layoutSignOutCases.js'
+import { registerLayoutThemeCases } from '../../test-support/layoutThemeCases.js'
+import { registerLayoutViewModeCases } from '../../test-support/layoutViewModeCases.js'
+import { registerLayoutAdminGearCases } from '../../test-support/layoutAdminGearCases.js'
+import { registerLayoutFooterCases } from '../../test-support/layoutFooterCases.js'
+import { registerLayoutBannerCases } from '../../test-support/layoutBannerCases.js'
+import { registerLayoutNavigationCases } from '../../test-support/layoutNavigationCases.js'
+import { registerLayoutLifetimeCases } from '../../test-support/layoutLifetimeCases.js'
+import {
+  registerLayoutConnectionShellCases,
+  type LayoutConnectionShellView,
+} from '../../test-support/layoutConnectionShellCases.js'
+import { registerLayoutConnectionBranchCases } from '../../test-support/layoutConnectionBranchCases.js'
+import { mountLayoutLifetime } from './layoutLifetimeMount.js'
+import { mountLayoutBlocked } from './layoutBlockedMount.js'
+import { mountLayoutChrome } from './layoutChromeMount.js'
 import { HilosLayout } from '../src/HilosLayout.js'
-import { HilosModal } from '../src/HilosModal.js'
-import { HilosView } from '../src/HilosView.js'
 import { LoadingButton } from '../src/LoadingButton.js'
-import { HilosStatusPage } from '../src/public/HilosStatusPage.js'
 import {
   useConnectionInteraction,
   type ConnectionInteraction,
 } from '../src/hilosConnectionInteraction.js'
 import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
-
-/** A node frozen for a restore: the shell turns into the maintenance surface. */
-const FROZEN: ProtectedModeStatus = {
-  active: true,
-  operation: 'restore',
-  title: 'Restoring a backup',
-  message: 'The application will be back in a few minutes.',
-  bannerMessage: undefined,
-  acceptsPass: false,
-  passIssued: false,
-  passRejected: false,
-}
-
-/** The verification window seen from inside it: the protected-mode strip is up. */
-const ADMITTED: ProtectedModeStatus = {
-  ...FROZEN,
-  active: false,
-  title: undefined,
-  message: undefined,
-  acceptsPass: true,
-  bannerMessage: 'The restore is being verified.',
-}
 
 /** A handshake naming Bob as the user and Ada as the administrator behind him. */
 const TAKEOVER = {
@@ -295,1144 +311,389 @@ describe('HilosLayout session fixture lifecycle (HIL-1651)', () => {
   )
 })
 
-describe('HilosLayout impersonation strip', () => {
-  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
-
-  afterEach(async () => {
-    await unbind?.()
-    unbind = undefined
-    cleanup()
-    hilosToasts.clear()
-  })
-
-  it('draws no strip for a plain session', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake({ entities: { currentUser: { id: 1, name: 'Ada' } } })
-
-    const container = renderShell(shellConnection())
-
-    expect(surface(container, 'impersonation-banner')).toBeNull()
-  })
-
-  it('names the user the session acts as while impersonated', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(TAKEOVER)
-
-    const container = renderShell(shellConnection())
-
-    const strip = surface(container, 'impersonation-banner')
-    expect(strip?.textContent).toContain('You are impersonating')
-    expect(strip?.querySelector('strong')?.textContent).toBe('Bob')
-    expect(surface(container, 'impersonation-stop')?.textContent).toBe('Stop')
-  })
-
-  it('stands between the protected-mode strip and the project strip', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(TAKEOVER)
-
-    const container = renderShell(
-      shellConnection(ADMITTED),
-      <p data-id="test-banner">A trial notice</p>,
-    )
-
-    const order = Array.from(
-      surface(container, 'app-banner')?.children ?? [],
-    ).map((child) => child.getAttribute('data-id'))
-    expect(order).toEqual([
-      'protected-mode-banner',
-      'impersonation-banner',
-      'test-banner',
-    ])
-  })
-
-  it('draws no strip under the maintenance surface', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(TAKEOVER)
-
-    const container = renderShell(shellConnection(FROZEN))
-
-    expect(surface(container, 'impersonation-banner')).toBeNull()
-  })
-
-  it('sends Stop tracked and keeps it disabled until the reply settles', async () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(TAKEOVER)
-    const container = renderShell(shellConnection())
-    const stop = surface(container, 'impersonation-stop') as HTMLButtonElement
-
-    act(() => {
-      fireEvent.click(stop)
-    })
-
-    expect(session.source.sent).toHaveLength(1)
-    expect(session.source.sent[0]?.action).toBe('hilos_impersonate_stop')
-    expect(session.source.sent[0]?.data).toEqual({})
-    expect(session.source.sent[0]?.requestId).toBeTruthy()
-    expect(stop.disabled).toBe(false)
-    expect(stop.getAttribute('aria-disabled')).toBe('true')
-    expect(stop.getAttribute('aria-busy')).toBe('true')
-    act(() => {
-      fireEvent.click(stop)
-    })
-    expect(session.source.sent).toHaveLength(1)
-
-    await act(async () => {
-      session.source.succeed(session.source.sent[0]?.requestId)
-    })
-
-    expect(stop.disabled).toBe(false)
-    expect(stop.getAttribute('aria-disabled')).toBeNull()
-    expect(stop.getAttribute('aria-busy')).toBeNull()
-    expect(hilosToasts.toasts.get()).toEqual([])
-  })
-
-  it('leaves the strip standing on a refusal and says why in a toast', async () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(TAKEOVER)
-    const container = renderShell(shellConnection())
-    const stop = surface(container, 'impersonation-stop') as HTMLButtonElement
-
-    act(() => {
-      fireEvent.click(stop)
-    })
-    await act(async () => {
-      session.source.refuse(
-        session.source.sent[0]?.requestId,
-        'Session is not impersonating',
-      )
-    })
-
-    expect(surface(container, 'impersonation-banner')).not.toBeNull()
-    expect(stop.disabled).toBe(false)
-    expect(
-      hilosToasts.toasts.get().map((toast) => [toast.severity, toast.message]),
-    ).toEqual([['error', 'Session is not impersonating']])
-  })
-
-  /**
-   * The takeover handshake carrying the installation's impersonation policy.
-   *
-   * @param viewOnly Whether the administrator may only look.
-   */
-  function takeoverWith(viewOnly: boolean): Record<string, unknown> {
-    return {
-      ...TAKEOVER,
-      data: {
-        impersonationPolicy: {
-          ...DEFAULT_IMPERSONATION_POLICY,
-          viewOnly,
-        },
-      },
-    }
-  }
-
-  /** Render the shell over a page whose one control is a tracked button. */
-  function renderOverPageAction(): HTMLElement {
-    return render(
-      <HilosLayout connection={shellConnection()}>
-        <LoadingButton data-id="page-action">Send</LoadingButton>
-      </HilosLayout>,
-    ).container
-  }
-
-  it('says "view only" and switches off the page, never Stop, in a takeover that only looks (HIL-1170)', async () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(takeoverWith(true))
-
-    const container = renderOverPageAction()
-    const strip = surface(container, 'impersonation-banner')
-    const text = strip?.querySelector(`#${HILOS_IMPERSONATION_STRIP_TEXT_ID}`)
-
-    expect(text).not.toBeNull()
-    expect(text?.textContent).toContain('You are impersonating')
-    expect(text?.querySelector('.badge')?.textContent).toBe('view only')
-    expect(strip?.querySelector('strong')?.textContent).toBe('Bob')
-    const stop = surface(container, 'impersonation-stop') as HTMLButtonElement
-    expect(stop.disabled).toBe(false)
-    expect(stop.getAttribute('aria-describedby')).toBeNull()
-    const action = surface(container, 'page-action') as HTMLButtonElement
-    expect(action.disabled).toBe(true)
-    expect(action.getAttribute('aria-describedby')).toBe(
-      HILOS_IMPERSONATION_STRIP_TEXT_ID,
-    )
-
-    act(() => {
-      fireEvent.click(stop)
-    })
-    expect(session.source.sent[0]?.action).toBe('hilos_impersonate_stop')
-    await act(async () => {
-      session.source.succeed(session.source.sent[0]?.requestId)
-    })
-  })
-
-  it('leaves the page live and the strip unmarked while the takeover may act, and follows the policy', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(takeoverWith(false))
-
-    const container = renderOverPageAction()
-
-    expect(
-      container.querySelector('[data-id="impersonation-banner"] .badge'),
-    ).toBeNull()
-    expect(
-      (surface(container, 'page-action') as HTMLButtonElement).disabled,
-    ).toBe(false)
-
-    act(() => {
-      session.handshake(takeoverWith(true))
-    })
-
-    expect(
-      container.querySelector('[data-id="impersonation-banner"] .badge')
-        ?.textContent,
-    ).toBe('view only')
-    expect(
-      (surface(container, 'page-action') as HTMLButtonElement).disabled,
-    ).toBe(true)
-  })
-
-  it('adds no live region of its own when the strip goes up', async () => {
-    // Counted before the strip goes up: both shells read the one store, so the
-    // plain one would grow the strip too once the takeover lands.
-    const live = '[role="status"][aria-live="polite"]'
-    const plain = bindSession()
-    plain.handshake({ entities: { currentUser: { id: 1, name: 'Ada' } } })
-    const liveWithout =
-      renderShell(shellConnection()).querySelectorAll(live).length
-    await plain.unbind()
-    cleanup()
-
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(TAKEOVER)
-    const up = renderShell(shellConnection())
-
-    expect(surface(up, 'impersonation-banner')).not.toBeNull()
-    expect(up.querySelectorAll(live).length).toBe(liveWithout)
-  })
-})
-
-/** One day, in ms. */
-const DAY_MS = 86_400_000
-
-/** The browser clock the standing cases are parked at. */
-const NOW = 1_800_000_000_000
-
-/**
- * A handshake of Bob's session carrying a standing.
- *
- * @param shown The standing shown.
- * @param impersonated Whether Ada stands behind the session.
- * @param deletionEffectiveAt The server moment of a scheduled erasure, or null.
- * @param deletionGraceDays The original grace period, or null for a legacy
- *   standing.
- */
-function standingHandshake(
-  shown: string,
-  impersonated = false,
-  deletionEffectiveAt: number | null = null,
-  deletionGraceDays: number | null = null,
-): Record<string, unknown> {
-  return {
-    data: {
-      serverTimeMs: NOW,
-      accountStanding: {
-        shown,
-        blocked: shown === 'blocked',
-        frozen: shown === 'frozen',
-        deletionEffectiveAt,
-        deletionGraceDays,
-        lapsed: [],
-        window: [],
-        mergedInto: null,
-        mergedIntoName: null,
-      },
-    },
-    entities: {
-      currentUser: { id: 2, name: 'Bob' },
-      impersonatedBy: impersonated ? { id: 1, name: 'Ada' } : null,
-    },
-  }
-}
-
-describe('HilosLayout account standing (HIL-945)', () => {
-  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
-
-  afterEach(async () => {
-    await unbind?.()
-    unbind = undefined
-    cleanup()
-    hilosToasts.clear()
-    applyServerTime(Date.now())
-    vi.useRealTimers()
-  })
-
-  it('says when the own account is deleted and how many days are left', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(NOW)
-    const session = bindSession()
-    unbind = session.unbind
-    const effectiveAt = NOW + 12 * DAY_MS
-    session.handshake(
-      standingHandshake('deletion_scheduled', false, effectiveAt),
-    )
-
-    const container = renderShell(shellConnection())
-
-    const strip = surface(container, 'account-deletion-strip')
-    expect(strip).not.toBeNull()
-    expect(strip?.classList.contains('alert-warning')).toBe(true)
-    expect(strip?.querySelector('.bi-trash')).not.toBeNull()
-    expect(
-      strip
-        ?.querySelector('[data-id="account-deletion-strip-text"]')
-        ?.textContent?.trim(),
-    ).toBe(
-      `Your account will be deleted on ${formatCalendarDate(effectiveAt)} — 12 days left`,
-    )
-    expect(
-      strip?.querySelector('[data-id="account-deletion-strip-keep"]')
-        ?.textContent,
-    ).toBe('Keep my account')
-  })
-
-  it('counts the days left again once a minute', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(NOW)
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(
-      standingHandshake('deletion_scheduled', false, NOW + 2 * DAY_MS),
-    )
-    const container = renderShell(shellConnection())
-    const text = () =>
-      surface(container, 'account-deletion-strip-text')?.textContent
-    expect(text()).toContain('2 days left')
-
-    act(() => {
-      vi.setSystemTime(NOW + 1.5 * DAY_MS)
-      vi.advanceTimersByTime(60_000)
-    })
-
-    expect(text()).toContain('1 day left')
-  })
-
-  it('bounds the strip by the standing grace period with a negative clock error and keeps ticking', async () => {
-    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
-    vi.setSystemTime(NOW)
-    const session = bindSession()
-    unbind = session.unbind
-    const effectiveAt = NOW + 30 * DAY_MS
-    session.handshake(
-      standingHandshake('deletion_scheduled', false, effectiveAt, 30),
-    )
-    applyServerTime(NOW - 300)
-    const container = renderShell(shellConnection())
-    const text = () =>
-      surface(container, 'account-deletion-strip-text')?.textContent?.trim()
-
-    expect(text()).toBe(
-      `Your account will be deleted on ${formatCalendarDate(effectiveAt)} — 30 days left`,
-    )
-
-    vi.setSystemTime(NOW + DAY_MS)
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(60_000)
-    })
-    expect(text()).toBe(
-      `Your account will be deleted on ${formatCalendarDate(effectiveAt)} — 29 days left`,
-    )
-  })
-
-  it('stands after the framework strips and before the project strip', () => {
-    // This session has no takeover, so the protected-mode banner comes first.
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(
-      standingHandshake('deletion_scheduled', false, NOW + 3 * DAY_MS),
-    )
-
-    const container = renderShell(
-      shellConnection(ADMITTED),
-      <p data-id="test-banner">A trial notice</p>,
-    )
-
-    const order = Array.from(
-      surface(container, 'app-banner')?.children ?? [],
-    ).map((child) => child.getAttribute('data-id'))
-    expect(order).toEqual([
-      'protected-mode-banner',
-      'account-deletion-strip',
-      'test-banner',
-    ])
-  })
-
-  it('draws the deletion strip under a takeover without a personal Keep action', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(NOW)
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(
-      standingHandshake('deletion_scheduled', true, NOW + 3 * DAY_MS),
-    )
-
-    const taken = renderShell(shellConnection())
-    expect(surface(taken, 'impersonation-banner')).not.toBeNull()
-    expect(surface(taken, 'account-deletion-strip')).not.toBeNull()
-    expect(surface(taken, 'account-deletion-strip-keep')).toBeNull()
-    expect(
-      surface(taken, 'account-deletion-strip-text')?.textContent,
-    ).toContain(
-      `Your account will be deleted on ${formatCalendarDate(NOW + 3 * DAY_MS)} — 3 days left`,
-    )
-  })
-
-  it('draws no deletion strip under maintenance', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(
-      standingHandshake('deletion_scheduled', false, NOW + 3 * DAY_MS),
-    )
-    const frozenNode = renderShell(shellConnection(FROZEN))
-    expect(surface(frozenNode, 'account-deletion-strip')).toBeNull()
-  })
-
-  it('sends Keep my account tracked, busy until the reply, and toasts nothing on success', async () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(
-      standingHandshake('deletion_scheduled', false, NOW + 3 * DAY_MS),
-    )
-    const container = renderShell(shellConnection())
-    const keep = surface(
-      container,
-      'account-deletion-strip-keep',
-    ) as HTMLButtonElement
-
-    act(() => {
-      fireEvent.click(keep)
-    })
-
-    expect(session.source.sent).toHaveLength(1)
-    expect(session.source.sent[0]?.action).toBe('hilos_account_deletion_cancel')
-    expect(session.source.sent[0]?.data).toEqual({})
-    expect(session.source.sent[0]?.requestId).toBeTruthy()
-    expect(keep.disabled).toBe(false)
-    expect(keep.getAttribute('aria-disabled')).toBe('true')
-    expect(keep.getAttribute('aria-busy')).toBe('true')
-    act(() => {
-      fireEvent.click(keep)
-    })
-    expect(session.source.sent).toHaveLength(1)
-
-    await act(async () => {
-      session.source.succeed(
-        session.source.sent[0]?.requestId,
-        'hilos_account_deletion_cancel',
-      )
-      session.handshake(standingHandshake('none'))
-    })
-
-    expect(surface(container, 'account-deletion-strip')).toBeNull()
-    expect(hilosToasts.toasts.get()).toEqual([])
-  })
-
-  it('leaves the strip standing on a refusal and says why in a toast', async () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(
-      standingHandshake('deletion_scheduled', false, NOW + 3 * DAY_MS),
-    )
-    const container = renderShell(shellConnection())
-    const keep = surface(
-      container,
-      'account-deletion-strip-keep',
-    ) as HTMLButtonElement
-
-    act(() => {
-      fireEvent.click(keep)
-    })
-    await act(async () => {
-      session.source.refuse(
-        session.source.sent[0]?.requestId,
-        'No deletion is scheduled',
-        'hilos_account_deletion_cancel',
-      )
-    })
-
-    expect(surface(container, 'account-deletion-strip')).not.toBeNull()
-    expect(keep.disabled).toBe(false)
-    expect(
-      hilosToasts.toasts.get().map((toast) => [toast.severity, toast.message]),
-    ).toEqual([['error', 'No deletion is scheduled']])
-  })
-
-  it.each([
-    ['none', 'alert-warning'],
-    ['blocked', 'alert-danger'],
-    ['frozen', 'alert-info'],
-  ])(
-    'colors the impersonation strip of a %s person %s',
-    (shown, alertClass) => {
-      const session = bindSession()
-      unbind = session.unbind
-      session.handshake(standingHandshake(shown, true))
-
-      const container = renderShell(shellConnection())
-
-      const strip = surface(container, 'impersonation-banner')
-      expect(strip?.classList.contains(alertClass)).toBe(true)
-      expect(strip?.querySelector('strong')?.textContent).toBe('Bob')
-    },
-  )
-})
-
-describe('HilosLayout admin gear', () => {
-  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
-
-  /**
-   * One handshake: who is behind the session, if anybody, and the node's admin
-   * view mode, both as the backend stamps them (HIL-1253).
-   *
-   * @param user The person behind the session, or null for a guest.
-   * @param viewMode The node's admin view mode.
-   */
-  function greeting(
-    user: { id: number; admin: boolean } | null,
-    viewMode: boolean,
-  ): Record<string, unknown> {
-    return {
-      entities: {
-        currentUser: user === null ? null : { ...user, name: 'Olena' },
-      },
-      data: { adminViewMode: viewMode },
-    }
-  }
-
-  function gear(connection: HilosConnection = shellConnection()): {
-    container: HTMLElement
-    link: Element | null
-  } {
-    const container = renderShell(connection)
-
-    return { container, link: surface(container, 'nav-admin') }
-  }
-
-  afterEach(async () => {
-    await unbind?.()
-    unbind = undefined
-    cleanup()
-  })
-
-  it('draws no gear for a guest on a node without the view mode', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(greeting(null, false))
-
-    expect(gear().link).toBeNull()
-  })
-
-  it('draws no gear for a signed-in non-admin on a node without the view mode', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(greeting({ id: 7, admin: false }, false))
-
-    expect(gear().link).toBeNull()
-  })
-
-  it('draws the full gear for an admin, leading to the dashboard', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(greeting({ id: 7, admin: true }, false))
-    const { link } = gear()
-
-    expect(link).not.toBeNull()
-    expect(link?.getAttribute('data-access')).toBe('full')
-    expect(link?.getAttribute('href')).toBe('/hilos')
-    expect(link?.getAttribute('aria-label')).toBe('Hilos dashboard')
-    expect(link?.getAttribute('title')).toBeNull()
-    expect(link?.querySelector('.visually-hidden')?.textContent).toBe(
-      'Hilos dashboard',
-    )
-    expect(
-      link?.querySelector('.bi-gear')?.classList.contains('text-info-emphasis'),
-    ).toBe(false)
-    expect(link?.querySelector('.bi-gear')?.getAttribute('aria-hidden')).toBe(
-      'true',
-    )
-    expect(link?.querySelectorAll('.bi-eye')).toHaveLength(0)
-  })
-
-  it.each([
-    ['a guest', null],
-    ['a signed-in non-admin', { id: 7, admin: false }],
-  ] as const)(
-    'draws the view gear for %s on a node in the view mode',
-    (_who, user) => {
-      const session = bindSession()
-      unbind = session.unbind
-      session.handshake(greeting(user, true))
-      const { link } = gear()
-
-      expect(link).not.toBeNull()
-      expect(link?.getAttribute('data-access')).toBe('view')
-      expect(link?.getAttribute('href')).toBe('/hilos')
-      expect(link?.getAttribute('aria-label')).toBe(
-        'Hilos dashboard — View mode',
-      )
-      expect(link?.getAttribute('title')).toBe('Hilos dashboard — View mode')
-      expect(link?.querySelector('.visually-hidden')?.textContent).toBe(
-        'Hilos dashboard — View mode',
-      )
-      expect(
-        link
-          ?.querySelector('.bi-gear')
-          ?.classList.contains('text-info-emphasis'),
-      ).toBe(true)
-      expect(link?.querySelector('.bi-gear')?.getAttribute('aria-hidden')).toBe(
-        'true',
-      )
-      expect(link?.querySelectorAll('.bi-eye')).toHaveLength(1)
-      expect(link?.querySelector('.bi-eye')?.getAttribute('aria-hidden')).toBe(
-        'true',
-      )
-    },
-  )
-
-  it('turns the gear full on a grant and back to view on a revoke, live', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(greeting({ id: 7, admin: false }, true))
-    const { container } = gear()
-
-    act(() => {
-      session.handshake(greeting({ id: 7, admin: true }, true))
-    })
-    const fullLinks = container.querySelectorAll('[data-id="nav-admin"]')
-    expect(fullLinks).toHaveLength(1)
-    const fullLink = fullLinks[0]
-    expect(fullLink.getAttribute('data-access')).toBe('full')
-    expect(fullLink.getAttribute('aria-label')).toBe('Hilos dashboard')
-    expect(fullLink.getAttribute('title')).toBeNull()
-    expect(fullLink.querySelector('.visually-hidden')?.textContent).toBe(
-      'Hilos dashboard',
-    )
-    expect(
-      fullLink
-        .querySelector('.bi-gear')
-        ?.classList.contains('text-info-emphasis'),
-    ).toBe(false)
-    expect(fullLink.querySelectorAll('.bi-eye')).toHaveLength(0)
-
-    act(() => {
-      session.handshake(greeting({ id: 7, admin: false }, true))
-    })
-    const viewLinks = container.querySelectorAll('[data-id="nav-admin"]')
-    expect(viewLinks).toHaveLength(1)
-    const viewLink = viewLinks[0]
-    expect(viewLink.getAttribute('data-access')).toBe('view')
-    expect(viewLink.getAttribute('aria-label')).toBe(
-      'Hilos dashboard — View mode',
-    )
-    expect(viewLink.getAttribute('title')).toBe('Hilos dashboard — View mode')
-    expect(viewLink.querySelector('.visually-hidden')?.textContent).toBe(
-      'Hilos dashboard — View mode',
-    )
-    expect(
-      viewLink
-        .querySelector('.bi-gear')
-        ?.classList.contains('text-info-emphasis'),
-    ).toBe(true)
-    expect(viewLink.querySelectorAll('.bi-eye')).toHaveLength(1)
-    expect(viewLink.querySelector('.bi-eye')?.getAttribute('aria-hidden')).toBe(
-      'true',
-    )
-  })
-
-  it('draws no gear under the maintenance surface', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(greeting(null, true))
-
-    expect(gear(shellConnection(FROZEN)).link).toBeNull()
-  })
-})
-
-describe('HilosLayout sign-out', () => {
-  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
-
-  afterEach(async () => {
-    await unbind?.()
-    unbind = undefined
-    cleanup()
-    hilosToasts.clear()
-  })
-
-  it('draws no control for an anonymous session', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake({ entities: { currentUser: null } })
-
-    expect(surface(renderShell(shellConnection()), 'nav-logout')).toBeNull()
-  })
-
-  it.each([{ entities: { currentUser: { id: 1, name: '' } } }, TAKEOVER])(
-    'draws the named control before the final connection indicator, also while impersonated: %j',
-    (payload) => {
-      const session = bindSession()
-      unbind = session.unbind
-      session.handshake(payload)
-      const container = renderShell(shellConnection())
-      const button = surface(container, 'nav-logout') as HTMLButtonElement
-
-      expect(button.tagName).toBe('BUTTON')
-      expect(button.getAttribute('aria-label')).toBe('Sign out')
-      expect(button.title).toBe('Sign out')
-      expect(button.parentElement?.lastElementChild).toBe(
-        button.nextElementSibling,
-      )
-      expect(button.nextElementSibling).toBe(surface(container, 'conn-state'))
-      expect(
-        button
-          .querySelector('.bi-box-arrow-right')
-          ?.getAttribute('aria-hidden'),
-      ).toBe('true')
-    },
-  )
-
-  it('draws no control under the maintenance surface', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(TAKEOVER)
-
-    expect(
-      surface(renderShell(shellConnection(FROZEN)), 'nav-logout'),
-    ).toBeNull()
-  })
-
-  it('draws no control during the held first frame', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(TAKEOVER)
-    const connection = shellConnection()
-    Object.defineProperty(connection, 'firstFrameHeld', { value: true })
-
-    expect(surface(renderShell(connection), 'nav-logout')).toBeNull()
-  })
-
-  it('sends sign-out tracked once and stays disabled until a silent success', async () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(TAKEOVER)
-    const container = renderShell(shellConnection())
-    const button = surface(container, 'nav-logout') as HTMLButtonElement
-
-    act(() => {
-      fireEvent.click(button)
-    })
-    expect(button.disabled).toBe(false)
-    expect(button.getAttribute('aria-disabled')).toBe('true')
-    expect(button.getAttribute('aria-busy')).toBe('true')
-    expect(surface(container, 'loading-button-spinner')).toBeNull()
-    act(() => {
-      fireEvent.click(button)
-    })
-    expect(session.source.sent).toEqual([
-      { action: 'hilos_logout', data: {}, requestId: expect.any(String) },
-    ])
-    expect(session.source.sent[0]?.requestId).toBeTruthy()
-
-    await act(async () => {
-      session.source.succeed(session.source.sent[0]?.requestId, 'hilos_logout')
-    })
-
-    expect(button.disabled).toBe(false)
-    expect(button.getAttribute('aria-disabled')).toBeNull()
-    expect(button.getAttribute('aria-busy')).toBeNull()
-    expect(hilosToasts.toasts.get()).toEqual([])
-  })
-
-  it('leaves the control ready on a refusal and toasts the server reason', async () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(TAKEOVER)
-    const container = renderShell(shellConnection())
-    const button = surface(container, 'nav-logout') as HTMLButtonElement
-
-    act(() => {
-      fireEvent.click(button)
-    })
-    await act(async () => {
-      session.source.refuse(
-        session.source.sent[0]?.requestId,
-        'Session not on connection',
-        'hilos_logout',
-      )
-    })
-
-    expect(surface(container, 'nav-logout')).toBe(button)
-    expect(button.disabled).toBe(false)
-    expect(surface(container, 'impersonation-banner')?.textContent).toContain(
-      'Bob',
-    )
-    expect(
-      hilosToasts.toasts.get().map((toast) => [toast.severity, toast.message]),
-    ).toEqual([['error', 'Session not on connection']])
-  })
-
-  it('removes the control with the anonymous identity before its ack arrives', async () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(TAKEOVER)
-    const container = renderShell(shellConnection())
-
-    act(() => {
-      fireEvent.click(surface(container, 'nav-logout') as HTMLButtonElement)
-    })
-    act(() => {
-      session.handshake({
-        entities: { currentUser: null, impersonatedBy: null },
-      })
-    })
-    expect(surface(container, 'nav-logout')).toBeNull()
-
-    await act(async () => {
-      session.source.succeed(session.source.sent[0]?.requestId, 'hilos_logout')
-    })
-    expect(hilosToasts.toasts.get()).toEqual([])
-  })
-})
-
-/** The anonymous handshake a browser gets after its account was blocked. */
-const BLOCKED = {
-  entities: { currentUser: null },
-  data: { accountBlocked: { identifier: 'maria@example.com' } },
-}
-
-describe('HilosLayout account blocked card', () => {
-  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
-
-  afterEach(async () => {
-    await unbind?.()
-    unbind = undefined
-    cleanup()
-    hilosToasts.clear()
-  })
-
-  it('stands in place of the content and keeps the header and footer', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(BLOCKED)
-
-    const container = renderShell(shellConnection())
-
-    expect(surface(container, 'account-blocked')).not.toBeNull()
-    expect(surface(container, 'data-export-prepare')).not.toBeNull()
-    expect(surface(container, 'page-body')).toBeNull()
-    expect(surface(container, 'app-footer')).not.toBeNull()
-    expect(container.querySelector('nav')).not.toBeNull()
-    expect(surface(container, 'account-blocked-heading')?.textContent).toBe(
-      'Access closed',
-    )
-    expect(surface(container, 'account-blocked-account')?.textContent).toBe(
-      'The account maria@example.com has been blocked by the project administration.',
-    )
-    expect(surface(container, 'account-blocked-reason')?.textContent).toContain(
-      'No reason given',
-    )
-    expect(surface(container, 'access-loss-notice')).toBeNull()
-  })
-
-  it('says "This account" when the server could name no address', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake({ data: { accountBlocked: { identifier: null } } })
-
-    const container = renderShell(shellConnection())
-
-    expect(surface(container, 'account-blocked-account')?.textContent).toBe(
-      'This account has been blocked by the project administration.',
-    )
-  })
-
-  it('sends Sign out tracked and keeps it disabled until the reply settles', async () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(BLOCKED)
-    const container = renderShell(shellConnection())
-    const signOut = surface(
-      container,
-      'account-blocked-sign-out',
-    ) as HTMLButtonElement
-
-    act(() => {
-      fireEvent.click(signOut)
-    })
-
-    expect(session.source.sent).toHaveLength(1)
-    expect(session.source.sent[0]?.action).toBe('hilos_dismiss_account_blocked')
-    expect(session.source.sent[0]?.data).toEqual({})
-    expect(session.source.sent[0]?.requestId).toBeTruthy()
-    expect(signOut.disabled).toBe(false)
-    expect(signOut.getAttribute('aria-disabled')).toBe('true')
-    expect(signOut.getAttribute('aria-busy')).toBe('true')
-    act(() => {
-      fireEvent.click(signOut)
-    })
-    expect(session.source.sent).toHaveLength(1)
-
-    await act(async () => {
-      session.source.succeed(session.source.sent[0]?.requestId)
-    })
-
-    expect(signOut.disabled).toBe(false)
-    expect(signOut.getAttribute('aria-disabled')).toBeNull()
-    expect(signOut.getAttribute('aria-busy')).toBeNull()
-  })
-
-  it('gives the content back when a handshake carries no card', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(BLOCKED)
-    const container = renderShell(shellConnection())
-
-    act(() => {
-      session.handshake({ data: { accountBlocked: null } })
-    })
-
-    expect(surface(container, 'account-blocked')).toBeNull()
-    expect(surface(container, 'page-body')).not.toBeNull()
-  })
-
-  it('gives way to the maintenance surface', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(BLOCKED)
-
-    const container = renderShell(shellConnection(FROZEN))
-
-    expect(surface(container, 'account-blocked')).toBeNull()
-  })
-})
-
-describe('HilosLayout live access loss', () => {
-  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
-
-  function LivePrivatePage() {
-    const [open, setOpen] = useState(false)
-    return (
-      <div data-id="private-content">
-        <button
-          type="button"
-          data-id="open-draft"
-          onClick={() => setOpen(true)}
-        >
-          Edit
-        </button>
-        <HilosModal
-          open={open}
-          title="Edit phone"
-          confirmOnClose
-          onClose={() => setOpen(false)}
-        >
-          <input data-id="draft" data-autofocus="" />
-        </HilosModal>
-      </div>
-    )
-  }
-
-  function LiveAuthSurface() {
-    return <form data-id="test-sign-in" />
-  }
-
-  afterEach(async () => {
-    cleanup()
-    await unbind?.()
-    unbind = undefined
-    hilosToasts.clear()
-  })
-
-  /** Mount the outlet and a dirty edit dialog under the live session binding. */
-  function liveShell() {
-    const router = { ...routerOn('main'), resolvePath: () => '/' }
-    const session = bindSession(router)
-    unbind = session.unbind
-    session.handshake({ entities: { currentUser: { id: 7 } } })
-    const { container } = render(
-      <HilosRouterContext.Provider value={router}>
-        <HilosLayout connection={shellConnection()}>
-          <HilosView
-            pages={{ main: LivePrivatePage }}
-            authSurface={LiveAuthSurface}
-          />
-        </HilosLayout>
-      </HilosRouterContext.Provider>,
-    )
-    return { session, container }
-  }
-
-  it('replaces the dirty slot with the live-block warning and focuses the card', async () => {
-    const { session, container } = liveShell()
-    const opener = surface(container, 'open-draft') as HTMLButtonElement
-    opener.focus()
-    fireEvent.click(opener)
-    await act(async () => {
-      await Promise.resolve()
-    })
-    const draft = document.querySelector<HTMLInputElement>('[data-id="draft"]')!
-    draft.value = 'Unsaved phone number'
-    expect(document.activeElement).toBe(draft)
-
-    await act(async () => {
-      session.handshake({
-        entities: { currentUser: null },
-        data: {
-          accountBlocked: { identifier: 'maria@example.com' },
-          accessLossReason: 'account_blocked',
-        },
-      })
-      await Promise.resolve()
-    })
-
-    const card = surface(container, 'account-blocked')!
-    const notice = surface(container, 'access-loss-notice')!
-    expect(notice.textContent).toBe('Any unsaved changes were lost.')
-    expect(notice.classList.contains('alert-warning')).toBe(true)
-    expect(notice.parentElement?.getAttribute('role')).toBe('status')
-    expect(notice.parentElement?.getAttribute('aria-live')).toBe('polite')
-    const account = surface(container, 'account-blocked-account')!
-    const reason = surface(container, 'account-blocked-reason')!
-    expect(account.nextElementSibling).toBe(notice.parentElement)
-    expect(notice.parentElement?.nextElementSibling).toBe(reason)
-    expect(surface(container, 'private-content')).toBeNull()
-    expect(surface(container, 'hilos-page-departure')).toBeNull()
-    expect(draft.isConnected).toBe(false)
-    expect(document.querySelector('[data-id="modal"]')).toBeNull()
-    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
-    expect(document.activeElement).toBe(card.querySelector('section'))
-    expect(container.querySelector('nav')).not.toBeNull()
-    expect(surface(container, 'app-footer')).not.toBeNull()
-
-    act(() => session.handshake(BLOCKED))
-    expect(surface(container, 'access-loss-notice')?.textContent).toBe(
-      'Any unsaved changes were lost.',
-    )
-  })
-
-  it.each(['sign out', 'unblock'] as const)(
-    'removes the warning with the card on %s and leaves no notice on the cold card',
-    async (exit) => {
-      const { session, container } = liveShell()
-      act(() =>
-        session.handshake({
-          entities: { currentUser: null },
-          data: {
-            accountBlocked: { identifier: 'maria@example.com' },
-            accessLossReason: 'account_blocked',
+// React updates from source rejection and effect cleanup must settle inside awaited act.
+describe('HilosLayout blocked fixture pending dismiss cleanup', () => {
+  it.each([0, 300])(
+    'settles pending dismiss at native teardown after %d ms',
+    async (elapsed) => {
+      let session: Awaited<ReturnType<typeof layoutBlockedSession>> | undefined
+      let view: Awaited<ReturnType<typeof mountLayoutChrome>> | undefined
+      // Only timer functions are replaced; Date and the server offset stay real.
+      expect(vi.isFakeTimers()).toBe(false)
+      try {
+        vi.useFakeTimers({
+          toFake: [
+            'setTimeout',
+            'clearTimeout',
+            'setInterval',
+            'clearInterval',
+          ],
+        })
+        expect(vi.getTimerCount()).toBe(0)
+        session = await layoutBlockedSession()
+        session.handshake(BLOCKED_GREETING)
+        view = await mountLayoutChrome({ connection: layoutChromeConnection() })
+        const dismiss = surface(
+          view.root,
+          'account-blocked-sign-out',
+        ) as HTMLButtonElement
+        await view.flush(() => dismiss.click())
+        expect(session.sent).toEqual([
+          {
+            action: 'hilos_dismiss_account_blocked',
+            data: {},
+            requestId: expect.any(String),
           },
+        ])
+        expect(session.sent[0]?.requestId).toBeTruthy()
+        await view.flush(() => vi.advanceTimersByTime(elapsed))
+
+        await view.unmount()
+        await act(session.release)
+        expect(vi.getTimerCount()).toBe(0)
+        const settledToasts = hilosToasts.toasts.get()
+        expect(settledToasts).toEqual([
+          expect.objectContaining({
+            severity: 'error',
+            message:
+              'The connection dropped before the action completed. Please try again.',
+            repeats: 1,
+          }),
+        ])
+
+        await act(session.release)
+        await act(async () => {
+          vi.advanceTimersByTime(60_000)
+        })
+        expect(vi.getTimerCount()).toBe(0)
+        expect(hilosToasts.toasts.get()).toEqual(settledToasts)
+      } finally {
+        try {
+          await view?.unmount()
+        } finally {
+          try {
+            if (session) await act(session.release)
+          } finally {
+            try {
+              hilosToasts.clear()
+            } finally {
+              vi.useRealTimers()
+            }
+          }
+        }
+      }
+    },
+  )
+})
+
+// React updates from source rejection and effect cleanup must settle inside awaited act.
+describe('HilosLayout standing fixture pending Keep cleanup', () => {
+  it.each([0, 300])(
+    'settles pending Keep at native teardown after %d ms',
+    async (elapsed) => {
+      const entryOffset = offsetMs()
+      let session: Awaited<ReturnType<typeof layoutStandingSession>> | undefined
+      let view: Awaited<ReturnType<typeof mountLayoutChrome>> | undefined
+      try {
+        vi.useFakeTimers({
+          toFake: [
+            'Date',
+            'setInterval',
+            'clearInterval',
+            'setTimeout',
+            'clearTimeout',
+          ],
+        })
+        vi.setSystemTime(STANDING_NOW)
+        expect(vi.getTimerCount()).toBe(0)
+        session = await layoutStandingSession()
+        session.handshake(
+          layoutStandingGreeting(
+            'deletion_scheduled',
+            false,
+            1_800_259_200_000,
+            null,
+          ),
+        )
+        view = await mountLayoutChrome({
+          connection: layoutChromeConnection(),
+        })
+        const keep = surface(
+          view.root,
+          'account-deletion-strip-keep',
+        ) as HTMLButtonElement
+        await view.flush(() => keep.click())
+        expect(session.sent).toEqual([
+          {
+            action: 'hilos_account_deletion_cancel',
+            data: {},
+            requestId: expect.any(String),
+          },
+        ])
+        expect(session.sent[0]?.requestId).toBeTruthy()
+        await view.flush(() => vi.advanceTimersByTime(elapsed))
+
+        await view.unmount()
+        await act(session.release)
+
+        expect(vi.getTimerCount()).toBe(0)
+        const settledToasts = hilosToasts.toasts.get()
+        expect(settledToasts).toEqual([
+          expect.objectContaining({
+            severity: 'error',
+            message:
+              'The connection dropped before the action completed. Please try again.',
+            repeats: 1,
+          }),
+        ])
+        await act(session.release)
+        await act(async () => {
+          vi.advanceTimersByTime(60_000)
+        })
+        expect(vi.getTimerCount()).toBe(0)
+        expect(hilosToasts.toasts.get()).toEqual(settledToasts)
+      } finally {
+        try {
+          await view?.unmount()
+        } finally {
+          try {
+            if (session) await act(session.release)
+          } finally {
+            try {
+              hilosToasts.clear()
+            } finally {
+              try {
+                applyServerTime(Date.now() + entryOffset)
+              } finally {
+                vi.useRealTimers()
+              }
+            }
+          }
+        }
+      }
+    },
+  )
+})
+
+// A frozen screen has no open modal; its pending read and singleton state still
+// belong to the released session fixture.
+describe('HilosLayout legal fixture pending frozen read cleanup', () => {
+  it('settles the frozen read and clears its closed-window store at native teardown', async () => {
+    let session: Awaited<ReturnType<typeof layoutReconsentSession>> | undefined
+    let view: Awaited<ReturnType<typeof mountLayoutChrome>> | undefined
+    function expectIdle(): void {
+      expect(hilosLegalReconsent.loading.get()).toBe(false)
+      expect(hilosLegalReconsent.error.get()).toBeNull()
+      expect(hilosLegalReconsent.content.get()).toBeNull()
+      expect(hilosLegalReconsent.busy.get()).toBe(false)
+      expect(hilosLegalReconsentOpen.get()).toBe(false)
+      expect(surface(document.body, 'legal-reconsent-modal')).toBeNull()
+    }
+    expect(vi.isFakeTimers()).toBe(false)
+    try {
+      // Only timer functions are replaced; Date and the server offset stay real.
+      vi.useFakeTimers({
+        toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'],
+      })
+      expect(vi.getTimerCount()).toBe(0)
+      session = await layoutReconsentSession()
+      session.handshake(
+        layoutReconsentHandshake({
+          lapsed: [{ document: 'terms', deadline: '2026-09-01' }],
+          frozen: true,
         }),
       )
-      expect(surface(container, 'access-loss-notice')).not.toBeNull()
+      view = await mountLayoutChrome({ connection: layoutChromeConnection() })
+      expect(surface(view.root, 'legal-frozen-screen')).not.toBeNull()
+      expect(surface(document.body, 'legal-reconsent-modal')).toBeNull()
+      expect(hilosLegalReconsentOpen.get()).toBe(false)
+      expect(hilosLegalReconsent.loading.get()).toBe(true)
+      expect(session.sent.at(-1)).toEqual({
+        action: 'hilos_legal_reconsent',
+        data: {},
+        requestId: expect.any(String),
+      })
+      expect(session.sent.at(-1)?.requestId).toBeTruthy()
+      const sent = [...session.sent]
 
-      if (exit === 'sign out') {
-        fireEvent.click(surface(container, 'account-blocked-sign-out')!)
-        expect(session.source.sent[0]?.action).toBe(
-          'hilos_dismiss_account_blocked',
-        )
-        await act(async () => {
-          session.source.succeed(
-            session.source.sent[0]?.requestId,
-            'hilos_dismiss_account_blocked',
-          )
-          await Promise.resolve()
-        })
-        act(() =>
-          session.handshake({
-            entities: { currentUser: null },
-            data: { accountBlocked: null },
-          }),
-        )
-      } else {
-        act(() =>
-          session.handshake({
-            entities: { currentUser: { id: 7 } },
-            data: { accountBlocked: null },
-          }),
-        )
+      await view.unmount()
+      expect(hilosLegalReconsent.loading.get()).toBe(true)
+      expect(vi.getTimerCount()).toBeGreaterThan(0)
+      await act(session.release)
+      expect(vi.getTimerCount()).toBe(0)
+      expectIdle()
+      expect(hilosToasts.toasts.get()).toEqual([])
+
+      await act(session.release)
+      await act(async () => {
+        vi.advanceTimersByTime(60_000)
+      })
+      expect(vi.getTimerCount()).toBe(0)
+      expectIdle()
+      expect(hilosToasts.toasts.get()).toEqual([])
+      expect(session.sent).toEqual(sent)
+    } finally {
+      try {
+        await view?.unmount()
+      } finally {
+        try {
+          if (session) await act(session.release)
+        } finally {
+          try {
+            hilosToasts.clear()
+          } finally {
+            vi.useRealTimers()
+          }
+        }
       }
-      expect(surface(container, 'account-blocked')).toBeNull()
-      expect(surface(container, 'access-loss-notice')).toBeNull()
-      expect(surface(container, 'private-content')).not.toBeNull()
-
-      act(() => session.handshake(BLOCKED))
-      expect(surface(container, 'account-blocked')).not.toBeNull()
-      expect(surface(container, 'access-loss-notice')).toBeNull()
-    },
-  )
-
-  it('does not carry the ended-session explanation into a newly refused blocked sign-in', () => {
-    const { session, container } = liveShell()
-    act(() =>
-      session.handshake({
-        entities: { currentUser: null },
-        data: { accessLossReason: 'session_ended' },
-      }),
-    )
-    expect(surface(container, 'access-loss-notice')?.textContent).toBe(
-      'Your session has ended. Any unsaved changes were lost.',
-    )
-    expect(surface(container, 'test-sign-in')).not.toBeNull()
-
-    act(() => session.handshake(BLOCKED))
-    expect(surface(container, 'account-blocked')).not.toBeNull()
-    expect(surface(container, 'test-sign-in')).toBeNull()
-    expect(surface(container, 'access-loss-notice')).toBeNull()
-    expect(container.textContent).not.toContain(
-      'Any unsaved changes were lost.',
-    )
+    }
   })
 })
 
-/**
- * A handshake of Bob's session with documents waiting for his decision, or of
- * an anonymous session.
- *
- * @param facts The standing's facts beside a plain account, or null for nobody.
- */
-function reconsentHandshake(
-  facts: Record<string, unknown> | null,
-): Record<string, unknown> {
-  return {
-    data: {
-      accountStanding:
-        facts === null
-          ? null
-          : {
-              shown: facts['frozen'] === true ? 'frozen' : 'none',
-              blocked: false,
-              frozen: false,
-              deletionEffectiveAt: null,
-              lapsed: [],
-              window: [],
-              mergedInto: null,
-              mergedIntoName: null,
-              ...facts,
-            },
+registerLayoutImpersonationCases(
+  'React',
+  {
+    describe,
+    it,
+    expect,
+    async releaseBindings(release) {
+      await act(release)
     },
-    entities: {
-      currentUser: facts === null ? null : { id: 2, name: 'Bob' },
-      impersonatedBy: null,
+  },
+  mountLayoutChrome,
+)
+
+registerLayoutStandingMomentCases(
+  'React',
+  {
+    describe,
+    it,
+    expect,
+    vi,
+    async releaseBindings(release) {
+      await act(async () => {
+        await release()
+      })
     },
-  }
-}
+  },
+  mountLayoutChrome,
+)
+registerLayoutStandingChromeCases(
+  'React',
+  {
+    describe,
+    it,
+    expect,
+    vi,
+    async releaseBindings(release) {
+      await act(async () => {
+        await release()
+      })
+    },
+  },
+  mountLayoutChrome,
+)
+registerLayoutProtectedResidueCases(
+  'React',
+  { describe, it, expect, vi },
+  mountLayoutChrome,
+)
+registerLayoutCompactStalenessCases(
+  'React',
+  { describe, it, expect },
+  mountLayoutChrome,
+)
+registerLayoutControlOrderCases(
+  'React',
+  { describe, it, expect },
+  mountLayoutChrome,
+  bindSession,
+)
+registerLayoutSignOutCases(
+  'React',
+  {
+    describe,
+    it,
+    expect,
+    async releaseBindings(release) {
+      await act(release)
+    },
+  },
+  mountLayoutChrome,
+)
+
+registerLayoutStandingVisibilityCases(
+  'React',
+  {
+    describe,
+    it,
+    expect,
+    vi,
+    async releaseBindings(release) {
+      await act(async () => {
+        await release()
+      })
+    },
+  },
+  mountLayoutChrome,
+  { dataId: 'test-banner', text: 'A trial notice' },
+)
+
+registerLayoutStandingCancelCases(
+  'React',
+  {
+    describe,
+    it,
+    expect,
+    async releaseBindings(release) {
+      await act(async () => {
+        await release()
+      })
+    },
+  },
+  mountLayoutChrome,
+)
+
+registerLayoutStandingIdentityCases(
+  'React',
+  {
+    describe,
+    it,
+    expect,
+    async releaseBindings(release) {
+      await act(async () => {
+        await release()
+      })
+    },
+  },
+  mountLayoutChrome,
+)
+
+registerLayoutBlockedLiveCases(
+  'React',
+  {
+    describe,
+    it,
+    expect,
+    async releaseBindings(release) {
+      await act(release)
+    },
+  },
+  mountLayoutBlocked,
+)
+
+registerLayoutBlockedCases(
+  'React',
+  {
+    describe,
+    it,
+    expect,
+    async releaseBindings(release) {
+      await act(release)
+    },
+  },
+  mountLayoutChrome,
+)
 
 /**
  * A router standing on one page.
@@ -1465,599 +726,73 @@ function routerOn(page: string | null, admin = false): HilosRouter {
   }
 }
 
-describe('HilosLayout "the terms have changed" (HIL-500)', () => {
-  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
-  const inWindow = { window: [{ document: 'terms', deadline: '2026-11-10' }] }
-  const lapsed = { lapsed: [{ document: 'terms', deadline: '2026-09-01' }] }
-  const windowShown = (): boolean =>
-    document.body.querySelector('[data-id="legal-reconsent-modal"]') !== null
-
-  afterEach(async () => {
-    await unbind?.()
-    unbind = undefined
-    cleanup()
-    vi.useRealTimers()
-  })
-
-  it('draws the yellow document icon after the user region with the days left', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(Date.UTC(2026, 10, 1))
-    applyServerTime(Date.now())
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(reconsentHandshake(inWindow))
-
-    const container = renderShell(shellConnection())
-
-    const icon = surface(container, 'legal-reconsent-icon')
-    expect(icon?.classList.contains('text-warning')).toBe(true)
-    expect(icon?.querySelector('.bi-file-earmark-text')).not.toBeNull()
-    expect(icon?.getAttribute('title')).toBe(
-      'The terms have changed — 9 days left to decide',
-    )
-    expect(windowShown()).toBe(false)
-  })
-
-  it('says "please review them" for a lapsed document under the remind setting', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(reconsentHandshake(lapsed))
-
-    const container = renderShell(shellConnection())
-
-    expect(
-      surface(container, 'legal-reconsent-icon')?.getAttribute('title'),
-    ).toBe('The terms have changed — please review them')
-    expect(surface(container, 'legal-frozen-screen')).toBeNull()
-  })
-
-  it('raises the window on a sign-in in this tab and opens it from the icon after Later', async () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(reconsentHandshake(null))
-    const container = renderShell(shellConnection())
-    expect(surface(container, 'legal-reconsent-icon')).toBeNull()
-
-    await act(async () => {
-      session.handshake(reconsentHandshake(inWindow))
-    })
-
-    expect(windowShown()).toBe(true)
-    expect(session.source.sent.at(-1)?.action).toBe('hilos_legal_reconsent')
-    await act(async () => {
-      fireEvent.click(
-        document.body.querySelector('[data-id="legal-reconsent-later"]')!,
-      )
-    })
-    expect(windowShown()).toBe(false)
-    await act(async () => {
-      fireEvent.click(surface(container, 'legal-reconsent-icon')!)
-    })
-    expect(windowShown()).toBe(true)
-  })
-
-  it.each(['header', 'escape', 'backdrop', 'later'] as const)(
-    'allows %s close while the reconsent text is loading',
-    async (gesture) => {
-      const session = bindSession()
-      unbind = session.unbind
-      session.handshake(reconsentHandshake(null))
-      renderShell(shellConnection())
-      await act(async () => session.handshake(reconsentHandshake(inWindow)))
-      expect(windowShown()).toBe(true)
-      const one = (id: string): HTMLElement =>
-        document.body.querySelector(`[data-id="${id}"]`)!
-      expect(one('legal-reconsent-loading')).not.toBeNull()
-      expect(one('legal-reconsent-accept').matches(':disabled')).toBe(true)
-      expect(one('modal-close').matches(':disabled')).toBe(false)
+registerLayoutReconsentReminderCases(
+  'React',
+  {
+    describe,
+    it,
+    expect,
+    vi,
+    async releaseBindings(release) {
       await act(async () => {
-        if (gesture === 'escape')
-          fireEvent.keyDown(one('modal'), { key: 'Escape' })
-        else if (gesture === 'backdrop') fireEvent.click(one('modal'))
-        else
-          fireEvent.click(
-            one(gesture === 'header' ? 'modal-close' : 'legal-reconsent-later'),
-          )
+        await release()
       })
-      expect(windowShown()).toBe(false)
-      expect(session.source.sent.map(({ action }) => action)).toEqual([
-        'hilos_legal_reconsent',
-      ])
     },
-  )
+  },
+  mountLayoutChrome,
+)
 
-  it('holds the real acceptance window immediately, releases a refusal for retry and closes on success', async () => {
-    vi.useFakeTimers()
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(reconsentHandshake(null))
-    renderShell(shellConnection())
-    const one = (id: string): HTMLElement =>
-      document.body.querySelector(`[data-id="${id}"]`)!
-    await act(async () => session.handshake(reconsentHandshake(inWindow)))
-    await act(async () =>
-      session.source.succeed(
-        session.source.sent.at(-1)!.requestId,
-        'hilos_legal_reconsent',
-        reconsentContent(),
-      ),
-    )
-    await act(async () => fireEvent.click(one('legal-reconsent-compare')))
-    const modal = one('legal-reconsent-modal')
-    const body = modal.querySelector('fieldset')!
-    const comparison = one('legal-changes')
-    const accept = one('legal-reconsent-accept')
-    accept.focus()
-    await act(async () => fireEvent.click(accept))
-    const attempt = session.source.sent.at(-1)!
-    expect(attempt.action).toBe('hilos_legal_accept')
-    expect(attempt.data).toEqual({
-      acceptedRevisions: { terms: '2026-09-27', privacy: '2026-09-27' },
-    })
-    expect(accept.getAttribute('aria-busy')).toBe('true')
-    expect(accept.getAttribute('aria-disabled')).toBe('true')
-    expect(accept.matches(':disabled')).toBe(false)
-    expect(document.activeElement).toBe(accept)
-    expect(accept.classList.contains('disabled')).toBe(false)
-    expect(one('legal-reconsent-modal')).toBe(modal)
-    expect(modal.querySelector('fieldset')).toBe(body)
-    expect(one('legal-changes')).toBe(comparison)
-    for (const id of [
-      'modal-close',
-      'legal-reconsent-later',
-      'legal-reconsent-refuse',
-      'legal-reconsent-back',
-    ]) {
-      expect(one(id).matches(':disabled')).toBe(true)
-    }
-    await act(async () => {
-      for (const id of [
-        'modal-close',
-        'legal-reconsent-later',
-        'legal-reconsent-refuse',
-        'legal-reconsent-back',
-        'legal-reconsent-accept',
-        'modal',
-      ])
-        fireEvent.click(one(id))
-      fireEvent.keyDown(one('modal'), { key: 'Escape' })
-      vi.advanceTimersByTime(299)
-    })
-    expect(windowShown()).toBe(true)
-    expect(one('legal-changes')).toBe(comparison)
-    expect(session.source.sent).toHaveLength(2)
-    expect(
-      accept.querySelector('[data-id="loading-button-spinner"]'),
-    ).toBeNull()
-    expect(document.activeElement).toBe(accept)
-    await act(async () => vi.advanceTimersByTime(1))
-    expect(
-      accept.querySelector('[data-id="loading-button-spinner"]'),
-    ).not.toBeNull()
-
-    await act(async () =>
-      session.source.refuse(
-        attempt.requestId,
-        'The terms moved.',
-        'hilos_legal_accept',
-      ),
-    )
-    expect(windowShown()).toBe(true)
-    expect(one('legal-reconsent-error').textContent).toContain(
-      'The terms moved.',
-    )
-    expect(body.disabled).toBe(true)
-    const refusal = one('legal-reconsent-error')
-    expect(one('legal-reconsent-error-details').matches(':disabled')).toBe(true)
-    await act(async () =>
-      session.source.succeed(
-        session.source.sent.at(-1)!.requestId,
-        'hilos_legal_reconsent',
-        reconsentContent(),
-      ),
-    )
-    expect(one('legal-reconsent-modal')).toBe(modal)
-    expect(modal.querySelector('fieldset')).toBe(body)
-    expect(one('legal-reconsent-error')).toBe(refusal)
-    expect(body.disabled).toBe(false)
-    expect(one('legal-reconsent-error-details').matches(':disabled')).toBe(
-      false,
-    )
-    expect(one('modal-close').matches(':disabled')).toBe(false)
-    expect(one('legal-reconsent-later').matches(':disabled')).toBe(false)
-    expect(one('legal-reconsent-document')).not.toBeNull()
-    expect(session.source.sent).toHaveLength(3)
-    await act(async () => fireEvent.click(one('legal-reconsent-accept')))
-    expect(session.source.sent).toHaveLength(4)
-    await act(async () =>
-      session.source.succeed(
-        session.source.sent.at(-1)!.requestId,
-        'hilos_legal_accept',
-      ),
-    )
-    expect(windowShown()).toBe(false)
-  })
-
-  it('removes the busy legal window when the session leaves', async () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(reconsentHandshake(null))
-    renderShell(shellConnection())
-    await act(async () => session.handshake(reconsentHandshake(inWindow)))
-    await act(async () =>
-      session.source.succeed(
-        session.source.sent.at(-1)!.requestId,
-        'hilos_legal_reconsent',
-        reconsentContent(),
-      ),
-    )
-    await act(async () =>
-      fireEvent.click(
-        document.body.querySelector('[data-id="legal-reconsent-accept"]')!,
-      ),
-    )
-    expect(windowShown()).toBe(true)
-    await act(async () => session.handshake(reconsentHandshake(null)))
-    expect(windowShown()).toBe(false)
-  })
-
-  it('puts the freeze screen in place of the content with no icon', async () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(reconsentHandshake({ ...lapsed, frozen: true }))
-
-    let container!: HTMLElement
-    await act(async () => {
-      container = renderShell(shellConnection())
-    })
-
-    const screen = surface(container, 'legal-frozen-screen')
-    expect(screen?.querySelector('.bi-snow')).not.toBeNull()
-    expect(
-      screen
-        ?.querySelector('[data-id="legal-reconsent"]')
-        ?.getAttribute('data-variant'),
-    ).toBe('frozen')
-    expect(surface(container, 'page-body')).toBeNull()
-    expect(surface(container, 'app-footer')).not.toBeNull()
-    expect(surface(container, 'legal-reconsent-icon')).toBeNull()
-    expect(session.source.sent.at(-1)?.action).toBe('hilos_legal_reconsent')
-  })
-
-  it('leaves the pages the freeze keeps open to their content', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(reconsentHandshake({ ...lapsed, frozen: true }))
-
-    const { container } = render(
-      <HilosRouterContext.Provider value={routerOn(HilosPages.PROFILE_DATA)}>
-        <HilosLayout connection={shellConnection()}>
-          <p data-id="page-body">Page</p>
-        </HilosLayout>
-      </HilosRouterContext.Provider>,
-    )
-
-    expect(surface(container, 'legal-frozen-screen')).toBeNull()
-    expect(surface(container, 'page-body')).not.toBeNull()
-  })
-
-  it('covers an address with no page with the freeze screen', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(reconsentHandshake({ ...lapsed, frozen: true }))
-
-    const { container } = render(
-      <HilosRouterContext.Provider value={routerOn(null)}>
-        <HilosLayout connection={shellConnection()}>
-          <p data-id="page-body">Page</p>
-        </HilosLayout>
-      </HilosRouterContext.Provider>,
-    )
-
-    expect(surface(container, 'legal-frozen-screen')).not.toBeNull()
-    expect(surface(container, 'page-body')).toBeNull()
-  })
-
-  it('draws no icon under the maintenance surface', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(reconsentHandshake(inWindow))
-
-    const container = renderShell(shellConnection(FROZEN))
-
-    expect(surface(container, 'legal-reconsent-icon')).toBeNull()
-  })
-})
-
-describe('HilosLayout view-mode strip (HIL-1260)', () => {
-  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
-
-  afterEach(async () => {
-    await unbind?.()
-    unbind = undefined
-    cleanup()
-  })
-
-  /**
-   * One handshake: Bob, an admin or not, on a node with the admin view mode on
-   * or off, with the facts of his standing.
-   *
-   * @param admin Whether Bob is an admin.
-   * @param viewMode The node's admin view mode.
-   * @param deletionEffectiveAt When Bob's own account is deleted, or null.
-   */
-  function viewerHandshake(
-    admin: boolean,
-    viewMode: boolean,
-    deletionEffectiveAt: number | null = null,
-  ): Record<string, unknown> {
-    const standing = standingHandshake(
-      deletionEffectiveAt === null ? 'none' : 'deletion_scheduled',
-      false,
-      deletionEffectiveAt,
-    )
-
-    return {
-      data: {
-        ...(standing['data'] as Record<string, unknown>),
-        adminViewMode: viewMode,
-      },
-      entities: { currentUser: { id: 2, name: 'Bob', admin } },
-    }
-  }
-
-  /**
-   * Render the shell on one route.
-   *
-   * @param admin Whether the route is an admin one.
-   * @param connection The shell's connection.
-   * @param banner The project's own strip, if any.
-   */
-  function renderOn(
-    admin: boolean,
-    connection: HilosConnection = shellConnection(),
-    banner?: ReactNode,
-  ): HTMLElement {
-    return render(
-      <HilosRouterContext.Provider
-        value={routerOn(
-          admin ? HilosPages.DASHBOARD : HilosPages.PROFILE_DATA,
-          admin,
-        )}
-      >
-        <HilosLayout connection={connection} banner={banner}>
-          <p data-id="page-body">Page</p>
-        </HilosLayout>
-      </HilosRouterContext.Provider>,
-    ).container
-  }
-
-  it('tells a viewer on an admin route that the screen may be looked at and not changed', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(viewerHandshake(false, true))
-
-    const strip = surface(renderOn(true), 'view-mode-banner')!
-
-    expect(strip.classList.contains('alert')).toBe(true)
-    expect(strip.classList.contains('alert-secondary')).toBe(true)
-    expect(strip.classList.contains('border-0')).toBe(true)
-    expect(strip.querySelector('.bi-eye')?.getAttribute('aria-hidden')).toBe(
-      'true',
-    )
-    const text = strip.querySelector(`#${HILOS_VIEW_MODE_STRIP_TEXT_ID}`)!
-    expect(text.querySelector('strong')?.textContent).toBe('View mode')
-    expect(text.textContent?.trim()).toBe(
-      'View mode · You can look around, but not change anything.',
-    )
-  })
-
-  it('stands after the session strips and before the project strip', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(viewerHandshake(false, true, NOW + 3 * DAY_MS))
-
-    const container = renderOn(
-      true,
-      shellConnection(ADMITTED),
-      <p data-id="test-banner">A trial notice</p>,
-    )
-
-    const order = Array.from(
-      surface(container, 'app-banner')?.children ?? [],
-    ).map((child) => child.getAttribute('data-id'))
-    expect(order).toEqual([
-      'protected-mode-banner',
-      'account-deletion-strip',
-      'view-mode-banner',
-      'test-banner',
-    ])
-  })
-
-  it.each([
-    ['on a route outside the admin section', false, true, false],
-    ['for an admin', true, true, true],
-    ['on a node without the view mode', false, false, true],
-  ] as const)('draws no strip %s', (_case, admin, viewMode, adminRoute) => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(viewerHandshake(admin, viewMode))
-
-    expect(surface(renderOn(adminRoute), 'view-mode-banner')).toBeNull()
-  })
-
-  it('draws no strip under the maintenance surface', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(viewerHandshake(false, true))
-
-    expect(
-      surface(renderOn(true, shellConnection(FROZEN)), 'view-mode-banner'),
-    ).toBeNull()
-  })
-
-  it('leaves on a grant and comes back on a revoke, live', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(viewerHandshake(false, true))
-    const container = renderOn(true)
-    const shown = () => surface(container, 'view-mode-banner') !== null
-    expect(shown()).toBe(true)
-
-    act(() => {
-      session.handshake(viewerHandshake(true, true))
-    })
-    expect(shown()).toBe(false)
-
-    act(() => {
-      session.handshake(viewerHandshake(false, true))
-    })
-    expect(shown()).toBe(true)
-  })
-})
-
-describe('HilosLayout theme icon (HIL-1440)', () => {
-  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
-  let releaseTheme: (() => void) | undefined
-  const themeActions = new ActionLifecycle(new ReplyingSource())
-
-  function dummyConnection(): HilosConnection {
-    return { on: () => () => {} } as unknown as HilosConnection
-  }
-
-  // Filled by construction, not by a storage write in this file: a setItem
-  // call here is a browser value the file does not declare.
-  function memoryStorage(raw: string): Storage {
-    const store = new Map<string, string>([[THEME_SETTINGS_STORAGE_KEY, raw]])
-
-    return {
-      get length() {
-        return store.size
-      },
-      clear() {
-        store.clear()
-      },
-      getItem(key: string) {
-        return store.get(key) ?? null
-      },
-      key(index: number) {
-        return [...store.keys()][index] ?? null
-      },
-      removeItem(key: string) {
-        store.delete(key)
-      },
-      setItem(key: string, value: string) {
-        store.set(key, value)
-      },
-    }
-  }
-
-  function bindSnapshot(switchingEnabled: boolean): void {
-    releaseTheme?.()
-    vi.stubGlobal(
-      'localStorage',
-      memoryStorage(
-        JSON.stringify({ switchingEnabled, defaultTheme: 'light' }),
-      ),
-    )
-    releaseTheme = bindThemeState(
-      dummyConnection(),
-      new ScopeManager(),
-      themeActions,
-    )
-  }
-
-  function renderThemed(connection: HilosConnection): HTMLElement {
-    return render(
-      <HilosLayout
-        connection={connection}
-        user={<span data-id="user-slot">Ada</span>}
-      >
-        <p data-id="page-body">Page</p>
-      </HilosLayout>,
-    ).container
-  }
-
-  afterEach(async () => {
-    await unbind?.()
-    unbind = undefined
-    cleanup()
-    releaseTheme?.()
-    releaseTheme = undefined
-    vi.unstubAllGlobals()
-    const restore = bindThemeState(
-      dummyConnection(),
-      new ScopeManager(),
-      themeActions,
-    )
-    restore()
-  })
-
-  it.each([
-    ['guest', null],
-    ['signed-in person', { id: 7, name: 'Ada' }],
-  ] as const)(
-    'draws the theme icon first in the right-hand group for a %s',
-    (_label, user) => {
-      const session = bindSession()
-      unbind = session.unbind
-      session.handshake({ entities: { currentUser: user } })
-      const container = renderThemed(shellConnection())
-      const group = container.querySelector(
-        'nav .d-flex.align-items-center.gap-2',
-      ) as HTMLElement
-      const theme = surface(group, 'nav-theme') as HTMLElement
-
-      expect(group.firstElementChild?.contains(theme)).toBe(true)
-      expect(
-        theme.compareDocumentPosition(
-          surface(group, 'user-slot') as HTMLElement,
-        ) & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).not.toBe(0)
-      expect(theme.getAttribute('aria-label')).toBe('Theme: System')
+registerLayoutReconsentFrozenCases(
+  'React',
+  {
+    describe,
+    it,
+    expect,
+    async releaseBindings(release) {
+      await act(async () => {
+        await release()
+      })
     },
-  )
+  },
+  mountLayoutChrome,
+)
 
-  it('draws no theme icon under maintenance', () => {
-    const container = renderThemed(shellConnection(FROZEN))
+registerLayoutReconsentLoadingCases(
+  'React',
+  {
+    describe,
+    it,
+    expect,
+    async releaseBindings(release) {
+      await act(async () => {
+        await release()
+      })
+    },
+  },
+  mountLayoutChrome,
+)
 
-    expect(surface(container, 'maintenance')).not.toBeNull()
-    expect(surface(container, 'nav-theme')).toBeNull()
-    expect(surface(container, 'conn-state')).not.toBeNull()
-  })
+registerLayoutReconsentAcceptanceCases(
+  'React',
+  {
+    describe,
+    it,
+    expect,
+    vi,
+    async releaseBindings(release) {
+      await act(async () => {
+        await release()
+      })
+    },
+  },
+  mountLayoutChrome,
+)
 
-  it('draws no theme icon during the held first frame', () => {
-    const connection = shellConnection()
-    Object.defineProperty(connection, 'firstFrameHeld', { value: true })
-    const container = renderThemed(connection)
-
-    expect(surface(container, 'nav-theme')).toBeNull()
-    expect(
-      surface(container, 'hilos-boot-state')?.getAttribute('data-state'),
-    ).toBe('held')
-  })
-
-  it('draws no theme icon when switching is off', () => {
-    bindSnapshot(false)
-    const container = renderThemed(shellConnection())
-
-    expect(surface(container, 'nav-brand')).not.toBeNull()
-    expect(surface(container, 'nav-theme')).toBeNull()
-  })
-
-  it('keeps the icon in a takeover but closes it to writes', () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake(TAKEOVER)
-    const container = renderThemed(shellConnection())
-    const theme = surface(container, 'nav-theme') as HTMLButtonElement
-
-    expect(theme.disabled).toBe(true)
-    expect(theme.getAttribute('aria-describedby')).toBe(
-      HILOS_IMPERSONATION_STRIP_TEXT_ID,
-    )
-  })
-})
+registerLayoutConnectionPageCases(
+  'React',
+  { describe, it, expect },
+  mountLayoutConnection,
+)
 
 /** A shell connection with snapshots and individually removable event listeners. */
 function shellFeed(initialBuild?: string) {
@@ -2103,445 +838,6 @@ function shellFeed(initialBuild?: string) {
   }
 }
 
-/** Mount the real node prop seam, retaining the shell while the host changes. */
-function renderResponsive(
-  feed: ReturnType<typeof shellFeed>,
-  initiallyVisible = true,
-) {
-  let bound = feed.connection
-  let visible = initiallyVisible
-  const route = createSignal<PageRouteMatch>({
-    page: null,
-    params: {},
-    admin: false,
-  })
-  const router = { ...routerOn(null), currentRoute: route } as HilosRouter
-  const draw = () => (
-    <HilosRouterContext.Provider value={router}>
-      <HilosLayout
-        connection={bound}
-        nav={
-          visible ? (
-            <>
-              <a href="/hidden" hidden>
-                Hidden
-              </a>
-              <a href="/first" data-id="project-nav-first">
-                First
-              </a>
-              <a href="/second" data-id="project-nav-second">
-                Second
-              </a>
-            </>
-          ) : null
-        }
-        user={
-          <>
-            <span data-id="user-bell">Bell</span>
-            <span data-id="user-avatar">Avatar</span>
-            <a href="/signin" data-id="user-signin">
-              Sign in
-            </a>
-          </>
-        }
-      >
-        <p>Page</p>
-      </HilosLayout>
-    </HilosRouterContext.Provider>
-  )
-  const view = render(draw())
-  const root = view.container
-  root.addEventListener('click', (event) => event.preventDefault())
-  const settle = async (): Promise<void> => {
-    await act(async () => {
-      await Promise.resolve()
-    })
-  }
-  const update = async (run: () => void): Promise<void> => {
-    await act(async () => {
-      run()
-      await Promise.resolve()
-    })
-  }
-  return {
-    root,
-    route,
-    settle,
-    update,
-    click: (element: HTMLElement) => update(() => element.click()),
-    key: (element: HTMLElement, key: string) =>
-      update(() =>
-        element.dispatchEvent(
-          new KeyboardEvent('keydown', {
-            key,
-            bubbles: true,
-            cancelable: true,
-          }),
-        ),
-      ),
-    nav: (value: boolean) =>
-      update(() => {
-        visible = value
-        view.rerender(draw())
-      }),
-    connection: (value: HilosConnection) =>
-      update(() => {
-        bound = value
-        view.rerender(draw())
-      }),
-    dispose(): void {
-      view.unmount()
-    },
-  }
-}
-
-describe('HilosLayout responsive shell (HIL-1647)', () => {
-  let shell: ReturnType<typeof renderResponsive> | undefined
-  let releaseSession: ReturnType<typeof bindSession>['unbind'] | undefined
-  let wide = false
-
-  const surface = (id: string): HTMLElement | null =>
-    shell?.root.querySelector(`[data-id="${id}"]`) ?? null
-  const get = (id: string): HTMLElement => {
-    const element = surface(id)
-    expect(element, id).not.toBeNull()
-    return element!
-  }
-  // Model CSS visibility, not geometry: the production code asks isDisplayed.
-  function cssVisibility(): void {
-    const computedStyle = window.getComputedStyle.bind(window)
-    vi.spyOn(window, 'getComputedStyle').mockImplementation(
-      (element, pseudo) => {
-        if (element.getAttribute('data-id') === 'nav-toggle') {
-          return { display: wide ? 'none' : 'block' } as CSSStyleDeclaration
-        }
-        return computedStyle(element, pseudo)
-      },
-    )
-  }
-
-  afterEach(async () => {
-    await releaseSession?.()
-    releaseSession = undefined
-    shell?.dispose()
-    shell = undefined
-    vi.useRealTimers()
-    applyServerTime(Date.now())
-    wide = false
-    vi.restoreAllMocks()
-  })
-
-  it('uses one named native disclosure with an existing unique controlled panel', async () => {
-    shell = renderResponsive(shellFeed())
-    await shell.settle()
-    const toggle = get('nav-toggle')
-    const panel = get('nav-panel')
-    expect(toggle.tagName).toBe('BUTTON')
-    expect(toggle.getAttribute('type')).toBe('button')
-    expect(toggle.getAttribute('aria-label')).toBe('Navigation')
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(toggle.getAttribute('aria-controls')).toBe(panel.id)
-    expect(document.querySelectorAll(`[id="${panel.id}"]`)).toHaveLength(1)
-    expect(
-      shell.root.querySelectorAll('[data-id="project-nav-first"]'),
-    ).toHaveLength(1)
-    expect(panel.classList.contains('show')).toBe(false)
-    expect(panel.getAttribute('role')).toBeNull()
-    expect(panel.getAttribute('aria-modal')).toBeNull()
-    expect(toggle.hasAttribute('data-bs-toggle')).toBe(false)
-  })
-
-  it('opens by native button activation, closes by Escape, link and route without stealing router focus', async () => {
-    cssVisibility()
-    shell = renderResponsive(shellFeed())
-    await shell.settle()
-    const toggle = get('nav-toggle')
-    // Enter and Space activate a native button as a click in a real browser.
-    for (const key of ['Enter', ' ']) {
-      toggle.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
-      await shell.click(toggle)
-      expect(toggle.getAttribute('aria-expanded')).toBe('true')
-      expect(get('nav-panel').classList.contains('show')).toBe(true)
-      expect(document.activeElement).toBe(get('project-nav-first'))
-      await shell.key(get('project-nav-first'), 'Escape')
-      expect(toggle.getAttribute('aria-expanded')).toBe('false')
-      expect(document.activeElement).toBe(toggle)
-    }
-    await shell.click(toggle)
-    const link = get('project-nav-second')
-    link.focus()
-    await shell.click(link)
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(document.activeElement).toBe(link)
-    await shell.click(toggle)
-    const main = shell.root.querySelector('main')!
-    main.focus()
-    await shell.update(() => {
-      shell!.route.set({ page: 'next', params: {}, admin: false })
-    })
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(document.activeElement).toBe(main)
-  })
-
-  it('removes empty or vanished content and resets when maintenance or the first-frame hold rises', async () => {
-    const feed = shellFeed()
-    shell = renderResponsive(feed)
-    await shell.settle()
-    await shell.click(get('nav-toggle'))
-    await shell.nav(false)
-    expect(surface('nav-toggle')).toBeNull()
-    expect(surface('nav-panel')).toBeNull()
-    await shell.nav(true)
-    expect(get('nav-toggle').getAttribute('aria-expanded')).toBe('false')
-    await shell.click(get('nav-toggle'))
-    await shell.update(() =>
-      feed.push({ protectedMode: FROZEN }, 'protectedMode'),
-    )
-    expect(surface('nav-toggle')).toBeNull()
-    expect(surface('nav-panel')).toBeNull()
-    expect(surface('nav-brand')).toBeNull()
-    expect(surface('nav-admin')).toBeNull()
-    expect(surface('nav-logout')).toBeNull()
-    expect(surface('conn-state')).not.toBeNull()
-    await shell.update(() =>
-      feed.push({ protectedMode: PROTECTED_MODE_INACTIVE }, 'protectedMode'),
-    )
-    expect(get('nav-toggle').getAttribute('aria-expanded')).toBe('false')
-    await shell.update(() =>
-      feed.push({ firstFrameHeld: true }, 'firstFrameHold'),
-    )
-    expect(surface('app-root')).toBeNull()
-    expect(surface('hilos-boot-state')?.getAttribute('data-state')).toBe('held')
-  })
-
-  it('has no disclosure when the host starts with an empty nav', async () => {
-    shell = renderResponsive(shellFeed(), false)
-    await shell.settle()
-    expect(surface('nav-toggle')).toBeNull()
-    expect(surface('nav-panel')).toBeNull()
-  })
-
-  it('resets at CSS width changes and moves focus out of the hidden button or panel', async () => {
-    cssVisibility()
-    shell = renderResponsive(shellFeed())
-    await shell.settle()
-    const toggle = get('nav-toggle')
-    await shell.click(toggle)
-    wide = true
-    await shell.update(() => window.dispatchEvent(new Event('resize')))
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(document.activeElement).toBe(get('project-nav-first'))
-    wide = false
-    await shell.update(() => window.dispatchEvent(new Event('resize')))
-    expect(document.activeElement).toBe(toggle)
-    expect(get('nav-panel').classList.contains('show')).toBe(false)
-    toggle.focus()
-    wide = true
-    await shell.update(() => window.dispatchEvent(new Event('resize')))
-    expect(document.activeElement).toBe(get('project-nav-first'))
-  })
-
-  it('reads the latest build snapshot, updates on welcome, keeps it on drop and releases replaced subscriptions', async () => {
-    const feed = shellFeed('A')
-    shell = renderResponsive(feed)
-    await shell.settle()
-    expect(get('footer-build').textContent?.trim()).toBe('build A')
-    await shell.update(() => feed.push({ build: 'B' }, 'handshake'))
-    expect(get('footer-build').textContent?.trim()).toBe('build B')
-    await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
-    expect(get('footer-build').textContent?.trim()).toBe('build B')
-    const replacement = shellFeed('C')
-    await shell.connection(replacement.connection)
-    expect(get('footer-build').textContent?.trim()).toBe('build C')
-    expect(feed.listeners.get('handshake')?.size).toBe(0)
-    await shell.update(() => feed.push({ build: 'old' }, 'handshake'))
-    expect(get('footer-build').textContent?.trim()).toBe('build C')
-    await shell.update(() => replacement.push({ build: 'D' }, 'handshake'))
-    expect(get('footer-build').textContent?.trim()).toBe('build D')
-    const remove = vi.spyOn(window, 'removeEventListener')
-    const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect')
-    shell.dispose()
-    shell = undefined
-    expect(replacement.listeners.get('handshake')?.size).toBe(0)
-    expect(remove.mock.calls.some(([name]) => name === 'resize')).toBe(true)
-    expect(disconnect).toHaveBeenCalled()
-  })
-
-  it('reserves a hidden build line before welcome and keeps the four SPA links in a responsive grid', async () => {
-    shell = renderResponsive(shellFeed())
-    await shell.settle()
-    expect(get('footer-build').classList.contains('invisible')).toBe(true)
-    expect(get('footer-build').textContent?.trim()).toBe('build')
-    const footer = get('app-footer')
-    const grid = footer.querySelector('.row-cols-2')!
-    expect(grid.children).toHaveLength(4)
-    expect(grid.classList.contains('text-center')).toBe(true)
-    expect(grid.classList.contains('d-md-flex')).toBe(true)
-    expect(
-      Array.from(footer.querySelectorAll('a')).map((link) =>
-        link.getAttribute('href'),
-      ),
-    ).toEqual(['/about', '/terms', '/privacy', '/license'])
-  })
-
-  it('follows the current person live and preserves blocked/frozen priority over deletion', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(NOW)
-    const session = bindSession()
-    releaseSession = session.unbind
-    session.handshake(
-      standingHandshake('deletion_scheduled', false, NOW + 3 * DAY_MS),
-    )
-    shell = renderResponsive(shellFeed())
-    await shell.settle()
-    expect(surface('account-deletion-strip-keep')).not.toBeNull()
-    await shell.update(() =>
-      session.handshake({
-        ...standingHandshake('deletion_scheduled', true, NOW + 5 * DAY_MS),
-        entities: {
-          currentUser: { id: 3, name: 'Eve' },
-          impersonatedBy: { id: 1, name: 'Ada' },
-        },
-      }),
-    )
-    expect(
-      get('impersonation-banner').querySelector('strong')?.textContent,
-    ).toBe('Eve')
-    expect(get('account-deletion-strip-text').textContent).toContain(
-      `Your account will be deleted on ${formatCalendarDate(NOW + 5 * DAY_MS)} — 5 days left`,
-    )
-    expect(surface('account-deletion-strip-keep')).toBeNull()
-    for (const [standing, tone] of [
-      ['blocked', 'alert-danger'],
-      ['frozen', 'alert-info'],
-    ] as const) {
-      await shell.update(() =>
-        session.handshake(standingHandshake(standing, true, NOW + 5 * DAY_MS)),
-      )
-      expect(surface('account-deletion-strip')).toBeNull()
-      expect(get('impersonation-banner').classList.contains(tone)).toBe(true)
-    }
-    await shell.update(() =>
-      session.handshake({
-        ...standingHandshake('deletion_scheduled', false, NOW + 7 * DAY_MS),
-        entities: {
-          currentUser: { id: 4, name: 'Carol' },
-          impersonatedBy: null,
-        },
-      }),
-    )
-    expect(surface('impersonation-banner')).toBeNull()
-    expect(surface('account-deletion-strip-keep')).not.toBeNull()
-    expect(get('account-deletion-strip-text').textContent).toContain(
-      `Your account will be deleted on ${formatCalendarDate(NOW + 7 * DAY_MS)} — 7 days left`,
-    )
-  })
-
-  it('shows one visual compact stale sentence including maintenance and updates without navigation', async () => {
-    const feed = shellFeed()
-    shell = renderResponsive(feed)
-    await shell.settle()
-    expect(surface('conn-stale-line')).toBeNull()
-    const stale = { stale: true, since: undefined }
-    await shell.update(() => feed.push({ rtStaleness: stale }, 'rtStaleness'))
-    const line = get('conn-stale-line')
-    expect(line.textContent?.trim()).toBe(
-      'Some data may be out of date since an unknown time',
-    )
-    expect(line.getAttribute('aria-hidden')).toBe('true')
-    expect(line.hasAttribute('aria-live')).toBe(false)
-    expect(line.hasAttribute('role')).toBe(false)
-    expect(get('app-banner').firstElementChild).toBe(line)
-    expect(get('conn-state').getAttribute('title')).toBe(
-      `connected - ${rtStalenessLabel(stale)}`,
-    )
-    expect(get('conn-state').querySelector('.bi-snow')).not.toBeNull()
-    expect(get('app-banner').querySelectorAll('[aria-live]')).toHaveLength(0)
-    const dated = { stale: true, since: Date.UTC(2026, 9, 21, 10) }
-    await shell.update(() => feed.push({ rtStaleness: dated }, 'rtStaleness'))
-    expect(line.textContent?.trim()).toBe(rtStalenessCompactLabel(dated))
-    await shell.update(() =>
-      feed.push({ protectedMode: FROZEN }, 'protectedMode'),
-    )
-    expect(surface('conn-stale-line')).toBe(line)
-    expect(surface('app-footer')).toBeNull()
-    await shell.update(() => feed.push({ state: 'reconnecting' }, 'state'))
-    expect(surface('conn-stale-line')).toBeNull()
-    await shell.update(() => feed.push({ state: 'connected' }, 'state'))
-    expect(surface('conn-stale-line')).not.toBeNull()
-    await shell.update(() =>
-      feed.push({ rtStaleness: RT_STALENESS_FRESH }, 'rtStaleness'),
-    )
-    expect(surface('conn-stale-line')).toBeNull()
-  })
-
-  it.each([
-    ['guest', null, false, false],
-    ['signed', { id: 2, name: 'Bob' }, false, false],
-    ['admin', { id: 2, name: 'Bob', admin: true }, false, false],
-    ['view', null, true, false],
-    ['takeover', { id: 2, name: 'Bob' }, false, true],
-  ] as const)(
-    'keeps actual control DOM order for %s',
-    async (_label, user, viewMode, takeover) => {
-      const session = bindSession()
-      releaseSession = session.unbind
-      session.handshake({
-        data: {
-          adminViewMode: viewMode,
-          accountStanding:
-            user === null
-              ? null
-              : {
-                  shown: 'none',
-                  blocked: false,
-                  frozen: false,
-                  deletionEffectiveAt: null,
-                  lapsed: [],
-                  window: [{ document: 'terms', deadline: '2099-11-10' }],
-                  mergedInto: null,
-                  mergedIntoName: null,
-                },
-        },
-        entities: {
-          currentUser: user,
-          impersonatedBy: takeover ? { id: 1, name: 'Ada' } : null,
-        },
-      })
-      shell = renderResponsive(shellFeed())
-      await shell.settle()
-      const ids = [
-        'nav-theme',
-        'nav-admin',
-        'user-bell',
-        'user-avatar',
-        'user-signin',
-        'legal-reconsent-icon',
-        'nav-logout',
-        'nav-toggle',
-        'conn-state',
-      ]
-      const present = ids
-        .map(surface)
-        .filter((element): element is HTMLElement => element !== null)
-      for (let index = 1; index < present.length; index++) {
-        expect(
-          present[index - 1]!.compareDocumentPosition(present[index]!) &
-            Node.DOCUMENT_POSITION_FOLLOWING,
-        ).not.toBe(0)
-      }
-      expect(get('conn-state').parentElement?.lastElementChild).toBe(
-        get('conn-state'),
-      )
-      expect(!!surface('nav-admin')).toBe(
-        viewMode || (user !== null && 'admin' in user),
-      )
-      expect(!!surface('nav-logout')).toBe(user !== null)
-      expect(!!surface('legal-reconsent-icon')).toBe(user !== null && !takeover)
-    },
-  )
-})
-
 /** A context consumer placed in the page, shell user region and a real portal. */
 function InteractionProbe({
   capture,
@@ -2553,7 +849,10 @@ function InteractionProbe({
 }
 
 /** The actual shell retained across input changes, including StrictMode replay. */
-function renderInteraction(feed: ReturnType<typeof shellFeed>, allow = false) {
+function renderInteraction(
+  feed: { connection: HilosConnection },
+  allow = false,
+) {
   let bound = feed.connection
   let allowed = allow
   let ownDisabled = false
@@ -2647,778 +946,143 @@ function renderInteraction(feed: ReturnType<typeof shellFeed>, allow = false) {
   }
 }
 
+/** Preserve this host's native stale-handler entry and lifecycle. */
+function mountConnectionShell(input: {
+  connection: HilosConnection
+  allow?: boolean
+}): LayoutConnectionShellView {
+  const shell = renderInteraction(input, input.allow)
+  let destroyed = false
+  return {
+    root: shell.root,
+    invokeStale(id) {
+      shell.root.querySelector<HTMLButtonElement>(`[data-id="${id}"]`)!.click()
+    },
+    async flush(run) {
+      await shell.update(run ?? (() => {}))
+    },
+    async unmount() {
+      if (destroyed) return
+      destroyed = true
+      try {
+        await act(async () => shell.dispose())
+      } finally {
+        shell.root.remove()
+      }
+    },
+  }
+}
+
+registerLayoutConnectionShellCases(
+  'React',
+  { describe, it, expect },
+  mountConnectionShell,
+  bindSession,
+)
+
+registerLayoutConnectionBranchCases(
+  'React',
+  { describe, it, expect },
+  mountConnectionShell,
+  bindSession,
+)
+
+registerLayoutConnectionModalCases(
+  'React',
+  { describe, it, expect },
+  mountLayoutConnection,
+)
+
 describe('HilosLayout connection interaction (HIL-1651)', () => {
   let shell: ReturnType<typeof renderInteraction> | undefined
-  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
-  afterEach(async () => {
-    await unbind?.()
-    unbind = undefined
+  afterEach(() => {
     shell?.dispose()
     shell = undefined
     cleanup()
     hilosToasts.clear()
   })
-  const get = <T extends HTMLElement = HTMLElement>(id: string): T =>
-    shell!.root.querySelector<T>(`[data-id="${id}"]`)!
 
-  it('keeps the main, fieldset, draft, file, choice and scroll through every unavailable state', async () => {
-    const feed = shellFeed()
-    shell = renderInteraction(feed)
-    const main = shell.root.querySelector('main')!
-    const fieldset = get<HTMLFieldSetElement>('page-interaction-scope')
-    const draft = get<HTMLInputElement>('draft')
-    const file = get<HTMLInputElement>('file')
-    const files = Object.freeze([new File(['draft'], 'draft.txt')])
-    Object.defineProperty(file, 'files', { value: files })
-    draft.value = 'Keep this draft'
-    draft.setSelectionRange(2, 6)
-    get<HTMLSelectElement>('choice').value = 'b'
-    main.scrollTop = 137
-    for (const state of [
-      'connecting',
-      'reconnecting',
-      'disconnected',
-    ] as const) {
-      await shell.update(() => {
-        feed.push({ state }, 'state')
-        expect(fieldset.disabled).toBe(true)
-      })
-      expect(get('draft')).toBe(draft)
-      expect(draft.matches(':disabled')).toBe(true)
-      expect(get('page-open').matches(':disabled')).toBe(true)
-      await shell.update(() => {
-        get('page-open').click()
-        get('page-link').click()
-      })
-      expect(shell.clicks).not.toHaveBeenCalled()
-      expect(get('page-view').getAttribute('aria-describedby')).toBe(
-        `validation ${HILOS_VIEW_MODE_STRIP_TEXT_ID} ${HILOS_CONNECTION_STATUS_TEXT_ID}`,
-      )
-      expect(draft.getAttribute('aria-describedby')).toBe(
-        `validation ${HILOS_CONNECTION_STATUS_TEXT_ID}`,
-      )
-      expect(
-        shell.root.querySelectorAll(`#${HILOS_CONNECTION_STATUS_TEXT_ID}`),
-      ).toHaveLength(1)
-    }
-    await shell.configure({ disabled: true, description: 'new-validation' })
-    await shell.update(() => {
-      feed.push({ state: 'connected' }, 'state')
-      feed.push(
-        { rtStaleness: { stale: true, since: undefined } },
-        'rtStaleness',
-      )
-    })
-    expect(shell.root.querySelector('main')).toBe(main)
-    expect(get('page-interaction-scope')).toBe(fieldset)
-    expect(fieldset.disabled).toBe(false)
-    expect(draft.disabled).toBe(true)
-    expect(get<HTMLButtonElement>('page-view').disabled).toBe(true)
-    expect(get('page-view').getAttribute('aria-describedby')).toBe(
-      `validation ${HILOS_VIEW_MODE_STRIP_TEXT_ID}`,
-    )
-    expect(draft.getAttribute('aria-describedby')).toBe('new-validation')
-    expect(draft.value).toBe('Keep this draft')
-    expect([draft.selectionStart, draft.selectionEnd]).toEqual([2, 6])
-    expect(file.files).toBe(files)
-    expect(get<HTMLSelectElement>('choice').value).toBe('b')
-    expect(main.scrollTop).toBe(137)
-    expect(shell.clicks).not.toHaveBeenCalled()
-    await shell.update(() => get('page-open').click())
-    expect(shell.clicks).toHaveBeenCalledTimes(1)
-  })
-
-  it('shares one core state through page, shell and portal, with a readonly standalone fallback', async () => {
-    let outside: ConnectionInteraction | undefined
-    const probe = render(
-      <InteractionProbe
-        capture={(value) => {
-          outside = value
-        }}
-      />,
-    )
-    expect(outside!.unavailable.get()).toBe(false)
-    expect(outside!.blocked.get()).toBe(false)
-    expect('set' in outside!.blocked).toBe(false)
-    probe.unmount()
-    const feed = shellFeed()
-    shell = renderInteraction(feed)
+  // React context identity and exact committed portal capture keys depend on React
+  // rendering and StrictMode replay, which remain in the React native wrapper.
+  it('keeps React context identity and committed portal capture keys under StrictMode', () => {
+    shell = renderInteraction(shellFeed())
     expect(new Set(shell.interactions.values()).size).toBe(1)
     expect([...shell.interactions.keys()].sort()).toEqual([
       'page',
       'portal',
       'shell',
     ])
-    await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
-    expect(shell.interactions.get('page')!.unavailable.get()).toBe(true)
-    const independent = renderInteraction(shellFeed())
-    expect(independent.interactions.get('page')!.blocked.get()).toBe(false)
-    independent.dispose()
-  })
-
-  it('updates opt-out and the connection live, releases replaced sources and remounts cleanly', async () => {
-    const old = shellFeed()
-    old.push({ state: 'disconnected' }, 'state')
-    shell = renderInteraction(old)
-    const fieldset = get<HTMLFieldSetElement>('page-interaction-scope')
-    await shell.configure({ allow: true })
-    expect(fieldset.disabled).toBe(false)
-    expect(shell.interactions.get('page')!.unavailable.get()).toBe(true)
-    const next = shellFeed()
-    await shell.configure({ allow: false, connection: next.connection })
-    expect(fieldset.disabled).toBe(false)
-    await shell.update(() => old.push({ state: 'connecting' }, 'state'))
-    expect(fieldset.disabled).toBe(false)
-    expect(old.listeners.get('state')?.size).toBe(0)
-    await shell.update(() => next.push({ state: 'reconnecting' }, 'state'))
-    expect(fieldset.disabled).toBe(true)
-    shell.dispose()
-    shell = undefined
-    expect([...next.listeners.values()].every((set) => set.size === 0)).toBe(
-      true,
-    )
-    shell = renderInteraction(next)
-    expect(get<HTMLFieldSetElement>('page-interaction-scope').disabled).toBe(
-      true,
-    )
-  })
-
-  it.each(['nav-logout', 'impersonation-stop', 'account-deletion-strip-keep'])(
-    'guards %s before render, independently of page opt-out and busy',
-    async (id) => {
-      const session = bindSession()
-      unbind = session.unbind
-      session.handshake(
-        id === 'impersonation-stop'
-          ? TAKEOVER
-          : standingHandshake('deletion_scheduled', false, Date.now() + DAY_MS),
-      )
-      const feed = shellFeed()
-      shell = renderInteraction(feed, true)
-      const button = get<HTMLButtonElement>(id)
-      // The old React click closure is still mounted within this batch. The core
-      // state has already changed, so only the handler's synchronous guard can stop it.
-      await shell.update(() => {
-        feed.push({ state: 'reconnecting' }, 'state')
-        button.click()
-        expect(session.source.sent).toHaveLength(0)
-      })
-      expect(button.disabled).toBe(true)
-      expect(button.getAttribute('aria-busy')).toBeNull()
-      expect(button.getAttribute('aria-describedby')).toBe(
-        HILOS_CONNECTION_STATUS_TEXT_ID,
-      )
-      expect(get<HTMLFieldSetElement>('page-interaction-scope').disabled).toBe(
-        false,
-      )
-      expect(get('nav-brand').hasAttribute('aria-disabled')).toBe(false)
-      expect(
-        get('app-footer').querySelector('a')!.hasAttribute('aria-disabled'),
-      ).toBe(false)
-      await shell.update(() => button.click())
-      expect(session.source.sent).toHaveLength(0)
-      await shell.update(() => feed.push({ state: 'connected' }, 'state'))
-      await shell.update(() => button.click())
-      expect(session.source.sent).toHaveLength(1)
-      await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
-      await shell.update(() => feed.push({ state: 'connected' }, 'state'))
-      expect(button.getAttribute('aria-busy')).toBe('true')
-      await shell.update(() => button.click())
-      expect(session.source.sent).toHaveLength(1)
-      await shell.update(() => {
-        const sent = session.source.sent[0]!
-        session.source.succeed(sent.requestId, sent.action)
-      })
-      expect(button.getAttribute('aria-busy')).toBeNull()
-      expect(button.getAttribute('aria-disabled')).toBeNull()
-      expect(hilosToasts.toasts.get()).toEqual([])
-    },
-  )
-
-  it('releases only the connection cause while takeover restrictions still apply', async () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake({
-      ...TAKEOVER,
-      data: {
-        impersonationPolicy: {
-          ...DEFAULT_IMPERSONATION_POLICY,
-          viewOnly: true,
-        },
-      },
-    })
-    const feed = shellFeed()
-    shell = renderInteraction(feed)
-    const action = get<HTMLButtonElement>('page-mutate')
-    expect(action.disabled).toBe(true)
-    await shell.update(() => feed.push({ state: 'reconnecting' }, 'state'))
-    expect(action.getAttribute('aria-describedby')).toBe(
-      `${HILOS_IMPERSONATION_STRIP_TEXT_ID} ${HILOS_CONNECTION_STATUS_TEXT_ID}`,
-    )
-    await shell.update(() => feed.push({ state: 'connected' }, 'state'))
-    expect(action.disabled).toBe(true)
-    expect(action.getAttribute('aria-describedby')).toBe(
-      HILOS_IMPERSONATION_STRIP_TEXT_ID,
-    )
-    expect(get<HTMLButtonElement>('page-open').disabled).toBe(false)
-    expect(get<HTMLButtonElement>('impersonation-stop').disabled).toBe(false)
-  })
-
-  it('leaves shell navigation, dashboard links and mobile disclosure available during a drop', async () => {
-    const session = bindSession()
-    unbind = session.unbind
-    session.handshake({
-      entities: { currentUser: { id: 2, name: 'Bob', admin: true } },
-    })
-    const feed = shellFeed()
-    shell = renderInteraction(feed)
-    await shell.settle()
-    await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
-    for (const id of ['nav-brand', 'nav-admin']) {
-      expect(get(id).hasAttribute('aria-disabled')).toBe(false)
-      expect(get(id).closest('fieldset')).toBeNull()
-    }
-    const toggle = get<HTMLButtonElement>('nav-toggle')
-    expect(toggle.disabled).toBe(false)
-    await shell.update(() => toggle.click())
-    expect(toggle.getAttribute('aria-expanded')).toBe('true')
-    expect(get('app-footer').closest('fieldset')).toBeNull()
-    expect(get<HTMLFieldSetElement>('page-interaction-scope').disabled).toBe(
-      true,
-    )
-    const main = shell.root.querySelector('main')!
-    await shell.update(() =>
-      feed.push({ firstFrameHeld: true }, 'firstFrameHold'),
-    )
-    expect(shell.root.querySelector('main')).toBeNull()
-    expect(main.hasAttribute(HILOS_INTERACTION_REGION_ATTR)).toBe(false)
-    await shell.update(() =>
-      feed.push({ firstFrameHeld: false }, 'firstFrameHold'),
-    )
-    expect(get<HTMLFieldSetElement>('page-interaction-scope').disabled).toBe(
-      true,
-    )
-  })
-
-  it.each(['blocked', 'frozen'])(
-    'gates the %s account branch without replacing it on reconnect',
-    async (branch) => {
-      const session = bindSession()
-      unbind = session.unbind
-      session.handshake(
-        branch === 'blocked'
-          ? BLOCKED
-          : reconsentHandshake({ frozen: true, shown: 'frozen' }),
-      )
-      const feed = shellFeed()
-      shell = renderInteraction(feed)
-      const content = get(
-        branch === 'blocked' ? 'account-blocked' : 'legal-frozen-screen',
-      )
-      const fieldset = get<HTMLFieldSetElement>('page-interaction-scope')
-      expect(fieldset.contains(content)).toBe(true)
-      await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
-      expect(fieldset.disabled).toBe(true)
-      await shell.update(() => feed.push({ state: 'connected' }, 'state'))
-      expect(content.isConnected).toBe(true)
-      expect(fieldset.disabled).toBe(false)
-    },
-  )
-
-  it('removes the main capture gate for maintenance and rebinds the ordinary branch', async () => {
-    const feed = shellFeed()
-    shell = renderInteraction(feed)
-    await shell.update(() => feed.push({ state: 'disconnected' }, 'state'))
-    const main = shell.root.querySelector('main')!
-    expect(main.hasAttribute(HILOS_INTERACTION_BLOCKED_ATTR)).toBe(true)
-    await shell.update(() =>
-      feed.push(
-        { protectedMode: { ...FROZEN, acceptsPass: true, passIssued: true } },
-        'protectedMode',
-      ),
-    )
-    expect(main.hasAttribute(HILOS_INTERACTION_REGION_ATTR)).toBe(false)
-    expect(
-      shell.root.querySelector('[data-id="page-interaction-scope"]'),
-    ).toBeNull()
-    const input = get<HTMLInputElement>('maintenance-pass')
-    expect(input.matches(':disabled')).toBe(false)
-    const inputEvent = new Event('beforeinput', {
-      bubbles: true,
-      cancelable: true,
-    })
-    input.dispatchEvent(inputEvent)
-    expect(inputEvent.defaultPrevented).toBe(false)
-    await shell.update(() =>
-      feed.push({ protectedMode: PROTECTED_MODE_INACTIVE }, 'protectedMode'),
-    )
-    expect(get<HTMLFieldSetElement>('page-interaction-scope').disabled).toBe(
-      true,
-    )
   })
 })
 
-/**
- * The real public file reader inside the real shell, on a route the case moves,
- * with a shell dialog in the user region that keeps the caller's policy.
- *
- * @param feed The shell's connection.
- */
-function publicShell(feed: ReturnType<typeof shellFeed>) {
-  let allowed = false
-  let modalOpen = false
-  const mutate = vi.fn()
-  const actions = new ActionLifecycle(feed.connection)
-  const currentRoute = createSignal<PageRouteMatch>({
-    page: HilosPages.PUBLIC_STATUS,
-    params: {},
-    admin: false,
-  })
-  const router: HilosRouter = {
-    ...routerOn(HilosPages.PUBLIC_STATUS),
-    currentRoute,
-  }
-  const draw = () => (
-    <HilosRouterContext.Provider value={router}>
-      <HilosLayout
-        connection={feed.connection}
-        allowDisconnectedInteraction={allowed}
-        user={
-          <HilosModal
-            open={modalOpen}
-            aria-label="Protected action"
-            initialFocus="dialog"
-          >
-            <button
-              type="button"
-              data-id="shell-dialog-action"
-              onClick={mutate}
-            >
-              Save
-            </button>
-          </HilosModal>
-        }
-      >
-        <HilosStatusPage connection={feed.connection} actions={actions} />
-      </HilosLayout>
-    </HilosRouterContext.Provider>
-  )
-  const view = render(draw())
-  const update = async (run: () => void): Promise<void> => {
-    await act(async () => {
-      run()
-      await Promise.resolve()
-    })
-  }
-  const query = (id: string): HTMLElement | null =>
-    view.container.querySelector<HTMLElement>(`[data-id="${id}"]`)
-
-  return {
-    mutate,
-    query,
-    update,
-    route: (page: string) =>
-      update(() =>
-        currentRoute.set({
-          page,
-          params: {},
-          admin: page === HilosPages.STATUS,
-        }),
-      ),
-    configure: (options: { allow?: boolean; modalOpen?: boolean }) =>
-      update(() => {
-        allowed = options.allow ?? allowed
-        modalOpen = options.modalOpen ?? modalOpen
-        view.rerender(draw())
-      }),
-    /** Let the reader accept its file pair, then read two days of the strip. */
-    async readDay(): Promise<void> {
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 0))
-      })
-      const days = view.container.querySelectorAll<HTMLButtonElement>(
-        '[data-id="public-status-days-30"] button',
-      )
-      const day = days[0]!
-      expect(day.disabled).toBe(false)
-      expect(day.closest('fieldset')?.disabled).toBe(false)
-      expect(day.closest('[inert]')).toBeNull()
-      expect(day.getAttribute('aria-disabled')).toBeNull()
-      const event = new MouseEvent('click', { bubbles: true, cancelable: true })
-      await update(() => {
-        day.focus()
-        day.dispatchEvent(event)
-      })
-      expect(event.defaultPrevented).toBe(false)
-      expect(query('public-status-day-detail')?.textContent).toBe(
-        day.getAttribute('aria-label'),
-      )
-      const last = days[days.length - 1]!
-      await update(() => last.focus())
-      expect(document.activeElement).toBe(last)
-      expect(query('public-status-day-detail')?.textContent).toBe(
-        last.getAttribute('aria-label'),
-      )
-      expect(query('conn-state')).not.toBeNull()
+registerLayoutThemeCases(
+  'React',
+  {
+    describe,
+    it,
+    expect,
+    async releaseBindings(release) {
+      await act(release)
     },
-  }
-}
+  },
+  mountLayoutChrome,
+)
 
-describe('HilosLayout public Status exception (HIL-1690)', () => {
-  let unbind: ReturnType<typeof bindSession>['unbind'] | undefined
-
-  beforeEach(() => {
-    const now = Date.now()
-    const projection = {
-      schemaVersion: 1,
-      revision: 'shell-public-status',
-      generatedAt: now,
-      config: { pollIntervalSeconds: 30, staleAfterSeconds: 120 },
-      components: [
-        {
-          componentKey: 'site',
-          name: 'Site',
-          description: 'Public service',
-          state: 'operational',
-        },
-      ],
-      candidates: [],
-      outages: [],
-      scheduledWorks: [],
-      maintenancePeriods: [],
-    }
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => ({
-        ok: true,
-        json: async () =>
-          url.endsWith('/status.json')
-            ? projection
-            : {
-                schemaVersion: 1,
-                revision: projection.revision,
-                aliveAt: now,
-              },
-      })),
-    )
-  })
-
-  afterEach(async () => {
-    await unbind?.()
-    unbind = undefined
-    cleanup()
-    document.body.classList.remove('modal-open')
-    hilosToasts.clear()
-    vi.unstubAllGlobals()
-  })
-
-  it('paints cold file content without releasing the first-frame hold or ordinary routes', async () => {
-    const feed = shellFeed()
-    feed.push({ state: 'disconnected', firstFrameHeld: true }, 'firstFrameHold')
-    const shell = publicShell(feed)
-    await shell.readDay()
-    expect(shell.query('hilos-boot-state')?.getAttribute('data-state')).toBe(
-      'ready',
-    )
-    expect(feed.connection.firstFrameHeld).toBe(true)
-    expect(shell.query('nav-brand')?.tagName).toBe('SPAN')
-    expect(shell.query('app-footer')).toBeNull()
-    for (const page of [
-      HilosPages.ABOUT,
-      HilosPages.TERMS,
-      HilosPages.STATUS,
-    ]) {
-      await shell.route(page)
-      expect(shell.query('app-root')).toBeNull()
-      expect(shell.query('hilos-boot-state')?.getAttribute('data-state')).toBe(
-        'held',
-      )
-      await shell.route(HilosPages.PUBLIC_STATUS)
-      await shell.readDay()
-    }
-  })
-
-  it('keeps file controls usable through freeze phases and restores the ordinary cover', async () => {
-    const feed = shellFeed()
-    const shell = publicShell(feed)
-    for (const status of [
-      FROZEN,
-      { ...FROZEN, acceptsPass: true },
-      { ...FROZEN, acceptsPass: true, passIssued: true },
-      ADMITTED,
-    ]) {
-      await shell.update(() => {
-        feed.push({ protectedMode: status }, 'protectedMode')
-        feed.push({ state: 'reconnecting' }, 'state')
+registerLayoutViewModeCases(
+  'React',
+  {
+    describe,
+    it,
+    expect,
+    // Observable binding release follows native unmount inside React's act boundary.
+    afterEach: (release) => {
+      afterEach(async () => {
+        await act(release)
       })
-      await shell.readDay()
-      expect(shell.query('maintenance')).toBeNull()
-      expect(shell.query('protected-mode-banner')).toBeNull()
-      await shell.route(HilosPages.STATUS)
-      expect(shell.query('maintenance') !== null).toBe(status.active)
-      if (!status.active) {
-        expect(
-          (shell.query('page-interaction-scope') as HTMLFieldSetElement)
-            .disabled,
-        ).toBe(true)
-      }
-      await shell.route(HilosPages.PUBLIC_STATUS)
-      await shell.readDay()
-    }
-  })
-
-  it.each(['blocked', 'frozen', 'takeover'] as const)(
-    'keeps public reading under %s and restores the ordinary account restriction',
-    async (standing) => {
-      const session = bindSession()
-      unbind = session.unbind
-      session.handshake(
-        standing === 'blocked'
-          ? BLOCKED
-          : standing === 'frozen'
-            ? reconsentHandshake({ frozen: true, shown: 'frozen' })
-            : {
-                ...TAKEOVER,
-                data: {
-                  impersonationPolicy: {
-                    ...DEFAULT_IMPERSONATION_POLICY,
-                    viewOnly: true,
-                  },
-                },
-              },
-      )
-      const feed = shellFeed()
-      feed.push({ state: 'disconnected' }, 'state')
-      const shell = publicShell(feed)
-      await shell.readDay()
-      expect(shell.query('account-blocked')).toBeNull()
-      expect(shell.query('legal-frozen-screen')).toBeNull()
-      if (standing === 'takeover') {
-        const stop = shell.query('impersonation-stop') as HTMLButtonElement
-        expect(stop.disabled).toBe(true)
-        expect((shell.query('nav-logout') as HTMLButtonElement).disabled).toBe(
-          true,
-        )
-        await shell.update(() => stop.click())
-        expect(session.source.sent).toHaveLength(0)
-      }
-      await shell.route('ordinary')
-      expect(
-        (shell.query('page-interaction-scope') as HTMLFieldSetElement).disabled,
-      ).toBe(true)
-      if (standing !== 'takeover') {
-        expect(
-          shell.query(
-            standing === 'blocked' ? 'account-blocked' : 'legal-frozen-screen',
-          ),
-        ).not.toBeNull()
-      }
-      await shell.route(HilosPages.PUBLIC_STATUS)
-      await shell.readDay()
     },
-  )
+  },
+  mountLayoutChrome,
+)
 
-  it('restores the caller interaction policy on a rapid ordinary round trip', async () => {
-    const feed = shellFeed()
-    feed.push({ state: 'disconnected' }, 'state')
-    const shell = publicShell(feed)
-    await shell.readDay()
-    for (const allow of [false, true, false]) {
-      await shell.configure({ allow })
-      await shell.route('ordinary')
-      expect(
-        (shell.query('page-interaction-scope') as HTMLFieldSetElement).disabled,
-      ).toBe(!allow)
-      await shell.route(HilosPages.PUBLIC_STATUS)
-      await shell.readDay()
-    }
-  })
-
-  it('keeps a shell action dialog blocked while public day controls are released', async () => {
-    const feed = shellFeed()
-    feed.push({ state: 'disconnected' }, 'state')
-    const shell = publicShell(feed)
-    await shell.readDay()
-    await shell.configure({ modalOpen: true })
-    const action = document.querySelector<HTMLButtonElement>(
-      '[data-id="shell-dialog-action"]',
-    )!
-    const scope = action.closest<HTMLFieldSetElement>(
-      '[data-id="modal-interaction-scope"]',
-    )!
-    expect(scope.disabled).toBe(true)
-    await shell.update(() => action.click())
-    expect(shell.mutate).not.toHaveBeenCalled()
-    await shell.update(() => feed.push({ state: 'connected' }, 'state'))
-    expect(scope.disabled).toBe(false)
-    await shell.update(() => action.click())
-    expect(shell.mutate).toHaveBeenCalledTimes(1)
-  })
-
-  /**
-   * The real shell, the real outlet and the public reader on one router.
-   * `publicShell` paints the reader straight into the layout slot, so it cannot
-   * see a session end that the outlet would have replaced.
-   *
-   * @param feed The shell's connection.
-   */
-  function mountStatusOutlet(feed: ReturnType<typeof shellFeed>) {
-    const actions = new ActionLifecycle(feed.connection)
-    function StatusOutlet() {
-      return <HilosStatusPage connection={feed.connection} actions={actions} />
-    }
-    function OrdinaryPage() {
-      return <p data-id="ordinary-page">Ordinary</p>
-    }
-    function TestAuthSurface() {
-      return <form data-id="test-sign-in" />
-    }
-    const currentRoute = createSignal<PageRouteMatch>({
-      page: HilosPages.PUBLIC_STATUS,
-      params: {},
-      admin: false,
-    })
-    const router: HilosRouter = {
-      ...routerOn(HilosPages.PUBLIC_STATUS),
-      currentRoute,
-      resolvePath: (page) =>
-        page === HilosPages.PUBLIC_STATUS ? '/status' : '/',
-    }
-    const session = bindSession(router)
-    unbind = session.unbind
-    const view = render(
-      <HilosRouterContext.Provider value={router}>
-        <HilosLayout connection={feed.connection}>
-          <HilosView
-            pages={{
-              [HilosPages.PUBLIC_STATUS]: StatusOutlet,
-              main: OrdinaryPage,
-            }}
-            authSurface={TestAuthSurface}
-          />
-        </HilosLayout>
-      </HilosRouterContext.Provider>,
-    )
-    const query = (id: string): HTMLElement | null =>
-      view.container.querySelector<HTMLElement>(`[data-id="${id}"]`)
-
-    return { session, currentRoute, query }
-  }
-
-  it.each([
-    'blocked',
-    'frozen',
-    'stale',
-    'takeover',
-    'session_ended',
-    'account_blocked',
-  ] as const)(
-    'keeps the public reader mounted under %s and preserves the other route policy',
-    async (state) => {
-      const feed = shellFeed()
-      const shell = mountStatusOutlet(feed)
-      act(() => {
-        shell.session.handshake({
-          entities: { currentUser: { id: 2, name: 'Bob' } },
-          data: { accountBlocked: null },
-        })
+registerLayoutAdminGearCases(
+  'React',
+  {
+    describe,
+    it,
+    expect,
+    // Observable binding release follows native unmount inside React's act boundary.
+    afterEach: (release) => {
+      afterEach(async () => {
+        await act(release)
       })
-      await act(async () => {
-        await Promise.resolve()
-        await Promise.resolve()
-        await Promise.resolve()
-        await Promise.resolve()
-      })
-      const banner = shell.query('public-status-banner')
-      expect(banner).not.toBeNull()
-      expect(banner!.textContent).toContain('All systems operational')
-      const stale = { stale: true, since: Date.now() }
-      act(() => {
-        if (state === 'blocked') shell.session.handshake(BLOCKED)
-        if (state === 'frozen') {
-          shell.session.handshake(
-            reconsentHandshake({ frozen: true, shown: 'frozen' }),
-          )
-        }
-        if (state === 'stale') {
-          feed.push({ rtStaleness: stale }, 'rtStaleness')
-        }
-        if (state === 'takeover') shell.session.handshake(TAKEOVER)
-        if (state === 'session_ended' || state === 'account_blocked') {
-          shell.session.handshake({
-            entities: { currentUser: null },
-            data: {
-              accessLossReason: state,
-              accountBlocked:
-                state === 'account_blocked'
-                  ? BLOCKED.data.accountBlocked
-                  : null,
-            },
-          })
-        }
-      })
-      expect(banner!.isConnected).toBe(true)
-      expect(banner!.textContent).toContain('All systems operational')
-      expect(shell.query('account-blocked')).toBeNull()
-      expect(shell.query('legal-frozen-screen')).toBeNull()
-      expect(shell.query('access-loss-notice')).toBeNull()
-      expect(shell.query('test-sign-in')).toBeNull()
-      const guest =
-        state === 'blocked' ||
-        state === 'session_ended' ||
-        state === 'account_blocked'
-      expect(shell.query('nav-logout') !== null).toBe(!guest)
-      if (state === 'stale') {
-        expect(shell.query('conn-stale-line')?.textContent?.trim()).toBe(
-          rtStalenessCompactLabel(stale),
-        )
-      }
-      if (state === 'takeover') {
-        expect(shell.query('impersonation-banner')).not.toBeNull()
-      }
-      if (state === 'session_ended' || state === 'account_blocked') {
-        expect(hilosAccessLossReason.get()).toBe(state)
-        expect(document.activeElement).toBe(document.body)
-      }
-      // The page key changes alone. A path change would clear session_ended.
-      await act(async () => {
-        shell.currentRoute.set({ page: 'main', params: {}, admin: false })
-        await Promise.resolve()
-      })
-      expect(banner!.isConnected).toBe(false)
-      expect(shell.query('public-status-banner')).toBeNull()
-      if (state === 'blocked' || state === 'account_blocked') {
-        expect(shell.query('account-blocked')).not.toBeNull()
-        expect(shell.query('test-sign-in')).toBeNull()
-      }
-      if (state === 'frozen') {
-        expect(shell.query('legal-frozen-screen')).not.toBeNull()
-      }
-      if (state === 'session_ended') {
-        expect(hilosAccessLossReason.get()).toBe('session_ended')
-        expect(shell.query('access-loss-notice')?.textContent).toBe(
-          'Your session has ended. Any unsaved changes were lost.',
-        )
-        expect(shell.query('test-sign-in')).not.toBeNull()
-        expect(shell.query('ordinary-page')).toBeNull()
-      }
-      if (state === 'stale' || state === 'takeover') {
-        expect(
-          shell
-            .query('page-interaction-scope')
-            ?.querySelector('[data-id="ordinary-page"]'),
-        ).not.toBeNull()
-        expect(shell.query('access-loss-notice')).toBeNull()
-        expect(shell.query('test-sign-in')).toBeNull()
-      }
-      if (state === 'stale') {
-        expect(shell.query('conn-stale-line')?.textContent?.trim()).toBe(
-          rtStalenessCompactLabel(stale),
-        )
-      }
-      if (state === 'takeover') {
-        expect(shell.query('impersonation-banner')).not.toBeNull()
-      }
     },
-  )
-})
+  },
+  mountLayoutChrome,
+)
+
+registerLayoutBannerCases('React', { describe, it, expect }, mountLayoutChrome)
+
+registerLayoutNavigationCases(
+  'React',
+  { describe, it, expect, vi },
+  mountLayoutChrome,
+)
+
+registerLayoutFooterCases(
+  'React',
+  { describe, it, expect, vi },
+  mountLayoutChrome,
+)
+
+registerLayoutLifetimeCases(
+  'React',
+  { describe, it, expect },
+  mountLayoutLifetime,
+)
+
+registerLayoutConnectionContextCases(
+  'React',
+  { describe, it, expect },
+  mountLayoutConnection,
+  mountStandaloneConnection,
+)

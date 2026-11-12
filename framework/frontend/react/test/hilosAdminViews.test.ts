@@ -1,4 +1,4 @@
-import { HilosPages, type LazyPageView } from '@hilos/core'
+import { HilosPages, type LazyPageView } from '@hilos/core/base'
 import type { ComponentType } from 'react'
 import { expect, it } from 'vitest'
 import { hilosAdminViews } from '@hilos/react/admin-views'

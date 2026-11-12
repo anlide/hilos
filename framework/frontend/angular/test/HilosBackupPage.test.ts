@@ -20,17 +20,17 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import type {
   ActionHandle,
   ActionLifecycle,
   ActionResult,
-  HilosBackupsContext,
   HilosConnection,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
+import type { HilosBackupsContext } from '@hilos/core/admin/backup'
 import {
   BACKUP_RESTORE_PROGRESS_SIGNAL,
   type HilosRestoreStatus,

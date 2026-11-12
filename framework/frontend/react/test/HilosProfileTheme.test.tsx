@@ -16,7 +16,7 @@ import {
   type HilosConnection,
   type ThemePick,
   type ThemeSettings,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'

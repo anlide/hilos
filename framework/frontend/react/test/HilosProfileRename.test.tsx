@@ -14,7 +14,7 @@ import {
   type ActionLifecycle,
   type HilosConnection,
   type HilosProfileRename as HilosProfileRenameBinding,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { HilosConnectionInteractionContext } from '../src/hilosConnectionInteraction.js'
 import { HilosProfileRename } from '../src/profile/HilosProfileRename.js'
 import { profileNameStatus, profileRenameTab } from './profileRenameHarness.js'

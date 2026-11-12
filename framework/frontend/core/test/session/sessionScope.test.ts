@@ -34,7 +34,10 @@ import { applyServerTime, offsetMs } from '../../src/session/serverClock.js'
 import { HIDDEN_VALUE } from '../../src/state/hiddenValue.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { subscribeSignal } from '../../src/state/signal.js'
-import { type HilosConnection, type ProjectSignal } from '../../src/index.js'
+import {
+  type HilosConnection,
+  type ProjectSignal,
+} from '../../src/base/index.js'
 
 /** A browser clock parked at a known moment, so the measured drift is a chosen number. */
 const LOCAL_NOW = 1_700_000_000_000

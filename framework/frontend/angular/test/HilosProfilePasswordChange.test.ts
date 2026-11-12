@@ -17,7 +17,7 @@ import {
   type ActionLifecycle,
   type HilosConnection,
   type ProjectSignal,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { type ModalController } from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HilosProfilePasswordChange } from '../src/profile/HilosProfilePasswordChange.js'

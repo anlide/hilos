@@ -62,7 +62,7 @@ import {
   type HilosConnection,
   type ProjectSignal,
   type WebSocketLike,
-} from '@hilos/core'
+} from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosAuthSurface } from '../src/auth/HilosAuthSurface.js'

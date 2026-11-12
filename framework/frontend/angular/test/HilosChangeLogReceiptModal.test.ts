@@ -8,13 +8,15 @@ import { TestBed } from '@angular/core/testing'
 import {
   createSignal,
   HilosPages,
+  type HilosRouter,
+  type PageRouteMatch,
+} from '@hilos/core/base'
+import {
   type HilosChangeLogEntry,
   type HilosChangeLogReceiptDialog,
   type HilosChangeLogReceiptHeader,
   type HilosChangeLogReceiptReader,
-  type HilosRouter,
-  type PageRouteMatch,
-} from '@hilos/core'
+} from '@hilos/core/admin/change-log'
 import {
   CHANGE_LOG_RECEIPT_COPY,
   formatChangeLogTime,

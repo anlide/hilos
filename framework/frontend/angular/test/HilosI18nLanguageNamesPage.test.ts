@@ -6,7 +6,7 @@
 // disappears under an open confirmation, a viewer of the admin view mode, and the
 // table let go when the page ends. The windows' own behavior is tested beside
 // them; the rules are the core's.
-import { HilosPages } from '@hilos/core'
+import { HilosPages } from '@hilos/core/base'
 import { describe, expect, it } from 'vitest'
 
 import { HilosI18nLanguageNamesPage } from '../src/admin/i18n/details/HilosI18nLanguageNamesPage.js'

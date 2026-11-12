@@ -7,16 +7,14 @@
 // opening that paints nothing, a viewer of the admin view mode, and the row let
 // go when the view ends. The session itself is the core's and is tested there.
 import { signal } from '@angular/core'
+import { HilosPages, computedSignal, createSignal } from '@hilos/core/base'
 import {
   HILOS_I18N_LANGUAGE_NAME_COPY,
   HILOS_I18N_LANGUAGE_NAMES,
-  HilosPages,
-  computedSignal,
-  createSignal,
   createHilosI18nLanguageCard,
   createHilosI18nLanguageNameWindow,
   createHilosI18nNamesTable,
-} from '@hilos/core'
+} from '@hilos/core/admin/i18n'
 import { describe, expect, it } from 'vitest'
 
 import { HilosI18nLanguageNameWindow } from '../src/admin/i18n/details/HilosI18nLanguageNameWindow.js'
