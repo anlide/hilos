@@ -9,7 +9,8 @@ use Hilos\HilosException;
 /**
  * One owner of personal rows the account erasure has to reach: the collections it covers and
  * what it is expected to carry for one account of the erasure circle.
- * SCAFFOLD: no live caller until the erasure coordinator opens its operation (HIL-1952).
+ * SCAFFOLD: {@see expectationsFor()} has no live caller until the erasure coordinator opens its operation
+ * (HIL-1952); the startup coverage gate reads the key and the collections.
  */
 interface AccountErasureParticipant
 {

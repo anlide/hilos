@@ -20,7 +20,8 @@ use Hilos\Notification\Delivery\DeliveryOwnerResolver;
  *
  * Each distinct owner of the account's deliveries is expected once per channel, under the
  * participant key `delivery:<channel>`; a channel whose deliveries name no owner is one wait.
- * SCAFFOLD: no live caller until the erasure coordinator opens its operation (HIL-1952).
+ * SCAFFOLD: {@see expectationsFor()} has no live caller until the erasure coordinator opens its operation
+ * (HIL-1952); the startup coverage gate reads the key and the collections.
  */
 final class AccountErasureDeliveryParticipant implements AccountErasureParticipant
 {

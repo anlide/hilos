@@ -63,7 +63,12 @@ is the daemon's own check of required names, in step 1, after the prelude.
 4. `SetOwnershipGuard::assertMountedSetsDeclared()` refuses the start of a node whose
    mounted tables do not declare whose set their rows belong to. It reads class constants
    only and stands right after the framework-extension guard and before the three others,
-   so the cheap wiring questions are answered first.
+   so the cheap wiring questions are answered first. Right after it,
+   `AccountErasureCoverageGuard::assertMountedCollectionsCovered()` refuses the start of a
+   node with accounts whose mounted collection no account erasure participant covers and
+   no exemption names, or whose project directory names a collection it does not mount;
+   it reads constants and the mounted map only
+   ([account-operations.md](account-operations.md#erasure)).
 5. `SessionStageStartupGuard::assertRosterCarriesSessions()` refuses the start of a node
    whose browser connections roster stands on the presence stage instead of carrying
    session tokens. It reads only the in-memory map of mounted runtime collections and

@@ -56,6 +56,7 @@ use Demo\Polls\Agents\Hilos\UserAgent;
 use Demo\Polls\Agents\Hilos\UsersLibraryAgent;
 use Demo\Polls\Agents\OAuthAgent;
 use Demo\Polls\Agents\PollsAgent;
+use Demo\Polls\Auth\PollsAccountDataOwnerDirectory;
 use Demo\Polls\Auth\PollsAuthMethodDirectory;
 use Demo\Polls\Auth\PollsCodeChannelRegistry;
 use Demo\Polls\Auth\PollsOAuthProviderDirectory;
@@ -290,6 +291,8 @@ final class Hilos extends HilosFacade
     protected const string AUTH_METHOD_DIRECTORY = PollsAuthMethodDirectory::class;
 
     protected const string OAUTH_PROVIDER_DIRECTORY = PollsOAuthProviderDirectory::class;
+
+    protected const string ACCOUNT_DATA_OWNER_DIRECTORY = PollsAccountDataOwnerDirectory::class;
 
     protected const ?string LEGAL_CATALOG = PollsLegalCatalog::class;
 

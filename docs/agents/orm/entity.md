@@ -430,6 +430,18 @@ claim. The width itself:
 For the root of a new set tree, ask whether it needs an agent per instance:
 [Does A New Entity Need One](../architecture/instance-owners.md#does-a-new-entity-need-one).
 
+## Who erases a person's rows of the table
+
+A new project table answers one more question when it is mounted: when a person
+erases their account, who deletes their rows of it. Either an owner in the
+project's `AccountDataOwnerDirectory` covers its collection, or the directory
+leaves it out with a reason (`AccountErasureExemption`). A table that does
+neither keeps the node from starting (`AccountErasureCoverageGuard`), and so
+does a directory naming a collection the installation does not mount — the gap
+is born with the table, not on the day somebody asks to be forgotten. The
+framework answers for its own tables. What an owner does and when:
+[../architecture/account-operations.md](../architecture/account-operations.md#erasure).
+
 ## Settings Entity (special case)
 
 `Entity/Item/Setting.php` — key/value store for app-level runtime settings.

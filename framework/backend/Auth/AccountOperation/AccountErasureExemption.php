@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Auth\AccountOperation;
 
 /**
- * Why a mounted framework collection is left out of the account erasure census.
- * SCAFFOLD: no live caller until the erasure coordinator opens its operation (HIL-1952).
+ * Why a mounted collection, the framework's or a project's, is left out of the account erasure census.
  */
 enum AccountErasureExemption: string
 {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\Auth\AccountOperation\AccountErasureCoverageGuard;
 use Hilos\Backup\Anonymization\AnonymizationStartupGuard;
 use Hilos\Cluster\NodeName;
 use Hilos\Constants\EnvConstants;
@@ -35,8 +36,8 @@ use Throwable;
  * environment against the project catalog and refuses to start naming every required value
  * that has no answer, claims the log directory so another daemon cannot share it, points the
  * logger at the daemon log, refuses a framework entity a project extended by halves, refuses a
- * table that does not declare
- * whose set it is part of, refuses a browser connections roster without its session stage, refuses
+ * table that does not declare whose set it is part of, refuses a table nobody answers for in the
+ * account erasure, refuses a browser connections roster without its session stage, refuses
  * a project that does not state what its database guarantees, lets
  * a node carrying backup refuse a schema it could not anonymize, constructs the manager, hands it
  * a {@see DaemonContext} to
@@ -125,6 +126,12 @@ final class DaemonApplication
             // anonymization gate below because it reads constants alone and costs less, and
             // because an unmarked table is the more basic of the two defects.
             SetOwnershipGuard::assertMountedSetsDeclared();
+
+            // Before anything composes: a mounted table that does not say who erases a person's
+            // rows of it leaves the account erasure blind to it, the same kind of defect as a table
+            // without a set. Constants and the mounted map alone, no query; silent where there are
+            // no accounts.
+            AccountErasureCoverageGuard::assertMountedCollectionsCovered();
 
             // Before anything composes: a browser connections roster without its session stage
             // makes the master and worker disagree about protected-mode admission. Ahead of the

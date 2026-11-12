@@ -95,6 +95,7 @@ use Demo\Chat\Files\ChatAttachmentUploadTarget;
 use Demo\Chat\Fs\ChatFsContext;
 use Demo\Chat\Groups\Hilos\NotificationsGroup;
 use Demo\Chat\Groups\SessionGroup;
+use Demo\Chat\Auth\ChatAccountDataOwnerDirectory;
 use Demo\Chat\Auth\ChatAuthMethodDirectory;
 use Demo\Chat\Auth\ChatCodeChannelRegistry;
 use Demo\Chat\Auth\ChatOAuthProviderDirectory;
@@ -379,6 +380,8 @@ final class Hilos extends HilosFacade
     protected const string AUTH_METHOD_DIRECTORY = ChatAuthMethodDirectory::class;
 
     protected const string MODERATION_KIND_DIRECTORY = ChatModerationKindDirectory::class;
+
+    protected const string ACCOUNT_DATA_OWNER_DIRECTORY = ChatAccountDataOwnerDirectory::class;
 
     protected const string OAUTH_PROVIDER_DIRECTORY = ChatOAuthProviderDirectory::class;
 

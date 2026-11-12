@@ -18,9 +18,13 @@ use Hilos\HilosException;
  * The participants of an installation's account erasure, each collection covered by exactly one of
  * them or exempt by a stated reason.
  *
- * The framework's own participants come from {@see framework()}; a project adds its own through
- * {@see with()}, and the project API for declaring them comes later (HIL-1948).
- * SCAFFOLD: no live caller until the erasure coordinator opens its operation (HIL-1952).
+ * The framework's own participants come from {@see framework()}. A project declares the owners
+ * of its collections and the collections it leaves out in its {@see AccountDataOwnerDirectory}, and
+ * {@see installation()} takes them after the framework's own; {@see with()} adds a participant
+ * that is not an owner from the directory.
+ * SCAFFOLD: {@see framework()}, {@see with()} and the row questions of the framework's participants have no
+ * live caller until the erasure coordinator opens its operation (HIL-1952); the startup coverage gate reads
+ * {@see installation()}.
  */
 final class AccountErasureParticipantCatalog
 {
@@ -52,15 +56,40 @@ final class AccountErasureParticipantCatalog
         HilosDbContext::i18nReflows => AccountErasureExemption::NotPersonal,
         HilosDbContext::probeValues => AccountErasureExemption::NotPersonal,
         HilosDbContext::moderationRules => AccountErasureExemption::NotPersonal,
+        // Mounted only under CHANGE_LOG and STATUS. The journal is not a store of personal data, and a
+        // receipt keeps an erased person's number by design (docs/agents/architecture/change-log.md,
+        // its opening and "The Receipt"); no Status table has an account column.
+        HilosDbContext::changeLogTables => AccountErasureExemption::NotPersonal,
+        HilosDbContext::changeLogFields => AccountErasureExemption::NotPersonal,
+        HilosDbContext::changeLogReceipts => AccountErasureExemption::Trace,
+        HilosDbContext::changeLogEntries => AccountErasureExemption::Trace,
+        HilosDbContext::changeLogChanges => AccountErasureExemption::Trace,
+        HilosDbContext::changeLogValues => AccountErasureExemption::Trace,
+        HilosDbContext::statusIncidents => AccountErasureExemption::NotPersonal,
+        HilosDbContext::statusIncidentUpdates => AccountErasureExemption::NotPersonal,
+        HilosDbContext::statusWorks => AccountErasureExemption::NotPersonal,
+        HilosDbContext::statusWorkComponents => AccountErasureExemption::NotPersonal,
+        HilosDbContext::statusMaintenancePeriods => AccountErasureExemption::NotPersonal,
+        HilosDbContext::statusSilencePeriods => AccountErasureExemption::NotPersonal,
+        HilosDbContext::statusSubscribers => AccountErasureExemption::OutsideAccount,
     ];
 
     /**
      * @param list<AccountErasureParticipant> $participants Participants in census order
-     * @throws InvalidTopologyException When a key or a collection is declared twice, or a covered collection is exempt
+     * @param array<string, AccountErasureExemption> $projectExempt Project collections left out, by collection key
+     * @throws InvalidTopologyException When a key or a collection is declared twice, a covered collection is exempt,
+     *     or the project exempts a collection the framework already exempts
      */
-    private function __construct(private readonly array $participants)
-    {
+    private function __construct(
+        private readonly array $participants,
+        private readonly array $projectExempt = [],
+    ) {
         $errors = [];
+        foreach (array_keys($projectExempt) as $collection) {
+            if (isset(self::EXEMPT[$collection])) {
+                $errors[] = "Collection [{$collection}] is exempt by the framework and cannot be exempted again by the project";
+            }
+        }
         $keys = [];
         $coveredBy = [];
         foreach ($participants as $participant) {
@@ -70,9 +99,9 @@ final class AccountErasureParticipantCatalog
             }
             $keys[$key] = true;
             foreach ($participant->collections() as $collection) {
-                if (isset(self::EXEMPT[$collection])) {
-                    $errors[] = "Collection [{$collection}] is covered by participant [{$key}]"
-                        . ' and exempt as ' . self::EXEMPT[$collection]->value;
+                $exemption = self::EXEMPT[$collection] ?? $projectExempt[$collection] ?? null;
+                if ($exemption !== null) {
+                    $errors[] = "Collection [{$collection}] is covered by participant [{$key}] and exempt as {$exemption->value}";
                 }
                 if (isset($coveredBy[$collection])) {
                     $errors[] = "Collection [{$collection}] is covered by both [{$coveredBy[$collection]}] and [{$key}]";
@@ -91,7 +120,59 @@ final class AccountErasureParticipantCatalog
      */
     public static function framework(): self
     {
-        return new self([
+        return new self(self::frameworkParticipants());
+    }
+
+    /**
+     * The installation's catalog: the framework's participants, then the owners of the project's
+     * {@see AccountDataOwnerDirectory} in its order, with the project's exemptions.
+     *
+     * @return self The participants and exemptions of the running application
+     * @throws InvalidTopologyException When the project's directory is malformed, or its owners or exemptions overlap
+     *     the framework's participants, the exemptions or each other
+     */
+    public static function installation(): self
+    {
+        $directory = Hilos::accountDataOwnerDirectoryClass();
+
+        return new self(
+            [
+                ...self::frameworkParticipants(),
+                ...array_map(
+                    static fn (AccountDataOwner $owner): AccountErasureParticipant => new AccountErasureProjectParticipant($owner),
+                    $directory::declaredOwners(),
+                ),
+            ],
+            $directory::declaredExemptions(),
+        );
+    }
+
+    /**
+     * @param AccountErasureParticipant ...$participants Project participants, asked after these
+     * @return self New catalog with the same exemptions; this one is left unchanged
+     * @throws InvalidTopologyException When a key or a collection is declared twice, or a covered collection is exempt
+     */
+    public function with(AccountErasureParticipant ...$participants): self
+    {
+        return new self([...$this->participants, ...array_values($participants)], $this->projectExempt);
+    }
+
+    /** @return list<AccountErasureParticipant> Participants in census order */
+    public function participants(): array
+    {
+        return $this->participants;
+    }
+
+    /** @return array<string, AccountErasureExemption> Collections the erasure leaves alone, the framework's then the project's */
+    public function exempt(): array
+    {
+        return [...self::EXEMPT, ...$this->projectExempt];
+    }
+
+    /** @return list<AccountErasureParticipant> The framework's own participants, in census order */
+    private static function frameworkParticipants(): array
+    {
+        return [
             new AccountErasureFixedOwner(
                 self::PERSONAL,
                 [
@@ -146,23 +227,7 @@ final class AccountErasureParticipantCatalog
                 false,
                 self::hasLegalAcceptanceExport(...),
             ),
-        ]);
-    }
-
-    /**
-     * @param AccountErasureParticipant ...$participants Project participants, asked after these
-     * @return self New catalog; this one is left unchanged
-     * @throws InvalidTopologyException When a key or a collection is declared twice, or a covered collection is exempt
-     */
-    public function with(AccountErasureParticipant ...$participants): self
-    {
-        return new self([...$this->participants, ...array_values($participants)]);
-    }
-
-    /** @return list<AccountErasureParticipant> Participants in census order */
-    public function participants(): array
-    {
-        return $this->participants;
+        ];
     }
 
     /**

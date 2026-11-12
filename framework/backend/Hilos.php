@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos;
 
 use Hilos\Auth\AccessLog\AccessLogPolicy;
+use Hilos\Auth\AccountOperation\AccountDataOwnerDirectory;
 use Hilos\Auth\CodeChannel\CodeChannelRegistry;
 use Hilos\Auth\Method\AuthMethodDirectory;
 use Hilos\Auth\OAuth\OAuthProviderDirectory;
@@ -237,6 +238,17 @@ abstract class Hilos implements TruthSourceOwner
      * @var class-string<ModerationKindDirectory>
      */
     protected const string MODERATION_KIND_DIRECTORY = ModerationKindDirectory::class;
+
+    /**
+     * Account data owner directory class (HIL-1948).
+     *
+     * The framework default declares nothing. A project points this at its own subclass to name
+     * the owners of its collections and the collections the account erasure leaves alone; the
+     * declaration is metadata, read from constants alone.
+     *
+     * @var class-string<AccountDataOwnerDirectory>
+     */
+    protected const string ACCOUNT_DATA_OWNER_DIRECTORY = AccountDataOwnerDirectory::class;
 
     /**
      * OAuth provider directory class (HIL-286).
@@ -675,6 +687,19 @@ abstract class Hilos implements TruthSourceOwner
     public static function moderationKindDirectoryClass(): string
     {
         return static::appClass()::MODERATION_KIND_DIRECTORY;
+    }
+
+    /**
+     * Returns the project's account data owner directory class (HIL-1948).
+     *
+     * Resolved through {@see appClass()} for the same reason as {@see getBackupCatalogClass()}:
+     * every caller is framework code writing a bare `Hilos::accountDataOwnerDirectoryClass()`.
+     *
+     * @return class-string<AccountDataOwnerDirectory> Account data owner directory class
+     */
+    public static function accountDataOwnerDirectoryClass(): string
+    {
+        return static::appClass()::ACCOUNT_DATA_OWNER_DIRECTORY;
     }
 
     /**

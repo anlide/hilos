@@ -482,7 +482,17 @@ gives no participant, and the trusts it limits are the personal owner's);
 `OutsideAccount`; and `fileVariants`, `settings`, `verifierCircle`,
 `oauthProviders`, `languages`, `languageNames`, `countries`, `countryNames`,
 `locales`, `i18nReflows`, `probeValues` and `moderationRules` are
-`NotPersonal`. The 22 covered and the 20 exempt collections are the 42 mounted
+`NotPersonal`. Thirteen more are mounted only under a feature. Under
+`CHANGE_LOG`, `changeLogTables` and `changeLogFields` are `NotPersonal`, and
+`changeLogReceipts`, `changeLogEntries`, `changeLogChanges` and
+`changeLogValues` are `Trace`: the journal is not a store of personal data, and
+a receipt keeps an erased person's number by design
+([change-log.md](change-log.md)). Under `STATUS`, `statusIncidents`,
+`statusIncidentUpdates`, `statusWorks`, `statusWorkComponents`,
+`statusMaintenancePeriods` and `statusSilencePeriods` are `NotPersonal`, since
+no Status table has an account column, and `statusSubscribers` is
+`OutsideAccount`: a subscriber is an address, not an account. With every
+feature on, the 22 covered and the 33 exempt collections are the 55 mounted
 framework collections, and a unit check holds that equality.
 
 `AccountErasureCensus::of($circle, $catalog)` returns the
@@ -527,11 +537,32 @@ cutover (not in the code yet — HIL-1952). The reconciliation is called at the
 start and in the passes (not in the code yet — HIL-1951), after a `RESTRICT`
 refusal (not in the code yet — HIL-1942) and after a stage's failure
 (not in the code yet — HIL-1950), and after the start, before the notifications
-are deleted (not in the code yet — HIL-1940). A project's own participants join
-the catalog through `with(...)`; the project declaration API and the
-completeness guard over a project's tables are not written yet
-(not in the code yet — HIL-1948). The census adds no claim, table, migration,
-signal, route or runtime state.
+are deleted (not in the code yet — HIL-1940).
+
+A project declares the owners of its own collections in one directory: its
+facade points `ACCOUNT_DATA_OWNER_DIRECTORY` at a subclass of
+`AccountDataOwnerDirectory`, whose `owners()` lists `AccountDataOwner` records
+(the key, the collections, the owner's agent type, one per person or one for
+everybody, and whether an account still has rows) and whose `exempt()` names
+the project collections the erasure leaves alone, each with its
+`AccountErasureExemption`. The default directory declares nothing.
+`AccountErasureParticipantCatalog::installation()` takes the framework's
+participants, then each owner as an `AccountErasureProjectParticipant` in
+directory order, with the project's exemptions; a malformed directory, or an
+owner or exemption overlapping the framework or each other, is an
+`InvalidTopologyException` naming every mistake. A project participant counts
+as registered when the application registers its agent type with the indexing
+the owner declares and the registered class implements
+`AccountErasureProjectOwner`: then the census expects the owner for every
+account; otherwise it waits for an account with rows and expects nothing for
+one without. `with(...)` still adds a participant that is not an owner from
+the directory. The daemon refuses to start over a mounted collection that no
+participant covers and no exemption names, and over a collection the directory
+names that this installation does not mount (`AccountErasureCoverageGuard`,
+right after the set ownership gate); it is silent without `AUTH`. That gate is
+the only live caller of `installation()`: the census over a project's owners
+is prepared, with no live caller until HIL-1950/HIL-1952. The census adds no
+claim, table, migration, signal, route or runtime state.
 
 **Creators.** `AbstractUsersLibraryAgent::OWNS_DB`
 (`Auth/Library/AbstractUsersLibraryAgent.php`) creates `users`,
@@ -867,8 +898,11 @@ path only at the [single cutover](#erasure-cutover-and-observation)
    count the part done and cannot appoint a fallback writer (prepared, no live
    caller until HIL-1950/HIL-1952). Projects declare their own participants
    under the same distinction; there is no fixed "twenty tables, always"
-   list and this page declares no activation API
-   (not in the code yet — HIL-1948).
+   list. A project names the owners of its tables, and the tables it leaves
+   out with a reason, in its `AccountDataOwnerDirectory`, and the daemon
+   refuses to start over a mounted table that no participant covers and no
+   exemption names (`AccountErasureCoverageGuard`); the census over those
+   owners is prepared, with no live caller until HIL-1950/HIL-1952.
 5. **Capture before an anchor goes.** The receiving obligations must carry
    what their owners need without reading a row already gone:
 
@@ -918,10 +952,18 @@ path only at the [single cutover](#erasure-cutover-and-observation)
    - The sessions holder deletes access log entries as its own confirmed
      part and remains the owner of its working rows
      (not in the code yet — HIL-1943).
-   - Each declared project owner deletes its own rows with its result
-     (not in the code yet — HIL-1948). In chat, `ChatAgent` deletes the
-     person's messages across every room, attachment links, registration
-     details and feed events in one transaction with its result. It uses the
+   - Each declared project owner deletes its own rows with its result: the
+     class registered under the owner's type implements
+     `AccountErasureProjectOwner`, and calls `AccountErasureProjectStep::run()`
+     in its own frame with its assignment, which asks it to erase its part of
+     that account inside the step's transaction and records its answer as the
+     result in the same transaction. The payload is the rows it deleted per
+     family it names and the registry files they pointed at
+     (`{"rows":{…},"files":[…]}`); the files leave after the commit. This is
+     prepared, with no live caller until HIL-1950/HIL-1952. In chat,
+     `ChatAgent` deletes the person's messages across every room, attachment
+     links, registration details and feed events in one transaction with its
+     result. It uses the
      saved event ids and the journal owner's confirmed unlink; the users
      library stays the creator of registration/feed events. Attachment file
      removal remains after commit, and other people's rows mentioning the

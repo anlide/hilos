@@ -216,7 +216,13 @@ That is the seam today, and a project written today writes it. Under the
 target [participant boundary](account-operations.md#erasure), a project names
 its own owners, each deleting its rows with a result. A table never activated
 owes no participant; existing rows with no owner remain visible unfinished
-work, with no fallback writer (not in the code yet — HIL-1948). Its exact
-signature and activation form belong to that implementing leaf, not to this
-document. The seam and its borrowed rights stay live until the
+work, with no fallback writer. The project names its owners and the tables it
+leaves out in its `AccountDataOwnerDirectory` (the facade's
+`ACCOUNT_DATA_OWNER_DIRECTORY`); the class registered under an owner's type
+implements `AccountErasureProjectOwner` and carries its part through
+`AccountErasureProjectStep`; and the daemon refuses to start over a mounted
+table that no owner covers and no exemption names
+(`AccountErasureCoverageGuard`). The directory and the gate are live; the
+owners' part is prepared, with no live caller until HIL-1950/HIL-1952. The
+seam and its borrowed rights stay live until the
 HIL-1952 switch retires them (not in the code yet — HIL-1952).

@@ -17,7 +17,8 @@ use Hilos\HilosException;
  * A registered owner is expected for every account, rows or not, because only the owner knows
  * what it holds. With no owner registered, the coordinator waits for an account that still has
  * rows and expects nothing for one that has none.
- * SCAFFOLD: no live caller until the erasure coordinator opens its operation (HIL-1952).
+ * SCAFFOLD: {@see expectationsFor()} has no live caller until the erasure coordinator opens its operation
+ * (HIL-1952); the startup coverage gate reads the key and the collections.
  */
 final readonly class AccountErasureFixedOwner implements AccountErasureParticipant
 {

@@ -48,6 +48,7 @@ use Demo\Tasks\Agents\Hilos\UserAgent;
 use Demo\Tasks\Agents\Hilos\UsersLibraryAgent;
 use Demo\Tasks\Agents\OAuthAgent;
 use Demo\Tasks\Agents\TasksAgent;
+use Demo\Tasks\Auth\TasksAccountDataOwnerDirectory;
 use Demo\Tasks\Auth\TasksAuthMethodDirectory;
 use Demo\Tasks\Auth\TasksCodeChannelRegistry;
 use Demo\Tasks\Auth\TasksOAuthProviderDirectory;
@@ -287,6 +288,8 @@ final class Hilos extends HilosFacade
     protected const string AUTH_METHOD_DIRECTORY = TasksAuthMethodDirectory::class;
 
     protected const string OAUTH_PROVIDER_DIRECTORY = TasksOAuthProviderDirectory::class;
+
+    protected const string ACCOUNT_DATA_OWNER_DIRECTORY = TasksAccountDataOwnerDirectory::class;
 
     protected const ?string BACKUP_CATALOG = BackupCatalog::class;
 
