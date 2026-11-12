@@ -48,6 +48,7 @@ use Hilos\Database\View\Collection\SecondFactorResets as DbCollectionSecondFacto
 use Hilos\Database\View\Collection\SecondFactors as DbCollectionSecondFactors;
 use Hilos\Database\View\Collection\SecondFactorSettings as DbCollectionSecondFactorSettings;
 use Hilos\Database\View\Collection\SecondFactorTrusts as DbCollectionSecondFactorTrusts;
+use Hilos\Database\View\Collection\SecondFactorTrustRestrictions as DbCollectionSecondFactorTrustRestrictions;
 use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\AccessLogEntries as DbCollectionAccessLogEntries;
@@ -103,6 +104,7 @@ final class FrameworkExtensionMountTest extends TestCase
         HilosDbContext::secondFactors => DbCollectionSecondFactors::class,
         HilosDbContext::secondFactorBackupCodes => DbCollectionSecondFactorBackupCodes::class,
         HilosDbContext::secondFactorTrusts => DbCollectionSecondFactorTrusts::class,
+        HilosDbContext::secondFactorTrustRestrictions => DbCollectionSecondFactorTrustRestrictions::class,
         HilosDbContext::secondFactorResets => DbCollectionSecondFactorResets::class,
         HilosDbContext::secondFactorSettings => DbCollectionSecondFactorSettings::class,
         HilosDbContext::stepUps => DbCollectionStepUps::class,

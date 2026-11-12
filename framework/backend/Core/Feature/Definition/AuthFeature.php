@@ -27,6 +27,7 @@ use Hilos\Database\Entity\Item\SecondFactorBackupCode;
 use Hilos\Database\Entity\Item\SecondFactorReset;
 use Hilos\Database\Entity\Item\SecondFactorSetting;
 use Hilos\Database\Entity\Item\SecondFactorTrust;
+use Hilos\Database\Entity\Item\SecondFactorTrustRestriction;
 use Hilos\Database\Entity\Item\StepUp;
 use Hilos\Database\Entity\Item\UserMerge;
 use Hilos\Database\Entity\Item\UserRename;
@@ -115,6 +116,7 @@ final class AuthFeature extends FeatureDefinition
                 SecondFactor::_table,
                 SecondFactorBackupCode::_table,
                 SecondFactorTrust::_table,
+                SecondFactorTrustRestriction::_table,
                 SecondFactorReset::_table,
                 SecondFactorSetting::_table,
                 StepUp::_table,

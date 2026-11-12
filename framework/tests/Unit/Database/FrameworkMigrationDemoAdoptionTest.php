@@ -16,6 +16,11 @@ use PHPUnit\Framework\TestCase;
 /** Reviewed repository artifacts; neither migration application nor legacy-track auto-adoption. */
 final class FrameworkMigrationDemoAdoptionTest extends TestCase
 {
+    /** Trust stub snapshot the HIL-1922 part was published with; the HIL-1900 part declares the current one. */
+    private const string SECOND_FACTOR_TRUST_MOMENTS_UP_SHA256 = '30bad6fdbef73c3f53d765737ecfd63b12b7a7a7b177c863ef107ff14b26fd33';
+
+    private const string TRUST_RESTRICTION_CHANGE = '20261112084322628728_HIL-1900_second_factor_trust_restriction';
+
     private const array GENESIS_UNITS = [
         'access_log', 'account_deletion', 'admin_view_mode_latch', 'analytics', 'auth_block', 'change_log',
         'country', 'country_name', 'data_export', 'database_marker', 'file', 'file_variant', 'i18n_reflow',
@@ -271,6 +276,10 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                     self::assertSame($expected['requires'], $source->requires);
                     $origins[] = $change;
                     $coveredParts[] = $change->parts[0];
+                }
+                foreach ($this->assertTrustRestrictionPairs($project->root, 19, $catalog, $schema) as $restriction) {
+                    $origins[] = $restriction;
+                    $coveredParts[] = $restriction->parts[0];
                 }
                 $selectedUnits = array_column($schema->selectedUnits($project->facade), 'key');
                 self::assertSame(
@@ -847,12 +856,16 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 $source = $catalog->part($change->parts[0]->changeId, $key);
                 self::assertFalse($source->introducesUnit);
                 self::assertSame([], $source->requires);
-                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
-                    $source->afterStubUpSha256);
+                self::assertSame($this->secondFactorMomentUpSnapshot($key, $schema), $source->afterStubUpSha256);
                 self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
                     $source->afterStubDownSha256);
                 $origins[] = $change;
             }
+            $trustRestrictionIndices = [164, 121, 121, 102, 102, 104];
+            array_push(
+                $origins,
+                ...$this->assertTrustRestrictionPairs($project->root, $trustRestrictionIndices[$index], $catalog, $schema),
+            );
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $this->assertLaterSecondFactorMomentTracks($projects, $catalog, $schema);
@@ -1011,10 +1024,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $momentSource = $catalog->part($moment->parts[0]->changeId, $key);
             self::assertFalse($momentSource->introducesUnit);
             self::assertSame([], $momentSource->requires);
-            self::assertSame(
-                FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
-                $momentSource->afterStubUpSha256,
-            );
+            self::assertSame($this->secondFactorMomentUpSnapshot($key, $schema), $momentSource->afterStubUpSha256);
             self::assertSame(
                 FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
                 $momentSource->afterStubDownSha256,
@@ -1023,12 +1033,14 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $momentFiles[] = $momentBase . '.sql';
             $momentFiles[] = $momentBase . '_down.sql';
         }
+        array_push($momentChanges, ...$this->assertTrustRestrictionPairs($root, 8, $catalog, $schema));
         self::assertSame([
             $base . '.sql',
             $base . '_down.sql',
             $changeBase . '.sql',
             $changeBase . '_down.sql',
             ...$momentFiles,
+            ...$this->trustRestrictionFiles($root, 8),
         ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);
@@ -1044,7 +1056,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
     }
 
     /**
-     * Baseline projects whose tracks are not enumerated pair by pair still receive the five parts.
+     * Baseline projects whose tracks are not enumerated pair by pair still receive the five parts,
+     * and after them the trust restriction's install and the grant moment's change (HIL-1900).
      *
      * @param list<object> $projects Registered projects in registry order
      */
@@ -1054,6 +1067,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         FrameworkSchemaCatalog $schema,
     ): void {
         $starts = [7 => 16, 9 => 7, 10 => 3];
+        $restrictionStarts = [7 => 21, 9 => 12, 10 => 8];
         $parts = [
             'second_factor' => 'd387464f16783b3b26bc52ebfa8b58854d4fac281f71c95c06777b3ac2d71601',
             'second_factor_backup_code' => '97fb53ec00e51e213c862962f7bd493a885a3a467f4d176dced9ea1c84cbf362',
@@ -1073,12 +1087,12 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 $source = $catalog->part($change->parts[0]->changeId, $key);
                 self::assertFalse($source->introducesUnit);
                 self::assertSame([], $source->requires);
-                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
-                    $source->afterStubUpSha256);
+                self::assertSame($this->secondFactorMomentUpSnapshot($key, $schema), $source->afterStubUpSha256);
                 self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
                     $source->afterStubDownSha256);
                 $seen[] = $change;
             }
+            array_push($seen, ...$this->assertTrustRestrictionPairs($project->root, $restrictionStarts[$index], $catalog, $schema));
             $selected = array_column($schema->selectedUnits($project->facade), 'key');
             $onDisk = [];
             foreach (glob($project->root . '/*_down.sql') as $down) {
@@ -1092,8 +1106,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                     $keys[] = $part->key();
                 }
             }
-            foreach ($seen as $change) {
-                self::assertContains($change->parts[0]->key(), $keys);
+            foreach ($seen as $origin) {
+                self::assertContains($origin->parts[0]->key(), $keys);
             }
         }
     }
@@ -1231,10 +1245,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $momentSource = $catalog->part($moment->parts[0]->changeId, $key);
             self::assertFalse($momentSource->introducesUnit);
             self::assertSame([], $momentSource->requires);
-            self::assertSame(
-                FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
-                $momentSource->afterStubUpSha256,
-            );
+            self::assertSame($this->secondFactorMomentUpSnapshot($key, $schema), $momentSource->afterStubUpSha256);
             self::assertSame(
                 FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
                 $momentSource->afterStubDownSha256,
@@ -1243,10 +1254,12 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $momentFiles[] = $momentBase . '.sql';
             $momentFiles[] = $momentBase . '_down.sql';
         }
+        array_push($momentChanges, ...$this->assertTrustRestrictionPairs($root, 7, $catalog, $schema));
         self::assertSame([
             $base . '.sql',
             $base . '_down.sql',
             ...$momentFiles,
+            ...$this->trustRestrictionFiles($root, 7),
         ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);
@@ -1260,6 +1273,92 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $this->partRecords([...$origin->parts, ...$momentPartsOnDisk]),
         );
         self::assertSame([], $catalog->missingParts($selectedUnits, [$origin, ...$momentChanges]));
+    }
+
+    /**
+     * The trust stub has moved on past the HIL-1922 part, which keeps the snapshot it was published with.
+     *
+     * @param string $key Second-factor unit the HIL-1922 part changed
+     * @param FrameworkSchemaCatalog $schema Framework schema catalog
+     * @return string Up-stub snapshot that part declares
+     */
+    private function secondFactorMomentUpSnapshot(string $key, FrameworkSchemaCatalog $schema): string
+    {
+        return $key === 'second_factor_trust'
+            ? self::SECOND_FACTOR_TRUST_MOMENTS_UP_SHA256
+            : FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath));
+    }
+
+    /**
+     * The restriction table arrives as its current install and the grant moment as a change continuing
+     * the trust chain; both parts declare the stubs current now (HIL-1900).
+     *
+     * @param string $root Migration track of the project
+     * @param int $first Number of the install pair; the change pair takes the next one
+     * @param FrameworkMigrationCatalog $catalog Framework change catalog
+     * @param FrameworkSchemaCatalog $schema Framework schema catalog
+     * @return list<FrameworkMigrationOrigin> The install origin, then the change origin
+     */
+    private function assertTrustRestrictionPairs(
+        string $root,
+        int $first,
+        FrameworkMigrationCatalog $catalog,
+        FrameworkSchemaCatalog $schema,
+    ): array {
+        [$installBase, $changeBase] = $this->trustRestrictionBases($root, $first);
+        $unit = $schema->unit('second_factor_trust_restriction');
+        $up = FsPath::read($installBase . '.sql');
+        $down = FsPath::read($installBase . '_down.sql');
+        $install = $catalog->verifyPair($up, $down);
+        self::assertSame(FrameworkMigrationOrigin::INSTALL, $install->kind);
+        self::assertSame(['second_factor_trust_restriction'], $install->units);
+        self::assertCount(1, $install->parts);
+        $source = $catalog->part(self::TRUST_RESTRICTION_CHANGE, 'second_factor_trust_restriction');
+        self::assertTrue($source->introducesUnit);
+        self::assertSame([], $source->requires);
+        self::assertSame([$source->toArray()], $this->partRecords($install->parts));
+        self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
+        self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
+        $change = $catalog->verifyPair(FsPath::read($changeBase . '.sql'), FsPath::read($changeBase . '_down.sql'));
+        self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+        self::assertSame(['second_factor_trust'], $change->units);
+        self::assertCount(1, $change->parts);
+        self::assertSame(self::TRUST_RESTRICTION_CHANGE . '/second_factor_trust', $change->parts[0]->key());
+        $source = $catalog->part(self::TRUST_RESTRICTION_CHANGE, 'second_factor_trust');
+        self::assertFalse($source->introducesUnit);
+        self::assertSame(['20261111235717678237_HIL-1922_second_factor_moments/second_factor_trust'], $source->requires);
+        self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('second_factor_trust')->upPath)),
+            $source->afterStubUpSha256);
+        self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('second_factor_trust')->downPath)),
+            $source->afterStubDownSha256);
+
+        return [$install, $change];
+    }
+
+    /**
+     * @param string $root Migration track of the project
+     * @param int $first Number of the trust restriction's install pair
+     * @return list<string> Its four files in the order glob() lists them
+     */
+    private function trustRestrictionFiles(string $root, int $first): array
+    {
+        [$installBase, $changeBase] = $this->trustRestrictionBases($root, $first);
+
+        return [$installBase . '.sql', $installBase . '_down.sql', $changeBase . '.sql', $changeBase . '_down.sql'];
+    }
+
+    /**
+     * @param string $root Migration track of the project
+     * @param int $first Number of the trust restriction's install pair
+     * @return array{string, string} Install pair base, then the grant moment's change pair base, without extension
+     */
+    private function trustRestrictionBases(string $root, int $first): array
+    {
+        return [
+            $root . '/' . sprintf('%03d', $first) . '_framework_install_second_factor_trust_restriction',
+            $root . '/' . sprintf('%03d', $first + 1)
+                . '_framework_change_fb8c3e6bd279d04e5c9de4da091a6dbbc474eda7a736995a8ace3b2334cf503e',
+        ];
     }
 
     /**

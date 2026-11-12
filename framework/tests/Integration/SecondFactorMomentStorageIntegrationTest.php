@@ -775,9 +775,13 @@ final class SecondFactorMomentStorageIntegrationTest extends FrameworkIntegratio
     }
 
     /**
+     * The trust's grant moment came after this change (HIL-1900) and is not one it converts, so it
+     * travels with the other required columns.
+     *
      * @param string $unit Schema unit of the part
      * @param int $ordinal Position of the row in its case
-     * @return array<string, int|string> Required columns other than moments, unique per ordinal where the table asks it
+     * @return array<string, int|string> Required columns other than the moments this change converts, unique per
+     *   ordinal where the table asks it
      */
     private static function keyColumns(string $unit, int $ordinal): array
     {
@@ -798,6 +802,7 @@ final class SecondFactorMomentStorageIntegrationTest extends FrameworkIntegratio
             self::TRUST_UNIT => [
                 EntitySecondFactorTrust::session_id => $ordinal + 1,
                 EntitySecondFactorTrust::user_id => self::USER_ID,
+                EntitySecondFactorTrust::granted_at => 1735689600000,
             ],
         };
     }

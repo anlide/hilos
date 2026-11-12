@@ -160,6 +160,7 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         'hilos_second_factor_reset',
         'hilos_second_factor_setting',
         'hilos_second_factor_trust',
+        'hilos_second_factor_trust_restriction',
         'hilos_access_log',
     ];
 
@@ -946,8 +947,9 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
                 [$userId, 'live' . $userId, $now, $userId, 'spent' . $userId, $now, $now],
             );
             Database::sqlRun(
-                'INSERT INTO hilos_second_factor_trust (session_id, user_id, trusted_until, created_at) VALUES (1, ?, ?, ?)',
-                [$userId, $until, $now],
+                'INSERT INTO hilos_second_factor_trust (session_id, user_id, trusted_until, created_at, granted_at)'
+                    . ' VALUES (1, ?, ?, ?, ?)',
+                [$userId, $until, $now, $now],
             );
         }
         Database::sqlRun(

@@ -1,0 +1,2 @@
+-- hilos-framework: {"format":1,"kind":"change","units":["second_factor_trust"],"parts":[{"changeId":"20261112084322628728_HIL-1900_second_factor_trust_restriction","unit":"second_factor_trust","upSha256":"0fb4149a47992e77050741c2bad746a4af83b8aab38acaeb26030e5938d245bc","downSha256":"30ea13b4d3b0d2cde3f1883869059f148ad966fe920ac8524f52e70b0a429540"}],"upSha256":"0fb4149a47992e77050741c2bad746a4af83b8aab38acaeb26030e5938d245bc","downSha256":"30ea13b4d3b0d2cde3f1883869059f148ad966fe920ac8524f52e70b0a429540"}
+ALTER TABLE `hilos_second_factor_trust` DROP COLUMN `granted_at`;

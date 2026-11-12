@@ -96,11 +96,15 @@ final class SettingsLibraryAgentTest extends TestCase
 
     /**
      * The claim is the whole point of the leaf: one holder, the whole collection, every operation.
+     * Beside it, the restrictions of browser trust a save gives birth to, whole and for adding alone (HIL-1900).
      */
     public function testTheLibraryClaimsTheSettingsCollectionOutrightAndForEveryOperation(): void
     {
         $this->assertSame(
-            [HilosDbContext::settings => TruthSourceOperation::ALL],
+            [
+                HilosDbContext::settings => TruthSourceOperation::ALL,
+                HilosDbContext::secondFactorTrustRestrictions => [TruthSourceOperation::Add],
+            ],
             SettingsLibraryAgent::OWNS_DB,
         );
         $this->assertSame(HilosAgentType::HILOS_SETTINGS_LIBRARY, SettingsLibraryAgent::AGENT_TYPE);

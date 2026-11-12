@@ -18,13 +18,14 @@ use Hilos\HilosException;
  * @property-read int $userId
  * @property-read int $trustedUntil
  * @property-read int $createdAt
+ * @property-read int $grantedAt
  */
 class SecondFactorTrust extends DbItem
 {
     /**
      * Magic getter for trust properties.
      *
-     * @param string $name Property name (id, sessionId, userId, trustedUntil, createdAt)
+     * @param string $name Property name (id, sessionId, userId, trustedUntil, createdAt, grantedAt)
      * @return mixed Property value
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
@@ -38,6 +39,7 @@ class SecondFactorTrust extends DbItem
             ObjectSecondFactorTrust::userId => $this->_object->userId,
             ObjectSecondFactorTrust::trustedUntil => $this->_object->trustedUntil,
             ObjectSecondFactorTrust::createdAt => $this->_object->createdAt,
+            ObjectSecondFactorTrust::grantedAt => $this->_object->grantedAt,
             default => parent::__get($name),
         };
     }

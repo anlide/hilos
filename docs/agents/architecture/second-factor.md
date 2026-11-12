@@ -49,7 +49,8 @@ The transitions below do not make a future owner callable today.
 | `hilos_second_factor_backup_code` | users library `Add`/`Remove` (replacement set); person's agent `Update`/`Remove`; holder `Update`/`Remove` for merge/erasure | one row per code, spent by a conditional write |
 | `hilos_second_factor_reset` | users library `Add`; person's agent `Update`/`Remove`; holder `Remove` for merge/erasure | removals: when asked, when due, the cancel token, last notice |
 | `hilos_second_factor_setting` | person's agent `Add`/`Update`; holder `Add`/`Update`/`Remove` for the merge's wait upsert and merge/erasure deletion | the person's removal wait and a shorter one not yet in force; the app-code miss count, its window, the lock step and its end |
-| `hilos_second_factor_trust` | holder `Add`/`Update`/`Remove` (create/renew, global term/switch-off, merge/erasure); person's agent `Update`/`Remove` for personal revocations | a browser (session row) trusted for a person until a moment |
+| `hilos_second_factor_trust` | holder `Add`/`Update`/`Remove` (create/renew, global term/switch-off, merge/erasure); person's agent `Update`/`Remove` for personal revocations and for applying the saved restrictions | a browser (session row) trusted for a person until a moment, and the moment it was last granted |
+| `hilos_second_factor_trust_restriction` | settings library `Add` in the transaction of the save that shortened the term or turned the factor off; no `Update` or `Remove`; the holder and the person's agent read it | one shortening: the save moment and a term of 0 to 365 days; trusts granted no later than the save live no longer than the save plus the term, and 0 takes them out |
 
 The personal edits moved in HIL-1406 are written by the person's agent
 (`AbstractUserAgent`, its writes in `SecondFactorPersonEdits`) on a frame of the
@@ -131,7 +132,9 @@ codes or app labels.
 ## Trust
 
 "Don't ask again on this device" writes a trust row for (session row, person)
-until now + the administrator's days (0 offers no trust). The session row
+until now + the administrator's days (0 offers no trust). The row also keeps the
+moment it was last granted: a new pair stores it with its creation, and an
+extension moves it to now while the first writing stays. The session row
 survives token rotation, so a trusted browser stays trusted; signing out does
 not end the trust, switching the factor off and a carried-out removal do.
 Trust does not remove a protected operation's fresh confirmation; step-up asks a
@@ -144,11 +147,36 @@ trusts that were live when it was saved, using that save moment; it never extend
 an earlier expiry. Saving 0 erases every trust, including expired rows. Raising
 the term later does not recreate or lengthen a trust. The settings library sends
 the reduction to the session holder and the administrator's action is answered
-after the holder commits it.
+after the holder commits it. That frame carries the save moment the restriction
+below was written with.
+
+Each shortening is also kept as a restriction (HIL-1900): a row of the save
+moment S and a term of N days, 0 to 365, meaning that trusts granted no later
+than S live no longer than S + N days, and that N = 0 takes them out. The
+settings library writes it in the transaction of the save, at all four of its
+doors — a write, a reset to the default, the removal of an orphan row, a
+preset — from the screen and from the console. A term saved shorter than it stood
+records `(S, new term)`; so does a term written over one that could not be read,
+taken as shorter. The factor turned off while `forget_trusts_on_disable` is on
+records `(S, 0)`. A longer term, the same term again, the factor turned on and
+the factor turned off with trusts kept record nothing. When the settings cannot
+be read after a write that touched the term or the switch, or the restriction
+cannot be written, the save is taken back with the restriction and refused in
+the words it already used.
+
+A restriction touches a trust only when the trust was last granted no later than
+S, so a trust granted again afterwards is not touched. The gate reads the
+restrictions from the table, not from memory, and counts one before any person's
+agent has applied it: a trust under a restriction whose limit has passed is not
+trusted, whatever its row still says, and the limit of a 0-day restriction is S
+itself, so such a trust never passes again. Raising the term from 7 days to 30,
+or turning the factor off and on again, therefore does not bring back a trust a
+shortening already ended, even when the person's agent has not yet applied it.
 
 Turning the second factor off for the installation (HIL-1303) forgets every
 trust when `auth.second_factor.forget_trusts_on_disable` says so — the same
-erasure a term of 0 makes, by the same holder. When it says no, the trusts live
+erasure a term of 0 makes, by the same holder, and with the same 0-day
+restriction recorded. When it says no, the trusts live
 to their own expiry, and turning the factor back on finds them: a trusted browser
 still skips the code step until its trust runs out.
 
@@ -188,9 +216,31 @@ person's agent's, in the turn of the write that causes it:
 New trust creation on entry stays at the holder; renewal of an existing
 session/person pair goes to the personal owner, which owns every later write
 (not in the code yet — HIL-1907). The saved policy needed to apply a shorter
-term is retained (not in the code yet — HIL-1900); a sweep and owner start
-recover missed application work (not in the code yet — HIL-1901). These are
-ownership and recovery obligations, not a declaration of new DB fields here.
+term is retained, as the restrictions above (HIL-1900); a sweep and owner start
+recover missed application work (not in the code yet — HIL-1901). Renewal and
+recovery are ownership and recovery obligations, not a declaration of new DB
+fields here.
+
+The person's agent applies the stored restrictions on a service frame,
+`hilos_user_second_factor_trust_restrict`, which names the person, the
+restriction and the signal the answer is sent under; the sender defines that
+signal. The frame is answered every time, and neither the person's standing nor
+a merge refuses it: a folded account applies it and stops again, and ordinary
+access stays closed to it. In one transaction the agent refuses a restriction
+that is not stored ("Trust restriction N is not saved") and writes nothing;
+otherwise, for each of the person's trusts, one under a restriction of 0 days is
+deleted and any other trust under restrictions is cut to the earliest limit when
+it runs longer. Applying again, or in another order, changes nothing more. The
+answer is ok when, at the moment of the owner's commit, no trust of the person
+violates a restriction up to the one asked for, a trust violating one that
+applies to it when its term is 0 or it runs past its limit; the same test will
+tell the sweep of HIL-1901 which work is unfinished. Nothing in the product
+sends the frame yet: the sweep and owner start, the term and the switch-off
+below are what will. The application reads the person's trusts without locking
+their rows, so a holder extending a trust strictly between that read and the
+owner's write can have the extension cut; the outcome errs on the side of fewer
+trusts, never more, and the renewal moving to the owner (HIL-1907) removes the
+race.
 
 The personal owners apply the saved cap, or remove their rows for a zero term
 (not in the code yet — HIL-1908). They also perform `forgetTrusts` when

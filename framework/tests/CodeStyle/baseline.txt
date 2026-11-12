@@ -43,7 +43,6 @@ COLLECTION-SQL-READ framework/backend/Database/Object/Collection/PasskeyCredenti
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/RegistrationReservations.php 3 # HIL-1533
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/SecondFactorBackupCodes.php 1 # HIL-1533
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/SecondFactorResets.php 4 # HIL-1533
-COLLECTION-SQL-READ framework/backend/Database/Object/Collection/SecondFactorTrusts.php 4 # HIL-1533
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/SecondFactors.php 1 # HIL-1533
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/Sessions.php 11 # HIL-1533
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/StepUps.php 4 # HIL-1533

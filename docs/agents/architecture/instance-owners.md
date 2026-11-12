@@ -121,8 +121,9 @@ a changed or recovered password and the block. The holder currently creates
 or extends trust on the way in and applies the term to every person's trust at
 once.
 Creation stays there; renewal of an existing pair moves to the person
-(not in the code yet — HIL-1907). A saved policy is retained for application
-(not in the code yet — HIL-1900), with missed work found at sweep and start
+(not in the code yet — HIL-1907). A saved policy is retained for application as
+a trust restriction (HIL-1900), which the personal owner can already apply on
+a service frame, with missed work found at sweep and start
 (not in the code yet — HIL-1901). The personal owner applies the cap
 (not in the code yet — HIL-1908) and switch-off removal
 (not in the code yet — HIL-1909). Erasure and merge remain the terminal debts

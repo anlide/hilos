@@ -73,7 +73,7 @@ final class FrameworkMigrationSourcesTest extends TestCase
         $schema = new FrameworkSchemaCatalog();
         $catalog = new FrameworkMigrationCatalog($schema);
         $catalog->verifyCurrentStubs();
-        $this->assertCount(53, $schema->allUnits());
+        $this->assertCount(54, $schema->allUnits());
         $this->assertSame(
             [
                 '20261021021039718057_HIL-1580_add_user_time_zone/user',
@@ -176,7 +176,11 @@ final class FrameworkMigrationSourcesTest extends TestCase
         $catalog->verifyCurrentStubs(['push_subscription']);
     }
 
-    /** Guards the five second-factor moment parts and the stubs they leave current. */
+    /**
+     * Guards the five second-factor moment parts and the stubs they leave current. The trust stub
+     * has moved on since (HIL-1900): its part keeps the snapshot it was published with, and the
+     * chain goes on in the part that adds the grant moment.
+     */
     public function testRealSecondFactorMomentsCarryFivePartsWithEmptyChainsAndCurrentStubHashes(): void
     {
         $schema = new FrameworkSchemaCatalog();
@@ -191,17 +195,47 @@ final class FrameworkMigrationSourcesTest extends TestCase
         ];
         $parts = $catalog->partsForUnits($units);
         $this->assertSame(
-            array_map(static fn (string $unit): string => $change . '/' . $unit, $units),
+            [
+                ...array_map(static fn (string $unit): string => $change . '/' . $unit, $units),
+                '20261112084322628728_HIL-1900_second_factor_trust_restriction/second_factor_trust',
+            ],
             array_map(static fn (FrameworkMigrationPart $part): string => $part->key(), $parts),
         );
-        foreach ($parts as $part) {
+        foreach (array_slice($parts, 0, count($units)) as $part) {
             $this->assertSame([], $part->requires);
             $this->assertFalse($part->introducesUnit);
+            $unit = $schema->unit($part->unit);
+            $this->assertSame(
+                $part->unit === 'second_factor_trust'
+                    ? '30bad6fdbef73c3f53d765737ecfd63b12b7a7a7b177c863ef107ff14b26fd33'
+                    : FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->upPath)),
+                $part->afterStubUpSha256,
+            );
+            $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->downPath)), $part->afterStubDownSha256);
+        }
+        $catalog->verifyCurrentStubs($units);
+    }
+
+    /** Guards the restriction table's introduction and the grant moment that continues the trust chain. */
+    public function testRealTrustRestrictionIntroducesItsUnitAndContinuesTheTrustChainWithCurrentStubHashes(): void
+    {
+        $schema = new FrameworkSchemaCatalog();
+        $catalog = new FrameworkMigrationCatalog($schema);
+        $change = '20261112084322628728_HIL-1900_second_factor_trust_restriction';
+        $trust = $catalog->part($change, 'second_factor_trust');
+        $restriction = $catalog->part($change, 'second_factor_trust_restriction');
+
+        $this->assertSame(['20261111235717678237_HIL-1922_second_factor_moments/second_factor_trust'], $trust->requires);
+        $this->assertFalse($trust->introducesUnit);
+        $this->assertSame([], $restriction->requires);
+        $this->assertTrue($restriction->introducesUnit);
+        $this->assertSame([], $schema->unit('second_factor_trust_restriction')->dependencies);
+        foreach ([$trust, $restriction] as $part) {
             $unit = $schema->unit($part->unit);
             $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->upPath)), $part->afterStubUpSha256);
             $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->downPath)), $part->afterStubDownSha256);
         }
-        $catalog->verifyCurrentStubs($units);
+        $catalog->verifyCurrentStubs(['second_factor_trust', 'second_factor_trust_restriction']);
     }
 
     public function testErasureStorageUnitsAreIntroducedOnceInDependencyOrder(): void

@@ -438,6 +438,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     ];
 
     /**
+     * @var list<string> The stored trust restrictions, read when a sign-in asks whether its browser is
+     *     trusted (HIL-1900): the settings library writes them, and a restriction counts at the door
+     *     before the person's agent has applied it. A project subclass with reads of its own keeps this
+     *     list with `[...parent::READS_DB, …]`.
+     */
+    public const array READS_DB = [HilosDbContext::secondFactorTrustRestrictions];
+
+    /**
      * The runtime halves of a session: where it is being rotated, and what it is being shown.
      *
      * Both are claimed unconditionally and for the same reason the session set is: what a browser

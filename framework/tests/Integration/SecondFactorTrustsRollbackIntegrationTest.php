@@ -18,11 +18,11 @@ final class SecondFactorTrustsRollbackIntegrationTest extends FrameworkRollbackI
     {
         Database::sqlRun("INSERT INTO hilos_user (id, name) VALUES (1562, 'Rollback example')");
         Database::sqlRun(
-            'INSERT INTO hilos_second_factor_trust (id, session_id, user_id, created_at, trusted_until) VALUES '
-            . '(1, 101, 1562, 1767225600000, 1796083200000), '
-            . '(2, 102, 1562, 1767225600000, 1770076800000), '
-            . '(3, 103, 1562, 1767225600000, 1769903999000), '
-            . '(4, 104, 1562, 1769904001000, 1796083200000)',
+            'INSERT INTO hilos_second_factor_trust (id, session_id, user_id, created_at, granted_at, trusted_until) VALUES '
+            . '(1, 101, 1562, 1767225600000, 1767225600000, 1796083200000), '
+            . '(2, 102, 1562, 1767225600000, 1767225600000, 1770076800000), '
+            . '(3, 103, 1562, 1767225600000, 1767225600000, 1769903999000), '
+            . '(4, 104, 1562, 1769904001000, 1769904001000, 1796083200000)',
         );
         foreach ([1, 2, 3, 4] as $id) {
             self::assertArrayHasKey($id, Hilos::$db->secondFactorTrusts);

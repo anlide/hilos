@@ -143,6 +143,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Users\DTO\UserPushReleaseDoneSignalData;
 use Hilos\Users\DTO\UserPushReleaseSignalData;
 use Hilos\Users\DTO\UserPushSubscribeSignalData;
+use Hilos\Users\DTO\UserSecondFactorTrustRestrictSignalData;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionProperty;
@@ -627,6 +628,12 @@ final class RobloxGameServerTopologyRegistryTest extends TestCase
         self::assertSame(
             UserPushReleaseSignalData::class,
             Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE],
+        );
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT]);
+        self::assertSame('userId', Hilos::getAgentSignalIndexFields()[HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT]);
+        self::assertSame(
+            UserSecondFactorTrustRestrictSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT],
         );
         self::assertSame(
             HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,

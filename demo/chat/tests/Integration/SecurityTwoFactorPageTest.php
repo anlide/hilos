@@ -31,6 +31,8 @@ use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
@@ -430,17 +432,31 @@ final class SecurityTwoFactorPageTest extends IntegrationTestCase
     /**
      * Holds the settings writer around a body and takes every second-factor row away afterwards.
      *
+     * The writer holds what the library holds: the settings, and adding the trust restriction a
+     * switch-off that forgets the trusted browsers records (HIL-1900). Nobody removes those rows, so
+     * the ones the body recorded are taken out here by hand.
+     *
      * @param callable():void $body Test body run while the settings writer is held
      */
     private function withSettingsWriter(callable $body): void
     {
         TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::SETTINGS_AGENT_ID);
+        TruthSourceRegistry::register(
+            HilosDbContext::secondFactorTrustRestrictions,
+            TruthSourceKeys::all(),
+            self::SETTINGS_AGENT_ID,
+            new TruthSourceOperations(TruthSourceOperation::Add),
+        );
         $this->clearRows();
+        $lastRestrictionId = (int) Database::sql(
+            'SELECT COALESCE(MAX(`id`), 0) AS `last_id` FROM `hilos_second_factor_trust_restriction`',
+        )->rows()[0]['last_id'];
 
         try {
             $body();
         } finally {
             $this->clearRows();
+            Database::sql('DELETE FROM `hilos_second_factor_trust_restriction` WHERE `id` > ?', [$lastRestrictionId]);
             TruthSourceRegistry::unregisterAgent(self::SETTINGS_AGENT_ID);
         }
     }

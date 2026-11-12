@@ -116,6 +116,8 @@ use Hilos\Users\DTO\UserSecondFactorResetDueDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetDueSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindSignalData;
+use Hilos\Users\DTO\UserSecondFactorTrustRestrictDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorTrustRestrictSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
 use Hilos\Users\DTO\UserLegalHoldForgetDoneSignalData;
@@ -145,6 +147,8 @@ use Throwable;
  * or a code, a device key or a second-factor code, or credited to a refused sign-in of a blocked
  * person ({@see StepUpConfirmations}); the trust when the second factor goes, when the password is
  * changed or recovered, when the person is blocked and when the person's sessions are ended. It
+ * applies the stored trust restrictions to the person's trusts on a service frame from any sender
+ * (HIL-1900), a folded account included: that one answers and stops again. It
  * writes the person's notification edits too (HIL-1408): one notification marked read or all of
  * them, a channel turned on or off, this browser's push subscription dropped, a push device
  * removed. It cancels a standing request to delete the account and sets or removes the profile
@@ -278,6 +282,10 @@ abstract class AbstractUserAgent extends AbstractAgent
             AgentSignalConfigKey::INDEX_FIELD => UserBrowserTrustRevokeSignalData::userId,
             AgentSignalConfigKey::DTO => UserBrowserTrustRevokeSignalData::class,
         ],
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT => [
+            AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorTrustRestrictSignalData::userId,
+            AgentSignalConfigKey::DTO => UserSecondFactorTrustRestrictSignalData::class,
+        ],
         HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL => [
             AgentSignalConfigKey::INDEX_FIELD => UserAccountDeletionCancelSignalData::userId,
             AgentSignalConfigKey::DTO => UserAccountDeletionCancelSignalData::class,
@@ -361,6 +369,13 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosDbContext::userRenames => [TruthSourceOperation::Add, TruthSourceOperation::Update],
     ];
 
+    /**
+     * @var list<string> The stored trust restrictions, read when the person's trusts are restricted
+     *     (HIL-1900): the settings library writes them, and this agent applies them to the person's
+     *     trusts it edits and removes.
+     */
+    public const array READS_DB = [HilosDbContext::secondFactorTrustRestrictions];
+
     private int $userId;
 
     /** The writes of the person's second factor, built on first use. */
@@ -442,7 +457,9 @@ abstract class AbstractUserAgent extends AbstractAgent
      * subscription dropped or a device removed are answered the same way (HIL-1408): the notifications
      * library waits on the answer, and the tabs hear a read or a channel change only after the write.
      * A push endpoint another person subscribes is released and answered to that library too, by a
-     * folded account as well (HIL-1906).
+     * folded account as well (HIL-1906). The stored trust restrictions are applied to the person's
+     * trusts and answered to whichever agent asked, under the reply name its frame carries, by a
+     * folded account as well (HIL-1900).
      * A standing deletion canceled, and a profile photo set or removed, are answered the same way
      * (HIL-1409): the users library waits on the answer. The sessions library reports the last zone
      * a browser named in the background (HIL-1582). That report, the provider-name report and the
@@ -828,6 +845,20 @@ abstract class AbstractUserAgent extends AbstractAgent
                     $trustRevoke,
                     $this->flagRefusal(fn () => $this->revokeBrowserTrust($trustRevoke->sessionId, $trustRevoke->others), 'Browser trust revoke'),
                 ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT:
+                $restrict = $data->data;
+                if (!$restrict instanceof UserSecondFactorTrustRestrictSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorTrustRestrictSignalData::class, $restrict);
+                }
+
+                $this->refuseAnotherPerson($restrict->userId, $name);
+                $this->sendToAgent($restrict->replySignal, $this->restrictTrustsAnswer($restrict));
+                if (isset(Hilos::$db->userMerges[$this->userId])) {
+                    $this->selfStop();
+                }
 
                 return;
 
@@ -2016,6 +2047,42 @@ abstract class AbstractUserAgent extends AbstractAgent
             }
 
             return UserPushReleaseDoneSignalData::refused($ask, $refusal);
+        }
+    }
+
+    /**
+     * Applies the stored trust restrictions to the person's trusts, including for a folded account (HIL-1900).
+     *
+     * A service frame: neither the person's standing nor a fold refuses it, and every outcome is
+     * answered. A restriction that is not stored is refused in its own words, with nothing written;
+     * any other failure takes every row back and is refused as a failure. The log names the person
+     * and the restriction alone, never a browser's session.
+     *
+     * @param UserSecondFactorTrustRestrictSignalData $ask The restriction asked for and the reply name
+     * @return UserSecondFactorTrustRestrictDoneSignalData Application outcome carrying the unchanged request
+     */
+    private function restrictTrustsAnswer(UserSecondFactorTrustRestrictSignalData $ask): UserSecondFactorTrustRestrictDoneSignalData
+    {
+        try {
+            Hilos::$db->secondFactorTrusts->actions->applyRestrictions($this->userId, $ask->restrictionId);
+
+            return UserSecondFactorTrustRestrictDoneSignalData::ok($ask);
+        } catch (ValidationException $e) {
+            return UserSecondFactorTrustRestrictDoneSignalData::refused($ask, ActionRefusal::said($e->getMessage()));
+        } catch (WiringRefusal $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Trust restriction #{$ask->restrictionId} not applied to #{$this->userId}: {$e->getMessage()}");
+            }
+
+            return UserSecondFactorTrustRestrictDoneSignalData::refused($ask, $refusal);
+        } catch (Throwable $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Trust restriction #{$ask->restrictionId} not applied to #{$this->userId}: {$e->getMessage()}");
+            }
+
+            return UserSecondFactorTrustRestrictDoneSignalData::refused($ask, $refusal);
         }
     }
 

@@ -43,7 +43,9 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
      *     (HIL-1199): the export writes both sides of a person's merges, and who the
      *     administrators are leaves out a merged account. The access log joins because every
      *     sign-in the holder grants writes a row of it, and every handshake of a signed-in
-     *     session from a new address does too (HIL-1174).
+     *     session from a new address does too (HIL-1174). The restrictions of browser trust
+     *     join beside the trusts, because whether a trust still lets a person past the second
+     *     factor depends on the shortenings saved after it was granted (HIL-1900).
      */
     private const array TABLES = [
         'hilos_user',
@@ -56,6 +58,7 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
         'hilos_second_factor',
         'hilos_second_factor_backup_code',
         'hilos_second_factor_trust',
+        'hilos_second_factor_trust_restriction',
         'hilos_second_factor_reset',
         'hilos_second_factor_setting',
         'hilos_step_up',

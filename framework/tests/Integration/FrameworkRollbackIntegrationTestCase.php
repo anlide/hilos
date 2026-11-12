@@ -25,7 +25,7 @@ use Throwable;
 /** Unmarked environment owner: unchanged migration stubs stand outside every case's rollback scope. */
 abstract class FrameworkRollbackIntegrationTestCase extends RollbackIntegrationTestCase
 {
-    private const array TABLES = ['hilos_user', 'hilos_setting', 'hilos_second_factor_trust'];
+    private const array TABLES = ['hilos_user', 'hilos_setting', 'hilos_second_factor_trust', 'hilos_second_factor_trust_restriction'];
     private const array COLLECTIONS = [HilosDbContext::users, HilosDbContext::settings, HilosDbContext::secondFactorTrusts];
 
     private ?HilosDbContext $previousDb = null;

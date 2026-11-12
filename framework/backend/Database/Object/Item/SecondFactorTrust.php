@@ -13,7 +13,8 @@ use Hilos\Database\Object\Item\Object_;
  * SecondFactorTrust object - wraps the SecondFactorTrust entity (HIL-494).
  *
  * One "don't ask again on this device": a browser (its session row) and a person the
- * second-factor step is skipped for until `trustedUntil`.
+ * second-factor step is skipped for until `trustedUntil`; `grantedAt` is when it was last
+ * written or extended (HIL-1900).
  *
  * @extends Object_<EntitySecondFactorTrust>
  *
@@ -22,6 +23,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property int $userId
  * @property int $trustedUntil Epoch milliseconds
  * @property int $createdAt Epoch milliseconds
+ * @property int $grantedAt Epoch milliseconds of the last grant: writing or extending the trust
  */
 class SecondFactorTrust extends Object_
 {
@@ -32,6 +34,7 @@ class SecondFactorTrust extends Object_
     public const string userId = 'userId';
     public const string trustedUntil = 'trustedUntil';
     public const string createdAt = 'createdAt';
+    public const string grantedAt = 'grantedAt';
 
     /**
      * Magic getter for entity properties.
@@ -48,6 +51,7 @@ class SecondFactorTrust extends Object_
             self::userId => $this->entity->user_id,
             self::trustedUntil => $this->entity->trusted_until,
             self::createdAt => $this->entity->created_at,
+            self::grantedAt => $this->entity->granted_at,
             default => parent::__get($property),
         };
     }
@@ -66,6 +70,7 @@ class SecondFactorTrust extends Object_
             self::userId => $this->entity->user_id = (int)$value,
             self::trustedUntil => $this->entity->trusted_until = (int)$value,
             self::createdAt => $this->entity->created_at = (int)$value,
+            self::grantedAt => $this->entity->granted_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -73,7 +78,7 @@ class SecondFactorTrust extends Object_
     /**
      * Converts the trust row to an associative array.
      *
-     * @return array<string, mixed> Trust data (id, sessionId, userId, trustedUntil, createdAt)
+     * @return array<string, mixed> Trust data (id, sessionId, userId, trustedUntil, createdAt, grantedAt)
      */
     public function toArray(): array
     {
@@ -83,6 +88,7 @@ class SecondFactorTrust extends Object_
             self::userId => $this->entity->user_id,
             self::trustedUntil => $this->entity->trusted_until,
             self::createdAt => $this->entity->created_at,
+            self::grantedAt => $this->entity->granted_at,
         ];
     }
 }

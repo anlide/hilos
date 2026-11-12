@@ -179,6 +179,7 @@ class FrameworkSchemaCatalog
             $this->tableUnit('second_factor', 'hilos_second_factor', [self::USER]),
             $this->tableUnit('second_factor_backup_code', 'hilos_second_factor_backup_code', [self::USER]),
             $this->tableUnit('second_factor_trust', 'hilos_second_factor_trust', [self::USER]),
+            $this->tableUnit('second_factor_trust_restriction', 'hilos_second_factor_trust_restriction'),
             $this->tableUnit('second_factor_reset', 'hilos_second_factor_reset', [self::USER]),
             $this->tableUnit('second_factor_setting', 'hilos_second_factor_setting', [self::USER]),
             $this->tableUnit('step_up', 'hilos_step_up', [self::USER]),

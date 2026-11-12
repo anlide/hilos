@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Actions\Collection;
 
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
@@ -15,13 +16,15 @@ use Hilos\Database\Object\Collection\SecondFactorTrusts as ObjectSecondFactorTru
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\View\Collection\SecondFactorTrusts as DbCollectionSecondFactorTrusts;
 use Hilos\Database\View\Item\SecondFactorTrust;
+use Hilos\Hilos;
 use Hilos\HilosException;
 use Throwable;
 
 /**
  * SecondFactorTrustsActions - write operations for the SecondFactorTrusts collection (HIL-494).
  *
- * Trusting a browser for a person, and taking every trust of a person out.
+ * Trusting a browser for a person, taking every trust of a person out, and applying the stored
+ * trust restrictions to the trusts of one person (HIL-1900).
  *
  * @extends DbActions<SecondFactorTrust, ObjectSecondFactorTrusts>
  * @property-read DbCollectionSecondFactorTrusts $collection
@@ -107,6 +110,31 @@ class SecondFactorTrustsActions extends DbActions
     {
         $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);
         $this->writeAtomically(fn () => $this->objectCollection->deleteForPair($sessionId, $userId));
+    }
+
+    /**
+     * Applies the stored trust restrictions to a person's trusts, in one transaction (HIL-1900).
+     *
+     * Asked for because of one restriction: when it is not stored the request is refused and
+     * nothing is written. Otherwise every restriction saved since the person's earliest grant is
+     * applied, the one asked for and any other, and a failed row takes every row back.
+     *
+     * @param int $userId Person whose trusts the restrictions are applied to
+     * @param int $throughId Restriction the request was made for
+     * @throws ValidationException When the restriction is not stored
+     * @throws WriteNotAllowedException When the truth source rejects an edit or a removal of the person's trusts
+     * @throws DatabaseException When a lookup or a write fails
+     * @throws HilosException When ownership, the restrictions, the transaction or a row write fails
+     */
+    public function applyRestrictions(int $userId, int $throughId): void
+    {
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Update);
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);
+        if (!Hilos::$db->secondFactorTrustRestrictions->getObjectCollection()->has($throughId)) {
+            throw new ValidationException('Trust restriction ' . $throughId . ' is not saved');
+        }
+
+        $this->writeAtomically(fn () => $this->objectCollection->applyRestrictions($userId));
     }
 
     /**

@@ -77,6 +77,7 @@ use Hilos\Users\DTO\UserSecondFactorRemoveSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetCancelSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetDueSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindSignalData;
+use Hilos\Users\DTO\UserSecondFactorTrustRestrictSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
 use Hilos\Users\DTO\UserLegalHoldForgetSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
@@ -185,7 +186,7 @@ final class AbstractUserAgentTest extends TestCase
         self::assertSame(TruthSourceOperation::ALL, TestUserAgent::OWNS_DB_SET[HilosDbContext::notificationPreferences]);
         self::assertSame(TruthSourceOperation::ALL, TestUserAgent::OWNS_DB_SET[HilosDbContext::userPhotos]);
         self::assertSame([], TestUserAgent::OWNS_DB);
-        self::assertSame([], TestUserAgent::READS_DB);
+        self::assertSame([HilosDbContext::secondFactorTrustRestrictions], TestUserAgent::READS_DB);
         self::assertSame([], TestUserAgent::OWNS_RT);
         self::assertSame([], TestUserAgent::OWNS_RT_ROWS);
         self::assertSame([], TestUserAgent::OWNS_RT_SET);
@@ -320,6 +321,7 @@ final class AbstractUserAgentTest extends TestCase
             HilosSignalConstants::HILOS_USER_STEP_UP_RECORD => UserStepUpRecordSignalData::class,
             HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT => UserStepUpCreditSignalData::class,
             HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE => UserBrowserTrustRevokeSignalData::class,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT => UserSecondFactorTrustRestrictSignalData::class,
             HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL => UserAccountDeletionCancelSignalData::class,
             HilosSignalConstants::HILOS_USER_PHOTO_PUT => UserPhotoPutSignalData::class,
             HilosSignalConstants::HILOS_USER_PHOTO_REMOVE => UserPhotoRemoveSignalData::class,

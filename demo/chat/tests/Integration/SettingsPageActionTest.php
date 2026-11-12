@@ -28,6 +28,7 @@ use Hilos\Auth\Verification\DTO\CodeDeliverySignalData;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
@@ -41,8 +42,11 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
@@ -100,6 +104,9 @@ final class SettingsPageActionTest extends IntegrationTestCase
 
     /** Lifetime of a seeded confirmation, in seconds; longer than any case runs. */
     private const int CONFIRMATION_TTL_SECONDS = 900;
+
+    /** Id of the last trust restriction a case has looked at; the rows after it are what the case wrote since. */
+    private int $restrictionCursor = 0;
 
     protected function setUp(): void
     {
@@ -647,6 +654,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
             $this->assertSame(7, $apply[0]->trustDays);
             $this->assertSame('trust-term-setting-done', $apply[0]->replySignal);
             $this->assertSame([], $answered);
+            $this->assertSame([[$apply[0]->savedAt, 7]], $this->newRestrictions(), 'One restriction, at the moment the holder is told');
         }, [SecondFactorSettings::TRUST_DAYS_KEY]);
     }
 
@@ -673,6 +681,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
 
             $write(365);
             $this->assertSame([], $this->framesNamed(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY));
+            $this->assertSame([], $this->newRestrictions(), 'A longer term restricts nothing');
             new SettingsLibraryAgent()->onSignalAgent(
                 new AgentSignalData(new SettingResetSignalData(
                     replySignal: 'trust-term-setting-done',
@@ -688,15 +697,19 @@ final class SettingsPageActionTest extends IntegrationTestCase
             $reset = $this->framesNamed(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY);
             $this->assertCount(1, $reset);
             $this->assertSame(SecondFactorSettings::DEFAULT_TRUST_DAYS, $reset[0]->data->data->trustDays);
+            $this->assertSame([[$reset[0]->data->data->savedAt, SecondFactorSettings::DEFAULT_TRUST_DAYS]], $this->newRestrictions());
 
             $write(0);
             $zero = $this->framesNamed(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY);
             $this->assertCount(1, $zero);
             $this->assertSame(0, $zero[0]->data->data->trustDays);
+            $this->assertSame([[$zero[0]->data->data->savedAt, 0]], $this->newRestrictions());
             $write(0);
             $this->assertCount(1, $this->framesNamed(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY));
+            $this->assertSame([], $this->newRestrictions(), 'The same term again restricts nothing new');
             $write(365);
             $this->assertSame([], $this->framesNamed(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY));
+            $this->assertSame([], $this->newRestrictions(), 'Raising a zero term restricts nothing');
         }, [SecondFactorSettings::TRUST_DAYS_KEY]);
     }
 
@@ -735,6 +748,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
             $this->assertCount(1, $apply);
             $this->assertSame(7, $apply[0]->trustDays);
             $this->assertSame([], $answers);
+            $this->assertSame([[$apply[0]->savedAt, 7]], $this->newRestrictions());
         }, [SecondFactorSettings::TRUST_DAYS_KEY, self::CATALOG_KEY]);
     }
 
@@ -757,6 +771,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 $this->assertSame(StepUpMessages::EXPIRED, $error);
                 $this->assertArrayNotHasKey(SecondFactorSettings::ENABLED_KEY, Hilos::$db->settings);
                 $this->assertTrue(SecondFactorPolicy::current()->enabled);
+                $this->assertSame([], $this->newRestrictions());
             }, [SecondFactorSettings::ENABLED_KEY]);
         });
     }
@@ -795,6 +810,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 $this->assertInstanceOf(AuthSecondFactorDisableApplySignalData::class, $apply[0]->data->data);
                 $this->assertFalse($apply[0]->data->data->forgetTrusts);
                 $this->assertSame(self::ADMIN_KEY, $apply[0]->data->data->acceptKey);
+                $this->assertSame([], $this->newRestrictions(), 'Turned off with its trusts kept, nothing is restricted');
 
                 $library = $this->sessionsLibrary();
                 $this->underAgent($library, static fn () => $library->onSignalAgent(
@@ -835,7 +851,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
     {
         $this->withSettingsWriter(function (): void {
             $this->deleteSettingIfExists(SecondFactorSettings::ENABLED_KEY);
-            $this->writeFromTheConsole(SecondFactorSettings::ENABLED_KEY, 'false');
+            $this->turnOffForgettingTrusts();
             $this->drainSignals();
 
             $this->writeFromTheConsole(SecondFactorSettings::ENABLED_KEY, 'true');
@@ -845,8 +861,9 @@ final class SettingsPageActionTest extends IntegrationTestCase
             $this->assertCount(1, $answers);
             $this->assertCount(1, $policies);
             $this->assertTrue($policies[0]->enabled);
+            $this->assertSame([], $this->newRestrictions(), 'Turning the factor on restricts nothing');
 
-            $this->writeFromTheConsole(SecondFactorSettings::ENABLED_KEY, 'false');
+            $this->turnOffForgettingTrusts();
             $this->drainSignals();
             new SettingsLibraryAgent()->onSignalAgent(
                 new AgentSignalData(new SettingResetSignalData(
@@ -864,7 +881,74 @@ final class SettingsPageActionTest extends IntegrationTestCase
             $this->assertTrue(SecondFactorPolicy::current()->enabled);
             $this->assertSame([], $apply);
             $this->assertCount(1, $answers);
+            $this->assertSame([], $this->newRestrictions(), 'A reset that turns the factor on restricts nothing');
         }, [SecondFactorSettings::ENABLED_KEY]);
+    }
+
+    /**
+     * The shorter term and its restriction are committed together before the session holder hears of
+     * either: the apply still waits on the queue, undelivered, and both rows already stand (HIL-1900).
+     */
+    public function testTheTrustTermAndItsRestrictionAreCommittedBeforeTheHolderIsAsked(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(SecondFactorSettings::TRUST_DAYS_KEY);
+
+            $this->writeFromTheConsole(SecondFactorSettings::TRUST_DAYS_KEY, '7');
+
+            $this->assertFalse(Database::hasOpenTransactions());
+            $this->assertSame(
+                [['value' => '7']],
+                Database::sql('SELECT `value` FROM `hilos_setting` WHERE `key` = ?', [SecondFactorSettings::TRUST_DAYS_KEY])->rows(),
+            );
+            $restrictions = $this->newRestrictions();
+            $apply = $this->framesNamed(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY);
+            $this->assertCount(1, $apply);
+            $this->assertSame([[$apply[0]->data->data->savedAt, 7]], $restrictions);
+        }, [SecondFactorSettings::TRUST_DAYS_KEY]);
+    }
+
+    /**
+     * A restriction that cannot be recorded takes the shorter term back with it: the term stays as it
+     * was, the write is refused, and neither the session holder nor any connection is told (HIL-1900).
+     */
+    public function testARestrictionThatCannotBeRecordedTakesTheTrustTermBack(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(SecondFactorSettings::TRUST_DAYS_KEY);
+            $this->drainSignals();
+            // The term itself may still be written; only the restriction it owes is refused.
+            TruthSourceRegistry::unregister(HilosDbContext::secondFactorTrustRestrictions, self::SETTINGS_AGENT_ID);
+
+            $this->writeFromTheConsole(SecondFactorSettings::TRUST_DAYS_KEY, '7');
+
+            $this->assertSame(SignalConstants::ACTION_FAILED_REASON, $this->refusedAlone());
+            $this->assertFalse(Database::hasOpenTransactions());
+            $this->assertArrayNotHasKey(SecondFactorSettings::TRUST_DAYS_KEY, Hilos::$db->settings);
+            $this->assertSame(
+                [],
+                Database::sql('SELECT `value` FROM `hilos_setting` WHERE `key` = ?', [SecondFactorSettings::TRUST_DAYS_KEY])->rows(),
+            );
+            $this->assertSame(SecondFactorSettings::DEFAULT_TRUST_DAYS, SecondFactorPolicy::current()->trustDays);
+            $this->assertSame([], $this->newRestrictions());
+        }, [SecondFactorSettings::TRUST_DAYS_KEY]);
+    }
+
+    /**
+     * A shorter term the settings refuse records no restriction and hands the session holder nothing (HIL-1900).
+     */
+    public function testARefusedTrustTermRecordsNoRestriction(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(SecondFactorSettings::TRUST_DAYS_KEY);
+            $this->drainSignals();
+
+            $this->writeFromTheConsole(SecondFactorSettings::TRUST_DAYS_KEY, '-1');
+
+            $this->refusedAlone();
+            $this->assertArrayNotHasKey(SecondFactorSettings::TRUST_DAYS_KEY, Hilos::$db->settings);
+            $this->assertSame([], $this->newRestrictions());
+        }, [SecondFactorSettings::TRUST_DAYS_KEY]);
     }
 
     /**
@@ -1150,6 +1234,63 @@ final class SettingsPageActionTest extends IntegrationTestCase
     }
 
     /**
+     * Drains the queue once, checking that a refused write sent its answer and nothing besides (HIL-1900).
+     *
+     * @return string Sentence the write was refused with
+     */
+    private function refusedAlone(): string
+    {
+        $sent = [];
+        $error = null;
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $sent[] = $signal->signalName->getName();
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {
+                $error = $signal->data->data->error;
+            }
+        }
+        $this->assertSame([HilosSignalConstants::HILOS_SETTING_COMMAND_DONE], $sent, 'A refused write sends its answer alone');
+        $this->assertNotNull($error);
+
+        return $error;
+    }
+
+    /**
+     * Turns the second factor off from the console while forgetting the trusted browsers is on, as it is
+     * by default, and checks the one restriction to no term at all that the write recorded (HIL-1900).
+     */
+    private function turnOffForgettingTrusts(): void
+    {
+        $before = TimeHelper::nowMs();
+        $this->writeFromTheConsole(SecondFactorSettings::ENABLED_KEY, 'false');
+        $after = TimeHelper::nowMs();
+
+        $restrictions = $this->newRestrictions();
+        $this->assertCount(1, $restrictions);
+        $this->assertSame(0, $restrictions[0][1]);
+        $this->assertGreaterThanOrEqual($before, $restrictions[0][0]);
+        $this->assertLessThanOrEqual($after, $restrictions[0][0]);
+    }
+
+    /**
+     * Reads the trust restrictions recorded since the case last looked, straight from the table (HIL-1900).
+     *
+     * @return list<array{0: int, 1: int}> Save moment and term in days of each new row, oldest first
+     */
+    private function newRestrictions(): array
+    {
+        $restrictions = [];
+        foreach (Database::sql(
+            'SELECT `id`, `saved_at`, `term_days` FROM `hilos_second_factor_trust_restriction` WHERE `id` > ? ORDER BY `id`',
+            [$this->restrictionCursor],
+        )->rows() as $row) {
+            $this->restrictionCursor = (int) $row['id'];
+            $restrictions[] = [(int) $row['saved_at'], (int) $row['term_days']];
+        }
+
+        return $restrictions;
+    }
+
+    /**
      * Drains the queue once, selecting the frame being asserted even when other broadcasts follow the write.
      *
      * @param string $name Signal name to collect
@@ -1267,12 +1408,27 @@ final class SettingsPageActionTest extends IntegrationTestCase
      * Registers the settings collection writer, runs the test body, then cleans up any
      * rows it may have written and releases the writer.
      *
+     * The writer holds what the library holds: the settings, and adding the trust restrictions a
+     * shorter term or a switch-off records (HIL-1900). Those rows are never removed by anybody, so
+     * the ones the body recorded are taken out here by hand, and no later case finds trusts cut
+     * short by a save it did not make.
+     *
      * @param callable():void $body Test body run while the settings writer is held
      * @param list<string> $keysToCleanup Setting keys to delete afterward when present
      */
     private function withSettingsWriter(callable $body, array $keysToCleanup): void
     {
         TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::SETTINGS_AGENT_ID);
+        TruthSourceRegistry::register(
+            HilosDbContext::secondFactorTrustRestrictions,
+            TruthSourceKeys::all(),
+            self::SETTINGS_AGENT_ID,
+            new TruthSourceOperations(TruthSourceOperation::Add),
+        );
+        $baseline = (int) Database::sql(
+            'SELECT COALESCE(MAX(`id`), 0) AS `last_id` FROM `hilos_second_factor_trust_restriction`',
+        )->rows()[0]['last_id'];
+        $this->restrictionCursor = $baseline;
 
         try {
             $body();
@@ -1280,6 +1436,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
             foreach ($keysToCleanup as $key) {
                 $this->deleteSettingIfExists($key);
             }
+            Database::sql('DELETE FROM `hilos_second_factor_trust_restriction` WHERE `id` > ?', [$baseline]);
             TruthSourceRegistry::unregisterAgent(self::SETTINGS_AGENT_ID);
         }
     }

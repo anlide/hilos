@@ -53,6 +53,7 @@ use Hilos\Users\DTO\UserSecondFactorRemoveSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetCancelSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetDueSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindSignalData;
+use Hilos\Users\DTO\UserSecondFactorTrustRestrictSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
 use Hilos\Users\DTO\UserLegalHoldForgetSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
@@ -156,6 +157,7 @@ trait PersonAgentFrames
             $ask instanceof UserStepUpRecordSignalData,
             $ask instanceof UserStepUpCreditSignalData,
             $ask instanceof UserBrowserTrustRevokeSignalData,
+            $ask instanceof UserSecondFactorTrustRestrictSignalData,
             $ask instanceof UserNotificationReadSignalData,
             $ask instanceof UserNotificationChannelSetSignalData,
             $ask instanceof UserPushUnsubscribeSignalData,

@@ -118,7 +118,7 @@ final class FrameworkMigrationCatalogTest extends TestCase
         $this->assertContains('oauth_provider', $keys);
         $this->assertContains('legal_acceptance_export', $keys);
         $this->assertNotContains('verifier_circle', $keys);
-        $this->assertCount(27, $keys);
+        $this->assertCount(28, $keys);
     }
 
     public function testMetadataRequirementsAreTheSelectionSource(): void

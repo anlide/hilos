@@ -63,6 +63,7 @@ use Hilos\Database\View\Collection\SecondFactorResets as DbCollectionSecondFacto
 use Hilos\Database\View\Collection\SecondFactors as DbCollectionSecondFactors;
 use Hilos\Database\View\Collection\SecondFactorSettings as DbCollectionSecondFactorSettings;
 use Hilos\Database\View\Collection\SecondFactorTrusts as DbCollectionSecondFactorTrusts;
+use Hilos\Database\View\Collection\SecondFactorTrustRestrictions as DbCollectionSecondFactorTrustRestrictions;
 use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\StatusIncidents as DbCollectionStatusIncidents;
@@ -112,6 +113,7 @@ use Hilos\Database\Actions\Collection\SecondFactorResetsActions;
 use Hilos\Database\Actions\Collection\SecondFactorsActions;
 use Hilos\Database\Actions\Collection\SecondFactorSettingsActions;
 use Hilos\Database\Actions\Collection\SecondFactorTrustsActions;
+use Hilos\Database\Actions\Collection\SecondFactorTrustRestrictionsActions;
 use Hilos\Database\Actions\Collection\SessionsActions;
 use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\Actions\Collection\StatusIncidentsActions;
@@ -185,6 +187,7 @@ use Hilos\Database\Exception\InvalidMountedCollectionException;
  * @property-read DbCollectionSecondFactors $secondFactors
  * @property-read DbCollectionSecondFactorBackupCodes $secondFactorBackupCodes
  * @property-read DbCollectionSecondFactorTrusts $secondFactorTrusts
+ * @property-read DbCollectionSecondFactorTrustRestrictions $secondFactorTrustRestrictions Shortenings of browser trust
  * @property-read DbCollectionSecondFactorResets $secondFactorResets
  * @property-read DbCollectionSecondFactorSettings $secondFactorSettings
  * @property-read DbCollectionStepUps $stepUps
@@ -273,6 +276,7 @@ abstract class HilosDbContext extends DbContext
     public const string secondFactorBackupCode = 'secondFactorBackupCode';
     public const string secondFactorTrusts = 'secondFactorTrusts';
     public const string secondFactorTrust = 'secondFactorTrust';
+    public const string secondFactorTrustRestrictions = 'secondFactorTrustRestrictions';
     public const string secondFactorResets = 'secondFactorResets';
     public const string secondFactorReset = 'secondFactorReset';
     public const string secondFactorSettings = 'secondFactorSettings';
@@ -505,6 +509,12 @@ abstract class HilosDbContext extends DbContext
             Objects::LAZY_STRATEGY_KEY,
             DbCollectionSecondFactorTrusts::class,
             SecondFactorTrustsActions::class,
+        );
+        $this->mountFramework(
+            self::secondFactorTrustRestrictions,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionSecondFactorTrustRestrictions::class,
+            SecondFactorTrustRestrictionsActions::class,
         );
         $this->mountFramework(
             self::secondFactorResets,

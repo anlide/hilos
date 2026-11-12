@@ -1,0 +1,28 @@
+{
+    "format": 1,
+    "id": "20261112084322628728_HIL-1900_second_factor_trust_restriction",
+    "parts": [
+        {
+            "unit": "second_factor_trust",
+            "up": "second_factor_trust.sql",
+            "down": "second_factor_trust_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261111235717678237_HIL-1922_second_factor_moments",
+                    "unit": "second_factor_trust"
+                }
+            ],
+            "afterStubUpSha256": "c6f3c3e5b0613e9b07a1e433c25acd6001e390483050096eab7772240d3fbbb5",
+            "afterStubDownSha256": "0c93c04f06655b62c05128a1c6c5e71e1a0dfce9a951a4ab88c99202ca6ad477"
+        },
+        {
+            "unit": "second_factor_trust_restriction",
+            "up": "second_factor_trust_restriction.sql",
+            "down": "second_factor_trust_restriction_down.sql",
+            "introducesUnit": true,
+            "requires": [],
+            "afterStubUpSha256": "f5adc60277e32e6aeb9ff4555b11b04b67847630c6bcf21438cefc8f91c36181",
+            "afterStubDownSha256": "da342bdc6bb0ee3fc392d99185c0bc2956ad9664c64f6e49333429ea3f762ea9"
+        }
+    ]
+}

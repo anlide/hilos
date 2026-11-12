@@ -10,6 +10,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\SecondFactorTrusts as ObjectSecondFactorTrusts;
 use Hilos\Database\View\Item\SecondFactorTrust;
+use Hilos\HilosException;
 
 /**
  * SecondFactorTrusts Db collection - "don't ask again on this device" (HIL-494).
@@ -49,9 +50,10 @@ class SecondFactorTrusts extends DbCollection
      * @param int $sessionId Session row of the browser
      * @param int $userId Person asking to be let in
      * @param int $allowedDays Current policy limit in days
-     * @return bool True while a trust of the pair has not run out
-     * @throws DatabaseException When the lookup fails
-     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @return bool True while a trust of the pair has not run out and no restriction saved since its grant has ended it
+     * @throws DatabaseException When a lookup fails
+     * @throws InvalidArgumentException When an entity query is given an invalid order direction
+     * @throws HilosException When the trust restrictions cannot be read
      */
     public function isTrusted(int $sessionId, int $userId, int $allowedDays): bool
     {

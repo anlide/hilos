@@ -47,6 +47,7 @@ final class PasswordRecoveryCodeIntegrationTest extends FrameworkIntegrationTest
         'hilos_identity',
         'hilos_user_verification',
         'hilos_second_factor_trust',
+        'hilos_second_factor_trust_restriction',
     ];
 
     private const string CODE = '424242';

@@ -187,6 +187,8 @@ use Hilos\Users\DTO\UserSecondFactorResetDueDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetDueSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindSignalData;
+use Hilos\Users\DTO\UserSecondFactorTrustRestrictDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorTrustRestrictSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
 use Hilos\Users\DTO\UserLegalHoldForgetDoneSignalData;
@@ -1111,6 +1113,19 @@ final class HilosSignalConstants
      * Only a refusal is read, into the holder's log. Carried by {@see UserBrowserTrustRevokeDoneSignalData}.
      */
     public const string HILOS_USER_BROWSER_TRUST_REVOKE_DONE = 'hilos_user_browser_trust_revoke_done';
+
+    /**
+     * Any agent → the person's agent: apply the stored trust restrictions to the person's trusts (HIL-1900).
+     *
+     * Sent because of one restriction; the agent applies every restriction saved since the person's
+     * earliest grant, in one transaction, and answers under the reply name the frame carries - each
+     * kind of sender names its own. A folded account answers too and stops after it. An ok answer
+     * means that at the agent's commit no trust of the person breaks a restriction with an id up to
+     * the one asked for: none still under a restriction of 0 days, none running past the limit of a
+     * restriction saved no earlier than its last grant. Carried by
+     * {@see UserSecondFactorTrustRestrictSignalData}, answered by {@see UserSecondFactorTrustRestrictDoneSignalData}.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT = 'hilos_user_second_factor_trust_restrict';
 
     /**
      * Users library → the person's agent: cancel a standing request to delete the account (HIL-1409).

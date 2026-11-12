@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Settings\Library;
 
+use Closure;
 use Hilos\Auth\Impersonation\DTO\ImpersonationPolicySignalData;
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Method\PasskeyAddressPolicy;
@@ -32,6 +33,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
 use Hilos\Database\Settings\Library\DTO\SettingDeleteSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
 use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
@@ -118,18 +120,21 @@ use Hilos\Utils\Logger;
 final class SettingsLibraryAgent extends AbstractAgent
 {
     /**
-     * The settings collection, whole and unconditionally.
+     * The settings collection, whole and unconditionally, and the restrictions of browser trust
+     * that saving the trust term or switching the second factor off gives birth to (HIL-1900).
      *
-     * Every operation, because every one of them arrives here: a value put under a key, a key
-     * put back to its default, an orphan row dropped, a preset written across a group. Claimed
-     * outright rather than by rows, because settings have no instance rows with owners - a
+     * Every operation on the settings, because every one of them arrives here: a value put under
+     * a key, a key put back to its default, an orphan row dropped, a preset written across a group.
+     * Claimed outright rather than by rows, because settings have no instance rows with owners - a
      * settings row belongs to the installation, which is the definition of a set the library
-     * owns.
+     * owns. The restrictions are claimed whole too, and for adding alone: a row is never changed
+     * or removed once it is written, by anybody.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
         HilosDbContext::settings => TruthSourceOperation::ALL,
+        HilosDbContext::secondFactorTrustRestrictions => [TruthSourceOperation::Add],
     ];
 
     /**
@@ -210,6 +215,9 @@ final class SettingsLibraryAgent extends AbstractAgent
     /** Most key and value pairs one test settings write carries (HIL-1856). */
     private const int TEST_WRITE_PAIRS_MAX = 32;
 
+    /** Refusal of a write that moved the trust term or the switch when the settings could not be read after it. */
+    private const string TRUST_POLICY_UNREAD = 'Second-factor trust policy could not be read after saving';
+
     /**
      * Nothing is released on stop: this library holds a claim, not a resource.
      */
@@ -262,7 +270,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                 }
                 $this->settle(
                     $data->data,
-                    $this->storeValue($data->data),
+                    $this->storeValue($data->data, $policyBefore),
                     $methodsBefore,
                     $policyBefore,
                     $deliveryBefore,
@@ -278,7 +286,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                 }
                 $this->settle(
                     $data->data,
-                    $this->resetToDefault($data->data),
+                    $this->resetToDefault($data->data, $policyBefore),
                     $methodsBefore,
                     $policyBefore,
                     $deliveryBefore,
@@ -294,7 +302,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                 }
                 $this->settle(
                     $data->data,
-                    $this->dropOrphan($data->data),
+                    $this->dropOrphan($data->data, $policyBefore),
                     $methodsBefore,
                     $policyBefore,
                     $deliveryBefore,
@@ -314,7 +322,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                 }
                 $this->settle(
                     $data->data,
-                    $this->applyPreset($data->data),
+                    $this->applyPreset($data->data, $policyBefore),
                     $methodsBefore,
                     $policyBefore,
                     $deliveryBefore,
@@ -406,7 +414,7 @@ final class SettingsLibraryAgent extends AbstractAgent
 
         $this->settle(
             $ask,
-            $this->storeValue($ask),
+            $this->storeValue($ask, $policyBefore),
             $methodsBefore,
             $policyBefore,
             $deliveryBefore,
@@ -452,7 +460,7 @@ final class SettingsLibraryAgent extends AbstractAgent
 
         $this->settle(
             $ask,
-            $this->resetToDefault($ask),
+            $this->resetToDefault($ask, $policyBefore),
             $methodsBefore,
             $policyBefore,
             $deliveryBefore,
@@ -503,13 +511,14 @@ final class SettingsLibraryAgent extends AbstractAgent
 
         $accepted = [];
         foreach ($asks as $index => $ask) {
-            $refusal = $this->storeValue($ask);
-            if ($refusal !== null) {
+            // The example keys move no second-factor setting, so there is no policy to hold the write against.
+            $saved = $this->storeValue($ask, null);
+            if ($saved instanceof ActionRefusal) {
                 // A placeholder is replaced by the detail it holds back, as settings:set does: the console is read by
                 // whoever runs the stand, and nobody behind it is to be spared the engine's words.
                 $this->replyToCommand(CommandReplyDTO::error(
                     $data->correlationId,
-                    'Write ' . ($index + 1) . ' was refused: ' . ($refusal->errorDetail ?? $refusal->reason),
+                    'Write ' . ($index + 1) . ' was refused: ' . ($saved->errorDetail ?? $saved->reason),
                 ));
 
                 return;
@@ -577,18 +586,19 @@ final class SettingsLibraryAgent extends AbstractAgent
      * ({@see confirmSecondFactorOff()}), whichever screen forwarded it.
      *
      * @param SettingWriteSignalData $ask Key and value the administrator asked for
-     * @return ?ActionRefusal Why the value was refused, or null when it was written
+     * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the write, or null when unread
+     * @return ActionRefusal|int Why the value was refused, or the moment it was written (epoch milliseconds)
      */
-    private function storeValue(SettingWriteSignalData $ask): ?ActionRefusal
+    private function storeValue(SettingWriteSignalData $ask, ?SecondFactorPolicy $policyBefore): ActionRefusal|int
     {
         try {
-            $this->confirmSecondFactorOff($ask);
-            $this->settingsTable()->actions->add($ask->key, $ask->value);
+            return $this->saveWithRestriction($ask, $policyBefore, function () use ($ask): void {
+                $this->confirmSecondFactorOff($ask);
+                $this->settingsTable()->actions->add($ask->key, $ask->value);
+            });
         } catch (HilosException $e) {
             return $this->refusal($e, "Setting write failed for '{$ask->key}'");
         }
-
-        return null;
     }
 
     /**
@@ -636,34 +646,36 @@ final class SettingsLibraryAgent extends AbstractAgent
      * Returns a cataloged key to its catalog default, or says why it could not be returned.
      *
      * @param SettingResetSignalData $ask Key the administrator asked to undo
-     * @return ?ActionRefusal Why the reset was refused, or null when it went through
+     * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the reset, or null when unread
+     * @return ActionRefusal|int Why the reset was refused, or the moment it went through (epoch milliseconds)
      */
-    private function resetToDefault(SettingResetSignalData $ask): ?ActionRefusal
+    private function resetToDefault(SettingResetSignalData $ask, ?SecondFactorPolicy $policyBefore): ActionRefusal|int
     {
         try {
-            $this->settingsTable()->actions->reset($ask->key);
+            return $this->saveWithRestriction($ask, $policyBefore, function () use ($ask): void {
+                $this->settingsTable()->actions->reset($ask->key);
+            });
         } catch (HilosException $e) {
             return $this->refusal($e, "Setting reset failed for '{$ask->key}'");
         }
-
-        return null;
     }
 
     /**
      * Removes an orphan row, or says why it is not one to remove.
      *
      * @param SettingDeleteSignalData $ask Key the administrator asked to drop
-     * @return ?ActionRefusal Why the row was kept, or null when it was dropped
+     * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the drop, or null when unread
+     * @return ActionRefusal|int Why the row was kept, or the moment it was dropped (epoch milliseconds)
      */
-    private function dropOrphan(SettingDeleteSignalData $ask): ?ActionRefusal
+    private function dropOrphan(SettingDeleteSignalData $ask, ?SecondFactorPolicy $policyBefore): ActionRefusal|int
     {
         try {
-            $this->settingsTable()[$ask->key]->actions->delete();
+            return $this->saveWithRestriction($ask, $policyBefore, function () use ($ask): void {
+                $this->settingsTable()[$ask->key]->actions->delete();
+            });
         } catch (HilosException $e) {
             return $this->refusal($e, "Setting delete failed for '{$ask->key}'");
         }
-
-        return null;
     }
 
     /**
@@ -676,16 +688,19 @@ final class SettingsLibraryAgent extends AbstractAgent
      * trusted into a fatal.
      *
      * @param SettingPresetApplySignalData $ask Group provider and preset the administrator picked
-     * @return ?ActionRefusal Why the preset was refused, or null when it was applied
+     * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the preset, or null when unread
+     * @return ActionRefusal|int Why the preset was refused, or the moment it was applied (epoch milliseconds)
      */
-    private function applyPreset(SettingPresetApplySignalData $ask): ?ActionRefusal
+    private function applyPreset(SettingPresetApplySignalData $ask, ?SecondFactorPolicy $policyBefore): ActionRefusal|int
     {
         if (!is_subclass_of($ask->groupProvider, SettingPresetGroupProviderInterface::class)) {
             return ActionRefusal::said('Setting preset group provider is not one: ' . $ask->groupProvider);
         }
 
         try {
-            new SettingPresetResolver($ask->groupProvider::presetGroup())->apply($ask->preset);
+            return $this->saveWithRestriction($ask, $policyBefore, static function () use ($ask): void {
+                new SettingPresetResolver($ask->groupProvider::presetGroup())->apply($ask->preset);
+            });
         } catch (SettingPresetUnknownException $e) {
             // The one refusal whose family does not carry it: the page used to re-raise this as a
             // table action for exactly that reason, and the sentence is what the administrator
@@ -695,8 +710,59 @@ final class SettingsLibraryAgent extends AbstractAgent
         } catch (HilosException $e) {
             return $this->refusal($e, "Setting preset apply failed for '{$ask->preset}'");
         }
+    }
 
-        return null;
+    /**
+     * Writes what one door asked for in one transaction with the trust restriction it gives birth to (HIL-1900).
+     *
+     * A browser trust is cut short by two saves, and the cut is recorded as a row beside the setting,
+     * at the same moment and in the same commit, so neither outlives the other: a trust term saved
+     * shorter than it stood - or written over a term nobody could read, taken as shorter - records
+     * the new term; the second factor turned off while forgetting the trusted browsers is on records
+     * a term of none. A longer term, the same term again, the factor turned on, or turned off with
+     * its trusts kept records nothing. One write moves one key and no preset group holds the switch,
+     * so a write meets at most one of the two, as in {@see settle()}.
+     *
+     * The settings are read again inside the transaction, where this process already sees the
+     * write. A write that moved the trust term or the switch while the settings cannot be read is
+     * taken back whole and refused: a setting is not saved without the restriction it owes. The
+     * door's own write opens no transaction, so nothing here nests.
+     *
+     * @param HandoverAskInterface $ask The ask being written
+     * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the write, or null when unread
+     * @param Closure(): void $write The door's own write
+     * @return ActionRefusal|int Why the write was taken back, or the moment it was saved (epoch milliseconds)
+     * @throws HilosException Whatever the write, the restriction, the transaction or the commit raised; nothing of the write stays
+     */
+    private function saveWithRestriction(HandoverAskInterface $ask, ?SecondFactorPolicy $policyBefore, Closure $write): ActionRefusal|int
+    {
+        $touchesTrustDays = $this->touchesKey($ask, SecondFactorSettings::TRUST_DAYS_KEY);
+        $touchesSwitch = $this->touchesKey($ask, SecondFactorSettings::ENABLED_KEY);
+
+        Database::transactionStart();
+        try {
+            $write();
+            $savedAt = TimeHelper::nowMs();
+            if ($touchesTrustDays || $touchesSwitch) {
+                $policyAfter = $this->secondFactorPolicy();
+                if ($policyAfter === null) {
+                    Database::transactionRollback();
+
+                    return ActionRefusal::said(self::TRUST_POLICY_UNREAD);
+                }
+                if ($touchesTrustDays && ($policyBefore === null || $policyAfter->trustDays < $policyBefore->trustDays)) {
+                    Hilos::$db->secondFactorTrustRestrictions->actions->record($savedAt, $policyAfter->trustDays);
+                } elseif ($policyBefore?->enabled === true && !$policyAfter->enabled && $policyAfter->forgetTrustsOnDisable) {
+                    Hilos::$db->secondFactorTrustRestrictions->actions->record($savedAt, 0);
+                }
+            }
+            Database::transactionCommit();
+        } catch (HilosException $failure) {
+            Database::transactionRollbackSilent();
+            throw $failure;
+        }
+
+        return $savedAt;
     }
 
     /**
@@ -752,8 +818,11 @@ final class SettingsLibraryAgent extends AbstractAgent
      * The theme settings (HIL-1428) travel as a complete pair after either value changes.
      * An unreadable pair is logged and cannot be compared to a fabricated default.
      *
+     * The trust term handed to the session holder carries the moment the write was saved, the one
+     * its trust restriction was recorded with ({@see saveWithRestriction()}, HIL-1900).
+     *
      * @param HandoverAskInterface $ask The ask, carrying whom to answer and under which name
-     * @param ?ActionRefusal $refusal Why the write was refused, or null when it went through
+     * @param ActionRefusal|int $saved Why the write was refused, or the moment it was saved (epoch milliseconds)
      * @param ?AuthMethodsSignalData $methodsBefore Method-set frame before the write, or null when unread
      * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the write, or null when unread
      * @param CodeDeliverySignalData $deliveryBefore Delivery availability before the write
@@ -763,21 +832,20 @@ final class SettingsLibraryAgent extends AbstractAgent
      */
     private function settle(
         HandoverAskInterface $ask,
-        ?ActionRefusal $refusal,
+        ActionRefusal|int $saved,
         ?AuthMethodsSignalData $methodsBefore,
         ?SecondFactorPolicy $policyBefore,
         CodeDeliverySignalData $deliveryBefore,
         ?ImpersonationPolicySignalData $impersonationBefore,
         ?ThemeSettingsSignalData $themeBefore,
     ): void {
-        if ($refusal !== null) {
-            $this->answer($ask, $refusal);
+        if ($saved instanceof ActionRefusal) {
+            $this->answer($ask, $saved);
             return;
         }
 
-        $savedAt = TimeHelper::nowMs();
         $policyAfter = $this->secondFactorPolicy();
-        $touchesTrustDays = $this->touchesTrustDays($ask);
+        $touchesTrustDays = $this->touchesKey($ask, SecondFactorSettings::TRUST_DAYS_KEY);
         $shortened = $touchesTrustDays && $policyAfter !== null
             && ($policyBefore === null || $policyAfter->trustDays < $policyBefore->trustDays);
         $retry = $touchesTrustDays && $ask instanceof SettingWriteSignalData && $policyAfter !== null
@@ -838,7 +906,7 @@ final class SettingsLibraryAgent extends AbstractAgent
         }
 
         if ($touchesTrustDays && $policyAfter === null) {
-            $this->answer($ask, ActionRefusal::said('Second-factor trust policy could not be read after saving'));
+            $this->answer($ask, ActionRefusal::said(self::TRUST_POLICY_UNREAD));
             return;
         }
         if (!$deferAnswer) {
@@ -872,7 +940,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                 HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY,
                 new AuthSecondFactorTrustDaysApplySignalData(
                     trustDays: $policyAfter->trustDays,
-                    savedAt: $savedAt,
+                    savedAt: $saved,
                     replySignal: $ask->replySignal,
                     acceptKey: $ask->acceptKey,
                     requestId: $ask->requestId,
@@ -886,18 +954,19 @@ final class SettingsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * @param HandoverAskInterface $ask Successful settings write
-     * @return bool Whether its target includes the trust term
+     * @param HandoverAskInterface $ask Settings write
+     * @param string $key Setting key
+     * @return bool Whether its target includes the key
      */
-    private function touchesTrustDays(HandoverAskInterface $ask): bool
+    private function touchesKey(HandoverAskInterface $ask, string $key): bool
     {
         if ($ask instanceof SettingWriteSignalData || $ask instanceof SettingResetSignalData) {
-            return $ask->key === SecondFactorSettings::TRUST_DAYS_KEY;
+            return $ask->key === $key;
         }
         if ($ask instanceof SettingPresetApplySignalData) {
             $provider = $ask->groupProvider;
 
-            return in_array(SecondFactorSettings::TRUST_DAYS_KEY, $provider::presetGroup()->memberKeys(), true);
+            return in_array($key, $provider::presetGroup()->memberKeys(), true);
         }
 
         return false;
