@@ -24,7 +24,8 @@ use Throwable;
  * SecondFactorTrustsActions - write operations for the SecondFactorTrusts collection (HIL-494).
  *
  * Trusting a browser for a person, taking every trust of a person out, and applying the stored
- * trust restrictions to the trusts of one person (HIL-1900).
+ * trust restrictions to the trusts of one person (HIL-1900), on a request for one of them or at
+ * the start of the person's agent (HIL-1901).
  *
  * @extends DbActions<SecondFactorTrust, ObjectSecondFactorTrusts>
  * @property-read DbCollectionSecondFactorTrusts $collection
@@ -117,7 +118,8 @@ class SecondFactorTrustsActions extends DbActions
      *
      * Asked for because of one restriction: when it is not stored the request is refused and
      * nothing is written. Otherwise every restriction saved since the person's earliest grant is
-     * applied, the one asked for and any other, and a failed row takes every row back.
+     * applied, the one asked for and any other, and a failed row takes every row back
+     * ({@see applySavedRestrictions()}).
      *
      * @param int $userId Person whose trusts the restrictions are applied to
      * @param int $throughId Restriction the request was made for
@@ -134,6 +136,25 @@ class SecondFactorTrustsActions extends DbActions
             throw new ValidationException('Trust restriction ' . $throughId . ' is not saved');
         }
 
+        $this->applySavedRestrictions($userId);
+    }
+
+    /**
+     * Applies every stored trust restriction to a person's trusts, in one transaction (HIL-1901).
+     *
+     * Asked for by no restriction in particular - the person's agent at its start - so nothing is
+     * checked first. A failed row takes every row back, and with nothing to cut or take out the
+     * transaction writes nothing.
+     *
+     * @param int $userId Person whose trusts the restrictions are applied to
+     * @throws WriteNotAllowedException When the truth source rejects an edit or a removal of the person's trusts
+     * @throws DatabaseException When a lookup or a write fails
+     * @throws HilosException When the restrictions, the transaction or a row write fails
+     */
+    public function applySavedRestrictions(int $userId): void
+    {
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Update);
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);
         $this->writeAtomically(fn () => $this->objectCollection->applyRestrictions($userId));
     }
 

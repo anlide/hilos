@@ -81,6 +81,7 @@ use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
+use Hilos\Users\DTO\UserSecondFactorTrustRestrictDoneSignalData;
 use Hilos\Users\DTO\UserLastBrowserTimeZoneWriteSignalData;
 use Hilos\Users\DTO\UserStepUpCreditDoneSignalData;
 use Hilos\Users\DTO\UserStepUpCreditSignalData;
@@ -231,6 +232,7 @@ use Hilos\Users\SecondFactorOutcome;
 use Hilos\Auth\SecondFactor\SecondFactorResetWait;
 use Hilos\Auth\SecondFactor\SecondFactorGroup;
 use Hilos\Auth\SecondFactor\SecondFactorStateProjector;
+use Hilos\Auth\SecondFactor\SecondFactorTrustRestrictionSweep;
 use Hilos\Users\AdminCommandConstants;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
@@ -290,6 +292,10 @@ use Throwable;
  * not reach, and signs a browser whose block was lifted while it was away back in (HIL-1188).
  * A session row is removed only by this library's sweep,
  * after its cookie lifetime ends or after an anonymous browser never returns.
+ *
+ * It also brings the restrictions of browser trust to the people whose agents sleep (HIL-1901):
+ * {@see SecondFactorTrustRestrictionSweep} sends them the restriction frame from this library's
+ * schedule and takes the answers here, and this library writes no trust for it.
  */
 abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 {
@@ -590,6 +596,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE => UserBlockWriteDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT_DONE => UserStepUpCreditDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE_DONE => UserBrowserTrustRevokeDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT_DONE => UserSecondFactorTrustRestrictDoneSignalData::class,
     ];
 
     /**
@@ -767,6 +774,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** Once an hour: a row is kept 12 months, and an hour more over that is not worth a tick a minute. */
     private const string ACCESS_LOG_SWEEP_CRON = '0 * * * *';
 
+    /** Name of the cron rule that brings the trust restrictions to the trusts of sleeping agents (HIL-1901). */
+    private const string TRUST_RESTRICTION_SWEEP_RULE = CronRule::FRAMEWORK_NAME_PREFIX . 'second_factor_trust_restriction_sweep';
+
+    /**
+     * Every minute: a frame unanswered for a minute is dropped on the next tick. A quiet minute reads
+     * nothing - the sweep itself decides when a pass is due.
+     */
+    private const string TRUST_RESTRICTION_SWEEP_CRON = '* * * * *';
+
     /** Maximum access log rows removed by one tick. */
     private const int ACCESS_LOG_SWEEP_BATCH = 500;
 
@@ -801,6 +817,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /** @var ?CronRule Schedule of the access log sweep, or null when this project has no sign-in (HIL-1174) */
     private ?CronRule $accessLogSweepRule = null;
+
+    /** @var ?CronRule Schedule of the trust restriction sweep, or null when this project has no sign-in (HIL-1901) */
+    private ?CronRule $trustRestrictionSweepRule = null;
+
+    /** The trust restriction sweep, built on first use; its passes live as long as this holder (HIL-1901). */
+    private ?SecondFactorTrustRestrictionSweep $trustRestrictionSweep = null;
 
     /** Whether a full sweep batch with removals asks the next tick to continue immediately */
     private bool $sessionSweepBacklog = false;
@@ -846,6 +868,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * A library that stops in order ends them itself on the way out ({@see self::onStop()},
      * HIL-1207); what an heir finds is what a fall left.
      *
+     * The trust restriction sweep is armed to run on the first tick (HIL-1901): the passes of a
+     * predecessor died with it, and what they left is found again in the data.
+     *
      * @throws EnvException When the sweep schedule key is missing, outside the catalog, or of the wrong type
      * @throws HilosException On runtime failure
      * @throws InvalidArgumentException When a result or progress frame cannot be named or queued
@@ -857,6 +882,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->armSessionSweep();
         $this->armAccountDeletionSweep();
         $this->armAccessLogSweep();
+        $this->armTrustRestrictionSweep();
         if ($this->hasSignInSurface()) {
             $this->endOpenSignIns(null);
         }
@@ -947,7 +973,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * the same wave of a node's stop - their reports find this library gone. Its heir would end
      * them on its start anyway ({@see self::onStart()}); ending them here tells the tabs still on
      * the wire while they are. The rest of its state is the database and the collections above,
-     * which outlive the process that owns them.
+     * which outlive the process that owns them - save the pass of the trust restriction sweep,
+     * which closes its receipt here and drops the requests waiting on it unanswered (HIL-1901).
      *
      * @throws HilosException On runtime failure
      * @throws InvalidArgumentException When a result or progress frame cannot be named or queued
@@ -962,7 +989,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             try {
                 $this->finishSessionSweep();
             } finally {
-                $this->finishAccessLogSweep();
+                try {
+                    $this->finishAccessLogSweep();
+                } finally {
+                    $this->trustRestrictionSweep?->stop();
+                }
             }
         }
     }
@@ -1042,6 +1073,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * raises rather than answering empty. That is the runtime collections doing their job: an
      * unmounted collection is not an empty one.
      *
+     * The trust restriction sweep goes last (HIL-1901): a tick of its schedule a minute, which
+     * reads nothing between passes and sends the frames of a pass to the people who still owe a
+     * restriction.
+     *
      * @throws HilosException On database or runtime failure
      * @throws EnvException When the verification TTL key is missing, outside the catalog, or of the wrong type
      * @throws InvalidArgumentException When a converge signal of the rollback cannot be named
@@ -1067,6 +1102,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->sweepOAuthTrips();
         $this->sweepAccountDeletions();
         $this->sweepAccessLog();
+        $this->sweepTrustRestrictions();
     }
 
     /** @return list<CronRule> Current session and account maintenance schedules */
@@ -1077,6 +1113,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $this->sessionSweepRule,
             $this->accountDeletionSweepRule,
             $this->accessLogSweepRule,
+            $this->trustRestrictionSweepRule,
         ]));
     }
 
@@ -4134,7 +4171,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * change's request to end other sessions (HIL-300), a profile window's step (HIL-1182), and
      * three answers of a person's agent that wrote what this library judged (HIL-1404), and two
      * more of that agent that are only logged when refused - a credit to a refused sign-in and a
-     * trust taken from ended sessions (HIL-1407).
+     * trust taken from ended sessions (HIL-1407). One more of that agent answers a frame of the
+     * trust restriction sweep, and the master's word about agents that are gone reaches the sweep
+     * too, so a person whose agent fell is not waited for (HIL-1901).
      *
      * The switch is the framework's rather than a project's because what each frame means
      * is: the users library ends a ceremony by saying what happened, and the order this
@@ -4411,6 +4450,16 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT_DONE:
+                $restricted = $data->data;
+                if (!$restricted instanceof UserSecondFactorTrustRestrictDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorTrustRestrictDoneSignalData::class, $restricted);
+                }
+
+                $this->trustRestrictionSweep()->answered($restricted);
+
+                return;
+
             case HilosSignalConstants::HILOS_IMPERSONATE_REQUEST:
                 if (!$data->data instanceof ImpersonateRequestSignalData) {
                     throw new InvalidAgentSignalPayloadException(
@@ -4518,6 +4567,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 if ($this->hasSignInSurface()) {
                     $this->endOpenSignIns($this->agentTypesOf($data->data->agentIds));
+                    $this->trustRestrictionSweep()->gone($data->data);
                 }
 
                 return;
@@ -6938,6 +6988,50 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 $this->finishAccessLogSweep();
             }
         }
+    }
+
+    /**
+     * Arms the schedule of the trust restriction sweep (HIL-1901).
+     *
+     * Only where a sign-in surface exists, as the account erasure is armed: a browser is trusted by
+     * signing in past the second factor. Never run rather than just run: the first tick of a
+     * restarted holder starts a pass, since the passes of the one before it died with it.
+     *
+     * @throws CronRuleNameException When the rule name does not match framework origin
+     */
+    private function armTrustRestrictionSweep(): void
+    {
+        if (!$this->hasSignInSurface()) {
+            return;
+        }
+
+        $rule = new CronRule(
+            self::TRUST_RESTRICTION_SWEEP_RULE,
+            self::TRUST_RESTRICTION_SWEEP_CRON,
+            CronRuleOrigin::FRAMEWORK,
+        );
+        $rule->lastRun = 0.0;
+        $this->trustRestrictionSweepRule = $rule;
+    }
+
+    /**
+     * Runs a tick of the trust restriction sweep when its schedule fires (HIL-1901).
+     *
+     * @throws HilosException When a lookup, a frame or the receipt of the sweep fails
+     */
+    private function sweepTrustRestrictions(): void
+    {
+        if ($this->trustRestrictionSweepRule?->shouldRun() !== true) {
+            return;
+        }
+
+        $this->trustRestrictionSweep()->cron(TimeHelper::nowMs(), $this->trustRestrictionSweepRule);
+    }
+
+    /** @return SecondFactorTrustRestrictionSweep The sweep of this holder, built on the first ask (HIL-1901) */
+    private function trustRestrictionSweep(): SecondFactorTrustRestrictionSweep
+    {
+        return $this->trustRestrictionSweep ??= new SecondFactorTrustRestrictionSweep($this);
     }
 
     /**

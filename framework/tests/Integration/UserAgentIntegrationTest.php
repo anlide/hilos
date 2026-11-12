@@ -49,9 +49,10 @@ use ReflectionProperty;
  *
  * The socket between master and worker is bridged in-process: its transport has separate tests.
  * Everything on either side of that socket is production code, including factory, start, claims,
- * idle verdict and stop cleanup. No production signal is added for this test.
+ * idle verdict and stop cleanup. No production signal is added for this test. The start reads the
+ * person's browser trusts (HIL-1901), so the case stands on the framework's account tables.
  */
-final class UserAgentIntegrationTest extends FrameworkIntegrationTestCase
+final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
 {
     private const string USER_ID = '42';
 

@@ -150,7 +150,8 @@ use Throwable;
  * person ({@see StepUpConfirmations}); the trust when the second factor goes, when the password is
  * changed or recovered, when the person is blocked and when the person's sessions are ended. It
  * applies the stored trust restrictions to the person's trusts on a service frame from any sender
- * (HIL-1900), a folded account included: that one answers and stops again. It
+ * (HIL-1900) and by itself at every start (HIL-1901), a folded account included: that one answers
+ * and stops again. It
  * writes the person's notification edits too (HIL-1408): one notification marked read or all of
  * them, a channel turned on or off, this browser's push subscription dropped, a push device
  * removed. It cancels a standing request to delete the account and sets or removes the profile
@@ -1074,6 +1075,30 @@ abstract class AbstractUserAgent extends AbstractAgent
     {
         if ($data->collectionKey === HilosDbContext::userMerges && $this->isThisPerson($data->idString)) {
             $this->selfStop();
+        }
+    }
+
+    /**
+     * Applies the stored trust restrictions to the person's trusts when the agent starts (HIL-1901).
+     *
+     * An owner that starts finishes what is owed to it from the facts, not from the next frame
+     * (Recovery, docs/agents/architecture/account-operations.md): a restriction saved while this
+     * agent slept is applied here, and the frame that woke it then finds nothing left to change.
+     * One count asks whether anything is owed, and only then does a transaction open. Nobody waits
+     * on a start, so nothing is answered. A folded account applies it too - service work on the rows
+     * it still has - and stops by its ordinary ways. A failure is logged, naming the person and no
+     * browser's session, and the start goes on: the session holder's sweep asks again.
+     */
+    public function onStart(): void
+    {
+        try {
+            if (Hilos::$db->secondFactorTrusts->getObjectCollection()->owes($this->userId)) {
+                Hilos::$db->secondFactorTrusts->actions->applySavedRestrictions($this->userId);
+            }
+        } catch (WiringRefusal $e) {
+            $this->logAgentError("Trust restrictions of #{$this->userId} not applied at start: {$e->getMessage()}");
+        } catch (Throwable $e) {
+            $this->logAgentError("Trust restrictions of #{$this->userId} not applied at start: {$e->getMessage()}");
         }
     }
 

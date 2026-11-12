@@ -225,9 +225,9 @@ person's agent's, in the turn of the write that causes it:
 New trust creation on entry stays at the holder; renewal of an existing
 session/person pair goes to the personal owner, which owns every later write
 (not in the code yet — HIL-1907). The saved policy needed to apply a shorter
-term is retained, as the restrictions above (HIL-1900); a sweep and owner start
-recover missed application work (not in the code yet — HIL-1901). Renewal and
-recovery are ownership and recovery obligations, not a declaration of new DB
+term is retained, as the restrictions above (HIL-1900); the sessions holder's
+sweep and the owner's start recover missed application work (HIL-1901). Renewal
+and recovery are ownership and recovery obligations, not a declaration of new DB
 fields here.
 
 The person's agent applies the stored restrictions on a service frame,
@@ -242,14 +242,50 @@ deleted and any other trust under restrictions is cut to the earliest limit when
 it runs longer. Applying again, or in another order, changes nothing more. The
 answer is ok when, at the moment of the owner's commit, no trust of the person
 violates a restriction up to the one asked for, a trust violating one that
-applies to it when its term is 0 or it runs past its limit; the same test will
-tell the sweep of HIL-1901 which work is unfinished. Nothing in the product
-sends the frame yet: the sweep and owner start, the term and the switch-off
-below are what will. The application reads the person's trusts without locking
-their rows, so a holder extending a trust strictly between that read and the
-owner's write can have the extension cut; the outcome errs on the side of fewer
-trusts, never more, and the renewal moving to the owner (HIL-1907) removes the
-race.
+applies to it when its term is 0 or it runs past its limit; the same test tells
+the sweep of HIL-1901 which work is unfinished. Today the sweep is what sends
+the frame; the term and the switch-off below do not yet (HIL-1908, HIL-1909).
+The application reads the person's trusts without locking their rows, so a
+holder extending a trust strictly between that read and the owner's write can
+have the extension cut; the outcome errs on the side of fewer trusts, never
+more, and the renewal moving to the owner (HIL-1907) removes the race.
+
+Missed application is found in two places (HIL-1901). The sessions holder
+sweeps for it: the framework cron rule
+`hilos_second_factor_trust_restriction_sweep` runs every minute from the
+holder's start, only where the project has a sign-in surface (AUTH), and its
+first tick is at once. A person owes when one of their trusts was granted no
+later than a saved restriction and that restriction cuts it: its term is 0, or
+the trust runs past the restriction's moment plus its term. The sweep asks the
+database afresh for such people in rising id order, after the last one it
+reached, and sends each the frame above with the latest saved restriction and
+`hilos_user_second_factor_trust_restrict_done` as the answer signal. No more
+than 100 people are in flight at once, and nobody is sent a second frame while
+one waits. With no restriction saved it asks nothing. An answer outside the
+flight is dropped quietly; a refusal and a frame unanswered for a minute (or
+whose agent is gone) each leave one warning in the holder's log, naming no
+session, and leave the flight. A new pass starts by itself only when none has
+run yet or an hour has passed since the last one ended, so a minute with
+nothing to do writes nothing and asks nothing, and an owner that keeps refusing
+is asked once an hour. The sweep's state is the holder's memory alone: it dies
+with the holder, and a new holder begins from its first tick. Two holders
+during a move may both send frames, which is harmless because applying twice
+changes nothing more; a live move is HIL-1912.
+
+The holder also keeps an internal request for the term and the switch-off to
+wait on, "finish the restrictions up to R, then tell me": it starts a pass at
+once when none runs, skips the hour's pause, answers at once when nobody owes,
+and otherwise answers at the end of the pass with the number of trusts still
+violating those restrictions, 0 meaning done. Only tests call it today
+(HIL-1908, HIL-1909). A holder that stops drops what waits, and no answer comes.
+
+The person's agent does not wait for the sweep. At start, whether it is the
+sweep's frame that woke it or not, it applies every saved restriction to the
+person's trusts in one transaction, with no frame and no answer, when the
+person owes; a folded account applies them too, and a person with no violation
+gets no write. A failure there is logged as an agent error, the start goes on,
+and the sweep asks again. The frame of the sweep that woke the agent then
+arrives after the start, changes nothing, and is answered ok.
 
 The personal owners apply the saved cap, or remove their rows for a zero term
 (not in the code yet — HIL-1908). They also perform `forgetTrusts` when

@@ -39,6 +39,7 @@ use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorPolicySignalData;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorStateSignalData;
 use Hilos\Auth\SecondFactor\SecondFactorGroup;
+use Hilos\Auth\SecondFactor\SecondFactorTrustRestrictionSweep;
 use Hilos\Auth\Session\DTO\AccountBlockChangedSignalData;
 use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
 use Hilos\Auth\Session\DTO\DismissAccountBlockedActionDTO;
@@ -1140,8 +1141,23 @@ final class HilosSignalConstants
      * the one asked for: none still under a restriction of 0 days, none running past the limit of a
      * restriction saved no earlier than its last grant. Carried by
      * {@see UserSecondFactorTrustRestrictSignalData}, answered by {@see UserSecondFactorTrustRestrictDoneSignalData}.
+     *
+     * The sender in the framework is the trust restriction sweep of the sessions holder
+     * ({@see SecondFactorTrustRestrictionSweep}, HIL-1901): it sends the frame, naming the last
+     * restriction saved, to every person who still owes one, and is answered under
+     * {@see self::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT_DONE}.
      */
     public const string HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT = 'hilos_user_second_factor_trust_restrict';
+
+    /**
+     * The person's agent → the sessions holder: the answer to the frame the trust restriction sweep
+     * sent (HIL-1901).
+     *
+     * An ok answer lets the sweep stop waiting for the person; a refusal is written into the holder's
+     * log, and the person is asked again by a later pass. Carried by
+     * {@see UserSecondFactorTrustRestrictDoneSignalData}.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT_DONE = 'hilos_user_second_factor_trust_restrict_done';
 
     /**
      * Users library → the person's agent: cancel a standing request to delete the account (HIL-1409).

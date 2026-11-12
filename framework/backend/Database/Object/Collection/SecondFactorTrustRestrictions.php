@@ -22,10 +22,10 @@ use Hilos\HilosException;
  * SecondFactorTrustRestrictions object collection - the shortenings of browser trust (HIL-1900).
  *
  * {@see record()} writes one when the trust term is shortened or the second factor is switched off
- * with the trusted browsers forgotten; rows are never changed afterwards. {@see savedSince()} and
- * {@see has()} read the table itself rather than this process's memory: the settings library
- * writes a restriction in its own process, and the holder that applies it has to see the row the
- * library has just written.
+ * with the trusted browsers forgotten; rows are never changed afterwards. {@see savedSince()},
+ * {@see has()} and {@see latestId()} read the table itself rather than this process's memory: the
+ * settings library writes a restriction in its own process, and the holder that applies it has to
+ * see the row the library has just written.
  *
  * @extends Objects<ObjectSecondFactorTrustRestriction>
  * @method ObjectSecondFactorTrustRestriction|null current()
@@ -111,5 +111,22 @@ class SecondFactorTrustRestrictions extends Objects
         return static::entityClass()::count( // fresh-sql: the settings library writes restrictions in another process.
             [EntitySecondFactorTrustRestriction::id => $id],
         ) > 0;
+    }
+
+    /**
+     * The id of the restriction saved last (HIL-1901).
+     *
+     * @return ?int Greatest stored restriction id, or null when no restriction is stored
+     * @throws DatabaseException When the lookup fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function latestId(): ?int
+    {
+        return static::entityClass()::get( // fresh-sql: the settings library writes restrictions in another process.
+            [],
+            [],
+            [EntitySecondFactorTrustRestriction::id => SqlSortDirection::DESC],
+            1,
+        )->first()?->id;
     }
 }

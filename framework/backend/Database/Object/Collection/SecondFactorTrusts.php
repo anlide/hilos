@@ -15,8 +15,10 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\SecondFactorTrusts as EntitySecondFactorTrusts;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Entity\Item\SecondFactorTrust as EntitySecondFactorTrust;
+use Hilos\Database\Entity\Item\SecondFactorTrustRestriction as EntitySecondFactorTrustRestriction;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\SecondFactorTrust as ObjectSecondFactorTrust;
+use Hilos\Database\Object\Item\SecondFactorTrustRestriction as ObjectSecondFactorTrustRestriction;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlSortDirection;
 use Hilos\Hilos;
@@ -36,7 +38,9 @@ use Hilos\Utils\Helpers\TimeHelper;
  * restriction's limit, and a restriction of 0 days takes it out. {@see isTrusted()} counts the
  * restrictions before anybody applies them, and {@see applyRestrictions()} is the person's agent
  * writing them into the person's trusts. A grant after the save is outside the restriction, so
- * a fresh proof always outlives an older shortening.
+ * a fresh proof always outlives an older shortening. {@see owingPeople()}, {@see countOwing()} and
+ * {@see owes()} ask the table which trusts a restriction still breaks (HIL-1901): the people the
+ * application is owed by, and whether one person is among them.
  *
  * @extends Objects<ObjectSecondFactorTrust>
  * @method ObjectSecondFactorTrust|null current()
@@ -285,6 +289,94 @@ class SecondFactorTrusts extends Objects
     }
 
     /**
+     * People who owe the application of a restriction: each holds a trust that one breaks (HIL-1901).
+     *
+     * Up to the asked number of distinct people, by ascending id, after one id and outside the
+     * listed ones. Fewer than asked means nobody beyond the last one owes anything. The rows come
+     * in person order a page at a time, and a page cut inside one person's trusts is continued
+     * after that person, so a person with many browsers never hides the next one.
+     *
+     * The rows are read from the table: personal agents write the trusts and the settings library
+     * writes the restrictions, each in its own process.
+     *
+     * @param int $afterUserId Only people with a greater id are selected
+     * @param list<int> $exceptUserIds People left out wherever they are
+     * @param int $people Most people to return, at least one
+     * @return list<int> Ids of the people found, ascending
+     * @throws InvalidArgumentException When fewer than one person is asked for
+     * @throws DatabaseException When a lookup fails
+     */
+    public function owingPeople(int $afterUserId, array $exceptUserIds, int $people): array
+    {
+        if ($people < 1) {
+            throw new InvalidArgumentException('Owing people are asked for in a positive number, not ' . $people);
+        }
+
+        $condition = self::trustColumn(EntitySecondFactorTrust::user_id) . ' > ?';
+        if ($exceptUserIds !== []) {
+            $condition .= ' AND ' . self::trustColumn(EntitySecondFactorTrust::user_id)
+                . ' NOT IN (' . implode(', ', array_fill(0, count($exceptUserIds), '?')) . ')';
+        }
+        $condition .= ' AND ' . self::owingCondition(false);
+
+        $owing = [];
+        $after = $afterUserId;
+        do {
+            $rows = static::entityClass()::get( // fresh-sql: personal agents write trusts and the settings library restrictions, apart.
+                $condition,
+                [$after, ...array_values($exceptUserIds)],
+                [
+                    EntitySecondFactorTrust::user_id => SqlSortDirection::ASC,
+                    EntitySecondFactorTrust::id => SqlSortDirection::ASC,
+                ],
+                $people,
+            );
+            foreach ($rows as $entity) {
+                $after = $entity->user_id;
+                if (!in_array($after, $owing, true)) {
+                    $owing[] = $after;
+                }
+            }
+        } while (count($rows) === $people && count($owing) < $people);
+
+        return array_slice($owing, 0, $people);
+    }
+
+    /**
+     * How many trusts break a restriction up to and including one (HIL-1901).
+     *
+     * Read from the table, as {@see owingPeople()} is.
+     *
+     * @param int $throughRestrictionId Greatest restriction id that counts
+     * @return int Trusts still to be cut or taken out under the restrictions up to that one
+     * @throws DatabaseException When the count fails
+     */
+    public function countOwing(int $throughRestrictionId): int
+    {
+        return static::entityClass()::count( // fresh-sql: personal agents write trusts and the settings library restrictions, apart.
+            self::owingCondition(true),
+            [$throughRestrictionId],
+        );
+    }
+
+    /**
+     * Whether a person holds a trust that a restriction breaks (HIL-1901).
+     *
+     * Read from the table, as {@see owingPeople()} is.
+     *
+     * @param int $userId Person
+     * @return bool True when at least one of the person's trusts is still to be cut or taken out
+     * @throws DatabaseException When the count fails
+     */
+    public function owes(int $userId): bool
+    {
+        return static::entityClass()::count( // fresh-sql: personal agents write trusts and the settings library restrictions, apart.
+            self::trustColumn(EntitySecondFactorTrust::user_id) . ' = ? AND ' . self::owingCondition(false),
+            [$userId],
+        ) > 0;
+    }
+
+    /**
      * @param EntityCollection<EntitySecondFactorTrust> $entities Matching rows
      * @return list<ObjectSecondFactorTrust> Hydrated row objects
      */
@@ -389,5 +481,43 @@ class SecondFactorTrusts extends Objects
         }
 
         return false;
+    }
+
+    /**
+     * The one SQL condition of a trust row that a restriction breaks (HIL-1901).
+     *
+     * A restriction saved no earlier than the trust's last grant breaks it when its term is 0 days
+     * or when the trust runs past the save moment plus the term. This is the SQL twin of
+     * {@see limitUnder()} and {@see revokedUnder()} and of {@see ObjectSecondFactorTrustRestriction::limitAt()},
+     * {@see ObjectSecondFactorTrustRestriction::revokes()} and {@see ObjectSecondFactorTrustRestriction::appliesTo()}:
+     * they change only together, or the people selected as owing and the cut they get part ways.
+     *
+     * @param bool $throughId Whether only the restrictions up to an id bound as the last parameter count
+     * @return string Condition over the trust table, with one placeholder when restricted by id
+     */
+    private static function owingCondition(bool $throughId): string
+    {
+        $condition = 'EXISTS (SELECT 1 FROM `' . EntitySecondFactorTrustRestriction::_table . '` AS `r`'
+            . ' WHERE `r`.`' . EntitySecondFactorTrustRestriction::saved_at . '` >= '
+            . self::trustColumn(EntitySecondFactorTrust::granted_at)
+            . ' AND (`r`.`' . EntitySecondFactorTrustRestriction::term_days . '` = 0'
+            . ' OR ' . self::trustColumn(EntitySecondFactorTrust::trusted_until)
+            . ' > `r`.`' . EntitySecondFactorTrustRestriction::saved_at . '` + `r`.`'
+            . EntitySecondFactorTrustRestriction::term_days . '` * '
+            . (TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND) . ')';
+        if ($throughId) {
+            $condition .= ' AND `r`.`' . EntitySecondFactorTrustRestriction::id . '` <= ?';
+        }
+
+        return $condition . ')';
+    }
+
+    /**
+     * @param string $column Column of the trust table
+     * @return string The column qualified by the trust table, apart from the restriction's columns beside it
+     */
+    private static function trustColumn(string $column): string
+    {
+        return '`' . EntitySecondFactorTrust::_table . '`.`' . $column . '`';
     }
 }
