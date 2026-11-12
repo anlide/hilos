@@ -72,6 +72,7 @@ use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
 use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollDropSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetCancelSignalData;
@@ -314,6 +315,7 @@ final class AbstractUserAgentTest extends TestCase
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE => UserSecondFactorRemoveSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL => UserSecondFactorResetCancelSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE => UserSecondFactorWaitWriteSignalData::class,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP => UserSecondFactorEnrollDropSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE => UserSecondFactorResetDueSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND => UserSecondFactorResetRemindSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK => UserSecondFactorUnlockSignalData::class,

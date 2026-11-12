@@ -9185,7 +9185,6 @@ abstract class TopologyLegacyDbHilos extends HilosFacade
 
     public const array SHARED_DB_OWNERS = [
         'secondFactorBackupCodes' => ['HIL-1904', 'HIL-1952', 'HIL-1999'],
-        'secondFactors' => ['HIL-1903', 'HIL-1952', 'HIL-1999'],
         'verifications' => ['HIL-1952'],
     ];
 }
@@ -9394,7 +9393,7 @@ abstract class TopologyDuplicateDbDebtHilos extends TopologyLegacyDbHilos
 abstract class TopologyUnsortedDbDebtHilos extends TopologyLegacyDbHilos
 {
     public const array SHARED_DB_OWNERS = [
-        ...parent::SHARED_DB_OWNERS, 'secondFactors' => ['HIL-1952', 'HIL-1903', 'HIL-1999'],
+        ...parent::SHARED_DB_OWNERS, 'secondFactorBackupCodes' => ['HIL-1952', 'HIL-1904', 'HIL-1999'],
     ];
 }
 
@@ -9437,7 +9436,7 @@ abstract class TopologyWrongWidthLibrary extends TopologyTestAgent
 {
     public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
     public const array OWNS_DB = [
-        HilosDbContext::secondFactors => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+        HilosDbContext::secondFactors => [TruthSourceOperation::Add],
         HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
     ];
     public const array OWNS_DB_ROWS = [HilosDbContext::verifications => TruthSourceOperation::ALL];

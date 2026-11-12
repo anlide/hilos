@@ -305,10 +305,14 @@ creates a new row for the subscriber, possibly under a new id. The library keeps
 `Add` alone; an owner's refusal refuses the press and nothing is written.
 The push delivery channel's dead-endpoint report is handed to the personal owner
 with an `(id, revision)` snapshot and verified against the fresh persisted
-Entity `(id, revision)` rather than `last_seen_at`. The
-personal owner removes the old enrollment (not in the code yet — HIL-1903) and
-old backup codes (not in the code yet — HIL-1904) before the library creates
-their replacements.
+Entity `(id, revision)` rather than `last_seen_at`. An enrollment of the
+second factor is started the same way (HIL-1903): the users library asks the
+person's owner to drop their unfinished enrollments
+(`hilos_user_second_factor_enroll_drop`), the owner deletes them and answers
+(`hilos_user_second_factor_enroll_drop_done`), and the library resumes the same
+press and creates the new enrollment; the library keeps `Add` alone there. The
+personal owner removes old backup codes (not in the code yet — HIL-1904) before
+the library creates their replacements.
 Trust renewal, policy, rename links, first-admin creation and the legal test
 path have their own addresses in that same table. Their current doors and
 claims stay until each real move; no generic sweep exception is retained.

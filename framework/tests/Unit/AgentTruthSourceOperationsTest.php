@@ -166,19 +166,21 @@ final class AgentTruthSourceOperationsTest extends TestCase
     /**
      * The library only brings the second factor into being: every edit of it is the person's agent's (HIL-1406).
      *
-     * An enrolment and a set of backup codes are created together with taking away the ones they
-     * replace; a removal is only opened here. The settings row of a person is the agent's to create,
-     * so the library holds no claim on it and only reads it.
+     * An enrolment is only created: the unfinished one before it is dropped by the person's agent
+     * (HIL-1903). A set of backup codes is created together with taking away the one it replaces; a
+     * removal is only opened here. The settings row of a person is the agent's to create, so the
+     * library holds no claim on it and only reads it.
      */
     public function testLibraryAgentOnlyCreatesTheSecondFactor(): void
     {
         $claims = OwnershipDeclaration::dbCollectionsOf(AgentTruthSourceOperationsTestLibrary::class);
 
-        foreach ([HilosDbContext::secondFactors, HilosDbContext::secondFactorBackupCodes] as $collection) {
-            $this->assertTrue($claims[$collection]->allows(TruthSourceOperation::Add), $collection);
-            $this->assertFalse($claims[$collection]->allows(TruthSourceOperation::Update), $collection);
-            $this->assertTrue($claims[$collection]->allows(TruthSourceOperation::Remove), $collection);
-        }
+        $this->assertTrue($claims[HilosDbContext::secondFactors]->allows(TruthSourceOperation::Add));
+        $this->assertFalse($claims[HilosDbContext::secondFactors]->allows(TruthSourceOperation::Update));
+        $this->assertFalse($claims[HilosDbContext::secondFactors]->allows(TruthSourceOperation::Remove));
+        $this->assertTrue($claims[HilosDbContext::secondFactorBackupCodes]->allows(TruthSourceOperation::Add));
+        $this->assertFalse($claims[HilosDbContext::secondFactorBackupCodes]->allows(TruthSourceOperation::Update));
+        $this->assertTrue($claims[HilosDbContext::secondFactorBackupCodes]->allows(TruthSourceOperation::Remove));
         $this->assertTrue($claims[HilosDbContext::secondFactorResets]->allows(TruthSourceOperation::Add));
         $this->assertFalse($claims[HilosDbContext::secondFactorResets]->allows(TruthSourceOperation::Update));
         $this->assertFalse($claims[HilosDbContext::secondFactorResets]->allows(TruthSourceOperation::Remove));

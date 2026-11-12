@@ -133,7 +133,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'identities' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove,update']],
             'verifications' => [['users', 'whole', 'add,remove,update'], ['holder', 'whole', 'remove']],
             'passkeyCredentials' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove,update']],
-            'secondFactors' => [['users', 'whole', 'add,remove'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove,update']],
+            'secondFactors' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove,update']],
             'secondFactorBackupCodes' => [
                 ['users', 'whole', 'add,remove'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove,update']],
             'secondFactorResets' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove']],
@@ -157,7 +157,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'identities' => ['HIL-1952', 'HIL-1999'],
             'verifications' => ['HIL-1952'],
             'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],
-            'secondFactors' => ['HIL-1903', 'HIL-1952', 'HIL-1999'],
+            'secondFactors' => ['HIL-1952', 'HIL-1999'],
             'secondFactorBackupCodes' => ['HIL-1904', 'HIL-1952', 'HIL-1999'],
             'secondFactorResets' => ['HIL-1952', 'HIL-1999'],
             'secondFactorSettings' => ['HIL-1952', 'HIL-1999'],
@@ -546,8 +546,6 @@ final class DbWriterTransitionCatalogTest extends TestCase
                 '' => ['users:whole:add', 'person:set:remove,update'],
             ],
             'secondFactors' => [
-                'HIL-1903,HIL-1952,HIL-1999' => [
-                    'users:whole:add,remove', 'person:set:remove,update', 'holder:whole:remove,update'],
                 'HIL-1952,HIL-1999' => ['users:whole:add', 'person:set:remove,update', 'holder:whole:remove,update'],
                 'HIL-1999' => ['users:whole:add', 'person:set:remove,update', 'holder:whole:remove,update'],
                 '' => ['users:whole:add', 'person:set:remove,update'],

@@ -19,7 +19,6 @@ use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
  */
 class DbWriterTransitionCatalog
 {
-    protected const string FACTOR_REPLACE = 'HIL-1903';
     protected const string BACKUP_CODES_REPLACE = 'HIL-1904';
     protected const string TRUST_RENEW = 'HIL-1907';
     protected const string TRUST_CAP = 'HIL-1908';
@@ -91,7 +90,6 @@ class DbWriterTransitionCatalog
             $pending = [self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove),
                 self::MERGE => $this->claim($holder, DbWriterClaimWidth::Whole, ...$mergeOperations)];
             $replacement = match ($collection) {
-                HilosDbContext::secondFactors => self::FACTOR_REPLACE,
                 HilosDbContext::secondFactorBackupCodes => self::BACKUP_CODES_REPLACE,
                 default => null,
             };

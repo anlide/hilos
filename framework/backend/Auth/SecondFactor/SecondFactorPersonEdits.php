@@ -14,6 +14,8 @@ use Hilos\HilosException;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollDropDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollDropSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
@@ -39,7 +41,8 @@ use Hilos\Utils\Helpers\TimeHelper;
  * an operator lifted, the removal wait chosen, a removal canceled, carried out or marked reminded,
  * and - when the factor goes whole - the trust of every browser that skipped it (HIL-1407).
  * Creating - an enrolment started, a set of backup codes issued, a removal asked for - stays with
- * the library.
+ * the library; the unfinished enrolment a new start replaces is dropped here, on the library's
+ * frame (HIL-1903).
  *
  * A check that reads the set is made here, in the turn that writes: the code is the write itself,
  * and whether an app is the person's and the last one is asked where the app is deleted, so two
@@ -234,6 +237,23 @@ final class SecondFactorPersonEdits
         );
 
         return new UserSecondFactorWaitWriteDoneSignalData($ask, null, null, null);
+    }
+
+    /**
+     * Drops every unfinished enrolment of the person; the confirmed authenticators stay.
+     *
+     * An enrolment never confirmed is an abandoned QR code, and the library asks for it to go before it
+     * opens the next one. Nothing to drop is an answer like any other.
+     *
+     * @param UserSecondFactorEnrollDropSignalData $ask The drop asked for
+     * @return UserSecondFactorEnrollDropDoneSignalData The enrolments dropped
+     * @throws HilosException When the lookup or a delete fails
+     */
+    public function dropEnrolment(UserSecondFactorEnrollDropSignalData $ask): UserSecondFactorEnrollDropDoneSignalData
+    {
+        Hilos::$db->secondFactors->actions->dropUnfinished($this->userId);
+
+        return new UserSecondFactorEnrollDropDoneSignalData($ask, null, null, null);
     }
 
     /**

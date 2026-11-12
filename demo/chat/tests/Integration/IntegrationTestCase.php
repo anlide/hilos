@@ -95,6 +95,8 @@ use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollDropDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollDropSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
@@ -616,6 +618,7 @@ abstract class IntegrationTestCase extends TestCase
                 || $frame instanceof UserSecondFactorRemoveSignalData
                 || $frame instanceof UserSecondFactorResetCancelSignalData
                 || $frame instanceof UserSecondFactorWaitWriteSignalData
+                || $frame instanceof UserSecondFactorEnrollDropSignalData
                 || $frame instanceof UserSecondFactorResetDueSignalData
                 || $frame instanceof UserSecondFactorResetRemindSignalData
                 || $frame instanceof UserSecondFactorUnlockSignalData
@@ -640,6 +643,7 @@ abstract class IntegrationTestCase extends TestCase
                 || $frame instanceof UserSecondFactorRemoveDoneSignalData
                 || $frame instanceof UserSecondFactorResetCancelDoneSignalData
                 || $frame instanceof UserSecondFactorWaitWriteDoneSignalData
+                || $frame instanceof UserSecondFactorEnrollDropDoneSignalData
                 || $frame instanceof UserSecondFactorResetDueDoneSignalData
                 || $frame instanceof UserSecondFactorResetRemindDoneSignalData
                 || $frame instanceof UserSecondFactorUnlockDoneSignalData

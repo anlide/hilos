@@ -177,6 +177,8 @@ use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollDropDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollDropSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
@@ -1051,6 +1053,20 @@ final class HilosSignalConstants
      * The library answers the parked command. Carried by {@see UserSecondFactorUnlockDoneSignalData}.
      */
     public const string HILOS_USER_SECOND_FACTOR_UNLOCK_DONE = 'hilos_user_second_factor_unlock_done';
+
+    /**
+     * Users library → the person's agent: drop the person's unfinished authenticator enrolments (HIL-1903).
+     *
+     * Carried by {@see UserSecondFactorEnrollDropSignalData}, an ask of the handover form.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_ENROLL_DROP = 'hilos_user_second_factor_enroll_drop';
+
+    /**
+     * The person's agent → users library: the unfinished enrolments are dropped, or why not (HIL-1903).
+     *
+     * The ask comes back whole. Carried by {@see UserSecondFactorEnrollDropDoneSignalData}.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_ENROLL_DROP_DONE = 'hilos_user_second_factor_enroll_drop_done';
 
     /**
      * Test-only users library → the person's agent: forget later acceptances of a document (HIL-1899).

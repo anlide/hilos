@@ -11,6 +11,8 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\DatabaseException;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollDropDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollDropSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
@@ -174,6 +176,29 @@ final class UserSecondFactorSignalDataTest extends TestCase
         self::assertSame(14, $restored->ask->days);
         self::assertSame(SecondFactorMessages::REQUIRED, $restored->error);
         self::assertNull($restored->errorType);
+    }
+
+    public function testAnEnrolmentDropAskAndItsAnswersRoundTrip(): void
+    {
+        $ask = new UserSecondFactorEnrollDropSignalData(
+            7,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP_DONE,
+            'key-1',
+            'req-1',
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
+            null,
+        );
+        $ok = new UserSecondFactorEnrollDropDoneSignalData($ask, null, null, null);
+        $refused = UserSecondFactorEnrollDropDoneSignalData::refused($ask, ActionRefusal::said(SecondFactorMessages::REQUIRED));
+
+        self::assertEquals($ask, UserSecondFactorEnrollDropSignalData::fromArray(self::overTheWire($ask->toArray())));
+        $restoredOk = UserSecondFactorEnrollDropDoneSignalData::fromArray(self::overTheWire($ok->toArray()));
+        self::assertEquals($ok, $restoredOk);
+        self::assertNull($restoredOk->error);
+        $restoredRefused = UserSecondFactorEnrollDropDoneSignalData::fromArray(self::overTheWire($refused->toArray()));
+        self::assertEquals($refused, $restoredRefused);
+        self::assertSame(SecondFactorMessages::REQUIRED, $restoredRefused->error);
+        self::assertNull($restoredRefused->errorType);
     }
 
     public function testADueRemovalAndItsAnswerRoundTrip(): void

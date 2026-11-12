@@ -49,6 +49,7 @@ use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\AddressablePerson;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollDropSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
@@ -84,9 +85,10 @@ use Throwable;
  * ceiling (HIL-1285) and the lock it puts - an app confirmed or disconnected, a removal canceled,
  * the wait chosen. The browser action is resumed on the agent's answer: the after... methods do
  * what follows any answer - a wrong code told to the holder, a lock or a canceled removal mailed -
- * and the finish... methods continue the action that asked. What is created stays here, in one
- * operation with what it replaces: an enrolment started, a set of backup codes issued, a removal
- * asked for.
+ * and the finish... methods continue the action that asked. What is created stays here: an
+ * enrolment is started on the answer of the person's agent, which first drops the enrolment the
+ * person left unfinished (HIL-1903); a set of backup codes is issued in one operation with what
+ * it replaces, and a removal is asked for.
  *
  * The profile half works on a signed-in person, whose id comes off the session: every action
  * but the first enrolment, the wait and the removal starts with a code, because a stolen live
@@ -139,14 +141,17 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Opens the enrolment an administrator requires, answering the secret once.
+     * Opens the enrolment an administrator requires; the person's agent first drops the unfinished one.
+     *
+     * The enrolment is started, and its secret answered once, on the agent's answer
+     * ({@see finishEnrollDrop()}).
      *
      * @param string $acceptKey Accept key the action arrived on
-     * @return ?AuthFlowOutcome The secret and its otpauth address, or null when the holder answers
+     * @return ?AuthFlowOutcome Always null: answered on the person's agent's answer, or by the holder
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
-     * @throws ValidationException When no wait stands on the enrolment screen
-     * @throws RandomException When the secret cannot be drawn
-     * @throws HilosException When a lookup, a write or a frame fails
+     * @throws ValidationException When no wait stands on the enrolment screen, or the person can no longer be addressed
+     * @throws LogicException When no action is being dispatched
+     * @throws HilosException When a lookup or a frame fails
      */
     public function setupStart(string $acceptKey): ?AuthFlowOutcome
     {
@@ -156,11 +161,9 @@ final class SecondFactorCommands extends AbstractLibraryCommands
             return null;
         }
 
-        [, $secret, $uri] = $this->startEnrolment($userId);
+        $this->askEnrollDrop($userId, $acceptKey);
 
-        return AuthFlowOutcome::secondFactorData(
-            new SecondFactorStepData(SecondFactorPolicy::current()->trustDeviceDays(), null, $secret, $uri),
-        );
+        return null;
     }
 
     /**
@@ -317,6 +320,9 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     /**
      * Opens an enrolment for a person: a fresh secret on an unconfirmed authenticator.
      *
+     * Only creates: the enrolment the person left unfinished was already dropped by their agent,
+     * whose answer this follows ({@see finishEnrollDrop()}, HIL-1903).
+     *
      * @param int $userId Person enrolling
      * @return array{0: int, 1: string, 2: string} The unconfirmed authenticator, its base32 secret and otpauth address
      * @throws RandomException When the secret cannot be drawn
@@ -359,17 +365,18 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * Connecting an app is the operation 'add_authenticator_app' (HIL-1138): the first app needs
      * a live confirmation, while a second one proves itself with a code from a connected app,
      * which the gate takes for the confirmation. That code is asked here whether or not an
-     * administrator switched the operation off, and checked by the person's agent; the enrolment
-     * is started on its answer ({@see finishProof()}).
+     * administrator switched the operation off, and checked by the person's agent ({@see finishProof()}).
+     * Either way the person's agent first drops the enrolment the person left unfinished, and the
+     * new one is started on its answer ({@see finishEnrollDrop()}, HIL-1903).
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileSecondFactorEnrollStartActionDTO $dto Proof, when an app is already connected
-     * @return ?SecondFactorProfileReplyDTO The enrolment, its secret and otpauth address, or null when the code went to the agent
+     * @return ?SecondFactorProfileReplyDTO Always null: answered on the person's agent's answer
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
      * @throws ValidationException When the second factor is turned off, the first app is not confirmed, or the person
      *     can no longer be addressed
-     * @throws RandomException When the secret cannot be drawn
-     * @throws HilosException When a lookup, the settings read, a write or a frame fails
+     * @throws LogicException When no action is being dispatched
+     * @throws HilosException When a lookup, the settings read or a frame fails
      */
     public function profileEnrollStart(string $acceptKey, ProfileSecondFactorEnrollStartActionDTO $dto): ?SecondFactorProfileReplyDTO
     {
@@ -381,9 +388,9 @@ final class SecondFactorCommands extends AbstractLibraryCommands
             return null;
         }
 
-        [$id, $secret, $uri] = $this->startEnrolment($userId);
+        $this->askEnrollDrop($userId, $acceptKey);
 
-        return new SecondFactorProfileReplyDTO(authenticatorId: $id, secret: $secret, otpauthUri: $uri);
+        return null;
     }
 
     /**
@@ -565,14 +572,16 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * Continues the action whose code the person's agent accepted (HIL-1406).
      *
      * The sign-in step lets the sign-in through, and the session holder answers it; starting
-     * another app starts its enrolment; showing the backup codes lists them; renewing them issues
-     * a new set, the old one dying with it.
+     * another app asks the person's agent to drop the enrolment left unfinished, and the new one
+     * is started on that answer ({@see finishEnrollDrop()}, HIL-1903); showing the backup codes
+     * lists them; renewing them issues a new set, the old one dying with it.
      *
      * @param UserSecondFactorProveSignalData $ask The ask the agent answered
-     * @return ?ActionReplyDTO What the profile is told, or null when the holder answers
+     * @return ?ActionReplyDTO What the profile is told, or null when the holder or the next answer of the agent answers
      * @throws ItemNotFoundForUpdateException When the asking connection has no session any more
-     * @throws LogicException When the ask names an action no proof continues
-     * @throws RandomException When a secret or the backup codes cannot be drawn
+     * @throws ValidationException When the person was erased or merged into another account
+     * @throws LogicException When the ask names an action no proof continues, or no action is being dispatched
+     * @throws RandomException When the backup codes cannot be drawn
      * @throws HilosException When a lookup, a write or a frame fails
      */
     public function finishProof(UserSecondFactorProveSignalData $ask): ?ActionReplyDTO
@@ -590,9 +599,9 @@ final class SecondFactorCommands extends AbstractLibraryCommands
                 return null;
 
             case HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START:
-                [$id, $secret, $uri] = $this->startEnrolment($ask->userId);
+                $this->askEnrollDrop($ask->userId, $ask->acceptKey);
 
-                return new SecondFactorProfileReplyDTO(authenticatorId: $id, secret: $secret, otpauthUri: $uri);
+                return null;
 
             case HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_SHOW:
                 $this->publishState($ask->userId);
@@ -658,6 +667,58 @@ final class SecondFactorCommands extends AbstractLibraryCommands
             new SecondFactorStepData(SecondFactorPolicy::current()->trustDeviceDays(), null, backupCodes: $codes),
             null,
         );
+    }
+
+    /**
+     * Starts the enrolment the person's agent made room for, answering its secret once (HIL-1903).
+     *
+     * The agent dropped the enrolment the person left unfinished, and the new one is created here
+     * - on the way in its secret is the screen's, in the profile the enrolment is the answer. The
+     * wait on the way in, the switch and the confirmation of the operation are not judged again,
+     * as in {@see finishEnrollConfirm()} and {@see finishProof()}.
+     *
+     * @param UserSecondFactorEnrollDropSignalData $ask The ask the agent answered
+     * @return ActionReplyDTO The secret on the way in, or the profile's enrolment with its secret
+     * @throws LogicException When the ask names an action no enrolment continues
+     * @throws RandomException When the secret cannot be drawn
+     * @throws HilosException When a lookup, the env read or the write fails
+     */
+    public function finishEnrollDrop(UserSecondFactorEnrollDropSignalData $ask): ActionReplyDTO
+    {
+        switch ($ask->action) {
+            case HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_START:
+                [, $secret, $uri] = $this->startEnrolment($ask->userId);
+
+                return AuthFlowOutcome::secondFactorData(
+                    new SecondFactorStepData(SecondFactorPolicy::current()->trustDeviceDays(), null, $secret, $uri),
+                );
+
+            case HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START:
+                [$id, $secret, $uri] = $this->startEnrolment($ask->userId);
+
+                return new SecondFactorProfileReplyDTO(authenticatorId: $id, secret: $secret, otpauthUri: $uri);
+
+            default:
+                throw new LogicException("An enrolment drop continues no action {$ask->action}");
+        }
+    }
+
+    /**
+     * Tells whether a person has an enrolment started and not confirmed (HIL-1903).
+     *
+     * Asked when the person's agent answers that it dropped the unfinished enrolment: one that
+     * stands then was started by another press in between, and this press is refused rather than
+     * open a second one. The set of rows is read afresh; a row already loaded here carries the
+     * confirmation its DB_SYNC brought, and the agent's DB_SYNC is applied before its answer, as
+     * {@see finishEnrollConfirm()} relies on when it publishes the section.
+     *
+     * @param int $userId Person enrolling
+     * @return bool Whether an unfinished enrolment stands
+     * @throws HilosException When the lookup fails
+     */
+    public function enrolmentStands(int $userId): bool
+    {
+        return Hilos::$db->secondFactors->unconfirmedOf($userId) !== null;
     }
 
     /**
@@ -873,6 +934,30 @@ final class SecondFactorCommands extends AbstractLibraryCommands
                 successMessage: null,
             ),
         );
+    }
+
+    /**
+     * Asks the person's agent to drop the enrolment the person left unfinished, and stops owing the browser an answer.
+     *
+     * The new enrolment is started on the agent's answer ({@see finishEnrollDrop()}, HIL-1903); no
+     * secret travels between the hops.
+     *
+     * @param int $userId Person enrolling
+     * @param string $acceptKey Accept key the action arrived on
+     * @throws ValidationException When the person was erased or merged into another account
+     * @throws LogicException When no action is being dispatched
+     * @throws HilosException When the person cannot be read, or the frame cannot be named or queued
+     */
+    private function askEnrollDrop(int $userId, string $acceptKey): void
+    {
+        $this->library->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP, new UserSecondFactorEnrollDropSignalData(
+            userId: $userId,
+            replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->library->currentActionRequestId(),
+            action: $this->library->runningAction(),
+            successMessage: null,
+        ));
     }
 
     /**

@@ -18,6 +18,7 @@ use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\BackupCodeGenerator;
 use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
 use Hilos\Auth\SecondFactor\SecondFactorGate;
+use Hilos\Auth\SecondFactor\SecondFactorMessages;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
@@ -50,6 +51,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\View\Item\SecondFactor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -716,21 +718,7 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         );
         $this->drain();
 
-        $start = $this->library->onAgentAction(
-            self::ACCEPT_KEY,
-            HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_START,
-            $this->emptyDto(HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_START),
-        );
-        $this->assertInstanceOf(AuthFlowOutcome::class, $start);
-        $secret = (string)$start->secondFactor?->secret;
-        $code = Totp::codeAt((string)Base32::decode($secret), Totp::stepAt(time()));
-
-        $confirm = AuthFlowOutcome::fromArray((array)$this->runTracked(
-            $this->library,
-            self::ACCEPT_KEY,
-            HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_CONFIRM,
-            new SecondFactorSetupConfirmActionDTO($code, 'Phone'),
-        ));
+        $confirm = $this->setupConfirm($this->setupStart());
         $this->assertSame(AuthFlowStep::SECOND_FACTOR_CODES, $confirm->step);
         $this->assertCount(SecondFactorSettings::DEFAULT_BACKUP_CODES, (array)$confirm->secondFactor?->backupCodes);
         $this->forwardToHolder();
@@ -746,6 +734,42 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         );
         $this->forwardToHolder();
         $this->assertSame(self::USER_ID, $this->lastStateFrame()?->userId);
+    }
+
+    /**
+     * Pressed again on the way in, the enrolment screen leaves only the latest enrolment: the
+     * person's agent drops the first before the second is started, so the code of the first QR is
+     * refused and the code of the second is taken (HIL-1903).
+     *
+     * @throws HilosException When a frame or a command fails
+     */
+    public function testARepeatedStartOnTheWayInLeavesOnlyTheLatestEnrolment(): void
+    {
+        Hilos::$setting = new SettingsAccessor(SecondFactorRequiredTestCatalog::class);
+        $this->grant();
+        $this->drain();
+
+        $first = $this->setupStart();
+        $second = $this->setupStart();
+        $this->assertNotSame($first, $second);
+        $unfinished = array_values(array_filter(
+            Hilos::$db->secondFactors->listByUser(self::USER_ID),
+            static fn (SecondFactor $factor): bool => $factor->confirmedAt === null,
+        ));
+        $this->assertCount(1, $unfinished, 'The second start dropped the first enrolment');
+        $this->assertSame($second, $unfinished[0]->readSecret());
+
+        try {
+            $this->setupConfirm($first);
+            $this->fail('The code of the first QR must be refused');
+        } catch (ValidationException $refusal) {
+            $this->assertSame(SecondFactorMessages::INVALID_CODE, $refusal->getMessage());
+        }
+
+        $confirm = $this->setupConfirm($second);
+        $this->assertSame(AuthFlowStep::SECOND_FACTOR_CODES, $confirm->step);
+        $this->assertCount(1, Hilos::$db->secondFactors->confirmedOf(self::USER_ID));
+        $this->assertNull(Hilos::$db->secondFactors->unconfirmedOf(self::USER_ID));
     }
 
     /**
@@ -1037,6 +1061,44 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
             HilosSignalConstants::HILOS_CONFIRM_SECOND_FACTOR,
             new ConfirmSecondFactorActionDTO($code, $backupCode, $trustDevice),
         );
+    }
+
+    /**
+     * Opens the enrolment on the way in the way the screen does; the person's agent drops the
+     * unfinished one first, and the start is answered after it.
+     *
+     * @return string The base32 secret the screen was answered with
+     * @throws ValidationException When the library or the person's agent refuses the start
+     * @throws HilosException When the command fails
+     */
+    private function setupStart(): string
+    {
+        $start = AuthFlowOutcome::fromArray((array)$this->runTracked(
+            $this->library,
+            self::ACCEPT_KEY,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_START,
+            $this->emptyDto(HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_START),
+        ));
+
+        return (string)$start->secondFactor?->secret;
+    }
+
+    /**
+     * Confirms the enrolment on the way in with the current code of an app.
+     *
+     * @param string $secret Base32 secret the app was given
+     * @return AuthFlowOutcome The screen the enrolment moves to
+     * @throws ValidationException When the library or the person's agent refuses the code
+     * @throws HilosException When the command fails
+     */
+    private function setupConfirm(string $secret): AuthFlowOutcome
+    {
+        return AuthFlowOutcome::fromArray((array)$this->runTracked(
+            $this->library,
+            self::ACCEPT_KEY,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_CONFIRM,
+            new SecondFactorSetupConfirmActionDTO(Totp::codeAt((string)Base32::decode($secret), Totp::stepAt(time())), 'Phone'),
+        ));
     }
 
     /**

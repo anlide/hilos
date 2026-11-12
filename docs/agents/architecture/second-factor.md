@@ -45,7 +45,7 @@ The transitions below do not make a future owner callable today.
 
 | Table | Writers and operations today | What |
 |---|---|---|
-| `hilos_second_factor` | users library `Add`/`Remove` (replacement enrollment); person's agent `Update`/`Remove`; holder `Update`/`Remove` for merge/erasure | apps: base32 secret, last accepted step, confirmed or not |
+| `hilos_second_factor` | users library `Add`; person's agent `Update`/`Remove`; holder `Update`/`Remove` for merge/erasure | apps: base32 secret, last accepted step, confirmed or not |
 | `hilos_second_factor_backup_code` | users library `Add`/`Remove` (replacement set); person's agent `Update`/`Remove`; holder `Update`/`Remove` for merge/erasure | one row per code, spent by a conditional write |
 | `hilos_second_factor_reset` | users library `Add`; person's agent `Update`/`Remove`; holder `Remove` for merge/erasure | removals: when asked, when due, the cancel token, last notice |
 | `hilos_second_factor_setting` | person's agent `Add`/`Update`; holder `Add`/`Update`/`Remove` for the merge's wait upsert and merge/erasure deletion | the person's removal wait and a shorter one not yet in force; the app-code miss count, its window, the lock step and its end |
@@ -56,12 +56,21 @@ The personal edits moved in HIL-1406 are written by the person's agent
 (`AbstractUserAgent`, its writes in `SecondFactorPersonEdits`) on a frame of the
 users library, which judges what lies outside the person's set first and does
 what follows the agent's answer. The library still creates enrollment, backup
-codes and reset requests. Today `startEnrolment()` also deletes an unfinished
-enrollment and `issueSet()` deletes the previous code set. Those are later
-writes to old rows, not part of creating their replacements.
+codes and reset requests. Today `issueSet()` also deletes the previous code set.
+That is a later write to old rows, not part of creating its replacement.
 
 The personal owner removes the previous enrollment before the library creates
-the new one (not in the code yet — HIL-1903), and removes the old backup-code
+the new one (HIL-1903). Every start of an enrollment - on the way in, the first
+app in the profile, and a further app after its code - sends the person's agent
+`hilos_user_second_factor_enroll_drop`; the agent deletes every enrollment of the
+person that was never confirmed and answers
+`hilos_user_second_factor_enroll_drop_done`, and on that answer the library
+creates the new enrollment with its secret and answers the same press. The
+secret is born at that creation, so nothing secret travels between the hops. A
+refusal of the agent refuses the press in its words. An answer that finds an
+unfinished enrollment standing again - a second start pressed at the same time
+created it first - refuses its press with `SETUP_EXPIRED`, so a person keeps at
+most one unfinished enrollment. The personal owner removes the old backup-code
 set before the library creates the new codes (not in the code yet — HIL-1904).
 The secret, code and token written immediately after their new row's insert
 remain completion of creation. The person's settings row is the agent's to

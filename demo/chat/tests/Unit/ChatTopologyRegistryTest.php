@@ -485,6 +485,8 @@ use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollDropDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollDropSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
@@ -2147,6 +2149,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE => HilosAgentType::HILOS_USER,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK => HilosAgentType::HILOS_USER,
@@ -2191,6 +2194,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -2446,6 +2450,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE => 'userId',
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL => 'userId',
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE => 'userId',
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP => 'userId',
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE => 'userId',
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND => 'userId',
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK => 'userId',
@@ -2541,6 +2546,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE => UserSecondFactorRemoveSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL => UserSecondFactorResetCancelSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE => UserSecondFactorWaitWriteSignalData::class,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP => UserSecondFactorEnrollDropSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE => UserSecondFactorResetDueSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND => UserSecondFactorResetRemindSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK => UserSecondFactorUnlockSignalData::class,
@@ -2585,6 +2591,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE_DONE => UserSecondFactorRemoveDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL_DONE => UserSecondFactorResetCancelDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE_DONE => UserSecondFactorWaitWriteDoneSignalData::class,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP_DONE => UserSecondFactorEnrollDropDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE_DONE => UserSecondFactorResetDueDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE => UserSecondFactorResetRemindDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE => UserSecondFactorUnlockDoneSignalData::class,
@@ -3194,7 +3201,7 @@ final class ChatTopologyRegistryTest extends TestCase
             'secondFactorResets' => ['HIL-1952', 'HIL-1999'],
             'secondFactorSettings' => ['HIL-1952', 'HIL-1999'],
             'secondFactorTrusts' => ['HIL-1907', 'HIL-1908', 'HIL-1909', 'HIL-1952', 'HIL-1999'],
-            'secondFactors' => ['HIL-1903', 'HIL-1952', 'HIL-1999'],
+            'secondFactors' => ['HIL-1952', 'HIL-1999'],
             'stepUps' => ['HIL-1952'],
             'userPhotos' => ['HIL-1952'],
             'userRenames' => ['HIL-1952'],

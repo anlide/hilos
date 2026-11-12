@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Closure;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
+use Hilos\Auth\Library\Command\SecondFactorCommands;
 use Hilos\Auth\Library\DTO\SecondFactorResetCancelLinkActionDTO;
 use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorCodesRenewActionDTO;
@@ -26,10 +28,13 @@ use Hilos\Auth\SecondFactor\Totp;
 use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -37,11 +42,13 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Database\View\Item\SecondFactor;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
@@ -53,6 +60,8 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Users\DTO\UserSecondFactorResetRemindDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindSignalData;
 use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * The profile half of the second factor and its delayed removal, against the real tables (HIL-494).
@@ -246,6 +255,148 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
             new ProfileSecondFactorEnrollStartActionDTO($this->nextCodeOf($secret), false),
         );
         $this->assertNotNull($start->secret);
+    }
+
+    /**
+     * Started again before its first code, the first app keeps only the latest enrolment: the
+     * person's agent drops the earlier one before the next is started, so the form of the first QR
+     * is refused as expired and the second is connected (HIL-1903).
+     *
+     * @throws HilosException When a command fails for another reason
+     */
+    public function testStartingTheFirstAppAgainLeavesOnlyTheLatestEnrolment(): void
+    {
+        $first = $this->startApp(null);
+        $second = $this->startApp(null);
+        $this->assertNotSame($first->authenticatorId, $second->authenticatorId);
+        $this->assertSame([(int)$second->authenticatorId], $this->unfinishedIds(), 'The second start dropped the first');
+
+        try {
+            $this->confirmApp($first);
+            self::fail('The form of the dropped enrolment must be refused');
+        } catch (ValidationException $exception) {
+            $this->assertSame(SecondFactorMessages::SETUP_EXPIRED, $exception->getMessage());
+        }
+
+        $confirm = $this->confirmApp($second);
+        $this->assertCount(SecondFactorSettings::DEFAULT_BACKUP_CODES, $confirm->backupCodes ?? []);
+        $connected = Hilos::$db->secondFactors->confirmedOf(self::USER_ID);
+        $this->assertSame([(int)$second->authenticatorId], array_map(static fn (SecondFactor $factor): int => (int)$factor->id, $connected));
+        $this->assertSame([], $this->unfinishedIds());
+    }
+
+    /**
+     * A second app started on a code from the first drops only what an earlier start left
+     * unfinished: the connected app stays as it was, and one new enrolment is started (HIL-1903).
+     *
+     * @throws HilosException When a command fails
+     */
+    public function testASecondAppDropsOnlyTheUnfinishedAndLeavesTheConnectedApp(): void
+    {
+        $secret = $this->connectFirstAppSecret();
+        [$connected] = Hilos::$db->secondFactors->confirmedOf(self::USER_ID);
+        // What an abandoned earlier start left, written past every agent's claim.
+        $leftover = (int)Hilos::$db->secondFactors->actions->startEnrolment(self::USER_ID, 'Abandoned', Totp::newSecret())->id;
+
+        $this->drain();
+        $this->pressDeferred(
+            'second-app',
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
+            new ProfileSecondFactorEnrollStartActionDTO($this->nextCodeOf($secret), false),
+        );
+        $this->carryPersonFrames($this->library);
+        // Two hops, prove and then drop: the press is answered once, by the second.
+        $ack = $this->acks()['second-app'] ?? null;
+        $this->assertInstanceOf(PageActionSuccessSignalData::class, $ack);
+        $start = SecondFactorProfileReplyDTO::fromArray((array)$ack->reply);
+
+        $this->assertNotSame($leftover, (int)$start->authenticatorId);
+        $this->assertSame([(int)$start->authenticatorId], $this->unfinishedIds(), 'Only the new enrolment is unfinished');
+        $after = Hilos::$db->secondFactors->confirmedOf(self::USER_ID);
+        $this->assertSame([(int)$connected->id], array_map(static fn (SecondFactor $factor): int => (int)$factor->id, $after));
+        $this->assertSame('Phone', $after[0]->label);
+        $this->assertSame($secret, $after[0]->readSecret());
+    }
+
+    /**
+     * Two starts pressed at once both reach the person's agent before either answer is back: the
+     * answer resumed first starts the enrolment and answers its secret, the other finds that
+     * enrolment standing and is refused as expired, and one enrolment is left unfinished (HIL-1903).
+     *
+     * @throws HilosException When a command or a frame fails
+     */
+    public function testTwoStartsAtOnceStartOneEnrolmentAndRefuseTheOtherPress(): void
+    {
+        $this->drain();
+        foreach (['start-a', 'start-b'] as $requestId) {
+            $this->pressDeferred(
+                $requestId,
+                HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
+                new ProfileSecondFactorEnrollStartActionDTO(null, false),
+            );
+        }
+        $log = $this->logged(fn () => $this->carryPersonFrames($this->library));
+
+        $this->assertStringNotContainsString('Action failed', $log, 'Losing to the other press is a refusal, not a failure');
+        $acks = $this->acks();
+        $this->assertSame(['start-a', 'start-b'], array_keys($acks));
+        $this->assertInstanceOf(PageActionSuccessSignalData::class, $acks['start-a']);
+        $started = SecondFactorProfileReplyDTO::fromArray((array)$acks['start-a']->reply);
+        $this->assertNotNull($started->secret);
+        $this->assertInstanceOf(PageActionErrorSignalData::class, $acks['start-b']);
+        $this->assertSame(SecondFactorMessages::SETUP_EXPIRED, $acks['start-b']->reason);
+        $this->assertSame([(int)$started->authenticatorId], $this->unfinishedIds());
+    }
+
+    /**
+     * A read that fails while the person's agent's answer is judged fails the press that waits on it
+     * - in the general words, with the detail left in the log, as a continuation that breaks does -
+     * and no enrolment is started behind it (HIL-1903).
+     *
+     * @throws HilosException When a command or a frame fails
+     */
+    public function testAReadThatFailsWhenTheDropIsAnsweredFailsThePress(): void
+    {
+        $this->drain();
+        $this->pressDeferred(
+            'start-a',
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
+            new ProfileSecondFactorEnrollStartActionDTO(null, false),
+        );
+        $this->library->commandsFailure = new DatabaseException('connection lost to the second-factor table');
+
+        $log = $this->logged(fn () => $this->carryPersonFrames($this->library));
+
+        $this->assertStringContainsString('Action failed', $log);
+        $this->assertStringContainsString('connection lost to the second-factor table', $log);
+        $acks = $this->acks();
+        $this->assertSame(['start-a'], array_keys($acks));
+        $this->assertInstanceOf(PageActionErrorSignalData::class, $acks['start-a']);
+        $this->assertSame(SignalConstants::ACTION_FAILED_REASON, $acks['start-a']->reason);
+        $this->assertSame([], $this->unfinishedIds(), 'No enrolment is started behind a press that failed');
+    }
+
+    /**
+     * A drop the person's agent refuses refuses the start in the agent's words, and no enrolment is
+     * started: what stood before stays, and no row is added (HIL-1903).
+     *
+     * @throws HilosException When a command fails for another reason
+     */
+    public function testAStartWhoseDropTheAgentRefusesIsRefusedAndStartsNothing(): void
+    {
+        $leftover = (int)Hilos::$db->secondFactors->actions->startEnrolment(self::USER_ID, 'Abandoned', Totp::newSecret())->id;
+        // The agent holds no claim any more, so the truth source refuses the drop it tries.
+        TruthSourceRegistry::unregisterAgent($this->personAgent(self::USER_ID)->getId());
+
+        try {
+            $this->startApp(null);
+            self::fail('A start the agent made no room for must be refused');
+        } catch (ValidationException $exception) {
+            $this->assertSame(SignalConstants::ACTION_FAILED_REASON, $exception->getMessage());
+        }
+
+        $this->assertSame([$leftover], $this->unfinishedIds());
+        $this->assertSame([], Hilos::$db->secondFactors->confirmedOf(self::USER_ID));
     }
 
     /**
@@ -814,6 +965,118 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     }
 
     /**
+     * Starts connecting an app from the profile.
+     *
+     * @param ?string $proofCode Code of a connected app, or null for the first app
+     * @return SecondFactorProfileReplyDTO The enrolment, its secret and otpauth address
+     * @throws ValidationException When the library or the person's agent refuses
+     * @throws HilosException When a command or a frame fails for another reason
+     */
+    private function startApp(?string $proofCode): SecondFactorProfileReplyDTO
+    {
+        return $this->profileReply(
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
+            new ProfileSecondFactorEnrollStartActionDTO($proofCode, false),
+        );
+    }
+
+    /**
+     * Confirms the enrolment a start was answered with, by the current code of its secret.
+     *
+     * @param SecondFactorProfileReplyDTO $start What the start was answered with
+     * @return SecondFactorProfileReplyDTO What the confirmation was answered with
+     * @throws ValidationException When the library or the person's agent refuses
+     * @throws HilosException When a command or a frame fails for another reason
+     */
+    private function confirmApp(SecondFactorProfileReplyDTO $start): SecondFactorProfileReplyDTO
+    {
+        return $this->profileReply(
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_CONFIRM,
+            new ProfileSecondFactorEnrollConfirmActionDTO(
+                (int)$start->authenticatorId,
+                Totp::codeAt((string)Base32::decode((string)$start->secret), Totp::stepAt(time())),
+                'Phone',
+            ),
+        );
+    }
+
+    /**
+     * @return list<int> Ids of the person's enrolments started and not confirmed, read afresh
+     * @throws HilosException When the lookup fails
+     */
+    private function unfinishedIds(): array
+    {
+        $ids = [];
+        foreach (Hilos::$db->secondFactors->listByUser(self::USER_ID) as $factor) {
+            if ($factor->confirmedAt === null) {
+                $ids[] = (int)$factor->id;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Presses one profile action the way the dispatcher runs a tracked one, and leaves the frame it
+     * asks of the person's agent on the queue, undelivered.
+     *
+     * @param string $requestId Request the press is tracked under
+     * @param string $action Action wire name
+     * @param ActionPayloadDTO $dto Action payload
+     * @throws HilosException When the command fails
+     */
+    private function pressDeferred(string $requestId, string $action, ActionPayloadDTO $dto): void
+    {
+        $this->library->beginActionDispatch($requestId);
+        try {
+            $this->library->onAgentAction(self::ACCEPT_KEY, $action, $dto);
+            $this->assertTrue($this->library->actionReplyDeferred(), "{$action} waits on the person's agent");
+        } finally {
+            $this->library->endActionDispatch();
+        }
+    }
+
+    /**
+     * Runs a step with the log going to a file of its own, and reads back what the step logged.
+     *
+     * @param Closure(): void $step What to run
+     * @return string What the step wrote to the log
+     * @throws HilosException When the step fails
+     */
+    private function logged(Closure $step): string
+    {
+        $logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-second-factor-reset-log');
+        Logger::setLogFile($logFile);
+        try {
+            $step();
+
+            return (string)file_get_contents($logFile);
+        } finally {
+            Logger::resetLogFile();
+            unlink($logFile);
+        }
+    }
+
+    /**
+     * @return array<string, PageActionSuccessSignalData|PageActionErrorSignalData> Action acks queued since the last drain, by request;
+     *     a request answered twice fails the case, so an early empty success in a later hop is not taken for the last word
+     */
+    private function acks(): array
+    {
+        $acks = [];
+        foreach ($this->queued() as $signal) {
+            $payload = $signal->data instanceof WebSocketSignalData ? $signal->data->data : null;
+            if ($payload instanceof PageActionSuccessSignalData || $payload instanceof PageActionErrorSignalData) {
+                $this->assertNotNull($payload->requestId);
+                $this->assertArrayNotHasKey($payload->requestId, $acks, "Request {$payload->requestId} is answered once");
+                $acks[$payload->requestId] = $payload;
+            }
+        }
+
+        return $acks;
+    }
+
+    /**
      * Runs the users library's tick from a fresh start and carries the sweep's frames to the person's agent and back.
      *
      * @throws HilosException When the sweep or a frame fails
@@ -942,6 +1205,22 @@ final class SecondFactorResetTestRtContext extends RtContext
  */
 final class SecondFactorResetTestLibrary extends AbstractUsersLibraryAgent
 {
+    /** @var ?Throwable Failure every use of the second-factor commands raises, or null while they are served */
+    public ?Throwable $commandsFailure = null;
+
+    /**
+     * @return SecondFactorCommands The commands, unless a case made them fail
+     * @throws Throwable The failure a case armed
+     */
+    protected function secondFactorCommands(): SecondFactorCommands
+    {
+        if ($this->commandsFailure !== null) {
+            throw $this->commandsFailure;
+        }
+
+        return parent::secondFactorCommands();
+    }
+
     /**
      * @param string $displayName Name the new account would be created with
      * @param ?string $themePick Guest theme choice, or null when not chosen

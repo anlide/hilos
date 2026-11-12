@@ -22,10 +22,11 @@ use Hilos\Utils\Helpers\TimeHelper;
 /**
  * SecondFactors object collection - the authenticator apps of every person (HIL-494).
  *
- * Persistence primitives of the enrolment: {@see startEnrolment()} opens one - a person
- * has at most one unfinished enrolment, so a new one replaces it - and
- * {@see deleteForUser()} takes the whole second factor of a person out, which is what
- * switching it off and a completed reset both do. Reads by person go through
+ * Persistence primitives of the enrolment: {@see startEnrolment()} opens one and only
+ * opens it; {@see dropUnfinished()} takes out the enrolments never confirmed - the person's
+ * agent does that before a new one is opened, so a person keeps at most one unfinished
+ * enrolment (HIL-1903) - and {@see deleteForUser()} takes the whole second factor of a person
+ * out, which is what switching it off and a completed reset both do. Reads by person go through
  * {@see listByUser()}.
  *
  * @extends Objects<ObjectSecondFactor>
@@ -62,7 +63,8 @@ class SecondFactors extends Objects
     /**
      * Opens an enrolment: an unconfirmed authenticator holding a fresh secret.
      *
-     * The person's earlier unfinished enrolment, if any, is dropped first: asking for a new
+     * Nothing is taken out here. The person's earlier unfinished enrolment was dropped by the
+     * person's agent before this is called ({@see dropUnfinished()}, HIL-1903): asking for a new
      * secret replaces the one shown before, and an abandoned QR code must not stay able to
      * finish an enrolment later. Confirmed authenticators are untouched.
      *
@@ -70,8 +72,8 @@ class SecondFactors extends Objects
      * @param string $label Name the authenticator starts with
      * @param string $secret Base32 shared secret
      * @return ObjectSecondFactor The unconfirmed authenticator
-     * @throws DatabaseException When a lookup, the insert or the secret write fails
-     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws DatabaseException When the insert or the secret write fails
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
@@ -79,12 +81,6 @@ class SecondFactors extends Objects
      */
     public function startEnrolment(int $userId, string $label, string $secret): ObjectSecondFactor
     {
-        foreach ($this->listByUser($userId) as $factor) {
-            if ($factor->confirmedAt === null) {
-                $this->remove($factor);
-            }
-        }
-
         $factor = static::OBJECT_CLASS::create();
         $factor->userId = $userId;
         $factor->label = $label;
@@ -169,6 +165,27 @@ class SecondFactors extends Objects
     {
         foreach ($this->listByUser($userId) as $factor) {
             $this->remove($factor);
+        }
+    }
+
+    /**
+     * Deletes every unfinished enrolment of a person; the confirmed authenticators stay.
+     *
+     * Each row leaves through its object so a delete announcement reaches every reader.
+     * A person with no unfinished enrolment is not an error.
+     *
+     * @param int $userId Person whose unfinished enrolments to delete
+     * @throws DatabaseException When a lookup or a delete fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     */
+    public function dropUnfinished(int $userId): void
+    {
+        foreach ($this->listByUser($userId) as $factor) {
+            if ($factor->confirmedAt === null) {
+                $this->remove($factor);
+            }
         }
     }
 
