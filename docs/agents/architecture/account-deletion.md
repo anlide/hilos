@@ -151,7 +151,7 @@ work and result in its local transaction and answers repeats from the saved
 result; it is built but has no live erasure consumer yet. After start, failure
 leaves an open operation to finish forward, without a common rollback
 (not in the code yet — HIL-1950). The fixed circle and folded-first ordering
-are prepared separately (not in the code yet — HIL-1938). The final personal
+are prepared, with no live caller until HIL-1950/HIL-1952. The final personal
 delete follows required results and uses `RESTRICT` as the last safeguard
 (not in the code yet — HIL-1942). The canon names the personal, library,
 channel, export, sessions and project portions individually, including their

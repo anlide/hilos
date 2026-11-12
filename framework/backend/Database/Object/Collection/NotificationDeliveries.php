@@ -227,6 +227,49 @@ class NotificationDeliveries extends Objects
     }
 
     /**
+     * Reads one bounded page of saved identities of a recipient's deliveries, whatever their status.
+     * The journal carries no recipient of its own, so the rows are found through their notifications.
+     *
+     * @param int $recipientUserId Recipient whose notifications the deliveries belong to
+     * @param int $afterId Exclusive delivery primary-key cursor
+     * @param int $limit Positive maximum number of identities
+     * @return ChangeLogReadCollection<NotificationDeliveryIdentity> Dense snapshot in ascending delivery-id order
+     * @throws InvalidArgumentException When the page limit is not positive
+     * @throws TableNotActivatedException When the project has not activated the delivery table
+     * @throws DatabaseException When the binding or projection query fails
+     */
+    public function recipientIdentitiesAfter(int $recipientUserId, int $afterId, int $limit): ChangeLogReadCollection
+    {
+        if ($limit <= 0) {
+            throw new InvalidArgumentException('Notification delivery identity page limit must be positive');
+        }
+        $this->requireActivatedTable();
+        $entityClass = static::entityClass();
+        $identities = [];
+        foreach (Database::sql( // fresh-sql: the erasure census pages a recipient's saved deliveries by id, which the mirror cannot index.
+            'SELECT `' . EntityNotificationDelivery::id . '`, `' . EntityNotificationDelivery::notification_id . '`,'
+            . ' `' . EntityNotificationDelivery::channel . '`, `' . EntityNotificationDelivery::routing_key . '`'
+            . ' FROM ' . $entityClass::getSqlTableName()
+            . ' WHERE `' . EntityNotificationDelivery::notification_id . '` IN (SELECT `' . EntityNotification::id
+            . '` FROM `' . EntityNotification::_table . '` WHERE `' . EntityNotification::user_id . '` = ?)'
+            . ' AND `' . EntityNotificationDelivery::id . '` > ?'
+            . ' ORDER BY `' . EntityNotificationDelivery::id . '` ASC LIMIT ?',
+            [$recipientUserId, $afterId, $limit],
+            index: $entityClass::getDatabase()->connectionIndex,
+        )->rows() as $row) {
+            $identities[] = new NotificationDeliveryIdentity(
+                deliveryId: (int)$row[EntityNotificationDelivery::id],
+                notificationId: (int)$row[EntityNotificationDelivery::notification_id],
+                channel: (string)$row[EntityNotificationDelivery::channel],
+                routingKey: $row[EntityNotificationDelivery::routing_key] === null
+                    ? null : (int)$row[EntityNotificationDelivery::routing_key],
+            );
+        }
+
+        return ChangeLogReadCollection::fromArray($identities);
+    }
+
+    /**
      * Reads a bounded saved snapshot without consulting the mutable Object mirror.
      *
      * @param string $channel Saved channel to scan

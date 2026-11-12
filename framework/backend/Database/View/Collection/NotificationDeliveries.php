@@ -66,6 +66,25 @@ class NotificationDeliveries extends DbCollection
     }
 
     /**
+     * SCAFFOLD: no live caller until the erasure coordinator reconciles its delivery owners (HIL-1952).
+     *
+     * @param int $recipientUserId Recipient whose notifications the deliveries belong to
+     * @param int $afterId Exclusive delivery primary-key cursor
+     * @param int $limit Positive page size
+     * @return ChangeLogReadCollection<NotificationDeliveryIdentity> Dense saved snapshot in ascending delivery-id order
+     * @throws ObjectCollectionNullException When detached from the owning collection
+     * @throws InvalidArgumentException When the page limit is not positive
+     * @throws TableNotActivatedException When the project has not activated the delivery table
+     * @throws DatabaseException When the projection query or binding fails
+     */
+    public function recipientIdentitiesAfter(int $recipientUserId, int $afterId, int $limit): ChangeLogReadCollection
+    {
+        return ($this->getObjectCollection()
+            ?? throw new ObjectCollectionNullException('Notification deliveries are detached from their collection'))
+            ->recipientIdentitiesAfter($recipientUserId, $afterId, $limit);
+    }
+
+    /**
      * @param string $channel Saved channel to scan
      * @param int $cutoffMs Exclusive creation-age boundary in epoch milliseconds
      * @param int $afterCreatedAt Creation moment of the exclusive cursor in epoch milliseconds

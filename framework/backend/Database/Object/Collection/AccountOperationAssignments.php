@@ -181,6 +181,16 @@ class AccountOperationAssignments extends Objects
     }
 
     /**
+     * @param int $operationId Parent operation id
+     * @return static Assignments of every stage in ascending primary id order
+     * @throws HilosException When a manual selection cannot be read
+     */
+    public function forOperation(int $operationId): static
+    {
+        return $this->select('`operation_id` = ?', [$operationId]);
+    }
+
+    /**
      * @param AccountOperationKind $kind Required parent operation kind
      * @param AccountOperationOwnerAddress $owner Exact participant address, including literal nullable index
      * @param int $afterId Exclusive primary id cursor

@@ -248,6 +248,29 @@ class AccountOperations extends Objects
     }
 
     /**
+     * Walks every page of open erasures in primary id order until one circle holds the account.
+     *
+     * @param int $userId Account asked about
+     * @return ?ObjectAccountOperation First open erasure whose fixed circle contains the account
+     * @throws HilosException When a page cannot be read or a stored circle is malformed
+     */
+    public function openErasureCovering(int $userId): ?ObjectAccountOperation
+    {
+        $afterId = 0;
+        do {
+            $page = $this->openPage(AccountOperationKind::Erasure, $afterId, self::PAGE_LIMIT_MAX);
+            foreach ($page as $operationId => $operation) {
+                if ($operation->circle()->contains($userId)) {
+                    return $operation;
+                }
+                $afterId = (int)$operationId;
+            }
+        } while (count($page) === self::PAGE_LIMIT_MAX);
+
+        return null;
+    }
+
+    /**
      * @param int $afterId Exclusive primary id cursor
      * @param int $limit Maximum rows in this page
      * @throws ValidationException When the cursor or page size is invalid

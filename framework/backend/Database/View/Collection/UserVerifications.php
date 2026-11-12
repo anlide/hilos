@@ -18,8 +18,9 @@ use Hilos\Database\View\Item\UserVerification;
  * Read-facing representation of the framework-owned hilos_user_verification
  * table. The issue/verify orchestration runs in
  * {@see VerificationService} against the object-layer
- * primitives ({@see ObjectUserVerifications}); no read API is exposed here
- * because the verification mechanism never surfaces to the frontend.
+ * primitives ({@see ObjectUserVerifications}); no frontend read API is exposed
+ * here because the verification mechanism never surfaces to the frontend - the one
+ * read, anyForUserOrIdentifiers(), answers the account erasure.
  *
  * @extends DbCollection<UserVerification, ObjectUserVerifications>
  * @method ObjectUserVerifications|null getObjectCollection()
@@ -60,6 +61,21 @@ class UserVerifications extends DbCollection
     public function deleteForIdentifiers(array $identifiers): void
     {
         $this->objectCollection->deleteForIdentifiers($identifiers);
+    }
+
+    /**
+     * Whether a challenge deleteForUser() or deleteForIdentifiers() would remove is still saved.
+     * SCAFFOLD: no live caller until the erasure coordinator reconciles its participants (HIL-1952).
+     *
+     * @param int $userId Person whose challenges are asked about
+     * @param list<string> $identifiers Person's current addresses, whatever user id their challenges carry
+     * @return bool Whether at least one such challenge is saved
+     * @throws DatabaseException When the lookup fails
+     * @throws InvalidArgumentException When the entity query is invalid
+     */
+    public function anyForUserOrIdentifiers(int $userId, array $identifiers): bool
+    {
+        return $this->objectCollection->anyForUserOrIdentifiers($userId, $identifiers);
     }
 
     /**

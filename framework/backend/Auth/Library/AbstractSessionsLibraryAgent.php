@@ -7052,31 +7052,16 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Lists an account and all accounts folded into it, deepest first (HIL-1200).
      *
-     * Each merge row is removed while its survivor still exists; reversing the breadth-first
-     * walk keeps descendants ahead of their survivors so the database's SET NULL is not used.
-     * Merges normally form a tree, but remembering visited ids keeps the walk finite even for
-     * rows written outside the merge rules.
+     * The order is the merge table's erasure circle (HIL-1938): each merge row is removed while
+     * its survivor still exists, so the database's SET NULL is not used.
      *
      * @param int $userId Account at the root of the erasure
      * @return list<int> Account ids in erasure order
-     * @throws HilosException On merge lookup failure
+     * @throws HilosException On merge lookup failure or a non-positive root
      */
     private function erasureOrderOf(int $userId): array
     {
-        $walked = [$userId];
-        $seen = [$userId => true];
-        for ($index = 0; $index < count($walked); $index++) {
-            $id = $walked[$index];
-            foreach (Hilos::$db->userMerges->foldedInto($id) as $merge) {
-                if (isset($seen[$merge->userId])) {
-                    continue;
-                }
-                $seen[$merge->userId] = true;
-                $walked[] = $merge->userId;
-            }
-        }
-
-        return array_reverse($walked);
+        return Hilos::$db->userMerges->erasureCircleOf($userId)->toArray();
     }
 
     /**

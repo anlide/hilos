@@ -268,9 +268,9 @@ accounts first (HIL-1200), so this key does not run on its normal path. The
 HIL-1202 confirms this choice as the pattern for the other person keys.
 
 In the split erasure, the circle is fixed before any link is broken
-(not in the code yet — HIL-1938). Each folded account's personal owner removes
-its own merge row before its survivor goes, keeping that leaf-first order
-(not in the code yet — HIL-1941). The holder retains today's erasure rights
+(prepared, no live caller until HIL-1950/HIL-1952). Each folded account's
+personal owner removes its own merge row before its survivor goes, keeping that
+leaf-first order (not in the code yet — HIL-1941). The holder retains today's erasure rights
 until the live switch (not in the code yet — HIL-1952).
 
 The table is the sessions library's whole, and the whole operation is framework
@@ -303,9 +303,11 @@ retires its foreign writes, grants, comments, debt, locks, rereads and the
 immediate stop on a merge row
 (not in the code yet — HIL-1999). A prepared handler does not clear this marker.
 
-The existing merge gains a refusal when any affected account has started
-erasure (not in the code yet — HIL-1960). This is a guard beside the erasure
-cutover; it does not implement the future merge or its transfer/receipt rules.
+The existing merge gains a refusal (not in the code yet — HIL-1960) when any
+affected account is in the circle of an open erasure operation, from
+preparation on (owner's decision 2026-11-12, HIL-1938). This is a guard beside
+the erasure cutover; it does not implement the future merge or its
+transfer/receipt rules.
 
 The second-factor choice is independent of the password choice. A protected
 loser requires an explicit transfer, or retaining the survivor's existing

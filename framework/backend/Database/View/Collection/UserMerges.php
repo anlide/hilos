@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Collection;
 
+use Hilos\Auth\AccountOperation\AccountOperationCircle;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Actions\Collection\UserMergesActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
@@ -20,7 +22,7 @@ use Hilos\Database\View\Item\UserMerge;
  * `Hilos::$db->userMerges[$userId]` is that account's merge row, or null when it was never
  * folded into another one - which is how "is this account merged" is asked. The accounts
  * folded into one person are read by foldedInto(); the live end of the chain a folded
- * account leads to, by liveSurvivorOf().
+ * account leads to, by liveSurvivorOf(); the circle an erasure takes along, by erasureCircleOf().
  *
  * @extends DbCollection<UserMerge, ObjectUserMerges>
  * @method ObjectUserMerges|null getObjectCollection()
@@ -47,6 +49,41 @@ class UserMerges extends DbCollection
     public function foldedInto(int $survivorUserId): static
     {
         return $this->whereColumnIs(ObjectUserMerge::survivorUserId, $survivorUserId);
+    }
+
+    /**
+     * An account and every account folded into it down the chain, deepest first and the root last
+     * (HIL-1200, HIL-1938).
+     *
+     * Each merge row leaves while its survivor still exists: reversing the breadth-first walk keeps
+     * descendants ahead of their survivors, so the database's SET NULL is not used. Merges normally
+     * form a tree, but remembering visited ids keeps the walk finite even for rows written outside
+     * the merge rules.
+     *
+     * @param int $rootUserId Account at the root of the erasure
+     * @return AccountOperationCircle Checked erasure order with the root last
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When a lookup names no field of this entity, or an object type does not match
+     * @throws DatabaseException When a lookup query fails
+     * @throws ObjectGetIdStringNotImplementedException If a matched item's Object does not implement getIdString()
+     * @throws CollectionNotManualException When a matched item is rejected by a non-manual collection
+     * @throws ValidationException When the root id is not positive
+     */
+    public function erasureCircleOf(int $rootUserId): AccountOperationCircle
+    {
+        $walked = [$rootUserId];
+        $seen = [$rootUserId => true];
+        for ($index = 0; $index < count($walked); $index++) {
+            foreach ($this->foldedInto($walked[$index]) as $merge) {
+                if (isset($seen[$merge->userId])) {
+                    continue;
+                }
+                $seen[$merge->userId] = true;
+                $walked[] = $merge->userId;
+            }
+        }
+
+        return AccountOperationCircle::fromArray(array_reverse($walked), $rootUserId);
     }
 
     /**

@@ -51,6 +51,18 @@ class AccountOperationAssignments extends DbCollection
     }
 
     /**
+     * SCAFFOLD: no live caller until the erasure coordinator reconciles its obligations (HIL-1952).
+     *
+     * @param int $operationId Parent operation id
+     * @return static Assignments of every stage in ascending primary id order
+     * @throws HilosException When the storage reader or item wrapper refuses the request
+     */
+    public function forOperation(int $operationId): static
+    {
+        return $this->selectionFor($this->objectCollection->forOperation($operationId));
+    }
+
+    /**
      * @param AccountOperationKind $kind Required parent operation kind
      * @param AccountOperationOwnerAddress $owner Exact stable participant address
      * @param int $afterId Exclusive primary id cursor

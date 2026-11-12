@@ -59,6 +59,18 @@ class AccountOperations extends DbCollection
     }
 
     /**
+     * SCAFFOLD: no live caller until the erasure opening (HIL-1952) and the merge refusal (HIL-1960).
+     *
+     * @param int $userId Account asked about
+     * @return ?AccountOperation First open erasure whose fixed circle contains the account
+     * @throws HilosException When the storage reader, a stored circle or the item wrapper refuses the lookup
+     */
+    public function openErasureCovering(int $userId): ?AccountOperation
+    {
+        return $this->itemFor($this->objectCollection->openErasureCovering($userId));
+    }
+
+    /**
      * @param ?ObjectAccountOperation $object Persisted object, or domain absence
      * @return ?AccountOperation Its wrapper, retaining already issued object identity
      * @throws InvalidArgumentException When the object type does not match

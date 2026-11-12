@@ -443,6 +443,96 @@ on the results collection and use the full agent id there, preserving the
 person id for its other sets. The common carriers add no production participant
 grant and do not change `AbstractUserAgent`.
 
+**The erasure census.** The plan of an erasure is a census taken from the
+circle and the activated tables, and it is written as ordinary assignments.
+The readers are in the ORM: `UserMerges::erasureCircleOf()` returns the
+`AccountOperationCircle` of a root account (a breadth-first walk over
+`foldedInto()` that remembers what it has visited, then reversed: folded
+descendants before their survivors, the root last; the sessions library's
+`erasureOrderOf()` calls it), `AccountOperations::openErasureCovering()`
+returns the open erasure operation whose circle holds an account,
+`AccountOperationAssignments::forOperation()` reads the assignments of every
+stage of an operation, and `NotificationDeliveries::recipientIdentitiesAfter()`
+and `UserVerifications::anyForUserOrIdentifiers()` read the rows of a person
+that the census must ask about. The catalog is in
+`framework/backend/Auth/AccountOperation/`: an
+`AccountErasureParticipant` has a `key()`, the `collections()` it covers and
+`expectationsFor(int $userId)`. `AccountErasureFixedOwner` answers for a
+registered owner: with the owner registered it expects that owner at
+`new AccountOperationOwnerAddress($ownerType, $perPerson ? (string)$userId : null)`;
+with no owner and rows the person has, it expects a wait; otherwise nothing.
+`AccountErasureDeliveryParticipant` reads the person's delivery rows, resolves
+the owner of each through `DeliveryOwnerResolver::forDelivery()` (HIL-1893) and
+expects `delivery:<channel>` owners, and rows with no owner become one wait per
+channel. `AccountErasureParticipantCatalog::framework()` holds `personal` (its
+sixteen collections, the `HILOS_USER` owner, one per person), `users_library`
+(`verifications`, `HILOS_USERS_LIBRARY`), `sessions_holder` (`sessions` and
+`accessLogEntries`, `HILOS_SESSIONS_LIBRARY`), `delivery`
+(`notificationDeliveries`), `data_export` (`dataExports`, `HILOS_DATA_EXPORT`)
+and `legal_export` (`legalAcceptanceExports`, `HILOS_LEGAL`). `with(...)`
+returns a new catalog with more participants; a repeated key or collection, or
+a collection that is also in `EXEMPT`, is an `InvalidTopologyException`.
+`EXEMPT` names each mounted framework collection that owes no participant and
+the reason (`AccountErasureExemption`): `accountDeletions` is a `Trace`;
+`accountOperations`, `accountOperationAssignments` and
+`accountOperationResults` are `ServiceRecord`;
+`secondFactorTrustRestrictions` is `InstallationPolicy` (the policy of HIL-1900
+gives no participant, and the trusts it limits are the personal owner's);
+`files` is `ReferenceNullified`; `registrationReservations` and `authBlocks` are
+`OutsideAccount`; and `fileVariants`, `settings`, `verifierCircle`,
+`oauthProviders`, `languages`, `languageNames`, `countries`, `countryNames`,
+`locales`, `i18nReflows`, `probeValues` and `moderationRules` are
+`NotPersonal`. The 22 covered and the 20 exempt collections are the 42 mounted
+framework collections, and a unit check holds that equality.
+
+`AccountErasureCensus::of($circle, $catalog)` returns the
+`AccountErasureExpectation` list, by the accounts of the circle in its order
+and, for each, by the participants in catalog order. A participant is activated
+when any of its collections is mounted and its table is in the schema; one
+whose tables the installation never created is not asked. An expectation is
+recorded as an assignment of the operation, with its `user_id` the account of
+the circle and its stage the stage the operation is at (`preparing` when it is
+opened). The keys and the payload are literal: an expected owner is
+`expect:<participantKey>:<owner agent id>:<userId>`, a wait is
+`wait:<participantKey>:<userId>`, both carry the payload
+`{"participant":"<participantKey>"}`, and a wait is addressed to the coordinator,
+`new AccountOperationOwnerAddress(HilosAgentType::HILOS_SESSIONS_LIBRARY)`.
+There are three cases per participant and account: an owner is registered
+(`expect:`), the table has rows and no owner (`wait:`), or there is nothing to
+erase and nothing is written. A wait stays on the coordinator and is lifted on
+reading: `AccountErasureExpectedSet::of($operationId)` returns `expected()`, the
+`expect:` assignments, and `waiting()`, the `wait:` assignments with no
+`expect:` of the same participant and account; the participant is read from the
+payload, and any other key, such as the stage assignments of HIL-1950, is
+ignored. A wait is therefore never deleted.
+
+`AccountErasureOpening::open($deletion, $catalog)` runs in one primary-database
+transaction and returns an `AccountErasureOpeningResult` (`operation`,
+`deferredByOperationId`, `recorded`). When the request already has its
+operation, that operation comes back and only what is missing is added. A
+request that is no longer live is a `ValidationException` ("The deletion
+request is no longer live."). When any account of the circle is already in the
+circle of another open erasure, the opening is deferred: nothing is written and
+the result carries the covering operation's id. Otherwise the operation and its
+whole census are written in that one transaction. `AccountErasureOpening::reconcile($operation, $catalog)`
+takes an open erasure only ("Only an open erasure can be reconciled."), runs in
+its own transaction and appends what is missing at the operation's current
+stage; it deletes nothing and does not touch the circle. A wait counts as lifted
+when the same participant and account has an expected owner, including one
+written in the same pass.
+
+Apart from `erasureCircleOf()`, which the sessions library's `erasureOrderOf()`
+already calls, none of this has a live caller yet. The opening is called by the
+cutover (not in the code yet — HIL-1952). The reconciliation is called at the
+start and in the passes (not in the code yet — HIL-1951), after a `RESTRICT`
+refusal (not in the code yet — HIL-1942) and after a stage's failure
+(not in the code yet — HIL-1950), and after the start, before the notifications
+are deleted (not in the code yet — HIL-1940). A project's own participants join
+the catalog through `with(...)`; the project declaration API and the
+completeness guard over a project's tables are not written yet
+(not in the code yet — HIL-1948). The census adds no claim, table, migration,
+signal, route or runtime state.
+
 **Creators.** `AbstractUsersLibraryAgent::OWNS_DB`
 (`Auth/Library/AbstractUsersLibraryAgent.php`) creates `users`,
 `identities`, `passkeyCredentials`, `secondFactorResets` and
@@ -731,7 +821,8 @@ path only at the [single cutover](#erasure-cutover-and-observation)
    minute sweep exists today. For the split path, the holder fixes the circle
    from the merge relationships before breaking any link, with folded leaves
    before their survivors, and derives the required owners from the
-   installation's activated tables (not in the code yet — HIL-1938). The
+   installation's activated tables (prepared, no live caller until HIL-1950/HIL-1952;
+   see *The erasure census*). The
    implemented operation and assignment `record()` actions can persist that
    plan at stable owner addresses in the logical *preparing* stage; an exact
    repeat returns the same records and a conflict is refused. The stored stage
@@ -772,8 +863,8 @@ path only at the [single cutover](#erasure-cutover-and-observation)
    in the installation owes no participant because no rows can exist. An
    activated table with its owner contributes that owner. Existing rows with
    no registered owner leave visible, open work: the operation waits, cannot
-   count the part done and cannot appoint a fallback writer
-   (not in the code yet — HIL-1938). Projects declare their own participants
+   count the part done and cannot appoint a fallback writer (prepared, no live
+   caller until HIL-1950/HIL-1952). Projects declare their own participants
    under the same distinction; there is no fixed "twenty tables, always"
    list and this page declares no activation API
    (not in the code yet — HIL-1948).
@@ -845,7 +936,8 @@ path only at the [single cutover](#erasure-cutover-and-observation)
    request remains the trace it is today; an account without a request gains
    none (not in the code yet — HIL-1942).
 8. **The circle finishes leaves first.** The fixed circle puts every folded
-   account before its survivor (not in the code yet — HIL-1938). Each folded
+   account before its survivor (prepared, no live caller until
+   HIL-1950/HIL-1952). Each folded
    account's owner removes its own `userMerges` row while the survivor still
    exists, so erasure does not rely on the survivor key's `SET NULL`
    (not in the code yet — HIL-1941). Stage assignments and answers carry the
@@ -896,8 +988,9 @@ switches neither live erasure entry:
   start and honestly refuses afterward (not in the code yet — HIL-1958).
   Administrator cancellation has the same boundary
   (not in the code yet — HIL-1959).
-- The existing merge refuses when any affected account has started erasure;
-  this prepares no new merge, transfer right or receipt protocol
+- The existing merge refuses when any affected account is in the circle of an
+  open erasure operation, from preparation on (owner's decision 2026-11-12,
+  HIL-1938); this prepares no new merge, transfer right or receipt protocol
   (not in the code yet — HIL-1960).
 - React carries the corresponding states and actions
   (not in the code yet — HIL-1961). Angular carries them too
@@ -1285,7 +1378,7 @@ channel's obligation whatever that settle did, and the settle is no step of the
 operation.
 
 For erasure, missing owners leave an open obligation without a fallback
-(not in the code yet — HIL-1938); a final `RESTRICT` refusal rolls back only
+(prepared, no live caller until HIL-1950/HIL-1952); a final `RESTRICT` refusal rolls back only
 the personal owner's final transaction and leaves the operation unfinished
 (not in the code yet — HIL-1942). The first page reply and live updates must
 carry that wait or safe refusal (not in the code yet — HIL-1954). These recovery

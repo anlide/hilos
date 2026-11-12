@@ -406,6 +406,33 @@ class UserVerifications extends Objects
     }
 
     /**
+     * Whether storage still holds a challenge deleteForUser() or deleteForIdentifiers() would remove.
+     *
+     * @param int $userId Person whose challenges are asked about
+     * @param list<string> $identifiers Person's current addresses; a challenge there may carry anyone's user id, or none
+     * @return bool Whether at least one such challenge is saved
+     * @throws DatabaseException When the lookup fails
+     * @throws InvalidArgumentException When the entity query is invalid
+     */
+    public function anyForUserOrIdentifiers(int $userId, array $identifiers): bool
+    {
+        $condition = '`' . EntityUserVerification::user_id . '` = ?';
+        $params = [$userId];
+        $identifiers = array_values(array_unique($identifiers));
+        if ($identifiers !== []) {
+            $placeholders = implode(', ', array_fill(0, count($identifiers), '?'));
+            $condition .= ' OR `' . EntityUserVerification::identifier . "` IN ({$placeholders})";
+            $params = [...$params, ...$identifiers];
+        }
+
+        return static::entityClass()::get( // fresh-sql: erasure asks about saved challenges, including ones another process issued.
+            $condition,
+            $params,
+            limit: 1,
+        )->first() !== null;
+    }
+
+    /**
      * Ages every challenge on one address for the test-only sweep command.
      *
      * @param string $identifier Address whose rows are aged
