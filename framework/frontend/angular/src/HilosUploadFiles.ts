@@ -52,9 +52,14 @@ import { mirrorHilosSignal } from './hilosSignal.js'
                 }
                 @case ('uploading') {
                   <span class="visually-hidden">{{ copy.uploading }}</span>
-                  <span class="hilos-upload-percent d-inline-block text-end"
-                    >{{ file.percent }}%</span
-                  >
+                  <span class="position-relative d-inline-block">
+                    <span class="invisible" aria-hidden="true">100%</span>
+                    <span
+                      class="position-absolute top-0 end-0"
+                      [attr.data-id]="dataId() + '-file-percent'"
+                      >{{ file.percent }}%</span
+                    >
+                  </span>
                 }
                 @case ('received') {
                   <i class="bi bi-paperclip" aria-hidden="true"></i>
@@ -65,14 +70,14 @@ import { mirrorHilosSignal } from './hilosSignal.js'
                 }
               }
               <span
-                class="text-truncate hilos-upload-name"
+                class="text-truncate"
                 [title]="file.filename"
                 [attr.data-id]="dataId() + '-file-name'"
                 >{{ file.filename }}</span
               >
               <button
                 type="button"
-                class="btn-close hilos-upload-remove"
+                class="btn-close"
                 [attr.aria-label]="copy.remove + ' ' + file.filename"
                 [disabled]="disabled() || file.canceling"
                 [attr.data-id]="dataId() + '-file-remove'"

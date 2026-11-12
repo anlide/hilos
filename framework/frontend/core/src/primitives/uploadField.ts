@@ -61,7 +61,7 @@ export const HILOS_UPLOAD_FIELD_CHIP_CANCELING_CLASS = 'opacity-50'
 
 /** Overlay over the whole wrapped area while files are dragged over it. */
 export const HILOS_UPLOAD_FIELD_OVERLAY_CLASS =
-  'position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center bg-primary-subtle border border-2 border-primary rounded'
+  'position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center bg-primary-subtle border border-2 border-primary rounded z-1'
 
 const PERCENT = 100
 

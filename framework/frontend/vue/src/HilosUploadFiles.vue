@@ -59,9 +59,14 @@ function chipClass(file: HilosUploadFieldFile): string[] {
         </template>
         <template v-else-if="file.reading === 'uploading'">
           <span class="visually-hidden">{{ COPY.uploading }}</span>
-          <span class="hilos-upload-percent d-inline-block text-end"
-            >{{ file.percent }}%</span
-          >
+          <span class="position-relative d-inline-block">
+            <span class="invisible" aria-hidden="true">100%</span>
+            <span
+              class="position-absolute top-0 end-0"
+              :data-id="`${dataId}-file-percent`"
+              >{{ file.percent }}%</span
+            >
+          </span>
         </template>
         <i
           v-else-if="file.reading === 'received'"
@@ -73,14 +78,14 @@ function chipClass(file: HilosUploadFieldFile): string[] {
           <span class="visually-hidden">{{ COPY.failed }}</span>
         </template>
         <span
-          class="text-truncate hilos-upload-name"
+          class="text-truncate"
           :title="file.filename"
           :data-id="`${dataId}-file-name`"
           >{{ file.filename }}</span
         >
         <button
           type="button"
-          class="btn-close hilos-upload-remove"
+          class="btn-close"
           :aria-label="`${COPY.remove} ${file.filename}`"
           :disabled="disabled || file.canceling"
           :data-id="`${dataId}-file-remove`"

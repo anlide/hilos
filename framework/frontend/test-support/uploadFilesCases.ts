@@ -106,8 +106,12 @@ export function registerUploadFilesCases(
           'Uploading',
         )
         expect(
-          uploading.querySelector('.hilos-upload-percent')?.textContent,
+          uploading.querySelector('[data-id="upload-file-percent"]')
+            ?.textContent,
         ).toBe('62%')
+        expect(
+          uploading.querySelector('[aria-hidden="true"]')?.textContent,
+        ).toBe('100%')
         expect(uploading.querySelector('i')).toBeNull()
         expect(received.querySelector('i')?.getAttribute('aria-hidden')).toBe(
           'true',

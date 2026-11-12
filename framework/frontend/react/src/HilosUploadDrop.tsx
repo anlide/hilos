@@ -97,10 +97,11 @@ export function HilosUploadDrop({
       onDrop={drop}
       onPaste={paste}
     >
-      {children}
+      {/* input group поднимает фокусное поле до z-index 5; обёртка z-0 замыкает его в своём контексте, и оверлей z-1 лежит поверх всего слота (проба аудита E3). */}
+      <div className="position-relative z-0">{children}</div>
       {dragging && (
         <div
-          className={`${HILOS_UPLOAD_FIELD_OVERLAY_CLASS} hilos-upload-overlay`}
+          className={HILOS_UPLOAD_FIELD_OVERLAY_CLASS}
           data-id={`${dataId}-overlay`}
         >
           <span className="text-primary fw-semibold">

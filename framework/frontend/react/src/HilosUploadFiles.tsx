@@ -38,7 +38,13 @@ function chipClass(file: HilosUploadFieldFile): string {
     : `${HILOS_UPLOAD_FIELD_CHIP_CLASS} ${tone}`
 }
 
-function ChipLead({ file }: { file: HilosUploadFieldFile }) {
+function ChipLead({
+  file,
+  dataId,
+}: {
+  file: HilosUploadFieldFile
+  dataId: string
+}) {
   switch (file.reading) {
     case 'waiting':
       return (
@@ -51,8 +57,16 @@ function ChipLead({ file }: { file: HilosUploadFieldFile }) {
       return (
         <>
           <span className="visually-hidden">{COPY.uploading}</span>
-          <span className="hilos-upload-percent d-inline-block text-end">
-            {file.percent}%
+          <span className="position-relative d-inline-block">
+            <span className="invisible" aria-hidden="true">
+              100%
+            </span>
+            <span
+              className="position-absolute top-0 end-0"
+              data-id={`${dataId}-file-percent`}
+            >
+              {file.percent}%
+            </span>
           </span>
         </>
       )
@@ -93,9 +107,9 @@ export function HilosUploadFiles({ field, dataId }: HilosUploadFilesProps) {
             data-id={`${dataId}-file`}
             data-state={file.reading}
           >
-            <ChipLead file={file} />
+            <ChipLead file={file} dataId={dataId} />
             <span
-              className="text-truncate hilos-upload-name"
+              className="text-truncate"
               title={file.filename}
               data-id={`${dataId}-file-name`}
             >
@@ -103,7 +117,7 @@ export function HilosUploadFiles({ field, dataId }: HilosUploadFilesProps) {
             </span>
             <button
               type="button"
-              className="btn-close hilos-upload-remove"
+              className="btn-close"
               aria-label={`${COPY.remove} ${file.filename}`}
               disabled={disabled || file.canceling}
               data-id={`${dataId}-file-remove`}

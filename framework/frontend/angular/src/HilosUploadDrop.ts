@@ -44,7 +44,8 @@ function carriesFiles(event: DragEvent): boolean {
       (drop)="dropped($event)"
       (paste)="pasted($event)"
     >
-      <ng-content />
+      <!-- input group поднимает фокусное поле до z-index 5; обёртка z-0 замыкает его в своём контексте, и оверлей z-1 лежит поверх всего слота (проба аудита E3). -->
+      <div class="position-relative z-0"><ng-content /></div>
       @if (dragging()) {
         <div [class]="overlayClass" [attr.data-id]="dataId() + '-overlay'">
           <span class="text-primary fw-semibold"
@@ -78,7 +79,7 @@ export class HilosUploadDrop {
   /** The data-id of the wrapper; the overlay and the two live regions derive theirs from it. */
   readonly dataId = input.required<string>()
   protected readonly copy = HILOS_UPLOAD_FIELD_COPY
-  protected readonly overlayClass = `${HILOS_UPLOAD_FIELD_OVERLAY_CLASS} hilos-upload-overlay`
+  protected readonly overlayClass = HILOS_UPLOAD_FIELD_OVERLAY_CLASS
   protected readonly dragging = signal(false)
   protected readonly alert = signal('')
   protected readonly status = signal('')
