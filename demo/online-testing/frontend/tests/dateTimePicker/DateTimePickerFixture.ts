@@ -216,6 +216,23 @@ function isFactorKey(value: string): value is FactorKey {
             (input)="onToday($event)"
           />
         </div>
+        <div class="col-sm-6 col-lg-4">
+          <label class="form-label" for="fixture-min">Minimum day</label>
+          <select
+            id="fixture-min"
+            class="form-select"
+            data-id="fixture-min"
+            (change)="onMinDate($event)"
+          >
+            <option [value]="''" [selected]="minDate() === ''">none</option>
+            <option
+              [value]="'2026-10-13'"
+              [selected]="minDate() === '2026-10-13'"
+            >
+              2026-10-13
+            </option>
+          </select>
+        </div>
       </div>
       <div class="d-flex flex-wrap gap-3 mb-4">
         <div class="form-check">
@@ -255,13 +272,24 @@ function isFactorKey(value: string): value is FactorKey {
         </div>
       </div>
       <div class="mb-4">
-        <hilos-date-time-picker
-          id="fixture-picker"
-          [picker]="picker()"
-          [label]="label()"
-          dataId="fixture-picker"
-        />
+        @for (mount of mounts(); track mount) {
+          <hilos-date-time-picker
+            id="fixture-picker"
+            [picker]="picker()"
+            [label]="label()"
+            dataId="fixture-picker"
+          />
+        }
       </div>
+      <button
+        type="button"
+        class="btn btn-outline-primary"
+        data-id="fixture-mount-open-time"
+        [disabled]="!canMountOpenTime()"
+        (click)="mountOpenTime()"
+      >
+        Mount open time
+      </button>
       <button
         type="button"
         class="btn btn-outline-primary"
@@ -302,10 +330,13 @@ export class DateTimePickerFixture {
   protected readonly factors = signal<FactorKey>('en-GB')
   protected readonly zone = signal('Europe/Warsaw')
   protected readonly today = signal('2026-10-13')
+  protected readonly minDate = signal('')
   protected readonly seconds = signal(false)
   protected readonly busy = hilosSignal(this.busySignal)
   protected readonly disabled = hilosSignal(this.disabledSignal)
   protected readonly changes = signal(0)
+  private readonly mountId = signal(0)
+  protected readonly mounts = computed(() => [this.mountId()])
   protected readonly picker: WritableSignal<FixturePicker>
   private readonly snapshot: WritableSignal<FixtureSnapshot>
   protected readonly label = computed(() =>
@@ -313,6 +344,9 @@ export class DateTimePickerFixture {
   )
   protected readonly canLoad = computed(
     () => this.kind() === 'datetime' && this.zone() !== 'Nowhere/Zone',
+  )
+  protected readonly canMountOpenTime = computed(
+    () => this.kind() === 'time' && this.count() === 'single',
   )
 
   constructor() {
@@ -360,6 +394,11 @@ export class DateTimePickerFixture {
     this.replacePicker()
   }
 
+  protected onMinDate(event: Event): void {
+    this.minDate.set((event.target as HTMLSelectElement).value)
+    this.replacePicker()
+  }
+
   protected onSeconds(event: Event): void {
     const show = (event.target as HTMLInputElement).checked
     this.seconds.set(show)
@@ -379,6 +418,24 @@ export class DateTimePickerFixture {
     this.picker().setEndpointValue('start', 1792209600000)
   }
 
+  /** Prepare initial-open time controls with their lock set before mounting. */
+  protected mountOpenTime(): void {
+    if (!this.canMountOpenTime()) return
+    const previous = this.picker().state.get().result
+    const wasBusy = this.busySignal.get()
+    const wasDisabled = this.disabledSignal.get()
+    this.picker().dispose()
+    this.busySignal.set(false)
+    this.disabledSignal.set(false)
+    const current = this.createPicker()
+    if (previous.status === 'valid') current.setValue(previous.value)
+    current.calendar.open()
+    this.busySignal.set(wasBusy)
+    this.disabledSignal.set(wasDisabled)
+    this.picker.set(current)
+    this.mountId.update((id) => id + 1)
+  }
+
   private replacePicker(): void {
     this.picker().dispose()
     this.picker.set(this.createPicker())
@@ -386,6 +443,7 @@ export class DateTimePickerFixture {
 
   private createPicker(): FixturePicker {
     const currentToday = this.today()
+    const currentMin = this.minDate()
     const options = {
       count: this.count(),
       value: null,
@@ -401,6 +459,7 @@ export class DateTimePickerFixture {
           ...options,
           kind: 'date',
           today: () => currentToday,
+          ...(currentMin ? { minDate: currentMin } : {}),
         })
       case 'time':
         return createDateTimePickerController({
@@ -413,6 +472,7 @@ export class DateTimePickerFixture {
           kind: 'datetime',
           timeZone: this.zone(),
           today: () => currentToday,
+          ...(currentMin ? { minDate: currentMin } : {}),
         })
     }
   }

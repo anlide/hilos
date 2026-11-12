@@ -1,9 +1,13 @@
-// Angular's mount and lifecycle only; the shared registrar owns all expectations.
-// The component is created directly: a host declared in this file would not
-// have its signal inputs visible to TestBed.
+// The Angular entry of HilosDateTimePicker's shared field and calendar cases
+// (../../test-support/dateTimePickerFieldCases.ts,
+// ../../test-support/dateTimePickerCalendarCases.ts): the steps and expectations
+// live there, and this file only mounts the real component and drives
+// Angular's lifecycle for them. The component is created directly: a host
+// declared in this file would not have its signal inputs visible to TestBed.
 import { type ComponentFixture, TestBed } from '@angular/core/testing'
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+import { registerDateTimePickerCalendarCases } from '../../test-support/dateTimePickerCalendarCases.js'
 import {
   registerDateTimePickerFieldCases,
   type DateTimePickerFieldInput,
@@ -11,9 +15,42 @@ import {
 } from '../../test-support/dateTimePickerFieldCases.js'
 import { HilosDateTimePicker } from '../src/HilosDateTimePicker.js'
 
+let scrollDescriptor: PropertyDescriptor | undefined
+let stubbedScroll = false
+
+beforeAll(() => {
+  scrollDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'scrollIntoView',
+  )
+  // jsdom draws no layout and so implements no scrollIntoView.
+  if (typeof HTMLElement.prototype.scrollIntoView !== 'function') {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value() {},
+    })
+    stubbedScroll = true
+  }
+})
+
+afterAll(() => {
+  if (!stubbedScroll) return
+  if (scrollDescriptor === undefined) {
+    Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
+  } else {
+    Object.defineProperty(
+      HTMLElement.prototype,
+      'scrollIntoView',
+      scrollDescriptor,
+    )
+  }
+})
+
 /**
- * Write each provided input. An absent optional field is left unset: passing
- * undefined is not a value the component's input accepts.
+ * Write each provided input. A required input left out of the patch keeps its
+ * value. An optional one present in the patch is written even when undefined:
+ * that is how a case takes the form's description or selector away.
  *
  * @param fixture The mounted field.
  * @param patch The inputs to apply.
@@ -31,10 +68,10 @@ function apply(
   if (patch.label !== undefined) {
     fixture.componentRef.setInput('label', patch.label)
   }
-  if (patch.describedBy !== undefined) {
+  if (Object.hasOwn(patch, 'describedBy')) {
     fixture.componentRef.setInput('describedBy', patch.describedBy)
   }
-  if (patch.dataId !== undefined) {
+  if (Object.hasOwn(patch, 'dataId')) {
     fixture.componentRef.setInput('dataId', patch.dataId)
   }
 }
@@ -99,6 +136,11 @@ async function mountField(
 }
 
 registerDateTimePickerFieldCases(
+  'Angular',
+  { describe, it, expect },
+  mountField,
+)
+registerDateTimePickerCalendarCases(
   'Angular',
   { describe, it, expect },
   mountField,

@@ -1,7 +1,8 @@
-// HilosDateTimePicker — the segmented field for one parent-owned controller.
-// The controller arrives as an input and may be replaced; this view mirrors
-// its signals and never disposes it. The calendar, the narrow layout and
-// screen-keyboard digits are separate surfaces.
+// HilosDateTimePicker — the segmented field for one parent-owned controller,
+// with its opener and the wide calendar and time panel it draws while the
+// controller's calendar is open. The controller arrives as an input and may be
+// replaced; this view mirrors its signals, closes the calendar it leaves, and
+// never disposes it. The narrow layout and screen-keyboard digits are separate.
 // Angular keeps a static `id` on the host even when that name is an input, so
 // the host clears it: otherwise the host and the group would share one id.
 import {
@@ -18,18 +19,23 @@ import {
   inject,
   input,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core'
-import type {
-  DateTimePickerController,
-  DateTimePickerCount,
-  DateTimePickerEdge,
-  DateTimePickerEndpointSnapshot,
-  DateTimePickerKind,
-  DateTimePickerPart,
-  DateTimePickerSnapshot,
+import {
+  bindPopupDismiss,
+  revealPickerPanel,
+  type DateTimePickerCalendarSnapshot,
+  type DateTimePickerController,
+  type DateTimePickerCount,
+  type DateTimePickerEdge,
+  type DateTimePickerEndpointSnapshot,
+  type DateTimePickerKind,
+  type DateTimePickerPart,
+  type DateTimePickerSnapshot,
 } from '@hilos/core/base'
 
+import { HilosDateTimePickerPanel } from './HilosDateTimePickerPanel.js'
 import { handleDateTimePickerPartKey } from './dateTimePickerPartKeys.js'
 import { mirrorHilosSignal } from './hilosSignal.js'
 
@@ -67,12 +73,13 @@ interface FieldEndpoint {
 @Component({
   selector: 'hilos-date-time-picker',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [HilosDateTimePickerPanel],
   host: { class: 'd-block', '[attr.id]': 'null' },
   template: `
     <span class="form-label d-block small mb-1" [id]="id() + '-label'">{{
       label()
     }}</span>
-    <div #root class="position-relative">
+    <div #root class="position-relative" (keydown)="onRootKeydown($event)">
       <div
         class="input-group input-group-sm flex-nowrap"
         [class.has-validation]="invalid()"
@@ -165,6 +172,29 @@ interface FieldEndpoint {
             </div>
           }
         </div>
+        <button
+          #opener
+          type="button"
+          class="btn btn-outline-secondary"
+          aria-haspopup="dialog"
+          [class.active]="open()"
+          [disabled]="blocked()"
+          [attr.aria-label]="
+            picker().kind === 'time'
+              ? picker().labels.chooseTime
+              : picker().labels.openCalendar
+          "
+          [attr.aria-expanded]="open()"
+          [attr.aria-controls]="open() ? id() + '-panel' : null"
+          (click)="toggleCalendar($event)"
+        >
+          <i
+            class="bi"
+            [class.bi-clock]="picker().kind === 'time'"
+            [class.bi-calendar3]="picker().kind !== 'time'"
+            aria-hidden="true"
+          ></i>
+        </button>
       </div>
       @for (endpoint of endpoints(); track endpoint.edge) {
         <span
@@ -185,6 +215,17 @@ interface FieldEndpoint {
         >
           {{ reason.reason }}
         </div>
+      }
+      @if (panel(); as current) {
+        <div
+          hilosDateTimePickerPanel
+          [picker]="picker()"
+          [fieldId]="id()"
+          [calendar]="current.calendar"
+          [state]="current.state"
+          [blocked]="blocked()"
+          [describedBy]="describedBy()"
+        ></div>
       }
     </div>
   `,
@@ -208,12 +249,38 @@ export class HilosDateTimePicker {
   private readonly state = signal<FieldSnapshot | null>(null)
   protected readonly disabled = signal(false)
   protected readonly busy = signal(false)
+  private readonly calendar = signal<DateTimePickerCalendarSnapshot | null>(
+    null,
+  )
   private readonly owner = signal<FieldOwner | null>(null)
   protected readonly focused = signal<FieldFocus | null>(null)
 
   private readonly injector = inject(Injector)
   private readonly root = viewChild<ElementRef<HTMLElement>>('root')
   private readonly group = viewChild<ElementRef<HTMLElement>>('group')
+  private readonly opener = viewChild<ElementRef<HTMLButtonElement>>('opener')
+
+  /**
+   * Whether closing the calendar puts focus back on the opener. The opener,
+   * Escape and a completed date return it; a press or focus outside, and a
+   * replaced or removed controller, do not.
+   */
+  private returnFocus = true
+
+  /** Whether the last render drew the calendar open, so a closed mount moves no focus. */
+  private wasOpen = false
+
+  protected readonly open = computed(() => this.calendar()?.open ?? false)
+
+  protected readonly blocked = computed(() => this.disabled() || this.busy())
+
+  /** What the open panel draws; null while closed or before the first mirror. */
+  protected readonly panel = computed(() => {
+    const calendar = this.calendar()
+    const state = this.state()
+    if (calendar === null || !calendar.open || state === null) return null
+    return { calendar, state }
+  })
 
   /**
    * Edges of the current snapshot. The first template pass can run before the
@@ -236,7 +303,7 @@ export class HilosDateTimePicker {
   protected readonly visibleReason = computed(() => {
     const currentFocus = this.focused()
     const snapshot = this.state()
-    if (currentFocus === null || snapshot === null) return null
+    if (currentFocus === null || snapshot === null || this.open()) return null
     const current = snapshot[currentFocus.edge]
     if (current?.reason) return current
     return (
@@ -253,19 +320,54 @@ export class HilosDateTimePicker {
     // The controller arrives via input and can be replaced. Mirrors live in
     // the effect so its cleanup drops the previous instance; the view never
     // disposes a controller, and a late callback sees `active` go false.
+    // A replacement's calendar is closed before it is drawn: nobody opened it
+    // here. The first run keeps an already open calendar open.
+    let mounted = false
     effect((onCleanup) => {
       const picker = this.picker()
+      if (mounted) picker.calendar.close()
+      mounted = true
       const source: FieldOwner = { picker, active: true }
       this.owner.set(source)
       const stops = [
         mirrorHilosSignal(picker.state, this.state),
         mirrorHilosSignal(picker.disabled, this.disabled),
         mirrorHilosSignal(picker.busy, this.busy),
+        mirrorHilosSignal(picker.calendar.state, this.calendar),
       ]
       onCleanup(() => {
         for (const stop of stops) stop()
         source.active = false
+        this.returnFocus = false
+        picker.calendar.close()
       })
+    })
+    // While open, a press or focus outside the root closes without returning
+    // focus. Closing otherwise returns focus to the opener once the panel is
+    // gone; a field mounted closed has no previous state and moves nothing.
+    afterRenderEffect((onCleanup) => {
+      const open = this.open()
+      const element = this.root()?.nativeElement
+      const wasOpen = this.wasOpen
+      this.wasOpen = open
+      if (open) {
+        this.returnFocus = true
+        if (element === undefined) return
+        onCleanup(
+          bindPopupDismiss(element, () => {
+            this.returnFocus = false
+            this.picker().calendar.close()
+          }),
+        )
+      } else if (wasOpen && this.returnFocus) {
+        this.opener()?.nativeElement.focus()
+      }
+    })
+    // Native disabled can drop focus to body during the render that applies
+    // it, so the focused control is captured here, before this component's
+    // template is checked, and the dialog takes focus after that render.
+    effect(() => {
+      if (this.blocked()) untracked(() => this.keepFocusInPanel())
     })
     // Removing a focused part does not emit blur in every DOM implementation.
     // Read the snapshot so this runs after the render that dropped the part.
@@ -339,6 +441,16 @@ export class HilosDateTimePicker {
   ): void {
     const target = event.target
     if (!this.isCurrent(target, source)) return
+    if (
+      event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      event.key === 'ArrowDown'
+    ) {
+      event.preventDefault()
+      this.openFromField(source)
+      return
+    }
     if (event.ctrlKey || event.metaKey || event.altKey) return
     handleDateTimePickerPartKey(
       event,
@@ -358,6 +470,85 @@ export class HilosDateTimePicker {
   /** Native insertion never lands in a segment; screen-keyboard digits are separate. */
   protected onBeforeInput(event: Event): void {
     event.preventDefault()
+  }
+
+  /** The opener toggles the calendar. */
+  protected toggleCalendar(event: MouseEvent): void {
+    if (!this.isCurrent(event.target)) return
+    const calendar = this.picker().calendar
+    if (calendar.state.get().open) calendar.close()
+    else calendar.open()
+  }
+
+  /**
+   * Escape anywhere inside the root closes an open calendar, and only that.
+   * The close is drawn before keydown returns, as a part key's render is:
+   * without a zone the next render would come a task later, and until then
+   * the opener still reports the panel open and the panel is still there.
+   */
+  protected onRootKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape' || !this.isCurrent(event.target)) return
+    const calendar = this.picker().calendar
+    if (!calendar.state.get().open) return
+    event.preventDefault()
+    event.stopPropagation()
+    calendar.close()
+    this.injector.get(ApplicationRef).tick()
+  }
+
+  /** Alt+ArrowDown opens the calendar, or brings an open panel back into focus. */
+  private openFromField(source: FieldOwner): void {
+    const calendar = source.picker.calendar
+    if (!calendar.state.get().open) {
+      calendar.open()
+      return
+    }
+    const panel =
+      this.root()?.nativeElement.querySelector<HTMLElement>('[role="dialog"]')
+    if (panel) revealPickerPanel(panel)
+  }
+
+  /**
+   * Called while blocking is being applied, before the render that disables
+   * the controls. When focus was on one of them, the dialog takes it after
+   * that render, unless the field, its controller or the calendar changed in
+   * between, or focus has since moved somewhere on purpose.
+   */
+  private keepFocusInPanel(): void {
+    if (!this.open()) return
+    const element = this.root()?.nativeElement
+    const source = this.owner()
+    const target = element?.ownerDocument.activeElement
+    if (
+      element === undefined ||
+      source === null ||
+      !(
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLButtonElement
+      ) ||
+      !element.contains(target)
+    ) {
+      return
+    }
+    afterNextRender(
+      () => {
+        const active = element.ownerDocument.activeElement
+        if (
+          this.root()?.nativeElement === element &&
+          this.owner() === source &&
+          source.active &&
+          this.open() &&
+          element.contains(target) &&
+          target.disabled &&
+          (active === target || active === element.ownerDocument.body)
+        ) {
+          element
+            .querySelector<HTMLElement>('[role="dialog"]')
+            ?.focus({ preventScroll: true })
+        }
+      },
+      { injector: this.injector },
+    )
   }
 
   protected focusPart(
