@@ -1,3 +1,4 @@
+import { DOCUMENT } from '@angular/common'
 import {
   ChangeDetectionStrategy,
   Component,
@@ -10,6 +11,7 @@ import {
 } from '@angular/core'
 import {
   HilosDateTimePicker,
+  HilosModal,
   hilosSignal,
   mirrorHilosSignal,
 } from '@hilos/angular/base'
@@ -96,7 +98,7 @@ function isFactorKey(value: string): value is FactorKey {
 @Component({
   selector: 'date-time-picker-fixture',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosDateTimePicker],
+  imports: [HilosDateTimePicker, HilosModal],
   template: `
     <main class="container py-4" data-id="date-time-picker-fixture">
       <h1 class="h4 mb-4">DateTimePicker fixture</h1>
@@ -270,17 +272,40 @@ function isFactorKey(value: string): value is FactorKey {
             >Disabled</label
           >
         </div>
+        <div>
+          <input
+            id="fixture-dark"
+            type="checkbox"
+            class="btn-check"
+            data-id="fixture-dark"
+            [checked]="dark()"
+            (change)="onDark($event)"
+          />
+          <label class="btn btn-lg btn-outline-secondary" for="fixture-dark"
+            >Dark theme</label
+          >
+        </div>
       </div>
       <div class="mb-4">
-        @for (mount of mounts(); track mount) {
-          <hilos-date-time-picker
-            id="fixture-picker"
-            [picker]="picker()"
-            [label]="label()"
-            dataId="fixture-picker"
-          />
+        @if (!inModal()) {
+          @for (mount of mounts(); track mount) {
+            <hilos-date-time-picker
+              id="fixture-picker"
+              [picker]="picker()"
+              [label]="label()"
+              dataId="fixture-picker"
+            />
+          }
         }
       </div>
+      <button
+        type="button"
+        class="btn btn-lg btn-outline-primary"
+        data-id="fixture-open-modal"
+        (click)="inModal.set(true)"
+      >
+        Open in modal
+      </button>
       <button
         type="button"
         class="btn btn-outline-primary"
@@ -318,6 +343,59 @@ function isFactorKey(value: string): value is FactorKey {
           changes()
         }}</output>
       </div>
+      <hilos-modal [(open)]="inModal" title="Schedule maintenance">
+        @if (inModal()) {
+          <div class="mb-3">
+            <label class="form-label" for="fixture-modal-title">Title</label>
+            <input
+              id="fixture-modal-title"
+              type="text"
+              class="form-control form-control-lg"
+              data-id="fixture-modal-title"
+              value="Database upgrade"
+              data-autofocus
+            />
+          </div>
+          <hilos-date-time-picker
+            id="fixture-modal-picker"
+            [picker]="picker()"
+            [label]="label()"
+            dataId="fixture-modal-picker"
+          />
+          <p class="form-text mt-2 mb-0">Choose when maintenance starts.</p>
+          <div class="mt-3">
+            <label class="form-label" for="fixture-modal-description"
+              >What visitors read</label
+            >
+            <textarea
+              id="fixture-modal-description"
+              class="form-control form-control-lg"
+              data-id="fixture-modal-description"
+              rows="3"
+            ></textarea>
+          </div>
+          <p class="small text-body-secondary mt-2 mb-0">
+            This is an advance announcement. It does not close the service; the
+            freeze in Maintenance starts the actual work.
+          </p>
+        }
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-lg btn-secondary"
+            (click)="requestClose()"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="btn btn-lg btn-primary"
+            (click)="requestClose()"
+          >
+            Schedule
+          </button>
+        </ng-template>
+      </hilos-modal>
     </main>
   `,
 })
@@ -337,6 +415,9 @@ export class DateTimePickerFixture {
   protected readonly changes = signal(0)
   private readonly mountId = signal(0)
   protected readonly mounts = computed(() => [this.mountId()])
+  protected readonly inModal = signal(false)
+  protected readonly dark = signal(false)
+  private readonly document = inject(DOCUMENT)
   protected readonly picker: WritableSignal<FixturePicker>
   private readonly snapshot: WritableSignal<FixtureSnapshot>
   protected readonly label = computed(() =>
@@ -411,6 +492,15 @@ export class DateTimePickerFixture {
 
   protected onDisabled(event: Event): void {
     this.disabledSignal.set((event.target as HTMLInputElement).checked)
+  }
+
+  protected onDark(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked
+    this.dark.set(checked)
+    this.document.documentElement.setAttribute(
+      'data-bs-theme',
+      checked ? 'dark' : 'light',
+    )
   }
 
   protected loadValue(): void {

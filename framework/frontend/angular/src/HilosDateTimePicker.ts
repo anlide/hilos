@@ -2,7 +2,8 @@
 // with its opener and the wide calendar and time panel it draws while the
 // controller's calendar is open. The controller arrives as an input and may be
 // replaced; this view mirrors its signals, closes the calendar it leaves, and
-// never disposes it. The narrow layout and screen-keyboard digits are separate.
+// never disposes it. On a narrow screen the panel opens in flow under the
+// field, and the parts take digits from a screen keyboard at any width.
 // Angular keeps a static `id` on the host even when that name is an input, so
 // the host clears it: otherwise the host and the group would share one id.
 import {
@@ -10,6 +11,7 @@ import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
   Component,
+  DestroyRef,
   ElementRef,
   Injector,
   afterNextRender,
@@ -23,6 +25,7 @@ import {
   viewChild,
 } from '@angular/core'
 import {
+  bindNarrowScreen,
   bindPopupDismiss,
   revealPickerPanel,
   type DateTimePickerCalendarSnapshot,
@@ -36,7 +39,12 @@ import {
 } from '@hilos/core/base'
 
 import { HilosDateTimePickerPanel } from './HilosDateTimePickerPanel.js'
-import { handleDateTimePickerPartKey } from './dateTimePickerPartKeys.js'
+import {
+  DateTimePickerPartInput,
+  dateTimePickerPartInputMode,
+  handleDateTimePickerPartInput,
+  handleDateTimePickerPartKey,
+} from './dateTimePickerPartKeys.js'
 import { mirrorHilosSignal } from './hilosSignal.js'
 
 type FieldController = DateTimePickerController<
@@ -73,7 +81,7 @@ interface FieldEndpoint {
 @Component({
   selector: 'hilos-date-time-picker',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosDateTimePickerPanel],
+  imports: [HilosDateTimePickerPanel, DateTimePickerPartInput],
   host: { class: 'd-block', '[attr.id]': 'null' },
   template: `
     <span class="form-label d-block small mb-1" [id]="id() + '-label'">{{
@@ -81,7 +89,9 @@ interface FieldEndpoint {
     }}</span>
     <div #root class="position-relative" (keydown)="onRootKeydown($event)">
       <div
-        class="input-group input-group-sm flex-nowrap"
+        class="input-group flex-nowrap"
+        [class.input-group-lg]="narrow()"
+        [class.input-group-sm]="!narrow()"
         [class.has-validation]="invalid()"
       >
         <div
@@ -94,10 +104,15 @@ interface FieldEndpoint {
           [class.is-invalid]="invalid()"
           [class.border-primary]="focused() !== null && !invalid()"
           [class.bg-body-secondary]="disabled() || busy()"
+          (mousedown)="onFieldMousedown($event)"
+          (click)="onFieldClick($event)"
         >
           @for (endpoint of endpoints(); track endpoint.edge) {
             <div
-              class="d-inline-flex align-items-center flex-nowrap text-nowrap"
+              class="d-inline-flex align-items-center"
+              [class]="
+                narrow() ? 'w-100 mw-100 flex-wrap' : 'flex-nowrap text-nowrap'
+              "
             >
               @for (
                 part of endpoint.snapshot.parts;
@@ -112,11 +127,18 @@ interface FieldEndpoint {
                   }
                   <span aria-hidden="true">{{ part.prefix }}</span>
                   <input
+                    hilosDateTimePickerPartInput
                     type="text"
                     role="spinbutton"
                     autocomplete="off"
                     spellcheck="false"
-                    class="border-0 p-0 text-center"
+                    class="border-0 text-center"
+                    [class]="
+                      narrow()
+                        ? 'form-control form-control-lg w-auto px-2 py-2'
+                        : 'p-0'
+                    "
+                    [attr.inputmode]="partInputMode(part.part)"
                     [class.text-bg-primary]="
                       partFocused(endpoint.edge, part.part)
                     "
@@ -149,7 +171,14 @@ interface FieldEndpoint {
                         part.part
                       )
                     "
-                    (beforeinput)="onBeforeInput($event)"
+                    (beforeinput)="
+                      onBeforeInput(
+                        $event,
+                        endpoint.owner,
+                        endpoint.edge,
+                        part.part
+                      )
+                    "
                     (focus)="
                       focusPart(
                         $event,
@@ -225,6 +254,7 @@ interface FieldEndpoint {
           [state]="current.state"
           [blocked]="blocked()"
           [describedBy]="describedBy()"
+          [narrow]="narrow()"
         ></div>
       }
     </div>
@@ -254,6 +284,7 @@ export class HilosDateTimePicker {
   )
   private readonly owner = signal<FieldOwner | null>(null)
   protected readonly focused = signal<FieldFocus | null>(null)
+  protected readonly narrow = signal(false)
 
   private readonly injector = inject(Injector)
   private readonly root = viewChild<ElementRef<HTMLElement>>('root')
@@ -266,6 +297,16 @@ export class HilosDateTimePicker {
    * replaced or removed controller, do not.
    */
   private returnFocus = true
+
+  /**
+   * The owner a press on the field started with, and whether that press opens
+   * the calendar. Decided on mousedown from the live state and checked again
+   * on click, so a gesture that outlives its controller does nothing.
+   */
+  private fieldPress: {
+    readonly source: FieldOwner
+    readonly opens: boolean
+  } | null = null
 
   /** Whether the last render drew the calendar open, so a closed mount moves no focus. */
   private wasOpen = false
@@ -317,6 +358,14 @@ export class HilosDateTimePicker {
   )
 
   constructor() {
+    // One width subscription per field, independent of the controller. The
+    // first value arrives synchronously, so the first render uses the
+    // matching layout.
+    inject(DestroyRef).onDestroy(
+      bindNarrowScreen((value) => {
+        this.onNarrow(value)
+      }),
+    )
     // The controller arrives via input and can be replaced. Mirrors live in
     // the effect so its cleanup drops the previous instance; the view never
     // disposes a controller, and a late callback sees `active` go false.
@@ -342,17 +391,19 @@ export class HilosDateTimePicker {
         picker.calendar.close()
       })
     })
-    // While open, a press or focus outside the root closes without returning
-    // focus. Closing otherwise returns focus to the opener once the panel is
-    // gone; a field mounted closed has no previous state and moves nothing.
+    // While open and wide, a press or focus outside the root closes without
+    // returning focus; the narrow panel lies in flow and has no such close.
+    // Closing otherwise returns focus to the opener once the panel is gone; a
+    // field mounted closed has no previous state and moves nothing.
     afterRenderEffect((onCleanup) => {
       const open = this.open()
+      const narrow = this.narrow()
       const element = this.root()?.nativeElement
       const wasOpen = this.wasOpen
       this.wasOpen = open
       if (open) {
         this.returnFocus = true
-        if (element === undefined) return
+        if (element === undefined || narrow) return
         onCleanup(
           bindPopupDismiss(element, () => {
             this.returnFocus = false
@@ -423,15 +474,15 @@ export class HilosDateTimePicker {
     return Math.max(left, right)
   }
 
+  /** The screen keyboard a part offers: numeric, or none for AM/PM and offset. */
+  protected partInputMode(part: DateTimePickerPart): 'none' | 'numeric' {
+    return dateTimePickerPartInputMode(part)
+  }
+
   /**
    * Browser shortcuts are not this field's keys. Tab and Enter are not
    * canceled either: a handler must not return false, which Angular would
    * treat as preventDefault.
-   *
-   * A completed digit can insert a part that is not in the DOM yet. Register
-   * the focus move with `afterNextRender`, draw this component, then tick so
-   * that callback runs before keydown returns. The next key then reaches the
-   * part this render added.
    */
   protected onKeydown(
     event: KeyboardEvent,
@@ -460,16 +511,33 @@ export class HilosDateTimePicker {
       () => this.group()?.nativeElement ?? null,
       () => this.isCurrent(target, source),
       (callback) => {
-        afterNextRender(callback, { injector: this.injector })
-        this.injector.get(ChangeDetectorRef).detectChanges()
-        this.injector.get(ApplicationRef).tick()
+        this.renderNow(callback)
       },
     )
   }
 
-  /** Native insertion never lands in a segment; screen-keyboard digits are separate. */
-  protected onBeforeInput(event: Event): void {
-    event.preventDefault()
+  /**
+   * A screen-keyboard digit or deletion takes the path a key takes. Native
+   * insertion is always canceled, here and by the part's own directive.
+   */
+  protected onBeforeInput(
+    event: InputEvent,
+    source: FieldOwner,
+    edge: DateTimePickerEdge,
+    part: DateTimePickerPart,
+  ): void {
+    const target = event.target
+    handleDateTimePickerPartInput(
+      event,
+      source.picker,
+      edge,
+      part,
+      () => this.group()?.nativeElement ?? null,
+      () => this.isCurrent(target, source),
+      (callback) => {
+        this.renderNow(callback)
+      },
+    )
   }
 
   /** The opener toggles the calendar. */
@@ -478,6 +546,45 @@ export class HilosDateTimePicker {
     const calendar = this.picker().calendar
     if (calendar.state.get().open) calendar.close()
     else calendar.open()
+  }
+
+  /**
+   * Narrow only: a press on the closed field with no part focused opens the
+   * calendar instead of focusing a part, so the press is decided here, from
+   * the live state, and the focus it would move is canceled.
+   */
+  protected onFieldMousedown(event: MouseEvent): void {
+    const source = this.owner()
+    if (source === null) return
+    const opens =
+      this.narrow() &&
+      !source.picker.calendar.state.get().open &&
+      this.focused() === null &&
+      this.isCurrent(event.target, source)
+    this.fieldPress = { source, opens }
+    if (opens) event.preventDefault()
+  }
+
+  /**
+   * Narrow only: the press decided on mousedown opens the calendar, or closes
+   * an open one. Focus stays in a pressed part and returns to the opener
+   * otherwise. A press whose owner has since been replaced does nothing.
+   */
+  protected onFieldClick(event: MouseEvent): void {
+    const press = this.fieldPress
+    this.fieldPress = null
+    if (
+      press === null ||
+      !this.narrow() ||
+      !this.isCurrent(event.target, press.source)
+    ) {
+      return
+    }
+    if (press.opens) press.source.picker.calendar.open()
+    else if (press.source.picker.calendar.state.get().open) {
+      this.returnFocus = !(event.target instanceof HTMLInputElement)
+      press.source.picker.calendar.close()
+    }
   }
 
   /**
@@ -506,6 +613,58 @@ export class HilosDateTimePicker {
     const panel =
       this.root()?.nativeElement.querySelector<HTMLElement>('[role="dialog"]')
     if (panel) revealPickerPanel(panel)
+  }
+
+  /**
+   * A width change keeps the open panel, its value and its draft, but a
+   * control only one width draws can hold focus. It is captured here, before
+   * the render that removes it, and the dialog takes focus after that render
+   * when focus fell to the body, unless the field, its controller or the
+   * calendar changed in between.
+   */
+  private onNarrow(value: boolean): void {
+    if (value === this.narrow()) return
+    const element = this.root()?.nativeElement
+    const source = this.owner()
+    const target = element?.ownerDocument.activeElement
+    if (
+      this.open() &&
+      element !== undefined &&
+      source !== null &&
+      target instanceof HTMLElement &&
+      element.contains(target)
+    ) {
+      afterNextRender(
+        () => {
+          if (
+            this.root()?.nativeElement === element &&
+            this.owner() === source &&
+            source.active &&
+            this.open() &&
+            !target.isConnected &&
+            element.ownerDocument.activeElement === element.ownerDocument.body
+          ) {
+            element
+              .querySelector<HTMLElement>('[role="dialog"]')
+              ?.focus({ preventScroll: true })
+          }
+        },
+        { injector: this.injector },
+      )
+    }
+    this.narrow.set(value)
+  }
+
+  /**
+   * A completed digit can insert a part that is not in the DOM yet. Register
+   * `callback` with `afterNextRender`, draw this component, then tick so that
+   * it runs before the event returns. The next key then reaches the part this
+   * render added.
+   */
+  private renderNow(callback: () => void): void {
+    afterNextRender(callback, { injector: this.injector })
+    this.injector.get(ChangeDetectorRef).detectChanges()
+    this.injector.get(ApplicationRef).tick()
   }
 
   /**

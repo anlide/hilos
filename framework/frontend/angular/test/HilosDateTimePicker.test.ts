@@ -1,6 +1,7 @@
-// The Angular entry of HilosDateTimePicker's shared field and calendar cases
-// (../../test-support/dateTimePickerFieldCases.ts,
-// ../../test-support/dateTimePickerCalendarCases.ts): the steps and expectations
+// The Angular entry of HilosDateTimePicker's shared field, calendar and narrow
+// cases (../../test-support/dateTimePickerFieldCases.ts,
+// ../../test-support/dateTimePickerCalendarCases.ts,
+// ../../test-support/dateTimePickerNarrowCases.ts): the steps and expectations
 // live there, and this file only mounts the real component and drives
 // Angular's lifecycle for them. The component is created directly: a host
 // declared in this file would not have its signal inputs visible to TestBed.
@@ -13,6 +14,7 @@ import {
   type DateTimePickerFieldInput,
   type DateTimePickerFieldView,
 } from '../../test-support/dateTimePickerFieldCases.js'
+import { registerDateTimePickerNarrowCases } from '../../test-support/dateTimePickerNarrowCases.js'
 import { HilosDateTimePicker } from '../src/HilosDateTimePicker.js'
 
 let scrollDescriptor: PropertyDescriptor | undefined
@@ -141,6 +143,11 @@ registerDateTimePickerFieldCases(
   mountField,
 )
 registerDateTimePickerCalendarCases(
+  'Angular',
+  { describe, it, expect },
+  mountField,
+)
+registerDateTimePickerNarrowCases(
   'Angular',
   { describe, it, expect },
   mountField,

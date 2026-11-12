@@ -964,7 +964,6 @@ changes. If the responsive render removes the focused control and focus falls
 to the document body, move focus to the dialog after rendering without
 scrolling. Leave focus alone when it is still on a connected target. The
 existing picker replacement and unmount rules continue to apply.
-(not in the code yet — HIL-1978)
 
 ## Core API examples
 

@@ -1,9 +1,10 @@
-// HilosDateTimePickerPanel — the wide calendar and time panel of one field.
-// Internal to HilosDateTimePicker and not exported: the field draws it while
-// the controller's calendar is open and hands down the snapshots it mirrors.
-// The draft, the grid and every check stay in the controller; this view binds
-// DOM, focus and lifecycle. The host element is the dialog itself. The narrow
-// layout, its edge buttons and Done, and screen-keyboard digits are separate.
+// HilosDateTimePickerPanel — the calendar and time panel of one field, at
+// either width. Internal to HilosDateTimePicker and not exported: the field
+// draws it while the controller's calendar is open and hands down the
+// snapshots it mirrors and its width. The draft, the grid and every check stay
+// in the controller; this view binds DOM, focus and lifecycle. The host element
+// is the dialog itself. The narrow panel lies in flow under the field, with
+// edge buttons and Done; the parts take digits from a screen keyboard.
 import {
   ApplicationRef,
   ChangeDetectionStrategy,
@@ -17,6 +18,7 @@ import {
   signal,
 } from '@angular/core'
 import {
+  revealNarrowPickerPanel,
   revealPickerPanel,
   type CalendarDate,
   type DateTimePickerCalendarDay,
@@ -31,7 +33,12 @@ import {
   type DateTimePickerSnapshot,
 } from '@hilos/core/base'
 
-import { handleDateTimePickerPartKey } from './dateTimePickerPartKeys.js'
+import {
+  DateTimePickerPartInput,
+  dateTimePickerPartInputMode,
+  handleDateTimePickerPartInput,
+  handleDateTimePickerPartKey,
+} from './dateTimePickerPartKeys.js'
 
 type PanelController = DateTimePickerController<
   DateTimePickerKind,
@@ -71,13 +78,20 @@ interface PanelFocus {
   readonly part: DateTimePickerPart
 }
 
-/** The wide month grid, time rows, reasons and offset choice of one field. */
+/** The month grid, time rows, reasons and offset choice of one field. */
 @Component({
   selector: 'div[hilosDateTimePickerPanel]',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [DateTimePickerPartInput],
   host: {
-    class:
-      'position-absolute top-100 start-0 z-3 mt-1 border rounded-3 shadow bg-body p-2',
+    class: 'border rounded-3 bg-body p-2',
+    '[class.position-absolute]': '!narrow()',
+    '[class.top-100]': '!narrow()',
+    '[class.start-0]': '!narrow()',
+    '[class.z-3]': '!narrow()',
+    '[class.mt-1]': '!narrow()',
+    '[class.shadow]': '!narrow()',
+    '[class.mt-2]': 'narrow()',
     '[attr.role]': "'dialog'",
     '[attr.tabindex]': "'-1'",
     '[id]': "fieldId() + '-panel'",
@@ -86,10 +100,38 @@ interface PanelFocus {
   },
   template: `
     @if (calendar().grid; as grid) {
+      @if (narrow() && picker().count === 'range') {
+        <div class="row g-2 mb-2">
+          @for (endpoint of endpoints(); track endpoint.edge) {
+            <div class="col-6">
+              <button
+                type="button"
+                class="btn btn-sm w-100 text-start"
+                [class]="
+                  calendar().activeEdge === endpoint.edge
+                    ? 'btn-outline-primary active'
+                    : 'btn-outline-secondary'
+                "
+                [attr.aria-pressed]="calendar().activeEdge === endpoint.edge"
+                (click)="setActiveEdge($event, endpoint.edge)"
+              >
+                <span class="d-block small opacity-75">{{
+                  picker().labels[endpoint.edge === 'start' ? 'from' : 'to']
+                }}</span>
+                <span class="small">{{ endpointText(endpoint.snapshot) }}</span>
+              </button>
+            </div>
+          }
+        </div>
+      }
       <div class="d-flex align-items-center gap-1 mb-1">
         <button
           type="button"
-          class="btn btn-sm btn-link text-body-secondary"
+          [class]="
+            narrow()
+              ? 'btn btn-lg btn-outline-secondary'
+              : 'btn btn-sm btn-link text-body-secondary'
+          "
           [attr.aria-label]="picker().labels.previousMonth"
           [disabled]="!grid.canPreviousMonth"
           (click)="showPreviousMonth($event)"
@@ -105,7 +147,11 @@ interface PanelFocus {
         </div>
         <button
           type="button"
-          class="btn btn-sm btn-link text-body-secondary"
+          [class]="
+            narrow()
+              ? 'btn btn-lg btn-outline-secondary'
+              : 'btn btn-sm btn-link text-body-secondary'
+          "
           [attr.aria-label]="picker().labels.nextMonth"
           [disabled]="!grid.canNextMonth"
           (click)="showNextMonth($event)"
@@ -155,7 +201,8 @@ interface PanelFocus {
                     <button
                       type="button"
                       role="gridcell"
-                      class="btn w-100 btn-sm px-2"
+                      class="btn w-100"
+                      [class]="narrow() ? 'btn-lg px-0' : 'btn-sm px-2'"
                       [class.btn-primary]="day.selected"
                       [class.text-body-tertiary]="!day.selected && day.disabled"
                       [class.border-primary]="
@@ -205,11 +252,18 @@ interface PanelFocus {
             @if (part.part === 'minute' || part.part === 'second') {
               <span class="text-body-secondary" aria-hidden="true">:</span>
             }
-            <div class="d-flex flex-column align-items-center">
+            <div
+              class="d-flex flex-column align-items-center"
+              [class.gap-1]="narrow()"
+            >
               <button
                 type="button"
                 tabindex="-1"
-                class="btn btn-link btn-sm p-0 lh-1 text-body-secondary"
+                [class]="
+                  narrow()
+                    ? 'btn btn-lg btn-outline-secondary'
+                    : 'btn btn-link btn-sm p-0 lh-1 text-body-secondary'
+                "
                 [attr.aria-label]="
                   picker().labels.increase +
                   ' ' +
@@ -221,11 +275,18 @@ interface PanelFocus {
                 <i class="bi bi-chevron-up" aria-hidden="true"></i>
               </button>
               <input
+                hilosDateTimePickerPartInput
                 type="text"
                 role="spinbutton"
                 autocomplete="off"
                 spellcheck="false"
-                class="border-0 p-0 text-center"
+                class="border-0 text-center"
+                [class]="
+                  narrow()
+                    ? 'form-control form-control-lg w-auto px-2 py-2'
+                    : 'p-0'
+                "
+                [attr.inputmode]="partInputMode(part.part)"
                 [class.text-bg-primary]="partFocused(row.edge, part.part)"
                 [class.bg-transparent]="!partFocused(row.edge, part.part)"
                 [class.text-body-tertiary]="
@@ -244,7 +305,7 @@ interface PanelFocus {
                 [attr.aria-invalid]="row.invalid ? 'true' : null"
                 [attr.aria-describedby]="description(row.edge)"
                 [disabled]="blocked()"
-                (beforeinput)="onBeforeInput($event)"
+                (beforeinput)="onBeforeInput($event, row.edge, part.part)"
                 (focus)="focusPart($event, row.edge, part.part)"
                 (blur)="leavePart($event, row.edge, part.part)"
                 (keydown)="onPartKeydown($event, row.edge, part.part)"
@@ -252,7 +313,11 @@ interface PanelFocus {
               <button
                 type="button"
                 tabindex="-1"
-                class="btn btn-link btn-sm p-0 lh-1 text-body-secondary"
+                [class]="
+                  narrow()
+                    ? 'btn btn-lg btn-outline-secondary'
+                    : 'btn btn-link btn-sm p-0 lh-1 text-body-secondary'
+                "
                 [attr.aria-label]="
                   picker().labels.decrease +
                   ' ' +
@@ -279,7 +344,8 @@ interface PanelFocus {
       }
       @if (endpoint.snapshot.offsetChoices.length > 0) {
         <div
-          class="mb-2 btn-group-vertical btn-group-sm w-100"
+          class="mb-2 btn-group-vertical w-100"
+          [class]="narrow() ? 'btn-group-lg' : 'btn-group-sm'"
           role="radiogroup"
           [attr.aria-label]="
             partLabel(endpoint.edge, picker().labels.chooseOffset)
@@ -308,6 +374,15 @@ interface PanelFocus {
           }
         </div>
       }
+    }
+    @if (narrow()) {
+      <button
+        type="button"
+        class="btn btn-lg btn-outline-secondary w-100 mt-2"
+        (click)="done($event)"
+      >
+        {{ picker().labels.done }}
+      </button>
     }
     @if (picker().count === 'range') {
       <span class="visually-hidden" aria-live="polite">{{
@@ -341,6 +416,9 @@ export class HilosDateTimePickerPanel {
   /** Extra description ids supplied by the mounting form. */
   readonly describedBy = input<string>()
 
+  /** The field's narrow layout: in flow under the field, edge buttons and Done. */
+  readonly narrow = input.required<boolean>()
+
   protected readonly focused = signal<PanelFocus | null>(null)
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef)
@@ -363,15 +441,21 @@ export class HilosDateTimePickerPanel {
 
   /**
    * Date fields have no time row; time draws both edges. A datetime range
-   * draws the end's time once that edge has a complete date.
+   * draws the end's time once that edge has a complete date. Under a narrow
+   * grid only the active edge's row is drawn.
    */
   protected readonly timeRows = computed((): readonly PanelTimeRow[] => {
     const picker = this.picker()
     if (picker.kind === 'date') return []
+    const calendar = this.calendar()
+    const activeOnly = this.narrow() && calendar.grid !== null
     return this.endpoints()
-      .filter(
-        ({ edge, snapshot }) =>
-          edge === 'start' || picker.kind === 'time' || this.hasDate(snapshot),
+      .filter(({ edge, snapshot }) =>
+        activeOnly
+          ? edge === calendar.activeEdge
+          : edge === 'start' ||
+            picker.kind === 'time' ||
+            this.hasDate(snapshot),
       )
       .map(({ edge, snapshot }) => ({
         edge,
@@ -383,10 +467,19 @@ export class HilosDateTimePickerPanel {
 
   constructor() {
     // Mounted on open: bring the panel into view and focus its active day or
-    // first time part, or the dialog itself when the panel is blocked.
+    // first time part, or the dialog itself when the panel is blocked. A
+    // narrow panel brings the field's label to the top and focuses the day,
+    // or the dialog when there is no grid.
     afterNextRender(() => {
       const element = this.host.nativeElement
-      if (this.isCurrent(element)) revealPickerPanel(element)
+      if (!this.isCurrent(element)) return
+      if (this.narrow()) {
+        revealNarrowPickerPanel(
+          element,
+          element.ownerDocument.getElementById(`${this.fieldId()}-label`) ??
+            element,
+        )
+      } else revealPickerPanel(element)
     })
   }
 
@@ -443,11 +536,34 @@ export class HilosDateTimePickerPanel {
     return text
   }
 
+  /** The screen keyboard a part offers: numeric, or none for AM/PM and offset. */
+  protected partInputMode(part: DateTimePickerPart): 'none' | 'numeric' {
+    return dateTimePickerPartInputMode(part)
+  }
+
+  /** An edge button's value: every part of that edge as the field shows it. */
+  protected endpointText(snapshot: PanelEndpoint): string {
+    return snapshot.parts
+      .map((part) => part.prefix + (part.text || part.placeholder))
+      .join('')
+  }
+
   /** The edge the next day selection addresses, spoken for a range. */
   protected activeEdgeText(): string {
     const labels = this.picker().labels
     const edge = this.calendar().activeEdge === 'start' ? 'from' : 'to'
     return `${labels.chooseDate}: ${labels[edge]}`
+  }
+
+  protected setActiveEdge(event: MouseEvent, edge: DateTimePickerEdge): void {
+    if (this.isCurrent(event.currentTarget)) {
+      this.picker().calendar.setActiveEdge(edge)
+    }
+  }
+
+  /** Done closes the calendar; the value stays as the draft left it. */
+  protected done(event: MouseEvent): void {
+    if (this.isCurrent(event.currentTarget)) this.picker().calendar.close()
   }
 
   protected showPreviousMonth(event: MouseEvent): void {
@@ -541,9 +657,27 @@ export class HilosDateTimePickerPanel {
     )
   }
 
-  /** Native insertion never lands in a part; screen-keyboard digits are separate. */
-  protected onBeforeInput(event: Event): void {
-    event.preventDefault()
+  /**
+   * A screen-keyboard digit or deletion takes the path a key takes, with this
+   * panel as the container. Native insertion is always canceled.
+   */
+  protected onBeforeInput(
+    event: InputEvent,
+    edge: DateTimePickerEdge,
+    part: DateTimePickerPart,
+  ): void {
+    const target = event.currentTarget
+    handleDateTimePickerPartInput(
+      event,
+      this.picker(),
+      edge,
+      part,
+      () => this.host.nativeElement,
+      () => this.isCurrent(target),
+      (callback) => {
+        this.afterRender(callback)
+      },
+    )
   }
 
   protected focusPart(
