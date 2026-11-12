@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Closure;
 use Hilos\AdminViewMode\AdminViewModeLatchFile;
 use Hilos\AdminViewMode\AdminViewModeLatchTable;
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
@@ -75,6 +76,15 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
     private const string LATE_TABLE = 'hilos_fw_restore_late';
     private const string CHILD_TABLE = 'hilos_fw_restore_child';
     private const string INDEPENDENT_TABLE = 'hilos_fw_restore_independent';
+
+    /** Chat 115 silence period without its named CHECK, as Status declares it (HIL-1886). */
+    private const string SILENCE_PERIOD_COLUMNS = '`id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, `public_id` CHAR(32) NOT NULL,'
+        . ' `started_at` BIGINT NOT NULL, `ended_at` BIGINT NOT NULL, PRIMARY KEY (`id`),'
+        . ' UNIQUE KEY `uk_status_silence_period_public` (`public_id`), KEY `idx_status_silence_period_ended` (`ended_at`, `id`)';
+
+    /** Framework i18n reflow stub without its named CHECK. */
+    private const string I18N_REFLOW_COLUMNS = '`id` TINYINT UNSIGNED NOT NULL,'
+        . ' `fingerprint` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, PRIMARY KEY (`id`)';
 
     /** Fixture backup id; also the stem of the stored archive/sidecar names. */
     private const string BACKUP_ID = '2026-08-08_12-00-00';
@@ -321,6 +331,153 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         yield 'boolean type' => ['MODIFY confirmed SMALLINT NOT NULL DEFAULT FALSE'];
         yield 'column collation' => ['MODIFY label VARCHAR(10) COLLATE latin1_general_ci'];
         yield 'table collation' => ['DEFAULT CHARSET=latin1 COLLATE=latin1_general_ci'];
+    }
+
+    /**
+     * A proven late table with a modeled named CHECK is recreated by UP without its rows, and MariaDB enforces it again.
+     *
+     * @param string $table Late table body, as its successful UP CREATE declares it
+     * @param string $constraint Name of its CHECK
+     * @param string $admitted Values of an old late row the CHECK admits
+     * @param string $refused Values of a row the CHECK refuses
+     */
+    #[DataProvider('namedCheckForms')]
+    public function testFullRecreatesANamedCheckTableWithoutItsRows(
+        string $table,
+        string $constraint,
+        string $admitted,
+        string $refused,
+    ): void {
+        $this->prepareCheckedLateTable($table, $table);
+        // Taken before the old row: its explicit id moves the AUTO_INCREMENT counter that a recreated table does not carry.
+        $physical = Database::sql('SHOW CREATE TABLE `' . self::LATE_TABLE . '`')->field('Create Table');
+        $this->assertStringContainsString('CONSTRAINT `' . $constraint . '` CHECK', $physical);
+        Database::sql('INSERT INTO `' . self::LATE_TABLE . '` VALUES ' . $admitted);
+        $marker = DatabaseMarker::current();
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+
+            $this->assertSame([], Database::sql('SELECT * FROM `' . self::LATE_TABLE . '`')->rows());
+            $this->assertSame($physical, Database::sql('SHOW CREATE TABLE `' . self::LATE_TABLE . '`')->field('Create Table'));
+            $this->assertSame([['1', 'archive']], $this->probeRows());
+            $this->assertSame([['id' => '13']], Database::sql('SELECT * FROM `' . self::INDEPENDENT_TABLE . '`')->rows());
+            $this->assertSame([self::ARCHIVE_MIGRATION_INDEX, self::CODE_MIGRATION_INDEX], Migration::appliedIndices());
+            $this->assertEquals($marker, DatabaseMarker::current());
+            try {
+                Database::sql('INSERT INTO `' . self::LATE_TABLE . '` VALUES ' . $refused);
+                $this->fail('The recreated CHECK must refuse a violating row');
+            } catch (DatabaseException $refusal) {
+                $this->assertStringContainsString('CONSTRAINT `' . $constraint . '` failed', $refusal->getMessage());
+            }
+            $this->assertSame([], Database::sql('SELECT * FROM `' . self::LATE_TABLE . '`')->rows());
+        } finally {
+            DatabaseMarker::clear();
+        }
+    }
+
+    /** @return iterable<string, array{string, string, string, string}> Late table, its CHECK, a row it admits, a row it refuses */
+    public static function namedCheckForms(): iterable
+    {
+        yield 'chat silence period' => [self::SILENCE_PERIOD_COLUMNS
+            . ', CONSTRAINT `ck_status_silence_period_bounds` CHECK (`ended_at` > `started_at`)',
+            'ck_status_silence_period_bounds', "(1, 'old', 10, 20)", "(2, 'refused', 20, 20)"];
+        yield 'i18n reflow' => [self::I18N_REFLOW_COLUMNS . ', CONSTRAINT `chk_i18n_reflow_one_row` CHECK (`id` = 1)',
+            'chk_i18n_reflow_one_row', "(1, 'old')", "(2, 'refused')"];
+    }
+
+    /**
+     * @param string $source Late table body of the successful UP CREATE
+     * @param string $live Live late table body that differs from it in a named CHECK
+     * @param string $row Values of a late row the live CHECK admits
+     * @param string $reason Refusal detail
+     */
+    #[DataProvider('namedCheckMismatches')]
+    public function testNamedCheckMismatchRefusesBeforeRestoreWrites(string $source, string $live, string $row, string $reason): void
+    {
+        $this->prepareCheckedLateTable($source, $live);
+        Database::sql('INSERT INTO `' . self::LATE_TABLE . '` VALUES ' . $row);
+        $this->assertCheckedLateRefuses($reason);
+    }
+
+    /** @return iterable<string, array{string, string, string, string}> Missing, additional, renamed, changed and unsupported CHECK */
+    public static function namedCheckMismatches(): iterable
+    {
+        $differs = 'live structure differs from its successful CREATE/ALTER lineage';
+        $unsupported = 'Unsupported structural CHECK comparison';
+        $periods = self::SILENCE_PERIOD_COLUMNS . ', CONSTRAINT `ck_status_silence_period_';
+        $bounds = $periods . 'bounds` CHECK (`ended_at` > `started_at`)';
+        $period = "(1, 'old', 10, 20)";
+        yield 'chat silence period, missing' => [$bounds, self::SILENCE_PERIOD_COLUMNS, $period, $differs];
+        yield 'chat silence period, additional' => [$bounds,
+            $bounds . ', CONSTRAINT `ck_status_silence_period_start` CHECK (`started_at` = 10)', $period, $differs];
+        yield 'chat silence period, renamed' => [$bounds, $periods . 'span` CHECK (`ended_at` > `started_at`)', $period, $differs];
+        yield 'chat silence period, changed' => [$bounds, $periods . 'bounds` CHECK (`started_at` > `ended_at`)', "(1, 'old', 20, 10)",
+            $differs];
+        $reversed = $periods . 'bounds` CHECK (`started_at` < `ended_at`)';
+        yield 'chat silence period, unsupported live' => [$bounds, $reversed, $period, $unsupported];
+        yield 'chat silence period, unsupported source' => [$reversed, $reversed, $period, $unsupported];
+        $reflows = self::I18N_REFLOW_COLUMNS . ', CONSTRAINT `chk_i18n_reflow_';
+        $oneRow = $reflows . 'one_row` CHECK (`id` = 1)';
+        $reflow = "(1, 'old')";
+        yield 'i18n reflow, missing' => [$oneRow, self::I18N_REFLOW_COLUMNS, $reflow, $differs];
+        yield 'i18n reflow, additional' => [$oneRow, $oneRow . ', CONSTRAINT `chk_i18n_reflow_first_row` CHECK (`id` = 1)', $reflow, $differs];
+        yield 'i18n reflow, renamed' => [$oneRow, $reflows . 'single_row` CHECK (`id` = 1)', $reflow, $differs];
+        yield 'i18n reflow, changed' => [$oneRow, $reflows . 'one_row` CHECK (`id` = 2)', "(2, 'old')", $differs];
+        $atMostOne = $reflows . 'one_row` CHECK (`id` <= 1)';
+        yield 'i18n reflow, unsupported live' => [$oneRow, $atMostOne, $reflow, $unsupported];
+        yield 'i18n reflow, unsupported source' => [$atMostOne, $atMostOne, $reflow, $unsupported];
+    }
+
+    /**
+     * The UP that would recreate the named CHECK table runs in a session that does not enforce CHECK constraints.
+     * The restore reads that session's state through the same physical connection 0 and does not switch it.
+     *
+     * @param string $table Late table body, as its successful UP CREATE declares it
+     * @param string $constraint Name of its CHECK
+     * @param string $admitted Values of an old late row the CHECK admits
+     */
+    #[DataProvider('namedCheckForms')]
+    public function testUnenforcedNamedCheckRefusesBeforeRestoreWrites(string $table, string $constraint, string $admitted): void
+    {
+        $this->prepareCheckedLateTable($table, $table);
+        Database::sql('INSERT INTO `' . self::LATE_TABLE . '` VALUES ' . $admitted);
+        Database::sql('SET SESSION check_constraint_checks = OFF', index: DatabaseConnectionDefaults::PRIMARY_INDEX);
+        try {
+            $this->assertCheckedLateRefuses('Full restore planner, connection 0: Object ' . $this->databaseName() . '.'
+                . self::LATE_TABLE . ': cleanup relying on named CHECK ' . $constraint
+                . ' requires check_constraint_checks=ON in the session that executes UP; in that session it is OFF');
+        } finally {
+            Database::sql('SET SESSION check_constraint_checks = ON', index: DatabaseConnectionDefaults::PRIMARY_INDEX);
+        }
+    }
+
+    /**
+     * Enforcement proven at preparation and switched off before the first write invalidates the prepared proof.
+     *
+     * @param string $table Late table body, as its successful UP CREATE declares it
+     * @param string $constraint Name of its CHECK
+     * @param string $admitted Values of an old late row the CHECK admits
+     */
+    #[DataProvider('namedCheckForms')]
+    public function testCheckEnforcementChangedAfterPreparationRefusesAtTheRestoreBoundary(
+        string $table,
+        string $constraint,
+        string $admitted,
+    ): void {
+        $this->prepareCheckedLateTable($table, $table);
+        $this->assertStringContainsString('CONSTRAINT `' . $constraint . '` CHECK',
+            Database::sql('SHOW CREATE TABLE `' . self::LATE_TABLE . '`')->field('Create Table'));
+        Database::sql('INSERT INTO `' . self::LATE_TABLE . '` VALUES ' . $admitted);
+        try {
+            $this->assertCheckedLateRefuses('The physical schema or its dependencies changed after full restore preparation',
+                static function (RestorePhase $phase): void {
+                    if ($phase === RestorePhase::IMPORTING) {
+                        Database::sql('SET SESSION check_constraint_checks = OFF', index: DatabaseConnectionDefaults::PRIMARY_INDEX);
+                    }
+                });
+        } finally {
+            Database::sql('SET SESSION check_constraint_checks = ON', index: DatabaseConnectionDefaults::PRIMARY_INDEX);
+        }
     }
 
     /** A real creator archive rolls back both schemas, with only the primary track recreating late objects. */
@@ -1868,13 +2025,16 @@ SQL);
         DatabaseMarker::put(new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', 1788256800123));
     }
 
-    /** @param string $reason Exact proof that should refuse this restore */
-    private function assertLatePreparationRefuses(string $reason): void
+    /**
+     * @param string $reason Exact proof that should refuse this restore
+     * @param ?Closure(RestorePhase): void $onPhase Restore phase observer, which can change evidence before the first write
+     */
+    private function assertLatePreparationRefuses(string $reason, ?Closure $onPhase = null): void
     {
         $history = Database::sql('SELECT * FROM migration ORDER BY `index`')->rows();
         $marker = DatabaseMarker::current();
         try {
-            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW, null, $onPhase);
             $this->fail('Unproven cleanup must refuse before any restore write');
         } catch (RestoreFailedException $failure) {
             $this->assertFalse($failure->databaseTouched());
@@ -1885,6 +2045,40 @@ SQL);
         } finally {
             DatabaseMarker::clear();
         }
+    }
+
+    /**
+     * Raises the late fixture with one empty late table whose successful UP CREATE carries a named CHECK.
+     *
+     * @param string $source Late table body of the UP CREATE the target history records as applied
+     * @param string $live Late table body the target actually carries
+     */
+    private function prepareCheckedLateTable(string $source, string $live): void
+    {
+        $this->prepareLateTables();
+        // The child's foreign key holds the plain late table, and its INT reference fits neither CHECK table key.
+        Database::sql('DROP TABLE `' . self::CHILD_TABLE . '`');
+        Database::sql('DROP TABLE `' . self::LATE_TABLE . '`');
+        FsPath::write($this->storeRoot . '/migrations/' . self::MIGRATION_TRACK . '/' . self::CODE_MIGRATION_INDEX . '_up.sql',
+            'CREATE TABLE `' . self::LATE_TABLE . '` (' . $source . ");\n");
+        Database::sql('CREATE TABLE `' . self::LATE_TABLE . '` (' . $live . ')');
+    }
+
+    /**
+     * Refuses as {@see assertLatePreparationRefuses()} does, and also keeps the late table, its row and the independent object.
+     *
+     * @param string $reason Exact proof that should refuse this restore
+     * @param ?Closure(RestorePhase): void $onPhase Restore phase observer, which can change evidence before the first write
+     */
+    private function assertCheckedLateRefuses(string $reason, ?Closure $onPhase = null): void
+    {
+        $physical = Database::sql('SHOW CREATE TABLE `' . self::LATE_TABLE . '`')->field('Create Table');
+        $rows = Database::sql('SELECT * FROM `' . self::LATE_TABLE . '`')->rows();
+        $this->assertCount(1, $rows);
+        $this->assertLatePreparationRefuses($reason, $onPhase);
+        $this->assertSame($physical, Database::sql('SHOW CREATE TABLE `' . self::LATE_TABLE . '`')->field('Create Table'));
+        $this->assertSame($rows, Database::sql('SELECT * FROM `' . self::LATE_TABLE . '`')->rows());
+        $this->assertSame([['id' => '13']], Database::sql('SELECT * FROM `' . self::INDEPENDENT_TABLE . '`')->rows());
     }
 
     /**

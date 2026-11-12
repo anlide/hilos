@@ -133,7 +133,8 @@ final readonly class FullRestorePlanner
      * @param array<int, MigrationTargetEvidence> $group Destinations sharing one physical execution source
      * @param FullRestoreSchemaSnapshot $schema Physical catalog
      * @return list<TableDrop> Proven candidates before dependency sorting
-     * @throws RestoreFailedException When lineage or replay is ambiguous
+     * @throws RestoreFailedException When lineage or replay is ambiguous, or the source session does not prove
+     *     the enforcement a named CHECK in cleanup or in a post-import CREATE relies on
      */
     private static function group(array $group, FullRestoreSchemaSnapshot $schema): array
     {
@@ -217,6 +218,11 @@ final readonly class FullRestorePlanner
                 throw new RestoreFailedException("Object {$table->database}.{$table->table}: "
                     . 'live structure differs from its successful CREATE/ALTER lineage');
             }
+            if ($projected->structure->checks !== []) {
+                // The UP that recreates this table runs in the source session, not in the session that read this target.
+                $schema->schemas[$sourceIndex]->assertEnforcesChecks("Object {$table->database}.{$table->table}: cleanup"
+                    . ' relying on named CHECK ' . implode(', ', array_keys($projected->structure->checks)));
+            }
             $cleanup[$key] = new TableDrop($index, $table->table);
             $origins[self::origin($projected->origin)] = false;
         }
@@ -240,8 +246,20 @@ final readonly class FullRestorePlanner
         foreach ($pending as $step) {
             DependencyProof::assertReplayCallsSupported($step->operation, $sqlMode, $metadata, basename($step->file->path));
             self::replay($future, $step, $targets, $schema);
-            if ($step->operation->kind === MigrationOperationKind::CREATE_TABLE && isset($origins[self::origin($step)])
-                && ($future[self::key($step->operation->table)] ?? null)?->origin === $step) {
+            if ($step->operation->kind !== MigrationOperationKind::CREATE_TABLE) {
+                continue;
+            }
+            $created = $future[self::key($step->operation->table)] ?? null;
+            if ($created?->origin !== $step) {
+                // A skipped IF NOT EXISTS creates nothing, so it neither relies on a CHECK nor recreates a lineage.
+                continue;
+            }
+            if ($created->structure !== null && $created->structure->checks !== []) {
+                $schema->schemas[$sourceIndex]->assertEnforcesChecks("Object {$created->name->database}.{$created->name->table}:"
+                    . ' post-import CREATE in ' . basename($step->file->path) . ' carrying named CHECK '
+                    . implode(', ', array_keys($created->structure->checks)));
+            }
+            if (isset($origins[self::origin($step)])) {
                 $origins[self::origin($step)] = true;
             }
         }

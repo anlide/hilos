@@ -1032,6 +1032,55 @@ SQL;
             self::JSON_PARENT), true];
     }
 
+    /**
+     * A named CHECK is new proof only through a session that enforces it: the cleanup that relies on it and
+     * the post-import CREATE that installs it both need a proven ON. Without a named CHECK nothing changes.
+     *
+     * @param string $create Post-archive UP CREATE
+     * @param array<string, string> $live Target-only tables; a matching one is a cleanup candidate
+     * @param ?string $enforcement Source session's reported check_constraint_checks; null is a server without the variable
+     * @param ?string $refusal Expected refusal, or null when cleanup of every live table is admitted
+     */
+    #[DataProvider('checkEnforcements')]
+    public function testNamedCheckRequiresEnforcementInTheExecutingSession(
+        string $create,
+        array $live,
+        ?string $enforcement,
+        ?string $refusal,
+    ): void {
+        if ($refusal !== null) {
+            $this->expectException(RestoreFailedException::class);
+            $this->expectExceptionMessage($refusal);
+        }
+        $cleanup = $this->plan([2 => $create], $live, applied: $live === [] ? [1] : [1, 2], checkConstraintChecks: $enforcement);
+        $this->assertSame(array_keys($live), array_column($cleanup, 'table'));
+    }
+
+    /** @return iterable<string, array{string, array<string, string>, ?string, ?string}> Reliance on a named CHECK by session report */
+    public static function checkEnforcements(): iterable
+    {
+        $plain = 'CREATE TABLE later (id INT PRIMARY KEY, started_at INT NOT NULL, ended_at INT NOT NULL';
+        $checked = $plain . ', CONSTRAINT chk_later_bounds CHECK (ended_at > started_at))';
+        $live = 'CREATE TABLE `later` (`id` int(11) NOT NULL, `started_at` int(11) NOT NULL, `ended_at` int(11) NOT NULL, PRIMARY KEY (`id`)';
+        $checkedLive = ['later' => $live . ', CONSTRAINT `chk_later_bounds` CHECK (`ended_at` > `started_at`))'];
+        $plainLive = ['later' => $live . ')'];
+        $requires = ' requires check_constraint_checks=ON in the session that executes UP; in that session it is ';
+        $cleanup = 'Full restore planner, connection 0: Object target.later: cleanup relying on named CHECK chk_later_bounds' . $requires;
+        $future = 'Full restore planner, connection 0: Object target.later: post-import CREATE in 2.sql carrying named CHECK chk_later_bounds'
+            . $requires;
+        yield 'cleanup, ON' => [$checked, $checkedLive, 'ON', null];
+        yield 'cleanup, OFF' => [$checked, $checkedLive, 'OFF', $cleanup . 'OFF'];
+        yield 'cleanup, no variable' => [$checked, $checkedLive, null, $cleanup . 'unknown'];
+        yield 'cleanup, unexpected report' => [$checked, $checkedLive, '1', $cleanup . 'unknown'];
+        yield 'create, ON' => [$checked, [], 'ON', null];
+        yield 'create, OFF' => [$checked, [], 'OFF', $future . 'OFF'];
+        yield 'create, no variable' => [$checked, [], null, $future . 'unknown'];
+        yield 'cleanup without CHECK, OFF' => [$plain . ')', $plainLive, 'OFF', null];
+        yield 'cleanup without CHECK, no variable' => [$plain . ')', $plainLive, null, null];
+        yield 'create without CHECK, OFF' => [$plain . ')', [], 'OFF', null];
+        yield 'create without CHECK, no variable' => [$plain . ')', [], null, null];
+    }
+
     /** A successful RENAME keeps the original CREATE provenance, while future UP still starts at the old name. */
     public function testRenamePreservesCreatedLineage(): void
     {
@@ -1237,6 +1286,71 @@ SQL;
         yield 'builtin with journal homonym' => ['ABS(-2)', 'target-change-log', 'ABS', false];
     }
 
+    /**
+     * The journal's UP runs through the primary session (MigrationBinding), so only the primary's report proves
+     * its named CHECK; the session that read the journal's SHOW CREATE is not the one that executes it.
+     *
+     * @param bool $cleanup Whether the journal already holds the late table as a cleanup candidate
+     * @param ?string $primary Primary session's reported check_constraint_checks
+     * @param ?string $journal Journal reading session's reported check_constraint_checks
+     * @param ?string $refusal Expected refusal, or null when the plan is admitted
+     */
+    #[DataProvider('journalCheckEnforcements')]
+    public function testJournalNamedCheckRequiresEnforcementInThePrimarySession(
+        bool $cleanup,
+        ?string $primary,
+        ?string $journal,
+        ?string $refusal,
+    ): void {
+        $primaryIndex = DatabaseConnectionDefaults::PRIMARY_INDEX;
+        $journalIndex = ChangeLogDatabase::CONNECTION_INDEX;
+        $targets = [];
+        foreach ([$primaryIndex => 'target', $journalIndex => 'target-change-log'] as $index => $database) {
+            Database::configure($index, 'unused', 'unused', '', $database);
+            $dump = new Dump([], new MigrationHistory(MigrationHistoryState::RECORDED, [new MigrationRow(1, false)]));
+            $targets[$index] = new PreparedTarget(new BackupConnectionMeta($index, 'source', null), Database::getConnectionConfig($index),
+                json_encode(['server', DatabaseConnectionDefaults::PORT, 1, $database]), 'source', 'digest', 'staged', 'digest', $dump);
+        }
+        $path = $this->root . '/002_journal_check.sql';
+        FsPath::write($path, 'CREATE TABLE {{change_log_database}}.journal_late (id INT PRIMARY KEY, started_at INT NOT NULL,'
+            . " ended_at INT NOT NULL, CONSTRAINT chk_journal_late CHECK (ended_at > started_at));\n");
+        $file = MigrationUpFile::read(2, $path);
+        $track = new MigrationUpTrack($this->root, 'Schema', ['002_journal_check.sql'], [$file]);
+        $step = new MigrationStep($file, 0, MigrationOperationReader::read($file->statements[0], 'target')[0]);
+        $live = $cleanup ? ['journal_late' => new LiveObject('BASE TABLE', 'CREATE TABLE `journal_late` (`id` int(11) NOT NULL,'
+            . ' `started_at` int(11) NOT NULL, `ended_at` int(11) NOT NULL, PRIMARY KEY (`id`),'
+            . ' CONSTRAINT `chk_journal_late` CHECK (`ended_at` > `started_at`))')] : [];
+        $records = array_map(static fn (int $number): MigrationRecord => new MigrationRecord($number, false), $cleanup ? [1, 2] : [1]);
+        $evidence = [];
+        $schemas = [];
+        foreach ($targets as $index => $target) {
+            $facts = MigrationFacts::read($targets[$primaryIndex]->dump->migrationHistory, new DatabaseMigrationHistory($records), $track, null);
+            $evidence[$index] = new MigrationTargetEvidence(MigrationBinding::resolve($target, array_values($targets)), $facts, [$step]);
+            $schemas[$index] = new SchemaMetadata('server', $index === $journalIndex ? $live : [], [['lower_case_table_names' => 0]], [], [],
+                $this->defaults, checkConstraintChecks: $index === $primaryIndex ? $primary : $journal);
+        }
+        $snapshot = new FullRestoreSchemaSnapshot($schemas, ['server' => new ServerMetadata(true, [], [], [], [], [], [])]);
+        if ($refusal !== null) {
+            $this->expectException(RestoreFailedException::class);
+            $this->expectExceptionMessage($refusal);
+        }
+        $this->assertSame($cleanup ? [$journalIndex] : [], array_column(FullRestorePlanner::prove($evidence, $track, $snapshot), 'index'));
+    }
+
+    /** @return iterable<string, array{bool, ?string, ?string, ?string}> Primary and journal session reports */
+    public static function journalCheckEnforcements(): iterable
+    {
+        $requires = ' requires check_constraint_checks=ON in the session that executes UP; in that session it is ';
+        $object = 'Full restore planner, connection 0: Object target-change-log.journal_late: ';
+        yield 'cleanup, journal OFF' => [true, 'ON', 'OFF', null];
+        yield 'cleanup, primary OFF' => [true, 'OFF', 'ON', $object . 'cleanup relying on named CHECK chk_journal_late' . $requires . 'OFF'];
+        yield 'create, journal unknown' => [false, 'ON', null, null];
+        yield 'create, primary OFF' => [false, 'OFF', 'ON',
+            $object . 'post-import CREATE in 002_journal_check.sql carrying named CHECK chk_journal_late' . $requires . 'OFF'];
+        yield 'create, primary unknown' => [false, null, 'ON',
+            $object . 'post-import CREATE in 002_journal_check.sql carrying named CHECK chk_journal_late' . $requires . 'unknown'];
+    }
+
     /** A same-named referenced table on another server is not an incoming dependency of the cleanup target. */
     public function testPhysicalServersDoNotShareSchemaOrDependencyNames(): void
     {
@@ -1354,6 +1468,7 @@ SQL;
      * @param ?bool $triggerVisible Schema trigger visibility; defaults to the fixture's global verdict
      * @param bool $mariaDbJsonAlias Explicit destination evidence for alias-specific cases only
      * @param list<array<string, mixed>> $columns Schema-local physical column snapshot
+     * @param ?string $checkConstraintChecks Source session's reported check_constraint_checks; null is a server without the variable
      * @return array Proven cleanup
      */
     private function plan(
@@ -1376,6 +1491,7 @@ SQL;
         ?bool $triggerVisible = null,
         bool $mariaDbJsonAlias = false,
         array $columns = [],
+        ?string $checkConstraintChecks = null,
     ): array {
         $index = DatabaseConnectionDefaults::PRIMARY_INDEX;
         Database::configure($index, 'unused', 'unused', '', 'target');
@@ -1422,7 +1538,7 @@ SQL;
             charsetByCollation: ['utf8mb4_bin' => 'utf8mb4', 'utf8mb4_0900_ai_ci' => 'utf8mb4'], mariaDbJsonAlias: $mariaDbJsonAlias);
         $snapshot = new FullRestoreSchemaSnapshot([$index => new SchemaMetadata('server', $metadata,
             $caseMode === null ? [] : [['lower_case_table_names' => $caseMode]], $columns, [], $defaults,
-            completeTriggerVisibility: $triggerVisible ?? $visible, triggers: $triggers)],
+            completeTriggerVisibility: $triggerVisible ?? $visible, triggers: $triggers, checkConstraintChecks: $checkConstraintChecks)],
             ['server' => new ServerMetadata($visible, [], $foreignKeys, $views, $triggers, $routines, [], $functions)]);
         return FullRestorePlanner::prove($evidence, $track, $snapshot);
     }

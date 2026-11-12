@@ -29,6 +29,13 @@ final class TableStructure
     private const string JSON_CHARSET = 'utf8mb4';
     private const string JSON_COLLATION = 'utf8mb4_bin';
     private const string JSON_VALID = 'JSON_VALID';
+    /** @var array<string, string> Modeled CHECK operators and the operand kind each takes on its right */
+    private const array CHECK_OPERATORS = ['>' => CheckShape::COLUMN, '=' => CheckShape::LITERAL];
+    /** @var list<string> Bare words MariaDB reads in an expression as a literal or a function without parentheses, never as a column */
+    private const array CHECK_BARE_KEYWORDS = [
+        'NULL', 'TRUE', 'FALSE', 'UNKNOWN', 'DEFAULT', 'CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP', 'CURRENT_USER',
+        'CURRENT_ROLE', 'LOCALTIME', 'LOCALTIMESTAMP', 'UTC_DATE', 'UTC_TIME', 'UTC_TIMESTAMP',
+    ];
 
     /** @var array<string, ColumnShape> Columns in physical order */
     public array $columns = [];
@@ -36,6 +43,8 @@ final class TableStructure
     public array $keys = [];
     /** @var array<string, ForeignKeyShape> Foreign keys by case-insensitive name */
     public array $foreignKeys = [];
+    /** @var array<string, CheckShape> Named table CHECKs by case-insensitive name in declaration order; only a direct CREATE adds one */
+    public array $checks = [];
     /** @var array<string, string> Effective table properties, excluding the next row id */
     public array $options = [];
 
@@ -74,7 +83,7 @@ final class TableStructure
         $structure = new self($database, $defaults);
         $structure->tableOptions($cursor);
         foreach ($definitions as $definition) {
-            $structure->add(new SqlTokens($definition));
+            $structure->add(new SqlTokens($definition), create: true);
         }
         $structure->finish();
         return $structure;
@@ -85,7 +94,7 @@ final class TableStructure
      */
     public function fingerprint(): string
     {
-        return json_encode([$this->columns, $this->keys, $this->foreignKeys, $this->options]);
+        return json_encode([$this->columns, $this->keys, $this->foreignKeys, $this->checks, $this->options]);
     }
 
     /**
@@ -141,7 +150,7 @@ final class TableStructure
                 }
             } elseif ($cursor->takeIf('ADD')) {
                 $cursor->takeIf('COLUMN');
-                $this->add($cursor);
+                $this->add($cursor, create: false);
             } else {
                 $change = $cursor->takeIf('CHANGE') !== null;
                 if (!$change) {
@@ -286,9 +295,10 @@ final class TableStructure
 
     /**
      * @param SqlTokens $cursor One definition or ADD body
+     * @param bool $create Whether a direct CREATE declares it; ALTER ADD reuses this grammar but not the CHECK lifecycle
      * @throws RestoreFailedException When a definition is unsupported or duplicated
      */
-    private function add(SqlTokens $cursor): void
+    private function add(SqlTokens $cursor, bool $create): void
     {
         $constraint = null;
         if ($cursor->takeIf('CONSTRAINT')) {
@@ -337,6 +347,14 @@ final class TableStructure
             $cursor->takeIf('VISIBLE');
             $name ??= array_key_first($columns);
             $this->insert($this->keys, $name, new KeyShape($kind, $columns, $algorithm));
+        } elseif ($cursor->is('CHECK')) {
+            if (!$create) {
+                throw new RestoreFailedException('ALTER ADD of a CHECK requires explicit constraint lifecycle evidence');
+            }
+            if ($constraint === null) {
+                throw new RestoreFailedException('An unnamed CHECK cannot establish exact structural provenance');
+            }
+            $this->insert($this->checks, $constraint, self::check($cursor));
         } else {
             if ($constraint !== null) {
                 throw new RestoreFailedException('Unsupported named constraint');
@@ -549,6 +567,64 @@ final class TableStructure
     }
 
     /**
+     * Models `<column> > <column>` and `<column> = <unsigned decimal>` only: for these two forms the migration source and
+     * MariaDB SHOW CREATE differ in identifier quoting, name case and spacing alone. MariaDB prints no enforcement suffix,
+     * so a CHECK without one is enforced and any suffix is an unproven status.
+     *
+     * @param SqlTokens $cursor Table CHECK definition after its constraint name
+     * @return CheckShape Operator, ordered operand kinds and values, enforcement status
+     * @throws RestoreFailedException When the expression or its enforcement status is not one of the modeled forms
+     */
+    private static function check(SqlTokens $cursor): CheckShape
+    {
+        $cursor->expect('CHECK');
+        $comparison = new SqlTokens($cursor->group());
+        $left = self::checkColumn($comparison->take());
+        $operator = $comparison->take();
+        if ($operator->kind !== SqlToken::SYMBOL || !isset(self::CHECK_OPERATORS[$operator->value])) {
+            throw new RestoreFailedException('Unsupported structural CHECK comparison');
+        }
+        $kind = self::CHECK_OPERATORS[$operator->value];
+        $right = $kind === CheckShape::COLUMN ? self::checkColumn($comparison->take()) : self::checkLiteral($comparison->take());
+        self::end($comparison);
+        if (!$cursor->ended()) {
+            throw new RestoreFailedException('Unsupported structural CHECK enforcement status');
+        }
+        return new CheckShape($operator->value, [[CheckShape::COLUMN, $left], [$kind, $right]], true);
+    }
+
+    /**
+     * Existence and integer type are proven by finish(), after every column of the declaration has been read. A quoted
+     * identifier is always a column, even one spelled like a keyword; a bare word is a column only when it is identifier-shaped
+     * and not one MariaDB reads as a literal or a function without parentheses (CHECK_BARE_KEYWORDS, any case).
+     *
+     * @param SqlToken $token CHECK operand that must name a column
+     * @return string Case-insensitive column name
+     * @throws RestoreFailedException When the operand is a literal, a keyword-like bare word or not an identifier
+     */
+    private static function checkColumn(SqlToken $token): string
+    {
+        if ($token->kind === SqlToken::WORD && (preg_match('/^[a-z_][a-z0-9_]*$/iD', $token->value) !== 1
+                || in_array(strtoupper($token->value), self::CHECK_BARE_KEYWORDS, true))) {
+            throw new RestoreFailedException('Unsupported structural CHECK column operand');
+        }
+        return strtolower(new SqlTokens([$token])->name());
+    }
+
+    /**
+     * @param SqlToken $token CHECK operand that must be an unsigned decimal integer
+     * @return string Exact digits, never cast: a BIGINT UNSIGNED bound exceeds the PHP integer range
+     * @throws RestoreFailedException When the literal has another kind, a sign, base, fraction, exponent or leading zero
+     */
+    private static function checkLiteral(SqlToken $token): string
+    {
+        if ($token->kind !== SqlToken::WORD || preg_match('/^(?:0|[1-9]\d*)$/D', $token->value) !== 1) {
+            throw new RestoreFailedException('Unsupported structural CHECK literal');
+        }
+        return $token->value;
+    }
+
+    /**
      * @param SqlTokens $cursor Optional FIRST/AFTER placement
      * @param string $name Column to move, already present
      * @throws RestoreFailedException When the position names an absent column
@@ -583,11 +659,12 @@ final class TableStructure
      * Column replacement, erasure and rename may implicitly retain or rewrite a constraint; this proof does not guess.
      *
      * @param string $name Column affected by an ALTER
-     * @throws RestoreFailedException When the column carries a modeled inline CHECK
+     * @throws RestoreFailedException When the column carries a modeled inline CHECK or a named CHECK reads it
      */
     private function refuseCheckedColumnChange(string $name): void
     {
-        if (isset($this->columns[$name]->attributes[self::CHECK])) {
+        if (isset($this->columns[$name]->attributes[self::CHECK])
+            || array_any($this->checks, static fn (CheckShape $check): bool => in_array($name, $check->columns(), true))) {
             throw new RestoreFailedException('ALTER of a checked column requires explicit constraint lifecycle evidence');
         }
     }
@@ -625,7 +702,7 @@ final class TableStructure
     /**
      * Resolves primary nullability and indexes generated by explicit foreign keys.
      *
-     * @throws RestoreFailedException When the final structure has dangling columns or ambiguous implicit keys
+     * @throws RestoreFailedException When the final structure has dangling or mistyped columns, ambiguous names or implicit keys
      */
     private function finish(): void
     {
@@ -633,6 +710,19 @@ final class TableStructure
             if (!isset($this->columns[$name])) {
                 throw new RestoreFailedException("Partition names absent column {$name}");
             }
+        }
+        foreach ($this->checks as $check) {
+            foreach ($check->columns() as $name) {
+                if (!isset($this->columns[$name])) {
+                    throw new RestoreFailedException("CHECK names absent column {$name}");
+                }
+                if (!in_array(strstr($this->columns[$name]->type, '[', true), self::INTEGER_TYPES, true)) {
+                    throw new RestoreFailedException("CHECK names non-integer column {$name}");
+                }
+            }
+        }
+        if (array_intersect_key($this->checks, $this->foreignKeys) !== []) {
+            throw new RestoreFailedException('A CHECK and a foreign key share one constraint name');
         }
         foreach ($this->keys as $key) {
             foreach ($key->columns as $name => $part) {

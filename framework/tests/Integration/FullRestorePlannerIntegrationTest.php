@@ -369,6 +369,35 @@ final class FullRestorePlannerIntegrationTest extends FrameworkIntegrationTestCa
     }
 
     /**
+     * The real session reports enforced CHECK constraints, and changing only that report invalidates the snapshot.
+     *
+     * @param ?string $captured Prepared report that differs from the session's actual ON
+     */
+    #[DataProvider('changedCheckEnforcements')]
+    public function testRecheckIncludesCheckConstraintEnforcement(?string $captured): void
+    {
+        $inputs = $this->inputs();
+        $snapshot = FullRestoreSchemaSnapshot::read($inputs->targets);
+        $schema = $snapshot->schemas[0];
+        $this->assertSame('ON', $schema->checkConstraintChecks);
+        $snapshot->assertUnchanged($inputs->targets);
+        $changed = new FullRestoreSchemaSnapshot([0 => new SchemaMetadata(
+            $schema->server, $schema->objects, $schema->defaults, $schema->columns, $schema->indexes, $schema->structureDefaults,
+            $schema->grants, $schema->completeTriggerVisibility, $schema->triggers, $captured,
+        )], $snapshot->servers);
+        $this->expectException(RestoreFailedException::class);
+        $this->expectExceptionMessage('changed');
+        $changed->assertUnchanged($inputs->targets);
+    }
+
+    /** @return iterable<string, array{?string}> Disabled and unknown enforcement reports */
+    public static function changedCheckEnforcements(): iterable
+    {
+        yield 'OFF' => ['OFF'];
+        yield 'no variable' => [null];
+    }
+
+    /**
      * @param string $column Ordinary text column declaration
      * @param string $options Explicit or inherited table character options
      */
@@ -529,6 +558,7 @@ final class FullRestorePlannerIntegrationTest extends FrameworkIntegrationTestCa
             'dependency' => Database::sql('CREATE VIEW ' . ChangeLogDatabase::identifier($this->external) . '.dependent AS SELECT id FROM '
                 . ChangeLogDatabase::identifier($this->database) . '.parent'),
             'session mode' => Database::sql("SET SESSION sql_mode = 'NO_FIELD_OPTIONS'"),
+            'session CHECK enforcement' => Database::sql('SET SESSION check_constraint_checks = OFF'),
         };
         $this->expectException(RestoreFailedException::class);
         $planner->assertUnchanged();
@@ -542,6 +572,7 @@ final class FullRestorePlannerIntegrationTest extends FrameworkIntegrationTestCa
         yield ['track'];
         yield ['dependency'];
         yield ['session mode'];
+        yield ['session CHECK enforcement'];
     }
 
     /**

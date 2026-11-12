@@ -152,7 +152,22 @@ final readonly class FullRestoreSchemaSnapshot
             self::hasSchemaPrivilege($grants, $database, 'TRIGGER'),
             Database::sql('SELECT TRIGGER_SCHEMA, TRIGGER_NAME, EVENT_OBJECT_SCHEMA, EVENT_OBJECT_TABLE'
                 . ' FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() ORDER BY TRIGGER_NAME')->rows(),
+            self::checkConstraintChecks(),
         );
+    }
+
+    /**
+     * A separate read: a server without the variable reports no row here, while selecting
+     * the variable beside the schema defaults would refuse every FULL restore on it.
+     * LIKE would read the name's underscores as wildcards; an exact match admits only this variable.
+     *
+     * @return ?string This physical session's reported value, or null when the server reports none
+     * @throws DatabaseException When the session variables cannot be read
+     */
+    private static function checkConstraintChecks(): ?string
+    {
+        $rows = Database::sql("SHOW SESSION VARIABLES WHERE Variable_name = '" . SchemaMetadata::CHECK_CONSTRAINT_CHECKS . "'")->rows();
+        return count($rows) === 1 ? (string)$rows[0]['Value'] : null;
     }
 
     /**

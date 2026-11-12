@@ -9,6 +9,9 @@ use Hilos\Backup\Exception\RestoreFailedException;
 /** Raw catalog rows are intentionally retained at this infrastructure boundary. */
 final readonly class SchemaMetadata
 {
+    public const string CHECK_CONSTRAINT_CHECKS = 'check_constraint_checks';
+    private const string CHECKS_ENFORCED = 'ON';
+    private const string CHECKS_DISABLED = 'OFF';
     private const array INCOMPLETE_DECLARATION_MODES = [
         'NO_FIELD_OPTIONS', 'NO_TABLE_OPTIONS', 'NO_KEY_OPTIONS', 'ANSI', 'DB2', 'POSTGRESQL', 'MSSQL', 'MAXDB', 'ORACLE',
     ];
@@ -23,6 +26,7 @@ final readonly class SchemaMetadata
      * @param list<string> $grants Direct grants proving that the destination object set is visible
      * @param bool $completeTriggerVisibility Whether this account sees every trigger in the selected schema
      * @param list<array<string, mixed>> $triggers Trigger names and owners read through this schema's actual connection
+     * @param ?string $checkConstraintChecks This session's reported check_constraint_checks, or null when the server reports none
      */
     public function __construct(
         public string $server,
@@ -34,6 +38,7 @@ final readonly class SchemaMetadata
         public array $grants = [],
         public bool $completeTriggerVisibility = false,
         public array $triggers = [],
+        public ?string $checkConstraintChecks = null,
     ) {
     }
 
@@ -56,5 +61,23 @@ final readonly class SchemaMetadata
             throw new RestoreFailedException('SHOW CREATE omits physical properties under SQL_MODE ' . implode(', ', $suppressed)
                 . '; full restore structure proof is unavailable');
         }
+    }
+
+    /**
+     * A modeled named CHECK proves the rows of a table only when the session that executes its UP enforces it.
+     * MariaDB reports the variable as ON or OFF; no such variable, or any other report, leaves enforcement unknown.
+     * The restore reads this session state and never switches it.
+     *
+     * @param string $reliance What relies on the named CHECK, as the subject of the refusal
+     * @throws RestoreFailedException When this session's CHECK enforcement is not proven ON
+     */
+    public function assertEnforcesChecks(string $reliance): void
+    {
+        if ($this->checkConstraintChecks === self::CHECKS_ENFORCED) {
+            return;
+        }
+        throw new RestoreFailedException($reliance . ' requires ' . self::CHECK_CONSTRAINT_CHECKS . '=' . self::CHECKS_ENFORCED
+            . ' in the session that executes UP; in that session it is '
+            . ($this->checkConstraintChecks === self::CHECKS_DISABLED ? self::CHECKS_DISABLED : 'unknown'));
     }
 }
