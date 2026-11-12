@@ -7,7 +7,7 @@ import { deliveryObject, type DeliveryFrameLog } from './deliveryFrames.js'
 import { trackedActionReplies } from './actionReplies.js'
 import { clickSubmit, typeInto } from './input.js'
 import { shownByTestId } from './table.js'
-import { enterCalendarDateTime } from './moments.js'
+import { enterCalendarDateTime, enterPickerDateTime } from './moments.js'
 
 export const STATUS_WORKS_PATH = '/hilos/status/works'
 export const STATUS_WORK_SCHEDULE = 'hilos_status_work_schedule'
@@ -76,18 +76,23 @@ export async function draftStatusWork(
     page.getByTestId('hilos-status-work-description'),
     draft.description,
   )
-  await enterCalendarDateTime(
-    expect,
-    page,
-    page.getByTestId('hilos-status-work-starts'),
-    draft.startsAt,
-  )
-  await enterCalendarDateTime(
-    expect,
-    page,
-    page.getByTestId('hilos-status-work-ends'),
-    draft.endsAt,
-  )
+  // Until HIL-1981/1982 adopt the picker, React and Angular draw two native
+  // fields; HIL-1983 removes this branch.
+  const window = page.getByTestId('hilos-status-work-window')
+  const starts = page.getByTestId('hilos-status-work-starts')
+  await expect(window.or(starts)).toBeVisible()
+  if (await window.isVisible()) {
+    await enterPickerDateTime(expect, window, 'Starts', draft.startsAt)
+    await enterPickerDateTime(expect, window, 'Ends', draft.endsAt)
+  } else {
+    await enterCalendarDateTime(expect, page, starts, draft.startsAt)
+    await enterCalendarDateTime(
+      expect,
+      page,
+      page.getByTestId('hilos-status-work-ends'),
+      draft.endsAt,
+    )
+  }
   for (const key of draft.componentKeys)
     await page.getByTestId(`hilos-status-work-component-${key}`).check()
 }
@@ -180,12 +185,19 @@ export async function expectStatusWorkScheduleDialog(
   await expect(
     page.getByTestId('hilos-status-work-title'),
   ).toHaveAccessibleName('Title')
-  await expect(
-    page.getByTestId('hilos-status-work-starts'),
-  ).toHaveAccessibleName(/^Starts, /)
-  await expect(page.getByTestId('hilos-status-work-ends')).toHaveAccessibleName(
-    /^Ends, /,
-  )
+  // Until HIL-1981/1982 adopt the picker, React and Angular draw two native
+  // fields; HIL-1983 removes this branch.
+  const window = page.getByTestId('hilos-status-work-window')
+  const starts = page.getByTestId('hilos-status-work-starts')
+  await expect(window.or(starts)).toBeVisible()
+  if (await window.isVisible())
+    await expect(window).toHaveAccessibleName(/^Window, /)
+  else {
+    await expect(starts).toHaveAccessibleName(/^Starts, /)
+    await expect(
+      page.getByTestId('hilos-status-work-ends'),
+    ).toHaveAccessibleName(/^Ends, /)
+  }
   await expect(
     page.getByTestId('hilos-status-work-description'),
   ).toHaveAccessibleName('What visitors read')

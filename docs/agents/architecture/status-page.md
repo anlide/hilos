@@ -379,8 +379,9 @@ text, component list and both times, and the live row version is sent as
 `expectedVersion`. The work window is a `DateTimePicker` datetime range,
 `windowPicker`, made on each opening in the reader's IANA zone captured then.
 A repeated hour resolves only to the chosen or the loaded occurrence, and a
-DST gap is rejected instead of guessed. Until HIL-1980–1982 adopt the picker,
-native views read and write the form's `startsAt`/`endsAt` text projected from
+DST gap is rejected instead of guessed. The Vue dialogs draw the picker as
+one field, `Window, <zone>`; until HIL-1981–1982 adopt it, the native React and
+Angular views read and write the form's `startsAt`/`endsAt` text projected from
 and into its parts. Action frames continue to carry epoch milliseconds UTC.
 Cancellation remains bound to the focused row's immutable public id; an
 unrelated late acknowledgement cannot retarget another dialog. Vue uses the
@@ -389,9 +390,9 @@ page, viewport table, create/edit/cancel modals and action notices; React draws
 the same pages, table and modals over the same core controllers. Chat and
 Binance mount thin Vue wrappers, Tasks and Ecommerce Shop thin React wrappers,
 and Polls and OnlineTesting mount the Angular pages through lazy wrappers that
-pass their shared Status context. The React work window states the non-overlap
-rule in a hint under Starts and Ends, which both fields name in
-`aria-describedby`.
+pass their shared Status context. Every work window states the non-overlap
+rule in a hint under it: the parts of the Vue Window field and the React and
+Angular Starts and Ends fields name that hint in `aria-describedby`.
 
 Overview source changes, including completed-history changes to `historyCount`,
 use the existing guarded `PageResender` / `resendPageWhole()` path. The narrow

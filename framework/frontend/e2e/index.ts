@@ -656,6 +656,7 @@ export {
   backupMomentRow,
   enterCalendarDate,
   enterCalendarDateTime,
+  enterPickerDateTime,
   expectBackupMoments,
   expectLegalAcceptanceMoments,
   expectMaintenanceMoment,

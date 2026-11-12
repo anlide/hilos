@@ -2128,6 +2128,8 @@ Keep operations that need different keyboard behavior:
   `typeInto(field, '')` call.
 - Native date segments use `enterCalendarDate(expect, field, date)` from the
   toolbox (`moments.ts`); segment navigation is part of that operation.
+- DateTimePicker parts use `enterPickerDateTime(expect, field, edge, at)` from
+  the toolbox (`moments.ts`): each named part of one edge is cleared and typed.
 - A disabled-input probe sends keys to the disabled field and checks that its
   value did not change; clearing first would change the operation being tested.
 - Appending to an existing prefix keeps that prefix and places the caret before

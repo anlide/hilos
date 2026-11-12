@@ -6,10 +6,7 @@ import {
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   type TableRow,
 } from '@hilos/core/base'
-import {
-  localDateTimeValue,
-  type HilosStatusWorksData,
-} from '@hilos/core/admin/status'
+import type { HilosStatusWorksData } from '@hilos/core/admin/status'
 
 import {
   announcement,
@@ -22,6 +19,10 @@ import {
   worksData,
   field,
   fillWork,
+  press,
+  typeWindowEdge,
+  windowPart,
+  windowTexts,
 } from '../../../test/statusWorksFixtures.js'
 import HilosStatusWorkModal from './HilosStatusWorkModal.vue'
 import { readerTimeZone } from '../../../test/helpers/readerTimeZone.js'
@@ -67,13 +68,20 @@ describe('HilosStatusWorkModal with real creation and row-edit factories', () =>
       const controller = activeModal.props('controller')
       await field('title').setValue('Maintenance')
       await field('description').setValue('Details for visitors')
-      await field('starts').setValue('2031-01-02T03:04:05')
-      await field('ends').setValue('2031-01-02T04:05:06')
+      await typeWindowEdge('Starts', ['02', '01', '2031', '03', '04', '05'])
+      await typeWindowEdge('Ends', ['02', '01', '2031', '04', '05', '06'])
+      const windowGroup = field('window').element
+      expect
+        .soft(
+          document
+            .getElementById(windowGroup.getAttribute('aria-labelledby')!)
+            ?.textContent?.trim(),
+        )
+        .toBe('Window, UTC')
+      const shownWindow = [...windowTexts('Starts'), ...windowTexts('Ends')]
       const labels = [...workForm().element.querySelectorAll('label')]
       const staticEntries = [
         { key: 'title', label: 'Title' },
-        { key: 'starts', label: 'Starts, UTC' },
-        { key: 'ends', label: 'Ends, UTC' },
         { key: 'description', label: 'What visitors read' },
       ]
       const staticFields = staticEntries.map(({ key, label: text }) => {
@@ -108,9 +116,13 @@ describe('HilosStatusWorkModal with real creation and row-edit factories', () =>
         }
         expect.soft(controller.form.get().componentKeys).toEqual(selected)
         expect.soft(staticFields).not.toContain(document.activeElement)
+        expect.soft(windowGroup.contains(document.activeElement)).toBe(false)
         expect
           .soft(staticFields.map((control) => control.value))
           .toEqual(values)
+        expect
+          .soft([...windowTexts('Starts'), ...windowTexts('Ends')])
+          .toEqual(shownWindow)
       }
     },
   )
@@ -124,22 +136,41 @@ describe('HilosStatusWorkModal with real creation and row-edit factories', () =>
       'Schedule maintenance',
     )
     expect(document.activeElement).toBe(field('title').element)
-    expect(field('starts').attributes('step')).toBe('1')
-    expect(field('ends').attributes('step')).toBe('1')
-    expect(body().text()).toContain('Starts, Asia/Tokyo')
+    expect(windowPart('Starts', 'Seconds').attributes('aria-valuemax')).toBe(
+      '59',
+    )
+    expect(windowPart('Ends', 'Seconds').attributes('aria-valuemax')).toBe('59')
+    expect(body().text()).toContain('Window, Asia/Tokyo')
     expect(workForm().get('legend').text()).toBe('Affects')
-    for (const control of workForm().findAll('input,textarea')) {
+    for (const control of workForm().findAll(
+      'input:not([role="spinbutton"]),textarea',
+    )) {
       expect(
         workForm()
           .find(`label[for="${control.attributes('id')}"]`)
           .exists(),
       ).toBe(true)
     }
+    const overlapHint = workForm()
+      .findAll('[id]')
+      .find((node) =>
+        node
+          .text()
+          .startsWith('The window cannot overlap another announcement'),
+      )!
+    const windowParts = field('window').findAll('input')
+    expect(windowParts).toHaveLength(12)
+    for (const part of windowParts) {
+      expect(part.attributes('aria-label')).toMatch(/^(Starts|Ends) /)
+      expect(part.attributes('aria-describedby')?.split(' ')).toContain(
+        overlapHint.attributes('id'),
+      )
+    }
     expect(workSave().attributes('disabled')).toBeDefined()
     await fillWork()
     zone.choose('America/New_York')
     await nextTick()
-    expect(body().text()).toContain('Starts, Asia/Tokyo')
+    expect(body().text()).toContain('Window, Asia/Tokyo')
     await field('title').trigger('keydown', { key: 'Enter' })
     expect(h.sent).toEqual([
       {
@@ -248,9 +279,7 @@ describe('HilosStatusWorkModal with real creation and row-edit factories', () =>
     expect((field('component-queue').element as HTMLInputElement).checked).toBe(
       true,
     )
-    expect((field('ends').element as HTMLInputElement).value).toBe(
-      localDateTimeValue(announcement.endsAt + 1000, 'UTC'),
-    )
+    expect(windowTexts('Ends')).toEqual(['02', '01', '2031', '04', '05', '07'])
     expect(body().get('[data-id="hilos-status-work-notice"]').text()).toContain(
       'Updated just now',
     )
@@ -265,7 +294,7 @@ describe('HilosStatusWorkModal with real creation and row-edit factories', () =>
     await body().get('[data-id="conflict-accept-mine"]').trigger('click')
     expect((field('title').element as HTMLInputElement).value).toBe('My title')
     await field('component-service').setValue(true)
-    await field('ends').setValue('2031-01-02T04:06:03')
+    await typeWindowEdge('Ends', ['02', '01', '2031', '04', '06', '03'])
     h.update({
       componentKeys: ['database'],
       endsAt: announcement.endsAt + 2000,
@@ -274,7 +303,7 @@ describe('HilosStatusWorkModal with real creation and row-edit factories', () =>
     zone.choose('Asia/Tokyo')
     await nextTick()
     expect(body().get('[data-id="hilos-status-work-notice"]').text()).toContain(
-      'Keep mine: 2031-01-02T04:06:03 (UTC)',
+      'Keep mine: 02/01/2031, 04:06:03 (UTC)',
     )
     expect(body().get('[data-id="hilos-status-work-notice"]').text()).toContain(
       '(Asia/Tokyo)',
@@ -287,9 +316,7 @@ describe('HilosStatusWorkModal with real creation and row-edit factories', () =>
     expect(
       (field('component-service').element as HTMLInputElement).checked,
     ).toBe(false)
-    expect((field('ends').element as HTMLInputElement).value).toBe(
-      localDateTimeValue(announcement.endsAt + 2000, 'UTC'),
-    )
+    expect(windowTexts('Ends')).toEqual(['02', '01', '2031', '04', '05', '08'])
     h.update({ lastMailQueuedAt: 1_800_000_000_000 })
     await nextTick()
     expect((field('title').element as HTMLInputElement).value).toBe('My title')
@@ -427,5 +454,122 @@ describe('HilosStatusWorkModal with real creation and row-edit factories', () =>
     expect(body().find('[data-id="modal"]').exists()).toBe(false)
     expect(hilosToasts.toasts.get()).toEqual([])
     expect(h.registered.size).toBe(0)
+  })
+})
+
+describe('Works window field', () => {
+  const openCalendar = async () => {
+    await workForm().get('button[aria-label="Open calendar"]').trigger('click')
+    await settled()
+  }
+  const calendar = () => workForm().find('[role="dialog"]')
+
+  it('offers no day before today in the captured zone', async () => {
+    const zone = readerTimeZone()
+    cleanups.push(zone.release)
+    zone.choose('UTC')
+    vi.setSystemTime(Date.UTC(2030, 5, 15, 12, 0, 0))
+    await open()
+    await openCalendar()
+    const days = calendar().findAll('[role="gridcell"]')
+    const todayIndex = days.findIndex(
+      (day) => day.attributes('aria-current') === 'date',
+    )
+    const today = days[todayIndex]!
+    const yesterday = days[todayIndex - 1]!
+    expect(today.text()).toBe('15')
+    expect(today.attributes('aria-disabled')).toBeUndefined()
+    expect(yesterday.text()).toBe('14')
+    expect(yesterday.attributes('aria-disabled')).toBe('true')
+    await yesterday.trigger('click')
+    expect(windowPart('Starts', 'Day').attributes('aria-valuenow')).toBe(
+      undefined,
+    )
+    await calendar()
+      .get('[role="gridcell"][aria-current="date"]')
+      .trigger('click')
+    expect(windowPart('Starts', 'Day').attributes('aria-valuenow')).toBe('15')
+  })
+
+  it('locks the window while the request is in flight and returns it intact after a refusal', async () => {
+    const h = await open()
+    await fillWork()
+    const typed = [...windowTexts('Starts'), ...windowTexts('Ends')]
+    await workForm().trigger('submit')
+    await settled()
+    expect(h.sent).toHaveLength(1)
+    const opener = workForm().get('button[aria-label="Open calendar"]')
+    expect(opener.attributes('disabled')).toBeDefined()
+    for (const part of field('window').findAll('input'))
+      expect(part.attributes('disabled')).toBeDefined()
+    h.reply(false, {
+      reason: 'Another announcement already occupies this window.',
+    })
+    await settled()
+    expect(body().get('[data-id="hilos-status-work-error"]').text()).toContain(
+      'Another announcement already occupies this window.',
+    )
+    expect(opener.attributes('disabled')).toBeUndefined()
+    for (const part of field('window').findAll('input'))
+      expect(part.attributes('disabled')).toBeUndefined()
+    expect([...windowTexts('Starts'), ...windowTexts('Ends')]).toEqual(typed)
+  })
+
+  it('keeps an unfinished window from Save and from Enter and asks before discarding it', async () => {
+    const h = await open()
+    await field('title').setValue('Upgrade')
+    await field('component-service').setValue(true)
+    await typeWindowEdge('Starts', ['02', '01', '2031', '12', '04', '05'])
+    const endsDay = windowPart('Ends', 'Day')
+    ;(endsDay.element as HTMLInputElement).focus()
+    for (const key of ['0', '2']) await press(endsDay, key)
+    expect(windowTexts('Ends')[0]).toBe('02')
+    expect(workSave().attributes('disabled')).toBeDefined()
+    await press(windowPart('Ends', 'Month'), 'Enter')
+    expect(h.sent).toEqual([])
+    await press(windowPart('Ends', 'Month'), 'Escape')
+    await settled()
+    expect(body().text()).toContain('Discard changes?')
+  })
+
+  it('leaves Enter to the open calendar and submits from the field once it is closed', async () => {
+    const h = await open()
+    await fillWork()
+    expect(workSave().attributes('disabled')).toBeUndefined()
+    await openCalendar()
+    await press(calendar().get('[role="gridcell"][tabindex="0"]'), 'Enter')
+    expect(h.sent).toEqual([])
+    expect(calendar().exists()).toBe(true)
+    const time = calendar().get('input[role="spinbutton"]')
+    const enter = await press(time, 'Enter')
+    expect(enter.defaultPrevented).toBe(true)
+    expect(h.sent).toEqual([])
+    expect(body().find('[data-id="modal"]').exists()).toBe(true)
+    await press(time, 'Escape')
+    await settled()
+    expect(calendar().exists()).toBe(false)
+    expect(body().text()).not.toContain('Discard changes?')
+    expect(workSave().attributes('disabled')).toBeUndefined()
+    await press(windowPart('Ends', 'Seconds'), 'Enter')
+    expect(h.sent.map((frame) => frame.action)).toEqual([
+      'hilos_status_work_schedule',
+    ])
+  })
+
+  it('opens the next form with an empty window in the newly chosen zone', async () => {
+    const zone = readerTimeZone()
+    cleanups.push(zone.release)
+    zone.choose('UTC')
+    const h = await open()
+    await typeWindowEdge('Starts', ['02', '01', '2031', '12', '04', '05'])
+    await field('close').trigger('click')
+    await body().get('[data-id="modal-confirm-discard"]').trigger('click')
+    await settled()
+    expect(body().find('[data-id="modal"]').exists()).toBe(false)
+    zone.choose('Asia/Tokyo')
+    await h.open('create')
+    expect(body().text()).toContain('Window, Asia/Tokyo')
+    for (const part of field('window').findAll('input'))
+      expect(part.attributes('aria-valuenow')).toBeUndefined()
   })
 })

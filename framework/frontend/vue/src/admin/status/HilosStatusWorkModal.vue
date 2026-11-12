@@ -10,6 +10,7 @@ import type {
 import { computed, useId } from 'vue'
 
 import ConflictActions from '../../ConflictActions.vue'
+import HilosDateTimePicker from '../../HilosDateTimePicker.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosFormError from '../../HilosFormError.vue'
 import HilosModal from '../../HilosModal.vue'
@@ -29,6 +30,10 @@ const form = useSignal(props.controller.form)
 const dirty = useSignal(props.controller.dirty)
 const timeZone = useSignal(props.controller.timeZone)
 const readerTimeZone = useSignal(hilosTimeZone)
+const windowPicker = useSignal(props.controller.windowPicker)
+const windowState = useSignal({
+  get: () => props.controller.windowPicker.get()?.state.get() ?? null,
+})
 const busy = useSignal(editor?.saving ?? props.controller.busy)
 const error = useSignal(props.controller.error)
 const failure = useSignal(props.controller.failure)
@@ -46,6 +51,7 @@ const title = editor ? 'Change scheduled maintenance' : 'Schedule maintenance'
 const formId = useId()
 const hintId = useId()
 const fieldsId = useId()
+const overlapHintId = useId()
 const copyText = computed(() =>
   failure.value?.errorDetail
     ? [failure.value.errorType, failure.value.errorDetail]
@@ -84,12 +90,27 @@ const noticeText = computed(() => {
         field === 'componentKeys'
           ? componentNames(form.value.componentKeys)
           : momentField
-            ? `${form.value[field]} (${timeZone.value})`
+            ? windowText(field === 'startsAt' ? 'start' : 'end')
             : form.value[field]
       return `${labels[field]}: Keep mine: ${mine}; Take theirs: ${theirs}`
     }),
   ].join('\n')
 })
+
+/**
+ * The draft of one window edge as its parts show it, in the captured zone.
+ *
+ * @param edge The edge a conflicting moment field names.
+ */
+function windowText(edge: 'start' | 'end'): string {
+  const parts = windowState.value?.[edge]?.parts ?? []
+  const shown = parts.every((part) => part.text === '')
+    ? '—'
+    : parts
+        .map((part) => part.prefix + (part.text || part.placeholder))
+        .join('')
+  return `${shown} (${timeZone.value})`
+}
 
 function componentNames(keys: readonly string[]): string {
   return keys
@@ -102,7 +123,7 @@ function componentNames(keys: readonly string[]): string {
     .join(', ')
 }
 
-/** Mirror native values; validation and calendar interpretation stay in core. */
+/** Text fields only; the window is edited in its picker. */
 function patch(patch: Partial<HilosStatusWorkForm>): void {
   props.controller.patchForm(patch)
 }
@@ -124,6 +145,12 @@ async function submit(): Promise<void> {
   }
 }
 
+/**
+ * Enter while the window calendar is open belongs to the calendar; buttons
+ * activate themselves.
+ *
+ * @param event The Enter keydown that reached the form.
+ */
 function onEnter(event: KeyboardEvent): void {
   if (
     event.target instanceof Element &&
@@ -131,6 +158,7 @@ function onEnter(event: KeyboardEvent): void {
   )
     return
   event.preventDefault()
+  if (props.controller.windowPicker.get()?.calendar.state.get().open) return
   void submit()
 }
 </script>
@@ -173,39 +201,20 @@ function onEnter(event: KeyboardEvent): void {
           @input="patch({ title: ($event.target as HTMLInputElement).value })"
         />
       </div>
-      <div class="row g-2 mb-2">
-        <div class="col-sm-6">
-          <label :for="`${fieldsId}-starts`" class="form-label"
-            >Starts, {{ timeZone }}</label
-          >
-          <input
-            :id="`${fieldsId}-starts`"
-            :value="form.startsAt"
-            type="datetime-local"
-            step="1"
-            class="form-control form-control-sm"
-            data-id="hilos-status-work-starts"
-            @input="
-              patch({ startsAt: ($event.target as HTMLInputElement).value })
-            "
-          />
-        </div>
-        <div class="col-sm-6">
-          <label :for="`${fieldsId}-ends`" class="form-label"
-            >Ends, {{ timeZone }}</label
-          >
-          <input
-            :id="`${fieldsId}-ends`"
-            :value="form.endsAt"
-            type="datetime-local"
-            step="1"
-            class="form-control form-control-sm"
-            data-id="hilos-status-work-ends"
-            @input="
-              patch({ endsAt: ($event.target as HTMLInputElement).value })
-            "
-          />
-        </div>
+      <div class="mb-1">
+        <HilosDateTimePicker
+          v-if="windowPicker"
+          :id="`${fieldsId}-window`"
+          :picker="windowPicker"
+          :label="`Window, ${timeZone}`"
+          :described-by="overlapHintId"
+          data-id="hilos-status-work-window"
+        />
+      </div>
+      <div :id="overlapHintId" class="form-text mt-0 mb-2">
+        The window cannot overlap another announcement, even if the components
+        differ. Simultaneous work is one announcement with several components.
+        Adjacent windows are fine: one ends at 07:00, the next starts at 07:00.
       </div>
       <fieldset class="mb-2">
         <legend class="form-label fs-6 mb-1">Affects</legend>

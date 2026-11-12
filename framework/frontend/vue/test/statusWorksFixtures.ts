@@ -1,5 +1,6 @@
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { markRaw, nextTick } from 'vue'
+import { vi } from 'vitest'
 import {
   bindPageScope,
   createSignal,
@@ -151,10 +152,76 @@ export const workSave = () => body().get('[data-id="hilos-status-work-save"]')
 export const field = (name: string) =>
   body().get(`[data-id="hilos-status-work-${name}"]`)
 
+const WINDOW_PARTS = [
+  'Day',
+  'Month',
+  'Year',
+  'Hours',
+  'Minutes',
+  'Seconds',
+] as const
+
+/** One edge's part of the works window field, named as the picker names it. */
+export const windowPart = (
+  edge: 'Starts' | 'Ends',
+  name: (typeof WINDOW_PARTS)[number],
+) =>
+  body().get(
+    `[data-id="hilos-status-work-window"] input[aria-label="${edge} ${name}"]`,
+  )
+
+/** The shown texts of one window edge: day, month, year, hours, minutes, seconds. */
+export const windowTexts = (edge: 'Starts' | 'Ends') =>
+  WINDOW_PARTS.map(
+    (name) => (windowPart(edge, name).element as HTMLInputElement).value,
+  )
+
+/**
+ * Press one key on a control the way a keyboard does: a bubbling, cancelable
+ * keydown. A real key comes after the listeners it bubbles through were
+ * attached, and Vue skips a listener attached no earlier than the event, so a
+ * frozen fake clock moves one millisecond first; no timer fires.
+ *
+ * @param target The control that has the key.
+ * @param key The key's name.
+ */
+export async function press(
+  target: Pick<DOMWrapper<Element>, 'element'>,
+  key: string,
+): Promise<KeyboardEvent> {
+  if (vi.isFakeTimers()) vi.setSystemTime(Date.now() + 1)
+  const event = new KeyboardEvent('keydown', {
+    key,
+    bubbles: true,
+    cancelable: true,
+  })
+  target.element.dispatchEvent(event)
+  await flushPromises()
+  return event
+}
+
+/**
+ * Type one edge of the works window part by part, as a keyboard does: each
+ * part is focused, cleared and typed digit by digit.
+ *
+ * @param edge The edge prefix the form gives the picker.
+ * @param texts Day, month, year, hours, minutes and seconds, in this order.
+ */
+export async function typeWindowEdge(
+  edge: 'Starts' | 'Ends',
+  texts: readonly [string, string, string, string, string, string],
+): Promise<void> {
+  for (const [index, name] of WINDOW_PARTS.entries()) {
+    const input = windowPart(edge, name)
+    ;(input.element as HTMLInputElement).focus()
+    for (const key of ['Backspace', ...texts[index]!]) await press(input, key)
+  }
+}
+
 export async function fillWork(): Promise<void> {
   await field('title').setValue('  Upgrade <database>  ')
-  await field('starts').setValue('2031-01-02T12:04:05')
-  await field('ends').setValue('2031-01-02T13:05:06')
+  await typeWindowEdge('Starts', ['02', '01', '2031', '12', '04', '05'])
+  await typeWindowEdge('Ends', ['02', '01', '2031', '13', '05', '06'])
   await field('component-service').setValue(true)
   await field('description').setValue('  Plain text <b>only</b>  ')
 }

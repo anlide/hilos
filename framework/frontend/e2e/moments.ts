@@ -260,14 +260,9 @@ export async function enterCalendarDate(
   await expect(field).toHaveValue(date)
 }
 
-/** Native datetime segments need keyboard navigation rather than ordinary text entry. */
-export async function enterCalendarDateTime(
-  expect: Expect,
-  page: Page,
-  field: Locator,
-  at: number,
-): Promise<void> {
-  const value = await page.evaluate((at) => {
+/** The moment as `YYYY-MM-DDTHH:mm:ss` on a 24-hour clock in the browser's own zone. */
+function browserDateTime(page: Page, at: number): Promise<string> {
+  return page.evaluate((at) => {
     const parts = new Intl.DateTimeFormat('en-CA', {
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       year: 'numeric',
@@ -282,6 +277,16 @@ export async function enterCalendarDateTime(
       parts.find((part) => part.type === type)!.value
     return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}:${part('second')}`
   }, at)
+}
+
+/** Native datetime segments need keyboard navigation rather than ordinary text entry. */
+export async function enterCalendarDateTime(
+  expect: Expect,
+  page: Page,
+  field: Locator,
+  at: number,
+): Promise<void> {
+  const value = await browserDateTime(page, at)
   const [date, time] = value.split('T')
   const [year, month, day] = date.split('-')
   const [hour, minute, second] = time.split(':')
@@ -305,4 +310,34 @@ export async function enterCalendarDateTime(
   await field.press('Tab')
   // Chromium omits zero seconds in the serialized native value.
   await expect(field).toHaveValue(value.replace(/:00$/, ''))
+}
+
+/** Type one moment into a DateTimePicker edge by its named parts, in the browser's zone. */
+export async function enterPickerDateTime(
+  expect: Expect,
+  field: Locator,
+  edge: string,
+  at: number,
+): Promise<void> {
+  const [date, time] = (await browserDateTime(field.page(), at)).split('T')
+  const [year, month, day] = date.split('-')
+  const [hours, minutes, seconds] = time.split(':')
+  for (const [name, text] of [
+    ['Day', day],
+    ['Month', month],
+    ['Year', year],
+    ['Hours', hours],
+    ['Minutes', minutes],
+    ['Seconds', seconds],
+  ] as const) {
+    const part = field.getByRole('spinbutton', {
+      name: `${edge} ${name}`,
+      exact: true,
+    })
+    await part.focus()
+    // One Backspace empties the whole part, so a prefilled edge is replaced.
+    await part.press('Backspace')
+    await part.pressSequentially(text, { delay: 10 })
+    await expect(part).toHaveAttribute('aria-valuenow', String(Number(text)))
+  }
 }
