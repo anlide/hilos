@@ -47,6 +47,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\AddressablePerson;
+use Hilos\Users\DTO\UserSecondFactorCodesDropSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollDropSignalData;
@@ -87,8 +88,8 @@ use Throwable;
  * what follows any answer - a wrong code told to the holder, a lock or a canceled removal mailed -
  * and the finish... methods continue the action that asked. What is created stays here: an
  * enrolment is started on the answer of the person's agent, which first drops the enrolment the
- * person left unfinished (HIL-1903); a set of backup codes is issued in one operation with what
- * it replaces, and a removal is asked for.
+ * person left unfinished (HIL-1903); a set of backup codes is issued on such an answer too, the
+ * agent having first dropped the set the person had (HIL-1904); and a removal is asked for.
  *
  * The profile half works on a signed-in person, whose id comes off the session: every action
  * but the first enrolment, the wait and the removal starts with a code, because a stolen live
@@ -344,7 +345,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Issues a person a new set of backup codes, the old set dying with it.
+     * Issues a person a new set of backup codes; the person's agent dropped the old set first (HIL-1904).
      *
      * @param int $userId Person
      * @return list<string> The new codes in display form
@@ -461,7 +462,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Issues a new set of backup codes after a code the person's agent checks; the old set dies.
+     * Issues a new set of backup codes after a code the person's agent checks; the agent drops the old set first (HIL-1904).
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileSecondFactorCodesRenewActionDTO $dto The proof
@@ -574,15 +575,15 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * The sign-in step lets the sign-in through, and the session holder answers it; starting
      * another app asks the person's agent to drop the enrolment left unfinished, and the new one
      * is started on that answer ({@see finishEnrollDrop()}, HIL-1903); showing the backup codes
-     * lists them; renewing them issues a new set, the old one dying with it.
+     * lists them; renewing them asks the person's agent to drop the old set, and the new one is
+     * issued on that answer ({@see finishCodesDrop()}, HIL-1904).
      *
      * @param UserSecondFactorProveSignalData $ask The ask the agent answered
      * @return ?ActionReplyDTO What the profile is told, or null when the holder or the next answer of the agent answers
      * @throws ItemNotFoundForUpdateException When the asking connection has no session any more
      * @throws ValidationException When the person was erased or merged into another account
      * @throws LogicException When the ask names an action no proof continues, or no action is being dispatched
-     * @throws RandomException When the backup codes cannot be drawn
-     * @throws HilosException When a lookup, a write or a frame fails
+     * @throws HilosException When a lookup or a frame fails
      */
     public function finishProof(UserSecondFactorProveSignalData $ask): ?ActionReplyDTO
     {
@@ -609,10 +610,9 @@ final class SecondFactorCommands extends AbstractLibraryCommands
                 return new SecondFactorProfileReplyDTO(codes: Hilos::$db->secondFactorBackupCodes->entriesOf($ask->userId));
 
             case HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW:
-                $codes = $this->issueBackupCodes($ask->userId);
-                $this->publishState($ask->userId);
+                $this->askCodesDrop($ask->userId, $ask->acceptKey);
 
-                return new SecondFactorProfileReplyDTO(backupCodes: $codes);
+                return null;
 
             default:
                 throw new LogicException("A second-factor proof continues no action {$ask->action}");
@@ -636,27 +636,34 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Continues an enrolment the person's agent confirmed, issuing the backup codes of a first app (HIL-1406).
+     * Continues an enrolment the person's agent confirmed (HIL-1406).
      *
      * A first app of the person comes with a set of backup codes; a further one does not - the set
-     * the person has stays theirs. On the way in the session holder is told the enrolment is
-     * proven and the surface moves to the screen of the codes; in the profile the codes are the
-     * answer.
+     * the person has stays theirs. The codes of a first app are issued on the next answer of the
+     * person's agent, which drops the set the person had first ({@see finishCodesDrop()},
+     * HIL-1904). For a further app, on the way in the session holder is told the enrolment is
+     * proven and the surface moves to the screen of the codes; in the profile the answer carries
+     * no codes.
      *
      * @param UserSecondFactorEnrollConfirmDoneSignalData $done The agent's answer
-     * @return ActionReplyDTO The codes screen on the way in, or the profile's answer
+     * @return ?ActionReplyDTO The codes screen on the way in, or the profile's answer; null when the next answer of the agent answers
      * @throws ItemNotFoundForUpdateException When the asking connection has no session any more
-     * @throws RandomException When the backup codes cannot be drawn
-     * @throws HilosException When a lookup, a write or a frame fails
+     * @throws ValidationException When the person was erased or merged into another account
+     * @throws LogicException When no action is being dispatched
+     * @throws HilosException When a lookup or a frame fails
      */
-    public function finishEnrollConfirm(UserSecondFactorEnrollConfirmDoneSignalData $done): ActionReplyDTO
+    public function finishEnrollConfirm(UserSecondFactorEnrollConfirmDoneSignalData $done): ?ActionReplyDTO
     {
         $ask = $done->ask;
-        $codes = $done->first ? $this->issueBackupCodes($ask->userId) : null;
+        if ($done->first) {
+            $this->askCodesDrop($ask->userId, $ask->acceptKey);
+
+            return null;
+        }
         if ($ask->action !== HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_CONFIRM) {
             $this->publishState($ask->userId);
 
-            return new SecondFactorProfileReplyDTO(backupCodes: $codes);
+            return new SecondFactorProfileReplyDTO(backupCodes: null);
         }
 
         $this->library->announceSecondFactorSetupProven($this->acting($ask->acceptKey));
@@ -664,7 +671,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
 
         return AuthFlowOutcome::moveToSecondFactor(
             AuthFlowStep::SECOND_FACTOR_CODES,
-            new SecondFactorStepData(SecondFactorPolicy::current()->trustDeviceDays(), null, backupCodes: $codes),
+            new SecondFactorStepData(SecondFactorPolicy::current()->trustDeviceDays(), null, backupCodes: null),
             null,
         );
     }
@@ -719,6 +726,48 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     public function enrolmentStands(int $userId): bool
     {
         return Hilos::$db->secondFactors->unconfirmedOf($userId) !== null;
+    }
+
+    /**
+     * Answers the press the person's agent dropped the old backup codes for, with the new set (HIL-1904).
+     *
+     * The codes are {@see codesAfterDrop()}'s. On the way in the session holder is told the
+     * enrolment is proven and the surface moves to the screen of the codes; in the profile the
+     * codes are the answer. The switch, the confirmation of the operation and the wait on the way
+     * in are not judged again, as in {@see finishEnrollConfirm()}, {@see finishProof()} and
+     * {@see finishEnrollDrop()}.
+     *
+     * @param UserSecondFactorCodesDropSignalData $ask The ask the agent answered
+     * @return ActionReplyDTO The codes screen on the way in, or the profile's answer
+     * @throws ItemNotFoundForUpdateException When the asking connection has no session any more
+     * @throws LogicException When the ask names an action no drop of the codes continues
+     * @throws RandomException When the backup codes cannot be drawn
+     * @throws HilosException When a lookup, a write or a frame fails
+     */
+    public function finishCodesDrop(UserSecondFactorCodesDropSignalData $ask): ActionReplyDTO
+    {
+        switch ($ask->action) {
+            case HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_CONFIRM:
+                $codes = $this->codesAfterDrop($ask->userId);
+                $this->library->announceSecondFactorSetupProven($this->acting($ask->acceptKey));
+                $this->publishState($ask->userId);
+
+                return AuthFlowOutcome::moveToSecondFactor(
+                    AuthFlowStep::SECOND_FACTOR_CODES,
+                    new SecondFactorStepData(SecondFactorPolicy::current()->trustDeviceDays(), null, backupCodes: $codes),
+                    null,
+                );
+
+            case HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_CONFIRM:
+            case HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW:
+                $codes = $this->codesAfterDrop($ask->userId);
+                $this->publishState($ask->userId);
+
+                return new SecondFactorProfileReplyDTO(backupCodes: $codes);
+
+            default:
+                throw new LogicException("A backup-code drop continues no action {$ask->action}");
+        }
     }
 
     /**
@@ -958,6 +1007,66 @@ final class SecondFactorCommands extends AbstractLibraryCommands
             action: $this->library->runningAction(),
             successMessage: null,
         ));
+    }
+
+    /**
+     * Asks the person's agent to drop the person's set of backup codes, and stops owing the browser an answer.
+     *
+     * The new set is issued on the agent's answer ({@see finishCodesDrop()}, HIL-1904); no code
+     * travels between the hops.
+     *
+     * @param int $userId Person whose codes are issued anew
+     * @param string $acceptKey Accept key the action arrived on
+     * @throws ValidationException When the person was erased or merged into another account
+     * @throws LogicException When no action is being dispatched
+     * @throws HilosException When the person cannot be read, or the frame cannot be named or queued
+     */
+    private function askCodesDrop(int $userId, string $acceptKey): void
+    {
+        $this->library->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP, new UserSecondFactorCodesDropSignalData(
+            userId: $userId,
+            replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->library->currentActionRequestId(),
+            action: $this->library->runningAction(),
+            successMessage: null,
+        ));
+    }
+
+    /**
+     * Reads the codes a person holds once their agent dropped the old set, issuing a set when none stands (HIL-1904).
+     *
+     * A set standing here was issued by another press answered after this drop; its unused codes
+     * answer this press too, and nothing is created. A failure - the read, the draw or the write -
+     * leaves the person with no new codes on the screen, so the section is fanned again before the
+     * failure goes on and fails the press in general words.
+     *
+     * @param int $userId Person whose codes were dropped
+     * @return list<string> The codes in display form
+     * @throws RandomException When the backup codes cannot be drawn
+     * @throws HilosException When the lookup or a write fails
+     */
+    private function codesAfterDrop(int $userId): array
+    {
+        try {
+            $entries = Hilos::$db->secondFactorBackupCodes->entriesOf($userId);
+            if ($entries === []) {
+                return $this->issueBackupCodes($userId);
+            }
+
+            $codes = [];
+            foreach ($entries as $entry) {
+                if (!$entry->used) {
+                    $codes[] = $entry->code;
+                }
+            }
+
+            return $codes;
+        } catch (Throwable $e) {
+            $this->followUp(fn () => $this->publishState($userId), 'section', $userId);
+
+            throw $e;
+        }
     }
 
     /**

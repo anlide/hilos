@@ -104,6 +104,8 @@ use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
 use Hilos\Users\DTO\UserTimeZoneWriteDoneSignalData;
 use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesDropDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesDropSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollDropDoneSignalData;
@@ -261,6 +263,10 @@ abstract class AbstractUserAgent extends AbstractAgent
             AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorEnrollDropSignalData::userId,
             AgentSignalConfigKey::DTO => UserSecondFactorEnrollDropSignalData::class,
         ],
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP => [
+            AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorCodesDropSignalData::userId,
+            AgentSignalConfigKey::DTO => UserSecondFactorCodesDropSignalData::class,
+        ],
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE => [
             AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorResetDueSignalData::userId,
             AgentSignalConfigKey::DTO => UserSecondFactorResetDueSignalData::class,
@@ -345,7 +351,8 @@ abstract class AbstractUserAgent extends AbstractAgent
      *     journal: added with the name, its feed link written here.
      *     The ways of signing in and the passkeys are written here since HIL-1405, and the second factor
      *     since HIL-1406; their creation is the libraries', and the unfinished enrolment a new start
-     *     replaces is dropped here, on the library's frame (HIL-1903). One row is born here too: the person's
+     *     replaces is dropped here, on the library's frame (HIL-1903), and so is the set of backup codes a new
+     *     issue replaces (HIL-1904). One row is born here too: the person's
      *     second-factor settings (`hilos_second_factor_setting`, keyed by the person), which the
      *     owner's first edit of it brings into being - a wait chosen, a wrong code counted - so the
      *     agent claims that set with adding and editing (owner's decision, 2026-10-09). It is a
@@ -468,7 +475,8 @@ abstract class AbstractUserAgent extends AbstractAgent
      * folded account as well (HIL-1906). The stored trust restrictions are applied to the person's
      * trusts and answered to whichever agent asked, under the reply name its frame carries, by a
      * folded account as well (HIL-1900). The unfinished enrolments of the second factor are dropped
-     * on the library's frame before it creates the next one (HIL-1903).
+     * on the library's frame before it creates the next one (HIL-1903), and so is the set of backup codes
+     * (HIL-1904).
      * A standing deletion canceled, and a profile photo set or removed, are answered the same way
      * (HIL-1409): the users library waits on the answer. The sessions library reports the last zone
      * a browser named in the background (HIL-1582). That report, the provider-name report and the
@@ -769,6 +777,20 @@ abstract class AbstractUserAgent extends AbstractAgent
                 $this->sendToAgent($enrollDrop->replySignal, $this->secondFactorAnswer(
                     fn () => $this->secondFactorEdits()->dropEnrolment($enrollDrop),
                     fn (ActionRefusal $refusal) => UserSecondFactorEnrollDropDoneSignalData::refused($enrollDrop, $refusal),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP:
+                $codesDrop = $data->data;
+                if (!$codesDrop instanceof UserSecondFactorCodesDropSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorCodesDropSignalData::class, $codesDrop);
+                }
+
+                $this->refuseAnotherPerson($codesDrop->userId, $name);
+                $this->sendToAgent($codesDrop->replySignal, $this->secondFactorAnswer(
+                    fn () => $this->secondFactorEdits()->dropCodes($codesDrop),
+                    fn (ActionRefusal $refusal) => UserSecondFactorCodesDropDoneSignalData::refused($codesDrop, $refusal),
                 ));
 
                 return;

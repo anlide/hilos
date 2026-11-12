@@ -9,6 +9,8 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\DatabaseException;
+use Hilos\Users\DTO\UserSecondFactorCodesDropDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesDropSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollDropDoneSignalData;
@@ -196,6 +198,29 @@ final class UserSecondFactorSignalDataTest extends TestCase
         self::assertEquals($ok, $restoredOk);
         self::assertNull($restoredOk->error);
         $restoredRefused = UserSecondFactorEnrollDropDoneSignalData::fromArray(self::overTheWire($refused->toArray()));
+        self::assertEquals($refused, $restoredRefused);
+        self::assertSame(SecondFactorMessages::REQUIRED, $restoredRefused->error);
+        self::assertNull($restoredRefused->errorType);
+    }
+
+    public function testABackupCodesDropAskAndItsAnswersRoundTrip(): void
+    {
+        $ask = new UserSecondFactorCodesDropSignalData(
+            7,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP_DONE,
+            'key-1',
+            'req-1',
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW,
+            null,
+        );
+        $ok = new UserSecondFactorCodesDropDoneSignalData($ask, null, null, null);
+        $refused = UserSecondFactorCodesDropDoneSignalData::refused($ask, ActionRefusal::said(SecondFactorMessages::REQUIRED));
+
+        self::assertEquals($ask, UserSecondFactorCodesDropSignalData::fromArray(self::overTheWire($ask->toArray())));
+        $restoredOk = UserSecondFactorCodesDropDoneSignalData::fromArray(self::overTheWire($ok->toArray()));
+        self::assertEquals($ok, $restoredOk);
+        self::assertNull($restoredOk->error);
+        $restoredRefused = UserSecondFactorCodesDropDoneSignalData::fromArray(self::overTheWire($refused->toArray()));
         self::assertEquals($refused, $restoredRefused);
         self::assertSame(SecondFactorMessages::REQUIRED, $restoredRefused->error);
         self::assertNull($restoredRefused->errorType);

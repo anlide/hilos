@@ -167,9 +167,9 @@ final class AgentTruthSourceOperationsTest extends TestCase
      * The library only brings the second factor into being: every edit of it is the person's agent's (HIL-1406).
      *
      * An enrolment is only created: the unfinished one before it is dropped by the person's agent
-     * (HIL-1903). A set of backup codes is created together with taking away the one it replaces; a
-     * removal is only opened here. The settings row of a person is the agent's to create, so the
-     * library holds no claim on it and only reads it.
+     * (HIL-1903). A set of backup codes is only created too: the one it replaces is dropped by the
+     * person's agent before (HIL-1904). A removal is only opened here. The settings row of a person
+     * is the agent's to create, so the library holds no claim on it and only reads it.
      */
     public function testLibraryAgentOnlyCreatesTheSecondFactor(): void
     {
@@ -180,7 +180,7 @@ final class AgentTruthSourceOperationsTest extends TestCase
         $this->assertFalse($claims[HilosDbContext::secondFactors]->allows(TruthSourceOperation::Remove));
         $this->assertTrue($claims[HilosDbContext::secondFactorBackupCodes]->allows(TruthSourceOperation::Add));
         $this->assertFalse($claims[HilosDbContext::secondFactorBackupCodes]->allows(TruthSourceOperation::Update));
-        $this->assertTrue($claims[HilosDbContext::secondFactorBackupCodes]->allows(TruthSourceOperation::Remove));
+        $this->assertFalse($claims[HilosDbContext::secondFactorBackupCodes]->allows(TruthSourceOperation::Remove));
         $this->assertTrue($claims[HilosDbContext::secondFactorResets]->allows(TruthSourceOperation::Add));
         $this->assertFalse($claims[HilosDbContext::secondFactorResets]->allows(TruthSourceOperation::Update));
         $this->assertFalse($claims[HilosDbContext::secondFactorResets]->allows(TruthSourceOperation::Remove));

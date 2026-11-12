@@ -12,6 +12,8 @@ use Hilos\Database\View\Item\SecondFactor;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Users\DTO\UserSecondFactorCodesDropDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesDropSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollDropDoneSignalData;
@@ -42,7 +44,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * and - when the factor goes whole - the trust of every browser that skipped it (HIL-1407).
  * Creating - an enrolment started, a set of backup codes issued, a removal asked for - stays with
  * the library; the unfinished enrolment a new start replaces is dropped here, on the library's
- * frame (HIL-1903).
+ * frame (HIL-1903), and so is the set of backup codes a new issue replaces (HIL-1904).
  *
  * A check that reads the set is made here, in the turn that writes: the code is the write itself,
  * and whether an app is the person's and the last one is asked where the app is deleted, so two
@@ -254,6 +256,32 @@ final class SecondFactorPersonEdits
         Hilos::$db->secondFactors->actions->dropUnfinished($this->userId);
 
         return new UserSecondFactorEnrollDropDoneSignalData($ask, null, null, null);
+    }
+
+    /**
+     * Drops the person's whole set of backup codes, the spent ones and the unspent alike.
+     *
+     * The library asks for the set to go before it issues the next one, so the person never holds two
+     * sets. The rows go in one transaction of this agent: a failure leaves the set as it was. Nothing to
+     * drop is an answer like any other.
+     *
+     * @param UserSecondFactorCodesDropSignalData $ask The drop asked for
+     * @return UserSecondFactorCodesDropDoneSignalData The set dropped
+     * @throws HilosException When the lookup, a delete or the transaction fails
+     */
+    public function dropCodes(UserSecondFactorCodesDropSignalData $ask): UserSecondFactorCodesDropDoneSignalData
+    {
+        Database::transactionStart();
+        try {
+            Hilos::$db->secondFactorBackupCodes->actions->deleteForUser($this->userId);
+            Database::transactionCommit();
+        } catch (HilosException $failure) {
+            Database::transactionRollbackSilent();
+
+            throw $failure;
+        }
+
+        return new UserSecondFactorCodesDropDoneSignalData($ask, null, null, null);
     }
 
     /**

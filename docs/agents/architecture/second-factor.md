@@ -46,7 +46,7 @@ The transitions below do not make a future owner callable today.
 | Table | Writers and operations today | What |
 |---|---|---|
 | `hilos_second_factor` | users library `Add`; person's agent `Update`/`Remove`; holder `Update`/`Remove` for merge/erasure | apps: base32 secret, last accepted step, confirmed or not |
-| `hilos_second_factor_backup_code` | users library `Add`/`Remove` (replacement set); person's agent `Update`/`Remove`; holder `Update`/`Remove` for merge/erasure | one row per code, spent by a conditional write |
+| `hilos_second_factor_backup_code` | users library `Add`; person's agent `Update`/`Remove`; holder `Update`/`Remove` for merge/erasure | one row per code, spent by a conditional write |
 | `hilos_second_factor_reset` | users library `Add`; person's agent `Update`/`Remove`; holder `Remove` for merge/erasure | removals: when asked, when due, the cancel token, last notice |
 | `hilos_second_factor_setting` | person's agent `Add`/`Update`; holder `Add`/`Update`/`Remove` for the merge's wait upsert and merge/erasure deletion | the person's removal wait and a shorter one not yet in force; the app-code miss count, its window, the lock step and its end |
 | `hilos_second_factor_trust` | holder `Add`/`Update`/`Remove` (create/renew, global term/switch-off, merge/erasure); person's agent `Update`/`Remove` for personal revocations and for applying the saved restrictions | a browser (session row) trusted for a person until a moment, and the moment it was last granted |
@@ -56,8 +56,7 @@ The personal edits moved in HIL-1406 are written by the person's agent
 (`AbstractUserAgent`, its writes in `SecondFactorPersonEdits`) on a frame of the
 users library, which judges what lies outside the person's set first and does
 what follows the agent's answer. The library still creates enrollment, backup
-codes and reset requests. Today `issueSet()` also deletes the previous code set.
-That is a later write to old rows, not part of creating its replacement.
+codes and reset requests, and only creates them.
 
 The personal owner removes the previous enrollment before the library creates
 the new one (HIL-1903). Every start of an enrollment - on the way in, the first
@@ -70,8 +69,24 @@ secret is born at that creation, so nothing secret travels between the hops. A
 refusal of the agent refuses the press in its words. An answer that finds an
 unfinished enrollment standing again - a second start pressed at the same time
 created it first - refuses its press with `SETUP_EXPIRED`, so a person keeps at
-most one unfinished enrollment. The personal owner removes the old backup-code
-set before the library creates the new codes (not in the code yet — HIL-1904).
+most one unfinished enrollment.
+
+The personal owner removes the old backup-code set before the library creates
+the new codes (HIL-1904). Every issue of a set - the first app connected on the
+way in or in the profile, and new codes in the profile after a code - sends the
+person's agent `hilos_user_second_factor_codes_drop`; the agent deletes the
+person's whole set in its own transaction, an empty set included, and answers
+`hilos_user_second_factor_codes_drop_done`, and on that answer the library
+creates the new set and answers the same press as before. No code travels
+between the hops. A refusal of the agent refuses the press in its words and
+leaves the old set standing. An answer that finds a set standing again - a
+second press at the same time created it first - answers its press with the
+unused codes of that set and creates nothing, so a person keeps one set. A
+failure after the drop - the read, the draw or the write of the new set - fails
+the press in the general words, and the person's section is fanned again first,
+so it shows what the failed write left: no codes, unless it broke midway
+through the set.
+
 The secret, code and token written immediately after their new row's insert
 remain completion of creation. The person's settings row is the agent's to
 create, born of its first edit - a wait chosen, a wrong code counted (owner's decision,

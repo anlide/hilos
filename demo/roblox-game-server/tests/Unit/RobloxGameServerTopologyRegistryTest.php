@@ -579,7 +579,7 @@ final class RobloxGameServerTopologyRegistryTest extends TestCase
             'notifications' => ['HIL-1952'],
             'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],
             'pushSubscriptions' => ['HIL-1952'],
-            'secondFactorBackupCodes' => ['HIL-1904', 'HIL-1952', 'HIL-1999'],
+            'secondFactorBackupCodes' => ['HIL-1952', 'HIL-1999'],
             'secondFactorResets' => ['HIL-1952', 'HIL-1999'],
             'secondFactorSettings' => ['HIL-1952', 'HIL-1999'],
             'secondFactorTrusts' => ['HIL-1907', 'HIL-1908', 'HIL-1909', 'HIL-1952', 'HIL-1999'],

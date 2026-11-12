@@ -176,6 +176,8 @@ use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesDropDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesDropSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollDropDoneSignalData;
@@ -1068,6 +1070,20 @@ final class HilosSignalConstants
      * The ask comes back whole. Carried by {@see UserSecondFactorEnrollDropDoneSignalData}.
      */
     public const string HILOS_USER_SECOND_FACTOR_ENROLL_DROP_DONE = 'hilos_user_second_factor_enroll_drop_done';
+
+    /**
+     * Users library → the person's agent: drop the person's whole set of backup codes (HIL-1904).
+     *
+     * Carried by {@see UserSecondFactorCodesDropSignalData}, an ask of the handover form.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_CODES_DROP = 'hilos_user_second_factor_codes_drop';
+
+    /**
+     * The person's agent → users library: the set of backup codes is dropped, or why not (HIL-1904).
+     *
+     * The ask comes back whole. Carried by {@see UserSecondFactorCodesDropDoneSignalData}.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_CODES_DROP_DONE = 'hilos_user_second_factor_codes_drop_done';
 
     /**
      * Test-only users library → the person's agent: forget later acceptances of a document (HIL-1899).

@@ -234,6 +234,7 @@ use Hilos\Users\DTO\UserPhotoPutDoneSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveDoneSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesDropDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollDropDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
@@ -328,11 +329,11 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * The second factor is a proof of the account too (HIL-494), and since HIL-1406 this library only
      * brings it into being: it starts an enrolment (the unfinished one is dropped before, by the
      * person's agent on a frame of this library - HIL-1903), issues a set of backup codes (the old set
-     * goes in the same operation - adding and taking away what it made, never editing it) and opens a
-     * delayed removal. Every edit of one person's second factor - a code that proves them, an app
-     * confirmed or disconnected, a removal canceled, carried out or marked reminded, the person's own
-     * removal wait, the count and the lock of wrong app codes - is written by the person's agent on a
-     * frame of this library, and the row that wait and count live on is the agent's to create too.
+     * is dropped before the same way - HIL-1904) and opens a delayed removal. Every edit of one
+     * person's second factor - a code that proves them, an app confirmed or disconnected, a removal
+     * canceled, carried out or marked reminded, the person's own removal wait, the count and the
+     * lock of wrong app codes - is written by the person's agent on a frame of this library, and the
+     * row that wait and count live on is the agent's to create too.
      * This library only reads that row ({@see self::READS_DB}). The browsers trusted to skip the step
      * are keyed by a session row: the session holder creates the trust on the way in, and the person's
      * agent takes one person's trust away (HIL-1407).
@@ -360,7 +361,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosDbContext::registrationReservations => TruthSourceOperation::ALL,
         HilosDbContext::passkeyCredentials => [TruthSourceOperation::Add],
         HilosDbContext::secondFactors => [TruthSourceOperation::Add],
-        HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+        HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Add],
         HilosDbContext::secondFactorResets => [TruthSourceOperation::Add],
         HilosDbContext::accountDeletions => [TruthSourceOperation::Add],
         HilosDbContext::legalAcceptances => [TruthSourceOperation::Add],
@@ -443,6 +444,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL_DONE => UserSecondFactorResetCancelDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE_DONE => UserSecondFactorWaitWriteDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP_DONE => UserSecondFactorEnrollDropDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP_DONE => UserSecondFactorCodesDropDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE_DONE => UserSecondFactorResetDueDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE => UserSecondFactorResetRemindDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE => UserSecondFactorUnlockDoneSignalData::class,
@@ -1428,6 +1430,19 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                         ? SecondFactorMessages::SETUP_EXPIRED
                         : null,
                     fn () => $this->secondFactorCommands()->finishEnrollDrop($dropped->ask),
+                );
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP_DONE:
+                $codesDropped = $data->data;
+                if (!$codesDropped instanceof UserSecondFactorCodesDropDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorCodesDropDoneSignalData::class);
+                }
+                $this->resumeAction(
+                    $codesDropped->ask,
+                    $codesDropped->error,
+                    fn () => $this->secondFactorCommands()->finishCodesDrop($codesDropped->ask),
                 );
 
                 return;

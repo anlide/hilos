@@ -8,6 +8,7 @@ use Closure;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\SecondFactorCommands;
 use Hilos\Auth\Library\DTO\SecondFactorResetCancelLinkActionDTO;
+use Hilos\Auth\SecondFactor\BackupCodeGenerator;
 use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorCodesRenewActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorCodesShowActionDTO;
@@ -32,6 +33,8 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
@@ -43,6 +46,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Identity\IdentityType;
@@ -51,6 +55,7 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\View\Item\SecondFactor;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Log\AgentLogStream;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
@@ -169,6 +174,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         $codes = $this->connectFirstApp();
 
         $this->assertCount(SecondFactorSettings::DEFAULT_BACKUP_CODES, $codes);
+        $this->assertCount(SecondFactorSettings::DEFAULT_BACKUP_CODES, Hilos::$db->secondFactorBackupCodes->listByUser(self::USER_ID));
         $state = $this->lastState();
         $this->assertCount(1, $state?->authenticators ?? []);
         $this->assertSame(SecondFactorSettings::DEFAULT_BACKUP_CODES, $state?->backupCodesLeft);
@@ -397,6 +403,132 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
 
         $this->assertSame([$leftover], $this->unfinishedIds());
         $this->assertSame([], Hilos::$db->secondFactors->confirmedOf(self::USER_ID));
+    }
+
+    /**
+     * New backup codes replace the old set through the person's agent: the agent drops the old set,
+     * and the new one is issued on its answer and is the answer of the press (HIL-1904).
+     *
+     * @throws HilosException When a command fails
+     */
+    public function testNewCodesReplaceTheOldSetThroughThePersonsAgent(): void
+    {
+        $secret = $this->connectFirstAppSecret($old);
+        $this->drain();
+
+        $renewed = $this->profileReply(
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW,
+            new ProfileSecondFactorCodesRenewActionDTO($this->nextCodeOf($secret), false),
+        );
+
+        $codes = $renewed->backupCodes ?? [];
+        $this->assertCount(SecondFactorSettings::DEFAULT_BACKUP_CODES, $codes);
+        $this->assertNull(Hilos::$db->secondFactorBackupCodes->findUnused(self::USER_ID, BackupCodeGenerator::normalize($old[0])));
+        $this->assertNotNull(Hilos::$db->secondFactorBackupCodes->findUnused(self::USER_ID, BackupCodeGenerator::normalize($codes[0])));
+        $this->assertCount(SecondFactorSettings::DEFAULT_BACKUP_CODES, Hilos::$db->secondFactorBackupCodes->listByUser(self::USER_ID));
+        $this->assertSame(SecondFactorSettings::DEFAULT_BACKUP_CODES, $this->lastState()?->backupCodesLeft);
+    }
+
+    /**
+     * Two renewals pressed at once both reach the person's agent before either drop is answered:
+     * the answer resumed first finds no set and issues one, the other finds that set standing and
+     * answers it - one set is left, and both presses are answered with it (HIL-1904).
+     *
+     * @throws HilosException When a command or a frame fails
+     */
+    public function testTwoRenewalsAtOnceLeaveOneSetAndAnswerItTwice(): void
+    {
+        $secret = $this->connectFirstAppSecret($first);
+        $this->drain();
+        $this->pressDeferred(
+            'renew-a',
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW,
+            new ProfileSecondFactorCodesRenewActionDTO($this->nextCodeOf($secret), false),
+        );
+        // Two app codes of one step do not pass the replay guard, so the other press proves with a backup code.
+        $this->pressDeferred(
+            'renew-b',
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW,
+            new ProfileSecondFactorCodesRenewActionDTO($first[0], true),
+        );
+        $log = $this->logged(fn () => $this->carryPersonFrames($this->library));
+
+        $this->assertStringNotContainsString('Action failed', $log, 'Answering with the standing set is no failure');
+        $acks = $this->acks();
+        $this->assertSame(['renew-a', 'renew-b'], array_keys($acks));
+        $this->assertInstanceOf(PageActionSuccessSignalData::class, $acks['renew-a']);
+        $this->assertInstanceOf(PageActionSuccessSignalData::class, $acks['renew-b']);
+        $codes = SecondFactorProfileReplyDTO::fromArray((array)$acks['renew-a']->reply)->backupCodes ?? [];
+        $this->assertCount(SecondFactorSettings::DEFAULT_BACKUP_CODES, $codes);
+        $this->assertSame($codes, SecondFactorProfileReplyDTO::fromArray((array)$acks['renew-b']->reply)->backupCodes);
+        $this->assertCount(SecondFactorSettings::DEFAULT_BACKUP_CODES, Hilos::$db->secondFactorBackupCodes->listByUser(self::USER_ID));
+    }
+
+    /**
+     * A drop the person's agent refuses refuses the renewal in the agent's words, and the old codes
+     * stay as they were (HIL-1904); that the drop itself was refused shows in the agent's line in its
+     * error stream.
+     *
+     * @throws HilosException When a command fails for another reason
+     */
+    public function testARenewalWhoseDropTheAgentRefusesKeepsTheOldCodes(): void
+    {
+        $secret = $this->connectFirstAppSecret($codes);
+        $agentId = $this->personAgent(self::USER_ID)->getId();
+        // The agent keeps its claim on the apps, so the app code passes, and loses the one on the
+        // codes, so the truth source refuses the drop it tries.
+        TruthSourceRegistry::unregister(HilosDbContext::secondFactorBackupCodes, $agentId);
+
+        $this->takeAgentErrors($agentId);
+        $log = $this->logged(function () use ($secret): void {
+            try {
+                $this->profileReply(
+                    HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW,
+                    new ProfileSecondFactorCodesRenewActionDTO($this->nextCodeOf($secret), false),
+                );
+                self::fail('A renewal the agent dropped nothing for must be refused');
+            } catch (ValidationException $exception) {
+                $this->assertSame(SignalConstants::ACTION_FAILED_REASON, $exception->getMessage());
+            }
+        });
+
+        $this->assertSame(1, substr_count($this->takeAgentErrors($agentId), 'Second factor of #' . self::USER_ID . ' failed:'));
+        $this->assertStringNotContainsString('Action failed', $log);
+        $this->assertNotNull(Hilos::$db->secondFactorBackupCodes->findUnused(self::USER_ID, BackupCodeGenerator::normalize($codes[0])));
+        $this->assertCount(SecondFactorSettings::DEFAULT_BACKUP_CODES, Hilos::$db->secondFactorBackupCodes->listByUser(self::USER_ID));
+    }
+
+    /**
+     * A new set that cannot be created after the person's agent dropped the old one fails the press
+     * in the general words, with the detail in the log, and the section is fanned again: it shows the
+     * person no codes left (HIL-1904).
+     *
+     * @throws HilosException When a command or a frame fails
+     */
+    public function testACreationThatFailsAfterTheDropFailsThePressAndShowsNoCodes(): void
+    {
+        $secret = $this->connectFirstAppSecret();
+        $this->drain();
+        $this->pressDeferred(
+            'renew-a',
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW,
+            new ProfileSecondFactorCodesRenewActionDTO($this->nextCodeOf($secret), false),
+        );
+
+        // The library answers in a frame of its own and holds no claim in this case, so the truth
+        // source refuses the set it creates; the person's agent answers in its own frame, as before.
+        $log = $this->logged(fn () => ExecutionContext::run(
+            new ExecutionFrame(agentId: $this->library->getId()),
+            fn () => $this->carryPersonFrames($this->library),
+        ));
+
+        $this->assertStringContainsString('Action failed', $log);
+        $acks = $this->acks();
+        $this->assertSame(['renew-a'], array_keys($acks));
+        $this->assertInstanceOf(PageActionErrorSignalData::class, $acks['renew-a']);
+        $this->assertSame(SignalConstants::ACTION_FAILED_REASON, $acks['renew-a']->reason);
+        $this->assertSame([], Hilos::$db->secondFactorBackupCodes->listByUser(self::USER_ID));
+        $this->assertSame(0, $this->lastState()?->backupCodesLeft);
     }
 
     /**
@@ -1055,6 +1187,25 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
             Logger::resetLogFile();
             unlink($logFile);
         }
+    }
+
+    /**
+     * Reads and clears what an agent wrote to its error stream, which {@see logged()} leaves out: an agent's
+     * line goes to a stream file of its own beside the log file, not into the log file.
+     *
+     * @param string $agentId Agent whose error stream to take
+     * @return string What the agent wrote to its error stream since the last take
+     */
+    private function takeAgentErrors(string $agentId): string
+    {
+        $path = AgentLogStream::pathFor(sys_get_temp_dir(), $agentId, true);
+        if (!is_file($path)) {
+            return '';
+        }
+        $lines = (string)file_get_contents($path);
+        unlink($path);
+
+        return $lines;
     }
 
     /**

@@ -310,9 +310,12 @@ second factor is started the same way (HIL-1903): the users library asks the
 person's owner to drop their unfinished enrollments
 (`hilos_user_second_factor_enroll_drop`), the owner deletes them and answers
 (`hilos_user_second_factor_enroll_drop_done`), and the library resumes the same
-press and creates the new enrollment; the library keeps `Add` alone there. The
-personal owner removes old backup codes (not in the code yet — HIL-1904) before
-the library creates their replacements.
+press and creates the new enrollment; the library keeps `Add` alone there. A
+set of backup codes is issued the same way (HIL-1904): the library asks the
+person's owner to drop the old set (`hilos_user_second_factor_codes_drop`), the
+owner deletes it and answers (`hilos_user_second_factor_codes_drop_done`), and
+the library resumes the same press and creates the new set; the library keeps
+`Add` alone there too.
 Trust renewal, policy, rename links, first-admin creation and the legal test
 path have their own addresses in that same table. Their current doors and
 claims stay until each real move; no generic sweep exception is retained.

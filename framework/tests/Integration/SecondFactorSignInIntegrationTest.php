@@ -773,6 +773,27 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
     }
 
     /**
+     * The first app connected on the way in replaces a set of backup codes left from before: the
+     * person's agent drops the set, and the codes screen shows a new one (HIL-1904).
+     *
+     * @throws HilosException When a frame or a command fails
+     */
+    public function testTheFirstAppOnTheWayInReplacesALeftoverSet(): void
+    {
+        Hilos::$setting = new SettingsAccessor(SecondFactorRequiredTestCatalog::class);
+        $this->grant();
+        $this->drain();
+        Hilos::$db->secondFactorBackupCodes->actions->issueSet(self::USER_ID, ['leftoverab']);
+
+        $confirm = $this->setupConfirm($this->setupStart());
+
+        $this->assertSame(AuthFlowStep::SECOND_FACTOR_CODES, $confirm->step);
+        $this->assertCount(SecondFactorSettings::DEFAULT_BACKUP_CODES, (array)$confirm->secondFactor?->backupCodes);
+        $this->assertNull(Hilos::$db->secondFactorBackupCodes->findUnused(self::USER_ID, 'leftoverab'), 'The leftover set was dropped');
+        $this->assertCount(SecondFactorSettings::DEFAULT_BACKUP_CODES, Hilos::$db->secondFactorBackupCodes->listByUser(self::USER_ID));
+    }
+
+    /**
      * Turned off for the installation, the factor asks a person with an app no code (HIL-1303).
      *
      * @throws HilosException When enrolment or the grant fails

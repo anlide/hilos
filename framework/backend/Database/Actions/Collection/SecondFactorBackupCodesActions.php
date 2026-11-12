@@ -18,8 +18,9 @@ use Hilos\Database\View\Item\SecondFactorBackupCode;
 /**
  * SecondFactorBackupCodesActions - write operations for the SecondFactorBackupCodes collection (HIL-494).
  *
- * Issuing a person's set and deleting it. Burning one code is a write on a row already
- * there and belongs to that item's actions.
+ * Issuing a person's set - only creating it - and deleting it: the person's agent drops the old
+ * set on the frame of the users library before a new one is issued (HIL-1904). Burning one code
+ * is a write on a row already there and belongs to that item's actions.
  *
  * @extends DbActions<SecondFactorBackupCode, ObjectSecondFactorBackupCodes>
  * @property-read DbCollectionSecondFactorBackupCodes $collection
@@ -28,21 +29,23 @@ use Hilos\Database\View\Item\SecondFactorBackupCode;
 class SecondFactorBackupCodesActions extends DbActions
 {
     /**
-     * Replaces a person's backup codes with a new set.
+     * Creates a person's set of backup codes.
+     *
+     * Only creates: the person's old set was dropped by the person's agent before this is called
+     * (HIL-1904).
      *
      * @param int $userId Person the set belongs to
      * @param list<string> $codes Normalized codes of the new set
      * @throws CreateNotAllowedException When the truth source rejects the inserts
-     * @throws WriteNotAllowedException When the truth source rejects the delete of the old set or a code write
-     * @throws DatabaseException When a lookup, a delete, an insert or a code write fails
-     * @throws InvalidArgumentException When a query or the queued DB-sync signal is invalid
+     * @throws WriteNotAllowedException When the truth source rejects a code write
+     * @throws DatabaseException When an insert or a code write fails
+     * @throws InvalidArgumentException When the queued DB-sync signal is invalid
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws ObjectGetIdStringNotImplementedException If an inserted row has no primary key
      */
     public function issueSet(int $userId, array $codes): void
     {
         $this->ensureCanCreateInSet((string)$userId);
-        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);
 
         $this->objectCollection->issueSet($userId, $codes);
     }

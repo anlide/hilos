@@ -27,8 +27,9 @@ use Hilos\Utils\Helpers\TimeHelper;
 /**
  * SecondFactorBackupCodes object collection - the backup codes of every person (HIL-494).
  *
- * A person holds one set at a time: {@see issueSet()} replaces the old set whole, and
- * {@see deleteForUser()} takes it out with the rest of the second factor. The code column
+ * A person holds one set at a time: {@see issueSet()} creates a set and only creates it - the
+ * person's agent takes the old set out with {@see deleteForUser()} before a new one is issued
+ * (HIL-1904), and the same delete takes it out with the rest of the second factor. The code column
  * is DB-only, so the two reads that need the codes themselves - finding the row a typed
  * code names, and listing the set for the "Show" screen - are targeted queries.
  *
@@ -64,15 +65,16 @@ class SecondFactorBackupCodes extends Objects
     }
 
     /**
-     * Replaces a person's backup codes with a new set.
+     * Creates a person's set of backup codes.
      *
-     * The old set dies before the new one is written: an interruption in between leaves the
-     * person with fewer codes, never with two live sets.
+     * Nothing is taken out here. The person's old set was dropped by the person's agent before
+     * this is called ({@see deleteForUser()}, HIL-1904), in a transaction of its own: an
+     * interruption in between leaves the person with no codes, never with two live sets.
      *
      * @param int $userId Person the set belongs to
      * @param list<string> $codes Normalized codes of the new set
-     * @throws DatabaseException When a lookup, a delete, an insert or a code write fails
-     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws DatabaseException When an insert or a code write fails
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
@@ -80,8 +82,6 @@ class SecondFactorBackupCodes extends Objects
      */
     public function issueSet(int $userId, array $codes): void
     {
-        $this->deleteForUser($userId);
-
         $now = TimeHelper::nowMs();
         foreach ($codes as $code) {
             $row = static::OBJECT_CLASS::create();
