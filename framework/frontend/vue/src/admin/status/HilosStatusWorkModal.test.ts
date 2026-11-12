@@ -556,6 +556,18 @@ describe('Works window field', () => {
     ])
   })
 
+  it('submits on Enter from another field while the window calendar is open', async () => {
+    const h = await open()
+    await fillWork()
+    await openCalendar()
+    expect(calendar().exists()).toBe(true)
+    // Focus stays in the calendar: a focused Title would close a wide popup.
+    await press(field('title'), 'Enter')
+    expect(h.sent.map((frame) => frame.action)).toEqual([
+      'hilos_status_work_schedule',
+    ])
+  })
+
   it('opens the next form with an empty window in the newly chosen zone', async () => {
     const zone = readerTimeZone()
     cleanups.push(zone.release)

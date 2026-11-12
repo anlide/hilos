@@ -660,6 +660,7 @@ export {
   expectBackupMoments,
   expectLegalAcceptanceMoments,
   expectMaintenanceMoment,
+  expectPickerDateTime,
   expectReaderMillisecondMoment,
   expectReaderMoment,
   legalAcceptanceMomentRow,

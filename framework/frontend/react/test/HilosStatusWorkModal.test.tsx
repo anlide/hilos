@@ -6,34 +6,68 @@
 // Scenarios mirror framework/frontend/vue/src/admin/status/HilosStatusWorkModal.test.ts.
 import { useState } from 'react'
 import { act, fireEvent } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 import {
   HilosPages,
   hilosToasts,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   type TableRow,
 } from '@hilos/core/base'
-import {
-  localDateTimeValue,
-  type HilosStatusWorksData,
-} from '@hilos/core/admin/status'
+import type { HilosStatusWorksData } from '@hilos/core/admin/status'
 
 import { HilosStatusWorkModal } from '../src/admin/status/HilosStatusWorkModal.js'
 import { readerTimeZone } from './readerTimeZone.js'
 import {
   announcement,
-  browserDateTimeValues,
   statusWorksHarness,
   statusWorksWindows,
   workRow,
   worksData,
 } from './statusFixtures.js'
 
+let scrollDescriptor: PropertyDescriptor | undefined
+let stubbedScroll = false
+beforeAll(() => {
+  scrollDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'scrollIntoView',
+  )
+  // jsdom draws no layout and so implements no scrollIntoView, which the
+  // window calendar calls when it opens.
+  if (typeof HTMLElement.prototype.scrollIntoView !== 'function') {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value() {},
+    })
+    stubbedScroll = true
+  }
+})
+afterAll(() => {
+  if (!stubbedScroll) return
+  if (scrollDescriptor === undefined) {
+    Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
+  } else {
+    Object.defineProperty(
+      HTMLElement.prototype,
+      'scrollIntoView',
+      scrollDescriptor,
+    )
+  }
+})
+
 const cleanups: (() => void)[] = []
 beforeEach(() => {
   vi.useFakeTimers()
-  // First in, so it is released last, after every field has left the page.
-  cleanups.push(browserDateTimeValues())
 })
 afterEach(() => {
   for (const cleanup of cleanups.splice(0).reverse()) act(cleanup)
@@ -41,7 +75,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-/** The rule of announcements the interval fields are described by. */
+/** The rule of announcements the window field is described by. */
 const OVERLAP_HINT =
   'The window cannot overlap another announcement, even if the components differ. Simultaneous work is one announcement with several components. Adjacent windows are fine: one ends at 07:00, the next starts at 07:00.'
 
@@ -93,11 +127,86 @@ function type(name: string, value: string): void {
   fireEvent.change(field(name), { target: { value } })
 }
 
+/** The parts of one window edge, in the order the picker shows them. */
+const WINDOW_PARTS = [
+  'Day',
+  'Month',
+  'Year',
+  'Hours',
+  'Minutes',
+  'Seconds',
+] as const
+
+/**
+ * One edge's part of the works window field, named as the picker names it.
+ *
+ * @param edge The edge prefix the form gives the picker.
+ * @param name The part's name.
+ */
+function windowPart(
+  edge: 'Starts' | 'Ends',
+  name: (typeof WINDOW_PARTS)[number],
+): HTMLInputElement {
+  const part = document.body.querySelector<HTMLInputElement>(
+    `[data-id="hilos-status-work-window"] input[aria-label="${edge} ${name}"]`,
+  )
+  if (part === null) throw new Error(`Missing window part ${edge} ${name}`)
+  return part
+}
+
+/**
+ * The shown texts of one window edge: day, month, year, hours, minutes, seconds.
+ *
+ * @param edge The edge prefix the form gives the picker.
+ */
+function windowTexts(edge: 'Starts' | 'Ends'): string[] {
+  return WINDOW_PARTS.map((name) => windowPart(edge, name).value)
+}
+
+/**
+ * Press one key on a control the way a keyboard does: a bubbling, cancelable
+ * keydown.
+ *
+ * @param target The control that has the key.
+ * @param key The key's name.
+ */
+function press(target: Element, key: string): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', {
+    key,
+    bubbles: true,
+    cancelable: true,
+  })
+  act(() => {
+    target.dispatchEvent(event)
+  })
+  return event
+}
+
+/**
+ * Type one edge of the works window part by part, as a keyboard does: each
+ * part is focused, cleared and typed digit by digit.
+ *
+ * @param edge The edge prefix the form gives the picker.
+ * @param texts Day, month, year, hours, minutes and seconds, in this order.
+ */
+function typeWindowEdge(
+  edge: 'Starts' | 'Ends',
+  texts: readonly [string, string, string, string, string, string],
+): void {
+  for (const [index, name] of WINDOW_PARTS.entries()) {
+    const input = windowPart(edge, name)
+    act(() => {
+      input.focus()
+    })
+    for (const key of ['Backspace', ...texts[index]!]) press(input, key)
+  }
+}
+
 /** Fill a valid announcement whose Tokyo times are the default announcement's. */
 function fillWork(): void {
   type('title', '  Upgrade <database>  ')
-  type('starts', '2031-01-02T12:04:05')
-  type('ends', '2031-01-02T13:05:06')
+  typeWindowEdge('Starts', ['02', '01', '2031', '12', '04', '05'])
+  typeWindowEdge('Ends', ['02', '01', '2031', '13', '05', '06'])
   fireEvent.click(field('component-service'))
   type('description', '  Plain text <b>only</b>  ')
 }
@@ -174,7 +283,7 @@ describe('HilosStatusWorkModal with real creation and row-edit controllers', () 
     async (kind) => {
       const components = [
         { componentKey: 'title', name: 'Title service' },
-        { componentKey: 'starts', name: 'Starts service' },
+        { componentKey: 'window', name: 'Window service' },
       ]
       readIn('UTC')
       const { w } = await open(kind, false, [workRow({ componentKeys: [] })], {
@@ -184,13 +293,20 @@ describe('HilosStatusWorkModal with real creation and row-edit controllers', () 
       const controller = kind === 'create' ? w.create : w.edit
       type('title', 'Maintenance')
       type('description', 'Details for visitors')
-      type('starts', '2031-01-02T03:04:05')
-      type('ends', '2031-01-02T04:05:06')
+      typeWindowEdge('Starts', ['02', '01', '2031', '03', '04', '05'])
+      typeWindowEdge('Ends', ['02', '01', '2031', '04', '05', '06'])
+      const windowGroup = field('window')
+      expect
+        .soft(
+          document
+            .getElementById(windowGroup.getAttribute('aria-labelledby')!)
+            ?.textContent?.trim(),
+        )
+        .toBe('Window, UTC')
+      const shownWindow = [...windowTexts('Starts'), ...windowTexts('Ends')]
       const labels = [...workForm().querySelectorAll('label')]
       const staticEntries = [
         { key: 'title', label: 'Title' },
-        { key: 'starts', label: 'Starts, UTC' },
-        { key: 'ends', label: 'Ends, UTC' },
         { key: 'description', label: 'What visitors read' },
       ]
       const staticFields = staticEntries.map(({ key, label: text }) => {
@@ -221,9 +337,13 @@ describe('HilosStatusWorkModal with real creation and row-edit controllers', () 
         }
         expect.soft(controller.form.get().componentKeys).toEqual(selected)
         expect.soft(staticFields).not.toContain(document.activeElement)
+        expect.soft(windowGroup.contains(document.activeElement)).toBe(false)
         expect
           .soft(staticFields.map((control) => control.value))
           .toEqual(values)
+        expect
+          .soft([...windowTexts('Starts'), ...windowTexts('Ends')])
+          .toEqual(shownWindow)
       }
     },
   )
@@ -239,20 +359,30 @@ describe('HilosStatusWorkModal with real creation and row-edit controllers', () 
         ?.textContent,
     ).toContain('This is an advance announcement.')
     expect(document.activeElement).toBe(field('title'))
-    expect(field('starts').getAttribute('step')).toBe('1')
-    expect(field('ends').getAttribute('step')).toBe('1')
-    expect(modal.textContent).toContain('Starts, Asia/Tokyo')
-    expect(modal.textContent).toContain('Ends, Asia/Tokyo')
+    expect(windowPart('Starts', 'Seconds').getAttribute('aria-valuemax')).toBe(
+      '59',
+    )
+    expect(windowPart('Ends', 'Seconds').getAttribute('aria-valuemax')).toBe(
+      '59',
+    )
+    expect(modal.textContent).toContain('Window, Asia/Tokyo')
     expect(workForm().querySelector('legend')?.textContent).toBe('Affects')
-    for (const control of workForm().querySelectorAll('input, textarea')) {
+    for (const control of workForm().querySelectorAll(
+      'input:not([role="spinbutton"]), textarea',
+    )) {
       expect(
         workForm().querySelector(`label[for="${control.id}"]`),
       ).not.toBeNull()
     }
+    const windowParts = field('window').querySelectorAll('input')
+    expect(windowParts).toHaveLength(12)
+    for (const part of windowParts) {
+      expect(part.getAttribute('aria-label')).toMatch(/^(Starts|Ends) /)
+    }
     expect(workSave().disabled).toBe(true)
     fillWork()
     act(() => zone.choose('America/New_York'))
-    expect(modal.textContent).toContain('Starts, Asia/Tokyo')
+    expect(modal.textContent).toContain('Window, Asia/Tokyo')
     fireEvent.keyDown(field('title'), { key: 'Enter' })
     expect(h.sent).toEqual([
       {
@@ -308,11 +438,13 @@ describe('HilosStatusWorkModal with real creation and row-edit controllers', () 
   })
 
   it.each(['create', 'edit'] as const)(
-    'describes both interval fields of the %s window by the rule that announcements never overlap',
+    'describes every window part of the %s window by the rule that announcements never overlap',
     async (kind) => {
       await open(kind)
-      for (const name of ['starts', 'ends']) {
-        const description = field(name)
+      const parts = field('window').querySelectorAll('input')
+      expect(parts).toHaveLength(12)
+      for (const part of parts) {
+        const description = part
           .getAttribute('aria-describedby')!
           .split(' ')
           .map((id) => document.getElementById(id)?.textContent ?? '')
@@ -363,9 +495,7 @@ describe('HilosStatusWorkModal with real creation and row-edit controllers', () 
     })
     expect(field('description').value).toBe('Incoming description')
     expect(field('component-queue').checked).toBe(true)
-    expect(field('ends').value).toBe(
-      localDateTimeValue(announcement.endsAt + 1000, 'UTC'),
-    )
+    expect(windowTexts('Ends')).toEqual(['02', '01', '2031', '04', '05', '07'])
     expect(notice()).toContain('Updated just now')
     h.update({ title: 'Their title', version: 3 })
     expect(notice()).toContain('Keep mine: My title; Take theirs: Their title')
@@ -375,22 +505,20 @@ describe('HilosStatusWorkModal with real creation and row-edit controllers', () 
     fireEvent.click(get('conflict-accept-mine'))
     expect(field('title').value).toBe('My title')
     fireEvent.click(field('component-service'))
-    type('ends', '2031-01-02T04:06:03')
+    typeWindowEdge('Ends', ['02', '01', '2031', '04', '06', '03'])
     h.update({
       componentKeys: ['database'],
       endsAt: announcement.endsAt + 2000,
       version: 4,
     })
     act(() => zone.choose('Asia/Tokyo'))
-    expect(notice()).toContain('Keep mine: 2031-01-02T04:06:03 (UTC)')
+    expect(notice()).toContain('Keep mine: 02/01/2031, 04:06:03 (UTC)')
     expect(notice()).toContain('(Asia/Tokyo)')
     expect(workSave().disabled).toBe(true)
     fireEvent.click(get('conflict-accept-theirs'))
     expect(field('component-database').checked).toBe(true)
     expect(field('component-service').checked).toBe(false)
-    expect(field('ends').value).toBe(
-      localDateTimeValue(announcement.endsAt + 2000, 'UTC'),
-    )
+    expect(windowTexts('Ends')).toEqual(['02', '01', '2031', '04', '05', '08'])
     h.update({ lastMailQueuedAt: 1_800_000_000_000 })
     expect(field('title').value).toBe('My title')
     expect(workSave().disabled).toBe(false)
@@ -644,5 +772,152 @@ describe('HilosStatusWorkModal with real creation and row-edit controllers', () 
     await settled()
     expect(find('modal')).toBeNull()
     expect(toasts()).toEqual(['Maintenance scheduled.'])
+  })
+})
+
+describe('Works window field', () => {
+  /** Open the window calendar with its own button, as a pointer does. */
+  function openCalendar(): void {
+    fireEvent.click(
+      workForm().querySelector('button[aria-label="Open calendar"]')!,
+    )
+  }
+
+  function calendar(): HTMLElement | null {
+    return workForm().querySelector<HTMLElement>('[role="dialog"]')
+  }
+
+  it('offers no day before today in the captured zone', async () => {
+    readIn('UTC')
+    vi.setSystemTime(Date.UTC(2030, 5, 15, 12, 0, 0))
+    await open()
+    openCalendar()
+    const days = [...calendar()!.querySelectorAll('[role="gridcell"]')]
+    const todayIndex = days.findIndex(
+      (day) => day.getAttribute('aria-current') === 'date',
+    )
+    const today = days[todayIndex]!
+    const yesterday = days[todayIndex - 1]!
+    expect(today.textContent).toBe('15')
+    expect(today.getAttribute('aria-disabled')).toBeNull()
+    expect(yesterday.textContent).toBe('14')
+    expect(yesterday.getAttribute('aria-disabled')).toBe('true')
+    fireEvent.click(yesterday)
+    expect(windowPart('Starts', 'Day').getAttribute('aria-valuenow')).toBeNull()
+    fireEvent.click(
+      calendar()!.querySelector('[role="gridcell"][aria-current="date"]')!,
+    )
+    expect(windowPart('Starts', 'Day').getAttribute('aria-valuenow')).toBe('15')
+  })
+
+  it('locks the window while the request is in flight and returns it intact after a refusal', async () => {
+    const { h } = await open()
+    fillWork()
+    const typed = [...windowTexts('Starts'), ...windowTexts('Ends')]
+    fireEvent.submit(workForm())
+    await settled()
+    expect(h.sent).toHaveLength(1)
+    const opener = workForm().querySelector<HTMLButtonElement>(
+      'button[aria-label="Open calendar"]',
+    )!
+    expect(opener.disabled).toBe(true)
+    for (const part of field('window').querySelectorAll('input'))
+      expect(part.disabled).toBe(true)
+    act(() =>
+      h.reply(false, {
+        reason: 'Another announcement already occupies this window.',
+      }),
+    )
+    await settled()
+    expect(get('hilos-status-work-error').textContent).toContain(
+      'Another announcement already occupies this window.',
+    )
+    expect(opener.disabled).toBe(false)
+    for (const part of field('window').querySelectorAll('input'))
+      expect(part.disabled).toBe(false)
+    expect([...windowTexts('Starts'), ...windowTexts('Ends')]).toEqual(typed)
+  })
+
+  it('keeps an unfinished window from Save and from Enter and asks before discarding it', async () => {
+    const { h } = await open()
+    type('title', 'Upgrade')
+    fireEvent.click(field('component-service'))
+    typeWindowEdge('Starts', ['02', '01', '2031', '12', '04', '05'])
+    const endsDay = windowPart('Ends', 'Day')
+    act(() => {
+      endsDay.focus()
+    })
+    for (const key of ['0', '2']) press(endsDay, key)
+    expect(windowTexts('Ends')[0]).toBe('02')
+    expect(workSave().disabled).toBe(true)
+    press(windowPart('Ends', 'Month'), 'Enter')
+    expect(h.sent).toEqual([])
+    press(windowPart('Ends', 'Month'), 'Escape')
+    await settled()
+    expect(document.body.textContent).toContain('Discard changes?')
+  })
+
+  it('leaves Enter inside the window field to its open calendar and submits from the field once it is closed', async () => {
+    const { h } = await open()
+    fillWork()
+    expect(workSave().disabled).toBe(false)
+    openCalendar()
+    const day = press(
+      calendar()!.querySelector('[role="gridcell"][tabindex="0"]')!,
+      'Enter',
+    )
+    expect(h.sent).toEqual([])
+    // The calendar took the key: it reached the day, not the form.
+    expect(day.defaultPrevented).toBe(true)
+    expect(calendar()).not.toBeNull()
+    const time = calendar()!.querySelector('input[role="spinbutton"]')!
+    expect(press(time, 'Enter').defaultPrevented).toBe(true)
+    expect(h.sent).toEqual([])
+    expect(find('modal')).not.toBeNull()
+    // A field part leaves Enter alone; the form silences it for the calendar.
+    expect(press(windowPart('Ends', 'Seconds'), 'Enter').defaultPrevented).toBe(
+      true,
+    )
+    expect(h.sent).toEqual([])
+    press(time, 'Escape')
+    await settled()
+    expect(calendar()).toBeNull()
+    expect(document.body.textContent).not.toContain('Discard changes?')
+    expect(workSave().disabled).toBe(false)
+    press(windowPart('Ends', 'Seconds'), 'Enter')
+    expect(h.sent.map((frame) => frame.action)).toEqual([
+      'hilos_status_work_schedule',
+    ])
+  })
+
+  it('opens the next form with an empty window in the newly chosen zone', async () => {
+    const zone = readIn('UTC')
+    const { w } = await open()
+    typeWindowEdge('Starts', ['02', '01', '2031', '12', '04', '05'])
+    fireEvent.click(field('close'))
+    await settled()
+    fireEvent.click(get('modal-confirm-discard'))
+    await settled()
+    expect(find('modal')).toBeNull()
+    act(() => zone.choose('Asia/Tokyo'))
+    act(() => {
+      w.create.open()
+    })
+    await settled()
+    expect(get('modal').textContent).toContain('Window, Asia/Tokyo')
+    for (const part of field('window').querySelectorAll('input'))
+      expect(part.getAttribute('aria-valuenow')).toBeNull()
+  })
+
+  it('submits on Enter from another field while the window calendar is open', async () => {
+    const { h } = await open()
+    fillWork()
+    openCalendar()
+    expect(calendar()).not.toBeNull()
+    // Focus stays in the calendar: a focused Title would close a wide popup.
+    press(field('title'), 'Enter')
+    expect(h.sent.map((frame) => frame.action)).toEqual([
+      'hilos_status_work_schedule',
+    ])
   })
 })

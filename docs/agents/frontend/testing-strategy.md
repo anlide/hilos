@@ -2132,6 +2132,8 @@ Keep operations that need different keyboard behavior:
   toolbox (`moments.ts`); segment navigation is part of that operation.
 - DateTimePicker parts use `enterPickerDateTime(expect, field, edge, at)` from
   the toolbox (`moments.ts`): each named part of one edge is cleared and typed.
+  `expectPickerDateTime(expect, field, edge, at)` reads the same parts back
+  without focusing them.
 - A disabled-input probe sends keys to the disabled field and checks that its
   value did not change; clearing first would change the operation being tested.
 - Appending to an existing prefix keeps that prefix and places the caret before

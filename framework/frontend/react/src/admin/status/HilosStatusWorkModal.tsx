@@ -4,17 +4,18 @@
 // a new announcement and a live row edit share the form, never the merge. The
 // page-owned controller keeps the draft, the captured reader zone, the verdict
 // and the tracked action; the row edit adds the standard per-field merge with
-// Keep mine / Take theirs. This view mirrors native values and draws that state;
-// validation and calendar interpretation stay in core. The window keeps its
-// draft on a refusal, an unconfirmed outcome or a target that ended, and closes
-// on the server's answer alone. Bootstrap classes only.
-import { useId } from 'react'
+// Keep mine / Take theirs. This view draws that state and edits the window in
+// its DateTimePicker; validation and calendar interpretation stay in core. The
+// window keeps its draft on a refusal, an unconfirmed outcome or a target that
+// ended, and closes on the server's answer alone. Bootstrap classes only.
+import { useId, useRef } from 'react'
 import type { KeyboardEvent } from 'react'
 import {
   createSignal,
   formatMoment,
   hilosTimeZone,
   hilosToasts,
+  type DateTimePickerSnapshot,
   type ReadonlySignal,
   type RowEditState,
 } from '@hilos/core/base'
@@ -27,6 +28,7 @@ import type {
 } from '@hilos/core/admin/status'
 
 import { ConflictActions } from '../../ConflictActions.js'
+import { HilosDateTimePicker } from '../../HilosDateTimePicker.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosFormError } from '../../HilosFormError.js'
 import { HilosModal } from '../../HilosModal.js'
@@ -44,6 +46,12 @@ export interface HilosStatusWorkModalProps {
 /** A creation has no row merge: no merge verdict to read. */
 const NO_EDIT_STATE: ReadonlySignal<RowEditState<HilosStatusWorkEditFields> | null> =
   createSignal(null)
+
+/** A closed form has no window parts to quote. */
+const NO_WINDOW_STATE: ReadonlySignal<DateTimePickerSnapshot<
+  'datetime',
+  'range'
+> | null> = createSignal(null)
 
 /** A creation has no row merge: nothing to say about the other side. */
 const NO_EDIT_NOTICE: ReadonlySignal<string> = createSignal('')
@@ -110,6 +118,12 @@ export function HilosStatusWorkModal({
   const dirty = useSignal(controller.dirty)
   const timeZone = useSignal(controller.timeZone)
   const readerTimeZone = useSignal(hilosTimeZone)
+  const windowPicker = useSignal(controller.windowPicker)
+  const windowState = useSignal<DateTimePickerSnapshot<
+    'datetime',
+    'range'
+  > | null>(windowPicker?.state ?? NO_WINDOW_STATE)
+  const windowBox = useRef<HTMLDivElement>(null)
   const busy = useSignal(signals.busy)
   const error = useSignal(controller.error)
   const failure = useSignal(controller.failure)
@@ -168,7 +182,7 @@ export function HilosStatusWorkModal({
           field === 'componentKeys'
             ? componentNames(form.componentKeys)
             : momentField
-              ? `${form[field]} (${timeZone})`
+              ? windowText(field === 'startsAt' ? 'start' : 'end')
               : form[field]
         return `${FIELD_LABELS[field]}: Keep mine: ${mine}; Take theirs: ${theirs}`
       }),
@@ -176,7 +190,22 @@ export function HilosStatusWorkModal({
   }
 
   /**
-   * Mirror native values; validation and calendar interpretation stay in core.
+   * The draft of one window edge as its parts show it, in the captured zone.
+   *
+   * @param edge The edge a conflicting moment field names.
+   */
+  function windowText(edge: 'start' | 'end'): string {
+    const parts = windowState?.[edge]?.parts ?? []
+    const shown = parts.every((part) => part.text === '')
+      ? '—'
+      : parts
+          .map((part) => part.prefix + (part.text || part.placeholder))
+          .join('')
+    return `${shown} (${timeZone})`
+  }
+
+  /**
+   * Text fields only; the window is edited in its picker.
    *
    * @param patch The fields the person changed.
    */
@@ -212,6 +241,9 @@ export function HilosStatusWorkModal({
    * a link keeps its own press. A key pressed in a details window the form's
    * refusal or notice opened is not this form's: that window is a portal
    * outside the form's DOM, yet its key still bubbles up the React tree to here.
+   * Enter inside the window field while its calendar is open belongs to the
+   * calendar; from any other field Enter follows the Save verdict, the narrow
+   * calendar sheet included.
    *
    * @param event The key pressed inside the form.
    */
@@ -224,6 +256,11 @@ export function HilosStatusWorkModal({
     )
       return
     event.preventDefault()
+    if (
+      controller.windowPicker.get()?.calendar.state.get().open &&
+      windowBox.current?.contains(event.target as Node)
+    )
+      return
     void submit()
   }
 
@@ -302,37 +339,16 @@ export function HilosStatusWorkModal({
               onChange={(event) => patch({ title: event.target.value })}
             />
           </div>
-          <div className="row g-2 mb-1">
-            <div className="col-sm-6">
-              <label htmlFor={`${fieldsId}-starts`} className="form-label">
-                Starts, {timeZone}
-              </label>
-              <input
-                id={`${fieldsId}-starts`}
-                value={form.startsAt}
-                type="datetime-local"
-                step={1}
-                className="form-control form-control-sm"
-                aria-describedby={overlapHintId}
-                data-id="hilos-status-work-starts"
-                onChange={(event) => patch({ startsAt: event.target.value })}
+          <div ref={windowBox} className="mb-1">
+            {windowPicker && (
+              <HilosDateTimePicker
+                id={`${fieldsId}-window`}
+                picker={windowPicker}
+                label={`Window, ${timeZone}`}
+                describedBy={overlapHintId}
+                dataId="hilos-status-work-window"
               />
-            </div>
-            <div className="col-sm-6">
-              <label htmlFor={`${fieldsId}-ends`} className="form-label">
-                Ends, {timeZone}
-              </label>
-              <input
-                id={`${fieldsId}-ends`}
-                value={form.endsAt}
-                type="datetime-local"
-                step={1}
-                className="form-control form-control-sm"
-                aria-describedby={overlapHintId}
-                data-id="hilos-status-work-ends"
-                onChange={(event) => patch({ endsAt: event.target.value })}
-              />
-            </div>
+            )}
           </div>
           <div id={overlapHintId} className="form-text mt-0 mb-2">
             The window cannot overlap another announcement, even if the

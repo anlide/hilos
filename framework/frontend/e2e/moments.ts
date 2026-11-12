@@ -312,6 +312,24 @@ export async function enterCalendarDateTime(
   await expect(field).toHaveValue(value.replace(/:00$/, ''))
 }
 
+/** The named parts of a DateTimePicker edge with their text for one moment, in the browser's zone. */
+async function pickerDateTimeParts(
+  page: Page,
+  at: number,
+): Promise<ReadonlyArray<readonly [string, string]>> {
+  const [date, time] = (await browserDateTime(page, at)).split('T')
+  const [year, month, day] = date.split('-')
+  const [hours, minutes, seconds] = time.split(':')
+  return [
+    ['Day', day],
+    ['Month', month],
+    ['Year', year],
+    ['Hours', hours],
+    ['Minutes', minutes],
+    ['Seconds', seconds],
+  ]
+}
+
 /** Type one moment into a DateTimePicker edge by its named parts, in the browser's zone. */
 export async function enterPickerDateTime(
   expect: Expect,
@@ -319,17 +337,7 @@ export async function enterPickerDateTime(
   edge: string,
   at: number,
 ): Promise<void> {
-  const [date, time] = (await browserDateTime(field.page(), at)).split('T')
-  const [year, month, day] = date.split('-')
-  const [hours, minutes, seconds] = time.split(':')
-  for (const [name, text] of [
-    ['Day', day],
-    ['Month', month],
-    ['Year', year],
-    ['Hours', hours],
-    ['Minutes', minutes],
-    ['Seconds', seconds],
-  ] as const) {
+  for (const [name, text] of await pickerDateTimeParts(field.page(), at)) {
     const part = field.getByRole('spinbutton', {
       name: `${edge} ${name}`,
       exact: true,
@@ -340,4 +348,17 @@ export async function enterPickerDateTime(
     await part.pressSequentially(text, { delay: 10 })
     await expect(part).toHaveAttribute('aria-valuenow', String(Number(text)))
   }
+}
+
+/** Check that a DateTimePicker edge shows one moment by its named parts, in the browser's zone. */
+export async function expectPickerDateTime(
+  expect: Expect,
+  field: Locator,
+  edge: string,
+  at: number,
+): Promise<void> {
+  for (const [name, text] of await pickerDateTimeParts(field.page(), at))
+    await expect(
+      field.getByRole('spinbutton', { name: `${edge} ${name}`, exact: true }),
+    ).toHaveAttribute('aria-valuenow', String(Number(text)))
 }

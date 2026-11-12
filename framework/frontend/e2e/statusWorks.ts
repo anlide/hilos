@@ -76,8 +76,8 @@ export async function draftStatusWork(
     page.getByTestId('hilos-status-work-description'),
     draft.description,
   )
-  // Until HIL-1981/1982 adopt the picker, React and Angular draw two native
-  // fields; HIL-1983 removes this branch.
+  // Until HIL-1982 adopts the picker, Angular draws two native fields;
+  // HIL-1983 removes this branch.
   const window = page.getByTestId('hilos-status-work-window')
   const starts = page.getByTestId('hilos-status-work-starts')
   await expect(window.or(starts)).toBeVisible()
@@ -185,8 +185,8 @@ export async function expectStatusWorkScheduleDialog(
   await expect(
     page.getByTestId('hilos-status-work-title'),
   ).toHaveAccessibleName('Title')
-  // Until HIL-1981/1982 adopt the picker, React and Angular draw two native
-  // fields; HIL-1983 removes this branch.
+  // Until HIL-1982 adopts the picker, Angular draws two native fields;
+  // HIL-1983 removes this branch.
   const window = page.getByTestId('hilos-status-work-window')
   const starts = page.getByTestId('hilos-status-work-starts')
   await expect(window.or(starts)).toBeVisible()

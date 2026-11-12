@@ -480,31 +480,6 @@ export function statusHistoryHarness(viewer = false) {
 }
 
 /**
- * Read datetime-local fields the way a browser does until the returned release
- * runs. jsdom writes a value with whole seconds as `…T12:04:05.000`, while a
- * browser gives the shortest form the HTML standard names, `…T12:04:05` — the
- * one form the core editor parser accepts. Stub it before the first render: the
- * React value tracker captures the descriptor when it mounts a field.
- */
-export function browserDateTimeValues(): () => void {
-  const native = Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
-    'value',
-  )!
-  Object.defineProperty(HTMLInputElement.prototype, 'value', {
-    ...native,
-    get(this: HTMLInputElement) {
-      const value = native.get!.call(this) as string
-      return this.type === 'datetime-local'
-        ? value.replace(/\.000$/, '')
-        : value
-    },
-  })
-  return () =>
-    Object.defineProperty(HTMLInputElement.prototype, 'value', native)
-}
-
-/**
  * The Works page's core generation, created and started the way the page does
  * in its effect: the catalog state, the table and its three windows — schedule,
  * change and cancel.

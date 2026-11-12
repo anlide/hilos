@@ -15,8 +15,9 @@ import {
   dismissToasts,
   draftStatusWork,
   enterCalendarDate,
-  enterCalendarDateTime,
+  enterPickerDateTime,
   expectPageReady,
+  expectPickerDateTime,
   expectPublicStatusPair,
   expectSelfReload,
   expectStatusHistoryFact,
@@ -83,8 +84,8 @@ const OVERLAP =
 const FREEZE = 'e2e-status-announced-work'
 
 /**
- * A strictly future start, 17 seconds past a minute, so every native value of
- * this spec carries its seconds and the oracle below needs no normalizing.
+ * A strictly future start, 17 seconds past a minute, so every edge of this spec
+ * shows its seconds and the oracle below needs no normalizing.
  */
 function futureStart(): number {
   return Math.floor(Date.now() / 60_000) * 60_000 + 600_000 + 17_000
@@ -233,8 +234,8 @@ test('scheduled maintenance is planned, refused on overlap, changed against a he
         await gotoPage(expect, other, STATUS_WORKS_PATH, PAGE_READY)
         await openStatusWorkSchedule(expect, page)
         await expect(
-          page.getByTestId('hilos-status-work-starts'),
-        ).toHaveAccessibleName(`Starts, ${READER_ZONE}`)
+          page.getByTestId('hilos-status-work-window'),
+        ).toHaveAccessibleName(`Window, ${READER_ZONE}`)
         await draftStatusWork(expect, page, draft)
         await submitStatusWork(expect, page, admin, STATUS_WORK_SCHEDULE)
         const row = await scheduledRow(admin, draft)
@@ -291,15 +292,14 @@ test('scheduled maintenance is planned, refused on overlap, changed against a he
         await expect(page.getByTestId('hilos-status-work-title')).toHaveValue(
           overlapping.title,
         )
-        await expect(page.getByTestId('hilos-status-work-starts')).toHaveValue(
-          readerFieldValue(overlapping.startsAt),
-        )
         await expect(page.getByTestId('hilos-status-work-save')).toBeEnabled()
-        // The same window, moved to end where the upgrade starts.
-        await enterCalendarDateTime(
+        // The same window, moved to end where the upgrade starts. The kept
+        // Starts is proved by the row scheduled next: only Ends changes, and
+        // that row is found by its Starts.
+        await enterPickerDateTime(
           expect,
-          page,
-          page.getByTestId('hilos-status-work-ends'),
+          page.getByTestId('hilos-status-work-window'),
+          'Ends',
           neighbor.endsAt,
         )
         await submitStatusWork(expect, page, admin, STATUS_WORK_SCHEDULE)
@@ -353,18 +353,9 @@ test('scheduled maintenance is planned, refused on overlap, changed against a he
         other.getByTestId('hilos-status-work-title'),
         changed.title,
       )
-      await enterCalendarDateTime(
-        expect,
-        other,
-        other.getByTestId('hilos-status-work-starts'),
-        changed.startsAt,
-      )
-      await enterCalendarDateTime(
-        expect,
-        other,
-        other.getByTestId('hilos-status-work-ends'),
-        changed.endsAt,
-      )
+      const otherWindow = other.getByTestId('hilos-status-work-window')
+      await enterPickerDateTime(expect, otherWindow, 'Starts', changed.startsAt)
+      await enterPickerDateTime(expect, otherWindow, 'Ends', changed.endsAt)
       await submitStatusWork(expect, other, second, STATUS_WORK_CHANGE)
 
       const notice = page.getByTestId('hilos-status-work-notice')
@@ -382,11 +373,17 @@ test('scheduled maintenance is planned, refused on overlap, changed against a he
       // touched here took the other window's moments in the reader zone.
       await expect(title).toHaveValue(held)
       await expect(title).toBeFocused()
-      await expect(page.getByTestId('hilos-status-work-starts')).toHaveValue(
-        readerFieldValue(changed.startsAt),
+      await expectPickerDateTime(
+        expect,
+        page.getByTestId('hilos-status-work-window'),
+        'Starts',
+        changed.startsAt,
       )
-      await expect(page.getByTestId('hilos-status-work-ends')).toHaveValue(
-        readerFieldValue(changed.endsAt),
+      await expectPickerDateTime(
+        expect,
+        page.getByTestId('hilos-status-work-window'),
+        'Ends',
+        changed.endsAt,
       )
       await expect(page.getByTestId('hilos-status-work-save')).toBeDisabled()
       await expect(

@@ -7,7 +7,7 @@ import type {
   HilosStatusWorkForm,
   HilosStatusWorksState,
 } from '@hilos/core/admin/status'
-import { computed, useId } from 'vue'
+import { computed, ref, useId } from 'vue'
 
 import ConflictActions from '../../ConflictActions.vue'
 import HilosDateTimePicker from '../../HilosDateTimePicker.vue'
@@ -52,6 +52,7 @@ const formId = useId()
 const hintId = useId()
 const fieldsId = useId()
 const overlapHintId = useId()
+const windowBox = ref<HTMLElement | null>(null)
 const copyText = computed(() =>
   failure.value?.errorDetail
     ? [failure.value.errorType, failure.value.errorDetail]
@@ -146,7 +147,8 @@ async function submit(): Promise<void> {
 }
 
 /**
- * Enter while the window calendar is open belongs to the calendar; buttons
+ * Enter inside the window field while its calendar is open belongs to the
+ * calendar; from any other field Enter follows the Save verdict; buttons
  * activate themselves.
  *
  * @param event The Enter keydown that reached the form.
@@ -158,7 +160,11 @@ function onEnter(event: KeyboardEvent): void {
   )
     return
   event.preventDefault()
-  if (props.controller.windowPicker.get()?.calendar.state.get().open) return
+  if (
+    props.controller.windowPicker.get()?.calendar.state.get().open &&
+    windowBox.value?.contains(event.target as Node)
+  )
+    return
   void submit()
 }
 </script>
@@ -201,7 +207,7 @@ function onEnter(event: KeyboardEvent): void {
           @input="patch({ title: ($event.target as HTMLInputElement).value })"
         />
       </div>
-      <div class="mb-1">
+      <div ref="windowBox" class="mb-1">
         <HilosDateTimePicker
           v-if="windowPicker"
           :id="`${fieldsId}-window`"

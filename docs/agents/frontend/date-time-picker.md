@@ -30,10 +30,10 @@ below. The existing [calendar engine](../../../framework/frontend/core/src/timeZ
 supplies Gregorian coordinates, explicit `Intl` field reading and IANA offset
 intervals. The [maintenance form](../../../framework/frontend/core/src/admin/status/hilosStatusWorkActions.ts)
 keeps its window in one picker per opening, `windowPicker`, rather than in
-these helpers. The Vue maintenance dialogs mount that picker as their Window
-field; until the React and Angular dialogs adopt it, their native views read
-the `startsAt`/`endsAt` text the form projects from the picker's parts and
-write such text back into them.
+these helpers. The Vue and React maintenance dialogs mount that picker as their
+Window field; until the Angular dialogs adopt it, their native views read the
+`startsAt`/`endsAt` text the form projects from the picker's parts and write
+such text back into them.
 
 This document changes no executable code, package exports, DB fields or
 migrations, runtime item fields, wire signals, DTOs, topology, product routes
@@ -1114,9 +1114,8 @@ wire's `startsAt` and `endsAt` as epoch milliseconds. Form/server rules decide
 period ordering and inclusivity; the picker does not decide whether work is
 allowed or whether windows overlap. The form owns explicit resets and accepted
 per-edge merges into the controller. The form exposes that controller as
-`windowPicker`; until the React and Angular dialogs below adopt it, native
-views use the form's `startsAt`/`endsAt` text projected from and into its
-parts.
+`windowPicker`; until the Angular dialogs below adopt it, their native views
+use the form's `startsAt`/`endsAt` text projected from and into its parts.
 
 Adopt that integration in the two maintenance dialogs, preserving the form
 refusal row and the hint about maintenance windows. Each view owns its own
@@ -1125,7 +1124,7 @@ adoption, separate from the generic component:
 | Consumer | Implementation owner |
 |---|---|
 | Vue Schedule maintenance / Change scheduled maintenance | [HilosStatusWorkModal.vue](../../../framework/frontend/vue/src/admin/status/HilosStatusWorkModal.vue) |
-| React Schedule maintenance / Change scheduled maintenance | (not in the code yet — HIL-1981) |
+| React Schedule maintenance / Change scheduled maintenance | [HilosStatusWorkModal.tsx](../../../framework/frontend/react/src/admin/status/HilosStatusWorkModal.tsx) |
 | Angular Schedule maintenance / Change scheduled maintenance | (not in the code yet — HIL-1982) |
 
 Shared Gregorian math and its `/base` exports are implemented by HIL-1966.
@@ -1134,11 +1133,11 @@ HIL-1968 implemented picker values, draft, factors, controller and core exports.
 HIL-1969 implemented `picker.calendar`, atomic range selection, navigation and
 its `/base` types. The SDK field/calendar/narrow sequences are implemented by
 HIL-1970–1972, HIL-1973–1975 and HIL-1976–1978 for Vue, React and Angular.
-HIL-1979 implemented the maintenance form integration and HIL-1980 its Vue
-dialogs. The remaining markers name HIL-1981–1982 for maintenance adoption
-and HIL-1983 for the final cross-layer cleanup. Do not invent new internal file
-names from this contract or implement a neighboring leaf to make an example
-import resolve.
+HIL-1979 implemented the maintenance form integration and HIL-1980 and HIL-1981
+its Vue and React dialogs. The remaining markers name HIL-1982 for maintenance
+adoption and HIL-1983 for the final cross-layer cleanup. Do not invent new
+internal file names from this contract or implement a neighboring leaf to make
+an example import resolve.
 
 ## Validation
 
