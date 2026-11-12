@@ -11,6 +11,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Notification\Delivery\DTO\NotificationDeliveryRetrySignalData;
 use Hilos\Push\PushSubscriptionAction;
+use Hilos\Users\DTO\UserPushReleaseSignalData;
 use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Core\Agent\AbstractAgent;
@@ -134,6 +135,29 @@ final class HandoverAskReceiptTest extends TestCase
         self::assertSame([['accept-push', 'request-push']], HandoverReceiptTestAgent::$seen);
         self::assertSame('accept-push', HandoverReceiptTestAgent::$lastChange->origin);
         self::assertSame('request-push', HandoverReceiptTestAgent::$lastChange->originRequestId);
+    }
+
+    public function testConcretePushReleaseKeepsOriginAndReplyFieldsAcrossTheEnvelope(): void
+    {
+        $ask = new UserPushReleaseSignalData(
+            7, 19, 'https://push.example/device', 8, 'pk', 'auth', 'Firefox',
+            HilosSignalConstants::HILOS_USER_PUSH_RELEASE_DONE,
+            'accept-release', 'request-release', PushSubscriptionAction::SUBSCRIBE, null,
+        );
+        $message = new DaemonAgentMessageDTO(HandoverReceiptTestManager::AGENT_ID, new SignalDTO(
+            new SignalSource(SignalSource::AGENT, 'unit_gatekeeper'),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName(HilosSignalConstants::HILOS_USER_PUSH_RELEASE),
+            new AgentSignalData($ask),
+        ));
+        $restored = DaemonAgentMessageDTO::fromArray(json_decode($message->toJson(), true, flags: JSON_THROW_ON_ERROR));
+        self::assertInstanceOf(AgentSignalData::class, $restored->signal->data);
+        self::assertInstanceOf(UserPushReleaseSignalData::class, $restored->signal->data->data);
+        self::assertSame($ask->toArray(), $restored->signal->data->data->toArray());
+        $this->deliver(new HandoverReceiptTestManager(), $restored->signal->data->data);
+        self::assertSame([['accept-release', 'request-release']], HandoverReceiptTestAgent::$seen);
+        self::assertSame('accept-release', HandoverReceiptTestAgent::$lastChange->origin);
+        self::assertSame('request-release', HandoverReceiptTestAgent::$lastChange->originRequestId);
     }
 
     /**

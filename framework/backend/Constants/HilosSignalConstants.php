@@ -168,6 +168,8 @@ use Hilos\Users\DTO\UserPhotoPutSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveDoneSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveSignalData;
 use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
+use Hilos\Users\DTO\UserPushReleaseDoneSignalData;
+use Hilos\Users\DTO\UserPushReleaseSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
@@ -1196,6 +1198,22 @@ final class HilosSignalConstants
      * Carried by {@see UserPushEndpointGoneSignalData}. Not answered.
      */
     public const string HILOS_USER_PUSH_ENDPOINT_GONE = 'hilos_user_push_endpoint_gone';
+
+    /**
+     * Notifications library → the prior personal owner: release this browser's push endpoint (HIL-1906).
+     *
+     * Another person subscribes the same browser; its owner removes its own row so the endpoint is free.
+     * Carried by {@see UserPushReleaseSignalData}.
+     */
+    public const string HILOS_USER_PUSH_RELEASE = 'hilos_user_push_release';
+
+    /**
+     * The prior personal owner → notifications library: the endpoint is released, or why not (HIL-1906).
+     *
+     * The request comes back whole for the library to resume the waiting subscribe. Carried by
+     * {@see UserPushReleaseDoneSignalData}.
+     */
+    public const string HILOS_USER_PUSH_RELEASE_DONE = 'hilos_user_push_release_done';
 
     /**
      * The person's agent → notifications library: the write landed, or why not (HIL-1408).

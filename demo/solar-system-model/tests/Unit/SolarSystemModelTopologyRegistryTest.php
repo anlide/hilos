@@ -20,6 +20,8 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Notification\Delivery\DTO\NotificationDeliveryRetrySignalData;
+use Hilos\Users\DTO\UserPushReleaseDoneSignalData;
+use Hilos\Users\DTO\UserPushReleaseSignalData;
 use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -145,7 +147,21 @@ final class SolarSystemModelTopologyRegistryTest extends TestCase
             UserPushSubscribeSignalData::class,
             Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE],
         );
-        self::assertSame(['HIL-1906', 'HIL-1952'], Hilos::SHARED_DB_OWNERS[HilosDbContext::pushSubscriptions]);
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE]);
+        self::assertSame('userId', Hilos::getAgentSignalIndexFields()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE]);
+        self::assertSame(
+            UserPushReleaseSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE],
+        );
+        self::assertSame(
+            HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE_DONE],
+        );
+        self::assertSame(
+            UserPushReleaseDoneSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE_DONE],
+        );
+        self::assertSame(['HIL-1952'], Hilos::SHARED_DB_OWNERS[HilosDbContext::pushSubscriptions]);
         Hilos::validateTopology();
 
         $this->addToAssertionCount(1);

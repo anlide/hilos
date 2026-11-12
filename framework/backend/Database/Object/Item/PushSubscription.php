@@ -97,38 +97,6 @@ class PushSubscription extends Object_
     }
 
     /**
-     * Temporarily rebinds a foreign row in place until HIL-1906; ordinary set guards cover both owners.
-     *
-     * @param int $userId Subscribing person
-     * @param string $endpoint Captured endpoint attribute
-     * @param string $p256dh Client public key
-     * @param string $auth Client auth secret
-     * @param ?string $userAgent Device user agent, or null
-     * @return bool Whether the captured foreign identity still existed and was renewed
-     * @throws HilosException When ownership, persistence or announcement refuses the write
-     */
-    public function rebindForeignLegacy(int $userId, string $endpoint, string $p256dh, string $auth, ?string $userAgent): bool
-    {
-        $entity = static::ENTITY_CLASS::get([EntityPushSubscription::id => $this->id])->first();
-        if ($entity === null || $entity->endpoint !== $endpoint || $entity->user_id === $userId) {
-            return false;
-        }
-
-        $this->restoreSaved($entity->toArray(), related: true);
-        $this->userId = $userId;
-        $this->p256dh = $p256dh;
-        $this->auth = $auth;
-        $this->userAgent = $userAgent;
-        $this->deviceName = DeviceName::fromUserAgent($userAgent);
-        $this->goneAt = null;
-        $this->lastSeenAt = TimeHelper::nowMs();
-        $this->revision = $entity->revision + 1;
-        $this->sync();
-
-        return true;
-    }
-
-    /**
      * Magic getter for entity properties.
      *
      * @param string $property Property name (id, userId, endpoint, p256dh, auth, userAgent, createdAt, lastSeenAt, revision)

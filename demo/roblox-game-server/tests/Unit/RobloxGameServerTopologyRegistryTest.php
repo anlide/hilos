@@ -140,6 +140,8 @@ use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\Tables\Users\HilosUserPhotoBrowserTable;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Users\DTO\UserPushReleaseDoneSignalData;
+use Hilos\Users\DTO\UserPushReleaseSignalData;
 use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -575,7 +577,7 @@ final class RobloxGameServerTopologyRegistryTest extends TestCase
             'notificationPreferences' => ['HIL-1952'],
             'notifications' => ['HIL-1952'],
             'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],
-            'pushSubscriptions' => ['HIL-1906', 'HIL-1952'],
+            'pushSubscriptions' => ['HIL-1952'],
             'secondFactorBackupCodes' => ['HIL-1904', 'HIL-1952', 'HIL-1999'],
             'secondFactorResets' => ['HIL-1952', 'HIL-1999'],
             'secondFactorSettings' => ['HIL-1952', 'HIL-1999'],
@@ -620,7 +622,21 @@ final class RobloxGameServerTopologyRegistryTest extends TestCase
             UserPushSubscribeSignalData::class,
             Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE],
         );
-        self::assertSame(['HIL-1906', 'HIL-1952'], Hilos::SHARED_DB_OWNERS[HilosDbContext::pushSubscriptions]);
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE]);
+        self::assertSame('userId', Hilos::getAgentSignalIndexFields()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE]);
+        self::assertSame(
+            UserPushReleaseSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE],
+        );
+        self::assertSame(
+            HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE_DONE],
+        );
+        self::assertSame(
+            UserPushReleaseDoneSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE_DONE],
+        );
+        self::assertSame(['HIL-1952'], Hilos::SHARED_DB_OWNERS[HilosDbContext::pushSubscriptions]);
         Hilos::validateTopology();
 
         $this->addToAssertionCount(1);

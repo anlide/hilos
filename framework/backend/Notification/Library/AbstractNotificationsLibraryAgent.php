@@ -27,6 +27,8 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Execution\Exception\FramePopOrderException;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\AgentSignalData;
@@ -73,10 +75,13 @@ use Hilos\Push\DTO\PushSubscribeActionDTO;
 use Hilos\Push\DTO\PushRemoveActionDTO;
 use Hilos\Push\DTO\PushUnsubscribeActionDTO;
 use Hilos\Push\PushSubscriptionAction;
+use Hilos\Push\PushSubscriptionIdentity;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Users\AddressablePerson;
 use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
 use Hilos\Users\DTO\UserNotificationReadSignalData;
+use Hilos\Users\DTO\UserPushReleaseDoneSignalData;
+use Hilos\Users\DTO\UserPushReleaseSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
@@ -120,8 +125,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     use HandoverGatekeeperTrait;
 
     /**
-     * Creating a notification and its delivery rows, and a push subscription brought into being
-     * or temporarily rebound from another person until HIL-1906.
+     * Creating a notification and its delivery rows, and a push subscription brought into being.
      *
      * Nothing may write a framework collection until somebody says who owns it, so a project that
      * never registers this agent simply has no notifications - rather than notifications written
@@ -133,16 +137,17 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      *
      * Delivery rows are only created here. Their channel or shard updates attempts, resets a
      * failed row an admin retries and removes expired terminal rows; this library has neither an
-     * Update nor a Remove grant over them. Push creation stays here; renewal, expiry and removal
-     * belong to the personal owner. Only the foreign in-place rebind keeps the library Update until
-     * HIL-1906.
+     * Update nor a Remove grant over them. Push subscriptions are likewise only created here:
+     * renewal, expiry and removal belong to the personal owner, and an endpoint another person
+     * holds is first released by that person's agent, so the row this library creates is always a
+     * new one (HIL-1906).
      *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
         HilosDbContext::notifications => [TruthSourceOperation::Add],
         HilosDbContext::notificationDeliveries => [TruthSourceOperation::Add],
-        HilosDbContext::pushSubscriptions => [TruthSourceOperation::Add, TruthSourceOperation::Update],
+        HilosDbContext::pushSubscriptions => [TruthSourceOperation::Add],
     ];
 
     /**
@@ -177,12 +182,15 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * library sends back, and the backup agent declares it.
      * The fourth is the person's agent answering a write this library forwarded (HIL-1408):
      * the browser action waiting on it is resumed here.
+     * The fifth is the prior owner of a push endpoint answering the release this library asked
+     * for (HIL-1906): the subscribe waiting on it is resumed here from the request it carries.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_NOTIFICATION_EMIT => NotificationEmitSignalData::class,
         HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
         HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => DeferredNotificationHandoverSignalData::class,
         HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE => HandoverAnswerSignalData::class,
+        HilosSignalConstants::HILOS_USER_PUSH_RELEASE_DONE => UserPushReleaseDoneSignalData::class,
     ];
 
     /**
@@ -276,6 +284,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws HilosException When the notification cannot be written or delivered
      * @throws InvalidArgumentException When the retry ask or refusal, or a hand-over receipt, cannot be named or queued
+     * @throws FramePopOrderException When a resumed subscribe leaves the execution frame stack imbalanced
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
@@ -325,6 +334,18 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
                     );
                 }
                 $this->answerHandover($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_PUSH_RELEASE_DONE:
+                if (!$data->data instanceof UserPushReleaseDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        UserPushReleaseDoneSignalData::class,
+                        $data->data,
+                    );
+                }
+                $this->resumeRelease($data->data);
 
                 return;
 
@@ -555,9 +576,10 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * Runs one of the six owned controls and answers the surface that submitted it.
      *
      * Five of them judge the ask and hand the write to the person's agent; the ack waits on
-     * that agent's answer. Subscribing a device is still written here. The refusals of a bad
-     * payload are the same objects thrown in the same order, so what a client sees on one has
-     * not moved.
+     * that agent's answer. The sixth, subscribing a device, creates the row here only for an
+     * endpoint nobody holds; otherwise it waits on the agent of whoever holds it. The refusals of
+     * a bad payload are the same objects thrown in the same order, so what a client sees on one
+     * has not moved.
      *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param string $action Owned action name from {@see AGENT_ACTIONS}
@@ -842,8 +864,11 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Creates a new device or hands renewal of an owned identity to its personal owner.
-     * The foreign in-place rebind remains temporary until HIL-1906.
+     * Judges the acting device's web-push opt-in and sends it where the endpoint belongs now.
+     *
+     * The judging is the entry's alone: the payload, the acting person, and that person being
+     * addressable. Where the subscription goes from there is {@see routeSubscription()}, which an
+     * answered release runs again ({@see resumeRelease()}).
      *
      * @param string $acceptKey Acting connection
      * @param PushSubscribeActionDTO $dto Browser subscription keys
@@ -857,9 +882,42 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
 
         $userId = $this->requireUserId($acceptKey);
         AddressablePerson::require($userId);
-        $identity = Hilos::$db->pushSubscriptions->readIdentityByEndpoint($dto->endpoint);
+        $this->routeSubscription($acceptKey, $userId, $dto->endpoint, $dto->p256dh, $dto->auth, $dto->userAgent);
+    }
+
+    /**
+     * Sends one subscribe the way the endpoint's fresh identity says (HIL-1905, HIL-1906).
+     *
+     * Three ways, read off the row as it is now. No row: this library creates it, and the press
+     * is answered once the insert is done. The subscriber's own row: their agent renews it.
+     * Another person's row: that person's agent is asked to release it, with the whole waiting
+     * press on the ask, and the press resumes on the answer. Both hand-overs defer a tracked
+     * answer. The prior owner is not checked for being addressable: a folded person is still
+     * served, and an erased one can hold no row. A resumed press that reads again the very row it
+     * was released from is refused instead: that owner has already answered for it.
+     *
+     * @param string $acceptKey Connection that pressed, and the one answered
+     * @param int $userId Person who subscribes
+     * @param string $endpoint Browser push endpoint URL
+     * @param string $p256dh Client public key
+     * @param string $auth Client auth secret
+     * @param ?string $userAgent Device user agent, or null
+     * @param ?PushSubscriptionIdentity $released Row the resumed press was released from, or null for a fresh press
+     * @throws ValidationException When the resumed press reads again the row it was released from
+     * @throws HilosException When the lookup, the insert or a hand-over refuses the request
+     */
+    private function routeSubscription(
+        string $acceptKey,
+        int $userId,
+        string $endpoint,
+        string $p256dh,
+        string $auth,
+        ?string $userAgent,
+        ?PushSubscriptionIdentity $released = null,
+    ): void {
+        $identity = Hilos::$db->pushSubscriptions->readIdentityByEndpoint($endpoint);
         if ($identity === null) {
-            Hilos::$db->pushSubscriptions->actions->subscribe($userId, $dto->endpoint, $dto->p256dh, $dto->auth, $dto->userAgent);
+            Hilos::$db->pushSubscriptions->actions->subscribe($userId, $endpoint, $p256dh, $auth, $userAgent);
 
             return;
         }
@@ -867,10 +925,10 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
             $this->forward(HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE, new UserPushSubscribeSignalData(
                 userId: $userId,
                 subscriptionId: $identity->subscriptionId,
-                endpoint: $dto->endpoint,
-                p256dh: $dto->p256dh,
-                auth: $dto->auth,
-                userAgent: $dto->userAgent,
+                endpoint: $endpoint,
+                p256dh: $p256dh,
+                auth: $auth,
+                userAgent: $userAgent,
                 replySignal: HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE,
                 acceptKey: $acceptKey,
                 requestId: $this->currentActionRequestId(),
@@ -880,16 +938,94 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
 
             return;
         }
-
-        $subscription = Hilos::$db->pushSubscriptions[$identity->subscriptionId] ?? null;
-        if ($subscription === null || !$subscription->actions->rebindForeignLegacy(
-            $userId,
-            $dto->endpoint,
-            $dto->p256dh,
-            $dto->auth,
-            $dto->userAgent,
-        )) {
+        if ($released !== null && $identity->subscriptionId === $released->subscriptionId && $identity->userId === $released->userId) {
             throw new ValidationException('This device is already gone');
+        }
+
+        $this->forward(HilosSignalConstants::HILOS_USER_PUSH_RELEASE, new UserPushReleaseSignalData(
+            userId: $identity->userId,
+            subscriptionId: $identity->subscriptionId,
+            endpoint: $endpoint,
+            subscriberUserId: $userId,
+            p256dh: $p256dh,
+            auth: $auth,
+            userAgent: $userAgent,
+            replySignal: HilosSignalConstants::HILOS_USER_PUSH_RELEASE_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->currentActionRequestId(),
+            action: PushSubscriptionAction::SUBSCRIBE,
+            successMessage: null,
+        ));
+    }
+
+    /**
+     * Resumes the subscribe that waited on a released endpoint, as the press it was (HIL-1906).
+     *
+     * The request comes back whole, so nothing waited here - no pending list, no timer. The
+     * dispatch of that press is put back: its request id, and its connection as the origin of
+     * every write, so the row created now reads as that press of that button. A refusal of the
+     * prior owner refuses the press in the owner's words, and nothing is written here. A release
+     * routes the press again over the fresh identity, the subscriber checked again: the endpoint
+     * may be free, may be the subscriber's own by a second press, or may have been taken by a
+     * third person meanwhile, who is then asked in turn. Another release follows only a row
+     * another press really created, so one press takes no more turns than there are presses on
+     * the same endpoint at once. The very row the ask named, still there after its owner
+     * answered released, refuses the press as a device already gone: the database matched its
+     * endpoint to the pressed one, but not byte for byte - another case, say - so the owner,
+     * deleting only its own endpoint as saved, kept it, and asking again would never end. A
+     * failure to create refuses the press: nothing reports a success that was not written.
+     *
+     * @param UserPushReleaseDoneSignalData $done The prior owner's answer, carrying the waiting press
+     * @throws InvalidArgumentException When an answer or a hand-over frame cannot be named or queued
+     * @throws FramePopOrderException When the resumed press leaves the execution frame stack imbalanced
+     */
+    private function resumeRelease(UserPushReleaseDoneSignalData $done): void
+    {
+        $request = $done->request;
+        $this->beginActionDispatch($request->requestId);
+        try {
+            ExecutionContext::withOrigin($request->acceptKey, $request->requestId, function () use ($done, $request): void {
+                if ($done->error !== null) {
+                    $this->answerHandover(new HandoverAnswerSignalData(
+                        acceptKey: $request->acceptKey,
+                        requestId: $request->requestId,
+                        action: $request->action,
+                        successMessage: $request->successMessage,
+                        error: $done->error,
+                        errorType: $done->errorType,
+                        errorDetail: $done->errorDetail,
+                    ));
+
+                    return;
+                }
+
+                try {
+                    AddressablePerson::require($request->subscriberUserId);
+                    $this->routeSubscription(
+                        $request->acceptKey,
+                        $request->subscriberUserId,
+                        $request->endpoint,
+                        $request->p256dh,
+                        $request->auth,
+                        $request->userAgent,
+                        new PushSubscriptionIdentity($request->subscriptionId, $request->userId),
+                    );
+                } catch (Throwable $e) {
+                    $refusal = ActionRefusal::fromThrowable($e);
+                    if ($refusal->isInternal()) {
+                        $this->logAgentError("Push subscribe of #{$request->subscriberUserId} not resumed: {$e->getMessage()}");
+                    }
+                    $this->answerHandover(HandoverAnswerSignalData::to($request, $refusal));
+
+                    return;
+                }
+
+                if (!$this->actionReplyDeferred()) {
+                    $this->answerHandover(HandoverAnswerSignalData::to($request, null));
+                }
+            });
+        } finally {
+            $this->endActionDispatch();
         }
     }
 

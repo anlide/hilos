@@ -591,7 +591,7 @@ final class Hilos extends HilosFacade
         HilosDbContext::notificationPreferences => ['HIL-1952'],
         HilosDbContext::notifications => ['HIL-1952'],
         HilosDbContext::passkeyCredentials => ['HIL-1952', 'HIL-1999'],
-        HilosDbContext::pushSubscriptions => ['HIL-1906', 'HIL-1952'],
+        HilosDbContext::pushSubscriptions => ['HIL-1952'],
         HilosDbContext::secondFactorBackupCodes => ['HIL-1904', 'HIL-1952', 'HIL-1999'],
         HilosDbContext::secondFactorResets => ['HIL-1952', 'HIL-1999'],
         HilosDbContext::secondFactorSettings => ['HIL-1952', 'HIL-1999'],

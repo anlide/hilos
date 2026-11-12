@@ -147,7 +147,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
                 ['notifications', 'whole', 'add'], ['mail', 'whole', 'remove,update'], ['holder', 'whole', 'remove']],
             'notificationPreferences' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'remove']],
             'pushSubscriptions' => [
-                ['notifications', 'whole', 'add,update'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove']],
+                ['notifications', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove']],
             'dataExports' => [['export', 'whole', 'add,remove,update'], ['holder', 'whole', 'remove']],
             'userRenames' => [['person', 'set', 'add,update'], ['holder', 'whole', 'remove']],
             'userPhotos' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'remove']],
@@ -168,7 +168,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'notifications' => ['HIL-1952'],
             'notificationDeliveries' => ['HIL-1952'],
             'notificationPreferences' => ['HIL-1952'],
-            'pushSubscriptions' => ['HIL-1906', 'HIL-1952'],
+            'pushSubscriptions' => ['HIL-1952'],
             'dataExports' => ['HIL-1952'],
             'userRenames' => ['HIL-1952'],
             'userPhotos' => ['HIL-1952'],
@@ -258,30 +258,28 @@ final class DbWriterTransitionCatalogTest extends TestCase
         $this->assertVector([UserAgent::class . ':set:add,remove,update'], $states['']);
     }
 
-    /** Only the remaining foreign rebind keeps the library's shared Update. */
-    public function testPushUpdateSurvivesUntilItsLastOrdinaryUse(): void
+    /** With the foreign release in place the library only ever adds a push row, before erasure and after it. */
+    public function testPushLibraryOnlyAddsInEveryState(): void
     {
         $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['pushSubscriptions']);
-        self::assertSame([
-            '',
-            'HIL-1906,HIL-1952', 'HIL-1952',
-        ], array_keys($states));
+        self::assertSame(['', 'HIL-1952'], array_keys($states));
         foreach ($states as $pending => $state) {
             $expected = [UserAgent::class . ':set:remove,update'];
             if ($pending !== '') {
                 $expected[] = SessionsLibraryAgent::class . ':whole:remove';
             }
-            $expected[] = NotificationsLibraryAgent::class . ($pending === '' || $pending === 'HIL-1952'
-                ? ':whole:add' : ':whole:add,update');
+            $expected[] = NotificationsLibraryAgent::class . ':whole:add';
             $this->assertVector($expected, $state);
         }
     }
 
-    public function testPushTransitionCannotReintroduceOwnRenewalDebt(): void
+    /** Neither the owned renewal debt nor the foreign rebind debt can be declared back. */
+    public function testPushTransitionCannotReintroduceRetiredDebts(): void
     {
         $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['pushSubscriptions']);
         foreach ($states as $state) {
             self::assertNotContains('HIL-1905', $state->pendingLeaves);
+            self::assertNotContains('HIL-1906', $state->pendingLeaves);
         }
         $this->expectException(InvalidTopologyException::class);
         $this->expectExceptionMessage("DB collection 'pushSubscriptions'");
@@ -610,7 +608,6 @@ final class DbWriterTransitionCatalogTest extends TestCase
                 '' => ['person:set:add,remove,update'],
             ],
             'pushSubscriptions' => [
-                'HIL-1906,HIL-1952' => ['notifications:whole:add,update', 'person:set:remove,update', 'holder:whole:remove'],
                 'HIL-1952' => ['notifications:whole:add', 'person:set:remove,update', 'holder:whole:remove'],
                 '' => ['notifications:whole:add', 'person:set:remove,update'],
             ],
@@ -729,7 +726,7 @@ abstract class CatalogRegisteredButInactiveHilos extends CatalogNoFeatureHilos
     ];
 }
 
-/** Reintroducing a retired debt must not reopen an old catalog vertex. */
+/** Reintroducing the retired renewal and rebind debts must not reopen an old catalog vertex. */
 abstract class CatalogRetiredPushRenewalHilos extends Hilos
 {
     public const array AGENTS = ChatHilos::AGENTS;

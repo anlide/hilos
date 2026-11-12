@@ -27,9 +27,11 @@ use Hilos\Core\Exception\ValidationException;
  *
  * Persistence primitives for browser push subscriptions, keyed by the device
  * `endpoint` (UNIQUE). The creator inserts new subscriptions; item actions renew an existing
- * device or perform the temporary foreign rebind until HIL-1906;
- * {@see unsubscribeOwned()} removes the acting device, while {@see markGoneOwned()} keeps a
- * transport-expired endpoint visible to its owner. {@see forUser()} lists live endpoints
+ * device for its own person; {@see unsubscribeOwned()} removes the acting device, while
+ * {@see markGoneOwned()} keeps a transport-expired endpoint visible to its owner. An endpoint
+ * another person holds is never rebound: {@see releaseOwned()} is that prior owner removing its
+ * own row at the notifications library's request (HIL-1906), and the library then creates a new
+ * row for the person who subscribes. {@see forUser()} lists live endpoints
  * for the push delivery channel to send to; {@see deleteForUser()} clears a user's
  * rows inside account erasure's transaction, before the person's RESTRICT key.
  *
@@ -47,7 +49,8 @@ class PushSubscriptions extends Objects
     public const string COLLECTION_KEY = HilosDbContext::pushSubscriptions;
 
     /**
-     * Creates a new endpoint. Renewal and the temporary foreign rebind belong to item actions.
+     * Creates a new endpoint. Renewal is an item action; an endpoint another person holds is first
+     * released by that person ({@see releaseOwned()}).
      *
      * @param int $userId Subscribing user id
      * @param string $endpoint Browser push endpoint URL
@@ -137,6 +140,39 @@ class PushSubscriptions extends Objects
         $subscription = $this->objects[$id];
         $subscription->goneAt = TimeHelper::nowMs();
         $subscription->sync();
+
+        return true;
+    }
+
+    /**
+     * Removes the prior owner's own row so another person can subscribe the endpoint (HIL-1906).
+     *
+     * A fresh row lookup decides: the row is removed only while it still has this owner and this
+     * endpoint. A missing row, or one with another owner or endpoint, is left as it is.
+     *
+     * @param int $userId Prior owner's id
+     * @param int $id Captured subscription row id
+     * @param string $endpoint Endpoint the captured row is expected to hold
+     * @return bool Whether the matching row was removed; false when there was nothing to remove
+     * @throws DatabaseException When the lookup or delete query fails
+     * @throws InvalidArgumentException When the query order or DB-sync signal is invalid
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws WriteNotAllowedException When the caller cannot remove the subscription row
+     */
+    public function releaseOwned(int $userId, int $id, string $endpoint): bool
+    {
+        $entity = static::entityClass()::get( // fresh-sql: a held object can outlive a row deleted elsewhere; the saved owner and endpoint decide.
+            [EntityPushSubscription::id => $id],
+        )->first();
+        if ($entity === null || $entity->user_id !== $userId || $entity->endpoint !== $endpoint) {
+            return false;
+        }
+
+        if (!isset($this->objects[$id])) {
+            $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
+        }
+        $this->objects[$id]->delete();
+        unset($this[$id]);
 
         return true;
     }

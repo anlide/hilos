@@ -297,10 +297,12 @@ addresses each remaining path. The channel or shard owns retention and leaves
 pending rows untouched. Delivery retry is the channel's too: the library passes
 the request to the owner of the row, which resets it and answers the page
 (HIL-1910). A known push
-device is renewed by its personal owner (HIL-1905); the library temporarily
-rebinds a foreign endpoint in place through `rebindForeignLegacy()`. HIL-1906
-will replace that path with deletion by the former owner and creation at the
-library, possibly under a new id (not in the code yet — HIL-1906).
+device is renewed by its personal owner (HIL-1905). A foreign endpoint is
+released by its former owner (HIL-1906): the library asks that owner
+(`hilos_user_push_release`), the owner deletes its own row and answers
+(`hilos_user_push_release_done`), and the library resumes the same press and
+creates a new row for the subscriber, possibly under a new id. The library keeps
+`Add` alone; an owner's refusal refuses the press and nothing is written.
 The push delivery channel's dead-endpoint report is handed to the personal owner
 with an `(id, revision)` snapshot and verified against the fresh persisted
 Entity `(id, revision)` rather than `last_seen_at`. The

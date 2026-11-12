@@ -16,11 +16,12 @@ use Hilos\Database\PhpType;
  * from the profile section, which registers the service worker, subscribes through
  * the browser push manager, and sends the resulting endpoint plus its `p256dh` / `auth`
  * keys; the row is the address a push delivery is sent to. `endpoint` is the device
- * identity and is UNIQUE — a re-subscribe (rotated keys, or the same device under a
- * new user) upserts the one row. `user_id` points at hilos_user with RESTRICT and is
- * indexed so a user's subscriptions resolve on the leftmost prefix. Framework holds
- * the contract; projects activate the table thinly (copy the migration stub) and the
- * framework DbContext exposes the collection.
+ * identity and is UNIQUE — a re-subscribe with rotated keys renews the one row of its
+ * person, and the same device under a new user does not take that row over: the prior
+ * owner removes its own row, and a new one is created (HIL-1906). `user_id` points at
+ * hilos_user with RESTRICT and is indexed so a user's subscriptions resolve on the
+ * leftmost prefix. Framework holds the contract; projects activate the table thinly
+ * (copy the migration stub) and the framework DbContext exposes the collection.
  *
  * @method static EntityPushSubscriptions get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityPushSubscriptions getAll()

@@ -93,6 +93,27 @@ class PushSubscriptionsActions extends DbActions
     }
 
     /**
+     * Removes the prior owner's own row at the notifications library's request (HIL-1906).
+     *
+     * The row goes only while it still has this owner and this endpoint; otherwise nothing is removed.
+     *
+     * @param int $userId Prior owner's id
+     * @param int $id Captured subscription row id
+     * @param string $endpoint Endpoint the captured row is expected to hold
+     * @return bool Whether the matching row was removed; false when there was nothing to remove
+     * @throws DatabaseException When the binding is unresolved, or the lookup or delete query fails
+     * @throws InvalidArgumentException When the query order or DB-sync signal is invalid
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws WriteNotAllowedException When the caller holds no right to remove that person's subscriptions
+     */
+    public function releaseOwned(int $userId, int $id, string $endpoint): bool
+    {
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);
+
+        return $this->objectCollection->releaseOwned($userId, $id, $endpoint);
+    }
+
+    /**
      * Removes the acting user's subscription for one endpoint.
      *
      * @param int $userId Acting user id

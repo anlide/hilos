@@ -42,6 +42,7 @@ use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\View\Collection\Identities;
 use Hilos\Database\View\Item\Identity;
 use Hilos\Hilos;
+use Hilos\Push\PushSubscriptionAction;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\Agent\AbstractUserAgentDaemon;
 use Hilos\Users\DTO\UserAccountDeletionCancelSignalData;
@@ -63,6 +64,7 @@ use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Users\DTO\UserPhotoPutSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveSignalData;
 use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
+use Hilos\Users\DTO\UserPushReleaseSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
@@ -327,6 +329,7 @@ final class AbstractUserAgentTest extends TestCase
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => UserPushUnsubscribeSignalData::class,
             HilosSignalConstants::HILOS_USER_PUSH_REMOVE => UserPushRemoveSignalData::class,
             HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE => UserPushEndpointGoneSignalData::class,
+            HilosSignalConstants::HILOS_USER_PUSH_RELEASE => UserPushReleaseSignalData::class,
         ], array_map(
             static fn (array $config): string => $config[AgentSignalConfigKey::DTO],
             TestUserAgent::AGENT_SIGNALS,
@@ -355,6 +358,31 @@ final class AbstractUserAgentTest extends TestCase
             new AgentSignalData(new SignalData(['userId' => 42, 'subscriptionId' => 91, 'lastSeenAt' => null])),
             'push-channel',
             HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE,
+        );
+    }
+
+    public function testAReleaseCannotRetargetAnotherPersonsAgent(): void
+    {
+        $this->expectException(AgentException::class);
+
+        new TestUserAgent('42')->onSignalAgent(
+            new AgentSignalData(new UserPushReleaseSignalData(
+                43, 91, 'https://push.example/release', 44, 'pk', 'auth', null,
+                HilosSignalConstants::HILOS_USER_PUSH_RELEASE_DONE, 'accept-release', null, PushSubscriptionAction::SUBSCRIBE, null,
+            )),
+            'notifications-library',
+            HilosSignalConstants::HILOS_USER_PUSH_RELEASE,
+        );
+    }
+
+    public function testAReleaseRefusesAnUnparsedPayloadBeforeReadingIt(): void
+    {
+        $this->expectException(InvalidAgentSignalPayloadException::class);
+
+        new TestUserAgent('42')->onSignalAgent(
+            new AgentSignalData(new SignalData(['userId' => 42, 'subscriptionId' => 91, 'endpoint' => 'https://push.example/release'])),
+            'notifications-library',
+            HilosSignalConstants::HILOS_USER_PUSH_RELEASE,
         );
     }
 

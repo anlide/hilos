@@ -53,6 +53,8 @@ use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Notification\Delivery\DTO\NotificationDeliveryRetrySignalData;
 use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
 use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
+use Hilos\Users\DTO\UserPushReleaseDoneSignalData;
+use Hilos\Users\DTO\UserPushReleaseSignalData;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use PHPUnit\Framework\TestCase;
@@ -335,7 +337,32 @@ final class PmdTopologyRegistryTest extends TestCase
             UserPushEndpointGoneSignalData::class,
             Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE],
         );
-        self::assertSame(['HIL-1906', 'HIL-1952'], Hilos::SHARED_DB_OWNERS[PmdDbContext::pushSubscriptions]);
+        self::assertSame(['HIL-1952'], Hilos::SHARED_DB_OWNERS[PmdDbContext::pushSubscriptions]);
+    }
+
+    /** The library's ask to release an endpoint reaches the inherited personal owner of the prior subscriber by person index. */
+    public function testPushReleaseAsksAreAddressedToThePriorOwner(): void
+    {
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE]);
+        self::assertSame('userId', Hilos::getAgentSignalIndexFields()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE]);
+        self::assertSame(
+            UserPushReleaseSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE],
+        );
+    }
+
+    /** The prior owner's answer to a release returns to the inherited notifications library, unindexed. */
+    public function testPushReleaseAnswersReturnToTheNotificationsLibrary(): void
+    {
+        self::assertSame(
+            HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE_DONE],
+        );
+        self::assertSame(
+            UserPushReleaseDoneSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE_DONE],
+        );
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_USER_PUSH_RELEASE_DONE, Hilos::getAgentSignalIndexFields());
     }
 
     /** The inherited mail shard owner takes the delivery retry request by shard key; no other channel opens here. */
@@ -363,7 +390,7 @@ final class PmdTopologyRegistryTest extends TestCase
             UserPushSubscribeSignalData::class,
             Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE],
         );
-        self::assertSame(['HIL-1906', 'HIL-1952'], Hilos::SHARED_DB_OWNERS[HilosDbContext::pushSubscriptions]);
+        self::assertSame(['HIL-1952'], Hilos::SHARED_DB_OWNERS[HilosDbContext::pushSubscriptions]);
         Hilos::validateTopology();
 
         self::assertSame(['HIL-1952'], Hilos::SHARED_DB_OWNERS['notificationDeliveries']);

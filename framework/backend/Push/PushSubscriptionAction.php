@@ -13,7 +13,8 @@ use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscription
  * authenticated connection alongside the per-user channel preferences (HIL-485).
  * Subscribing creates a {@see ObjectPushSubscriptions} row for a new endpoint at the
  * library, the person's agent renews their own known device (HIL-1905), and another
- * person's endpoint is rebound in place until HIL-1906; unsubscribing removes it, while
+ * person's endpoint is first released by that prior owner, after which the library creates
+ * a new row (HIL-1906); unsubscribing removes it, while
  * remove addresses another or expired device row. All resolve the acting user
  * server-side from the connection, never the payload, so a client can only ever
  * subscribe its own device. Unlike the channel preference (a per-user state fanned to

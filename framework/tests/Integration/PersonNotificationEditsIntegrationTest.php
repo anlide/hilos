@@ -21,6 +21,8 @@ use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\SourceChangeSubscriberInterface;
 use Hilos\Core\Source\SourceChangeProvenance;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Push\DTO\PushSubscribeActionDTO;
 use Hilos\Runtime\View\Context\RtContext;
@@ -76,6 +78,8 @@ use Hilos\Push\PushSubscriptionAction;
 use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
 use Hilos\Users\DTO\UserNotificationReadSignalData;
 use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
+use Hilos\Users\DTO\UserPushReleaseDoneSignalData;
+use Hilos\Users\DTO\UserPushReleaseSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
@@ -104,6 +108,9 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
     private const string ENDPOINT = 'https://push.example/notification-edits';
 
     private const string OTHER_ENDPOINT = 'https://push.example/notification-edits-other';
+
+    /** {@see ENDPOINT} in another case: the table's collation matches it, a byte comparison does not. */
+    private const string ENDPOINT_IN_ANOTHER_CASE = 'https://push.example/Notification-Edits';
 
     /** @var list<string> Tables this case adds beside the session base, dropped before that base drops users */
     private const array TABLES = [
@@ -812,28 +819,363 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
         self::assertSame($before, $this->deviceRow($id));
     }
 
-    public function testUntrackedRefusalUsesTheExistingActionErrorAndLegacyForeignInputStillRebinds(): void
+    /**
+     * Another person's endpoint is released by its prior owner, and only then created anew for the subscriber.
+     *
+     * @param ?string $requestId Waiting browser request, or null for a silent success
+     */
+    #[DataProvider('renewalRequests')]
+    public function testAForeignEndpointIsReleasedByItsPriorOwnerAndCreatedAnewForTheSubscriber(?string $requestId): void
+    {
+        $priorId = self::seedPerson();
+        $subscriberId = self::seedPerson();
+        $this->subscribe($priorId, self::ENDPOINT);
+        $id = $this->subscriptionIdOf($priorId, self::ENDPOINT);
+        self::assertNotNull($id);
+        $before = $this->deviceRow($id);
+        $this->bindBrowser($subscriberId);
+        $this->drainSignals();
+
+        $signal = $this->submitSubscription($requestId, 'subscriber-key', 'subscriber-auth', 'Mozilla/5.0 (Linux) Firefox/120');
+        self::assertNotNull($signal);
+        self::assertSame(HilosSignalConstants::HILOS_USER_PUSH_RELEASE, $signal->signalName->getName());
+        self::assertSame($before, $this->deviceRow($id));
+        self::assertNull($this->subscriptionIdOf($subscriberId, self::ENDPOINT));
+        self::assertSame([], $this->drainSignals(), 'No answer before the prior owner releases');
+        self::assertInstanceOf(AgentSignalData::class, $signal->data);
+        $ask = $signal->data->data;
+        self::assertInstanceOf(UserPushReleaseSignalData::class, $ask);
+        self::assertSame($priorId, $ask->userId);
+        self::assertSame($id, $ask->subscriptionId);
+        self::assertSame(self::ENDPOINT, $ask->endpoint);
+        self::assertSame($subscriberId, $ask->subscriberUserId);
+        self::assertSame('subscriber-key', $ask->p256dh);
+        self::assertSame('subscriber-auth', $ask->auth);
+        self::assertSame('Mozilla/5.0 (Linux) Firefox/120', $ask->userAgent);
+        self::assertSame(HilosSignalConstants::HILOS_USER_PUSH_RELEASE_DONE, $ask->replySignal);
+        self::assertSame(self::ACCEPT_KEY, $ask->acceptKey);
+        self::assertSame($requestId, $ask->requestId);
+        self::assertSame(PushSubscriptionAction::SUBSCRIBE, $ask->action);
+        self::assertNull($ask->successMessage);
+
+        $reply = $this->finishRelease($signal);
+
+        self::assertNull(Database::sql('SELECT `id` FROM `hilos_push_subscription` WHERE `id` = ?', [$id])->firstRow());
+        self::assertNull($this->subscriptionIdOf($priorId, self::ENDPOINT));
+        $newId = $this->subscriptionIdOf($subscriberId, self::ENDPOINT);
+        self::assertNotNull($newId);
+        self::assertNotSame($id, $newId);
+        self::assertSame('1', Database::sql('SELECT COUNT(*) AS n FROM hilos_push_subscription')->firstRow()['n']);
+        $saved = $this->deviceRow($newId);
+        self::assertSame('subscriber-key', $saved['p256dh']);
+        self::assertSame('subscriber-auth', $saved['auth']);
+        self::assertSame('Mozilla/5.0 (Linux) Firefox/120', $saved['user_agent']);
+        self::assertSame('Firefox on Linux', $saved['device_name']);
+        self::assertSame('1', $saved['revision']);
+        self::assertNull($saved['gone_at']);
+        self::assertCount($requestId === null ? 0 : 1, $reply);
+        if ($requestId !== null) {
+            self::assertSame(SignalConstants::ACTION_SUCCESS, $reply[0]->signalName->getName());
+            self::assertInstanceOf(PageActionSuccessSignalData::class, $reply[0]->data->data);
+            self::assertSame($requestId, $reply[0]->data->data->requestId);
+            self::assertSame(PushSubscriptionAction::SUBSCRIBE, $reply[0]->data->data->action);
+        }
+        $released = $this->carried[SignalConstants::DB_SYNC_DELETED]->data ?? null;
+        self::assertInstanceOf(DbSyncDeletedSignalData::class, $released);
+        self::assertSame((string)$id, $released->idString);
+        $created = $this->carried[SignalConstants::DB_SYNC_CREATED]->data ?? null;
+        self::assertInstanceOf(DbSyncCreatedSignalData::class, $created);
+        self::assertSame(HilosDbContext::pushSubscriptions, $created->collectionKey);
+        self::assertSame((string)$newId, $created->idString);
+        self::assertSame(self::ACCEPT_KEY, $created->origin);
+        self::assertSame($requestId, $created->originRequestId);
+    }
+
+    /**
+     * Both releases of a double press reach the prior owner before either resumes: the first
+     * creates the subscriber's row, the second finds it the subscriber's own and renews it.
+     */
+    public function testADoublePressReleasesTwiceAndTheSecondResumeRenewsTheRowTheFirstCreated(): void
+    {
+        $priorId = self::seedPerson();
+        $subscriberId = self::seedPerson();
+        $this->subscribe($priorId, self::ENDPOINT);
+        $id = $this->subscriptionIdOf($priorId, self::ENDPOINT);
+        self::assertNotNull($id);
+        $revision = (int)$this->deviceRow($id)['revision'];
+        $this->bindBrowser($subscriberId);
+        $this->drainSignals();
+
+        $first = $this->submitSubscription('first');
+        $second = $this->submitSubscription('second');
+        self::assertNotNull($first);
+        self::assertNotNull($second);
+        foreach ([$first, $second] as $release) {
+            self::assertSame(HilosSignalConstants::HILOS_USER_PUSH_RELEASE, $release->signalName->getName());
+            self::assertSame($id, $release->data->data->subscriptionId);
+        }
+
+        $firstDone = $this->releaseAtOwner($first);
+        self::assertNull($this->subscriptionIdOf($priorId, self::ENDPOINT));
+        self::assertArrayHasKey(SignalConstants::DB_SYNC_DELETED, $this->carried);
+        // The repeat by the old id finds nothing to delete and still answers released.
+        $secondDone = $this->releaseAtOwner($second);
+        self::assertNull($secondDone->data->data->error);
+        self::assertSame([], $this->carried);
+        self::assertSame(0, $this->pushDeviceCount());
+
+        $created = $this->resumeAtLibrary($firstDone);
+        $newId = $this->subscriptionIdOf($subscriberId, self::ENDPOINT);
+        self::assertNotNull($newId);
+        self::assertNotSame($id, $newId);
+        self::assertPressSucceeded($created, 'first');
+        self::assertSame([], $this->resumeAtLibrary($secondDone), 'No answer before the subscriber renews');
+        $renewal = $this->carried[HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE] ?? null;
+        self::assertInstanceOf(SignalDTO::class, $renewal);
+        $ask = $renewal->data->data;
+        self::assertInstanceOf(UserPushSubscribeSignalData::class, $ask);
+        self::assertSame($subscriberId, $ask->userId);
+        self::assertSame($newId, $ask->subscriptionId);
+        self::assertSame('second', $ask->requestId);
+        self::assertPressSucceeded($this->finishRenewal($renewal), 'second');
+        self::assertSame('2', $this->deviceRow($newId)['revision']);
+        self::assertSame(1, $this->pushDeviceCount());
+
+        // A late dead-endpoint report of the released row finds no row and changes nothing (HIL-1895).
+        $renewed = $this->deviceRow($newId);
+        $this->reportGone(new UserPushEndpointGoneSignalData($priorId, $id, $revision));
+        self::assertSame($renewed, $this->deviceRow($newId));
+        self::assertSame(1, $this->pushDeviceCount());
+    }
+
+    /**
+     * Two subscribers take the same endpoint from its prior owner at once: the first creates, the
+     * later one is sent on to release it from the first, and each is answered when its row is written.
+     */
+    public function testTwoSubscribersTakingOneEndpointEndWithTheLaterOneAndBothSucceed(): void
+    {
+        $priorId = self::seedPerson();
+        $firstId = self::seedPerson();
+        $laterId = self::seedPerson();
+        $this->subscribe($priorId, self::ENDPOINT);
+        $id = $this->subscriptionIdOf($priorId, self::ENDPOINT);
+        self::assertNotNull($id);
+        $this->drainSignals();
+        $this->bindBrowser($firstId);
+        $first = $this->submitSubscription('first');
+        $this->bindBrowser($laterId);
+        $later = $this->submitSubscription('later');
+        self::assertNotNull($first);
+        self::assertNotNull($later);
+        self::assertSame($priorId, $first->data->data->userId);
+        self::assertSame($priorId, $later->data->data->userId);
+
+        $firstDone = $this->releaseAtOwner($first);
+        $laterDone = $this->releaseAtOwner($later);
+        $created = $this->resumeAtLibrary($firstDone);
+        $firstRow = $this->subscriptionIdOf($firstId, self::ENDPOINT);
+        self::assertNotNull($firstRow);
+        self::assertPressSucceeded($created, 'first');
+        self::assertSame([], $this->resumeAtLibrary($laterDone), 'No answer before the first subscriber releases');
+        $release = $this->carried[HilosSignalConstants::HILOS_USER_PUSH_RELEASE] ?? null;
+        self::assertInstanceOf(SignalDTO::class, $release);
+        $ask = $release->data->data;
+        self::assertInstanceOf(UserPushReleaseSignalData::class, $ask);
+        self::assertSame($firstId, $ask->userId);
+        self::assertSame($firstRow, $ask->subscriptionId);
+        self::assertSame($laterId, $ask->subscriberUserId);
+        self::assertSame('later', $ask->requestId);
+        self::assertSame($firstRow, $this->subscriptionIdOf($firstId, self::ENDPOINT));
+
+        self::assertPressSucceeded($this->finishRelease($release), 'later');
+        self::assertNull($this->subscriptionIdOf($priorId, self::ENDPOINT));
+        self::assertNull($this->subscriptionIdOf($firstId, self::ENDPOINT));
+        $laterRow = $this->subscriptionIdOf($laterId, self::ENDPOINT);
+        self::assertNotNull($laterRow);
+        self::assertNotSame($firstRow, $laterRow);
+        self::assertSame(1, $this->pushDeviceCount());
+    }
+
+    public function testTheOwnersRenewalAheadOfAReleaseSucceedsAndTheReleaseThenDeletesTheRow(): void
+    {
+        $priorId = self::seedPerson();
+        $subscriberId = self::seedPerson();
+        [$id, $renewal, $release] = $this->queueRenewalBesideRelease($priorId, $subscriberId);
+
+        self::assertPressSucceeded($this->finishRenewal($renewal), 'renewal');
+        self::assertSame('2', $this->deviceRow($id)['revision']);
+        self::assertPressSucceeded($this->finishRelease($release), 'release');
+
+        self::assertNull($this->subscriptionIdOf($priorId, self::ENDPOINT));
+        $newId = $this->subscriptionIdOf($subscriberId, self::ENDPOINT);
+        self::assertNotNull($newId);
+        self::assertNotSame($id, $newId);
+        self::assertSame(1, $this->pushDeviceCount());
+    }
+
+    public function testAReleaseAheadOfTheOwnersRenewalLeavesTheRenewalADeviceAlreadyGone(): void
+    {
+        $priorId = self::seedPerson();
+        $subscriberId = self::seedPerson();
+        [$id, $renewal, $release] = $this->queueRenewalBesideRelease($priorId, $subscriberId);
+
+        self::assertPressSucceeded($this->finishRelease($release), 'release');
+        self::assertNull($this->subscriptionIdOf($priorId, self::ENDPOINT));
+        $newId = $this->subscriptionIdOf($subscriberId, self::ENDPOINT);
+        self::assertNotNull($newId);
+        self::assertNotSame($id, $newId);
+        $created = $this->deviceRow($newId);
+
+        self::assertPressRefused($this->finishRenewal($renewal), 'renewal', 'This device is already gone');
+        self::assertSame($created, $this->deviceRow($newId));
+        self::assertSame(1, $this->pushDeviceCount());
+    }
+
+    public function testAFoldedPriorOwnerStillReleasesTheEndpointAndStopsButRefusesAnOrdinaryRemoval(): void
+    {
+        $priorId = self::seedPerson();
+        $survivorId = self::seedPerson();
+        $subscriberId = self::seedPerson();
+        $this->subscribe($priorId, self::ENDPOINT);
+        $id = $this->subscriptionIdOf($priorId, self::ENDPOINT);
+        self::assertNotNull($id);
+        Hilos::$db->userMerges->actions->add($priorId, $survivorId);
+        $this->bindBrowser($subscriberId);
+        $this->drainSignals();
+
+        $release = $this->submitSubscription('folded-owner');
+        self::assertNotNull($release);
+        self::assertSame($priorId, $release->data->data->userId);
+        self::assertFalse($this->personAgent($priorId)->shouldStop());
+        self::assertPressSucceeded($this->finishRelease($release), 'folded-owner');
+
+        self::assertArrayHasKey(SignalConstants::DB_SYNC_DELETED, $this->carried);
+        self::assertNull(Database::sql('SELECT `id` FROM `hilos_push_subscription` WHERE `id` = ?', [$id])->firstRow());
+        $newId = $this->subscriptionIdOf($subscriberId, self::ENDPOINT);
+        self::assertNotNull($newId);
+        self::assertTrue($this->personAgent($priorId)->shouldStop());
+        $created = $this->deviceRow($newId);
+        $removed = $this->carry(HilosSignalConstants::HILOS_USER_PUSH_REMOVE, new UserPushRemoveSignalData(
+            $priorId, $newId, HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE,
+            self::ACCEPT_KEY, null, PushSubscriptionAction::REMOVE, null,
+        ));
+        self::assertSame(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE, $removed->error);
+        self::assertSame($created, $this->deviceRow($newId));
+    }
+
+    /**
+     * The prior owner's refused delete refuses the press in the owner's words, and nothing is written.
+     *
+     * @param ?string $requestId Waiting browser request, or null for an untracked press
+     */
+    #[DataProvider('renewalRequests')]
+    public function testAPriorOwnerWhoseDeleteIsRefusedRefusesThePressAndKeepsItsRow(?string $requestId): void
+    {
+        $priorId = self::seedPerson();
+        $subscriberId = self::seedPerson();
+        $this->subscribe($priorId, self::ENDPOINT);
+        $id = $this->subscriptionIdOf($priorId, self::ENDPOINT);
+        self::assertNotNull($id);
+        $before = $this->deviceRow($id);
+        $this->bindBrowser($subscriberId);
+        $this->drainSignals();
+        $release = $this->submitSubscription($requestId);
+        self::assertNotNull($release);
+        // The agent holds no claim any more, so the truth source refuses the delete it tries.
+        TruthSourceRegistry::unregisterAgent($this->personAgent($priorId)->getId());
+
+        $done = $this->releaseAtOwner($release);
+        self::assertSame('The action could not be completed.', $done->data->data->error);
+        self::assertSame('WriteNotAllowedException', $done->data->data->errorType);
+        self::assertPressRefused($this->resumeAtLibrary($done), $requestId, 'The action could not be completed.');
+
+        self::assertSame($before, $this->deviceRow($id));
+        self::assertNull($this->subscriptionIdOf($subscriberId, self::ENDPOINT));
+        self::assertSame(1, $this->pushDeviceCount());
+        self::assertArrayNotHasKey(SignalConstants::DB_SYNC_DELETED, $this->carried);
+        self::assertArrayNotHasKey(SignalConstants::DB_SYNC_CREATED, $this->carried);
+    }
+
+    /**
+     * A prior owner's row the database matches only in another case is answered released but kept,
+     * and the resumed press is refused instead of asking the same row's owner again.
+     *
+     * @param ?string $requestId Waiting browser request, or null for an untracked press
+     */
+    #[DataProvider('renewalRequests')]
+    public function testAnEndpointMatchedOnlyInAnotherCaseRefusesThePressAfterOneReleaseAndKeepsTheRow(?string $requestId): void
+    {
+        $priorId = self::seedPerson();
+        $subscriberId = self::seedPerson();
+        $this->subscribe($priorId, self::ENDPOINT_IN_ANOTHER_CASE);
+        $id = $this->subscriptionIdOf($priorId, self::ENDPOINT_IN_ANOTHER_CASE);
+        self::assertNotNull($id);
+        $before = $this->deviceRow($id);
+        $this->bindBrowser($subscriberId);
+        $this->drainSignals();
+        $release = $this->submitSubscription($requestId);
+        self::assertNotNull($release);
+        self::assertSame(HilosSignalConstants::HILOS_USER_PUSH_RELEASE, $release->signalName->getName());
+        self::assertSame($id, $release->data->data->subscriptionId);
+
+        $done = $this->releaseAtOwner($release);
+        self::assertNull($done->data->data->error);
+        self::assertSame($before, $this->deviceRow($id));
+        self::assertPressRefused($this->resumeAtLibrary($done), $requestId, 'This device is already gone');
+
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_USER_PUSH_RELEASE, $this->carried, 'The same row is not asked twice');
+        self::assertSame($before, $this->deviceRow($id));
+        self::assertSame(1, $this->pushDeviceCount());
+        self::assertArrayNotHasKey(SignalConstants::DB_SYNC_DELETED, $this->carried);
+        self::assertArrayNotHasKey(SignalConstants::DB_SYNC_CREATED, $this->carried);
+    }
+
+    /**
+     * A subscriber folded into another account between the release and the resume is refused, not answered with a success.
+     *
+     * @param ?string $requestId Waiting browser request, or null for an untracked press
+     */
+    #[DataProvider('renewalRequests')]
+    public function testASubscriberFoldedWhileTheOwnerReleasesIsRefusedAndNothingIsCreated(?string $requestId): void
+    {
+        $priorId = self::seedPerson();
+        $subscriberId = self::seedPerson();
+        $survivorId = self::seedPerson();
+        $this->subscribe($priorId, self::ENDPOINT);
+        self::assertNotNull($this->subscriptionIdOf($priorId, self::ENDPOINT));
+        $this->bindBrowser($subscriberId);
+        $this->drainSignals();
+        $release = $this->submitSubscription($requestId);
+        self::assertNotNull($release);
+
+        $done = $this->releaseAtOwner($release);
+        self::assertNull($done->data->data->error);
+        self::assertSame(0, $this->pushDeviceCount());
+        Hilos::$db->userMerges->actions->add($subscriberId, $survivorId);
+        $this->drainSignals();
+        self::assertPressRefused(
+            $this->resumeAtLibrary($done),
+            $requestId,
+            AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE,
+        );
+
+        self::assertNull($this->subscriptionIdOf($subscriberId, self::ENDPOINT));
+        self::assertSame(0, $this->pushDeviceCount());
+        self::assertArrayNotHasKey(SignalConstants::DB_SYNC_CREATED, $this->carried);
+    }
+
+    public function testUntrackedRenewalRefusalUsesTheExistingActionError(): void
     {
         $userId = self::seedPerson();
-        $otherId = self::seedPerson();
         $this->subscribe($userId, self::ENDPOINT);
         $id = $this->subscriptionIdOf($userId, self::ENDPOINT);
         self::assertNotNull($id);
-        $before = $this->deviceRow($id);
-        $this->bindBrowser($otherId);
-        $this->drainSignals();
-        self::assertNull($this->submitSubscription(null, 'foreign-key'));
-        $saved = $this->deviceRow($id);
-        self::assertSame((string)$otherId, $saved['user_id']);
-        self::assertSame('foreign-key', $saved['p256dh']);
-        self::assertSame('2', $saved['revision']);
-        foreach (['id', 'endpoint', 'endpoint_hash', 'created_at'] as $column) {
-            self::assertSame($before[$column], $saved[$column]);
-        }
+        $this->bindBrowser($userId);
         $this->drainSignals();
         $ask = $this->submitSubscription(null);
         self::assertNotNull($ask);
-        $this->asPerson($otherId, static fn () => Hilos::$db->pushSubscriptions->actions->removeOwned($otherId, $id));
+        self::assertSame(HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE, $ask->signalName->getName());
+        $this->asPerson($userId, static fn () => Hilos::$db->pushSubscriptions->actions->removeOwned($userId, $id));
         $this->drainSignals();
         $reply = $this->finishRenewal($ask);
         self::assertCount(1, $reply);
@@ -853,11 +1195,14 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
     /**
      * Calls the real public agent-action entry; takes only its queued personal ask off the queue.
      *
+     * The ask is the renewal at the subscriber's own agent or the release at the prior owner's,
+     * whichever the endpoint's fresh identity called for.
+     *
      * @param ?string $requestId Waiting submit
      * @param string $p256dh Public key
      * @param string $auth Auth secret
      * @param ?string $userAgent Device user agent
-     * @return ?SignalDTO Queued renewal, or null for a synchronous create or legacy rebind
+     * @return ?SignalDTO Queued renewal or release, or null for a synchronous create
      */
     private function submitSubscription(
         ?string $requestId,
@@ -880,7 +1225,11 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
         }
         $ask = null;
         foreach ($this->drainSignals() as $signal) {
-            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE) {
+            if (in_array(
+                $signal->signalName->getName(),
+                [HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE, HilosSignalConstants::HILOS_USER_PUSH_RELEASE],
+                true,
+            )) {
                 self::assertNull($ask, 'One input queues exactly one ask');
                 $ask = $signal;
             } else {
@@ -922,6 +1271,147 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
         );
 
         return array_values(array_filter($this->drainSignals(), static fn (SignalDTO $queued): bool => $queued->data instanceof WebSocketSignalData));
+    }
+
+    /**
+     * Runs the prior owner's actual worker receipt of one release, then resumes the press at the library.
+     *
+     * Serves any release the library asks: the owner is the person the ask names, and its answer
+     * reaches the library as it left the owner. Neither side's other frames are dropped: they are
+     * kept in {@see $carried} by name, the first of each name winning, the owner's before the
+     * library's - so the library's next ask, when the resumed press makes one, is there too.
+     *
+     * @param SignalDTO $signal Captured release ask
+     * @return list<SignalDTO> Browser outcomes of the resumed press
+     */
+    private function finishRelease(SignalDTO $signal): array
+    {
+        return $this->resumeAtLibrary($this->releaseAtOwner($signal));
+    }
+
+    /**
+     * Runs the prior owner's actual worker receipt of one release and holds its answer back.
+     *
+     * The owner's other frames start {@see $carried} afresh, by name, the first of each name winning.
+     * A race case delivers several releases before any answer reaches the library, or changes the
+     * world between the two steps; {@see finishRelease()} runs them back to back.
+     *
+     * @param SignalDTO $signal Captured release ask
+     * @return SignalDTO The owner's answer, not yet at the library
+     */
+    private function releaseAtOwner(SignalDTO $signal): SignalDTO
+    {
+        self::assertInstanceOf(AgentSignalData::class, $signal->data);
+        $ask = $signal->data->data;
+        self::assertInstanceOf(UserPushReleaseSignalData::class, $ask);
+        new NotificationEditsTestWorker($this->personAgent($ask->userId), Hilos::$sr)->deliver($signal);
+        $answer = null;
+        $this->carried = [];
+        foreach ($this->drainSignals() as $queued) {
+            self::assertNotInstanceOf(WebSocketSignalData::class, $queued->data, 'Only the library answers the press');
+            if ($queued->signalName->getName() === HilosSignalConstants::HILOS_USER_PUSH_RELEASE_DONE) {
+                self::assertNull($answer, 'The prior owner answers once');
+                $answer = $queued;
+            } else {
+                $this->carried[$queued->signalName->getName()] ??= $queued;
+            }
+        }
+        self::assertNotNull($answer);
+        self::assertInstanceOf(AgentSignalData::class, $answer->data);
+        self::assertInstanceOf(UserPushReleaseDoneSignalData::class, $answer->data->data);
+
+        return $answer;
+    }
+
+    /**
+     * Hands one held release answer to the library, which resumes the press it carries.
+     *
+     * The library's frames other than the browser's join {@see $carried}, a name already kept there
+     * winning - so the library's next ask, when the resumed press makes one, is there too.
+     *
+     * @param SignalDTO $answer The prior owner's answer, as it left the owner
+     * @return list<SignalDTO> Browser outcomes of the resumed press
+     */
+    private function resumeAtLibrary(SignalDTO $answer): array
+    {
+        self::assertInstanceOf(AgentSignalData::class, $answer->data);
+        ExecutionContext::run(
+            new ExecutionFrame(agentId: $this->library->getId()),
+            fn () => $this->library->onSignalAgent($answer->data, '', $answer->signalName->getName()),
+        );
+        self::assertNull($this->library->currentActionRequestId(), 'The resumed dispatch is closed');
+
+        $outcomes = [];
+        foreach ($this->drainSignals() as $queued) {
+            if ($queued->data instanceof WebSocketSignalData) {
+                $outcomes[] = $queued;
+            } else {
+                $this->carried[$queued->signalName->getName()] ??= $queued;
+            }
+        }
+
+        return $outcomes;
+    }
+
+    /**
+     * Queues the prior owner's renewal of its device and another person's release of it, neither delivered.
+     *
+     * Both press in the same browser, the prior owner first; each ask is still on its way to the
+     * prior owner's agent, so a case delivers them in the order it is about.
+     *
+     * @param int $priorId Person whose device it is
+     * @param int $subscriberId Person subscribing the same endpoint
+     * @return array{int, SignalDTO, SignalDTO} The device, the renewal under request "renewal", the release under request "release"
+     */
+    private function queueRenewalBesideRelease(int $priorId, int $subscriberId): array
+    {
+        $this->subscribe($priorId, self::ENDPOINT);
+        $id = $this->subscriptionIdOf($priorId, self::ENDPOINT);
+        self::assertNotNull($id);
+        $this->drainSignals();
+        $this->bindBrowser($priorId);
+        $renewal = $this->submitSubscription('renewal');
+        $this->bindBrowser($subscriberId);
+        $release = $this->submitSubscription('release');
+        self::assertNotNull($renewal);
+        self::assertNotNull($release);
+        self::assertSame(HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE, $renewal->signalName->getName());
+        self::assertSame(HilosSignalConstants::HILOS_USER_PUSH_RELEASE, $release->signalName->getName());
+        self::assertSame($priorId, $renewal->data->data->userId);
+        self::assertSame($priorId, $release->data->data->userId);
+        self::assertSame('1', $this->deviceRow($id)['revision']);
+
+        return [$id, $renewal, $release];
+    }
+
+    /**
+     * @param list<SignalDTO> $outcomes Browser outcomes of one press
+     * @param string $requestId Request the one success answers
+     */
+    private static function assertPressSucceeded(array $outcomes, string $requestId): void
+    {
+        self::assertCount(1, $outcomes);
+        self::assertSame(SignalConstants::ACTION_SUCCESS, $outcomes[0]->signalName->getName());
+        $success = $outcomes[0]->data->data;
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $success);
+        self::assertSame($requestId, $success->requestId);
+        self::assertSame(PushSubscriptionAction::SUBSCRIBE, $success->action);
+    }
+
+    /**
+     * @param list<SignalDTO> $outcomes Browser outcomes of one press
+     * @param ?string $requestId Request the one refusal answers, or null for an untracked press
+     * @param string $reason Words the browser reads
+     */
+    private static function assertPressRefused(array $outcomes, ?string $requestId, string $reason): void
+    {
+        self::assertCount(1, $outcomes);
+        self::assertSame(SignalConstants::ACTION_ERROR, $outcomes[0]->signalName->getName());
+        $refusal = $outcomes[0]->data->data;
+        self::assertInstanceOf(PageActionErrorSignalData::class, $refusal);
+        self::assertSame($requestId, $refusal->requestId);
+        self::assertSame(PushSubscriptionAction::SUBSCRIBE, $refusal->action);
+        self::assertSame($reason, $refusal->reason);
     }
 
     /**
@@ -977,6 +1467,18 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
         self::assertIsArray($row);
 
         return $row;
+    }
+
+    /**
+     * @return int Saved devices of everyone
+     * @throws DatabaseException When the count fails
+     */
+    private function pushDeviceCount(): int
+    {
+        $row = Database::sql('SELECT COUNT(*) AS `n` FROM `' . EntityPushSubscription::_table . '`')->firstRow();
+        self::assertIsArray($row);
+
+        return (int)$row['n'];
     }
 
     /**
@@ -1292,6 +1794,8 @@ final class NotificationEditsTestWorker extends WorkerManager
     }
 
     /**
+     * Runs in the agent's own frame, as the worker sets the addressed agent before its receipt.
+     *
      * @param SignalDTO $signal Queued personal ask
      */
     public function deliver(SignalDTO $signal): void
@@ -1303,7 +1807,10 @@ final class NotificationEditsTestWorker extends WorkerManager
             null,
             WorkerManager::class,
         );
-        $deliver($this, DaemonAgentMessageDTO::fromArray(new DaemonAgentMessageDTO($this->agent->getId(), $signal)->toArray()));
+        ExecutionContext::run(
+            new ExecutionFrame(agentId: $this->agent->getId()),
+            fn () => $deliver($this, DaemonAgentMessageDTO::fromArray(new DaemonAgentMessageDTO($this->agent->getId(), $signal)->toArray())),
+        );
     }
 
     /** @return SignalRouter Existing queue, shared with the library fixture */

@@ -8,6 +8,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Source\SourceChange;
@@ -41,7 +42,7 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
     /** Owner of person 41's subscription set, standing in for that person's agent. */
     private const string SET_OWNER = 'push-subscriptions-set-owner';
 
-    /** A claim of adding and updating, the notifications library's grant on this table. */
+    /** A whole-table claim of adding and updating, which stops short of removing a device. */
     private const string ADD_UPDATE = 'push-subscriptions-add-update';
 
     private const string ENDPOINT = 'https://push.example/device-a';
@@ -337,6 +338,93 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
         }
     }
 
+    public function testReleaseRemovesTheOwnersOwnRowAndAnnouncesTheDelete(): void
+    {
+        Hilos::$db->pushSubscriptions->actions->subscribe(41, self::ENDPOINT, 'pk', 'auth', null);
+        $id = $this->subscriptionId();
+        while (Hilos::$sr->getNextQueuedSignal() !== null) {
+        }
+
+        self::assertTrue(Hilos::$db->pushSubscriptions->actions->releaseOwned(41, $id, self::ENDPOINT));
+
+        self::assertNull(Database::sql('SELECT `id` FROM `hilos_push_subscription` WHERE `id` = ?', [$id])->firstRow());
+        self::assertSame([], $this->subscriptions()->forUser(41)->toArray());
+        $sync = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($sync);
+        self::assertSame(SignalConstants::DB_SYNC_DELETED, $sync->signalName->getName());
+        self::assertInstanceOf(DbSyncDeletedSignalData::class, $sync->data);
+        self::assertSame(HilosDbContext::pushSubscriptions, $sync->data->collectionKey);
+        self::assertSame((string)$id, $sync->data->idString);
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    /**
+     * A missing row, a row the saved state gives to another person and a row at another endpoint
+     * are left alone, whatever the held object still says.
+     *
+     * @throws DatabaseException When a fixture row cannot be written or read
+     */
+    public function testReleaseLeavesAMissingForeignOrMovedRowAlone(): void
+    {
+        Hilos::$db->pushSubscriptions->actions->subscribe(41, self::ENDPOINT, 'pk', 'auth', null);
+        Database::sqlRun("INSERT INTO hilos_user (id, name) VALUES (99, 'Other')");
+        $id = $this->subscriptionId();
+        $before = Database::sql('SELECT * FROM hilos_push_subscription')->firstRow();
+
+        self::assertFalse(Hilos::$db->pushSubscriptions->actions->releaseOwned(41, $id + 1, self::ENDPOINT));
+        self::assertFalse(Hilos::$db->pushSubscriptions->actions->releaseOwned(41, $id, 'https://push.example/device-b'));
+        self::assertSame($before, Database::sql('SELECT * FROM hilos_push_subscription')->firstRow());
+
+        self::assertSame(41, $this->subscriptions()[$id]->userId);
+        Database::sqlRun('UPDATE `hilos_push_subscription` SET `user_id` = ? WHERE `id` = ?', [99, $id]);
+        $foreign = Database::sql('SELECT * FROM hilos_push_subscription')->firstRow();
+        self::assertFalse(Hilos::$db->pushSubscriptions->actions->releaseOwned(41, $id, self::ENDPOINT));
+        self::assertSame($foreign, Database::sql('SELECT * FROM hilos_push_subscription')->firstRow());
+    }
+
+    public function testNeitherACreatorNorAnotherSetOwnerCanRelease(): void
+    {
+        Hilos::$db->pushSubscriptions->actions->subscribe(41, self::ENDPOINT, 'pk', 'auth', null);
+        $id = $this->subscriptionId();
+        $before = Database::sql('SELECT * FROM hilos_push_subscription')->firstRow();
+        TruthSourceRegistry::registerCreate(HilosDbContext::pushSubscriptions, 'creator-only');
+        TruthSourceRegistry::register(HilosDbContext::pushSubscriptions, TruthSourceKeys::set('99'), 'foreign-owner');
+        TruthSourceRegistry::register(HilosDbContext::pushSubscriptions, TruthSourceKeys::set('41'), self::SET_OWNER);
+        try {
+            foreach (['creator-only', 'foreign-owner'] as $writer) {
+                ExecutionContext::setCurrentAgentId($writer);
+                try {
+                    Hilos::$db->pushSubscriptions->actions->releaseOwned(41, $id, self::ENDPOINT);
+                    self::fail('A creator or a foreign owner must not release this row');
+                } catch (WriteNotAllowedException $refusal) {
+                    self::assertStringContainsString($writer, $refusal->getMessage());
+                }
+                self::assertSame($before, Database::sql('SELECT * FROM hilos_push_subscription')->firstRow());
+            }
+            ExecutionContext::setCurrentAgentId(self::SET_OWNER);
+            self::assertTrue(Hilos::$db->pushSubscriptions->actions->releaseOwned(41, $id, self::ENDPOINT));
+            self::assertNull(Database::sql('SELECT * FROM hilos_push_subscription')->firstRow());
+        } finally {
+            ExecutionContext::setCurrentAgentId(self::AGENT);
+            foreach (['creator-only', 'foreign-owner', self::SET_OWNER] as $writer) {
+                TruthSourceRegistry::unregisterAgent($writer);
+            }
+        }
+    }
+
+    public function testReleaseOfAHeldDeviceDeletedOutsideAnswersFalseWithoutWriting(): void
+    {
+        Hilos::$db->pushSubscriptions->actions->subscribe(41, self::ENDPOINT, 'pk', 'auth', null);
+        $id = $this->subscriptionId();
+        self::assertSame(self::ENDPOINT, $this->subscriptions()[$id]->endpoint);
+        Database::sqlRun('DELETE FROM `hilos_push_subscription` WHERE `id` = ?', [$id]);
+        while (Hilos::$sr->getNextQueuedSignal() !== null) {
+        }
+
+        self::assertFalse(Hilos::$db->pushSubscriptions->actions->releaseOwned(41, $id, self::ENDPOINT));
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
     public function testCreatorCollisionLeavesBothOwnedAndForeignDevicesUntouched(): void
     {
         Hilos::$db->pushSubscriptions->actions->subscribe(41, self::ENDPOINT, 'pk', 'auth', null);
@@ -352,7 +440,7 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
         }
     }
 
-    public function testOnlyTheOwnedSetCanRenewAndNeitherSetCanRebindAcrossOwners(): void
+    public function testOnlyTheOwnedSetCanRenew(): void
     {
         Hilos::$db->pushSubscriptions->actions->subscribe(41, self::ENDPOINT, 'pk', 'auth', null);
         Database::sqlRun("INSERT INTO hilos_user (id, name) VALUES (99, 'Other')");
@@ -373,13 +461,6 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
                 self::assertSame($before, Database::sql('SELECT * FROM hilos_push_subscription')->firstRow());
             }
             ExecutionContext::setCurrentAgentId(self::SET_OWNER);
-            try {
-                Hilos::$db->pushSubscriptions[$id]->actions->rebindForeignLegacy(99, self::ENDPOINT, 'new', 'new', null);
-                self::fail('The owner of the old set cannot write the new set');
-            } catch (WriteNotAllowedException $refusal) {
-                self::assertStringContainsString(self::SET_OWNER, $refusal->getMessage());
-            }
-            self::assertSame($before, Database::sql('SELECT * FROM hilos_push_subscription')->firstRow());
             self::assertTrue(Hilos::$db->pushSubscriptions[$id]->actions->renewOwned(41, self::ENDPOINT, 'new', 'new', null));
             self::assertSame('2', Database::sql('SELECT revision FROM hilos_push_subscription')->firstRow()['revision']);
         } finally {
@@ -477,10 +558,9 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
      * the shorter-than-a-stand-tick window exercised by the renewal persistence primitive.
      *
      * @param ?string $setKey Writer's set, or null for an Add-only creator
-     * @param bool $rebind Whether to attempt a legacy transfer back to the held owner
      */
     #[DataProvider('staleOwnerRefusals')]
-    public function testStaleHeldOwnerDoesNotGrantRenewalOrCrossSetRebind(?string $setKey, bool $rebind): void
+    public function testStaleHeldOwnerDoesNotGrantRenewal(?string $setKey): void
     {
         Hilos::$db->pushSubscriptions->actions->subscribe(41, self::ENDPOINT, 'pk', 'auth', null);
         Database::sqlRun("INSERT INTO hilos_user (id, name) VALUES (99, 'New owner')");
@@ -500,14 +580,10 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
         }
         try {
             try {
-                ExecutionContext::run(new ExecutionFrame(self::SET_OWNER), static function () use ($id, $rebind): void {
-                    if ($rebind) {
-                        Hilos::$db->pushSubscriptions[$id]->actions->rebindForeignLegacy(41, self::ENDPOINT, 'new', 'new', null);
-                    } else {
-                        Hilos::$db->pushSubscriptions[$id]->actions->renewOwned(99, self::ENDPOINT, 'new', 'new', null);
-                    }
+                ExecutionContext::run(new ExecutionFrame(self::SET_OWNER), static function () use ($id): void {
+                    Hilos::$db->pushSubscriptions[$id]->actions->renewOwned(99, self::ENDPOINT, 'new', 'new', null);
                 });
-                self::fail('A stale held owner must not permit a foreign write or cross-set rebind');
+                self::fail('A stale held owner must not permit a foreign write');
             } catch (WriteNotAllowedException $refusal) {
                 self::assertStringContainsString(self::SET_OWNER, $refusal->getMessage());
             }
@@ -517,15 +593,13 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
         }
     }
 
-    /** @return array<string, array{?string, bool}> Claims and operations that must remain refused */
+    /** @return array<string, array{?string}> Claims whose renewal must remain refused */
     public static function staleOwnerRefusals(): array
     {
         return [
-            'Add-only renewal' => [null, false],
-            'old-set renewal' => ['41', false],
-            'unrelated-set renewal' => ['100', false],
-            'old-set rebind' => ['41', true],
-            'new-set rebind' => ['99', true],
+            'Add-only renewal' => [null],
+            'old-set renewal' => ['41'],
+            'unrelated-set renewal' => ['100'],
         ];
     }
 
@@ -544,7 +618,7 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
         }
     }
 
-    public function testCapturedItemCannotRenewOrRebindARecreatedEndpoint(): void
+    public function testCapturedItemCannotRenewARecreatedEndpoint(): void
     {
         Hilos::$db->pushSubscriptions->actions->subscribe(41, self::ENDPOINT, 'pk', 'auth', null);
         $id = $this->subscriptionId();
@@ -554,11 +628,10 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
         $before = Database::sql('SELECT * FROM hilos_push_subscription')->firstRow();
         self::assertNotSame((string)$id, $before['id']);
         self::assertFalse($old->actions->renewOwned(41, self::ENDPOINT, 'new', 'new', null));
-        self::assertFalse($old->actions->rebindForeignLegacy(99, self::ENDPOINT, 'new', 'new', null));
         self::assertSame($before, Database::sql('SELECT * FROM hilos_push_subscription')->firstRow());
     }
 
-    public function testLegacyRebindRequiresFreshForeignIdentityAndPreservesTheRow(): void
+    public function testRenewalRequiresTheFreshOwnedIdentityAndPreservesTheRow(): void
     {
         Hilos::$db->pushSubscriptions->actions->subscribe(41, self::ENDPOINT, 'pk', 'auth', null);
         Database::sqlRun("INSERT INTO hilos_user (id, name) VALUES (99, 'Other')");
@@ -567,26 +640,16 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
         self::assertSame($id, Hilos::$db->pushSubscriptions->readIdentityByEndpoint(self::ENDPOINT)->subscriptionId);
         self::assertSame(41, Hilos::$db->pushSubscriptions->readIdentityByEndpoint(self::ENDPOINT)->userId);
         self::assertNull(Hilos::$db->pushSubscriptions->readIdentityByEndpoint('https://push.example/missing'));
-        self::assertFalse(Hilos::$db->pushSubscriptions[$id]->actions->rebindForeignLegacy(41, self::ENDPOINT, 'new', 'new', null));
-        self::assertFalse(Hilos::$db->pushSubscriptions[$id]->actions->rebindForeignLegacy(99, self::ENDPOINT . '/wrong', 'new', 'new', null));
         self::assertFalse(Hilos::$db->pushSubscriptions[$id]->actions->renewOwned(99, self::ENDPOINT, 'new', 'new', null));
         self::assertFalse(Hilos::$db->pushSubscriptions[$id]->actions->renewOwned(41, self::ENDPOINT . '/wrong', 'new', 'new', null));
         self::assertSame($before, Database::sql('SELECT * FROM hilos_push_subscription')->firstRow());
         // The held owner lags the persisted owner, which input dispatch must read fresh.
         Database::sqlRun('UPDATE hilos_push_subscription SET user_id = 99, revision = 5 WHERE id = ?', [$id]);
+        $moved = Database::sql('SELECT * FROM hilos_push_subscription')->firstRow();
         self::assertSame(41, Hilos::$db->pushSubscriptions[$id]->userId);
         self::assertSame(99, Hilos::$db->pushSubscriptions->readIdentityByEndpoint(self::ENDPOINT)->userId);
-        self::assertFalse(Hilos::$db->pushSubscriptions[$id]->actions->rebindForeignLegacy(99, self::ENDPOINT, 'new', 'new', null));
-        self::assertTrue(Hilos::$db->pushSubscriptions[$id]->actions->rebindForeignLegacy(41, self::ENDPOINT, 'new', 'new', 'Firefox'));
-        $saved = Database::sql('SELECT * FROM hilos_push_subscription')->firstRow();
-        foreach (['id', 'endpoint', 'endpoint_hash', 'created_at'] as $column) {
-            self::assertSame($before[$column], $saved[$column]);
-        }
-        self::assertSame('41', $saved['user_id']);
-        self::assertSame('6', $saved['revision']);
-        self::assertSame('new', $saved['p256dh']);
-        self::assertSame('new', $saved['auth']);
-        self::assertNull($saved['gone_at']);
+        self::assertFalse(Hilos::$db->pushSubscriptions[$id]->actions->renewOwned(41, self::ENDPOINT, 'new', 'new', null));
+        self::assertSame($moved, Database::sql('SELECT * FROM hilos_push_subscription')->firstRow());
     }
 
     /** @return int Id of person 41's one subscription */

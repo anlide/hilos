@@ -93,6 +93,8 @@ use Hilos\Users\DTO\UserPhotoPutSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveDoneSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveSignalData;
 use Hilos\Users\DTO\UserPushEndpointGoneSignalData;
+use Hilos\Users\DTO\UserPushReleaseDoneSignalData;
+use Hilos\Users\DTO\UserPushReleaseSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
@@ -312,6 +314,10 @@ abstract class AbstractUserAgent extends AbstractAgent
             AgentSignalConfigKey::INDEX_FIELD => UserPushEndpointGoneSignalData::userId,
             AgentSignalConfigKey::DTO => UserPushEndpointGoneSignalData::class,
         ],
+        HilosSignalConstants::HILOS_USER_PUSH_RELEASE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserPushReleaseSignalData::userId,
+            AgentSignalConfigKey::DTO => UserPushReleaseSignalData::class,
+        ],
     ];
 
     /** @var array<string, list<TruthSourceOperation>> The person's row, excluding creation and removal. */
@@ -435,6 +441,8 @@ abstract class AbstractUserAgent extends AbstractAgent
      * of a trust into its log. A notification marked read, a channel turned on or off, and a push
      * subscription dropped or a device removed are answered the same way (HIL-1408): the notifications
      * library waits on the answer, and the tabs hear a read or a channel change only after the write.
+     * A push endpoint another person subscribes is released and answered to that library too, by a
+     * folded account as well (HIL-1906).
      * A standing deletion canceled, and a profile photo set or removed, are answered the same way
      * (HIL-1409): the users library waits on the answer. The sessions library reports the last zone
      * a browser named in the background (HIL-1582). That report, the provider-name report and the
@@ -955,6 +963,20 @@ abstract class AbstractUserAgent extends AbstractAgent
 
                 $this->refuseAnotherPerson($gone->userId, $name);
                 $this->applyPushEndpointGone($gone);
+                if (isset(Hilos::$db->userMerges[$this->userId])) {
+                    $this->selfStop();
+                }
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_PUSH_RELEASE:
+                $release = $data->data;
+                if (!$release instanceof UserPushReleaseSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserPushReleaseSignalData::class, $release);
+                }
+
+                $this->refuseAnotherPerson($release->userId, $name);
+                $this->sendToAgent($release->replySignal, $this->releasePushAnswer($release));
                 if (isset(Hilos::$db->userMerges[$this->userId])) {
                     $this->selfStop();
                 }
@@ -1959,6 +1981,41 @@ abstract class AbstractUserAgent extends AbstractAgent
             }
 
             return UserLegalHoldForgetDoneSignalData::refused($ask, $refusal);
+        }
+    }
+
+    /**
+     * Releases a push endpoint another person subscribes, including for a folded account (HIL-1906).
+     *
+     * The row goes only while it still has this person and the asked endpoint; a missing or changed
+     * row is released already, so every outcome but a failed write answers ok. The log names the
+     * device by its id alone: the endpoint and keys are the browser's secrets.
+     *
+     * @param UserPushReleaseSignalData $ask The captured device and the waiting subscribe
+     * @return UserPushReleaseDoneSignalData Release outcome carrying the unchanged request
+     */
+    private function releasePushAnswer(UserPushReleaseSignalData $ask): UserPushReleaseDoneSignalData
+    {
+        try {
+            Hilos::$db->pushSubscriptions->actions->releaseOwned($this->userId, $ask->subscriptionId, $ask->endpoint);
+
+            return UserPushReleaseDoneSignalData::ok($ask);
+        } catch (ValidationException $e) {
+            return UserPushReleaseDoneSignalData::refused($ask, ActionRefusal::said($e->getMessage()));
+        } catch (WiringRefusal $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Push device #{$ask->subscriptionId} of #{$this->userId} not released: {$e->getMessage()}");
+            }
+
+            return UserPushReleaseDoneSignalData::refused($ask, $refusal);
+        } catch (Throwable $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Push device #{$ask->subscriptionId} of #{$this->userId} not released: {$e->getMessage()}");
+            }
+
+            return UserPushReleaseDoneSignalData::refused($ask, $refusal);
         }
     }
 
