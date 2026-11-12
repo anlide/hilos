@@ -125,6 +125,12 @@ services:
       - MAIL_SMTP_SECURITY=${MAIL_SMTP_SECURITY:-none}
       - MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS:-notifications@solar-system-model.local}
       - MAIL_FROM_NAME=${MAIL_FROM_NAME:-Solar System Model}
+      # Where a mailed sign-in link comes back to (HIL-417). Overridden rather than
+      # inherited: the framework default names port 5173, and this stack publishes
+      # its dev server on 5181 so it can run beside the others - so the default would
+      # mail a person a link into another application's front end.
+      - HILOS_MAGIC_LINK_URL=${HILOS_MAGIC_LINK_URL:-http://localhost:5181/auth/magic}
+      - HILOS_SECOND_FACTOR_CANCEL_URL=${HILOS_SECOND_FACTOR_CANCEL_URL:-http://localhost:5181/auth/second-factor/cancel}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
     depends_on:

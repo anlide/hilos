@@ -3,7 +3,7 @@
 // the session and page scopes, builds the navigator, opens the socket, and
 // applies the URL; this module supplies the project inputs and provides the
 // navigator through HilosRouterContext (docs/agents/frontend/bootstrap-structure.md).
-import { bootHilos, createAuthGate } from '@hilos/core/base'
+import { bootHilos, createAuthGate, createOAuthLogin } from '@hilos/core/base'
 import {
   HILOS_VIEW_LAYER,
   HilosAuthGateContext,
@@ -13,11 +13,31 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import App from '../App.js'
+import { hilosAuthContext } from '../auth/hilosAuthContext.js'
 import { pageEntityTypes } from '../pages/entityTypes.js'
 import { appName, pageTitles } from '../pages/pageTitles.js'
 import { router } from '../pages/routes.js'
 import { actions, connection } from './connection.js'
 import { currentUserId, pendingAck, scopes } from './session.js'
+
+// The framework OAuth client, bound to this project's context. Its redirect state
+// lives in the framework module, so the bindings registered here answer the trips
+// the surfaces start. The readiness the callback relay waits on is not among them:
+// since HIL-607 that is the shared page-ready gate, which bootHilos binds itself.
+const oauth = createOAuthLogin(hilosAuthContext)
+
+// The OAuth trip's bindings (HIL-281, HIL-633): put the authorize URL the daemon
+// answers `hilos_oauth_start` with into the provider window, take the return the
+// callback window couriers back, and notice a window the person closed by hand.
+// Registered before bootHilos opens the socket so the reply always has a handler.
+oauth.bindOAuthTrip()
+
+// The OAuth email-collision link replay (HIL-282): once a collision re-auth
+// upgrades the session (currentUserId turns non-null) with a pending link armed,
+// redeem the link token to bind the OAuth identity. Bound here, outside any
+// component, so it survives the sign-in surface unmounting when the gate closes on
+// the upgrade. Registered before bootHilos opens the socket.
+oauth.bindOAuthLinkReplay(currentUserId)
 
 const hilosRouter = bootHilos({
   viewLayer: HILOS_VIEW_LAYER,

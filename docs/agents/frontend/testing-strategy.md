@@ -586,8 +586,7 @@ today; they move together.** The named leaf takes every spec of that area,
 including additions since this inventory. It updates the current paths below
 and other references it moves, and clears its markers in the same code commit
 under [rule authoring](../rule-authoring.md#a-rule-written-ahead-of-its-code).
-The subsequent React/Angular parity pass belongs to HIL-2022
-(not in the code yet — HIL-2022); it is not evidence of readiness today.
+The React/Angular parity pass that followed these moves is HIL-2022.
 
 #### Approved cluster-browser target — HIL-1985
 
