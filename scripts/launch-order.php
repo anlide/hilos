@@ -16,10 +16,12 @@ declare(strict_types=1);
  * the place that member held when every step was ranked by its own duration alone,
  * so across the groups the run keeps the shape it had. A step without a group is
  * ranked by its own duration. It stays a narrow hint: nothing here looks at the work
- * waiting behind a step, so `fe-install` costs a second, holds up the entire frontend
- * chain, and still sorts near the end. That was measured and left alone deliberately
- * — the head of `scripts/test-suite.php` says what a full run is actually bound by,
- * and why neither the order nor the lanes are the lever (HIL-854, HIL-1227).
+ * waiting behind a step, so `fe-install` costs a few seconds, holds up the entire frontend
+ * chain, and still sorts near the end. With twelve demos the order does move the end
+ * of a run, through the `seconds` hints it ranks by (HIL-2023). Ranking by the work
+ * waiting behind a step was worked out and not taken: its gain lies within the spread
+ * between runs. The head of `scripts/test-suite.php` says what a full run is bound by
+ * (HIL-854, HIL-1227, HIL-2023).
  *
  * This file only declares functions and executes nothing, so that the runner and
  * `framework/tests/Unit/LaunchOrderTest.php` can both require it.

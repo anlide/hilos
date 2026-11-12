@@ -35,21 +35,26 @@ require_once __DIR__ . '/framework-pieces.php';
  *   database  the database inside the stand this step works in, when it is not
  *            the one the stand's database container names as MYSQL_DATABASE;
  *            the step's snapshot reads this one.
- *   seconds  a rough duration, written by hand off green runs on the test box
- *            (the demo numbers last on 2026-10-16) and not kept current: specs
- *            land every day and nobody refreshes it. A scheduling HINT only, and
- *            a narrow one (`scripts/launch-order.php`): of the steps ready to go,
- *            the group whose longest member is longest goes first, its shortest
- *            step ahead of the rest, and nothing here looks at the work waiting
- *            behind a step. A stale number costs wall clock, never correctness.
+ *   seconds  a rough duration. HIL-2023 refreshed every number here from the median
+ *            of green full runs 2345…2377 on the test box, 2026-11-12, and none is
+ *            kept current since: specs land every day and move it. A scheduling
+ *            HINT only, and a narrow one (`scripts/launch-order.php`): of the steps
+ *            ready to go, the group whose longest member is longest goes first, its
+ *            shortest step ahead of the rest, and nothing here looks at the work
+ *            waiting behind a step. A stale number costs wall clock, never
+ *            correctness — and with twelve demos the wall clock is minutes: in run
+ *            2361 online-testing-e2e, hinted at 111 s for 500 s of work, started at
+ *            18m30s and pushed its cluster browser step to the end of the run.
  *            It is no measure of load: the demo a new spec file is born in is
  *            chosen from the durations of the latest green full run
  *            (docs/agents/frontend/testing-strategy.md, "Which demo carries a
  *            spec").
  *
- * WHAT BOUNDS A FULL RUN, and why neither the order nor the lanes are the lever.
- * Measured 2026-09-29 (HIL-1227) on the test box, run 0659, the first green run
- * at seven lanes:
+ * WHAT BOUNDS A FULL RUN: the sum of its steps over the lanes. The order moves its
+ * end, the lane count does not.
+ *
+ * History: measured 2026-09-29 (HIL-1227) on the test box, run 0659, the first green
+ * run at seven lanes, when the chat demo carried most of the e2e:
  *
  *   22m19s  the floor, at ANY lane count. chat-php, chat-e2e and chat-check share
  *           `group => 'chat'` — one stand — so no two of them ever overlap:
@@ -62,9 +67,15 @@ require_once __DIR__ . '/framework-pieces.php';
  *           lanes took 22m00s–24m32s on the same day, the difference being
  *           chat-e2e's own length and nothing the lanes did.
  *
- * The next lever is an instance of the stand as a parameter, so that chat-e2e can
- * be cut by area across stands of its own — not the order of the steps and not
- * the lane count.
+ * Measured 2026-11-12 (HIL-2023) on the test box at seven lanes, twelve demos, green
+ * full runs 2345…2377, medians. The chat chain, which ended the run at 26.8 minutes
+ * with six demos (runs 2232…2283), now ends by 17.4 minutes, and the run takes 28.1.
+ * The steps add up to 166.3 minutes, which seven lanes could pack into 23.8 if
+ * nothing were serialized — the bound of a perfect packing, not a promise. The order
+ * moves the end by minutes, through the hints: in run 2361 fe-checks started at
+ * 18m28s and online-testing-e2e at 18m30s, both ranked late on hints far below their
+ * work, and its last step ended at 28m42s. The lane count is still no lever: fifteen lanes
+ * ran the box out of CPU (2026-10-02).
  *
  * THE FRAMEWORK SUITE IN PIECES (HIL-1328). The unit suite runs beside four
  * integration pieces, each using its own database in one MariaDB container. A
@@ -98,7 +109,8 @@ require_once __DIR__ . '/framework-pieces.php';
 
 /**
  * Demos carrying a tests/e2e suite, with rough per-step durations for the launch order
- * (`seconds` above) — not the load that places a new spec.
+ * (`seconds` above) — not the load that places a new spec. Each is the median of green
+ * full runs 2345…2377 on the test box, 2026-11-12 (HIL-2023).
  *
  * A demo with a `build` duration builds its frontend in a step of its own, `<demo>-build`,
  * and its e2e step serves that build instead of making one (`test:e2e-prebuilt`). Only
@@ -106,22 +118,24 @@ require_once __DIR__ . '/framework-pieces.php';
  * the demo's e2e, and a build empties dist before it writes it (HOTFIX 2026-10-25).
  */
 $demos = [
-    'chat' => ['check' => 11, 'php' => 79, 'e2e' => 600],
-    'tasks' => ['check' => 9, 'php' => 17, 'e2e' => 642],
-    'polls' => ['check' => 15, 'php' => 17, 'e2e' => 792],
-    'binance-btc-tracker' => ['check' => 10, 'php' => 15, 'build' => 13, 'e2e' => 755],
-    'pmd' => ['check' => 10, 'php' => 15, 'e2e' => 600],
-    'roblox-game-server' => ['check' => 10, 'php' => 15, 'e2e' => 600],
-    'ecommerce-shop' => ['check' => 9, 'php' => 15, 'e2e' => 102],
-    'online-testing' => ['check' => 15, 'php' => 15, 'e2e' => 111],
-    'preferans' => ['check' => 15, 'php' => 15, 'e2e' => 360],
-    'concert-tickets' => ['check' => 15, 'php' => 20, 'e2e' => 420],
-    'solar-system-model' => ['check' => 9, 'php' => 15, 'e2e' => 480],
-    'file-gallery-manager' => ['check' => 9, 'php' => 15, 'e2e' => 420],
+    'chat' => ['check' => 35, 'php' => 235, 'e2e' => 700],
+    'tasks' => ['check' => 30, 'php' => 30, 'e2e' => 420],
+    'polls' => ['check' => 45, 'php' => 30, 'e2e' => 405],
+    'binance-btc-tracker' => ['check' => 35, 'php' => 30, 'build' => 15, 'e2e' => 750],
+    'pmd' => ['check' => 35, 'php' => 40, 'e2e' => 520],
+    'roblox-game-server' => ['check' => 30, 'php' => 40, 'e2e' => 530],
+    'ecommerce-shop' => ['check' => 30, 'php' => 25, 'e2e' => 400],
+    'online-testing' => ['check' => 50, 'php' => 25, 'e2e' => 500],
+    'preferans' => ['check' => 60, 'php' => 25, 'e2e' => 425],
+    'concert-tickets' => ['check' => 45, 'php' => 25, 'e2e' => 430],
+    'solar-system-model' => ['check' => 30, 'php' => 30, 'e2e' => 515],
+    'file-gallery-manager' => ['check' => 30, 'php' => 35, 'e2e' => 455],
 ];
 
 $steps = [
-    // HIL-1795: 5.714s through the container gateway on 2026-10-24; no stand is raised.
+    // HIL-1795: the Python regressions of the cluster tooling, through the container gateway;
+    // no stand is raised. Seconds: the median of green full runs 2345…2377 on the test box,
+    // 2026-11-12 (HIL-2023).
     [
         'id' => 'cluster-unit',
         'command' => 'composer run test:cluster:unit',
@@ -129,7 +143,7 @@ $steps = [
         'deps' => [],
         'group' => null,
         'tags' => ['cluster', 'backend'],
-        'seconds' => 6,
+        'seconds' => 8,
     ],
     // Rebuilding cli-test up front, because `docker compose run` only builds an
     // image when there is NONE: an edited Dockerfile.test-cli otherwise rides the
@@ -158,7 +172,7 @@ $steps = [
         'deps' => ['framework-image'],
         'group' => null,
         'tags' => ['framework', 'backend', 'framework-php'],
-        'seconds' => 1,
+        'seconds' => 7,
     ],
     [
         'id' => 'framework-unit',
@@ -168,7 +182,7 @@ $steps = [
         'deps' => ['framework-deps'],
         'group' => null,
         'tags' => ['framework', 'backend', 'framework-php'],
-        'seconds' => 22,
+        'seconds' => 95,
     ],
     [
         'id' => 'framework-up',
@@ -178,13 +192,13 @@ $steps = [
         'deps' => ['framework-deps'],
         'group' => null,
         'tags' => ['framework', 'backend', 'framework-php'],
-        'seconds' => 7,
+        'seconds' => 15,
     ],
 ];
 
 $frameworkPieceIds = [];
-// HIL-1327, the group alone on the test box, databases in memory, 2026-10-04.
-$frameworkPieceSeconds = [1 => 10, 2 => 17, 3 => 16, 4 => 33];
+// The median of green full runs 2345…2377 on the test box, 2026-11-12 (HIL-2023).
+$frameworkPieceSeconds = [1 => 65, 2 => 75, 3 => 85, 4 => 90];
 for ($piece = 1; $piece <= FRAMEWORK_INTEGRATION_PIECES; $piece++) {
     $frameworkPieceIds[] = frameworkPieceStepId($piece);
     $steps[] = [
@@ -207,7 +221,7 @@ $steps[] = [
     'deps' => ['framework-unit', ...$frameworkPieceIds],
     'group' => null,
     'tags' => ['framework', 'backend', 'framework-php'],
-    'seconds' => 2,
+    'seconds' => 5,
 ];
 
 $steps = array_merge($steps, [
@@ -219,7 +233,7 @@ $steps = array_merge($steps, [
         'deps' => [],
         'group' => null,
         'tags' => ['framework', 'frontend'],
-        'seconds' => 1,
+        'seconds' => 3,
     ],
     [
         'id' => 'fe-build',
@@ -229,7 +243,7 @@ $steps = array_merge($steps, [
         'deps' => ['fe-install'],
         'group' => null,
         'tags' => ['framework', 'frontend'],
-        'seconds' => 35,
+        'seconds' => 85,
     ],
     [
         'id' => 'fe-checks',
@@ -245,7 +259,7 @@ $steps = array_merge($steps, [
         'deps' => ['fe-install', 'fe-build'],
         'group' => null,
         'tags' => ['framework', 'frontend'],
-        'seconds' => 87,
+        'seconds' => 495,
     ],
     // The fleet of binance-btc-tracker (HIL-1215): five nodes of the whole demo on one
     // database, and a stranger scenario 17 raises. It may run beside the other fleets and any
@@ -258,9 +272,8 @@ $steps = array_merge($steps, [
     // appended to the composer chain because that chain breaks at the first red, while the
     // runner holds the outcome. The demo's unit suite runs in binance-btc-tracker-php.
     // Scenarios 23 and 25 freeze the masters last (HIL-1125, HIL-1128). Scenarios 29 and 30
-    // recreate and kill a slave (HIL-1243); scenario 32 recreates one twice (HIL-1274). The
-    // seconds are measured on the test box, 2026-11-02 (HIL-1597): full fresh stand, cached
-    // images; 546 s, 22 passed, 3 existing skips (13, 8, 36), no retries.
+    // recreate and kill a slave (HIL-1243); scenario 32 recreates one twice (HIL-1274).
+    // Seconds: the median of green full runs 2345…2377 on the test box, 2026-11-12 (HIL-2023).
     [
         'id' => 'binance-btc-tracker-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -269,7 +282,7 @@ $steps = array_merge($steps, [
         'deps' => ['binance-btc-tracker-deps'],
         'group' => 'binance-btc-tracker-cluster',
         'tags' => ['cluster', 'backend'],
-        'seconds' => 546,
+        'seconds' => 605,
         'downsStand' => true,
     ],
     // A browser on the cluster stand through its entry (HIL-1232, HIL-1304).
@@ -296,19 +309,16 @@ $steps = array_merge($steps, [
         'deps' => ['binance-btc-tracker-build', 'binance-btc-tracker-check'],
         'group' => 'binance-btc-tracker-cluster',
         'tags' => ['cluster', 'e2e'],
-        // On the test box, 2026-10-25 (HOTFIX): full run 1590 at seven lanes, beside four demo
-        // e2e steps, 8m04s; daemon phase switched off (F-023), 13 live + 2 after-loss
-        // passed, quarantine tail 10 live with F-011 failed, no retries or unstable tests.
-        'seconds' => 484,
+        // The median of green full runs 2345…2377 on the test box, 2026-11-12 (HIL-2023).
+        'seconds' => 360,
         'downsStand' => true,
     ],
     // The fleet of ecommerce-shop (HIL-1216): one master and two slaves of unequal room, the
     // whole demo on one MariaDB server with primary and derived journal (HIL-1453). Beside the
     // other fleets and any e2e step, no group and no edge (the head of this file); takes its
     // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does. The
-    // demo's unit suite runs in ecommerce-shop-php. Seconds retain the historical estimate:
-    // ten fresh primary/replica matrices on the test box (2026-10-05, HIL-1229), median 131 s,
-    // max 136 s, no retries, scenarios 9 and 16 parked; not remeasured for the single server.
+    // demo's unit suite runs in ecommerce-shop-php. Seconds: the median of green full runs
+    // 2345…2377 on the test box, 2026-11-12 (HIL-2023).
     [
         'id' => 'ecommerce-shop-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -317,15 +327,15 @@ $steps = array_merge($steps, [
         'deps' => ['ecommerce-shop-deps'],
         'group' => null,
         'tags' => ['cluster', 'backend'],
-        'seconds' => 131,
+        'seconds' => 300,
         'downsStand' => true,
     ],
     // The fleet of online-testing (HIL-1217): three equal masters that carry the work themselves,
     // the whole demo on one MariaDB server with primary and derived journal (HIL-1453). Beside
     // the other fleets and unrelated e2e steps, sharing a group with its browser step; takes its
     // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does.
-    // The demo's unit suite runs in online-testing-php. Seconds retain the historical median of
-    // ten fresh Galera stands with member death and return (HIL-1231), not a single-server timing.
+    // The demo's unit suite runs in online-testing-php. Seconds: the median of green full runs
+    // 2345…2377 on the test box, 2026-11-12 (HIL-2023).
     [
         'id' => 'online-testing-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -334,7 +344,7 @@ $steps = array_merge($steps, [
         'deps' => ['online-testing-deps'],
         'group' => 'online-testing-cluster',
         'tags' => ['cluster', 'backend'],
-        'seconds' => 165,
+        'seconds' => 90,
         'downsStand' => true,
     ],
     // Analytics and Moderation in three master rotations, live only. The single-node e2e
@@ -348,17 +358,17 @@ $steps = array_merge($steps, [
         'deps' => ['online-testing-e2e'],
         'group' => 'online-testing-cluster',
         'tags' => ['cluster', 'e2e'],
-        // 2026-11-03, HIL-1639: 301.304s measured for the fresh-stand command; no retries.
-        // Includes reset, startup and browser; excludes production build/check.
-        'seconds' => 302,
+        // The median of green full runs 2345…2377 on the test box, 2026-11-12 (HIL-2023).
+        'seconds' => 100,
         'downsStand' => true,
     ],
     // Where every log line of a node lands, proven on the live tasks stand (HIL-1018): five
     // scenarios in sequence over demo/tasks, judged against scripts/log-streams.php. In the
     // tasks group so it never overlaps tasks-check, tasks-php or tasks-e2e over one stand,
-    // and on tasks rather than chat because the chat group is the floor of the whole run
-    // (1339s end to end) and this step would lift it; the tasks group has the room. Takes its
-    // stand down at any outcome, standalone as well as here.
+    // and on tasks rather than chat because the chat group was the floor of the whole run when
+    // this step was placed (1339s end to end, 2026-09-29) and this step would have lifted it;
+    // the tasks group has the room. Takes its stand down at any outcome, standalone as well as
+    // here.
     //
     // No ordering edge: the old cluster step held back log-streams after scenario 9 ("s1 seen
     // offline after its daemon died") timed out beside it twice on the old box (2026-09-17, runs
@@ -374,7 +384,7 @@ $steps = array_merge($steps, [
         'deps' => ['tasks-deps'],
         'group' => 'tasks',
         'tags' => ['backend', 'demo'],
-        'seconds' => 112,
+        'seconds' => 175,
         'downsStand' => true,
     ],
 ]);
@@ -394,7 +404,7 @@ foreach ($demos as $demo => $seconds) {
         'deps' => [],
         'group' => $demo,
         'tags' => ['backend', 'demo'],
-        'seconds' => 5,
+        'seconds' => 10,
     ];
     $steps[] = [
         'id' => $demo . '-check',

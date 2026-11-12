@@ -389,8 +389,9 @@ it silently and is still forbidden here.
 
 Why: a palette or a width multiplies a scenario without reaching a different
 server path. One leaf's 1440/375 × light/dark matrix grew chat-e2e from 180 to
-406 tests and from ~14 to ~26 minutes (HIL-1749), and chat-e2e is the floor of
-the full run.
+406 tests and from ~14 to ~26 minutes (HIL-1749), when chat-e2e was the floor of
+the full run; today every such minute adds to the sum of steps that holds the run
+(HIL-2023).
 
 ### Explicit browser time zones
 
@@ -520,8 +521,9 @@ the moment:
 
 A new test in an existing spec goes into that spec. The durations come from a
 run, never from `$demos` in `scripts/test-suite.php`: those numbers only hint
-the launch order, nobody refreshes them, and every spec that lands leaves them
-further behind. Nobody keeps the lengths level either. Load decides only where
+the launch order. HIL-2023 refreshed them once from the medians of green full
+runs; nobody is bound to keep them current, and every new spec moves them aside
+again. Nobody keeps the lengths level either. Load decides only where
 a new spec file is born. A spec born
 away from its area takes shared helpers from `framework/frontend/e2e/` and
 `framework/frontend/scripts/`, without copying them; follow
@@ -801,7 +803,7 @@ Vue's i18n stays in binance-btc-tracker. Their test titles match but for the
 country head scenarios of `i18n-country-card` and `i18n-country-name-write`,
 which each kit splits its own way. The Vue kit moved from chat to
 binance-btc-tracker on the owner's word
-(2026-10-15), taking about 4.4 minutes off chat-e2e, the floor of the run. The
+(2026-10-15), taking about 4.4 minutes off chat-e2e, then the floor of the run. The
 country's shared head, its Overview · Names row, its live name and its live 404
 are proved in these files on all three kits, through the checks of
 `framework/frontend/e2e/i18n.ts`: `expectCountryPageHead`,

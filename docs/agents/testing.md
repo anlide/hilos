@@ -349,8 +349,10 @@ php scripts/run-test-suite.php --list         the plan, without running it
 ```
 
 A target is a step id or a tag, and whatever it selects pulls its dependencies in.
-Steps run **concurrently up to a global limit**, the longest expected step first —
-by its **own** duration, not by the chain waiting behind it. The limit is sized
+Steps run **concurrently up to a global limit**: the group whose longest member is
+longest goes first and, inside a group, the shortest step first — by the steps' own
+hinted durations, not by the chain waiting behind them
+([`scripts/launch-order.php`](../../scripts/launch-order.php)). The limit is sized
 from the machine ([`scripts/lane-count.php`](../../scripts/lane-count.php)): a
 lane per two cores, less one lane left to the machine itself, never more than one
 lane per 2 GiB of available memory, and never fewer than one. The box of the line,
@@ -409,15 +411,19 @@ teardown still waits for unit and all four pieces to finish green. Shared stand
 resources, such as the backup receiver or MariaDB server settings, may be touched
 by only one class.
 
-Neither the order nor the lane count is the lever it looks like. The three steps of
-the `chat` demo share a group — one stand. On 2026-09-29, their measured
+The lane count is not the lever it looks like, and with six demos the order was
+not either. The three steps of the `chat` demo share a group — one stand. On
+2026-09-29, their measured
 106 + 1227 + 6 = 1339s could not overlap: **22m19s was the floor of that graph
 at any lane count** (HIL-1227, run 0659, the test box, seven lanes). That run
 took 22m20s, every other step was done by 7m08s, and seven lanes could otherwise
 pack that graph into 6m25s. These are historical measurements, not a current
 baseline or a promised duration after the
 [ordinary carrier expansion](#ordinary-demo-carriers).
-The numbers are in the head of
+With twelve demos the chat chain no longer bounds the run: the sum of the steps
+over the lanes holds it, and the order matters — the `seconds` hints that rank
+the steps move the end of a run by minutes (HIL-2023). The lane count still does
+not. The numbers are in the head of
 [`scripts/test-suite.php`](../../scripts/test-suite.php).
 
 **Stand instances.** Several copies of every stand can stand on one host at once, one
@@ -731,10 +737,14 @@ variable, and its ports and local subnet are reserved in the registry
 
 **Seven lanes is the agreed comparison condition for HIL-1984 on the test
 box**, not a replacement for the adaptive lane-count formula. Do not increase
-the lane or instance count to manufacture a gain. HIL-2023 owns the comparable
-full-run measurement and residue checks after activation and transfer
-(not in the code yet — HIL-2023). Record the run and measurement boundary,
-keeping main and quarantine observations distinct; the historical durations
+the lane or instance count to manufacture a gain. HIL-2023 measured the full
+run across activation and transfer. The boundary: seven lanes on the test box,
+regular full runs, each timed from its start to its finish. Before the
+transfers — runs 2232…2283, six demos, n=21 — the median was 26.8 minutes
+(p25 25.7); after them — runs 2345…2377, twelve demos, n=20 — it is 28.1
+minutes (p25 27.5). The run is held by the sum of its steps, not by the chain
+of one demo. The result and the final run, with its residue check, are recorded
+in HIL-2023, main and quarantine observations apart; the historical durations
 above promise no new speedup.
 
 ### Ordinary and cluster phases
