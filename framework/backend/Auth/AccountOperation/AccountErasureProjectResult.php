@@ -7,6 +7,7 @@ namespace Hilos\Auth\AccountOperation;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\InvalidJsonException;
 use Hilos\Users\AccountErasure;
+use Hilos\Users\Agent\AbstractUserAgent;
 use JsonException;
 use stdClass;
 
@@ -15,7 +16,8 @@ use stdClass;
  *
  * The payload is exactly `{"rows":{"<family>":<int>,…},"files":[<int>,…]}`: the rows the owner
  * deleted per family it names, and the registry files those rows pointed at. With nothing erased
- * it is `{"rows":{},"files":[]}` - `rows` stays a JSON object even when empty.
+ * it is `{"rows":{},"files":[]}` - `rows` stays a JSON object even when empty. The person's agent
+ * writes the same form for its own part ({@see AbstractUserAgent::eraseAccountPersonalPart()}, HIL-1941).
  * SCAFFOLD: no live caller until the erasure coordinator opens its operation (HIL-1952).
  */
 final class AccountErasureProjectResult

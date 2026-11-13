@@ -167,7 +167,8 @@ claims (HIL-630), and takes the frames of the edits that have moved to it
   The person's one row of second-factor settings (`hilos_second_factor_setting`,
   keyed by the person) is born by the owner's first edit of it — a wait chosen, a
   wrong code counted — so the agent claims that set with `Add` and `Update`
-  (owner's decision, 2026-10-09, HIL-1406). It is a one-to-one extension of the
+  (owner's decision, 2026-10-09, HIL-1406), and with `Remove` for its erasure
+  part (HIL-1941). It is a one-to-one extension of the
   person's own row, not a new member of the set; where a set holds many rows, the
   library still creates them - with two exceptions. A step-up confirmation is the
   mark of the person's own proof in one browser: the owner inserts or extends it

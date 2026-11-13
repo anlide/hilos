@@ -88,11 +88,12 @@ class DbWriterTransitionCatalog
             $definitions[$collection] = $this->states($base, $pending);
         }
 
+        // The person's own erasure of the settings is in the base state (HIL-1941, Writer Map); the holder leaves with HIL-1952.
         $definitions[HilosDbContext::secondFactorSettings] = $this->states(
-            $this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Add, TruthSourceOperation::Update),
+            $this->claim($person, DbWriterClaimWidth::Set,
+                TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove),
             [self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove),
                 self::MERGE => $this->claim($holder, DbWriterClaimWidth::Whole, ...TruthSourceOperation::ALL)],
-            [self::ERASURE => $this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Remove)],
         );
 
         $definitions[HilosDbContext::secondFactorTrusts] = $this->states(

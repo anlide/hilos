@@ -274,7 +274,7 @@ HIL-1202 confirms this choice as the pattern for the other person keys.
 In the split erasure, the circle is fixed before any link is broken
 (prepared, no live caller until HIL-1950/HIL-1952). Each folded account's
 personal owner removes its own merge row before its survivor goes, keeping that
-leaf-first order (not in the code yet — HIL-1941). The holder retains today's erasure rights
+leaf-first order (not in the code yet — HIL-1942). The holder retains today's erasure rights
 until the live switch (not in the code yet — HIL-1952).
 
 The table is the sessions library's whole, and the whole operation is framework

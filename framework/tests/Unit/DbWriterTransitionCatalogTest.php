@@ -136,7 +136,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'secondFactors' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove,update']],
             'secondFactorBackupCodes' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove,update']],
             'secondFactorResets' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove']],
-            'secondFactorSettings' => [['person', 'set', 'add,update'], ['holder', 'whole', 'add,remove,update']],
+            'secondFactorSettings' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'add,remove,update']],
             'secondFactorTrusts' => [['person', 'set', 'remove,update'], ['holder', 'whole', 'add,remove']],
             'stepUps' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'remove']],
             'accountDeletions' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'update']],
@@ -551,7 +551,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
                 '' => ['users:whole:add', 'person:set:remove,update'],
             ],
             'secondFactorSettings' => [
-                'HIL-1952,HIL-1999' => ['person:set:add,update', 'holder:whole:add,remove,update'],
+                'HIL-1952,HIL-1999' => ['person:set:add,remove,update', 'holder:whole:add,remove,update'],
                 'HIL-1999' => ['person:set:add,remove,update', 'holder:whole:add,remove,update'],
                 '' => ['person:set:add,remove,update'],
             ],

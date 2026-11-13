@@ -5,8 +5,18 @@ declare(strict_types=1);
 namespace Hilos\Users\Agent;
 
 use Closure;
+use Hilos\Auth\AccountOperation\AccountErasureDeliveryCapture;
+use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountErasurePersonalCapture;
+use Hilos\Auth\AccountOperation\AccountErasurePersonalCaptureResult;
+use Hilos\Auth\AccountOperation\AccountErasureProjectResult;
 use Hilos\Auth\AccountOperation\AccountErasureStart;
+use Hilos\Auth\AccountOperation\AccountOperationActivation;
+use Hilos\Auth\AccountOperation\AccountOperationExpectation;
+use Hilos\Auth\AccountOperation\AccountOperationKind;
+use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
+use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
+use Hilos\Auth\AccountOperation\Exception\AccountErasureUncapturedException;
 use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
@@ -34,6 +44,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalSource;
@@ -48,13 +59,17 @@ use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\UserPhoto as EntityUserPhoto;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
+use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\View\Collection\Identities;
+use Hilos\Database\View\Item\AccountOperationAssignment;
 use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Database\View\Item\UserRename;
+use Hilos\Files\HilosFiles;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Legal\LegalDocument;
@@ -64,6 +79,7 @@ use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Notification\NotificationChannelPreferenceProjector;
 use Hilos\Notification\NotificationGroup;
 use Hilos\Notification\NotificationSignalName;
+use Hilos\Users\AccountErasure;
 use Hilos\Users\AddressablePerson;
 use Hilos\Users\DTO\UserAccountDeletionCancelDoneSignalData;
 use Hilos\Users\DTO\UserAccountDeletionCancelSignalData;
@@ -189,7 +205,9 @@ use Throwable;
  * marked gone ({@see HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE}) and a push endpoint
  * released to another person ({@see HilosSignalConstants::HILOS_USER_PUSH_RELEASE}). Once the
  * account has closed, the agent captures the person's addresses and whatever the project asks for
- * before the ways in are deleted ({@see captureForErasure()}, HIL-1940).
+ * before the ways in are deleted ({@see captureForErasure()}, HIL-1940). After the capture the
+ * agent deletes its own child sets as its part of the erasure ({@see eraseAccountPersonalPart()},
+ * HIL-1941).
  */
 abstract class AbstractUserAgent extends AbstractAgent
 {
@@ -392,6 +410,7 @@ abstract class AbstractUserAgent extends AbstractAgent
      *     borrowed, so the start does not wait for it. Legal acceptances are removed here only by the test hold command.
      *     The results of the agent's own steps in an account operation are added here and never
      *     changed (HIL-1939): their set is keyed by the agent's full id, not by the person's.
+     *     The second-factor settings are also removed here, in the agent's part of the erasure (HIL-1941).
      */
     public const array OWNS_DB_SET = [
         HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
@@ -399,7 +418,7 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosDbContext::secondFactors => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::secondFactorResets => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::secondFactorSettings => [TruthSourceOperation::Add, TruthSourceOperation::Update],
+        HilosDbContext::secondFactorSettings => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::secondFactorTrusts => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::stepUps => TruthSourceOperation::ALL,
         HilosDbContext::accountDeletions => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
@@ -417,12 +436,14 @@ abstract class AbstractUserAgent extends AbstractAgent
      *     (HIL-1900): the settings library writes them, and this agent applies them to the person's
      *     trusts it edits and removes. The account operations and their assignments, read when the
      *     agent runs its step of one (HIL-1939): the session holder writes them. Their results are
-     *     not listed here, because the set claim above already reads them.
+     *     not listed here, because the set claim above already reads them. The deliveries, read when
+     *     the erasure part checks every notification's deliveries are captured (HIL-1941).
      */
     public const array READS_DB = [
         HilosDbContext::secondFactorTrustRestrictions,
         HilosDbContext::accountOperationAssignments,
         HilosDbContext::accountOperations,
+        HilosDbContext::notificationDeliveries,
     ];
 
     private int $userId;
@@ -518,6 +539,66 @@ abstract class AbstractUserAgent extends AbstractAgent
             $assignmentId,
             $this->userId,
             fn (): array => $this->erasureCaptureProjectPart($this->userId),
+        );
+    }
+
+    /**
+     * Deletes the person's child sets as the agent's part in the erasure of the account (HIL-1941);
+     * a repeat answers the saved result without doing the work again.
+     *
+     * Called by the agent in its own frame with the person's expected part the census wrote. Before
+     * any work the assignment must be an erasure's, the person's own expected part, and name this
+     * agent's account; the person's addresses must be captured, and so must every delivery of the
+     * person's notifications. Each refusal writes nothing. Inside the step's transaction the agent
+     * deletes its child sets ({@see erasePersonalChildren()}), and what it erased is recorded as the
+     * result in the same transaction, so a failure rolls back both. The photo's registry file leaves
+     * for the files library only once that transaction commits ({@see HilosFiles::remove()}); a failed
+     * removal is logged and not repeated.
+     *
+     * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950), live at the switch (HIL-1952).
+     *
+     * @param int $assignmentId The person's expected part the coordinator gave this agent
+     * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt
+     * @throws AccountOperationStepRefusedException When the caller, assignment or current stage refuses new work
+     * @throws ValidationException When the operation is no erasure, or the assignment is not this person's erasure part
+     * @throws AccountErasureUncapturedException When the person's addresses or some notifications' deliveries are not captured yet
+     * @throws Throwable When storage or the erasure fails, preserving the original failure
+     */
+    public function eraseAccountPersonalPart(int $assignmentId): AccountOperationResult
+    {
+        return AccountOperationParticipantStep::run(
+            $assignmentId,
+            function (AccountOperationAssignment $assignment): AccountOperationResultPayload {
+                if ($assignment->operation?->kind !== AccountOperationKind::Erasure) {
+                    throw new ValidationException('An account erasure part must belong to an erasure.');
+                }
+                if (!AccountOperationExpectation::isExpectKey($assignment->assignmentKey)
+                    || AccountOperationExpectation::participantOf($assignment->payload) !== AccountErasureParticipantCatalog::PERSONAL) {
+                    throw new ValidationException('This assignment is not the person\'s erasure part.');
+                }
+                if ($assignment->userId !== $this->userId) {
+                    throw new ValidationException('An account erasure part must name its own account.');
+                }
+                if (AccountErasurePersonalCaptureResult::of($assignment->operationId, $this->userId) === null) {
+                    throw AccountErasureUncapturedException::addresses();
+                }
+                $notificationIds = AccountErasureDeliveryCapture::uncapturedNotificationIdsOf($assignment->operationId, $this->userId);
+                if ($notificationIds !== []) {
+                    throw AccountErasureUncapturedException::deliveries($notificationIds);
+                }
+                $erasure = $this->erasePersonalChildren($this->userId);
+                if ($erasure->fileIds !== [] && Hilos::hasFeature(HilosFeature::FILES)) {
+                    Database::afterCommit(function () use ($erasure): void {
+                        try {
+                            (Hilos::$files ?? throw new LogicException('The files door is not created'))->remove($erasure->fileIds);
+                        } catch (HilosException $e) {
+                            $this->logAgentError("Account of user {$this->userId} erased, but removing its files failed: {$e->getMessage()}");
+                        }
+                    });
+                }
+
+                return AccountErasureProjectResult::payloadOf($erasure);
+            },
         );
     }
 
@@ -1790,6 +1871,62 @@ abstract class AbstractUserAgent extends AbstractAgent
     protected function erasureCaptureProjectPart(int $userId): array
     {
         return [];
+    }
+
+    /**
+     * Deletes the person's child sets inside the erasure part's transaction (HIL-1941).
+     *
+     * The device keys go before the ways in, which they restrict the delete of; then the second
+     * factor, the confirmations and the legal acceptances; then, only where the project activated
+     * each table, the notifications, the channel choices, the push subscriptions and, last, the photo
+     * row. The photo's registry file is named, not removed: a file deleted from disk cannot come
+     * back if the transaction rolls back. The person's own row, rename journal and merge row are not
+     * this part's (HIL-1942).
+     *
+     * Not final: the framework's test stands replace it to make the part fail.
+     *
+     * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950), live at the switch (HIL-1952).
+     *
+     * @param int $userId Person whose account is being erased
+     * @return AccountErasure The photo row and its registry file, or nothing when there was no photo or photos are not activated
+     * @throws DatabaseException When a lookup or a delete fails
+     * @throws InvalidArgumentException When a query or the queued DB-sync signal is invalid
+     * @throws WriteNotAllowedException When this agent's claims do not cover a removal
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws DbCollectionNotReadableException When this process does not read a collection asked about its activation
+     * @throws NamedDatabaseException When a collection's database binding cannot be resolved
+     * @throws HilosException When a removal is refused or fails in a collection that names no narrower failure
+     */
+    protected function erasePersonalChildren(int $userId): AccountErasure
+    {
+        // The device keys before the ways in: a credential restricts the delete of its anchor.
+        Hilos::$db->passkeyCredentials->deleteForUser($userId);
+        Hilos::$db->identities->deleteForUser($userId);
+        Hilos::$db->secondFactors->actions->deleteForUser($userId);
+        Hilos::$db->secondFactorBackupCodes->actions->deleteForUser($userId);
+        Hilos::$db->secondFactorResets->actions->deleteForUser($userId);
+        Hilos::$db->secondFactorSettings->actions->deleteForUser($userId);
+        Hilos::$db->secondFactorTrusts->actions->deleteForUser($userId);
+        Hilos::$db->stepUps->actions->deleteForUser($userId);
+        Hilos::$db->legalAcceptances->actions->deleteForUser($userId);
+        if (AccountOperationActivation::anyActivated([HilosDbContext::notifications])) {
+            Hilos::$db->notifications->actions->deleteForUser($userId);
+        }
+        if (AccountOperationActivation::anyActivated([HilosDbContext::notificationPreferences])) {
+            Hilos::$db->notificationPreferences->actions->deleteForUser($userId);
+        }
+        if (AccountOperationActivation::anyActivated([HilosDbContext::pushSubscriptions])) {
+            Hilos::$db->pushSubscriptions->actions->deleteForUser($userId);
+        }
+        $fileId = AccountOperationActivation::anyActivated([HilosDbContext::userPhotos])
+            ? Hilos::$db->userPhotos->actions->deleteForUser($userId)
+            : null;
+
+        return new AccountErasure(
+            $fileId === null ? [] : [EntityUserPhoto::_table => 1],
+            $fileId === null ? [] : [$fileId],
+        );
     }
 
     /**

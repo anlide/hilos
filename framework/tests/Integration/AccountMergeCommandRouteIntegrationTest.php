@@ -1152,15 +1152,23 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     }
 
     /**
-     * The person's agent creates and edits the person's wait, and cannot remove it: that is the
-     * merge's and the erasure's, the session holder's (HIL-1406).
+     * The person's agent creates, edits and removes the person's wait - the removal is its part of
+     * the erasure (HIL-1941) - and leaves another person's wait alone; carrying the loser's settings
+     * over in a merge stays with the holder (HIL-1942).
      *
-     * @throws HilosException When configuring or writing the setting fails
+     * @throws HilosException When seeding, configuring or writing the setting fails
      */
-    public function testThePersonsAgentCanUpsertTheWaitButCannotRemoveIt(): void
+    public function testThePersonsAgentWritesAndRemovesItsOwnWaitButNotAnothers(): void
     {
         TruthSourceRegistry::unregister(HilosDbContext::secondFactorSettings, 'framework-test-agent');
         TruthSourceRegistry::unregister(HilosDbContext::secondFactorSettings, self::LIBRARY_ID);
+        $now = TimeHelper::nowMs();
+        Database::sqlRun(
+            'INSERT INTO hilos_second_factor_setting'
+                . ' (user_id, reset_wait_days, pending_reset_wait_days, pending_reset_wait_from, updated_at)'
+                . ' VALUES (?, 20, 1, ?, ?)',
+            [self::LOSER_USER_ID, $now, $now],
+        );
         $agent = new AccountMergeStopTestAgent((string)self::SURVIVOR_USER_ID);
         $this->claimPerson($agent);
         try {
@@ -1168,8 +1176,14 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
                 Hilos::$db->secondFactorSettings->actions->setResetWait(self::SURVIVOR_USER_ID, 20, null, null);
                 Hilos::$db->secondFactorSettings->actions->setResetWait(self::SURVIVOR_USER_ID, 30, null, null);
                 self::assertSame(30, Hilos::$db->secondFactorSettings[self::SURVIVOR_USER_ID]->resetWaitDays);
-                $this->expectException(WriteNotAllowedException::class);
                 Hilos::$db->secondFactorSettings->actions->deleteForUser(self::SURVIVOR_USER_ID);
+                self::assertSame(0, self::secondFactorRowCount('hilos_second_factor_setting', self::SURVIVOR_USER_ID));
+                try {
+                    Hilos::$db->secondFactorSettings->actions->deleteForUser(self::LOSER_USER_ID);
+                    self::fail("The person's agent removed another person's wait");
+                } catch (WriteNotAllowedException) {
+                    self::assertSame(1, self::secondFactorRowCount('hilos_second_factor_setting', self::LOSER_USER_ID));
+                }
             });
         } finally {
             $this->releasePerson($agent);

@@ -187,7 +187,7 @@ final class AbstractUserAgentTest extends TestCase
         );
         self::assertSame([TruthSourceOperation::Remove], TestUserAgent::OWNS_DB_SET[HilosDbContext::legalAcceptances]);
         self::assertSame(
-            [TruthSourceOperation::Add, TruthSourceOperation::Update],
+            [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
             TestUserAgent::OWNS_DB_SET[HilosDbContext::secondFactorSettings],
         );
         self::assertSame(TruthSourceOperation::ALL, TestUserAgent::OWNS_DB_SET[HilosDbContext::stepUps]);
@@ -200,6 +200,7 @@ final class AbstractUserAgentTest extends TestCase
                 HilosDbContext::secondFactorTrustRestrictions,
                 HilosDbContext::accountOperationAssignments,
                 HilosDbContext::accountOperations,
+                HilosDbContext::notificationDeliveries,
             ],
             TestUserAgent::READS_DB,
         );
