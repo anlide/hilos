@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { effectScope } from 'vue'
+import { effectScope, nextTick, shallowRef } from 'vue'
 import { HilosConnection } from '@hilos/core/base'
 import type { WebSocketLike } from '@hilos/core/base'
 import { useConnectionState } from '../src/useConnectionState.js'
@@ -97,5 +97,36 @@ describe('useConnectionState', () => {
     connection.connect()
     MockWebSocket.last.emit('open')
     expect(state?.value).toBe('disconnected')
+  })
+
+  it('moves the state mirror when its connection ref changes', async () => {
+    const replacement = new HilosConnection({
+      url: 'ws://test/ws',
+      webSocketFactory: () => new MockWebSocket(),
+    })
+    const source = shallowRef(connection)
+    const scope = effectScope()
+    try {
+      const state = scope.run(() => useConnectionState(source))
+      expect(state?.value).toBe('disconnected')
+
+      replacement.connect()
+      const replacementSocket = MockWebSocket.last
+      replacementSocket.emit('open')
+      source.value = replacement
+      await nextTick()
+      expect(state?.value).toBe('connected')
+
+      connection.connect()
+      const previousSocket = MockWebSocket.last
+      expect(state?.value).toBe('connected')
+      replacementSocket.emit('close')
+      expect(state?.value).toBe('reconnecting')
+      previousSocket.emit('open')
+      expect(state?.value).toBe('reconnecting')
+    } finally {
+      scope.stop()
+      replacement.close()
+    }
   })
 })

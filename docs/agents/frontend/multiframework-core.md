@@ -239,6 +239,12 @@ replacement connection, update the opt-out and dispose its listener; a
 generation guard prevents a replaced connection's late callback from publishing.
 It does not add transport, reconnect or replay behavior.
 
+In Vue, the shell's other connection mirrors also follow replacements: protected
+mode, first-frame hold, stale replicas, prolonged reconnect, connection state,
+and the maintenance screen's restore progress. The Vue helpers accept an object,
+ref or getter and resubscribe when the connection changes; passing a plain object
+keeps the existing behavior.
+
 Each `HilosLayout` owns one instance. The optional
 `allowDisconnectedInteraction` defaults to false and applies only to the
 ordinary page region. The page's permanent fieldset and

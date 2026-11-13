@@ -100,8 +100,8 @@ const ownCard = computed(
 
 // The tabs are a live picture of the nodes, which a frozen copy may hold back;
 // the sessions come from the database and do not lag (HIL-711).
-const connectionState = useConnectionState(props.context.connection)
-const staleness = useRtStaleness(props.context.connection)
+const connectionState = useConnectionState(() => props.context.connection)
+const staleness = useRtStaleness(() => props.context.connection)
 const tabsMayLag = computed(
   () => connectionState.value === 'connected' && staleness.value.stale,
 )

@@ -465,7 +465,7 @@ export interface HilosLegalReconsentStore {
    * terms moved while they were read, or the request failed - becomes the
    * store's error line and the content is read again.
    *
-   * @returns Whether the server accepted.
+   * @returns Whether the server accepted while this window stayed open.
    */
   accept(): Promise<boolean>
   /** Move the body to another view. */
@@ -477,7 +477,7 @@ export interface HilosLegalReconsentStore {
 /**
  * The live state of the screen over one action lifecycle. A counter of reads
  * keeps an answer that arrives after the screen was reset or read again from
- * landing.
+ * landing. A separate counter of window openings guards acceptance answers.
  *
  * @param context Where the actions are dispatched.
  * @param options What to do once the acceptance landed.
@@ -492,6 +492,8 @@ export function createHilosLegalReconsentStore(
   const busy = createSignal(false)
   const view = createSignal<HilosLegalReconsentView>({ kind: 'changes' })
   let generation = 0
+  // The window's opening number; only reset() advances it.
+  let opening = 0
 
   const read = async (): Promise<void> => {
     const current = ++generation
@@ -539,7 +541,7 @@ export function createHilosLegalReconsentStore(
       if (shown === null || shown.documents.length === 0 || busy.get()) {
         return false
       }
-      const opened = generation
+      const opened = opening
       busy.set(true)
       error.set(null)
       try {
@@ -551,12 +553,13 @@ export function createHilosLegalReconsentStore(
             ]),
           ),
         }).done
+        if (opened !== opening) return false
         options.onAccepted?.()
 
         return true
       } catch (failure) {
         // The screen was closed while the answer travelled: nothing to tell anybody.
-        if (opened !== generation) return false
+        if (opened !== opening) return false
         error.set(
           failure instanceof ActionError && failure.message !== ''
             ? failure.message
@@ -567,7 +570,7 @@ export function createHilosLegalReconsentStore(
 
         return false
       } finally {
-        busy.set(false)
+        if (opened === opening) busy.set(false)
       }
     },
     show(next: HilosLegalReconsentView): void {
@@ -575,6 +578,7 @@ export function createHilosLegalReconsentStore(
     },
     reset(): void {
       generation += 1
+      opening += 1
       content.set(null)
       loading.set(false)
       error.set(null)

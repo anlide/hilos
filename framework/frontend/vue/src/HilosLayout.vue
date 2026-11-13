@@ -234,8 +234,8 @@ watch(
 // is the one thing that stays — during planned work it is the only status worth
 // telling the visitor. The state is read from the connection, not from a page
 // store, so it outlives routing and subscription lifecycles.
-const protectedMode = useProtectedMode(props.connection)
-const firstFrameHeld = useFirstFrameHold(props.connection)
+const protectedMode = useProtectedMode(() => props.connection)
+const firstFrameHeld = useFirstFrameHold(() => props.connection)
 const underMaintenance = computed(
   () => protectedMode.value.active || firstFrameHeld.value,
 )
@@ -566,7 +566,7 @@ const connVisual = computed(() => CONN_VISUAL[connectionState.value])
 // you see can be trusted — and two marks would read as two problems. Only while
 // the socket is up: while it is down the transport itself is the news, and a
 // stale copy is the least of what is out of date.
-const staleness = useRtStaleness(props.connection)
+const staleness = useRtStaleness(() => props.connection)
 const stalenessLabel = computed(() => {
   void timeZone.value
   return rtStalenessLabel(staleness.value)
@@ -586,7 +586,7 @@ const connIcon = computed(() =>
 // triangle over their corner. An overlay rather than a replacement, because it
 // is the same process — merely longer than expected. Only while reconnecting:
 // on a first connect nothing has been repairing.
-const reconnectDragging = useReconnectDragging(props.connection)
+const reconnectDragging = useReconnectDragging(() => props.connection)
 const showsDraggingRepair = computed(
   () => connectionState.value === 'reconnecting' && reconnectDragging.value,
 )

@@ -27,8 +27,12 @@ the backup list, since under the freeze there is nobody left to serve a list. Th
 bar is here because this screen is now the operator's only view of their own
 restore: the freeze holds every one of their tabs, the backups page included. -->
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import type { HilosConnection, ProtectedModeStatus } from '@hilos/core/base'
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
+import type {
+  HilosConnection,
+  HilosRestoreStatus,
+  ProtectedModeStatus,
+} from '@hilos/core/base'
 import {
   backupProgressPercent,
   createBackupProgressClock,
@@ -40,6 +44,7 @@ import {
   HilosPages,
   PROTECTED_MODE_FALLBACK_COPY,
   PROTECTED_MODE_PASS_COPY,
+  subscribeSignal,
 } from '@hilos/core/base'
 
 import HilosFormError from './HilosFormError.vue'
@@ -63,8 +68,7 @@ const message = computed(
   () => props.status.message ?? PROTECTED_MODE_FALLBACK_COPY.message,
 )
 
-const restoreProgress = createHilosRestoreProgress(props.connection)
-const restoreStatus = useSignal(restoreProgress.status)
+const restoreStatus = shallowRef<HilosRestoreStatus | null>(null)
 const restorePhaseLine = computed(() =>
   restoreStatus.value === null
     ? ''
@@ -97,10 +101,24 @@ const restoreRunning = computed(
 )
 
 onMounted(() => {
-  restoreProgress.start()
+  watch(
+    () => props.connection,
+    (connection, _previous, onCleanup) => {
+      const progress = createHilosRestoreProgress(connection)
+      progress.start()
+      restoreStatus.value = progress.status.get()
+      const off = subscribeSignal(progress.status, (next) => {
+        restoreStatus.value = next
+      })
+      onCleanup(() => {
+        off()
+        progress.dispose()
+      })
+    },
+    { immediate: true },
+  )
 })
 onUnmounted(() => {
-  restoreProgress.dispose()
   progressClock.dispose()
 })
 

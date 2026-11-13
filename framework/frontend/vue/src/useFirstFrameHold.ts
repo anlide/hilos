@@ -2,8 +2,8 @@
 // whether the shell should still draw nothing, mirrored into Vue reactivity. The
 // core owns the decision — a browser hint and the welcome that answers it; this
 // composable only subscribes to it (multiframework-core.md).
-import { onScopeDispose, readonly, shallowRef } from 'vue'
-import type { Ref } from 'vue'
+import { readonly, shallowRef, toValue, watch } from 'vue'
+import type { MaybeRefOrGetter, Ref } from 'vue'
 import type { HilosConnection } from '@hilos/core/base'
 
 /**
@@ -16,16 +16,25 @@ import type { HilosConnection } from '@hilos/core/base'
  *
  * Call it inside a component `setup()` or an `effectScope()`: the subscription
  * is released when the calling scope is disposed.
+ * The subscription moves when the source connection changes.
  *
- * @param connection The core connection to mirror.
+ * @param connection The core connection object, ref, or getter to mirror.
  */
 export function useFirstFrameHold(
-  connection: HilosConnection,
+  connection: MaybeRefOrGetter<HilosConnection>,
 ): Readonly<Ref<boolean>> {
-  const held = shallowRef(connection.firstFrameHeld)
-  const unsubscribe = connection.on('firstFrameHold', (next) => {
-    held.value = next
-  })
-  onScopeDispose(unsubscribe)
+  const held = shallowRef(toValue(connection).firstFrameHeld)
+  watch(
+    () => toValue(connection),
+    (source, _previous, onCleanup) => {
+      held.value = source.firstFrameHeld
+      onCleanup(
+        source.on('firstFrameHold', (next) => {
+          held.value = next
+        }),
+      )
+    },
+    { immediate: true },
+  )
   return readonly(held)
 }

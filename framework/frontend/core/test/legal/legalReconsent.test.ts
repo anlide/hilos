@@ -580,6 +580,7 @@ describe('the acceptance (HIL-500)', () => {
     expect(dispatch).toHaveBeenCalledTimes(3)
     expect(store.content.get()).not.toBeNull()
     expect(store.view.get()).toEqual({ kind: 'changes' })
+    expect(store.busy.get()).toBe(false)
   })
 
   it('refuses to accept before anything was read', async () => {
@@ -730,6 +731,47 @@ describe('the acceptance guards (HIL-500)', () => {
     expect(store.error.get()).toBeNull()
     expect(store.content.get()).toBeNull()
     expect(dispatch).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps a new acceptance busy when an earlier window is accepted', async () => {
+    let acceptOld!: () => void
+    let acceptNew!: () => void
+    const onAccepted = vi.fn()
+    const dispatch = vi
+      .fn()
+      .mockReturnValueOnce({ done: Promise.resolve({ reply: content() }) })
+      .mockReturnValueOnce({
+        done: new Promise<void>((resolve) => {
+          acceptOld = resolve
+        }),
+      })
+      .mockReturnValueOnce({ done: Promise.resolve({ reply: content() }) })
+      .mockReturnValueOnce({
+        done: new Promise<void>((resolve) => {
+          acceptNew = resolve
+        }),
+      })
+    const store = createHilosLegalReconsentStore(
+      { actions: { dispatch } as unknown as ActionLifecycle },
+      { onAccepted },
+    )
+    await store.load()
+    const oldAcceptance = store.accept()
+    store.reset()
+    await store.load()
+    const newAcceptance = store.accept()
+
+    acceptOld()
+
+    expect(await oldAcceptance).toBe(false)
+    expect(onAccepted).not.toHaveBeenCalled()
+    expect(store.busy.get()).toBe(true)
+
+    acceptNew()
+
+    expect(await newAcceptance).toBe(true)
+    expect(onAccepted).toHaveBeenCalledOnce()
+    expect(store.busy.get()).toBe(false)
   })
 })
 

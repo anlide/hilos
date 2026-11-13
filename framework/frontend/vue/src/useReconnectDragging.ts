@@ -2,8 +2,8 @@
 // reconnect under way has been retrying long enough for its backoff pauses to have
 // reached the ceiling, mirrored into Vue reactivity. The core owns the state; this
 // composable only subscribes to it (multiframework-core.md).
-import { onScopeDispose, shallowReadonly, shallowRef } from 'vue'
-import type { Ref } from 'vue'
+import { shallowReadonly, shallowRef, toValue, watch } from 'vue'
+import type { MaybeRefOrGetter, Ref } from 'vue'
 import type { HilosConnection } from '@hilos/core/base'
 
 /**
@@ -11,16 +11,25 @@ import type { HilosConnection } from '@hilos/core/base'
  *
  * Call it inside a component `setup()` or an `effectScope()`: the subscription
  * is released when the calling scope is disposed.
+ * The subscription moves when the source connection changes.
  *
- * @param connection The core connection to mirror.
+ * @param connection The core connection object, ref, or getter to mirror.
  */
 export function useReconnectDragging(
-  connection: HilosConnection,
+  connection: MaybeRefOrGetter<HilosConnection>,
 ): Readonly<Ref<boolean>> {
-  const dragging = shallowRef(connection.reconnectDragging)
-  const unsubscribe = connection.on('reconnectDragging', (next) => {
-    dragging.value = next
-  })
-  onScopeDispose(unsubscribe)
+  const dragging = shallowRef(toValue(connection).reconnectDragging)
+  watch(
+    () => toValue(connection),
+    (source, _previous, onCleanup) => {
+      dragging.value = source.reconnectDragging
+      onCleanup(
+        source.on('reconnectDragging', (next) => {
+          dragging.value = next
+        }),
+      )
+    },
+    { immediate: true },
+  )
   return shallowReadonly(dragging)
 }
