@@ -290,7 +290,7 @@ registry of taken host ports:
 | pmd test | 33074 | 8173/8174/8175 | — | http 8177 / https 8178 | — | 10.214 |
 | roblox-game-server local | 33075 | 8190/8191/8192 | 8200 | https 8196 | 5180 | 10.205 |
 | roblox-game-server test | 33076 | 8193/8194/8195 | — | http 8197 / https 8198 | — | 10.215 |
-| roblox-game-server cluster (not in the code yet — HIL-2029) | — | — | — | — | — | 10.225 |
+| roblox-game-server cluster | — | — | — | — | — | 10.225 |
 | solar-system-model local | 33077 | 8210/8211/8212 | 8220 | https 8216 | 5181 | 10.206 |
 | solar-system-model test | 33078 | 8213/8214/8215 | — | http 8217 / https 8218 | — | 10.216 |
 | file-gallery-manager local | 33079 | 8230/8231/8232 | 8240 | https 8236 | 5182 | 10.207 |

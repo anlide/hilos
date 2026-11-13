@@ -725,9 +725,11 @@ For its data and privacy boundaries, read
    connections, before `if ($initHilos)`. Mount `init-change-log.sh` at
    `/docker-entrypoint-initdb.d/init-change-log.sh` and `provision-change-log.sh`
    at `/usr/local/bin/provision-change-log.sh` on each MariaDB service: local,
-   test and cluster. The init script calls the same repeatable root script
-   used to provision an existing ordinary MariaDB directory before Hilos starts;
-   it creates/grants the journal without clearing either database. The
+   test and cluster; on a Galera cluster the init hook goes to the first data
+   node only, and the script to every data node. The init script calls the same
+   repeatable root script used to provision an existing ordinary MariaDB
+   directory before Hilos starts; it creates/grants the journal without
+   clearing either database. The
    binance-btc-tracker, ecommerce-shop and online-testing cluster stands each
    use one ordinary MariaDB server; the planned carriers' database topologies
    are in [the testing guide](../testing.md#the-cluster-stands--six-demos-six-shapes).

@@ -1,0 +1,233 @@
+# Local bindings only. Canonical services never join this aggregate themselves.
+# !reset/!override are intentional: standalone ports, env and storage must not accumulate.
+#
+# The start order is the database's: galera1 raises the cluster (or joins galera2 when galera2
+# answers), galera2 joins it once galera1 is Synced, garbd joins once galera2 is, the proxy
+# waits for both data members, and the nodes and the cli wait for the proxy.
+services:
+  roblox-game-server-cluster-entry:
+    extends: {file: ./entry.yml, service: entry}
+    container_name: roblox-game-server-cluster-entry${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    volumes:
+      - data-export:/data_export:ro
+      - files:/published:ro
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.30
+
+  # The ONE address of the database - the nodes and the cli know only this.
+  roblox-game-server-cluster-proxy:
+    extends: {file: ./haproxy.yml, service: haproxy}
+    container_name: roblox-game-server-cluster-proxy${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    # The harness finds this proxy by label to read the backend states.
+    labels:
+      hilos.database.proxy: "true"
+    # Each node's data member, by the node's address: m1 and m3 on galera1, m2 and s1 on galera2.
+    environment:
+      HILOS_DB_MEMBER_1: 10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.21
+      HILOS_DB_MEMBER_2: 10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.22
+      HILOS_DB_CLIENTS_1: "10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.11 10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.13"
+      HILOS_DB_CLIENTS_2: "10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.12 10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.14"
+    depends_on:
+      roblox-game-server-cluster-galera1:
+        condition: service_healthy
+      roblox-game-server-cluster-galera2:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.10
+
+  # The data member that starts first: it raises the cluster when galera2 does not answer, and
+  # joins galera2 when it does (bootstrap.sh). How the runner's artifact collector finds the
+  # database: the stands spell their database service several ways, so it is asked for by role
+  # rather than guessed at by name (HIL-841). And the one member the tooling execs into - db-sql
+  # without a member and the step's artifact collector; either member would answer the same, one
+  # keeps the answer off docker's listing order.
+  roblox-game-server-cluster-galera1:
+    extends: {file: ./database.yml, service: database}
+    container_name: roblox-game-server-cluster-galera1${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    labels:
+      hilos.role: database
+      hilos.database.member: "true"
+    environment:
+      HILOS_GALERA_DATA_PEERS: 10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.22
+    command: ["mariadbd", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci",
+              "--wsrep-cluster-name=hilos-roblox-game-server-cluster",
+              "--wsrep-cluster-address=gcomm://10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.21,10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.22,10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.23",
+              "--wsrep-node-name=galera1", "--wsrep-node-address=10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.21"]
+    volumes:
+      # Host memory keeps this member's data across down/up and kill/start;
+      # the harness wipes it on down --volumes (HIL-1327).
+      - /dev/shm/hilos-roblox-game-server-cluster-galera1-data${HILOS_STAND_SUFFIX:-}:/var/lib/mysql
+      # The journal's database and its grant are made here alone, by the image's initialization
+      # of an empty directory; galera2 receives them, with the users, by the full copy - once,
+      # through the replicating path. The script for an existing directory comes from the part.
+      - ../mysql/init-change-log.sh:/docker-entrypoint-initdb.d/init-change-log.sh:ro
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.21
+
+  # Joins, never raises the cluster; waits for galera1 to be Synced. The image still initializes
+  # its empty directory, and the full copy from galera1 replaces all of it.
+  roblox-game-server-cluster-galera2:
+    extends: {file: ./database.yml, service: database}
+    container_name: roblox-game-server-cluster-galera2${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    labels:
+      hilos.database.member: "true"
+    entrypoint: ["bash", "/usr/local/bin/hilos-galera-member.sh", "docker-entrypoint.sh"]
+    command: ["mariadbd", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci",
+              "--wsrep-cluster-name=hilos-roblox-game-server-cluster",
+              "--wsrep-cluster-address=gcomm://10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.21,10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.22,10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.23",
+              "--wsrep-node-name=galera2", "--wsrep-node-address=10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.22"]
+    volumes:
+      # Host memory keeps this member's data across down/up and kill/start;
+      # the harness wipes it on down --volumes (HIL-1327).
+      - /dev/shm/hilos-roblox-game-server-cluster-galera2-data${HILOS_STAND_SUFFIX:-}:/var/lib/mysql
+    depends_on:
+      roblox-game-server-cluster-galera1:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.22
+
+  # The third vote, after both data members.
+  roblox-game-server-cluster-garbd:
+    extends: {file: ./garbd.yml, service: garbd}
+    container_name: roblox-game-server-cluster-garbd${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    labels:
+      hilos.database.voter: "true"
+    command: ["garbd", "--address", "gcomm://10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.21,10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.22", "--group", "hilos-roblox-game-server-cluster",
+              "--options", "gmcast.listen_addr=tcp://0.0.0.0:4567"]
+    depends_on:
+      roblox-game-server-cluster-galera2:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.23
+
+  roblox-game-server-cluster-m1:
+    extends: {file: ./node.yml, service: node}
+    container_name: roblox-game-server-cluster-m1${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/m1.env
+    # One collector address for the shared application schema.
+    labels:
+      hilos.role: app
+    volumes:
+      - data:/app/data
+      - data-export:/app/data/data_export
+      - files:/app/data/files/published
+      - ../../data/logs-cluster/m1:/var/log/hilos
+    depends_on:
+      roblox-game-server-cluster-proxy:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.11
+
+  roblox-game-server-cluster-m2:
+    extends: {file: ./node.yml, service: node}
+    container_name: roblox-game-server-cluster-m2${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/m2.env
+    volumes:
+      - data:/app/data
+      - data-export:/app/data/data_export
+      - files:/app/data/files/published
+      - ../../data/logs-cluster/m2:/var/log/hilos
+    depends_on:
+      roblox-game-server-cluster-proxy:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.12
+
+  roblox-game-server-cluster-m3:
+    extends: {file: ./node.yml, service: node}
+    container_name: roblox-game-server-cluster-m3${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/m3.env
+    volumes:
+      - data:/app/data
+      - data-export:/app/data/data_export
+      - files:/app/data/files/published
+      - ../../data/logs-cluster/m3:/var/log/hilos
+    depends_on:
+      roblox-game-server-cluster-proxy:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.13
+
+  roblox-game-server-cluster-s1:
+    extends: {file: ./node.yml, service: node}
+    container_name: roblox-game-server-cluster-s1${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/s1.env
+    volumes:
+      - data:/app/data
+      - data-export:/app/data/data_export
+      - files:/app/data/files/published
+      - ../../data/logs-cluster/s1:/var/log/hilos
+    depends_on:
+      roblox-game-server-cluster-proxy:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.14
+
+volumes:
+  # The stand's own data root: the export agent deletes files without ready rows in its
+  # own database at start and hourly, so the local installation's data/ must stay out of
+  # its sight. Every node and the CLI mount this volume at /app/data, and the harness's
+  # down --volumes clears it with the database each run.
+  data:
+    name: hilos-roblox-game-server-cluster-data${HILOS_STAND_SUFFIX:-}
+
+  # Exports sit on a volume of their own over that root because the entry reads them at
+  # its own path, /data_export, and its part is shared with standalone and stays as is.
+  # All four nodes and the entry share this disk.
+  data-export:
+    name: hilos-roblox-game-server-cluster-data-export${HILOS_STAND_SUFFIX:-}
+
+  # Published files sit on a volume of their own over the root for the same reason: the entry
+  # serves them from /published once a node's files library has checked the reader. All four
+  # nodes and the entry share this disk.
+  files:
+    name: hilos-roblox-game-server-cluster-files${HILOS_STAND_SUFFIX:-}
+
+networks:
+  cluster-net:
+    name: hilos-roblox-game-server-cluster-net${HILOS_STAND_SUFFIX:-}
+    driver: bridge
+    ipam:
+      config:
+        # Deliberately outside 172.16.0.0/12 and 192.168.0.0/16 — Docker's default
+        # address pools. The nodes need fixed addresses (peers advertise them, and
+        # `cluster heal` reconnects a partitioned node on its original IP), so this
+        # subnet is claimed, not assigned. Inside a default pool that claim loses a
+        # race: any other stack whose network came up first may already hold the
+        # range, and then the whole cluster fails to start with "Pool overlaps with
+        # other one on this address space". 10.0.0.0/8 is never auto-assigned.
+        - subnet: 10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.0/16

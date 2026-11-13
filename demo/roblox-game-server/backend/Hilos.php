@@ -107,6 +107,8 @@ use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupAgentDaemon;
+use Hilos\Cluster\Probe\ClusterProbe;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -478,6 +480,12 @@ class Hilos extends HilosFacade
             AgentRegistryKey::DAEMON => ModerationRulesLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
+        // The probe of this demo's cluster stand - scenario 49 writes and reads through it, on
+        // both data members of the Galera database. A probe starts only on a clustered node of a
+        // non-production environment, so this demo on one node, on its Playwright stand and in
+        // production carries the row and runs none of it (docs/agents/testing.md, "The cluster
+        // stands").
+        HilosAgentType::HILOS_PROBE_DB => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_DB],
     ];
 
     /** @var array<string, list<string>> Outstanding closed DB writer transitions. */

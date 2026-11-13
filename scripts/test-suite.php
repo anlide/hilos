@@ -87,7 +87,8 @@ require_once __DIR__ . '/framework-pieces.php';
  * process; rc=1 there meant either unit or integration failed.
  *
  * WHO MAY RUN BESIDE WHOM. Any cluster fleet — `binance-btc-tracker-cluster`,
- * `ecommerce-shop-cluster` and `online-testing-cluster` — may run beside any
+ * `ecommerce-shop-cluster`, `online-testing-cluster` and
+ * `roblox-game-server-cluster` — may run beside any
  * e2e step. Neither an edge nor the order keeps them apart, and a fleet leaves
  * with its own step (`downsStand`), which is hygiene rather than separation.
  * Decided by the owner on 2026-09-29 on 43 full runs on the test box (27–29.09),
@@ -96,11 +97,12 @@ require_once __DIR__ . '/framework-pieces.php';
  * is read like any other: the full verdict stays red; neighbors in the step's
  * SNAPSHOT.txt and narrow re-runs supply diagnostic evidence. Keeping the fleets
  * apart from EACH OTHER, should that be needed, belongs to the leaves that add
- * them. The three fleets need nothing of the kind: in run 0747 on the test box
+ * them. The first three fleets need nothing of the kind: in run 0747 on the test box
  * (2026-10-02, HIL-1216),
  * `binance-btc-tracker-cluster`, `ecommerce-shop-cluster` and
  * `online-testing-cluster` started in the same second, ran all three together
- * for 1m21s, and all were green. Log-streams may run beside any fleet too: in
+ * for 1m21s, and all were green. `roblox-game-server-cluster` (HIL-2029) has not
+ * been measured beside the others yet. Log-streams may run beside any fleet too: in
  * 23 full runs on the test box (2026-10-02/03, runs 0748–0773) it overlapped
  * ecommerce-shop-cluster, which carries scenario 9, for 113–136s, and every run
  * was green (HIL-1218). Two steps of the same cluster stand share a group: each
@@ -360,6 +362,25 @@ $steps = array_merge($steps, [
         'tags' => ['cluster', 'e2e'],
         // The median of green full runs 2345…2377 on the test box, 2026-11-12 (HIL-2023).
         'seconds' => 100,
+        'downsStand' => true,
+    ],
+    // The fleet of roblox-game-server (HIL-2029): three masters and one slave over a MariaDB
+    // Galera cluster of two data members and an arbitrator behind HAProxy. Scenario 26 writes
+    // through both data members, scenario 49 reads what one node wrote through the other one.
+    // Beside the other fleets and any e2e step, in the group of its stand, so that a browser step
+    // over the same compose project would not run beneath it (the head of this file); takes its
+    // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does. The
+    // demo's unit suite runs in roblox-game-server-php. Seconds: an estimate after
+    // online-testing-cluster, not a measurement (HIL-2043 measures it).
+    [
+        'id' => 'roblox-game-server-cluster',
+        'command' => 'composer run test:cluster:scenarios',
+        'cwd' => 'demo/roblox-game-server',
+        'stand' => 'roblox-game-server-cluster',
+        'deps' => ['roblox-game-server-deps'],
+        'group' => 'roblox-game-server-cluster',
+        'tags' => ['cluster', 'backend'],
+        'seconds' => 90,
         'downsStand' => true,
     ],
     // Where every log line of a node lands, proven on the live tasks stand (HIL-1018): five

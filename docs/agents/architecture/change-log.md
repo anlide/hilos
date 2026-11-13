@@ -458,7 +458,9 @@ a direct CLI or worker entry, since both go through `initialize()`, so Hilos
 sees the journal configuration when it checks column coverage.
 
 Every demo's fresh local volume, test tmpfs or cluster data directory runs
-`init-change-log.sh` and grants the app access to exactly the derived database.
+`init-change-log.sh` and grants the app access to exactly the derived database;
+on a Galera cluster only the first data node's directory does, and the second
+receives the journal by copy.
 The binance-btc-tracker, ecommerce-shop and online-testing cluster stands each
 use one ordinary MariaDB 11.4 server, holding both primary and journal.
 Before updating an existing ordinary MariaDB data
@@ -493,7 +495,10 @@ as ordinary MariaDB data. Exact paths and commands are in the demo READMEs.
 On Galera and primary/replica, create the journal database, its grant and
 triggers once through the replicating path, not through independent
 `CREATE`/`GRANT`/`TRIGGER` statements on every server. Roblox's two-data-node
-Galera follows this path (not in the code yet — HIL-2029).
+Galera follows this path: the journal database and its grant are created by the
+initialization of the first data node alone, and the second receives them with
+its full copy (SST); an existing catalog gets them from
+`provision-change-log.sh` run on one data node, which Galera replicates.
 File-gallery-manager's primary/replica follows it
 (not in the code yet — HIL-2032). Concert-tickets' three-data-node Galera
 follows it (not in the code yet — HIL-2033).
@@ -932,9 +937,16 @@ provisioned before nodes start (HIL-1453).
 Startup prepares journal partitions and installs triggers under the existing
 primary schema rollout claim.
 
-The planned Galera and primary/replica carriers prepare the journal once
-through the replicating path described in
-[Where The Journal Lives](#where-the-journal-lives).
+The roblox-game-server cluster stand runs a Galera of two data nodes: the
+journal is prepared on the first data node and reaches the second as a copy, as
+[Where The Journal Lives](#where-the-journal-lives) describes. The planned
+carriers, the primary/replica of file-gallery-manager and the Galera of
+concert-tickets, prepare the journal once through the same replicating path.
+On this stand the Galera members set `log_bin_trust_function_creators=1`
+(`framework/docker/galera/galera.cnf`): a Galera member counts as a server with
+binary logging on and refuses `CREATE TRIGGER` to a user without SUPER (error
+1419), while the program installs the journal triggers under the application's
+user.
 
 Scenario 40 in `framework/docker/cluster/scenarios.py`, carried by online-testing,
 checks the exact live trigger set against the project's 12 SQL trigger files:

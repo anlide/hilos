@@ -1,0 +1,25 @@
+# The one address of the stand's database, standing alone or extended by the local stand: the
+# nodes and the cli know only this. Hilos sees one database address (2026-09-06), and the topology
+# behind it is the project's (../haproxy/haproxy.cfg). The addresses come from the environment,
+# which HAProxy reads in its configuration.
+services:
+  haproxy:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    image: haproxy:3.4.7-alpine@sha256:b9fe316f718d5015c5cfebd8ca019591f3e44656f61d93cb8b59a1028961e530
+    restart: "no"
+    environment:
+      # The two data members, as host or address.
+      HILOS_DB_MEMBER_1: ${HILOS_DB_MEMBER_1:-}
+      HILOS_DB_MEMBER_2: ${HILOS_DB_MEMBER_2:-}
+      # The source addresses of the nodes given to each member, separated by spaces.
+      HILOS_DB_CLIENTS_1: ${HILOS_DB_CLIENTS_1:-}
+      HILOS_DB_CLIENTS_2: ${HILOS_DB_CLIENTS_2:-}
+    volumes:
+      - ../haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8404/healthz"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+    ports:
+      - "${HILOS_CLUSTER_BIND_ADDRESS:-127.0.0.1}:${HILOS_CLUSTER_DB_PROXY_PUBLISHED_PORT:-3306}:3306"

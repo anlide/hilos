@@ -1,0 +1,14 @@
+# The Galera arbitrator of the stand's database, standing alone or extended by the local stand: a
+# third vote, so the cluster keeps its majority when one data member is lost. It stores no data
+# and answers no SQL. Named garbd in its command: that is how the harness tells an arbitrator.
+services:
+  garbd:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    build:
+      context: ../../../../framework/docker/galera
+      dockerfile: Dockerfile.garbd
+    restart: "no"
+    # The data members (comma-separated addresses) and the cluster's name; no health check: that
+    # the arbitrator voted is what the first step of scenario 26 waits for.
+    command: ["garbd", "--address", "gcomm://${HILOS_GALERA_DATA_MEMBERS:-}", "--group", "${HILOS_GALERA_CLUSTER_NAME:-}",
+              "--options", "gmcast.listen_addr=tcp://0.0.0.0:4567"]

@@ -62,6 +62,7 @@ use Demo\RobloxGameServer\Runtime\View\Context\RobloxGameServerRtContext;
 use Demo\RobloxGameServer\Tables\RobloxGameServerTableContext;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupAgentDaemon;
+use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -210,6 +211,18 @@ final class RobloxGameServerTopologyRegistryTest extends TestCase
             self::assertTrue(new ReflectionClass($daemonClass)->isInstantiable());
             self::assertSame($agentType, $workerClass::AGENT_TYPE);
         }
+    }
+
+    /** The database probe of the cluster stand is listed as the framework wrote it. */
+    public function testTheClusterProbesAreListedAsTheFrameworkWroteThem(): void
+    {
+        // The row is the framework's record, not this demo's copy of it: the flags every
+        // cluster scenario stands on are pinned once, in the framework's own registry test.
+        self::assertSame(
+            ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_DB],
+            Hilos::AGENTS[HilosAgentType::HILOS_PROBE_DB],
+            HilosAgentType::HILOS_PROBE_DB . ' is listed as the framework wrote it',
+        );
     }
 
     /** Server tables are concrete; browser tables, lists and data retain their declared keys. */

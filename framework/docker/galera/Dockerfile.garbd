@@ -1,0 +1,9 @@
+# The Galera arbitrator of a stand's database: one more vote in the cluster, without data and
+# without SQL. The pinned MariaDB image carries no garbd. The arbitrator comes from the MariaDB
+# repository that image already has configured, in exactly the version of the galera-4 library
+# the image ships, so the arbitrator and the data members run one Galera.
+FROM mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends "galera-arbitrator-4=$(dpkg-query -W -f='${Version}' galera-4)" \
+ && rm -rf /var/lib/apt/lists/*

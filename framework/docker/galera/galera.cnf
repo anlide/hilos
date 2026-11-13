@@ -1,0 +1,39 @@
+# What makes a MariaDB server a data member of one Galera cluster on a stand. Every data member
+# mounts it; what tells the members apart comes from each member's command line, so this file
+# names no cluster and no address: --wsrep-cluster-name, --wsrep-cluster-address (every data
+# member and arbitrator of the cluster), --wsrep-node-name and --wsrep-node-address.
+#
+# The image's temporary server, the one that initializes an empty data directory, runs with
+# --wsrep_on=OFF of its own accord (the image's docker-entrypoint.sh), so the first boot creates
+# the schema and the users locally before the member joins anyone.
+#
+# Not writable by everybody: mariadbd skips a world-writable .cnf without failing.
+
+[mariadb]
+wsrep_on = ON
+wsrep_provider = /usr/lib/galera/libgalera_smm.so
+# A full copy to a joining member by mariabackup: the donor keeps answering while it copies,
+# where rsync holds it locked for the whole copy - and with two data members the donor is the
+# only server left to answer. The copy signs in on the donor as mysql@localhost through
+# unix_socket, the operating system user mariadbd runs as, so no password is written anywhere;
+# that user holds the grants a backup needs, which the database image gives it at
+# initialization (MARIADB_MYSQL_LOCALHOST_GRANTS of the stand's database service).
+wsrep_sst_method = mariabackup
+wsrep_sst_auth = mysql:
+# A read waits until the member has applied what the cluster already committed: the
+# READ_AFTER_WRITE a demo declares, which on a multi-primary with clients on different members
+# holds only this way (docs/agents/app-topology.md, "Database Guarantees"). The global value is
+# every session's default, so a reconnected session reads the same way.
+wsrep_sync_wait = 1
+# No read from a member outside the primary component: it may miss what the majority committed.
+wsrep_dirty_reads = OFF
+# A member of a cluster counts as a server with binary logging on, even with log_bin off, and
+# such a server refuses CREATE TRIGGER from a user without SUPER (error 1419): the application's
+# user, which installs a project's journal triggers, holds no such privilege and should not.
+# The refusal guards statement-based replication against nondeterministic routines; a cluster
+# replicates rows (binlog_format below), so trusting the creators costs nothing here.
+log_bin_trust_function_creators = 1
+# What Galera requires of every member.
+binlog_format = ROW
+default_storage_engine = InnoDB
+innodb_autoinc_lock_mode = 2

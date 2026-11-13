@@ -1,0 +1,55 @@
+# One data member of the stand's Galera database, standing alone or extended by the local stand.
+# No Hilos-node dependency. What makes it a member, and how it raises or joins the cluster, is
+# shared with every Galera stand: framework/docker/galera/.
+services:
+  database:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    image: mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620
+    restart: "no"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      MYSQL_DATABASE: ${DB_DATABASE:-hilos-demo-roblox-game-server-cluster}
+      MYSQL_USER: ${DB_USERNAME:-hilos}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-hilos_pass}
+      TZ: UTC
+      # mysql@localhost through unix_socket, created on every member at initialization and carried
+      # by the full copy. The health check below signs in as it; so do the proxy's agent check and
+      # the copy itself on its donor (wsrep_sst_auth = mysql:), which needs these grants of a
+      # mariabackup user on MariaDB 11.4 - REPLICA MONITOR because the copy asks for the Galera
+      # position. Not the image's healthcheck user: its password is random on each member
+      # (/var/lib/mysql/.my-healthcheck.cnf) and the copy brings the donor's user table, so the
+      # two would part.
+      MARIADB_MYSQL_LOCALHOST_USER: "1"
+      MARIADB_MYSQL_LOCALHOST_GRANTS: RELOAD, PROCESS, LOCK TABLES, BINLOG MONITOR, REPLICA MONITOR
+      # The other data members, whom bootstrap.sh asks before it raises a new cluster.
+      HILOS_GALERA_DATA_PEERS: ${HILOS_GALERA_DATA_PEERS:-}
+    # Raises the cluster when no other data member answers, joins it otherwise (bootstrap.sh).
+    entrypoint: ["bash", "/usr/local/bin/hilos-galera-member.sh", "bash", "/usr/local/bin/hilos-galera-bootstrap.sh"]
+    command: ["mariadbd", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci",
+              "--wsrep-cluster-name=${HILOS_GALERA_CLUSTER_NAME:-}",
+              "--wsrep-cluster-address=gcomm://${HILOS_GALERA_CLUSTER_ADDRESS:-}",
+              "--wsrep-node-name=${HILOS_GALERA_NODE_NAME:-}",
+              "--wsrep-node-address=${HILOS_GALERA_NODE_ADDRESS:-}"]
+    volumes:
+      - ../../../../framework/docker/galera/galera.cnf:/etc/mysql/conf.d/zz-galera.cnf:ro
+      - ../../../../framework/docker/galera/bootstrap.sh:/usr/local/bin/hilos-galera-bootstrap.sh:ro
+      - ../../../../framework/docker/galera/member.sh:/usr/local/bin/hilos-galera-member.sh:ro
+      - ../../../../framework/docker/galera/agent.sh:/usr/local/bin/hilos-galera-agent.sh:ro
+      - ../../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
+      # The journal's database and its grant, made by running this script once with root
+      # credentials on the first data member; the init hook of the local stand does it
+      # itself on galera1 of a fresh stand (cluster/local.yml).
+      - ../mysql/provision-change-log.sh:/usr/local/bin/provision-change-log.sh:ro
+      # Host memory keeps this member's data across down/up and kill/start;
+      # the harness wipes it on down --volumes (HIL-1327).
+      - ${HILOS_CLUSTER_DB_DATA_DIR:-/dev/shm/hilos-roblox-game-server-cluster-database-data${HILOS_STAND_SUFFIX:-}}:/var/lib/mysql
+    # Synced is what a member owes before anything leans on it: the start order of the stand
+    # stands on this check (healthcheck.sh --galera_online, as mysql@localhost).
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--su-mysql", "--no-defaults", "--connect", "--galera_online"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+    ports:
+      - "${HILOS_CLUSTER_BIND_ADDRESS:-127.0.0.1}:${HILOS_CLUSTER_DB_PUBLISHED_PORT:-3306}:3306"

@@ -1,0 +1,41 @@
+# The cluster stand of roblox-game-server: three masters and one slave on one MariaDB Galera
+# cluster.
+#
+# The database is one Galera cluster of two data members and the garbd arbitrator, which votes
+# and stores no data, behind one HAProxy (framework/docker/galera/ and haproxy/haproxy.cfg). The
+# nodes and the cli know that one address alone; the application writes to both data members,
+# and a read waits for what the cluster committed (wsrep_sync_wait=1), which is what the demo's
+# declared READ_AFTER_WRITE asks of a multi-primary (docs/agents/app-topology.md, "Database
+# Guarantees"). The proxy gives each node a data member of its own - m1 and m3 to galera1, m2 and
+# s1 to galera2 - so a row one node writes is always readable by a node on the other data member;
+# a node whose member is down is led to the living one.
+#
+# Four daemon nodes roll the schema out themselves as they start together, under the rollout
+# claim in the database (HIL-1228), on a dedicated bridge with static IPs: three masters (the
+# consensus/master set) - m1 without capacity, so it votes and hosts no placed work, m2 and m3
+# workers - and the slave s1, a worker with less room. Beside them a long-lived CLI container the
+# shared cluster harness `docker exec`s to run `test:cluster:inspect` against each node. Node
+# role, identity, capabilities, master set, and timeouts all come from CLUSTER_* env, so the same
+# image is a master or a data-plane node purely by configuration.
+#
+# A compose project of its own, beside the demo's local and test stacks rather than inside one of
+# them: the demo's e2e steps take their whole project down when they start, and a fleet inside it
+# would fall in the middle of its matrix. The nodes run the whole demo - every agent it registers,
+# the framework's cluster probes among them - and publish nothing on the host: the harness reaches
+# them through the cli container. One nginx entry serves all masters on the stand network;
+# hilos_stand_master selects a master, while a request without that cookie rotates through them.
+
+name: hilos-roblox-game-server-cluster${HILOS_STAND_SUFFIX:-}
+
+# What the shared cluster harness (framework/docker/cluster/cluster.py) reads besides the services
+# in the included model; node identity, addresses, roles, room and logs come from its services,
+# and the shape of the database from the labels of its servers.
+x-hilos-cluster:
+  cli: roblox-game-server-cluster-cli
+  entry: roblox-game-server-cluster-entry
+  scenarios: [26, 49]
+
+
+# One included model: merge local services and tooling before importing shared resources.
+include:
+  - path: [./cluster/local.yml, ./cluster/tooling.yml]

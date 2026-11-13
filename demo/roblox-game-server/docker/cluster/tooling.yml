@@ -1,0 +1,41 @@
+# CLI is default-on and the only tooling of this stand.
+# The caller supplies HILOS_DAEMON_HOST per command when addressing a member.
+services:
+  roblox-game-server-cluster-cli:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    build:
+      context: ..
+      additional_contexts:
+        hilos-event: ../../../../framework/docker/native/event
+    container_name: roblox-game-server-cluster-cli${HILOS_STAND_SUFFIX:-}
+    working_dir: /app
+    command: ["sleep", "infinity"]
+    # This carrier runs backend commands, not the test suite. Its runtime env
+    # target must live off the /app host bind: Docker creates a missing bind
+    # target even for a read-only file mount, otherwise leaving tests/.env behind.
+    tmpfs:
+      - /app/tests
+    environment:
+      APP_ENV: test
+      # The database's one address, as the nodes know it.
+      DB_HOST: roblox-game-server-cluster-proxy
+      DB_PORT: "3306"
+      # Not inherited: this service carries no anchor. Same schema as the nodes
+      # (HIL-712).
+      DB_DATABASE: hilos-demo-roblox-game-server-cluster
+      DB_USERNAME: hilos
+      DB_PASSWORD: hilos_pass
+      COMMAND_PORT: "8094"
+    volumes:
+      - ../..:/app
+      - data:/app/data
+      # Tracked default; runtime DB env above takes precedence over its test DB.
+      - ${HILOS_CLUSTER_TEST_ENV_FILE:-../../tests/.env}:/app/tests/.env:ro
+      - ../../../../composer.json:/hilos/composer.json:ro
+      - ../../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../../framework:/hilos/framework:ro
+    depends_on:
+      roblox-game-server-cluster-proxy:
+        condition: service_healthy
+    networks:
+      - cluster-net
