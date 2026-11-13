@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Agents\Hilos\DataExportAgent;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
@@ -29,6 +30,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Http\RequestQueryParams;
@@ -38,7 +40,10 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\DataExport\DTO\DataExportOrderActionDTO;
 use Hilos\Database\Database;
+use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -70,7 +75,8 @@ use JsonException;
  * sign-in is answered with its own reason, on a live tab and when a held grant is applied; a
  * recovered password binds nothing and still takes the other sessions; an unblock and a returning
  * tab with the card give nobody back, and a takeover of the person is refused; a trust the
- * person's agent found no pair for is not written again.
+ * person's agent found no pair for is not written again; a copy of the person's data is not
+ * ordered, from a signed-in tab or from the card (HIL-1946).
  *
  * Requires the test DB reset before run (composer run test:db-reset).
  */
@@ -469,6 +475,78 @@ final class AccountErasingSignInTest extends IntegrationTestCase
         $this->beginErasure($userId);
         $this->renewalNotFound($userId, $afterId);
         $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($afterId, $userId, 30));
+    }
+
+    /**
+     * A signed-in tab of a person whose erasure has begun cannot order a copy of their data.
+     *
+     * @throws HilosException When setup or a frame fails
+     */
+    public function testASignedInTabCannotOrderACopyOnceTheErasureBegan(): void
+    {
+        $userId = $this->registerUser($this->uniqueEmail());
+        $this->signedInSession('export-signed-in-ak', $userId);
+        $this->beginErasure($userId);
+
+        $this->assertCopyOrderRefused('export-signed-in-ak', $userId);
+    }
+
+    /**
+     * The session showing the "Access closed" card of a person whose erasure has begun cannot order a copy either.
+     *
+     * @throws HilosException When setup or a frame fails
+     */
+    public function testATabWithTheCardCannotOrderACopyOnceTheErasureBegan(): void
+    {
+        $userId = $this->registerUser($this->uniqueEmail());
+        $this->signedInSession('export-card-ak', $userId);
+        $this->block($userId);
+        $this->sendBlockChanged($userId);
+        $this->assertSame($userId, $this->sessionOf('export-card-ak')?->blockedUserId, 'The tab shows the card');
+        $this->beginErasure($userId);
+
+        $this->assertCopyOrderRefused('export-card-ak', $userId);
+    }
+
+    /**
+     * Orders a copy from one tab through the data copy agent, in its frame, and expects the erasing words with no order written.
+     *
+     * @param string $acceptKey Tab ordering the copy
+     * @param int $userId Person whose erasure has begun
+     * @throws HilosException When the agent cannot start, or the order fails other than by the refusal
+     */
+    private function assertCopyOrderRefused(string $acceptKey, int $userId): void
+    {
+        $path = sys_get_temp_dir() . '/hil1946-order-' . bin2hex(random_bytes(8));
+        $previousFs = Hilos::$fs;
+        Hilos::$fs = new class($path) extends FsContext {
+            /** @param string $path Private archive directory */
+            public function __construct(private readonly string $path) { }
+            /** Registers only the directory this order test needs. */
+            public function configure(): void { $this->registerDirectory(self::DATA_EXPORT, $this->path, DirectoryScope::CLUSTER); }
+        };
+        Hilos::$fs->configure();
+        $agent = new DataExportAgent();
+        try {
+            $this->startAgent($agent);
+            try {
+                $this->underAgent($agent, static fn () => $agent->onAgentAction(
+                    $acceptKey, HilosSignalConstants::HILOS_DATA_EXPORT_ORDER, new DataExportOrderActionDTO(),
+                ));
+                $this->fail('A copy was ordered for a person whose erasure has begun');
+            } catch (ValidationException $refusal) {
+                $this->assertSame(AbstractSessionsLibraryAgent::ERASING_ACCOUNT_REFUSED_MESSAGE, $refusal->getMessage());
+            }
+            $this->assertSame([], Database::sql('SELECT `id` FROM `hilos_data_export` WHERE `user_id` = ?', [$userId])->rows());
+        } finally {
+            Hilos::$fs = $previousFs;
+            try {
+                foreach (glob($path . '/*') as $file) { unlink($file); }
+                if (is_dir($path)) { rmdir($path); }
+            } finally {
+                TruthSourceRegistry::unregisterAgent($agent->getId());
+            }
+        }
     }
 
     /**

@@ -40,9 +40,13 @@ standing on its confirmation step closes on that frame and orders nothing - the
 tab that confirmed is the one ordering - and so it does when Send again finds
 the operation already confirmed.
 
-`hilos_data_export_order` resolves the person from the connection/session and
-rechecks step-up. A blocked-card order also checks that the account remains
-blocked. Product-access restrictions are not consulted.
+`hilos_data_export_order` resolves the person from the connection/session; a
+blocked-card order also checks that the account remains blocked. A person
+whose erasure has begun is refused next, before any confirmation is asked, in
+the words of `AbstractSessionsLibraryAgent::ERASING_ACCOUNT_REFUSED_MESSAGE`
+("This account is being deleted."), and no row is written
+([account-operations.md](account-operations.md), *The closed account*). Only
+then is step-up rechecked. Product-access restrictions are not consulted.
 
 The card's `dataExport` node arrives with `accountBlocked` in session state and
 the handshake. Its connections join `DataExportGroup` as the handshake response
@@ -77,8 +81,8 @@ optional and honor the person's enabled channels, including for a blocked
 account. Their data carries `url: '/profile/data'`; the ready notice names the
 copy's lifetime in days rather than a date in an unknown timezone.
 
-An erased account or a request replaced during assembly gets no completion
-notice. Expiry sends none either. Notification dispatch sits outside archive
+An account whose erasure has begun or completed, or a request replaced during
+assembly, gets no completion notice. Expiry sends none either. Notification dispatch sits outside archive
 failure handling, so it cannot turn a ready copy into a failed build.
 
 ## Building And Restarting
@@ -142,21 +146,48 @@ of the cluster directory is not one of them and stays: the sweep lists the
 directory through `FsDirectory::entries()`, which leaves it out
 ([filesystem.md](filesystem.md), "The Guard").
 
-Before publication the builder queries `accountDeletions->erasedOf()` directly:
-a completed erasure discards the build without publication. Account erasure
-deletes the order inside its transaction. After it commits,
+The builder asks whether the person's erasure has begun or completed,
+querying `accountDeletions->startedOf()` and `erasedOf()` directly rather than
+synced memory, in three places: before it starts a build, before it publishes
+one, and when a build fails. A yes in any of them removes the unfinished bytes,
+if any, and deletes the order, with no publication, no state frame and no
+notice; the erasure part later finds no order and records `{"orders":0}`
+([The Erasure Part](#the-erasure-part)). Account erasure, on the path in use
+today, deletes the order inside its transaction. After it commits,
 `DataExportNotifier::forgetUser()` queues `hilos_data_export_forget_user` to
 remove files no ready order keeps. This also closes an erasure arriving after
 the builder's final check. A late completion cannot finish a request replaced
 while it was being built.
+
+## The Erasure Part
+
+The export agent is a participant of the account erasure
+([account-operations.md](account-operations.md), *The data export part*). Its
+step, `runErasurePart()`, deletes the person's order, whatever its state, and
+records `{"orders":1}`, or `{"orders":0}` when there is none, in the same
+transaction. For that it claims `accountOperationResults` for its own set
+(`hilos_data_export`) and reads `accountOperationAssignments` and
+`accountOperations`. Files are not touched inside the transaction: after the
+commit, and only when the call did the work, the step runs the sweep the forget
+frame runs - expired orders, then every file no ready order keeps, then the
+state to the person's tabs. A failed removal is logged and not repeated; the
+hourly sweep or the agent's start takes what is left. A repeated call returns
+the saved result and sweeps nothing. The census waits for this part only while
+the person has an order saved
+(`AccountErasureParticipantCatalog::hasDataExport()`).
+
+The step has no live caller until HIL-1950/HIL-1952. Until HIL-1952 the old
+path stays the one in use: the sessions holder deletes the order inside the
+erasure's transaction, and after the commit `DataExportNotifier::forgetUser()`
+sends the forget frame.
 
 ## Download And Storage
 
 `GET /_hilos/data-export` is an agent HTTP route. The cookie or header session,
 never a URL credential, selects the copy: signed in as its person, or holding
 that person's block notice. Missing/expired sessions are refused, impersonation
-is 403, and a missing, unfinished or expired copy is 404. Replies are not
-cached.
+is 403, a person whose erasure has begun is 403 as well, and a missing,
+unfinished or expired copy is 404. Replies are not cached.
 
 A successful response is an attachment named `your-data-YYYY-MM-DD.zip`, dated
 by readiness in the zone the archive was written in. That zone is stored in

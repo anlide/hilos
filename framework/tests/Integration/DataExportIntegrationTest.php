@@ -608,6 +608,31 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
     }
 
     /**
+     * Once the person's erasure has begun, neither their own browser nor the "Access closed" card
+     * downloads the copy that is still on disk; somebody else's browser is answered as before.
+     *
+     * @throws HilosException When seeding or HTTP delivery fails
+     */
+    public function testHttpDownloadIsForbiddenOnceTheErasureHasBegun(): void
+    {
+        self::seedSession('owner', 7, self::SESSION_CREATED_AT, null);
+        self::seedSession('blocked', null, self::SESSION_CREATED_AT, null);
+        Hilos::$db->sessions->findByToken('blocked')->actions->holdBlockedNotice(7, true);
+        self::seedSession('other', 8, self::SESSION_CREATED_AT, null);
+        Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        $agent = new DataExportTestAgent();
+        $agent->onStart();
+        $agent->onTick();
+        self::assertSame(DataExportState::READY, Hilos::$db->dataExports->ofUser(7)?->state);
+        self::beginErasure(7);
+        foreach (['owner' => 403, 'blocked' => 403, 'other' => 404] as $token => $status) {
+            $agent->onSignalHttpRequest(new HttpRequestDTO('request', 'GET', DataExportHttp::DOWNLOAD_PATH, [], $token, null), '', '');
+            self::assertSame($status, $agent->httpReply?->status, $token);
+            self::assertStringContainsString('no-store', $agent->httpReply->headers['Cache-Control']);
+        }
+    }
+
+    /**
      * Without nginx the daemon's own body reaches only a browser this node holds; the journal names
      * the node and the env value the operator has to set.
      *
@@ -745,6 +770,47 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
     }
 
     /**
+     * An order whose person's erasure has begun before the build is discarded without being built.
+     *
+     * @throws HilosException When the fixture or the tick fails
+     */
+    public function testErasureBegunBeforeBuildDiscardsTheOrderUnbuilt(): void
+    {
+        Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        self::beginErasure(7);
+        $agent = new DataExportTestAgent();
+        $agent->duringExport = static function (): void {
+            self::fail('The copy of a person whose erasure has begun was built');
+        };
+        $agent->onStart();
+        $agent->onTick();
+        self::assertNull(Hilos::$db->dataExports->ofUser(7));
+        self::assertSame([], glob($this->directory . '/*'));
+        self::assertSame([], $agent->published);
+        self::assertSame([], $this->announcements());
+    }
+
+    /**
+     * Erasure begins during the project export: the build is discarded as for a completed one.
+     *
+     * @throws HilosException When the fixture or build fails
+     */
+    public function testErasureBegunDuringBuildDiscardsEverythingWithoutPublication(): void
+    {
+        Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        $agent = new DataExportTestAgent();
+        $agent->duringExport = static function (): void {
+            self::beginErasure(7);
+        };
+        $agent->onStart();
+        $agent->onTick();
+        self::assertNull(Hilos::$db->dataExports->ofUser(7));
+        self::assertSame([], glob($this->directory . '/*'));
+        self::assertSame([], $agent->published);
+        self::assertSame([], $this->announcements());
+    }
+
+    /**
      * A completion for a replaced request cannot publish the old archive.
      *
      * @throws HilosException When the fixture or build fails
@@ -811,6 +877,20 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             putenv(EnvConstants::HILOS_SERVER_TEXT_TIME_ZONE_MODE->name . ($previousMode === false ? '' : '=' . $previousMode));
             putenv(EnvConstants::HILOS_PROJECT_TIME_ZONE->name . ($previousProject === false ? '' : '=' . $previousProject));
         }
+    }
+
+    /**
+     * Writes the start of the person's erasure on a standing deletion request (HIL-1939).
+     *
+     * @param int $userId Person whose erasure begins
+     * @throws HilosException When the row cannot be written
+     */
+    private static function beginErasure(int $userId): void
+    {
+        Database::sqlRun(
+            'INSERT INTO `hilos_account_deletion` (`user_id`, `requested_at`, `effective_at`, `started_at`) VALUES (?, ?, ?, ?)',
+            [$userId, 1767225600000, 1767312000000, 1767225660000],
+        );
     }
 
     /** @return list<NotificationEmitSignalData> Completion notices queued for the notification owner */

@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\DataExport;
 
+use Hilos\Auth\AccountOperation\AccountErasureDataExportResult;
+use Hilos\Auth\AccountOperation\AccountOperationKind;
+use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
+use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
+use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Constants\HttpConstants;
@@ -32,6 +38,9 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
+use Hilos\Database\View\Item\AccountOperationAssignment;
+use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Database\View\Item\DataExport;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\FsDirectory;
@@ -47,15 +56,31 @@ use Hilos\Utils\Helpers\TimeHelper;
 use Random\RandomException;
 use DateTimeZone;
 use Hilos\WiringRefusal;
+use Throwable;
 
 /**
  * Cluster-wide owner of personal data copies (HIL-303).
  * Assembly is deliberately one blocking tick in a monopolistic worker.
+ * It erases a person's copy order itself as its participant step of an account erasure
+ * ({@see self::runErasurePart()}); until HIL-1952 the session holder's old path stays beside it.
  */
 abstract class AbstractDataExportAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = HilosAgentType::HILOS_DATA_EXPORT;
     public const array OWNS_DB = [HilosDbContext::dataExports => TruthSourceOperation::ALL];
+
+    /**
+     * The results of the agent's own steps in an account erasure are added here and never
+     * changed (HIL-1946): their set is keyed by the agent's full id, the owner their assignment
+     * names ({@see self::ownedDbSetKey()}). See docs/agents/architecture/account-operations.md,
+     * "The participant result claim".
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_DB_SET = [
+        HilosDbContext::accountOperationResults => [TruthSourceOperation::Add],
+    ];
+
     public const array READS_DB = [
         HilosDbContext::identities,
         HilosDbContext::passkeyCredentials,
@@ -73,6 +98,8 @@ abstract class AbstractDataExportAgent extends AbstractAgent
         HilosDbContext::userPhotos,
         HilosDbContext::files,
         HilosDbContext::users,
+        HilosDbContext::accountOperationAssignments,
+        HilosDbContext::accountOperations,
     ];
 
     public const array AGENT_ACTIONS = [HilosSignalConstants::HILOS_DATA_EXPORT_ORDER => DataExportOrderActionDTO::class];
@@ -223,6 +250,75 @@ abstract class AbstractDataExportAgent extends AbstractAgent
     }
 
     /**
+     * The results of the agent's account erasure steps are keyed by its full id, the owner their
+     * assignment names (HIL-1946); any other set is the base's refusal.
+     *
+     * @param string $collection Collection whose set claim is being resolved
+     * @return string The agent's full id for the results, the base's answer otherwise
+     */
+    public function ownedDbSetKey(string $collection): string
+    {
+        if ($collection === HilosDbContext::accountOperationResults) {
+            return $this->getId();
+        }
+
+        return parent::ownedDbSetKey($collection);
+    }
+
+    /**
+     * The data copy agent's part of an account erasure, carried as its participant step (HIL-1946).
+     *
+     * Called by the agent in its own frame with the assignment the coordinator gave it. Before any
+     * work the assignment must be an erasure's and name its account; each refusal writes nothing.
+     * Inside the step's transaction the person's copy order is deleted, whatever its state, and the
+     * count is recorded as the result in the same transaction, so a failure rolls back both. The
+     * files leave only once that transaction commits: the agent's own sweep removes every file no
+     * ready order keeps, the person's copy and an interrupted build among them, and the person's
+     * tabs are told the copy is gone ({@see self::forgetUser()}); a failed removal is logged and
+     * not repeated. A repeated call returns the saved result without deleting or sweeping again.
+     * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950/HIL-1952).
+     *
+     * @param int $assignmentId Assignment the coordinator gave the agent
+     * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt
+     * @throws AccountOperationStepRefusedException When the caller, assignment or current stage refuses new work
+     * @throws ValidationException When the assignment is not an erasure's or names no account
+     * @throws Throwable When storage or the deletion fails, preserving the original failure
+     */
+    final public function runErasurePart(int $assignmentId): AccountOperationResult
+    {
+        return AccountOperationParticipantStep::run(
+            $assignmentId,
+            function (AccountOperationAssignment $assignment): AccountOperationResultPayload {
+                if ($assignment->operation?->kind !== AccountOperationKind::Erasure) {
+                    throw new ValidationException('A data export erasure part must belong to an erasure.');
+                }
+                $userId = $assignment->userId;
+                if ($userId === null) {
+                    throw new ValidationException('A data export erasure part must name its account.');
+                }
+                $export = Hilos::$db->dataExports->ofUser($userId);
+                $deleted = 0;
+                if ($export !== null) {
+                    $export->actions->delete();
+                    $deleted = 1;
+                }
+                Database::afterCommit(function () use ($userId): void {
+                    if ($this->directory === null) {
+                        return;
+                    }
+                    try {
+                        $this->forgetUser($userId);
+                    } catch (HilosException $e) {
+                        $this->logAgentError("Account of user {$userId} erased, but removing its data copy failed: {$e->getMessage()}");
+                    }
+                });
+
+                return AccountErasureDataExportResult::payloadOf($deleted);
+            },
+        );
+    }
+
+    /**
      * The project must write its person's row and all content belonging to that person.
      * Exclude other people's records; copy attachments only through the writer's file() seam.
      *
@@ -266,6 +362,9 @@ abstract class AbstractDataExportAgent extends AbstractAgent
         if ($person === null) {
             return HttpReplyDTO::refusal($request, HttpConstants::HTTP_UNAUTHORIZED);
         }
+        if (Hilos::$db->accountDeletions->startedOf($person) !== null) {
+            return HttpReplyDTO::refusal($request, HttpConstants::HTTP_FORBIDDEN);
+        }
         $export = Hilos::$db->dataExports->ofUser($person);
         if ($export?->state !== DataExportState::READY || $export->storedName === null || $export->finishedAt === null
             || $export->expiresAt === null || $export->expiresAt <= TimeHelper::getSqlDateTime()
@@ -303,7 +402,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
 
     /**
      * @param string $acceptKey Browser asking for its person's copy
-     * @throws HilosException When the person or proof is absent, or the order cannot be written
+     * @throws HilosException When the person or proof is absent, the person's erasure has begun, or the order cannot be written
      */
     private function order(string $acceptKey): void
     {
@@ -317,6 +416,9 @@ abstract class AbstractDataExportAgent extends AbstractAgent
             if ($person === null || !isset(Hilos::$db->users[$person]) || Hilos::$db->users[$person]->block !== true) {
                 throw new ValidationException(DataExportMessages::NOBODY);
             }
+        }
+        if (Hilos::$db->accountDeletions->startedOf($person) !== null) {
+            throw new ValidationException(AbstractSessionsLibraryAgent::ERASING_ACCOUNT_REFUSED_MESSAGE);
         }
         (new StepUpGate())->require($connection->sessionToken, $person, StepUpOperationKey::EXPORT_DATA);
         $previous = Hilos::$db->dataExports->ofUser($person);
@@ -358,6 +460,11 @@ abstract class AbstractDataExportAgent extends AbstractAgent
 
             return;
         }
+        if ($this->erasureReached($export->userId)) {
+            $export->actions->delete();
+
+            return;
+        }
         try {
             $basename = RandomHelper::secureHex(self::STORED_NAME_BYTES);
         } catch (RandomException $e) {
@@ -375,7 +482,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
             $size = $archive->close();
             unset($archive);
 
-            if (Hilos::$db->accountDeletions->erasedOf($export->userId) !== null) {
+            if ($this->erasureReached($export->userId)) {
                 FsPath::delete($buildingPath);
                 $export->actions->delete();
 
@@ -398,7 +505,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
             unset($archive);
             FsPath::delete($buildingPath);
             FsPath::delete($finalPath);
-            if (Hilos::$db->accountDeletions->erasedOf($export->userId) !== null) {
+            if ($this->erasureReached($export->userId)) {
                 $export->actions->delete();
 
                 return;
@@ -413,6 +520,20 @@ abstract class AbstractDataExportAgent extends AbstractAgent
         }
         $this->publishState($export->userId);
         $this->announce($export->userId, $export->state === DataExportState::READY);
+    }
+
+    /**
+     * Read from the database, not from synced memory: the worker builds while a deletion's sync
+     * frame may still be waiting behind its tick.
+     *
+     * @param int $userId Person whose copy is being built
+     * @return bool Whether the person's erasure has begun or completed
+     * @throws HilosException When a deletion request cannot be read
+     */
+    private function erasureReached(int $userId): bool
+    {
+        return Hilos::$db->accountDeletions->erasedOf($userId) !== null
+            || Hilos::$db->accountDeletions->startedOf($userId) !== null;
     }
 
     /**
