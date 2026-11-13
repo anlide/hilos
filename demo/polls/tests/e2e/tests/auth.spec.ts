@@ -1,6 +1,9 @@
 import { test, expect } from '../test.js'
 
-import { mailsTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
+import {
+  mailsTo,
+  waitForMailTo,
+} from '../../../../../framework/frontend/scripts/standMailbox.mjs'
 import {
   readMagicLinkCode,
   readMagicLinkUrl,
@@ -253,137 +256,128 @@ function returnPath(url: string): string {
  */
 const SIGN_IN_LINK_TIMEOUT_FACTOR = 1.5
 
-// FIXME(F-066, 2026-11-08): Mail snapshot misses the sign-in security notice · foreign · attempt 1 · HIL-1898
-test(
-  'walks both halves of the sign-in link, and turns a tampered one down',
-  { tag: '@quarantine:F-066' },
-  async ({ page }) => {
-    test.setTimeout(test.info().timeout * SIGN_IN_LINK_TIMEOUT_FACTOR)
-    // Every step asks for its own letter: the send gate holds a second letter to
-    // the same address for a minute, so a shared address would leave a step
-    // waiting for mail nobody sent. And every step starts from a guest, which is
-    // why the signed-in legs end with a sign-out.
-    await gotoPage(expect, page, '/')
+test('walks both halves of the sign-in link, and turns a tampered one down', async ({
+  page,
+}) => {
+  test.setTimeout(test.info().timeout * SIGN_IN_LINK_TIMEOUT_FACTOR)
+  // Every step asks for its own letter: the send gate holds a second letter to
+  // the same address for a minute, so a shared address would leave a step
+  // waiting for mail nobody sent. And every step starts from a guest, which is
+  // why the signed-in legs end with a sign-out.
+  await gotoPage(expect, page, '/')
 
-    await test.step('code from the letter', async () => {
-      const email = uniqueEmail()
+  await test.step('code from the letter', async () => {
+    const email = uniqueEmail()
 
-      // An account first. The envelope stands where it still stands after HIL-1008
-      // — beside the password field of an account that has one, as the way past
-      // that password — and a free address no longer offers it at all.
-      await createTestUser(expect, page, { email })
-      await expect(page.getByTestId('self-user')).toHaveText(
-        nameFromEmail(email),
-      )
-      await logout(expect, page)
+    // An account first. The envelope stands where it still stands after HIL-1008
+    // — beside the password field of an account that has one, as the way past
+    // that password — and a free address no longer offers it at all.
+    await createTestUser(expect, page, { email })
+    await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+    await logout(expect, page)
 
-      await openSignIn(expect, page)
-      await typeInto(page.getByTestId('auth-identifier'), email)
-      await expect(page.getByTestId('auth-password')).toBeVisible()
-      await page.getByTestId('auth-icon-magic-link').click()
+    await openSignIn(expect, page)
+    await typeInto(page.getByTestId('auth-identifier'), email)
+    await expect(page.getByTestId('auth-password')).toBeVisible()
+    await page.getByTestId('auth-icon-magic-link').click()
 
-      // The screen the person asked for does not change under them — it grows a
-      // field (HIL-606). The link is still there to click; this step is the person
-      // who cannot, because their mail is open on another device.
-      await expect(page.getByTestId('auth-heading')).toHaveText(
-        'Check your inbox',
-      )
-      await expect(page.getByTestId('auth-link-sent')).toBeVisible()
-      await expect(page.getByTestId('auth-code')).toBeVisible()
+    // The screen the person asked for does not change under them — it grows a
+    // field (HIL-606). The link is still there to click; this step is the person
+    // who cannot, because their mail is open on another device.
+    await expect(page.getByTestId('auth-heading')).toHaveText(
+      'Check your inbox',
+    )
+    await expect(page.getByTestId('auth-link-sent')).toBeVisible()
+    await expect(page.getByTestId('auth-code')).toBeVisible()
 
-      await typeInto(
-        page.getByTestId('auth-code'),
-        await readMagicLinkCode(email),
-      )
-      await clickSubmit(expect, page.getByTestId('auth-submit'))
-      await continueFromDone(expect, page)
-      await expect(page.getByTestId('self-user')).toHaveText(
-        nameFromEmail(email),
-      )
+    await typeInto(
+      page.getByTestId('auth-code'),
+      await readMagicLinkCode(email),
+    )
+    await clickSubmit(expect, page.getByTestId('auth-submit'))
+    await continueFromDone(expect, page)
+    await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
-      // Two letters: the magic link and the mandatory new sign-in security notice.
-      expect(await mailsTo(email)).toHaveLength(2)
+    // Two letters: the magic link and the mandatory new sign-in security notice.
+    // The email channel sends the notice after the sign-in, so wait for it first.
+    await waitForMailTo(email, 'New sign-in to your account')
+    expect(await mailsTo(email)).toHaveLength(2)
 
-      await logout(expect, page)
-    })
+    await logout(expect, page)
+  })
 
-    await test.step('click from a cold load', async () => {
-      const email = uniqueEmail()
+  await test.step('click from a cold load', async () => {
+    const email = uniqueEmail()
 
-      await createTestUser(expect, page, { email })
-      await expect(page.getByTestId('self-user')).toHaveText(
-        nameFromEmail(email),
-      )
-      await logout(expect, page)
+    await createTestUser(expect, page, { email })
+    await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+    await logout(expect, page)
 
-      await openSignIn(expect, page)
-      await typeInto(page.getByTestId('auth-identifier'), email)
-      await expect(page.getByTestId('auth-password')).toBeVisible()
-      await page.getByTestId('auth-icon-magic-link').click()
-      await expect(page.getByTestId('auth-link-sent')).toBeVisible()
+    await openSignIn(expect, page)
+    await typeInto(page.getByTestId('auth-identifier'), email)
+    await expect(page.getByTestId('auth-password')).toBeVisible()
+    await page.getByTestId('auth-icon-magic-link').click()
+    await expect(page.getByTestId('auth-link-sent')).toBeVisible()
 
-      // The click itself: a full browser load of the return route, which is the
-      // one navigation this demo's App serves without HilosView at all — the relay
-      // replaces the outlet while the path matches.
-      await gotoAuthReturn(
-        expect,
-        page,
-        returnPath(await readMagicLinkUrl(email)),
-        'auth-magic',
-      )
+    // The click itself: a full browser load of the return route, which is the
+    // one navigation this demo's App serves without HilosView at all — the relay
+    // replaces the outlet while the path matches.
+    await gotoAuthReturn(
+      expect,
+      page,
+      returnPath(await readMagicLinkUrl(email)),
+      'auth-magic',
+    )
 
-      // Home, signed in: the relay navigates on success and the session it
-      // upgraded is the one this tab is holding.
-      await expect(page.getByTestId('nav-logout')).toBeVisible()
-      await expect(page.getByTestId('self-user')).toHaveText(
-        nameFromEmail(email),
-      )
+    // Home, signed in: the relay navigates on success and the session it
+    // upgraded is the one this tab is holding.
+    await expect(page.getByTestId('nav-logout')).toBeVisible()
+    await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
-      // Two letters: the magic link and the mandatory new sign-in security notice.
-      expect(await mailsTo(email)).toHaveLength(2)
+    // Two letters: the magic link and the mandatory new sign-in security notice.
+    // The email channel sends the notice after the sign-in, so wait for it first.
+    await waitForMailTo(email, 'New sign-in to your account')
+    expect(await mailsTo(email)).toHaveLength(2)
 
-      // The click signed the session in, so the surface says what was achieved
-      // and waits for Continue (HIL-422) — over the shell, in the way of the
-      // sign-out the next leg starts from.
-      await continueFromDone(expect, page)
-      await logout(expect, page)
-    })
+    // The click signed the session in, so the surface says what was achieved
+    // and waits for Continue (HIL-422) — over the shell, in the way of the
+    // sign-out the next leg starts from.
+    await continueFromDone(expect, page)
+    await logout(expect, page)
+  })
 
-    await test.step('tampered token', async () => {
-      const email = uniqueEmail()
+  await test.step('tampered token', async () => {
+    const email = uniqueEmail()
 
-      await createTestUser(expect, page, { email })
-      await expect(page.getByTestId('self-user')).toHaveText(
-        nameFromEmail(email),
-      )
-      await logout(expect, page)
+    await createTestUser(expect, page, { email })
+    await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+    await logout(expect, page)
 
-      await openSignIn(expect, page)
-      await typeInto(page.getByTestId('auth-identifier'), email)
-      await expect(page.getByTestId('auth-password')).toBeVisible()
-      await page.getByTestId('auth-icon-magic-link').click()
-      await expect(page.getByTestId('auth-link-sent')).toBeVisible()
+    await openSignIn(expect, page)
+    await typeInto(page.getByTestId('auth-identifier'), email)
+    await expect(page.getByTestId('auth-password')).toBeVisible()
+    await page.getByTestId('auth-icon-magic-link').click()
+    await expect(page.getByTestId('auth-link-sent')).toBeVisible()
 
-      // A token nobody minted. The point is WHICH screen answers: a refusal that
-      // reached the server looks like this, and a click that reached nobody would
-      // look exactly the same.
-      const tampered = new URL(await readMagicLinkUrl(email))
-      tampered.searchParams.set('token', 'not-the-token-that-was-mailed')
-      await gotoAuthReturn(
-        expect,
-        page,
-        returnPath(tampered.toString()),
-        'auth-magic',
-      )
+    // A token nobody minted. The point is WHICH screen answers: a refusal that
+    // reached the server looks like this, and a click that reached nobody would
+    // look exactly the same.
+    const tampered = new URL(await readMagicLinkUrl(email))
+    tampered.searchParams.set('token', 'not-the-token-that-was-mailed')
+    await gotoAuthReturn(
+      expect,
+      page,
+      returnPath(tampered.toString()),
+      'auth-magic',
+    )
 
-      await expect(page.getByTestId('auth-magic-error')).toBeVisible()
-      await expect(page.getByTestId('auth-magic-to-login')).toBeVisible()
-      // Nothing was signed in, and no sign-in security notice went out.
-      await expect(page.getByTestId('nav-logout')).toHaveCount(0)
-      expect(await mailsTo(email)).toHaveLength(1)
-    })
-  },
-)
+    await expect(page.getByTestId('auth-magic-error')).toBeVisible()
+    await expect(page.getByTestId('auth-magic-to-login')).toBeVisible()
+    // Nothing was signed in, and no sign-in security notice went out.
+    await expect(page.getByTestId('nav-logout')).toHaveCount(0)
+    expect(await mailsTo(email)).toHaveLength(1)
+  })
+})
 
 // Code channels (HIL-492). Delivery of a login code is a registry, and this demo
 // registers two, so what is walked is what a registry is FOR: the same number

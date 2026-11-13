@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Session\SessionCookieName;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
@@ -25,9 +26,11 @@ use Hilos\Users\AdminCommandConstants;
  * id and a flag to set, and this command carries neither. The exit ladder is the same one
  * all the same, so an operator reads both commands' failures alike.
  *
- * Database-free ({@see DatabaseFreeCommand}) for the same reason its neighbours are: every
- * row it causes is written by the agent that answers it ({@see AbstractSessionsLibraryAgent}), which is
- * also the only process holding the session's live sockets.
+ * Database-free ({@see DatabaseFreeCommand}) for the same reason its neighbours are: the
+ * command is taken by the sessions holder ({@see AbstractSessionsLibraryAgent}), the only
+ * process holding the session's live sockets, which also binds the session; the user is
+ * created by the users library ({@see AbstractUsersLibraryAgent}) on the frame it receives
+ * from the holder (HIL-1898).
  */
 class AdminCreateCommand implements CommandInterface, DatabaseFreeCommand
 {
