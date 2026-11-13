@@ -26,6 +26,3 @@ npm-debug.log*
 # Playwright
 tests/e2e/test-results/
 tests/e2e/playwright-report/
-
-# Local and test runtime data
-/data/
