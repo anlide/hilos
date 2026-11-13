@@ -96,6 +96,9 @@ const test = base.extend<{ statusWorks: StatusWorkFixtureScope }>({
 
 test.use({ colorScheme: 'light' })
 
+/** The configured browser zone: `use.timezoneId` of this demo's Playwright config. */
+const READER_ZONE = 'Asia/Phnom_Penh'
+
 test('Maintenance Overview exposes one shared heading and five readable, read-only watchdog thresholds', async ({
   page,
 }) => {
@@ -730,7 +733,7 @@ test('Status Works keyboard forms retain focus, announce live conflicts, lock bu
       componentKeys: ['settings'],
     }
     statusWorks.reserve(draft)
-    await draftStatusWork(expect, page, draft)
+    await draftStatusWork(expect, page, draft, READER_ZONE)
     const since = log.sent.length
     gate.hold(STATUS_WORK_SCHEDULE)
     await clickSubmit(expect, page.getByTestId('hilos-status-work-save'))

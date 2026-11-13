@@ -658,7 +658,6 @@ export {
 export {
   backupMomentRow,
   enterCalendarDate,
-  enterCalendarDateTime,
   enterPickerDateTime,
   expectBackupMoments,
   expectLegalAcceptanceMoments,
@@ -667,6 +666,7 @@ export {
   expectReaderMillisecondMoment,
   expectReaderMoment,
   legalAcceptanceMomentRow,
+  readerLocalDateTime,
   readerMillisecondMoment,
   readerMoment,
 } from './moments.js'

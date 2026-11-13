@@ -1,5 +1,4 @@
 import { expect, test as base } from '../test.js'
-import { localDateTimeValue } from '../../../../../framework/frontend/core/src/timeZone/localDateTime.js'
 import {
   cleanupFixtures,
   clickSubmit,
@@ -21,6 +20,7 @@ import {
   latestStatusWork,
   markDocument,
   openStatusWorkSchedule,
+  readerLocalDateTime,
   readerMillisecondMoment,
   showAnnouncedRows,
   shownByTestId,
@@ -133,7 +133,7 @@ test('Angular Works preserves a refused draft, merges another admin edit and can
   statusWorks.reserve(draft)
   await test.step('Schedule enters the window in the reader zone and waits for the owner acknowledgement', async () => {
     await openStatusWorkSchedule(expect, page)
-    await draftStatusWork(expect, page, draft)
+    await draftStatusWork(expect, page, draft, READER_ZONE)
     await submitStatusWork(expect, page, log, STATUS_WORK_SCHEDULE)
   })
   await expect
@@ -150,11 +150,13 @@ test('Angular Works preserves a refused draft, merges another admin edit and can
   await expect(
     shownByTestId(page, `hilos-status-work-title-${work.id}`),
   ).toHaveText(work.title)
-  const zone = await page.evaluate(
-    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
-  )
   await expect(shownByTestId(page, `hilos-table-row-${work.id}`)).toContainText(
-    await readerMillisecondMoment(page, work.startsAt, zone, MOMENT_FORMAT),
+    await readerMillisecondMoment(
+      page,
+      work.startsAt,
+      READER_ZONE,
+      MOMENT_FORMAT,
+    ),
   )
   const scheduled = await expectPublicStatusPair(
     expect,
@@ -190,7 +192,7 @@ test('Angular Works preserves a refused draft, merges another admin edit and can
   }
   statusWorks.reserve(neighbor)
   await openStatusWorkSchedule(expect, page)
-  await draftStatusWork(expect, page, neighbor)
+  await draftStatusWork(expect, page, neighbor, READER_ZONE)
   await submitStatusWork(expect, page, log, STATUS_WORK_SCHEDULE)
   await expect
     .poll(() => statusWorkRows(log).find((row) => row.title === neighbor.title))
@@ -213,7 +215,13 @@ test('Angular Works preserves a refused draft, merges another admin edit and can
     }
     await typeInto(page.getByTestId('hilos-status-work-title'), refused.title)
     const window = page.getByTestId('hilos-status-work-window')
-    await enterPickerDateTime(expect, window, 'Starts', refused.startsAt)
+    await enterPickerDateTime(
+      expect,
+      window,
+      'Starts',
+      refused.startsAt,
+      READER_ZONE,
+    )
     const since = log.sent.length
     await clickSubmit(expect, page.getByTestId('hilos-status-work-save'))
     await expect(page.getByTestId('hilos-status-work-error')).toContainText(
@@ -242,8 +250,20 @@ test('Angular Works preserves a refused draft, merges another admin edit and can
     await expect(page.getByTestId('hilos-status-work-description')).toHaveValue(
       refused.description,
     )
-    await expectPickerDateTime(expect, window, 'Starts', refused.startsAt)
-    await expectPickerDateTime(expect, window, 'Ends', refused.endsAt)
+    await expectPickerDateTime(
+      expect,
+      window,
+      'Starts',
+      refused.startsAt,
+      READER_ZONE,
+    )
+    await expectPickerDateTime(
+      expect,
+      window,
+      'Ends',
+      refused.endsAt,
+      READER_ZONE,
+    )
     await expect(
       page.getByTestId('hilos-status-work-component-service'),
     ).toBeChecked()
@@ -262,8 +282,20 @@ test('Angular Works preserves a refused draft, merges another admin edit and can
     await typeInto(other.getByTestId('hilos-status-work-title'), mine)
     await typeInto(page.getByTestId('hilos-status-work-title'), changed.title)
     const window = page.getByTestId('hilos-status-work-window')
-    await enterPickerDateTime(expect, window, 'Starts', changed.startsAt)
-    await enterPickerDateTime(expect, window, 'Ends', changed.endsAt)
+    await enterPickerDateTime(
+      expect,
+      window,
+      'Starts',
+      changed.startsAt,
+      READER_ZONE,
+    )
+    await enterPickerDateTime(
+      expect,
+      window,
+      'Ends',
+      changed.endsAt,
+      READER_ZONE,
+    )
     await submitStatusWork(expect, page, log, STATUS_WORK_CHANGE)
     await expect(other.getByTestId('hilos-status-work-notice')).toContainText(
       'Changed elsewhere',
@@ -577,18 +609,20 @@ test('Angular Service status reads Maintenance during a real freeze and History 
     })
     await expectStatusHistoryFact(expect, page, fact)
     const row = shownByTestId(page, `hilos-table-row-${fact.id}`)
-    const zone = await page.evaluate(
-      () => Intl.DateTimeFormat().resolvedOptions().timeZone,
-    )
     await expect(row).toContainText(
-      await readerMillisecondMoment(page, fact.startedAt, zone, MOMENT_FORMAT),
+      await readerMillisecondMoment(
+        page,
+        fact.startedAt,
+        READER_ZONE,
+        MOMENT_FORMAT,
+      ),
     )
     if (fact.endedAt === null) {
       await expect(
         row.getByRole('cell', { name: 'Unknown', exact: true }),
       ).toBeVisible()
       await expect(row).toContainText(
-        `Completion observed at ${await readerMillisecondMoment(page, fact.completionObservedAt!, zone, MOMENT_FORMAT)}`,
+        `Completion observed at ${await readerMillisecondMoment(page, fact.completionObservedAt!, READER_ZONE, MOMENT_FORMAT)}`,
       )
     }
     let sent = log.sent.length
@@ -617,7 +651,9 @@ test('Angular Service status reads Maintenance during a real freeze and History 
       ),
     ).toMatchObject({ outcome: 'maintenance_completed' })
     await page.getByTestId('hilos-table-filter-from').click()
-    const date = localDateTimeValue(fact.startedAt, zone).slice(0, 10)
+    const date = (
+      await readerLocalDateTime(page, fact.startedAt, READER_ZONE)
+    ).slice(0, 10)
     sent = log.sent.length
     await enterCalendarDate(
       expect,
@@ -628,6 +664,11 @@ test('Angular Service status reads Maintenance during a real freeze and History 
       expect,
       page.getByTestId('hilos-table-filter-from-to'),
       date,
+    )
+    // The filter carries the zone as the browser names it: Chromium reports
+    // the configured link Pacific/Johnston as its canonical Pacific/Honolulu.
+    const zone = await page.evaluate(
+      () => Intl.DateTimeFormat().resolvedOptions().timeZone,
     )
     await expect
       .poll(() =>

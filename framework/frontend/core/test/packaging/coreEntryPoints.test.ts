@@ -46,7 +46,6 @@ import * as status from '../../src/admin/status/index.js'
 import * as statusWorks from '../../src/admin/status/hilosStatusWorks.js'
 import * as statusWorkActions from '../../src/admin/status/hilosStatusWorkActions.js'
 import * as statusHistory from '../../src/admin/status/hilosStatusHistory.js'
-import * as localDateTime from '../../src/timeZone/localDateTime.js'
 import * as users from '../../src/admin/users/index.js'
 import * as userRows from '../../src/admin/users/hilosUsers.js'
 import * as userSessions from '../../src/admin/users/hilosUserSessions.js'
@@ -563,7 +562,6 @@ const statusWorkActionTypes = [
   'HilosStatusWorkEdit',
   'HilosStatusWorkCancel',
 ]
-const statusWorkEditorValues = ['localDateTimeValue', 'parseLocalDateTimeValue']
 const statusHistoryValues = [
   'HILOS_STATUS_HISTORY_DATA',
   'HILOS_STATUS_HISTORY_TABLE',
@@ -925,7 +923,6 @@ describe('core public entries', () => {
           [
             ...statusWorksValues,
             ...statusWorkActionValues,
-            ...statusWorkEditorValues,
             ...statusHistoryValues,
           ].includes(name)
         ) {
@@ -936,9 +933,7 @@ describe('core public entries', () => {
             ? statusWorks
             : statusWorkActionValues.includes(name)
               ? statusWorkActions
-              : statusHistoryValues.includes(name)
-                ? statusHistory
-                : localDateTime
+              : statusHistory
           expect(value, name).toBe(owner[name])
         } else if (
           entry === './admin/analytics' &&
@@ -1291,14 +1286,12 @@ describe('core public entries', () => {
         ...statusValues,
         ...statusWorksValues,
         ...statusWorkActionValues,
-        ...statusWorkEditorValues,
         ...statusHistoryValues,
       ].sort(),
     )
     for (const [names, owner] of [
       [statusWorksValues, statusWorks],
       [statusWorkActionValues, statusWorkActions],
-      [statusWorkEditorValues, localDateTime],
       [statusHistoryValues, statusHistory],
     ] as const)
       for (const name of names) {
@@ -1684,7 +1677,6 @@ describe('core public entries', () => {
     const workActionExports = exportsOf(
       'admin/status/hilosStatusWorkActions.ts',
     )
-    const editorExports = exportsOf('timeZone/localDateTime.ts')
     const publicDerivedExports = exportsOf('status/derivedStatus.ts')
     const publicDerivedNames = [
       ...publicStatusDerivedValues,
@@ -1773,21 +1765,14 @@ describe('core public entries', () => {
           )
         } else if (
           entry === 'admin/status/index.ts' &&
-          [
-            ...workNames,
-            ...workActionNames,
-            ...statusWorkEditorValues,
-            ...historyNames,
-          ].includes(name)
+          [...workNames, ...workActionNames, ...historyNames].includes(name)
         ) {
           expect(baseExports.has(name), name).toBe(false)
           const owner = workNames.includes(name)
             ? worksExports
             : workActionNames.includes(name)
               ? workActionExports
-              : historyNames.includes(name)
-                ? historyExports
-                : editorExports
+              : historyExports
           expect(symbol, `${entry}:${name}`).toBe(owner.get(name))
         } else if (
           entry === 'admin/analytics/index.ts' &&

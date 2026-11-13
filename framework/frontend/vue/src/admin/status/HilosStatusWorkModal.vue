@@ -4,6 +4,7 @@ import { formatMoment, hilosTimeZone, hilosToasts } from '@hilos/core/base'
 import type {
   HilosStatusWorkCreate,
   HilosStatusWorkEdit,
+  HilosStatusWorkEditFields,
   HilosStatusWorkForm,
   HilosStatusWorksState,
 } from '@hilos/core/admin/status'
@@ -67,7 +68,7 @@ const noticeText = computed(() => {
   if (blockedReason.value) return blockedReason.value
   if (!editState.value?.conflict) return editNoticeText.value
   const values = editState.value.fields
-  const labels: Record<keyof HilosStatusWorkForm, string> = {
+  const labels: Record<keyof HilosStatusWorkEditFields, string> = {
     title: 'Title',
     description: 'What visitors read',
     componentKeys: 'Affects',

@@ -134,11 +134,16 @@ test('Status Works schedule, change and cancel reach live windows, public files 
     await expectStatusHead(expect, page, 'works')
     await openStatusWorkSchedule(expect, page)
     await openStatusWorkSchedule(expect, other)
-    await draftStatusWork(expect, page, draft)
-    await draftStatusWork(expect, other, {
-      ...draft,
-      title: 'Conflicting announcement',
-    })
+    await draftStatusWork(expect, page, draft, READER_ZONE)
+    await draftStatusWork(
+      expect,
+      other,
+      {
+        ...draft,
+        title: 'Conflicting announcement',
+      },
+      READER_ZONE,
+    )
     await submitStatusWork(expect, page, adminLog, STATUS_WORK_SCHEDULE)
     await expect
       .poll(() =>
@@ -238,7 +243,7 @@ test('Status Works schedule, change and cancel reach live windows, public files 
     }
     statusWorks.reserve(anchorDraft)
     await openStatusWorkSchedule(expect, page)
-    await draftStatusWork(expect, page, anchorDraft)
+    await draftStatusWork(expect, page, anchorDraft, READER_ZONE)
     await submitStatusWork(expect, page, adminLog, STATUS_WORK_SCHEDULE)
     await expect
       .poll(() =>
@@ -266,7 +271,7 @@ test('Status Works schedule, change and cancel reach live windows, public files 
       startsAt: anchorDraft.startsAt - 120_000,
       endsAt: anchorDraft.startsAt,
     }
-    await draftStatusWork(expect, page, changed)
+    await draftStatusWork(expect, page, changed, READER_ZONE)
     await submitStatusWork(expect, page, adminLog, STATUS_WORK_CHANGE)
     await expect(
       other.getByTestId('hilos-status-work-notice-slot'),
@@ -518,7 +523,7 @@ test('Status Works uses the published announcement during an actual freeze and c
       componentKeys: ['settings'],
     }
     statusWorks.reserve(draft)
-    await draftStatusWork(expect, page, draft)
+    await draftStatusWork(expect, page, draft, READER_ZONE)
     await submitStatusWork(expect, page, adminLog, STATUS_WORK_SCHEDULE)
     await expect
       .poll(() =>

@@ -27,6 +27,7 @@ import {
   latestStatusWork,
   markDocument,
   openStatusWorkSchedule,
+  readerLocalDateTime,
   showAnnouncedRows,
   shownByTestId,
   statusHistoryDeliveries,
@@ -89,23 +90,6 @@ const FREEZE = 'e2e-status-announced-work'
  */
 function futureStart(): number {
   return Math.floor(Date.now() / 60_000) * 60_000 + 600_000 + 17_000
-}
-
-/** The datetime-local value of a moment in the reader zone: the test's own Intl oracle. */
-function readerFieldValue(at: number): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: READER_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(new Date(at))
-  const part = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((entry) => entry.type === type)!.value
-  return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}:${part('second')}`
 }
 
 /** The calendar day after this one: day arithmetic, with no zone or clock in it. */
@@ -236,7 +220,7 @@ test('scheduled maintenance is planned, refused on overlap, changed against a he
         await expect(
           page.getByTestId('hilos-status-work-window'),
         ).toHaveAccessibleName(`Window, ${READER_ZONE}`)
-        await draftStatusWork(expect, page, draft)
+        await draftStatusWork(expect, page, draft, READER_ZONE)
         await submitStatusWork(expect, page, admin, STATUS_WORK_SCHEDULE)
         const row = await scheduledRow(admin, draft)
         expect(row).toMatchObject({
@@ -273,7 +257,7 @@ test('scheduled maintenance is planned, refused on overlap, changed against a he
       await test.step('an overlapping window is refused in the form with its draft kept, and the adjacent one is scheduled', async () => {
         await dismissToasts(page)
         await openStatusWorkSchedule(expect, page)
-        await draftStatusWork(expect, page, overlapping)
+        await draftStatusWork(expect, page, overlapping, READER_ZONE)
         const since = admin.sent.length
         await clickSubmit(expect, page.getByTestId('hilos-status-work-save'))
         await expect(page.getByTestId('hilos-status-work-error')).toContainText(
@@ -301,6 +285,7 @@ test('scheduled maintenance is planned, refused on overlap, changed against a he
           page.getByTestId('hilos-status-work-window'),
           'Ends',
           neighbor.endsAt,
+          READER_ZONE,
         )
         await submitStatusWork(expect, page, admin, STATUS_WORK_SCHEDULE)
         const row = await scheduledRow(admin, neighbor)
@@ -354,8 +339,20 @@ test('scheduled maintenance is planned, refused on overlap, changed against a he
         changed.title,
       )
       const otherWindow = other.getByTestId('hilos-status-work-window')
-      await enterPickerDateTime(expect, otherWindow, 'Starts', changed.startsAt)
-      await enterPickerDateTime(expect, otherWindow, 'Ends', changed.endsAt)
+      await enterPickerDateTime(
+        expect,
+        otherWindow,
+        'Starts',
+        changed.startsAt,
+        READER_ZONE,
+      )
+      await enterPickerDateTime(
+        expect,
+        otherWindow,
+        'Ends',
+        changed.endsAt,
+        READER_ZONE,
+      )
       await submitStatusWork(expect, other, second, STATUS_WORK_CHANGE)
 
       const notice = page.getByTestId('hilos-status-work-notice')
@@ -378,12 +375,14 @@ test('scheduled maintenance is planned, refused on overlap, changed against a he
         page.getByTestId('hilos-status-work-window'),
         'Starts',
         changed.startsAt,
+        READER_ZONE,
       )
       await expectPickerDateTime(
         expect,
         page.getByTestId('hilos-status-work-window'),
         'Ends',
         changed.endsAt,
+        READER_ZONE,
       )
       await expect(page.getByTestId('hilos-status-work-save')).toBeDisabled()
       await expect(
@@ -539,7 +538,7 @@ test('an announced window closes nothing; the actual freeze stubs the shop but n
           componentKeys: [SERVICE],
         }
         statusWorks.reserve(announced)
-        await draftStatusWork(expect, page, announced)
+        await draftStatusWork(expect, page, announced, READER_ZONE)
         await submitStatusWork(expect, page, admin, STATUS_WORK_SCHEDULE)
         const row = await scheduledRow(admin, announced)
         // The schedule keeps its strictly-future guard; a command, not a wait,
@@ -731,7 +730,9 @@ test('an announced window closes nothing; the actual freeze stubs the shop but n
       }
 
       // The Period's days are the reader's: the zone travels with the bounds.
-      const day = readerFieldValue(fact.startedAt).slice(0, 10)
+      const day = (
+        await readerLocalDateTime(page, fact.startedAt, READER_ZONE)
+      ).slice(0, 10)
       const next = dayAfter(day)
       const from = page.getByTestId('hilos-table-filter-from-from')
       const to = page.getByTestId('hilos-table-filter-from-to')

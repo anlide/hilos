@@ -12,7 +12,7 @@ import {
   createHilosStatusWorkEdit,
   createHilosStatusWorkCancel,
   HILOS_STATUS_WORK_ACTION_COPY,
-  localDateTimeValue,
+  type HilosStatusWorkCreate,
   type HilosStatusWorkForm,
   type HilosStatusWorkRow,
 } from '../../../src/admin/status/index.js'
@@ -86,8 +86,73 @@ const filledForm: HilosStatusWorkForm = {
   title: '  Database upgrade  ',
   description: '   ',
   componentKeys: ['service'],
-  startsAt: localDateTimeValue(announcement.startsAt, 'UTC'),
-  endsAt: localDateTimeValue(announcement.endsAt, 'UTC'),
+}
+
+/** The six numeric parts of a window edge, in the order of its local text. */
+const windowParts: readonly DateTimePickerNumericPart[] = [
+  'year',
+  'month',
+  'day',
+  'hour',
+  'minute',
+  'second',
+]
+
+/** A local date-time as a person types it into one edge; seconds are optional. */
+const typedWindow = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/
+
+/**
+ * The texts of an edge's numeric parts, in the order of its local text.
+ *
+ * @param picker The window picker of one opening.
+ * @param edge The edge to read.
+ */
+function edgeTexts(
+  picker: DateTimePickerController<'datetime', 'range'>,
+  edge: DateTimePickerEdge,
+): (string | undefined)[] {
+  const endpoint = picker.state.get()[edge]
+  return windowParts.map(
+    (name) => endpoint.parts.find((part) => part.part === name)?.text,
+  )
+}
+
+/**
+ * Type a local date-time into one edge of a form's window picker, part by
+ * part; seconds left out type as 00, and empty text clears the edge.
+ *
+ * @param form The create or edit form whose picker takes the text.
+ * @param edge The edge to type into.
+ * @param text 'YYYY-MM-DDTHH:mm[:ss]', or '' to clear the edge.
+ */
+function typeWindow(
+  form: Pick<HilosStatusWorkCreate, 'windowPicker'>,
+  edge: DateTimePickerEdge,
+  text: string,
+): void {
+  const picker = form.windowPicker.get()!
+  if (text === '') {
+    picker.setEndpointValue(edge, null)
+    return
+  }
+  const groups = typedWindow.exec(text)!.slice(1)
+  windowParts.forEach((part, index) =>
+    picker.setPartText(edge, part, groups[index] ?? '00'),
+  )
+}
+
+/**
+ * Fill a form whole: the text of filledForm and the announcement's window as
+ * a UTC reader types it.
+ *
+ * @param form The create or edit form to fill.
+ */
+function fillForm(
+  form: Pick<HilosStatusWorkCreate, 'windowPicker' | 'patchForm'>,
+): void {
+  form.patchForm(filledForm)
+  typeWindow(form, 'start', '2031-01-02T03:04:05')
+  typeWindow(form, 'end', '2031-01-02T04:05:06')
 }
 
 function setup(zone = 'UTC') {
@@ -509,26 +574,32 @@ describe('Works create, edit and cancel', () => {
     try {
       h.window()
       h.create.open()
-      for (const patch of [
-        {},
-        { ...filledForm, title: ' ' },
-        { ...filledForm, componentKeys: [] },
-        { ...filledForm, componentKeys: ['unknown'] },
-        { ...filledForm, componentKeys: ['service', 'service'] },
-        { ...filledForm, startsAt: filledForm.endsAt },
-        { ...filledForm, endsAt: '2031-01-02T02:00:00' },
-        { ...filledForm, title: 'a'.repeat(201) },
-        { ...filledForm, description: 'a'.repeat(2001) },
-      ]) {
+      const filled = ['2031-01-02T03:04:05', '2031-01-02T04:05:06'] as const
+      for (const [patch, [start, end]] of [
+        [{}, ['', '']],
+        [{ ...filledForm, title: ' ' }, filled],
+        [{ ...filledForm, componentKeys: [] }, filled],
+        [{ ...filledForm, componentKeys: ['unknown'] }, filled],
+        [{ ...filledForm, componentKeys: ['service', 'service'] }, filled],
+        [filledForm, ['2031-01-02T04:05:06', '2031-01-02T04:05:06']],
+        [filledForm, ['2031-01-02T03:04:05', '2031-01-02T02:00:00']],
+        [{ ...filledForm, title: 'a'.repeat(201) }, filled],
+        [{ ...filledForm, description: 'a'.repeat(2001) }, filled],
+      ] as const) {
         h.create.close()
         h.create.open()
         h.create.patchForm(patch)
+        typeWindow(h.create, 'start', start)
+        typeWindow(h.create, 'end', end)
         const form = h.create.form.get()
+        const window = h.create.windowPicker.get()!.state.get()
         expect(h.create.canSubmit.get()).toBe(false)
         expect(await h.create.submit()).toBe(false)
         expect(h.create.form.get()).toBe(form)
+        expect(h.create.windowPicker.get()!.state.get()).toBe(window)
       }
       expect(h.sent).toEqual([])
+      fillForm(h.create)
       h.create.patchForm({
         ...filledForm,
         title: '🛠'.repeat(200),
@@ -548,7 +619,7 @@ describe('Works create, edit and cancel', () => {
       h.window()
       expect(h.create.open()).toBe(true)
       expect(h.create.dirty.get()).toBe(false)
-      h.create.patchForm(filledForm)
+      fillForm(h.create)
       const pending = h.create.submit()
       expect(h.sent).toEqual([
         {
@@ -599,8 +670,8 @@ describe('Works create, edit and cancel', () => {
       h.edit.patchForm({
         title: 'My title',
         componentKeys: ['database', 'service'],
-        endsAt: '2031-01-02T06:00:00',
       })
+      typeWindow(h.edit, 'end', '2031-01-02T06:00:00')
       h.update({
         description: 'Their description',
         version: 2,
@@ -616,7 +687,14 @@ describe('Works create, edit and cancel', () => {
         version: 3,
       })
       expect(h.edit.state.get().fields.componentKeys.conflict).toBe(false)
-      expect(h.edit.form.get().startsAt).toBe('2031-01-02T03:05:07')
+      expect(edgeTexts(h.edit.windowPicker.get()!, 'start')).toEqual([
+        '2031',
+        '01',
+        '02',
+        '03',
+        '05',
+        '07',
+      ])
       expect(h.edit.state.get().fields.title.conflict).toBe(true)
       expect(h.edit.canSave.get()).toBe(false)
       expect(await h.edit.submit()).toBe(false)
@@ -657,12 +735,9 @@ describe('Works create, edit and cancel', () => {
     try {
       h.window()
       h.edit.open('7')
-      h.edit.patchForm({
-        title: 'Mine',
-        componentKeys: ['database'],
-        startsAt: '2031-01-02T02:00:00',
-        endsAt: '2031-01-02T09:00:00',
-      })
+      h.edit.patchForm({ title: 'Mine', componentKeys: ['database'] })
+      typeWindow(h.edit, 'start', '2031-01-02T02:00:00')
+      typeWindow(h.edit, 'end', '2031-01-02T09:00:00')
       h.update({
         title: 'Theirs',
         componentKeys: ['queue'],
@@ -682,9 +757,24 @@ describe('Works create, edit and cancel', () => {
         title: 'Theirs',
         description: '',
         componentKeys: ['queue'],
-        startsAt: '2031-01-02T01:00:00',
-        endsAt: '2031-01-02T08:00:00',
       })
+      const picker = h.edit.windowPicker.get()!
+      expect(edgeTexts(picker, 'start')).toEqual([
+        '2031',
+        '01',
+        '02',
+        '01',
+        '00',
+        '00',
+      ])
+      expect(edgeTexts(picker, 'end')).toEqual([
+        '2031',
+        '01',
+        '02',
+        '08',
+        '00',
+        '00',
+      ])
       expect(h.edit.dirty.get()).toBe(false)
       h.update({ lastMailQueuedAt: 9000 })
       expect(h.edit.state.get().conflict).toBe(false)
@@ -852,7 +942,7 @@ describe('Works create, edit and cancel', () => {
           const controller = h[operation]
           if (operation === 'create') {
             h.create.open()
-            h.create.patchForm(filledForm)
+            fillForm(h.create)
           } else if (operation === 'edit') {
             h.edit.open('7')
             h.edit.patchForm({ title: 'Draft' })
@@ -896,7 +986,7 @@ describe('Works create, edit and cancel', () => {
     try {
       h.window()
       h.create.open()
-      h.create.patchForm(filledForm)
+      fillForm(h.create)
       h.edit.open('7')
       h.edit.patchForm({ title: 'Draft' })
       h.cancel.open('7')
@@ -915,7 +1005,7 @@ describe('Works create, edit and cancel', () => {
     try {
       other.window()
       other.create.open()
-      other.create.patchForm(filledForm)
+      fillForm(other.create)
       other.data(null)
       expect(other.create.canSubmit.get()).toBe(false)
       other.data(catalog)
@@ -964,7 +1054,7 @@ describe('Works create, edit and cancel', () => {
         h.window()
         if (operation === 'create') {
           h.create.open()
-          h.create.patchForm(filledForm)
+          fillForm(h.create)
         } else if (operation === 'edit') {
           h.edit.open('7')
           h.edit.patchForm({ title: 'Draft' })
@@ -996,7 +1086,14 @@ describe('Works create, edit and cancel', () => {
       h.window()
       h.edit.open('7')
       expect(h.edit.timeZone.get()).toBe('America/New_York')
-      expect(h.edit.form.get().startsAt).toBe('2031-01-01T22:04:05')
+      expect(edgeTexts(h.edit.windowPicker.get()!, 'start')).toEqual([
+        '2031',
+        '01',
+        '01',
+        '22',
+        '04',
+        '05',
+      ])
       h.edit.patchForm({ title: 'Draft' })
       h.setZone('Asia/Tokyo')
       expect(h.edit.timeZone.get()).toBe('America/New_York')
@@ -1012,17 +1109,13 @@ describe('Works create, edit and cancel', () => {
       h.create.close()
       h.setZone('America/New_York')
       h.create.open()
-      h.create.patchForm({
-        ...filledForm,
-        startsAt: '2031-11-02T01:30:00',
-        endsAt: '2031-11-02T04:00:00',
-      })
+      h.create.patchForm(filledForm)
+      typeWindow(h.create, 'start', '2031-11-02T01:30:00')
+      typeWindow(h.create, 'end', '2031-11-02T04:00:00')
       expect(h.create.canSubmit.get()).toBe(false)
       expect(await h.create.submit()).toBe(false)
-      h.create.patchForm({
-        startsAt: '2031-03-09T02:30:00',
-        endsAt: '2031-03-09T04:00:00',
-      })
+      typeWindow(h.create, 'start', '2031-03-09T02:30:00')
+      typeWindow(h.create, 'end', '2031-03-09T04:00:00')
       expect(h.create.canSubmit.get()).toBe(false)
       expect(h.sent).toHaveLength(1)
     } finally {
@@ -1030,32 +1123,6 @@ describe('Works create, edit and cancel', () => {
     }
   })
 })
-
-/** The six numeric parts of a window edge, in the order of the native text. */
-const windowParts: readonly DateTimePickerNumericPart[] = [
-  'year',
-  'month',
-  'day',
-  'hour',
-  'minute',
-  'second',
-]
-
-/**
- * The texts of an edge's numeric parts, in the order of the native text.
- *
- * @param picker The window picker of one opening.
- * @param edge The edge to read.
- */
-function edgeTexts(
-  picker: DateTimePickerController<'datetime', 'range'>,
-  edge: DateTimePickerEdge,
-): (string | undefined)[] {
-  const endpoint = picker.state.get()[edge]
-  return windowParts.map(
-    (name) => endpoint.parts.find((part) => part.part === name)?.text,
-  )
-}
 
 const refusal = {
   reason: 'This announcement changed. Review it before saving.',
@@ -1088,7 +1155,7 @@ describe('Works window picker', () => {
       expect(days.find((day) => day?.date === '2031-01-02')?.disabled).toBe(
         false,
       )
-      h.create.patchForm({ startsAt: '2031-01-02T09:00:00' })
+      typeWindow(h.create, 'start', '2031-01-02T09:00:00')
       expect(first.state.get().start.result).toEqual({
         status: 'valid',
         value: Date.UTC(2031, 0, 2),
@@ -1097,7 +1164,7 @@ describe('Works window picker', () => {
       h.create.open()
       const second = h.create.windowPicker.get()!
       expect(second).not.toBe(first)
-      expect(h.create.form.get().startsAt).toBe('')
+      expect(second.state.get().start.result).toEqual({ status: 'empty' })
       const old = first.state.get()
       first.setPartText('start', 'year', '2040')
       first.stepPart('end', 'day', 1)
@@ -1106,11 +1173,26 @@ describe('Works window picker', () => {
       h.edit.open('7')
       const edited = h.edit.windowPicker.get()!
       expect(edited).not.toBe(second)
-      expect(h.edit.form.get().startsAt).toBe('2031-01-02T12:04:05')
+      expect(edgeTexts(edited, 'start')).toEqual([
+        '2031',
+        '01',
+        '02',
+        '12',
+        '04',
+        '05',
+      ])
       h.edit.open('7')
-      expect(h.edit.windowPicker.get()).not.toBe(edited)
+      const reopened = h.edit.windowPicker.get()!
+      expect(reopened).not.toBe(edited)
       edited.setPartText('start', 'hour', '13')
-      expect(h.edit.form.get().startsAt).toBe('2031-01-02T12:04:05')
+      expect(edgeTexts(reopened, 'start')).toEqual([
+        '2031',
+        '01',
+        '02',
+        '12',
+        '04',
+        '05',
+      ])
       expect(h.edit.dirty.get()).toBe(false)
     } finally {
       h.dispose()
@@ -1123,14 +1205,22 @@ describe('Works window picker', () => {
     try {
       h.window()
       h.create.open()
-      h.create.windowPicker.get()!.setPartText('end', 'day', '02')
+      const picker = h.create.windowPicker.get()!
+      picker.setPartText('end', 'day', '02')
       expect(h.create.dirty.get()).toBe(true)
-      expect(h.create.form.get().endsAt).toBe('')
-      h.create.patchForm(filledForm)
+      expect(picker.state.get().end.result).toEqual({ status: 'incomplete' })
+      fillForm(h.create)
       expect(h.create.canSubmit.get()).toBe(true)
-      h.create.windowPicker.get()!.setPartText('start', 'minute', '')
-      expect(h.create.form.get().startsAt).toBe('')
-      expect(h.create.form.get().endsAt).toBe(filledForm.endsAt)
+      picker.setPartText('start', 'minute', '')
+      expect(picker.state.get().start.result).toEqual({ status: 'incomplete' })
+      expect(edgeTexts(picker, 'end')).toEqual([
+        '2031',
+        '01',
+        '02',
+        '04',
+        '05',
+        '06',
+      ])
       expect(h.create.dirty.get()).toBe(true)
       expect(h.create.canSubmit.get()).toBe(false)
       expect(await h.create.submit()).toBe(false)
@@ -1145,21 +1235,24 @@ describe('Works window picker', () => {
     try {
       h.window()
       h.create.open()
-      h.create.patchForm(filledForm)
+      fillForm(h.create)
       expect(h.create.canSubmit.get()).toBe(true)
       const picker = h.create.windowPicker.get()!
-      h.create.patchForm({
-        startsAt: '2031-03-09T02:30:00',
-        endsAt: '2031-03-09T04:00:00',
-      })
+      typeWindow(h.create, 'start', '2031-03-09T02:30:00')
+      typeWindow(h.create, 'end', '2031-03-09T04:00:00')
       expect(picker.state.get().start.result).toEqual({ status: 'gap' })
-      expect(h.create.form.get().startsAt).toBe('2031-03-09T02:30:00')
+      expect(edgeTexts(picker, 'start')).toEqual([
+        '2031',
+        '03',
+        '09',
+        '02',
+        '30',
+        '00',
+      ])
       expect(h.create.canSubmit.get()).toBe(false)
       expect(await h.create.submit()).toBe(false)
-      h.create.patchForm({
-        startsAt: '2031-11-02T01:30:00',
-        endsAt: '2031-11-02T04:00:00',
-      })
+      typeWindow(h.create, 'start', '2031-11-02T01:30:00')
+      typeWindow(h.create, 'end', '2031-11-02T04:00:00')
       expect(picker.state.get().start.result.status).toBe('ambiguous')
       expect(h.create.canSubmit.get()).toBe(false)
       expect(await h.create.submit()).toBe(false)
@@ -1192,12 +1285,17 @@ describe('Works window picker', () => {
     try {
       h.window([row(repeated)])
       h.edit.open('7')
-      expect(h.edit.form.get().startsAt).toBe('2031-11-02T01:30:00')
+      expect(edgeTexts(h.edit.windowPicker.get()!, 'start')).toEqual([
+        '2031',
+        '11',
+        '02',
+        '01',
+        '30',
+        '00',
+      ])
       h.edit.patchForm({ title: 'Draft' })
-      h.edit.patchForm({
-        startsAt: '2031-11-02T01:30:00',
-        endsAt: '2031-11-02T04:00:00',
-      })
+      typeWindow(h.edit, 'start', '2031-11-02T01:30:00')
+      typeWindow(h.edit, 'end', '2031-11-02T04:00:00')
       expect(h.edit.canSave.get()).toBe(true)
       const pending = h.edit.submit()
       expect(h.sent[0]?.data).toMatchObject({
@@ -1212,7 +1310,7 @@ describe('Works window picker', () => {
     }
   })
 
-  it('keeps unedited milliseconds when the minutes change in the picker or in the native text', async () => {
+  it('keeps unedited milliseconds when the minutes change in the picker', async () => {
     const h = setup()
     const precise = {
       ...announcement,
@@ -1223,17 +1321,8 @@ describe('Works window picker', () => {
       h.window([row(precise)])
       h.edit.open('7')
       h.edit.windowPicker.get()!.setPartText('start', 'minute', '10')
-      let pending = h.edit.submit()
+      const pending = h.edit.submit()
       expect(h.sent[0]?.data).toMatchObject({
-        startsAt: Date.UTC(2031, 0, 2, 6, 10, 42, 123),
-        endsAt: precise.endsAt,
-      })
-      h.answer(true)
-      expect(await pending).toBe(true)
-      h.edit.open('7')
-      h.edit.patchForm({ startsAt: '2031-01-02T06:10:42' })
-      pending = h.edit.submit()
-      expect(h.sent[1]?.data).toMatchObject({
         startsAt: Date.UTC(2031, 0, 2, 6, 10, 42, 123),
         endsAt: precise.endsAt,
       })
@@ -1263,9 +1352,16 @@ describe('Works window picker', () => {
         status: 'valid',
         value: theirs,
       })
-      expect(h.edit.form.get().startsAt).toBe('2031-01-01T21:00:00')
+      expect(edgeTexts(picker, 'start')).toEqual([
+        '2031',
+        '01',
+        '01',
+        '21',
+        '00',
+        '00',
+      ])
       expect(edgeTexts(picker, 'end')).toEqual(end)
-      expect(h.edit.form.get().endsAt).toBe('')
+      expect(picker.state.get().end.result).toEqual({ status: 'incomplete' })
       expect(h.edit.timeZone.get()).toBe('America/New_York')
       expect(h.edit.windowPicker.get()).toBe(picker)
     } finally {
@@ -1288,7 +1384,14 @@ describe('Works window picker', () => {
         status: 'valid',
         value: theirs,
       })
-      expect(h.edit.form.get().endsAt).toBe('2031-01-02T06:00:00')
+      expect(edgeTexts(picker, 'end')).toEqual([
+        '2031',
+        '01',
+        '02',
+        '06',
+        '00',
+        '00',
+      ])
       expect(picker.state.get().start).toEqual(start)
     } finally {
       h.dispose()
@@ -1321,39 +1424,6 @@ describe('Works window picker', () => {
     }
   })
 
-  it.each([
-    {
-      passes: 'the saved moment',
-      draft: '2031-01-02T05:04:05',
-      theirs: Date.UTC(2031, 0, 1, 3, 4, 5),
-      text: '2031-01-02T03:30:05',
-    },
-    {
-      passes: 'their moment',
-      draft: '2031-01-02T05:20:05',
-      theirs: Date.UTC(2031, 0, 2, 3, 20, 5),
-      text: '2031-01-02T03:45:05',
-    },
-  ])(
-    'keeps a standing start conflict when native text passes $passes part by part',
-    ({ draft, theirs, text }) => {
-      const h = setup()
-      try {
-        h.window()
-        h.edit.open('7')
-        h.edit.patchForm({ startsAt: draft })
-        h.update({ startsAt: theirs, version: 2 })
-        expect(h.edit.state.get().fields.startsAt.conflict).toBe(true)
-        h.edit.patchForm({ startsAt: text })
-        expect(h.edit.state.get().fields.startsAt.conflict).toBe(true)
-        expect(h.edit.form.get().startsAt).toBe(text)
-        expect(h.edit.canSave.get()).toBe(false)
-      } finally {
-        h.dispose()
-      }
-    },
-  )
-
   it.each(['create', 'edit'] as const)(
     'refuses picker edits while the %s request is in flight and takes them after the answer',
     async (operation) => {
@@ -1362,7 +1432,7 @@ describe('Works window picker', () => {
         h.window()
         if (operation === 'create') {
           h.create.open()
-          h.create.patchForm(filledForm)
+          fillForm(h.create)
         } else {
           h.edit.open('7')
           h.edit.patchForm({ title: 'Draft' })
@@ -1402,7 +1472,14 @@ describe('Works window picker', () => {
       })
       h.answer(false, refusal)
       expect(await pending).toBe(false)
-      expect(h.edit.form.get().endsAt).toBe('2031-01-02T06:00:00')
+      expect(edgeTexts(picker, 'end')).toEqual([
+        '2031',
+        '01',
+        '02',
+        '06',
+        '00',
+        '00',
+      ])
     } finally {
       h.dispose()
     }
@@ -1425,40 +1502,19 @@ describe('Works window picker', () => {
       expect([created.state.get(), edited.state.get()]).toEqual(drafts)
       expect(h.create.timeZone.get()).toBe('America/New_York')
       expect(h.edit.timeZone.get()).toBe('America/New_York')
-      expect(h.edit.form.get().startsAt).toBe('2031-01-01T22:30:05')
-      h.create.patchForm({ startsAt: '2031-01-02T03:04:05' })
+      expect(edgeTexts(edited, 'start')).toEqual([
+        '2031',
+        '01',
+        '01',
+        '22',
+        '30',
+        '05',
+      ])
+      typeWindow(h.create, 'start', '2031-01-02T03:04:05')
       expect(created.state.get().start.result).toEqual({
         status: 'valid',
         value: Date.UTC(2031, 0, 2, 8, 4, 5),
       })
-    } finally {
-      h.dispose()
-    }
-  })
-
-  it('bridges native text into the parts and clears the edge on empty or foreign text', () => {
-    const h = setup()
-    try {
-      h.window()
-      h.create.open()
-      const picker = h.create.windowPicker.get()!
-      h.create.patchForm({ startsAt: '2031-01-02T03:04' })
-      expect(edgeTexts(picker, 'start')).toEqual([
-        '2031',
-        '01',
-        '02',
-        '03',
-        '04',
-        '00',
-      ])
-      expect(h.create.form.get().startsAt).toBe('2031-01-02T03:04:00')
-      for (const text of ['', 'nonsense']) {
-        h.create.patchForm({ startsAt: '2031-01-02T03:04:05' })
-        h.create.patchForm({ startsAt: text })
-        expect(picker.state.get().start.result).toEqual({ status: 'empty' })
-        expect(edgeTexts(picker, 'start')).toEqual(['', '', '', '', '', ''])
-        expect(h.create.form.get().startsAt).toBe('')
-      }
     } finally {
       h.dispose()
     }
@@ -1476,7 +1532,8 @@ describe('Works window picker', () => {
         }
         reopen()
         const controller = h[operation]
-        controller.patchForm({ ...filledForm, title: 'Draft' })
+        fillForm(controller)
+        controller.patchForm({ title: 'Draft' })
         const old = controller.windowPicker.get()!
         const pending = controller.submit()
         vi.advanceTimersByTime(1000)

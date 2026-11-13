@@ -260,64 +260,44 @@ export async function enterCalendarDate(
   await expect(field).toHaveValue(date)
 }
 
-/** The moment as `YYYY-MM-DDTHH:mm:ss` on a 24-hour clock in the browser's own zone. */
-function browserDateTime(page: Page, at: number): Promise<string> {
-  return page.evaluate((at) => {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hourCycle: 'h23',
-    }).formatToParts(new Date(at))
-    const part = (type: string) =>
-      parts.find((part) => part.type === type)!.value
-    return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}:${part('second')}`
-  }, at)
-}
-
-/** Native datetime segments need keyboard navigation rather than ordinary text entry. */
-export async function enterCalendarDateTime(
-  expect: Expect,
+/**
+ * The moment as `YYYY-MM-DDTHH:mm:ss` on a 24-hour clock in the named zone,
+ * by the browser's own Intl — never the product's formatter.
+ */
+export function readerLocalDateTime(
   page: Page,
-  field: Locator,
   at: number,
-): Promise<void> {
-  const value = await browserDateTime(page, at)
-  const [date, time] = value.split('T')
-  const [year, month, day] = date.split('-')
-  const [hour, minute, second] = time.split(':')
-  await field.fill('')
-  await field.focus()
-  // Chromium's en document exposes month/day/year/hour/minute/second/day-period.
-  // Reach the final segment before each edit to avoid native auto-advance.
-  for (const [text, left] of [
-    [year, 4],
-    [month, 6],
-    [day, 5],
-    [String(Number(hour) % 12 || 12), 3],
-    [minute, 2],
-    [second, 1],
-    [Number(hour) >= 12 ? 'p' : 'a', 0],
-  ] as const) {
-    for (let step = 0; step < 7; step++) await field.press('ArrowRight')
-    for (let step = 0; step < left; step++) await field.press('ArrowLeft')
-    await field.pressSequentially(text, { delay: 10 })
-  }
-  await field.press('Tab')
-  // Chromium omits zero seconds in the serialized native value.
-  await expect(field).toHaveValue(value.replace(/:00$/, ''))
+  timeZone: string,
+): Promise<string> {
+  return page.evaluate(
+    ({ at, timeZone }) => {
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23',
+      }).formatToParts(new Date(at))
+      const part = (type: string) =>
+        parts.find((part) => part.type === type)!.value
+      return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}:${part('second')}`
+    },
+    { at, timeZone },
+  )
 }
 
-/** The named parts of a DateTimePicker edge with their text for one moment, in the browser's zone. */
+/** The named parts of a DateTimePicker edge with their text for one moment, in the named zone. */
 async function pickerDateTimeParts(
   page: Page,
   at: number,
+  timeZone: string,
 ): Promise<ReadonlyArray<readonly [string, string]>> {
-  const [date, time] = (await browserDateTime(page, at)).split('T')
+  const [date, time] = (await readerLocalDateTime(page, at, timeZone)).split(
+    'T',
+  )
   const [year, month, day] = date.split('-')
   const [hours, minutes, seconds] = time.split(':')
   return [
@@ -330,14 +310,19 @@ async function pickerDateTimeParts(
   ]
 }
 
-/** Type one moment into a DateTimePicker edge by its named parts, in the browser's zone. */
+/** Type one moment into a DateTimePicker edge by its named parts, in the named zone. */
 export async function enterPickerDateTime(
   expect: Expect,
   field: Locator,
   edge: string,
   at: number,
+  timeZone: string,
 ): Promise<void> {
-  for (const [name, text] of await pickerDateTimeParts(field.page(), at)) {
+  for (const [name, text] of await pickerDateTimeParts(
+    field.page(),
+    at,
+    timeZone,
+  )) {
     const part = field.getByRole('spinbutton', {
       name: `${edge} ${name}`,
       exact: true,
@@ -350,14 +335,19 @@ export async function enterPickerDateTime(
   }
 }
 
-/** Check that a DateTimePicker edge shows one moment by its named parts, in the browser's zone. */
+/** Check that a DateTimePicker edge shows one moment by its named parts, in the named zone. */
 export async function expectPickerDateTime(
   expect: Expect,
   field: Locator,
   edge: string,
   at: number,
+  timeZone: string,
 ): Promise<void> {
-  for (const [name, text] of await pickerDateTimeParts(field.page(), at))
+  for (const [name, text] of await pickerDateTimeParts(
+    field.page(),
+    at,
+    timeZone,
+  ))
     await expect(
       field.getByRole('spinbutton', { name: `${edge} ${name}`, exact: true }),
     ).toHaveAttribute('aria-valuenow', String(Number(text)))

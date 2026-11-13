@@ -2129,11 +2129,16 @@ Keep operations that need different keyboard behavior:
 - A standalone clear stays `await field.fill('')`; it needs no
   `typeInto(field, '')` call.
 - Native date segments use `enterCalendarDate(expect, field, date)` from the
-  toolbox (`moments.ts`); segment navigation is part of that operation.
-- DateTimePicker parts use `enterPickerDateTime(expect, field, edge, at)` from
-  the toolbox (`moments.ts`): each named part of one edge is cleared and typed.
-  `expectPickerDateTime(expect, field, edge, at)` reads the same parts back
-  without focusing them.
+  toolbox (`moments.ts`); segment navigation is part of that operation. A
+  moment's day for them is
+  `(await readerLocalDateTime(page, at, timeZone)).slice(0, 10)` from the same
+  module: the browser's `Intl` in the zone the spec names, never the product's
+  formatter.
+- DateTimePicker parts use
+  `enterPickerDateTime(expect, field, edge, at, timeZone)` from the toolbox
+  (`moments.ts`): each named part of one edge is cleared and typed in the zone
+  the spec names. `expectPickerDateTime(expect, field, edge, at, timeZone)`
+  reads the same parts back without focusing them.
 - A disabled-input probe sends keys to the disabled field and checks that its
   value did not change; clearing first would change the operation being tested.
 - Appending to an existing prefix keeps that prefix and places the caret before

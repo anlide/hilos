@@ -129,11 +129,6 @@ export {
 } from './hilosStatusWorkActions.js'
 
 export {
-  localDateTimeValue,
-  parseLocalDateTimeValue,
-} from '../../timeZone/localDateTime.js'
-
-export {
   HILOS_STATUS_HISTORY_DATA,
   HILOS_STATUS_HISTORY_TABLE,
   HILOS_STATUS_HISTORY_SLOT,

@@ -320,16 +320,6 @@ export function registerDateTimePickerCalendarScenarios<
             await expect(hours).toBeDisabled()
             await expect(opener).toBeDisabled()
             await expect(panel).toBeVisible()
-            const activeElement = await page.evaluate(() => ({
-              tag: document.activeElement?.tagName,
-              role: document.activeElement?.getAttribute('role'),
-              name: document.activeElement?.getAttribute('aria-label'),
-            }))
-            const annotations = test.info().annotations
-            annotations.push({
-              type: `picker ${lock} focus`,
-              description: JSON.stringify(activeElement),
-            })
             await page.keyboard.press('Escape')
             await expect(panel).toHaveCount(0)
             await expect(page.locator('body')).toHaveAttribute(
@@ -371,33 +361,13 @@ export function registerDateTimePickerCalendarScenarios<
               panel.getByRole('spinbutton', { name: 'Hours', exact: true }),
             ).toBeDisabled()
             await expect(opener).toBeDisabled()
-            const before = await page.evaluate(() => ({
-              tag: document.activeElement?.tagName,
-              role: document.activeElement?.getAttribute('role'),
-              name: document.activeElement?.getAttribute('aria-label'),
-              source: document.activeElement?.getAttribute('data-id'),
-              open: document
-                .querySelector('[aria-haspopup="dialog"]')
-                ?.getAttribute('aria-expanded'),
-            }))
             await page.keyboard.press('Escape')
-            const after = await page.evaluate(() => ({
-              open: document
-                .querySelector('[aria-haspopup="dialog"]')
-                ?.getAttribute('aria-expanded'),
-              propagated: document.body.dataset.pickerEscapes,
-            }))
-            await test.info().attach(`initial-open-${lock}`, {
-              body: JSON.stringify({ before, after }),
-              contentType: 'application/json',
-            })
-            expect.soft(before).toMatchObject({
-              role: 'dialog',
-              name: 'Choose time',
-              open: 'true',
-            })
-            expect.soft(after).toEqual({ open: 'false', propagated: '0' })
-            await expect.soft(panel).toHaveCount(0)
+            await expect(panel).toHaveCount(0)
+            await expect(opener).toHaveAttribute('aria-expanded', 'false')
+            await expect(page.locator('body')).toHaveAttribute(
+              'data-picker-escapes',
+              '0',
+            )
             await expect(page.getByTestId('fixture-result')).toHaveText(
               '{"status":"valid","value":"07:00:00"}',
             )

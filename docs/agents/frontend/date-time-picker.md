@@ -22,17 +22,12 @@ and the structural rules in [accessibility.md](accessibility.md).
 and [loading-button](../../../framework/frontend/core/src/primitives/loadingButton.ts)
 controllers already demonstrate that split.
 
-The existing [local date-time helpers](../../../framework/frontend/core/src/timeZone/localDateTime.ts)
-fill and parse an explicit-zone editor. `localDateTimeValue()` discards
-subsecond precision; `parseLocalDateTimeValue()` returns `null` for gaps and
-folds as well as invalid input. They are not the precise adapter specified
-below. The existing [calendar engine](../../../framework/frontend/core/src/timeZone/calendarPeriods.ts)
+The existing [calendar engine](../../../framework/frontend/core/src/timeZone/calendarPeriods.ts)
 supplies Gregorian coordinates, explicit `Intl` field reading and IANA offset
 intervals. The [maintenance form](../../../framework/frontend/core/src/admin/status/hilosStatusWorkActions.ts)
-keeps its window in one picker per opening, `windowPicker`, rather than in
-these helpers. The Vue, React and Angular maintenance dialogs all mount that
-picker as their Window field; the form still projects `startsAt`/`endsAt` text
-from the picker's parts, but no view reads or writes it.
+keeps its window in one picker per opening, `windowPicker`, and its form holds
+text alone. The Vue, React and Angular maintenance dialogs all mount that
+picker as their Window field.
 
 This document changes no executable code, package exports, DB fields or
 migrations, runtime item fields, wire signals, DTOs, topology, product routes
@@ -170,8 +165,7 @@ These facts must also describe half-hour transitions and whole skipped dates;
 neither a gap nor a local day is assumed to be a fixed one-hour or 24-hour
 duration.
 
-Build the standard adapter on the existing `localDateTime` / `calendarPeriods`
-engine, preserving compatibility of the old parser/value helpers. UTC works
+Build the standard adapter on the existing `calendarPeriods` engine. UTC works
 without `Intl`. For other supported IANA zones, browser `Intl` may read numeric
 calendar fields and offsets with explicit Gregorian calendar, `latn` digits
 and `h23` hours. It must not derive display factors or call a server. This is
@@ -1132,8 +1126,7 @@ HIL-1969 implemented `picker.calendar`, atomic range selection, navigation and
 its `/base` types. The SDK field/calendar/narrow sequences are implemented by
 HIL-1970–1972, HIL-1973–1975 and HIL-1976–1978 for Vue, React and Angular.
 HIL-1979 implemented the maintenance form integration and HIL-1980, HIL-1981
-and HIL-1982 its Vue, React and Angular dialogs. The remaining marker names
-HIL-1983 for the final cross-layer cleanup. Do not invent new
+and HIL-1982 its Vue, React and Angular dialogs. Do not invent new
 internal file names from this contract or implement a neighboring leaf to make
 an example import resolve.
 
@@ -1146,11 +1139,10 @@ of display factors from `Intl`, and the ownership markers. Check relative
 links, both navigation entries, English/public wording and `git diff --check`.
 This review does not execute the future API or demonstrate its implementation.
 
-Each implementation leaf owes its own relevant tests when it lands; do not
-postpone them to final integration. Final cross-layer verification cleanup
-belongs to HIL-1983. It does not stand in for adapter, controller, keyboard or
-SDK behavior tests in the implementing leaves.
-(not in the code yet — HIL-1983)
+Each implementation leaf owes its own relevant tests when it lands. Across the
+SDKs the fixture scenarios prove the field and the calendar, and the maintenance
+specs prove the wire, refusals and merges; neither stands in for adapter,
+controller, keyboard or SDK behavior tests.
 
 No new unit/e2e code, runtime suite, future-API build, clock wait, command or
 stand change is required for this documentation leaf. Do not assign cosmetic

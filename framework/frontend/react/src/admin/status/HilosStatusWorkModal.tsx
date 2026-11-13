@@ -62,7 +62,7 @@ const SCHEDULE_LABEL: ReadonlySignal<string> = createSignal(
 )
 
 /** The names the conflict notice gives the edited fields. */
-const FIELD_LABELS: Record<keyof HilosStatusWorkForm, string> = {
+const FIELD_LABELS: Record<keyof HilosStatusWorkEditFields, string> = {
   title: 'Title',
   description: 'What visitors read',
   componentKeys: 'Affects',

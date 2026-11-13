@@ -7,7 +7,7 @@ import { deliveryObject, type DeliveryFrameLog } from './deliveryFrames.js'
 import { trackedActionReplies } from './actionReplies.js'
 import { clickSubmit, typeInto } from './input.js'
 import { shownByTestId } from './table.js'
-import { enterCalendarDateTime, enterPickerDateTime } from './moments.js'
+import { enterPickerDateTime } from './moments.js'
 
 export const STATUS_WORKS_PATH = '/hilos/status/works'
 export const STATUS_WORK_SCHEDULE = 'hilos_status_work_schedule'
@@ -65,33 +65,22 @@ export async function openStatusWorkSchedule(expect: Expect, page: Page) {
   await expect(page.getByTestId('hilos-status-work-title')).toBeFocused()
 }
 
-/** Fill the real modal in the browser's explicitly forwarded IANA time zone. */
+/** Fill the real modal; the window's moments go in the zone the spec names. */
 export async function draftStatusWork(
   expect: Expect,
   page: Page,
   draft: StatusWorkDraft,
+  timeZone: string,
 ): Promise<void> {
   await typeInto(page.getByTestId('hilos-status-work-title'), draft.title)
   await typeInto(
     page.getByTestId('hilos-status-work-description'),
     draft.description,
   )
-  // No view draws the native pair any more; HIL-1983 removes this branch.
   const window = page.getByTestId('hilos-status-work-window')
-  const starts = page.getByTestId('hilos-status-work-starts')
-  await expect(window.or(starts)).toBeVisible()
-  if (await window.isVisible()) {
-    await enterPickerDateTime(expect, window, 'Starts', draft.startsAt)
-    await enterPickerDateTime(expect, window, 'Ends', draft.endsAt)
-  } else {
-    await enterCalendarDateTime(expect, page, starts, draft.startsAt)
-    await enterCalendarDateTime(
-      expect,
-      page,
-      page.getByTestId('hilos-status-work-ends'),
-      draft.endsAt,
-    )
-  }
+  await expect(window).toBeVisible()
+  await enterPickerDateTime(expect, window, 'Starts', draft.startsAt, timeZone)
+  await enterPickerDateTime(expect, window, 'Ends', draft.endsAt, timeZone)
   for (const key of draft.componentKeys)
     await page.getByTestId(`hilos-status-work-component-${key}`).check()
 }
@@ -184,18 +173,9 @@ export async function expectStatusWorkScheduleDialog(
   await expect(
     page.getByTestId('hilos-status-work-title'),
   ).toHaveAccessibleName('Title')
-  // No view draws the native pair any more; HIL-1983 removes this branch.
-  const window = page.getByTestId('hilos-status-work-window')
-  const starts = page.getByTestId('hilos-status-work-starts')
-  await expect(window.or(starts)).toBeVisible()
-  if (await window.isVisible())
-    await expect(window).toHaveAccessibleName(/^Window, /)
-  else {
-    await expect(starts).toHaveAccessibleName(/^Starts, /)
-    await expect(
-      page.getByTestId('hilos-status-work-ends'),
-    ).toHaveAccessibleName(/^Ends, /)
-  }
+  await expect(
+    page.getByTestId('hilos-status-work-window'),
+  ).toHaveAccessibleName(/^Window, /)
   await expect(
     page.getByTestId('hilos-status-work-description'),
   ).toHaveAccessibleName('What visitors read')

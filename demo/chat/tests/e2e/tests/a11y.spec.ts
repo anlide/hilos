@@ -134,6 +134,9 @@ const test = base.extend<{ statusWorks: StatusWorkFixtureScope }>({
 
 test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
 
+/** The configured browser zone: `use.timezoneId` of this demo's Playwright config. */
+const READER_ZONE = 'Atlantic/Cape_Verde'
+
 /** Open the settings page and wait for the live table. */
 async function openSettings(page: Page): Promise<void> {
   await gotoPage(expect, page, '/hilos/settings')
@@ -1679,7 +1682,7 @@ test('Status Works keyboard forms retain focus, announce live conflicts, lock bu
       componentKeys: ['service'],
     }
     statusWorks.reserve(draft)
-    await draftStatusWork(expect, page, draft)
+    await draftStatusWork(expect, page, draft, READER_ZONE)
     const since = log.sent.length
     gate.hold(STATUS_WORK_SCHEDULE)
     await clickSubmit(expect, page.getByTestId('hilos-status-work-save'))

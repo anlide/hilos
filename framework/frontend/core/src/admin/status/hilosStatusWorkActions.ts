@@ -15,11 +15,7 @@ import {
   createDateTimePickerController,
   type DateTimePickerController,
 } from '../../primitives/dateTimePicker.js'
-import type {
-  DateTimePickerEdge,
-  DateTimePickerEndpointSnapshot,
-  DateTimePickerNumericPart,
-} from '../../primitives/dateTimePickerValue.js'
+import type { DateTimePickerEndpointSnapshot } from '../../primitives/dateTimePickerValue.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { hilosAdminAccess } from '../../session/adminAccess.js'
 import { offsetMs } from '../../session/serverClock.js'
@@ -62,21 +58,15 @@ export const HILOS_STATUS_WORK_ACTION_COPY = {
   canceled: 'Announcement canceled.',
 } as const
 
-/** Text inputs stay local; only the window picker's epoch milliseconds leave the form. */
+/**
+ * What a works form stores: its text alone, structured-cloneable for the
+ * row-edit checkpoint. The window lives only in the windowPicker, and only its
+ * epoch milliseconds leave the form.
+ */
 export interface HilosStatusWorkForm {
   readonly title: string
   readonly description: string
   readonly componentKeys: readonly string[]
-  /**
-   * Native-view compatibility text computed from windowPicker parts; never
-   * stored. It stays until the last native view moves to the picker.
-   */
-  readonly startsAt: string
-  /**
-   * Native-view compatibility text computed from windowPicker parts; never
-   * stored. It stays until the last native view moves to the picker.
-   */
-  readonly endsAt: string
 }
 
 /** Scalar projection for the standard Object.is row merge. Lists compare by content. */
@@ -231,33 +221,7 @@ function createWorkRequest(context: HilosStatusWorksContext) {
 /** The one draft of the work window, held for one opening of a form. */
 type HilosStatusWorkWindowPicker = DateTimePickerController<'datetime', 'range'>
 
-/**
- * What a works form stores: its text alone, structured-cloneable for the
- * row-edit checkpoint. The window lives only in the picker.
- */
-type HilosStatusWorkText = Omit<HilosStatusWorkForm, 'startsAt' | 'endsAt'>
-
-/** The local text a native date-time input writes; seconds are optional. */
-const NATIVE_WINDOW_TEXT =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/
-
-/** The picker parts of a native text, in the order of its groups. */
-const NATIVE_WINDOW_PARTS: readonly DateTimePickerNumericPart[] = [
-  'year',
-  'month',
-  'day',
-  'hour',
-  'minute',
-  'second',
-]
-
-/** The picker edge behind each native text key of the form. */
-const NATIVE_WINDOW_EDGES = {
-  startsAt: 'start',
-  endsAt: 'end',
-} as const satisfies Record<'startsAt' | 'endsAt', DateTimePickerEdge>
-
-function emptyForm(): HilosStatusWorkText {
+function emptyForm(): HilosStatusWorkForm {
   return {
     title: '',
     description: '',
@@ -288,7 +252,7 @@ function edgeMoment(
  * @param picker The window picker of this opening, null before the first.
  */
 function formFields(
-  text: HilosStatusWorkText,
+  text: HilosStatusWorkForm,
   picker: HilosStatusWorkWindowPicker | null,
 ): HilosStatusWorkEditFields {
   const window = picker?.state.get()
@@ -302,7 +266,7 @@ function formFields(
 }
 
 function validForm(
-  text: HilosStatusWorkText,
+  text: HilosStatusWorkForm,
   picker: HilosStatusWorkWindowPicker | null,
   state: HilosStatusWorksState,
 ): boolean {
@@ -373,86 +337,6 @@ function openWindowPicker(
     labels: { from: 'Starts', to: 'Ends' },
     busy,
   })
-}
-
-/**
- * The native text of one edge: its six parts once each reads a number, else ''.
- * Whether the parts name a gap or a repeated hour does not change the text.
- *
- * @param endpoint The edge as the picker publishes it.
- */
-function nativeWindowText(
-  endpoint: DateTimePickerEndpointSnapshot<'datetime'>,
-): string {
-  const texts: string[] = []
-  for (const part of NATIVE_WINDOW_PARTS) {
-    const draft = endpoint.parts.find((candidate) => candidate.part === part)
-    if (draft === undefined || draft.valueNow === null) return ''
-    texts.push(draft.text)
-  }
-  const [year, month, day, hour, minute, second] = texts
-  return `${year}-${month}-${day}T${hour}:${minute}:${second}`
-}
-
-/**
- * The form the views read: the stored text and the window's native text.
- *
- * @param text The stored text of the form.
- * @param picker The window picker of this opening, null before the first.
- */
-function viewForm(
-  text: HilosStatusWorkText,
-  picker: HilosStatusWorkWindowPicker | null,
-): HilosStatusWorkForm {
-  const window = picker?.state.get()
-  return {
-    ...text,
-    startsAt: window === undefined ? '' : nativeWindowText(window.start),
-    endsAt: window === undefined ? '' : nativeWindowText(window.end),
-  }
-}
-
-/**
- * The text keys of a form patch; the window keys go to the picker, never into
- * the stored form.
- *
- * @param patch The patch a view sent.
- */
-function textPatch(
-  patch: Partial<HilosStatusWorkForm>,
-): Partial<HilosStatusWorkText> {
-  return Object.fromEntries(
-    Object.entries(patch).filter(([key]) => !(key in NATIVE_WINDOW_EDGES)),
-  ) as Partial<HilosStatusWorkText>
-}
-
-/**
- * Write a native view's window text into the picker, part by part at the
- * width the picker loads with: text equal to the shown one is no edit, so a
- * loaded repeated-hour occurrence and its milliseconds stay. Text that is
- * empty or not a local date-time clears the edge.
- *
- * @param picker The window picker of this opening, null before the first.
- * @param patch The patch a view sent; keys other than the window's are ignored.
- */
-function writeNativeWindow(
-  picker: HilosStatusWorkWindowPicker | null,
-  patch: Partial<HilosStatusWorkForm>,
-): void {
-  if (picker === null) return
-  for (const key of ['startsAt', 'endsAt'] as const) {
-    const text = patch[key]
-    if (text === undefined) continue
-    const edge = NATIVE_WINDOW_EDGES[key]
-    const match = NATIVE_WINDOW_TEXT.exec(text)
-    if (match === null) {
-      picker.setEndpointValue(edge, null)
-      continue
-    }
-    NATIVE_WINDOW_PARTS.forEach((part, index) =>
-      picker.setPartText(edge, part, match[index + 1] ?? '00'),
-    )
-  }
 }
 
 function actionData(fields: HilosStatusWorkEditFields) {
@@ -533,7 +417,7 @@ export function createHilosStatusWorkCreate(
   return {
     ...request,
     opened,
-    form: computedSignal(() => viewForm(text.get(), windowPicker.get())),
+    form: text,
     windowPicker,
     timeZone,
     blockedReason,
@@ -564,8 +448,7 @@ export function createHilosStatusWorkCreate(
     },
     patchForm(patch) {
       if (!opened.get() || request.busy.get()) return
-      text.set({ ...text.get(), ...textPatch(patch) })
-      writeNativeWindow(windowPicker.get(), patch)
+      text.set({ ...text.get(), ...patch })
     },
     close() {
       if (!request.busy.get()) close()
@@ -727,8 +610,7 @@ export function createHilosStatusWorkEdit(
   const timeZone = createSignal('UTC')
   const windowPicker = createSignal<HilosStatusWorkWindowPicker | null>(null)
   // The draft as it stood before a view's write, while the write lands: the
-  // bridge sets a window edge part by part, and a moment halfway through can
-  // equal the saved or the live one and quietly settle a standing conflict.
+  // session merges what the write left, never a step on the way to it.
   const heldDraft = createSignal<HilosStatusWorkEditFields | null>(null)
   const blockedReason = computedSignal(
     () =>
@@ -740,7 +622,7 @@ export function createHilosStatusWorkEdit(
   const edit = createHilosRowEdit<
     HilosStatusWorkRow,
     HilosStatusWorkEditFields,
-    HilosStatusWorkText
+    HilosStatusWorkForm
   >(source, {
     initial: emptyForm(),
     fields: (row) => ({
@@ -802,7 +684,7 @@ export function createHilosStatusWorkEdit(
     windowPicker.get()?.dispose()
   }
   // One view write reaches the session as one draft: it merges once, on the
-  // whole entry, as when the native text was one value of the form.
+  // whole entry.
   const writeWhole = (write: () => void): void => {
     heldDraft.set(formFields(edit.form.get(), windowPicker.get()))
     try {
@@ -815,7 +697,7 @@ export function createHilosStatusWorkEdit(
     ...request,
     opened: edit.opened,
     row: edit.row,
-    form: computedSignal(() => viewForm(edit.form.get(), windowPicker.get())),
+    form: edit.form,
     state: edit.state,
     noticeText: edit.noticeText,
     saving: edit.saving,
@@ -842,31 +724,14 @@ export function createHilosStatusWorkEdit(
       timeZone.set(hilosTimeZone.get())
       return edit.open(rowKey)
     },
-    // The checkpoint carries the stored text, cloned by the session, and the
-    // window's native text as the form shows it.
-    checkpoint() {
-      const checkpoint = edit.checkpoint()
-      return checkpoint === null
-        ? null
-        : { ...checkpoint, form: viewForm(checkpoint.form, windowPicker.get()) }
-    },
+    checkpoint: edit.checkpoint,
     setForm(form) {
       if (edit.saving.get()) return
-      writeWhole(() => {
-        edit.setForm({
-          title: form.title,
-          description: form.description,
-          componentKeys: form.componentKeys,
-        })
-        writeNativeWindow(windowPicker.get(), form)
-      })
+      writeWhole(() => edit.setForm(form))
     },
     patchForm(patch) {
       if (edit.saving.get()) return
-      writeWhole(() => {
-        edit.patchForm(textPatch(patch))
-        writeNativeWindow(windowPicker.get(), patch)
-      })
+      writeWhole(() => edit.patchForm(patch))
     },
     keepMine() {
       if (!edit.saving.get()) edit.keepMine()

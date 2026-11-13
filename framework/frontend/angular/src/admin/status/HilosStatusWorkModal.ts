@@ -20,6 +20,7 @@ import {
 import type {
   HilosStatusWorkCreate,
   HilosStatusWorkEdit,
+  HilosStatusWorkEditFields,
   HilosStatusWorkForm,
   HilosStatusWorksData,
   HilosStatusWorksState,
@@ -212,8 +213,6 @@ export class HilosStatusWorkModal {
     title: '',
     description: '',
     componentKeys: [],
-    startsAt: '',
-    endsAt: '',
   })
   protected readonly dirty = signal(false)
   protected readonly busy = signal(false)
@@ -261,7 +260,7 @@ export class HilosStatusWorkModal {
     if (blocked) return blocked
     const edit = this.editState()
     if (!edit?.conflict) return this.editNotice()
-    const labels: Record<keyof HilosStatusWorkForm, string> = {
+    const labels: Record<keyof HilosStatusWorkEditFields, string> = {
       title: 'Title',
       description: 'What visitors read',
       componentKeys: 'Affects',
