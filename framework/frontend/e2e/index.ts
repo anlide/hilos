@@ -265,6 +265,8 @@ export {
   expectAnalyticsSessionListAccessibility,
   expectAnalyticsSessionReturn,
   analyticsPeopleViewports,
+  analyticsPeriodHolds,
+  analyticsPersonSeenTs,
   analyticsPersonLink,
   analyticsSessionCell,
   analyticsSessionLink,
@@ -297,6 +299,7 @@ export {
   type AnalyticsFrame,
   type AnalyticsFrameLog,
   type AnalyticsOverviewSnapshot,
+  type AnalyticsPeriodKey,
 } from './analytics.js'
 
 export {

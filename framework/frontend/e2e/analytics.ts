@@ -529,12 +529,85 @@ export async function expectAnalyticsPeoplePerson(
   )
 }
 
-/** Period choices show the daemon's four facet counts, through standard handles. */
+/** The four Period choices shared by the analytics tables. */
+export type AnalyticsPeriodKey = 'any' | 'this-hour' | 'today' | 'this-week'
+
+/**
+ * Test the inclusive boundary, like the daemon's `b.last_seen_ts >= ?`.
+ */
+export function analyticsPeriodHolds(
+  period: AnalyticsPeriodKey,
+  seenTs: number | null,
+  context: { weekStartTs: unknown; dayStartTs: unknown; hourStartTs: unknown },
+): boolean {
+  if (period === 'any') return true
+  if (seenTs === null) return false
+  const start = {
+    'this-hour': context.hourStartTs,
+    today: context.dayStartTs,
+    'this-week': context.weekStartTs,
+  }[period]
+  return seenTs >= Number(start)
+}
+
+/** Read a person's positive safe-integer moment from its served row. */
+export function analyticsPersonSeenTs(
+  settled: { rows: readonly Record<string, unknown>[] },
+  userId: number,
+): number {
+  const row = settled.rows.find((row) => row.rowKey === userId)
+  if (!row)
+    throw new Error(`Analytics person ${userId} is missing from the window`)
+  const { lastSeenTs } = deliveryObject(deliveryObject(row.slots).person)
+  if (
+    typeof lastSeenTs !== 'number' ||
+    !Number.isSafeInteger(lastSeenTs) ||
+    lastSeenTs <= 0
+  ) {
+    throw new Error(`Invalid analytics person ${userId} lastSeenTs`)
+  }
+  return lastSeenTs
+}
+
+/** Read a session's served moment; a viewer has no known subject. */
+function sessionSeenTs(
+  settled: { rows: readonly Record<string, unknown>[] },
+  browserSessionId: number | null,
+): number | null {
+  if (browserSessionId === null) return null
+  const row = settled.rows.find((row) => row.rowKey === browserSessionId)
+  if (!row) {
+    throw new Error(
+      `Analytics browser session ${browserSessionId} is missing from the window`,
+    )
+  }
+  const { lastSeenTs } = deliveryObject(
+    deliveryObject(row.slots).browserSession,
+  )
+  if (
+    typeof lastSeenTs !== 'number' ||
+    !Number.isSafeInteger(lastSeenTs) ||
+    lastSeenTs <= 0
+  ) {
+    throw new Error(
+      `Invalid analytics browser session ${browserSessionId} lastSeenTs`,
+    )
+  }
+  return lastSeenTs
+}
+
+/**
+ * Show the daemon's four facet counts through standard handles.
+ * Require ≥ 1 only for a period that holds the subject's served moment;
+ * never require exactly 0.
+ */
 async function expectAnalyticsFacets(
   expect: Expect,
   page: Page,
   log: DeliveryFrameLog,
   surface: typeof peopleSurface,
+  seenTs: number | null,
+  context: { weekStartTs: unknown; dayStartTs: unknown; hourStartTs: unknown },
 ): Promise<void> {
   const latest = () =>
     log.packets
@@ -564,7 +637,19 @@ async function expectAnalyticsFacets(
   ] as const) {
     const count = deliveryObject(key === 'any' ? facets.any : options[key])
     expect(Number.isSafeInteger(count.count)).toBe(true)
-    expect(count.count).toBeGreaterThanOrEqual(1)
+    expect(count.count).toBeGreaterThanOrEqual(0)
+    if (analyticsPeriodHolds(key, seenTs, context)) {
+      const start = {
+        any: null,
+        'this-hour': context.hourStartTs,
+        today: context.dayStartTs,
+        'this-week': context.weekStartTs,
+      }[key]
+      expect(
+        count.count,
+        `Period ${key}: seenTs=${seenTs}, startTs=${start}`,
+      ).toBeGreaterThanOrEqual(1)
+    }
     expect(count.exact).toBe(true)
     await expect(
       control.getByTestId(`hilos-dropdown-option-${index}`),
@@ -580,8 +665,17 @@ export function expectAnalyticsPeopleFacets(
   expect: Expect,
   page: Page,
   log: DeliveryFrameLog,
+  settled: Awaited<ReturnType<typeof expectAnalyticsPeopleWindow>>,
+  userId: number,
 ) {
-  return expectAnalyticsFacets(expect, page, log, peopleSurface)
+  return expectAnalyticsFacets(
+    expect,
+    page,
+    log,
+    peopleSurface,
+    analyticsPersonSeenTs(settled, userId),
+    settled.context,
+  )
 }
 
 /** Match session-list facets and their captured context to the viewport. */
@@ -589,9 +683,17 @@ export async function expectAnalyticsSessionListFacets(
   expect: Expect,
   page: Page,
   log: DeliveryFrameLog,
-  context: Record<string, unknown>,
+  settled: Awaited<ReturnType<typeof expectAnalyticsSessionListWindow>>,
+  browserSessionId: number | null,
 ): Promise<void> {
-  await expectAnalyticsFacets(expect, page, log, sessionListSurface)
+  await expectAnalyticsFacets(
+    expect,
+    page,
+    log,
+    sessionListSurface,
+    sessionSeenTs(settled, browserSessionId),
+    settled.context,
+  )
   const requests = log.sent
     .map(({ wire }) => deliveryObject(wire))
     .filter(
@@ -610,7 +712,7 @@ export async function expectAnalyticsSessionListFacets(
   const first = analyticsSessionListViewports(log)[0]
   expect(first).toBeDefined()
   expect(deliveryObject(deliveryObject(first!.wire).filter)).toEqual({
-    ...context,
+    ...settled.context,
     period: 'today',
   })
 }

@@ -1,10 +1,74 @@
 import type { Expect } from '@playwright/test'
 import { describe, expect, it } from 'vitest'
-import { waitAnalyticsBrowserSession } from '../analytics.js'
+import {
+  analyticsPeriodHolds,
+  analyticsPersonSeenTs,
+  waitAnalyticsBrowserSession,
+} from '../analytics.js'
 
 const ROTATE = 'test:analytics:rotate'
 const PROBE = 'test:analytics:browser-session'
 const USER_ID = 7
+
+describe('analyticsPeriodHolds', () => {
+  // Asia/Kathmandu boundaries captured in the hour-boundary regression.
+  const context = {
+    hourStartTs: 1794525300000,
+    dayStartTs: 1794507300000,
+    weekStartTs: 1794161700000,
+  }
+
+  it.each([
+    [context.hourStartTs - 1, [true, false, true, true]],
+    [context.hourStartTs, [true, true, true, true]],
+    [context.dayStartTs - 1, [true, false, false, true]],
+    [context.dayStartTs, [true, false, true, true]],
+    [context.weekStartTs - 1, [true, false, false, false]],
+    [context.weekStartTs, [true, false, false, true]],
+    [null, [true, false, false, false]],
+  ] as const)('holds the inclusive periods for seenTs=%s', (seenTs, held) => {
+    expect(
+      (['any', 'this-hour', 'today', 'this-week'] as const).map((period) =>
+        analyticsPeriodHolds(period, seenTs, context),
+      ),
+    ).toEqual(held)
+  })
+})
+
+describe('analyticsPersonSeenTs', () => {
+  it('reads the served moment of its own row', () => {
+    const settled = {
+      rows: [
+        { rowKey: 8, slots: { person: { lastSeenTs: 1794525300001 } } },
+        { rowKey: USER_ID, slots: { person: { lastSeenTs: 1794525299999 } } },
+      ],
+    }
+    expect(analyticsPersonSeenTs(settled, USER_ID)).toBe(1794525299999)
+  })
+
+  it('refuses a missing subject row', () => {
+    expect(() => analyticsPersonSeenTs({ rows: [] }, USER_ID)).toThrow(
+      'Analytics person 7 is missing from the window',
+    )
+  })
+
+  it.each([
+    { _hidden: true },
+    0,
+    -1,
+    1.5,
+    Number.MAX_SAFE_INTEGER + 1,
+    '123',
+    undefined,
+  ])('refuses an unavailable or invalid served moment: %s', (lastSeenTs) => {
+    const settled = {
+      rows: [{ rowKey: USER_ID, slots: { person: { lastSeenTs } } }],
+    }
+    expect(() => analyticsPersonSeenTs(settled, USER_ID)).toThrow(
+      'Invalid analytics person 7 lastSeenTs',
+    )
+  })
+})
 
 type Send = (
   command: string,

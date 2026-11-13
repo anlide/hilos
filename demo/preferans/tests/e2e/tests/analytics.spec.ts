@@ -4,6 +4,8 @@ import {
   ANALYTICS_SESSION_LIST_PATH,
   analyticsBrowserSessionPath,
   analyticsPeopleViewports,
+  analyticsPeriodHolds,
+  analyticsPersonSeenTs,
   analyticsPersonLink,
   analyticsSessionLink,
   analyticsSessionListCell,
@@ -402,13 +404,20 @@ test('People filters real sessions and opens the scoped Person through navigatio
       await expect(admin.getByTestId('hilos-table-filter-badge')).toContainText(
         '1 filter',
       )
+      const seenTs = analyticsPersonSeenTs(today, user.userId)
       for (const [option, selection, caption] of [
         ['2', 'this-week', 'This week'],
         ['-1', undefined, 'Any time'],
         ['0', 'this-hour', 'This hour'],
       ] as const) {
         await period.getByTestId('hilos-dropdown-toggle').click()
-        await expectAnalyticsPeopleFacets(expect, admin, frames)
+        await expectAnalyticsPeopleFacets(
+          expect,
+          admin,
+          frames,
+          today,
+          user.userId,
+        )
         const changing = frames.sent.length
         await period.getByTestId(`hilos-dropdown-option-${option}`).click()
         await expect(period.getByTestId('hilos-dropdown-menu')).toBeHidden()
@@ -426,7 +435,9 @@ test('People filters real sessions and opens the scoped Person through navigatio
         await expect(period.getByTestId('hilos-dropdown-toggle')).toHaveText(
           `Period: ${caption}`,
         )
-        await expectAnalyticsPeoplePerson(expect, admin, window, user)
+        if (analyticsPeriodHolds(selection ?? 'any', seenTs, today.context)) {
+          await expectAnalyticsPeoplePerson(expect, admin, window, user)
+        }
       }
       const changing = frames.sent.length
       await admin.getByTestId('hilos-table-filter-reset').click()
@@ -574,12 +585,7 @@ test('People filters real sessions and opens the scoped Person through navigatio
       )
       const period = admin.getByTestId('hilos-table-filter-period')
       await period.getByTestId('hilos-dropdown-toggle').click()
-      await expectAnalyticsSessionListFacets(
-        expect,
-        admin,
-        frames,
-        listed.context,
-      )
+      await expectAnalyticsSessionListFacets(expect, admin, frames, listed, id)
       await period.getByTestId('hilos-dropdown-toggle').press('Escape')
       await expect(period.getByTestId('hilos-dropdown-menu')).toBeHidden()
 

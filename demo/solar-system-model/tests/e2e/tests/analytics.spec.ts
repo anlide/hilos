@@ -477,12 +477,7 @@ test('opens a real person and session from People and Browser sessions and retur
       )
       const period = admin.getByTestId('hilos-table-filter-period')
       await period.getByTestId('hilos-dropdown-toggle').click()
-      await expectAnalyticsSessionListFacets(
-        expect,
-        admin,
-        frames,
-        listed.context,
-      )
+      await expectAnalyticsSessionListFacets(expect, admin, frames, listed, id)
       await period.getByTestId('hilos-dropdown-toggle').press('Escape')
       await expect(period.getByTestId('hilos-dropdown-menu')).toBeHidden()
 
@@ -568,7 +563,7 @@ test('People starts with one Today viewport and resets only its Period filter', 
       '1 filter',
     )
     await period.getByTestId('hilos-dropdown-toggle').click()
-    await expectAnalyticsPeopleFacets(expect, page, frames)
+    await expectAnalyticsPeopleFacets(expect, page, frames, today, userId)
     const facetRequests = frames.sent
       .map(({ wire }) => deliveryObject(wire))
       .filter(
@@ -701,12 +696,8 @@ test('Browser sessions viewer receives hidden personal values with only public s
     // Period counts are public: the viewer's facets answer like an admin's.
     const period = viewer.getByTestId('hilos-table-filter-period')
     await period.getByTestId('hilos-dropdown-toggle').click()
-    await expectAnalyticsSessionListFacets(
-      expect,
-      viewer,
-      frames,
-      window.context,
-    )
+    // Viewer rows hide lastSeenTs, so only Any time must count the session.
+    await expectAnalyticsSessionListFacets(expect, viewer, frames, window, null)
     await period.getByTestId('hilos-dropdown-toggle').press('Escape')
     await expect(period.getByTestId('hilos-dropdown-menu')).toBeHidden()
     // Viewer order uses public row numbers; the newly written row can be past 25.

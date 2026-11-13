@@ -308,7 +308,7 @@ test('People starts with one Today viewport and resets only its Period filter', 
       '1 filter',
     )
     await period.getByTestId('hilos-dropdown-toggle').click()
-    await expectAnalyticsPeopleFacets(expect, page, frames)
+    await expectAnalyticsPeopleFacets(expect, page, frames, today, userId)
 
     let changing = frames.sent.length
     await period.getByTestId('hilos-dropdown-option-2').click()
@@ -453,7 +453,7 @@ test('Browser sessions opens real sessions from the tab and Person with the same
     )
     const period = page.getByTestId('hilos-table-filter-period')
     await period.getByTestId('hilos-dropdown-toggle').click()
-    await expectAnalyticsSessionListFacets(expect, page, frames, today.context)
+    await expectAnalyticsSessionListFacets(expect, page, frames, today, id)
     await period.getByTestId('hilos-dropdown-toggle').press('Escape')
     await expect(period.getByTestId('hilos-dropdown-menu')).toBeHidden()
 
