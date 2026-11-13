@@ -183,32 +183,6 @@ class SecondFactorTrusts extends Objects
     }
 
     /**
-     * Limits trusts live at the save moment without lengthening any row.
-     *
-     * @param int $limitMs New latest expiry (epoch milliseconds)
-     * @param int $savedAtMs Setting save moment (epoch milliseconds)
-     * @throws DatabaseException When a lookup or update fails
-     * @throws InvalidArgumentException When a query or sync announcement is invalid
-     * @throws WriteNotAllowedException When this process cannot write a row
-     * @throws SourceChangeSubscriberException Whatever a store subscriber raises
-     * @throws ObjectGetIdStringNotImplementedException When a row id cannot be named
-     */
-    public function capLiveUntil(int $limitMs, int $savedAtMs): void
-    {
-        $where = '`' . EntitySecondFactorTrust::trusted_until . '` > ? AND `'
-            . EntitySecondFactorTrust::trusted_until . '` > ? AND `'
-            . EntitySecondFactorTrust::created_at . '` <= ?';
-        $liveTrusts = static::entityClass()::get( // fresh-sql: the person's agent caps and removes trusts in its own process.
-            $where,
-            [$limitMs, $savedAtMs, $savedAtMs],
-        );
-        foreach ($this->hydrateAll($liveTrusts) as $trust) {
-            $trust->trustedUntil = $limitMs;
-            $trust->sync();
-        }
-    }
-
-    /**
      * @param int $userId Person whose other browsers lose trust
      * @param int $keepSessionId Current browser's session row
      * @throws DatabaseException When a lookup or delete fails

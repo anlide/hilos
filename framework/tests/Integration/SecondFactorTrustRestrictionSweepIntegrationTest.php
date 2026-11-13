@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
+use Hilos\Auth\SecondFactor\SecondFactorSettings;
+use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\SecondFactor\SecondFactorTrustRestrictionSweep;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Daemon\Cron\CronRuleOrigin;
@@ -25,6 +29,7 @@ use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
@@ -35,7 +40,11 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Schema\Schema;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
+use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
+use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Log\AgentLogStream;
@@ -49,6 +58,7 @@ use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastSta
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\DTO\UserSecondFactorTrustRestrictDoneSignalData;
@@ -79,6 +89,10 @@ use ReflectionProperty;
  * with a portion of two, and the case carries its frames to the people's agents and their answers
  * back. Trusts and people are stored as rows, moments are named relative to now - the sweep's
  * ticks are given theirs as numbers - and nothing waits for the clock.
+ *
+ * A shorter trust term rides on the sweep from the save to the answer (HIL-1908): the settings
+ * library records the restriction and hands its id to the holder, the holder waits on the sweep
+ * for it, and the administrator is answered once the owners have cut their trusts.
  */
 final class SecondFactorTrustRestrictionSweepIntegrationTest extends HilosSessionIntegrationTestCase
 {
@@ -106,6 +120,9 @@ final class SecondFactorTrustRestrictionSweepIntegrationTest extends HilosSessio
 
     private const int MINUTE_MS = TimeConstants::SECONDS_PER_MINUTE * TimeConstants::MS_PER_SECOND;
 
+    /** Agent signal the administrator's write of a trust term is answered under. */
+    private const string TRUST_TERM_REPLY = 'integration_trust_term_done';
+
     /** Why a person's agent refused in a case: the message of the failure held back. */
     private const string REFUSAL_DETAIL = 'Trust storage failure';
 
@@ -125,6 +142,10 @@ final class SecondFactorTrustRestrictionSweepIntegrationTest extends HilosSessio
     private string $previousApp;
 
     private ?RtContext $previousRt = null;
+
+    private ?SettingsAccessor $previousSetting = null;
+
+    private ?TableContext $previousTable = null;
 
     /** Directory the agents' log streams of the case are written to. */
     private string $logDirectory = '';
@@ -148,6 +169,8 @@ final class SecondFactorTrustRestrictionSweepIntegrationTest extends HilosSessio
         $this->previousRouter = Hilos::$sr;
         $this->previousApp = Hilos::appClass();
         $this->previousRt = Hilos::$rt;
+        $this->previousSetting = Hilos::$setting;
+        $this->previousTable = Hilos::$table;
         Hilos::$sr = new SignalRouter();
         $this->settings = new SettingsLibraryAgent();
         $this->sessions = new TrustRestrictionSweepTestSessionsLibrary();
@@ -184,6 +207,8 @@ final class SecondFactorTrustRestrictionSweepIntegrationTest extends HilosSessio
             }
         }
         Hilos::$rt = $this->previousRt;
+        Hilos::$setting = $this->previousSetting;
+        Hilos::$table = $this->previousTable;
         self::bindAppClass($this->previousApp);
         Hilos::$sr = $this->previousRouter;
 
@@ -929,6 +954,155 @@ final class SecondFactorTrustRestrictionSweepIntegrationTest extends HilosSessio
     }
 
     /**
+     * A shorter term saved by an administrator reaches the holder as the id of the restriction the
+     * save recorded, the owners are asked to cut their trusts to it, and the administrator is
+     * answered once they have; a longer term saved after it is answered at once, asks nobody and
+     * extends no trust (HIL-1908).
+     *
+     * @throws HilosException When a fixture row cannot be written, or the library, the holder or an owner fails
+     */
+    public function testASavedTrustTermIsAnsweredOnceTheOwnersCutTheirTrusts(): void
+    {
+        $now = TimeHelper::nowMs();
+        $first = self::seedPerson();
+        $second = self::seedPerson();
+        $this->trust($first, $now - 3 * self::DAY_MS, $now + 27 * self::DAY_MS);
+        $this->trust($second, $now - 3 * self::DAY_MS, $now + 27 * self::DAY_MS);
+        $this->bindSettings();
+
+        $this->saveTrustTerm(7);
+        $saved = $this->queuedSignals();
+
+        $applies = self::named($saved, HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY);
+        self::assertCount(1, $applies);
+        self::assertSame([], self::trustTermAnswers($saved), 'The administrator waits for the owners');
+        $restriction = Database::sql(
+            'SELECT `id`, `saved_at`, `term_days` FROM `hilos_second_factor_trust_restriction` ORDER BY `id`',
+        )->rows();
+        self::assertCount(1, $restriction);
+        self::assertSame(7, (int)$restriction[0]['term_days']);
+        self::assertInstanceOf(AgentSignalData::class, $applies[0]->data);
+        self::assertInstanceOf(AuthSecondFactorTrustDaysApplySignalData::class, $applies[0]->data->data);
+        self::assertSame((int)$restriction[0]['id'], $applies[0]->data->data->restrictionId);
+
+        $this->sessions->onSignalAgent($applies[0]->data, 'test', HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY);
+        $asked = $this->queuedSignals();
+        $frames = self::named($asked, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT);
+        self::assertSame([$first, $second], self::askedPeople($frames));
+        self::assertSame([], self::trustTermAnswers($asked));
+
+        $answers = $this->carryToTheHolder($frames);
+
+        self::assertCount(1, $answers);
+        self::assertNull($answers[0]->error);
+        self::assertSame('trust-term-save-7', $answers[0]->requestId);
+        $cutTo = (int)$restriction[0]['saved_at'] + 7 * self::DAY_MS;
+        self::assertSame([$cutTo], array_column(self::trustRows($first), 1));
+        self::assertSame([$cutTo], array_column(self::trustRows($second), 1));
+
+        $this->saveTrustTerm(30);
+        $longer = $this->queuedSignals();
+
+        self::assertSame([], self::named($longer, HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY));
+        self::assertCount(1, self::trustTermAnswers($longer));
+        self::assertNull(self::trustTermAnswers($longer)[0]->error);
+        self::assertSame(1, (int)Database::sql('SELECT COUNT(*) AS `n` FROM `hilos_second_factor_trust_restriction`')->rows()[0]['n']);
+        self::assertSame([$cutTo], array_column(self::trustRows($first), 1), 'A longer term extends nothing');
+        self::assertSame([$cutTo], array_column(self::trustRows($second), 1));
+    }
+
+    /**
+     * A trust term whose first portion cannot be sent is not answered at once: the holder logs a
+     * warning, and its schedule sends the portion on its next tick and answers the administrator
+     * once, after the owner has cut the trust (HIL-1908).
+     *
+     * @throws HilosException When a fixture row cannot be written, or the holder or an owner fails
+     */
+    public function testATrustTermWhoseFirstPortionFailsIsAnsweredOnceByTheSchedule(): void
+    {
+        $now = TimeHelper::nowMs();
+        $userId = self::seedPerson();
+        $this->trust($userId, $now - 3 * self::DAY_MS, $now + 27 * self::DAY_MS);
+        $savedAt = $now - self::DAY_MS;
+        $restrictionId = $this->record($savedAt, 7);
+        $this->raiseJournal();
+        $this->bindSignInProject();
+        $this->sessions->onStart();
+        $this->queuedSignals();
+        $live = Hilos::$db;
+        Hilos::$db = new TrustRestrictionSweepRefusingDbContext();
+        try {
+            $this->applyTrustTerm($restrictionId, 'trust-term-refused-first');
+        } finally {
+            Hilos::$db = $live;
+        }
+        $failed = $this->queuedSignals();
+
+        self::assertSame([], self::trustTermAnswers($failed), 'The request stays with the sweep');
+        self::assertSame([], self::named($failed, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT));
+        self::assertStringContainsString('Second-factor trust term: trusted browsers not asked yet', $this->holderLog());
+
+        $this->sessions->onTick();
+        $frames = self::named($this->queuedSignals(), HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT);
+        self::assertSame([$userId], self::askedPeople($frames));
+        $answers = $this->carryToTheHolder($frames);
+
+        self::assertCount(1, $answers);
+        self::assertNull($answers[0]->error);
+        self::assertSame('trust-term-refused-first', $answers[0]->requestId);
+        self::assertSame([$savedAt + 7 * self::DAY_MS], array_column(self::trustRows($userId), 1));
+    }
+
+    /**
+     * A second term saved while the pass of the first still runs winds the pass back; once the
+     * owners have answered and the schedule has asked again from the start, each save is answered by
+     * its own restriction (HIL-1908). The owner who answered the first term owes the second and is
+     * asked again; the other one's agent started after both saves and applied them at its start.
+     *
+     * @throws HilosException When a fixture row cannot be written, or the holder or an owner fails
+     */
+    public function testTwoTermsSavedDuringOnePassAreEachAnsweredByTheirOwnRestriction(): void
+    {
+        $now = TimeHelper::nowMs();
+        $first = self::seedPerson();
+        $second = self::seedPerson();
+        $this->trust($first, $now - 3 * self::DAY_MS, $now + 27 * self::DAY_MS);
+        $this->trust($second, $now - 3 * self::DAY_MS, $now + 27 * self::DAY_MS);
+        $this->raiseJournal();
+        $this->bindSignInProject();
+        $this->sessions->onStart();
+        $week = $this->record($now - self::DAY_MS, 7);
+        $this->queuedSignals();
+        $this->applyTrustTerm($week, 'trust-term-week');
+        $frames = self::named($this->queuedSignals(), HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT);
+        self::assertSame([$first, $second], self::askedPeople($frames));
+        self::assertSame([], $this->carryToTheHolder([$frames[0]]));
+        $threeDaysSavedAt = $now - 12 * self::HOUR_MS;
+        $threeDays = $this->record($threeDaysSavedAt, 3);
+
+        $this->applyTrustTerm($threeDays, 'trust-term-three-days');
+        $wound = $this->queuedSignals();
+
+        self::assertSame([], self::named($wound, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT), 'The pass is wound back');
+        self::assertSame([], self::trustTermAnswers($wound));
+        self::assertSame([], $this->carryToTheHolder([$frames[1]]), 'The wound pass is not done with the first portion');
+
+        $this->sessions->onTick();
+        $again = self::named($this->queuedSignals(), HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT);
+        self::assertSame([$first], self::askedPeople($again), 'Asked again from the start; the second owner woke after both saves');
+        $answers = $this->carryToTheHolder($again);
+
+        self::assertSame(['trust-term-week', 'trust-term-three-days'], array_map(
+            static fn (HandoverAnswerSignalData $answer): ?string => $answer->requestId,
+            $answers,
+        ));
+        self::assertSame([null, null], array_map(static fn (HandoverAnswerSignalData $answer): ?string => $answer->error, $answers));
+        $cutTo = $threeDaysSavedAt + 3 * self::DAY_MS;
+        self::assertSame([$cutTo], array_column(self::trustRows($first), 1));
+        self::assertSame([$cutTo], array_column(self::trustRows($second), 1));
+    }
+
+    /**
      * @param string $userId Person id as the agent address carries it
      * @return AbstractUserAgent The framework's agent of the person, keeping its error lines
      */
@@ -1160,6 +1334,133 @@ final class SecondFactorTrustRestrictionSweepIntegrationTest extends HilosSessio
     }
 
     /**
+     * Binds the settings an administrator writes and the table the settings library writes them through.
+     */
+    private function bindSettings(): void
+    {
+        Hilos::$setting = new SettingsAccessor(SecondFactorSettingsCatalog::class);
+        Hilos::$table = new class extends TableContext {
+            public function configure(): void
+            {
+                $this->register(HilosSettingsTable::TABLE, new HilosSettingsTable());
+            }
+        };
+        Hilos::$table->configure();
+    }
+
+    /**
+     * Saves a trust term the way an administrator's write reaches the settings library, in its frame.
+     *
+     * @param int $days Term in days
+     * @throws HilosException When the library fails on the write
+     */
+    private function saveTrustTerm(int $days): void
+    {
+        ExecutionContext::run(new ExecutionFrame(agentId: $this->settings->getId()), function () use ($days): void {
+            $this->settings->onSignalAgent(
+                new AgentSignalData(new SettingWriteSignalData(
+                    replySignal: self::TRUST_TERM_REPLY,
+                    acceptKey: 'trust-term-admin',
+                    requestId: "trust-term-save-{$days}",
+                    action: HilosSignalConstants::SETTING_UPDATE,
+                    successMessage: null,
+                    key: SecondFactorSettings::TRUST_DAYS_KEY,
+                    value: $days,
+                )),
+                'test',
+                HilosSignalConstants::HILOS_SETTING_WRITE,
+            );
+        });
+    }
+
+    /**
+     * Hands the holder the settings library's ask to bring a shorter trust term home.
+     *
+     * @param int $restrictionId Restriction the save recorded
+     * @param string $requestId Submit the answer names, telling one save from another
+     * @throws HilosException When the holder fails on the frame
+     */
+    private function applyTrustTerm(int $restrictionId, string $requestId): void
+    {
+        $this->sessions->onSignalAgent(
+            new AgentSignalData(new AuthSecondFactorTrustDaysApplySignalData(
+                restrictionId: $restrictionId,
+                replySignal: self::TRUST_TERM_REPLY,
+                acceptKey: 'trust-term-admin',
+                requestId: $requestId,
+                action: HilosSignalConstants::SETTING_UPDATE,
+                successMessage: null,
+            )),
+            'test',
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY,
+        );
+    }
+
+    /**
+     * Hands every frame to its person's agent, then every answer the agents gave back to the holder.
+     *
+     * @param list<SignalDTO> $frames Restriction frames the holder sent
+     * @return list<HandoverAnswerSignalData> The holder's answers to trust terms queued meanwhile, in order
+     * @throws HilosException When an agent or the holder fails
+     */
+    private function carryToTheHolder(array $frames): array
+    {
+        foreach ($frames as $frame) {
+            $this->deliverToPerson($frame);
+        }
+        $queued = $this->queuedSignals();
+        $done = self::named($queued, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT_DONE);
+        self::assertCount(count($frames), $done, 'Every frame is answered once');
+        foreach ($done as $answer) {
+            self::assertInstanceOf(AgentSignalData::class, $answer->data);
+            self::assertInstanceOf(UserSecondFactorTrustRestrictDoneSignalData::class, $answer->data->data);
+            self::assertNull($answer->data->data->error);
+            $this->sessions->onSignalAgent($answer->data, 'test', HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT_DONE);
+        }
+
+        return [...self::trustTermAnswers($queued), ...self::trustTermAnswers($this->queuedSignals())];
+    }
+
+    /**
+     * @return list<SignalDTO> Every signal queued since the last look, in the order it was queued
+     */
+    private function queuedSignals(): array
+    {
+        $signals = [];
+        while (($queued = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $signals[] = $queued;
+        }
+
+        return $signals;
+    }
+
+    /**
+     * @param list<SignalDTO> $signals Queued signals
+     * @param string $name Signal name to keep
+     * @return list<SignalDTO> The signals under that name, in order
+     */
+    private static function named(array $signals, string $name): array
+    {
+        return array_values(array_filter($signals, static fn (SignalDTO $signal): bool => $signal->signalName->getName() === $name));
+    }
+
+    /**
+     * @param list<SignalDTO> $signals Queued signals
+     * @return list<HandoverAnswerSignalData> The answers to the administrator's trust term writes, in order
+     */
+    private static function trustTermAnswers(array $signals): array
+    {
+        $answers = [];
+        foreach (self::named($signals, self::TRUST_TERM_REPLY) as $signal) {
+            self::assertInstanceOf(AgentSignalData::class, $signal->data);
+            self::assertInstanceOf(HandoverAnswerSignalData::class, $signal->data->data);
+            $answers[] = $signal->data->data;
+        }
+
+        return $answers;
+    }
+
+    /**
      * Raises the change journal on its own connection and binds a project that keeps it - and that
      * draws a sign-in surface - so a receipt the sweep opens is a stored row.
      *
@@ -1327,5 +1628,19 @@ final class TrustRestrictionSweepTestConnection extends HilosSessionConnection
      */
     protected function applyOwnDiff(array $diff): void
     {
+    }
+}
+
+/** A mounted context that refuses every collection, as one whose source interest is missing does. */
+final class TrustRestrictionSweepRefusingDbContext extends HilosDbContext
+{
+    /**
+     * @param string $name Collection asked for
+     * @return mixed No value: this fixture refuses the read
+     * @throws DbCollectionNotReadableException Always, as the source is unavailable
+     */
+    public function __get(string $name): mixed
+    {
+        throw new DbCollectionNotReadableException("Collection {$name} is not readable in this process");
     }
 }

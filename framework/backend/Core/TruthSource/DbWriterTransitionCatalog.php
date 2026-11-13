@@ -19,7 +19,6 @@ use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
  */
 class DbWriterTransitionCatalog
 {
-    protected const string TRUST_CAP = 'HIL-1908';
     protected const string ERASURE = 'HIL-1952';
     protected const string MERGE = 'HIL-1999';
 
@@ -99,9 +98,7 @@ class DbWriterTransitionCatalog
         $definitions[HilosDbContext::secondFactorTrusts] = $this->states(
             [...$this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Add),
                 ...$this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Update, TruthSourceOperation::Remove)],
-            [self::TRUST_CAP => $this->claim($holder, DbWriterClaimWidth::Whole,
-                    TruthSourceOperation::Update, TruthSourceOperation::Remove),
-                self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove),
+            [self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove),
                 self::MERGE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
         );
 

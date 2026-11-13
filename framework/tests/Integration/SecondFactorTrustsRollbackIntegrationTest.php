@@ -24,6 +24,7 @@ final class SecondFactorTrustsRollbackIntegrationTest extends FrameworkRollbackI
             . '(3, 103, 1562, 1767225600000, 1767225600000, 1769903999000), '
             . '(4, 104, 1562, 1769904001000, 1769904001000, 1796083200000)',
         );
+        Database::sqlRun('INSERT INTO hilos_second_factor_trust_restriction (id, saved_at, term_days) VALUES (1, 1769904000000, 7)');
         foreach ([1, 2, 3, 4] as $id) {
             self::assertArrayHasKey($id, Hilos::$db->secondFactorTrusts);
             Hilos::$db->secondFactorTrusts[$id]->trustedUntil;
@@ -34,11 +35,9 @@ final class SecondFactorTrustsRollbackIntegrationTest extends FrameworkRollbackI
         self::assertSame(1796083200000, Hilos::$db->secondFactorTrusts[1]->trustedUntil);
     }
 
-    /** Only the old live long trust is capped; a retry with a later limit lengthens nothing. */
-    public function testCapLiveUntilWithItsOwnTransaction(): void
+    /** Only the old live long trust is cut to the saved term; applying it again changes nothing. */
+    public function testApplySavedRestrictionsWithItsOwnTransaction(): void
     {
-        $savedAtMs = 1769904000000;
-        $limitMs = 1770508800000;
         $expected = [
             ['id' => '1', 'created_at' => 1767225600000, 'trusted_until' => 1770508800000],
             ['id' => '2', 'created_at' => 1767225600000, 'trusted_until' => 1770076800000],
@@ -46,10 +45,10 @@ final class SecondFactorTrustsRollbackIntegrationTest extends FrameworkRollbackI
             ['id' => '4', 'created_at' => 1769904001000, 'trusted_until' => 1796083200000],
         ];
 
-        Hilos::$db->secondFactorTrusts->actions->capLiveUntil($limitMs, $savedAtMs);
+        Hilos::$db->secondFactorTrusts->actions->applySavedRestrictions(1562);
         self::assertSame($expected, self::trustRows());
 
-        Hilos::$db->secondFactorTrusts->actions->capLiveUntil(1772323200000, $savedAtMs);
+        Hilos::$db->secondFactorTrusts->actions->applySavedRestrictions(1562);
         self::assertSame($expected, self::trustRows());
     }
 

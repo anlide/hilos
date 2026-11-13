@@ -198,26 +198,50 @@ final class ProfileActionDTOTest extends TestCase
         AuthOtherSessionsEndSignalData::fromArray(['userId' => 300]);
     }
 
-    /** The owner receives the original answer address along with the saved deadline. */
-    public function testTrustDeadlineHandoverRoundTrips(): void
+    /** The session holder receives the restriction it brings home along with the original answer address. */
+    public function testTrustTermHandoverRoundTrips(): void
     {
-        $dto = new AuthSecondFactorTrustDaysApplySignalData(7, 1_780_000_000, 'reply', 'accept', null, 'setting_update', null);
-        self::assertSame($dto->toArray(), AuthSecondFactorTrustDaysApplySignalData::fromJson($dto->toJson())->toArray());
-        $this->expectException(InvalidFormatException::class);
-        AuthSecondFactorTrustDaysApplySignalData::fromArray(['trustDays' => 7]);
-    }
-
-    /** A saved moment that is not a whole second comes back as the same millisecond count. */
-    public function testTrustDeadlineHandoverKeepsMilliseconds(): void
-    {
-        $savedAt = 1_780_000_123;
-        $dto = new AuthSecondFactorTrustDaysApplySignalData(7, $savedAt, 'reply', 'accept', null, 'setting_update', null);
+        $dto = new AuthSecondFactorTrustDaysApplySignalData(42, 'reply', 'accept', 'request-1', 'setting_update', 'Saved');
         $restored = AuthSecondFactorTrustDaysApplySignalData::fromJson($dto->toJson());
 
-        self::assertSame($savedAt, $dto->toArray()['savedAt']);
-        self::assertSame($savedAt, $restored->savedAt);
-        self::assertSame(7, $restored->trustDays);
+        self::assertSame([
+            'restrictionId' => 42,
+            'replySignal' => 'reply',
+            'acceptKey' => 'accept',
+            'requestId' => 'request-1',
+            'action' => 'setting_update',
+            'successMessage' => 'Saved',
+        ], $dto->toArray());
+        self::assertSame(42, $restored->restrictionId);
         self::assertSame($dto->toArray(), $restored->toArray());
+    }
+
+    /** A trust term frame without a restriction names nothing to wait on and is refused. */
+    public function testTrustTermHandoverRefusesAMissingRestrictionId(): void
+    {
+        $payload = new AuthSecondFactorTrustDaysApplySignalData(42, 'reply', 'accept', null, 'setting_update', null)->toArray();
+        unset($payload['restrictionId']);
+
+        $this->expectException(InvalidFormatException::class);
+        AuthSecondFactorTrustDaysApplySignalData::fromArray($payload);
+    }
+
+    /** A trust term restriction id of zero names no restriction and is refused rather than waited on. */
+    public function testTrustTermHandoverRefusesARestrictionIdOfZero(): void
+    {
+        $payload = new AuthSecondFactorTrustDaysApplySignalData(42, 'reply', 'accept', null, 'setting_update', null)->toArray();
+
+        $this->expectException(InvalidFormatException::class);
+        AuthSecondFactorTrustDaysApplySignalData::fromArray(['restrictionId' => 0] + $payload);
+    }
+
+    /** A negative trust term restriction id names no restriction and is refused rather than waited on. */
+    public function testTrustTermHandoverRefusesANegativeRestrictionId(): void
+    {
+        $payload = new AuthSecondFactorTrustDaysApplySignalData(42, 'reply', 'accept', null, 'setting_update', null)->toArray();
+
+        $this->expectException(InvalidFormatException::class);
+        AuthSecondFactorTrustDaysApplySignalData::fromArray(['restrictionId' => -1] + $payload);
     }
 
     /** The session holder receives the restriction it waits on, or none, along with the original answer address. */

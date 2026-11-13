@@ -137,7 +137,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'secondFactorBackupCodes' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove,update']],
             'secondFactorResets' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove']],
             'secondFactorSettings' => [['person', 'set', 'add,update'], ['holder', 'whole', 'add,remove,update']],
-            'secondFactorTrusts' => [['person', 'set', 'remove,update'], ['holder', 'whole', 'add,remove,update']],
+            'secondFactorTrusts' => [['person', 'set', 'remove,update'], ['holder', 'whole', 'add,remove']],
             'stepUps' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'remove']],
             'accountDeletions' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'update']],
             'legalAcceptances' => [['users', 'whole', 'add'], ['person', 'set', 'remove'], ['holder', 'whole', 'remove']],
@@ -160,7 +160,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'secondFactorBackupCodes' => ['HIL-1952', 'HIL-1999'],
             'secondFactorResets' => ['HIL-1952', 'HIL-1999'],
             'secondFactorSettings' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorTrusts' => ['HIL-1908', 'HIL-1952', 'HIL-1999'],
+            'secondFactorTrusts' => ['HIL-1952', 'HIL-1999'],
             'stepUps' => ['HIL-1952'],
             'accountDeletions' => ['HIL-1952'],
             'legalAcceptances' => ['HIL-1952'],
@@ -285,19 +285,13 @@ final class DbWriterTransitionCatalogTest extends TestCase
         CatalogRetiredPushRenewalHilos::validateTopology();
     }
 
-    /** The term's path holds Update; terminal deletion keeps Remove after ordinary work. */
+    /** Terminal deletion keeps Remove after ordinary work. */
     public function testTrustSharedUsesAndTerminalRights(): void
     {
         $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['secondFactorTrusts']);
-        self::assertSame([
-            '', 'HIL-1908,HIL-1952,HIL-1999', 'HIL-1952,HIL-1999', 'HIL-1999',
-        ], array_keys($states));
+        self::assertSame(['', 'HIL-1952,HIL-1999', 'HIL-1999'], array_keys($states));
         foreach ($states as $pending => $state) {
-            $operations = match ($pending) {
-                '' => 'add',
-                'HIL-1952,HIL-1999', 'HIL-1999' => 'add,remove',
-                default => 'add,remove,update',
-            };
+            $operations = $pending === '' ? 'add' : 'add,remove';
             $this->assertVector([
                 UserAgent::class . ':set:remove,update',
                 SessionsLibraryAgent::class . ':whole:' . $operations,
@@ -562,7 +556,6 @@ final class DbWriterTransitionCatalogTest extends TestCase
                 '' => ['person:set:add,remove,update'],
             ],
             'secondFactorTrusts' => [
-                'HIL-1908,HIL-1952,HIL-1999' => ['person:set:remove,update', 'holder:whole:add,remove,update'],
                 'HIL-1952,HIL-1999' => ['person:set:remove,update', 'holder:whole:add,remove'],
                 'HIL-1999' => ['person:set:remove,update', 'holder:whole:add,remove'],
                 '' => ['person:set:remove,update', 'holder:whole:add'],

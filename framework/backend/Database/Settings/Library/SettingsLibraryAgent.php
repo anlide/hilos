@@ -53,6 +53,7 @@ use Hilos\Theme\DTO\ThemeSettingsSignalData;
 use Hilos\Users\AskingAdministrator;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
+use Hilos\WiringRefusal;
 
 /**
  * SettingsLibraryAgent - the entity library of the settings collection (HIL-946).
@@ -587,7 +588,7 @@ final class SettingsLibraryAgent extends AbstractAgent
      *
      * @param SettingWriteSignalData $ask Key and value the administrator asked for
      * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the write, or null when unread
-     * @return ActionRefusal|SettingSaved Why the value was refused, or the moment it was written and its restriction
+     * @return ActionRefusal|SettingSaved Why the value was refused, or the restriction the write recorded
      */
     private function storeValue(SettingWriteSignalData $ask, ?SecondFactorPolicy $policyBefore): ActionRefusal|SettingSaved
     {
@@ -647,7 +648,7 @@ final class SettingsLibraryAgent extends AbstractAgent
      *
      * @param SettingResetSignalData $ask Key the administrator asked to undo
      * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the reset, or null when unread
-     * @return ActionRefusal|SettingSaved Why the reset was refused, or the moment it went through and its restriction
+     * @return ActionRefusal|SettingSaved Why the reset was refused, or the restriction the reset recorded
      */
     private function resetToDefault(SettingResetSignalData $ask, ?SecondFactorPolicy $policyBefore): ActionRefusal|SettingSaved
     {
@@ -665,7 +666,7 @@ final class SettingsLibraryAgent extends AbstractAgent
      *
      * @param SettingDeleteSignalData $ask Key the administrator asked to drop
      * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the drop, or null when unread
-     * @return ActionRefusal|SettingSaved Why the row was kept, or the moment it was dropped and its restriction
+     * @return ActionRefusal|SettingSaved Why the row was kept, or the restriction the drop recorded
      */
     private function dropOrphan(SettingDeleteSignalData $ask, ?SecondFactorPolicy $policyBefore): ActionRefusal|SettingSaved
     {
@@ -689,7 +690,7 @@ final class SettingsLibraryAgent extends AbstractAgent
      *
      * @param SettingPresetApplySignalData $ask Group provider and preset the administrator picked
      * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the preset, or null when unread
-     * @return ActionRefusal|SettingSaved Why the preset was refused, or the moment it was applied and its restriction
+     * @return ActionRefusal|SettingSaved Why the preset was refused, or the restriction the preset recorded
      */
     private function applyPreset(SettingPresetApplySignalData $ask, ?SecondFactorPolicy $policyBefore): ActionRefusal|SettingSaved
     {
@@ -731,7 +732,7 @@ final class SettingsLibraryAgent extends AbstractAgent
      * @param HandoverAskInterface $ask The ask being written
      * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the write, or null when unread
      * @param Closure(): void $write The door's own write
-     * @return ActionRefusal|SettingSaved Why the write was taken back, or the moment it was saved and the restriction it recorded
+     * @return ActionRefusal|SettingSaved Why the write was taken back, or the restriction it recorded
      * @throws HilosException Whatever the write, the restriction, the transaction or the commit raised; nothing of the write stays
      */
     private function saveWithRestriction(
@@ -766,7 +767,7 @@ final class SettingsLibraryAgent extends AbstractAgent
             throw $failure;
         }
 
-        return new SettingSaved($savedAt, $restrictionId);
+        return new SettingSaved($restrictionId);
     }
 
     /**
@@ -823,11 +824,12 @@ final class SettingsLibraryAgent extends AbstractAgent
      * The theme settings (HIL-1428) travel as a complete pair after either value changes.
      * An unreadable pair is logged and cannot be compared to a fabricated default.
      *
-     * The trust term handed to the session holder carries the moment the write was saved, the one
-     * its trust restriction was recorded with ({@see saveWithRestriction()}, HIL-1900).
+     * The trust term handed to the session holder carries the restriction the save recorded
+     * ({@see saveWithRestriction()}, HIL-1900), or for the same term again the last one saved; with
+     * none saved the write is answered at once (HIL-1908).
      *
      * @param HandoverAskInterface $ask The ask, carrying whom to answer and under which name
-     * @param ActionRefusal|SettingSaved $saved Why the write was refused, or the moment it was saved and the restriction it recorded
+     * @param ActionRefusal|SettingSaved $saved Why the write was refused, or the restriction it recorded
      * @param ?AuthMethodsSignalData $methodsBefore Method-set frame before the write, or null when unread
      * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the write, or null when unread
      * @param CodeDeliverySignalData $deliveryBefore Delivery availability before the write
@@ -851,8 +853,7 @@ final class SettingsLibraryAgent extends AbstractAgent
 
         $policyAfter = $this->secondFactorPolicy();
         $touchesTrustDays = $this->touchesKey($ask, SecondFactorSettings::TRUST_DAYS_KEY);
-        $shortened = $touchesTrustDays && $policyAfter !== null
-            && ($policyBefore === null || $policyAfter->trustDays < $policyBefore->trustDays);
+        $shortened = $touchesTrustDays && $saved->restrictionId !== null;
         $retry = $touchesTrustDays && $ask instanceof SettingWriteSignalData && $policyAfter !== null
             && $policyAfter->trustDays === $policyBefore?->trustDays;
         $disabled = $policyBefore?->enabled === true && $policyAfter?->enabled === false;
@@ -941,11 +942,17 @@ final class SettingsLibraryAgent extends AbstractAgent
         }
 
         try {
+            $restrictionId = $shortened
+                ? $saved->restrictionId
+                : Hilos::$db->secondFactorTrustRestrictions->getObjectCollection()->latestId();
+            if ($restrictionId === null) {
+                $this->answer($ask, null);
+                return;
+            }
             $this->sendToAgent(
                 HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY,
                 new AuthSecondFactorTrustDaysApplySignalData(
-                    trustDays: $policyAfter->trustDays,
-                    savedAt: $saved->savedAt,
+                    restrictionId: $restrictionId,
                     replySignal: $ask->replySignal,
                     acceptKey: $ask->acceptKey,
                     requestId: $ask->requestId,
@@ -953,8 +960,12 @@ final class SettingsLibraryAgent extends AbstractAgent
                     successMessage: $ask->successMessage,
                 ),
             );
+        } catch (WiringRefusal $refusal) {
+            // The last restriction is read for the same term again; a refusal of that read is wiring, not the write.
+            $this->logAgentError("Trust restriction is not wired: {$refusal->getMessage()}");
+            $this->answer($ask, ActionRefusal::fromThrowable($refusal));
         } catch (HilosException $e) {
-            $this->answer($ask, $this->refusal($e, 'Trust deadline could not be sent to the session holder'));
+            $this->answer($ask, $this->refusal($e, 'Trust term could not be sent to the session holder'));
         }
     }
 

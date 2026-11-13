@@ -97,7 +97,6 @@ use Hilos\Auth\SecondFactor\DTO\SecondFactorStepData;
 use Hilos\Auth\SecondFactor\SecondFactorGate;
 use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
-use Hilos\Auth\SecondFactor\SecondFactorSettings;
 use Hilos\Auth\SecurityNotice\SecurityNotifier;
 use Hilos\Auth\Session\BrowserTimeZone;
 use Hilos\Auth\Session\DTO\AccountBlockChangedSignalData;
@@ -359,13 +358,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * The browsers trusted to skip the second-factor step (HIL-494) are claimed outright too. A
      * trust is keyed by the session row and created when a sign-in this library grants is let
-     * through, because what a browser is let into is decided here; its days an administrator sets
-     * are applied to every person's trusts at once, and the merge and the erasure move and remove
-     * them. A standing pair is not extended here: the person's agent extends it on this library's
-     * frame (HIL-1907), and the update stays in the claim for the days only (HIL-1908). Taking one
-     * person's trust away - the second factor switched off, the password changed or recovered, the
-     * person blocked, the person's sessions ended - is the person's agent's (HIL-1407); this
-     * library asks for the last of these by frame.
+     * through, because what a browser is let into is decided here, and the merge and the erasure
+     * move and remove them. The days an administrator sets are applied to each person's trusts by
+     * that person's agent on the sweep's frame (HIL-1908), and a standing pair is extended by the
+     * person's agent on this library's frame (HIL-1907). Taking one person's trust away - the
+     * second factor switched off, the password changed or recovered, the person blocked, the
+     * person's sessions ended - is the person's agent's (HIL-1407); this library asks for the last
+     * of these by frame.
      *
      * The rest are borrowed for the account erasure and merge: set operations held by this library
      * in one transaction, a declared shape in docs/agents/architecture/instance-owners.md#operations-over-many-instances.
@@ -389,13 +388,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // Inert working records of this coordinator; assignments remain immutable after creation.
         HilosDbContext::accountOperations => [TruthSourceOperation::Add, TruthSourceOperation::Update],
         HilosDbContext::accountOperationAssignments => [TruthSourceOperation::Add],
-        // Created on the way in, capped or erased by the days an administrator sets for every person, moved by the merge
-        // and removed by the erasure: operations over many people. A standing pair is extended by the person's agent on
-        // this library's frame (HIL-1907). Forgetting them when the second factor is turned off is the people's agents'
-        // work on the sweep's frame (HIL-1909); Update and Remove stay for the days (HIL-1908), Remove for the erasure
-        // and the merge. One person's trust is taken away by their agent (HIL-1407).
-        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
-        HilosDbContext::secondFactorTrusts => TruthSourceOperation::ALL,
+        // Created on the way in, and removed by the merge and the erasure: operations over many people. The
+        // administrator's term and the switch-off are applied by each person's agent on the sweep's frame (HIL-1908,
+        // HIL-1909); a standing pair is extended by the person's agent (HIL-1907). One person's trust is taken away by
+        // their agent (HIL-1407). See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
+        HilosDbContext::secondFactorTrusts => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
         // The loser's block in the merge transaction and the erased person's row:
         // set operations of this library. The admin flag and the block are written by the person's agent.
         // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
@@ -814,6 +811,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** Why turning the second factor off is answered with a refusal: some owners have not forgotten their trusts yet (HIL-1909) */
     private const string SECOND_FACTOR_OFF_TRUSTS_LEFT_MESSAGE
         = 'Two-step verification is turned off, but some trusted browsers are not forgotten yet. They will be forgotten automatically.';
+
+    /** Why a shorter trust term is answered with a refusal: %d trusted browsers are not cut to it yet (HIL-1908) */
+    private const string TRUST_TERM_TRUSTS_LEFT_MESSAGE = 'The trust term is saved, but %d trusted browsers are not cut to it yet.'
+        . ' Sign-in holds them to it already; save the same term again to finish.';
 
     /** Last private maintenance pass; attempts themselves live in the holder's RT collection. */
     private float $lastProfileNameSweepAt = 0.0;
@@ -7854,43 +7855,36 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Applies a shorter term and answers the original setting action after its transaction commits.
+     * Waits for the owners to cut their trusts to a shorter term, then answers the original setting action (HIL-1908).
      *
-     * @param AuthSecondFactorTrustDaysApplySignalData $ask New term and original handover address
+     * The holder writes nothing here: every trusted browser belongs to its owner, and the settings
+     * library recorded the shorter term as a trust restriction in the same commit as the setting.
+     * The holder waits on the trust restriction sweep for that restriction
+     * ({@see SecondFactorTrustRestrictionSweep::await()}) and answers once, when the pass ends - with
+     * success when nothing is owed, with a refusal naming how many trusts still stand. The term itself
+     * is not taken back: sign-in holds every trust to it already. A first portion that fails is logged
+     * and answered at the end of the pass, the way the sweep promises. A holder that stops before the
+     * pass ends leaves the administrator unanswered.
+     *
+     * @param AuthSecondFactorTrustDaysApplySignalData $ask Restriction to wait on and the original handover address
      * @throws InvalidArgumentException When the handover answer cannot be routed
      */
     private function applyTrustDays(AuthSecondFactorTrustDaysApplySignalData $ask): void
     {
         try {
-            if ($ask->trustDays < 0 || $ask->trustDays > SecondFactorSettings::TRUST_DAYS_MAX || $ask->savedAt <= 0) {
-                throw new ValidationException('Invalid second-factor trust deadline');
-            }
-            if ($ask->trustDays === 0) {
-                Hilos::$db->secondFactorTrusts->actions->deleteAll();
-            } else {
-                $savedAtMs = $ask->savedAt;
-                $limitMs = $savedAtMs + $ask->trustDays * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
-                Hilos::$db->secondFactorTrusts->actions->capLiveUntil($limitMs, $savedAtMs);
-            }
-        } catch (WiringRefusal $refusal) {
-            $this->logAgentError("Second-factor trust term is not wired: {$refusal->getMessage()}");
-            $this->sendToAgent(
-                $ask->replySignal,
-                HandoverAnswerSignalData::to($ask, ActionRefusal::fromThrowable($refusal)),
-            );
-
-            return;
-        } catch (Throwable $e) {
-            $refusal = ActionRefusal::fromThrowable($e);
-            if ($refusal->isInternal()) {
-                $this->logAgentError("Second-factor trust term apply failed: {$e->getMessage()}");
-            }
-            $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, $refusal));
-
-            return;
+            $this->trustRestrictionSweep()->await($ask->restrictionId, function (int $owing) use ($ask): void {
+                $this->sendToAgent(
+                    $ask->replySignal,
+                    HandoverAnswerSignalData::to(
+                        $ask,
+                        $owing === 0 ? null : ActionRefusal::said(sprintf(self::TRUST_TERM_TRUSTS_LEFT_MESSAGE, $owing)),
+                    ),
+                );
+            });
+        } catch (HilosException $e) {
+            // The request stays with the sweep, which answers it when the pass ends.
+            $this->logAgentWarning("Second-factor trust term: trusted browsers not asked yet: {$e->getMessage()}");
         }
-
-        $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, null));
     }
 
     /**

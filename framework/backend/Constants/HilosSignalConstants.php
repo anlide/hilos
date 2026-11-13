@@ -2334,8 +2334,12 @@ final class HilosSignalConstants
     public const string HILOS_AUTH_SECOND_FACTOR_OFF = 'hilos_auth_second_factor_off';
 
     /**
-     * Settings library → session holder: cap or erase trusts before answering the setting write.
-     * Carried by {@see AuthSecondFactorTrustDaysApplySignalData}.
+     * Settings library → session holder: a shorter trust term is saved; wait for the owners to cut their trusts
+     * to the restriction it recorded before answering the write (HIL-1908).
+     *
+     * The holder cuts nothing itself: the trust restriction sweep (HIL-1901) asks every owner of a trusted
+     * browser, and the holder answers once by the confirmed outcome — success, or a refusal naming how many
+     * trusts are not cut yet. Carried by {@see AuthSecondFactorTrustDaysApplySignalData}.
      */
     public const string HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY = 'hilos_auth_second_factor_trust_days_apply';
 

@@ -128,7 +128,7 @@ final class SecondFactorTrustRestrictionSweep
      * failure reaches the caller, and the next tick goes on after it. The holder that stops first
      * drops the request unanswered.
      *
-     * The switch-off waits on it (HIL-1909); the trust term moves onto it with HIL-1908.
+     * The trust term and the switch-off wait on it (HIL-1908, HIL-1909).
      *
      * @param int $restrictionId Restriction to bring home, positive
      * @param Closure(int): void $settled Called with the number of trusts the restrictions up to this

@@ -168,11 +168,23 @@ The gate checks the current trust term as well as the row: 0 never accepts an ol
 trust, and a row ending later than now plus the current term waits on the code
 until the session holder applies a shorter term. A saved shorter term caps only
 trusts that were live when it was saved, using that save moment; it never extends
-an earlier expiry. Saving 0 erases every trust, including expired rows. Raising
-the term later does not recreate or lengthen a trust. The settings library sends
-the reduction to the session holder and the administrator's action is answered
-after the holder commits it. That frame carries the save moment the restriction
-below was written with.
+an earlier expiry. Saving 0 takes every trust away, including expired rows.
+Raising the term later does not recreate or lengthen a trust. The settings
+library sends the reduction to the session holder with the id of the restriction
+below that the save wrote (HIL-1908). The holder writes nothing: it waits for
+the sweep to bring that restriction to every person's own agent
+(`SecondFactorTrustRestrictionSweep::await()`, below) and answers the
+administrator by the result. Nothing owed is success; N trusts still owed is a
+refusal ("The trust term is saved, but N trusted browsers are not cut to it yet.
+Sign-in holds them to it already; save the same term again to finish."), and
+the term stands either way. Saving the same term again sends the id of the
+latest restriction, so a repeat finishes what a pass left; with no restriction
+saved at all the answer is success at once and no frame is sent, and a longer
+term answers at once and extends nothing. The answer may come after the
+browser's 30 s wait - with 100 or more people holding a trust, with the save
+made in the middle of a pass already running, or with a silent owner - and the
+administrator then sees "The action timed out." while the term is saved and
+already holds at sign-in; the owner took that price on 13.11.2026.
 
 Each shortening is also kept as a restriction (HIL-1900): a row of the save
 moment S and a term of N days, 0 to 365, meaning that trusts granted no later
@@ -218,10 +230,10 @@ the trust until its expiry or an explicit revocation.
 Who writes each of these today (HIL-1407). The session holder's `trust()`
 creates a new pair on the way in and leaves a standing pair as it is; the
 person's agent extends a standing pair on `hilos_user_browser_trust_renew`
-(HIL-1907, below). The holder applies the administrator's term
-installation-wide and removes trusts in merge and erasure; it claims all three
-operations for those paths. It no longer removes trusts on switch-off: that is
-the people's agents' work on the sweep's frame (HIL-1909, below). Taking one
+(HIL-1907, below). The holder removes trusts in merge and erasure; it claims
+`Add` and `Remove` for those paths. It no longer cuts or removes trusts for the
+administrator's term or on switch-off: that is the people's agents' work on the
+sweep's frame (HIL-1908 and HIL-1909, below). Taking one
 person's trust away is already that person's agent's, in the turn of the write
 that causes it:
 
@@ -297,7 +309,7 @@ violates a restriction up to the one asked for, a trust violating one that
 applies to it when its term is 0 or it runs past its limit; the same test tells
 the sweep of HIL-1901 which work is unfinished. Today the sweep is what sends
 the frame; the switch-off below sends it through the request of the next
-paragraph (HIL-1909), the term does not yet (HIL-1908).
+paragraph (HIL-1909), and so does the term (HIL-1908).
 The holder no longer extends a trust - the renewal is the owner's own write
 (HIL-1907) - so the application meets no extension from another process. Three
 gaps remain. The creation: a pair the holder writes while the owner takes every
@@ -337,8 +349,10 @@ The holder also keeps an internal request for the term and the switch-off to
 wait on (`SecondFactorTrustRestrictionSweep::await()`), "finish the restrictions up to R, then tell me": it starts a pass at
 once when none runs, skips the hour's pause, answers at once when nobody owes,
 and otherwise answers at the end of the pass with the number of trusts still
-violating those restrictions, 0 meaning done. The switch-off calls it today
-(HIL-1909); the term does not yet (HIL-1908). A holder that stops drops what waits, and no answer comes.
+violating those restrictions, 0 meaning done. It has two callers: the switch-off
+(HIL-1909) and the term (HIL-1908). A first portion that fails to send is logged
+as a warning and the answer still comes at the end of the pass. A holder that
+stops drops what waits, and no answer comes.
 
 The person's agent does not wait for the sweep. At start, whether it is the
 sweep's frame that woke it or not, it applies every saved restriction to the
@@ -348,8 +362,8 @@ gets no write. A failure there is logged as an agent error, the start goes on,
 and the sweep asks again. The frame of the sweep that woke the agent then
 arrives after the start, changes nothing, and is answered ok.
 
-The personal owners apply the saved cap, or remove their rows for a zero term
-(not in the code yet — HIL-1908). They also forget their trusts when installation
+The personal owners apply the saved cap, or remove their rows for a zero term,
+on the frame of the sweep that the term asked for (HIL-1908). They also forget their trusts when installation
 switch-off calls for it, on the frame of the sweep that the switch-off asked for
 (HIL-1909). The saved-moment rule, no extension of an earlier expiry, current
 gate checks and browser outcomes above stay requirements. The current holder calls remain

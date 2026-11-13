@@ -152,7 +152,7 @@ the marked always-rollback form.
 
 [`framework/tests/Integration/SecondFactorTrustsRollbackIntegrationTest.php`](../../../framework/tests/Integration/SecondFactorTrustsRollbackIntegrationTest.php)
 is the first marked example. It warms ORM rows, deliberately changes one with
-raw SQL, calls the unchanged `SecondFactorTrustsActions::capLiveUntil()` action,
+raw SQL, calls the unchanged `SecondFactorTrustsActions::applySavedRestrictions()` action,
 and verifies the affected rows through independent SQL before the base rolls
 back the fixture.
 

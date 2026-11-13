@@ -111,28 +111,6 @@ class SecondFactorTrustsActions extends DbActions
     }
 
     /**
-     * Caps trusts that were live when the setting was saved; a retry never extends one.
-     *
-     * @param int $limitMs New latest expiry (epoch milliseconds)
-     * @param int $savedAtMs Moment the setting was saved (epoch milliseconds)
-     * @throws HilosException When ownership, lookup, transaction, or writing fails
-     */
-    public function capLiveUntil(int $limitMs, int $savedAtMs): void
-    {
-        $this->ensureCanWrite(TruthSourceOperation::Update);
-        $this->writeAtomically(fn () => $this->objectCollection->capLiveUntil($limitMs, $savedAtMs));
-    }
-
-    /**
-     * @throws HilosException When ownership, lookup, transaction, or deletion fails
-     */
-    public function deleteAll(): void
-    {
-        $this->ensureCanWrite(TruthSourceOperation::Remove);
-        $this->writeAtomically(fn () => $this->objectCollection->deleteAll());
-    }
-
-    /**
      * @param int $userId Person whose other browsers lose trust
      * @param int $keepSessionId Current browser's session row
      * @throws HilosException When ownership, lookup, transaction, or deletion fails

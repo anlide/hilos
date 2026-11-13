@@ -651,10 +651,9 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 }
             }
             $this->assertCount(1, $apply);
-            $this->assertSame(7, $apply[0]->trustDays);
             $this->assertSame('trust-term-setting-done', $apply[0]->replySignal);
             $this->assertSame([], $answered);
-            $this->assertSame([[$apply[0]->savedAt, 7]], $this->newRestrictions(), 'One restriction, at the moment the holder is told');
+            $this->assertAppliesTheNewRestriction($apply[0], 7);
         }, [SecondFactorSettings::TRUST_DAYS_KEY]);
     }
 
@@ -696,17 +695,21 @@ final class SettingsPageActionTest extends IntegrationTestCase
             );
             $reset = $this->framesNamed(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY);
             $this->assertCount(1, $reset);
-            $this->assertSame(SecondFactorSettings::DEFAULT_TRUST_DAYS, $reset[0]->data->data->trustDays);
-            $this->assertSame([[$reset[0]->data->data->savedAt, SecondFactorSettings::DEFAULT_TRUST_DAYS]], $this->newRestrictions());
+            $this->assertAppliesTheNewRestriction($reset[0]->data->data, SecondFactorSettings::DEFAULT_TRUST_DAYS);
 
             $write(0);
             $zero = $this->framesNamed(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY);
             $this->assertCount(1, $zero);
-            $this->assertSame(0, $zero[0]->data->data->trustDays);
-            $this->assertSame([[$zero[0]->data->data->savedAt, 0]], $this->newRestrictions());
+            $this->assertAppliesTheNewRestriction($zero[0]->data->data, 0);
             $write(0);
-            $this->assertCount(1, $this->framesNamed(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY));
+            $again = $this->framesNamed(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY);
+            $this->assertCount(1, $again);
             $this->assertSame([], $this->newRestrictions(), 'The same term again restricts nothing new');
+            $this->assertSame(
+                $zero[0]->data->data->restrictionId,
+                $again[0]->data->data->restrictionId,
+                'The same term again brings home the last restriction saved',
+            );
             $write(365);
             $this->assertSame([], $this->framesNamed(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY));
             $this->assertSame([], $this->newRestrictions(), 'Raising a zero term restricts nothing');
@@ -746,9 +749,8 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 }
             }
             $this->assertCount(1, $apply);
-            $this->assertSame(7, $apply[0]->trustDays);
             $this->assertSame([], $answers);
-            $this->assertSame([[$apply[0]->savedAt, 7]], $this->newRestrictions());
+            $this->assertAppliesTheNewRestriction($apply[0], 7);
         }, [SecondFactorSettings::TRUST_DAYS_KEY, self::CATALOG_KEY]);
     }
 
@@ -902,10 +904,66 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 [['value' => '7']],
                 Database::sql('SELECT `value` FROM `hilos_setting` WHERE `key` = ?', [SecondFactorSettings::TRUST_DAYS_KEY])->rows(),
             );
-            $restrictions = $this->newRestrictions();
             $apply = $this->framesNamed(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY);
             $this->assertCount(1, $apply);
-            $this->assertSame([[$apply[0]->data->data->savedAt, 7]], $restrictions);
+            $this->assertAppliesTheNewRestriction($apply[0]->data->data, 7);
+        }, [SecondFactorSettings::TRUST_DAYS_KEY]);
+    }
+
+    /**
+     * The same term saved again while no restriction was ever saved is answered at once: there is
+     * nothing for the session holder to bring home, so it is not asked (HIL-1908).
+     */
+    public function testTheSameTrustTermWithNoRestrictionSavedIsAnsweredAtOnce(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(SecondFactorSettings::TRUST_DAYS_KEY);
+            $stored = Database::sql(
+                'SELECT `id`, `saved_at`, `term_days` FROM `hilos_second_factor_trust_restriction` ORDER BY `id`',
+            )->rows();
+            Database::sql('DELETE FROM `hilos_second_factor_trust_restriction`');
+            try {
+                $this->drainSignals();
+                new SettingsLibraryAgent()->onSignalAgent(
+                    new AgentSignalData(new SettingWriteSignalData(
+                        replySignal: 'trust-term-setting-done',
+                        acceptKey: 'trust-term-ak',
+                        requestId: 'trust-term-request',
+                        action: HilosSignalConstants::SETTING_ADD,
+                        successMessage: 'Trust term saved.',
+                        key: SecondFactorSettings::TRUST_DAYS_KEY,
+                        value: SecondFactorSettings::DEFAULT_TRUST_DAYS,
+                    )),
+                    'test',
+                    HilosSignalConstants::HILOS_SETTING_WRITE,
+                );
+
+                $apply = [];
+                $answered = [];
+                while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+                    if ($signal->data instanceof AgentSignalData
+                        && $signal->data->data instanceof AuthSecondFactorTrustDaysApplySignalData) {
+                        $apply[] = $signal->data->data;
+                    }
+                    if ($signal->data instanceof AgentSignalData
+                        && $signal->data->data instanceof HandoverAnswerSignalData) {
+                        $answered[] = $signal->data->data;
+                    }
+                }
+                $this->assertSame([], $apply, 'Nothing to bring home, so the holder is not asked');
+                $this->assertCount(1, $answered);
+                $this->assertNull($answered[0]->error);
+                $this->assertSame('trust-term-request', $answered[0]->requestId);
+                $this->assertSame('Trust term saved.', $answered[0]->successMessage);
+                $this->assertSame([], $this->newRestrictions());
+            } finally {
+                foreach ($stored as $row) {
+                    Database::sql(
+                        'INSERT INTO `hilos_second_factor_trust_restriction` (`id`, `saved_at`, `term_days`) VALUES (?, ?, ?)',
+                        [(int) $row['id'], (int) $row['saved_at'], (int) $row['term_days']],
+                    );
+                }
+            }
         }, [SecondFactorSettings::TRUST_DAYS_KEY]);
     }
 
@@ -1293,6 +1351,18 @@ final class SettingsPageActionTest extends IntegrationTestCase
         }
 
         return $restrictions;
+    }
+
+    /**
+     * Checks that the write recorded one restriction of the term and that the holder is told that very row (HIL-1908).
+     *
+     * @param AuthSecondFactorTrustDaysApplySignalData $apply The apply handed to the session holder
+     * @param int $termDays Term the write saved
+     */
+    private function assertAppliesTheNewRestriction(AuthSecondFactorTrustDaysApplySignalData $apply, int $termDays): void
+    {
+        $this->assertSame([$termDays], array_column($this->newRestrictions(), 1), 'One restriction of the saved term');
+        $this->assertSame($this->restrictionCursor, $apply->restrictionId, 'The holder is told the restriction the write recorded');
     }
 
     /**
