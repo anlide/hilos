@@ -81,7 +81,7 @@ use ReflectionProperty;
 final class StatusAdminNotificationIntegrationTest extends FrameworkIntegrationTestCase
 {
     private const array TABLES = [
-        'hilos_user', 'hilos_user_merge', 'hilos_identity', 'hilos_setting', 'hilos_notification',
+        'hilos_user', 'hilos_user_merge', 'hilos_identity', 'hilos_setting', 'hilos_notification', 'hilos_account_deletion',
         'hilos_notification_delivery', 'hilos_notification_preference', 'hilos_status_incident', 'hilos_status_incident_update',
         'hilos_status_work', 'hilos_status_work_component', 'hilos_status_maintenance_period', 'hilos_status_silence_period',
     ];

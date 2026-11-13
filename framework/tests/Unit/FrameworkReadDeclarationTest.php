@@ -237,6 +237,7 @@ final class FrameworkReadDeclarationTest extends TestCase
      * re-resolves the recipient's devices; both collections belong to the notifications library,
      * so a channel declares a read and never a claim. The journal it does claim is absent from
      * both lists on purpose: a claim is already the owner's interest.
+     * Operations and their assignments supply the channel's erasure participant step.
      */
     public function testEveryDeliveryChannelDeclaresTheRowsItReadsPastTheAgentThatOwnsThem(): void
     {
@@ -258,7 +259,12 @@ final class FrameworkReadDeclarationTest extends TestCase
 
         $this->assertContains(HilosDbContext::pushSubscriptions, PushDeliveryChannelAgent::READS_DB);
         $this->assertSame(
-            [HilosDbContext::notifications, HilosDbContext::settings],
+            [
+                HilosDbContext::notifications,
+                HilosDbContext::settings,
+                HilosDbContext::accountOperationAssignments,
+                HilosDbContext::accountOperations,
+            ],
             SmsDeliveryChannelAgent::READS_DB,
         );
     }

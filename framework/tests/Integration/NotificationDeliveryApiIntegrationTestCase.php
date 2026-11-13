@@ -19,7 +19,7 @@ use ReflectionProperty;
 abstract class NotificationDeliveryApiIntegrationTestCase extends FrameworkRollbackIntegrationTestCase
 {
     private const string DELIVERY_AGENT = 'notification-delivery-api-test';
-    private const array TABLES = ['hilos_notification', 'hilos_notification_delivery'];
+    private const array TABLES = ['hilos_notification', 'hilos_notification_delivery', 'hilos_account_deletion'];
 
     /** @var list<string> Tables raised before the rollback scope */
     private array $deliveryTables = [];

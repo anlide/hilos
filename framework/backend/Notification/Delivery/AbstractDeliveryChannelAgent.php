@@ -5,6 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Notification\Delivery;
 
 use DateTimeImmutable;
+use Hilos\Auth\AccountOperation\AccountErasureDeliveryCapture;
+use Hilos\Auth\AccountOperation\AccountErasureDeliveryResult;
+use Hilos\Auth\AccountOperation\AccountOperationKind;
+use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
+use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
+use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\ActionRefusal;
@@ -15,6 +21,7 @@ use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Daemon\Cron\CronRuleOrigin;
 use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\TruthSource\DbWriterPartition;
@@ -28,6 +35,8 @@ use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Settings\Exception\SettingException;
+use Hilos\Database\View\Item\AccountOperationAssignment;
+use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -69,6 +78,11 @@ use Throwable;
  * for that retry and removes its expired terminal rows. The claim is {@see self::OWNS_DB} and is
  * merged down every subclass.
  *
+ * Each channel or shard also takes part in account erasure by deleting its own
+ * captured delivery rows. It does not begin an attempt for a recipient whose
+ * erasure has started; the erasure part is prepared, with no live caller until
+ * HIL-1950/HIL-1952.
+ *
  * Under a freeze that silences the writers the roster walk leaves running
  * ({@see ProtectedModeRuntime::silencesUnstoppedWriters()}) the pipeline drops everything it
  * holds and refuses new deliveries, because nothing of a database being replaced may be acted
@@ -83,9 +97,15 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
 {
     /**
      * @var list<string> Notifications reloaded for delivery and settings read when a retention pass starts.
+     *     Operations and their assignments are read by the erasure part.
      *     The delivery journal is omitted because {@see self::OWNS_DB} already supplies its owner's reader interest.
      */
-    public const array READS_DB = [HilosDbContext::notifications, HilosDbContext::settings];
+    public const array READS_DB = [
+        HilosDbContext::notifications,
+        HilosDbContext::settings,
+        HilosDbContext::accountOperationAssignments,
+        HilosDbContext::accountOperations,
+    ];
 
     /**
      * Updates and removes this channel/shard's rows; the library creates them.
@@ -95,6 +115,16 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [HilosDbContext::notificationDeliveries => TruthSourceOperation::BY_KIND];
+
+    /**
+     * Adds immutable results of this channel/shard's erasure steps under its full agent id.
+     * See docs/agents/architecture/account-operations.md, "The participant result claim".
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_DB_SET = [
+        HilosDbContext::accountOperationResults => [TruthSourceOperation::Add],
+    ];
 
     /** Fresh saved channel/shard coordinates constrain every item write. */
     public const ?DbWriterPartition DB_WRITER_PARTITION = DbWriterPartition::NotificationChannelShard;
@@ -119,6 +149,15 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
 
     /** Bounds per-row deletion work to keep the tick under 0.1 seconds beside live sends. */
     private const int RETENTION_PAGE_SIZE = 25;
+
+    /** Maximum saved recipient identities inspected in one erasure page. */
+    private const int ERASURE_DELIVERIES_PER_PAGE = 1000;
+
+    /** Maximum captured notification numbers in one erasure identity lookup. */
+    private const int ERASURE_NOTIFICATIONS_PER_LOOKUP = 1000;
+
+    /** Refusal before resetting a delivery whose recipient's erasure has begun. */
+    private const string RETRY_RECIPIENT_ERASING = 'Delivery retry is refused: the recipient\'s account is being deleted';
 
     /** @var array<int, NotificationDeliveryIdentity> Immutable ops awaiting a start or retry, keyed by delivery id. */
     private array $ops = [];
@@ -182,6 +221,84 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
     public static function defaultTruthSourceOperations(): TruthSourceOperations
     {
         return TruthSourceOperations::of(TruthSourceOperation::Update, TruthSourceOperation::Remove);
+    }
+
+    /**
+     * @param string $collection Collection whose set claim is being resolved
+     * @return string Full agent id for participant results, the base's answer otherwise
+     */
+    public function ownedDbSetKey(string $collection): string
+    {
+        if ($collection === HilosDbContext::accountOperationResults) {
+            return $this->getId();
+        }
+
+        return parent::ownedDbSetKey($collection);
+    }
+
+    /**
+     * Deletes captured deliveries held by this channel/shard's current route and records their count atomically.
+     * Uncaptured account deliveries or a silencing freeze refuse the part before any deletion.
+     * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950/HIL-1952).
+     *
+     * @param int $assignmentId Assignment the coordinator gave this channel/shard
+     * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt
+     * @throws AccountOperationStepRefusedException When the caller, assignment or current stage refuses new work
+     * @throws ValidationException When the erasure, account, maintenance or capture precondition refuses the part
+     * @throws Throwable When storage or deletion fails, preserving the original failure
+     */
+    final public function runErasurePart(int $assignmentId): AccountOperationResult
+    {
+        return AccountOperationParticipantStep::run(
+            $assignmentId,
+            function (AccountOperationAssignment $assignment): AccountOperationResultPayload {
+                if ($assignment->operation?->kind !== AccountOperationKind::Erasure) {
+                    throw new ValidationException('A delivery erasure part must belong to an erasure.');
+                }
+                $userId = $assignment->userId;
+                if ($userId === null) {
+                    throw new ValidationException('A delivery erasure part must name its account.');
+                }
+                if ($this->freezeSilencesDeliveries()) {
+                    throw new ValidationException('A delivery erasure part waits for maintenance to end.');
+                }
+                $channel = $this->channel()->name();
+                $notificationIds = [];
+                foreach (AccountErasureDeliveryCapture::capturesOf($assignment->operationId, $userId) as $capture) {
+                    if (AccountErasureDeliveryCapture::channelOf($capture->payload) === $channel) {
+                        foreach (AccountErasureDeliveryCapture::notificationIdsOf($capture->payload) as $notificationId) {
+                            $notificationIds[$notificationId] = true;
+                        }
+                    }
+                }
+
+                $afterId = 0;
+                do {
+                    $page = Hilos::$db->notificationDeliveries->recipientIdentitiesAfter($userId, $afterId, self::ERASURE_DELIVERIES_PER_PAGE);
+                    foreach ($page as $identity) {
+                        if ($identity->channel === $channel && $this->ownsIdentity($identity)
+                            && !isset($notificationIds[$identity->notificationId])) {
+                            throw new ValidationException('A delivery erasure part waits for its deliveries to be captured.');
+                        }
+                        $afterId = $identity->deliveryId;
+                    }
+                } while (count($page) === self::ERASURE_DELIVERIES_PER_PAGE);
+
+                $notificationIds = array_keys($notificationIds);
+                sort($notificationIds);
+                $deleted = 0;
+                foreach (array_chunk($notificationIds, self::ERASURE_NOTIFICATIONS_PER_LOOKUP) as $chunk) {
+                    foreach (Hilos::$db->notificationDeliveries->identitiesOfNotifications($channel, $chunk) as $identity) {
+                        if ($this->ownsIdentity($identity) && isset(Hilos::$db->notificationDeliveries[$identity->deliveryId])) {
+                            Hilos::$db->notificationDeliveries[$identity->deliveryId]->actions->delete();
+                            $deleted++;
+                        }
+                    }
+                }
+
+                return AccountErasureDeliveryResult::payloadOf($deleted);
+            },
+        );
     }
 
     /**
@@ -415,6 +532,7 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
      * it: a refusal leaves the row as it was. Only a reset that stands puts the saved identity
      * into the queue, in place of anything this instance still held under the id; the next tick
      * starts it like an adopted pending row, with no deliver frame and no transport opened here.
+     * A recipient whose account erasure has begun is refused before the reset.
      * An expected refusal is said; a failure becomes the refusal a page may read, and one held
      * back from the page is logged here.
      *
@@ -433,6 +551,10 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
             }
             if (!$this->retryReachedOwner($retry, $saved)) {
                 return ActionRefusal::said('Delivery retry reached a different channel or shard');
+            }
+            $notification = Hilos::$db->notifications[$saved->notificationId] ?? null;
+            if ($notification !== null && Hilos::$db->accountDeletions->startedOf($notification->userId) !== null) {
+                return ActionRefusal::said(self::RETRY_RECIPIENT_ERASING);
             }
             Database::transaction(EntityNotificationDelivery::getDatabaseName(), static function () use ($saved): void {
                 Hilos::$db->notificationDeliveries[$saved->deliveryId]->actions->resetForRetry();
@@ -614,6 +736,11 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
         }
         $notification = Hilos::$db->notifications[$this->ops[$deliveryId]->notificationId] ?? null;
         if (!$this->opIsCurrent($deliveryId)) {
+            $this->finishOp($deliveryId);
+
+            return;
+        }
+        if ($notification !== null && Hilos::$db->accountDeletions->startedOf($notification->userId) !== null) {
             $this->finishOp($deliveryId);
 
             return;

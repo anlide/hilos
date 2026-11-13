@@ -85,6 +85,22 @@ class NotificationDeliveries extends DbCollection
     }
 
     /**
+     * @param string $channel Saved channel to match
+     * @param list<int> $notificationIds Nonempty bounded list of captured notification numbers
+     * @return ChangeLogReadCollection<NotificationDeliveryIdentity> Dense saved snapshot in ascending delivery-id order
+     * @throws ObjectCollectionNullException When detached from the owning collection
+     * @throws InvalidArgumentException When the list has fewer than one or more than 1000 notification numbers
+     * @throws TableNotActivatedException When the project has not activated the delivery table
+     * @throws DatabaseException When the projection query or binding fails
+     */
+    public function identitiesOfNotifications(string $channel, array $notificationIds): ChangeLogReadCollection
+    {
+        return ($this->getObjectCollection()
+            ?? throw new ObjectCollectionNullException('Notification deliveries are detached from their collection'))
+            ->identitiesOfNotifications($channel, $notificationIds);
+    }
+
+    /**
      * @param string $channel Saved channel to scan
      * @param int $cutoffMs Exclusive creation-age boundary in epoch milliseconds
      * @param int $afterCreatedAt Creation moment of the exclusive cursor in epoch milliseconds

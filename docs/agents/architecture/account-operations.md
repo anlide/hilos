@@ -439,9 +439,10 @@ return a peer's winner, only after that transaction and its work roll back.
 The mechanism has typed refusals for a missing participant, unknown or foreign assignment, and closed
 stage, all exposed as a `ValidationException`. It adds no signal or route;
 answer correlation remains HIL-1950. No live erasure path uses it yet: its
-production participants, the person's agent, the sessions holder, the data
-export agent, the legal agent and the users library, have no caller of their steps until HIL-1950/HIL-1952 (see *The erasure start* below), and the due and force-purge
-paths remain on the old flow until HIL-1952.
+production participants — the person's agent, the sessions holder, the data
+export agent, the legal agent, the users library and the delivery channels —
+have no caller of their steps until HIL-1950/HIL-1952 (see *The erasure start*
+below), and the due and force-purge paths remain on the old flow until HIL-1952.
 
 **The participant result claim.** A participant using the generic step
 declares `HilosDbContext::accountOperationResults` with
@@ -476,7 +477,11 @@ other collection. It holds neither of the two either, so its `READS_DB` grows by
 `ownedDbSetKey()` returns `getId()` (`hilos_users_library`) for the results and
 the base's answer for any other collection. It holds neither of the two either,
 so its `READS_DB` grows by `accountOperationAssignments` and
-`accountOperations`. The common carriers themselves add no participant grant.
+`accountOperations`. The delivery channel agents (HIL-1945) declare the same
+result claim. `AbstractDeliveryChannelAgent::ownedDbSetKey()` uses its full
+`getId()` as the results key and the base's answer for other collections. Its
+`READS_DB` grows by `accountOperationAssignments` and `accountOperations`.
+The common carriers themselves add no participant grant.
 
 **The erasure census.** The plan of an erasure is a census taken from the
 circle and the activated tables, and it is written as ordinary assignments.
@@ -715,7 +720,9 @@ publishes no build and answers a download with 403
 ([data-export.md](data-export.md)). The legal agent refuses an administrator's
 new order of the consent records in the same words, right after the
 confirmation and before it changes anything. It does not check a download: the
-sessions holder closes the administrator's sessions.
+sessions holder closes the administrator's sessions. Delivery channels do not
+begin an attempt for a recipient whose erasure has started, and an administrator
+retry of that delivery is refused in the channel's own words.
 
 The sessions holder asks `refuseErasingSignIn()` before every
 `refuseBlockedSignIn()`, so before the second-factor gate, on the five places
@@ -906,9 +913,11 @@ The readers and their predicates, none of them written yet:
   `AccountErasurePersonalCaptureResult::of()->addresses`, refuses while that is
   null, and writes only numbers, never an address, into its own result
   (prepared, no live caller until HIL-1950/HIL-1952);
-- a channel works through its own portions (`capturesOf()`), takes the
-  notification numbers from `notificationIdsOf()` and deletes only its own rows
-  (not in the code yet — HIL-1945);
+- each channel or shard reads every capture portion for its channel and account,
+  gets the notification ids from `notificationIdsOf()`, and deletes only rows
+  it owns under the current route. It refuses if any of its own rows for that
+  account remains uncaptured (prepared, no live caller until
+  HIL-1950/HIL-1952);
 - `ChatAgent` takes the event ids from
   `ChatErasureRenameFeed::eventIdsOf(AccountErasurePersonalCaptureResult::of(…))`
   for every account of the circle, and refuses while one is null
@@ -1312,12 +1321,15 @@ path only at the [single cutover](#erasure-cutover-and-observation)
      addresses of the personal owner's capture, including codes with no user
      id or another user id on those addresses (prepared, no live caller until
      HIL-1950/HIL-1952).
-   - Each delivery channel/shard deletes its own deliveries by its own
-     capture assignments, including when sending is switched off. Startup adoption sends
-     nothing to a recipient whose erasure has started
-     (not in the code yet — HIL-1945). Ordinary channel rights, disabled-owner
-     duties, retention and retry retain their separate HIL-1893/HIL-1894/
-     HIL-1902/HIL-1910 boundaries in [Ordinary Transitions](#ordinary-transitions).
+   - Each delivery channel/shard deletes its own deliveries by its capture
+     assignments and records `{"deliveries":<n>}`. The step is prepared, with
+     no live caller until HIL-1950/HIL-1952. Its started-recipient guard is
+     built: it does not begin an attempt for a recipient whose erasure has
+     started, and an administrator retry is refused in the channel's own words.
+     No live path produces the started fact until HIL-1950/HIL-1952. Ordinary
+     channel rights, disabled-owner duties, retention and retry retain their
+     separate HIL-1893/HIL-1894/HIL-1902/HIL-1910 boundaries in
+     [Ordinary Transitions](#ordinary-transitions).
    - The data export owner deletes its own DB order of the person with its
      result, keeping the existing publication checks and post-commit file
      path: `AbstractDataExportAgent::runErasurePart()` records
@@ -1704,7 +1716,7 @@ coordinator and the participants keep are outside these rows, below.
 | `stepUps` | agent `Add`/`Update`/`Remove` (`record()`, `deleteExpiredForUser()`); holder `Remove` in the erasure | the agent | the agent, its own confirmation, its extension, its spending and clearing, and the erasure included | the erasure's `deleteForUser()` | none. Price: inside the agent's erasure portion | No ordinary move remains. Personal child erasure with result (not in the code yet — HIL-1941). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
 | `legalAcceptances` | users library `Add` (`accept()`); personal owner's agent `Remove` for test-only `forgetLaterThan()` called by `test:legal:hold`; sessions holder `Remove` in the erasure | users library | the library creates immutable acceptances; the personal owner removes later acceptances for a test hold and handles their deletion in erasure as its target. Erasure remains at the holder until the live switch; this does not make recorded acceptances mutable or permit deleting another person's consent | the test command's forget as a frame to the personal owner; the erasure's `deleteForUser()` | the legal agent reads these rows for its exports, and the erasure's forget frame to it stays. Price: one more hop in a test path | Personal child erasure with result (not in the code yet — HIL-1941). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
 | `notifications` | notifications library `Add`; agent `Update`/`Remove` (`markAllReadForUser()`, one statement over its set); holder `Remove` in the erasure; `NotificationTestSeedCommand`, test-only | notifications library | the library creates, the agent edits and deletes | the erasure's `deleteForUser()` | the deliveries point softly at the notification and are cut by it: before the agent deletes the notifications, the obligation of each channel over its soft delivery links is recorded, so no recipient is lost once the notification is gone. Price: one recorded obligation per channel ahead of this step, and one more ordering constraint in the erasure | No ordinary move remains. Delivery portions captured after the start: prepared, no live caller until HIL-1950/HIL-1952. Personal erasure after those obligations (not in the code yet — HIL-1941). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
-| `notificationDeliveries` | notifications library `Add`: creation only; channel agent `Update`/`Remove` (status, attempts and error of its attempt; `resetForRetry()` for an admin retry; `adoptPendingRows()` after start or freeze; retention of its terminal rows); holder `Remove` in the erasure (`deleteForRecipient()`); `RestoredDeliveries::settlePending()`, a raw `UPDATE` at restore with no agent; `NotificationTestSeedCommand`, test-only | notifications library | the library creates; the channel or shard changes its own rows, resets a failed row an admin retries and removes its terminal rows through retention. A switched-off channel keeps its journal and retention, and its agent stays available for retention and erasure; no shared sweeper is introduced (question 4) | retry, prune, the erasure's `deleteForRecipient()` | the `NotificationChannelShard` row guard constrains channel `Update` and `Remove` by fresh saved delivery identity and current route. The pipeline captures delivery ids, recovers bounded pages and reduces the saved routing key at the current pool width; legacy `NULL` keys use the notification id, even for an orphan. This checks each operation without re-cutting the Entity's `_setVia` away from the person's axis. Price: a retention and an erasure portion per channel; a narrowing of the channel's claim without a new width; the restore path's settle stays a raw write in a process with no agent and is named here rather than hidden | Channel/shard row checks implemented (HIL-1893); channel/shard retention implemented (HIL-1902); disabled-owner duties; owner retry implemented (HIL-1910). Channel/shard erasure with result and started-recipient adoption guard (not in the code yet — HIL-1945). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
+| `notificationDeliveries` | notifications library `Add`: creation only; channel agent `Update`/`Remove` (status, attempts and error of its attempt; `resetForRetry()` for an admin retry; `adoptPendingRows()` after start or freeze; retention of its terminal rows; the erasure part of its own rows (`runErasurePart()`)); holder `Remove` in the erasure (`deleteForRecipient()`); `RestoredDeliveries::settlePending()`, a raw `UPDATE` at restore with no agent; `NotificationTestSeedCommand`, test-only | notifications library | the library creates; the channel or shard changes its own rows, resets a failed row an admin retries and removes its terminal rows through retention. A switched-off channel keeps its journal and retention, and its agent stays available for retention and erasure; no shared sweeper is introduced (question 4) | retry, prune, the erasure's `deleteForRecipient()` | the `NotificationChannelShard` row guard constrains channel `Update` and `Remove` by fresh saved delivery identity and current route. The pipeline captures delivery ids, recovers bounded pages and reduces the saved routing key at the current pool width; legacy `NULL` keys use the notification id, even for an orphan. This checks each operation without re-cutting the Entity's `_setVia` away from the person's axis. Price: a retention and an erasure portion per channel; a narrowing of the channel's claim without a new width; the restore path's settle stays a raw write in a process with no agent and is named here rather than hidden | Channel/shard row checks implemented (HIL-1893); channel/shard retention implemented (HIL-1902); disabled-owner duties; owner retry implemented (HIL-1910). Channel/shard erasure with result and the started-recipient send guard built (HIL-1945), inert: no live caller until HIL-1950/HIL-1952. Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
 | `notificationPreferences` | agent `Add`/`Update`/`Remove` (`setChannel()`); holder `Remove` in the erasure | the agent (a row is born only by the person's own choice) | the agent creates its own setting and writes and deletes it | the erasure's `deleteForUser()` | none. Price: inside the agent's erasure portion | No ordinary move remains. Personal child erasure with result (not in the code yet — HIL-1941). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
 | `pushSubscriptions` | notifications library `Add` (`subscribe()` inserts only for an absent endpoint and refuses collisions); agent `Update`/`Remove` (`renewOwned()`, `markGoneOwned()`, `releaseOwned()`, `unsubscribeOwned()`, `removeOwned()`); holder `Remove` in the erasure | notifications library (a new subscription) | the library creates new subscriptions and nothing else; the personal agent renews its own device, handles dead-endpoint reports, removals and the release of an endpoint a later person takes over | renewal of a person's existing device; the transport's dead-endpoint report; unsubscribe/remove; the release of a foreign endpoint; the erasure's `deleteForUser()` | the subscription row names its person, so the owner is known from the row; the push channel reads the devices and stays a reader; a persisted `revision` distinguishes registrations even across identical `last_seen_at` timestamps, and `renewOwned()` refreshes the saved row and diff baseline, clears its gone state, then increments that revision. A foreign endpoint takes two service frames: `hilos_user_push_release` from the library to the former owner and `hilos_user_push_release_done` back. `releaseOwned()` rereads the row by id and deletes it only when `user_id` and `endpoint` still match, and answers "released" either way; a failed write or guard refuses the press instead. The library then resumes the same press and creates the row under a new id. Price: own-device renewal is split between creator-only library `Add` and personal-owner `Update`; a foreign endpoint costs one more hop and a window with no server row, and its id may change; a refusal by the former owner is explicit, never another person's delete; a dead endpoint becomes a frame per recipient | Own-device renewal implemented (HIL-1905). Foreign-endpoint release by the former owner and creation at the library implemented (HIL-1906). Personal child erasure with result (not in the code yet — HIL-1941). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
 | `dataExports` | export agent `Add`/`Update`/`Remove` (`order()`, build, publish, forget); holder `Remove` in the erasure (`ofUser()->delete()`), then the post-commit `DataExportNotifier::forgetUser()` | export agent | the existing export executor, the cancellation and clean-up of the erased person's DB order included; the holder only hands over | the erasure's delete of the order; the forget frame becomes the obligation | the builder's check of the retained completed-erasure row stays ([data-export.md](data-export.md)). Price: the executor is a participant with a recorded result instead of a borrowed delete plus a fire-and-forget frame | No ordinary move remains. Owner DB erasure with result is prepared: `runErasurePart()` deletes the order and records `{"orders":<n>}`, the files leave after the commit through the existing sweep, and the publication checks also refuse an erasure that has begun (HIL-1946), with no live caller until HIL-1950/HIL-1952. Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
@@ -1783,9 +1795,9 @@ are named below. Four rules hold the table together.
   hand-over copy have one writer each, and a repeat of either is the same
   answer again.
   Erasure's generic participant step commits work and result in one local
-  transaction and answers a repeat from the saved result. The mechanism and its
-  first participant, the person's agent's erasure start, are built but inert
-  until a live path calls them; its coordinator
+  transaction and answers a repeat from the saved result. The person's agent
+  and the delivery channel/shard erasure parts are built but inert until live
+  paths call them; a channel result records `{"deliveries":<n>}`. The coordinator
   accepts an answer only for the matching operation and stage
   (not in the code yet — HIL-1950).
 - **A closed account stays closed.** No internal continuation, no late frame
@@ -1813,7 +1825,7 @@ page.
 | A required owner is missing: a table with rows and no agent registered for it | the rows; the assignment the coordinator wrote; no result | nobody, until the project registers the owner again; there is no fallback writer, and taking away the last owner of rows that stay is a separate decision (question 4), not an administrator's act and not a way to close the obligation | no fallback writer takes the rows, so no row gets two writers and nothing is deleted by a process that does not own it (question 4) | an explicit open obligation, *waiting for an owner of …*; the account stays closed |
 | A child with a hard key was forgotten and no participant deleted it | the child row; the agent's final transaction rolled back, the person row and the journal still there | the agent, which retries the final step once the owner of the row has been added to the participants | `RESTRICT` refused the delete and the agent's transaction rolled back, so the request is not marked carried out and nothing is half-deleted | the operation stays open at the final step with the refusal named; no account comes back |
 | A soft reference stayed behind: a delivery whose notification is gone, a mention set null | the delivery rows under the channel's assignment; the rows meant to stay — the request, a rename whose author is set null, a merge whose survivor is set null | the channel, from the recipient and the ids in its assignment, recorded before the notifications went | a delete by recorded ids is the same delete twice; the rows meant to stay are part of no obligation | the channel is listed as expected until its result; the trace rows carry the deleted person's number, as the journal's receipts already do ([change-log.md](change-log.md#one-scheduled-attempt-across-parts)) |
-| The channel is switched off | its journal rows and its retention term; the assignment to delete the erased recipient's rows | the channel's own agent, which stays available for retention and erasure (question 4); the dispatcher only stops creating new deliveries | switching off writes nothing and deletes nothing; the agent's pick-up of pending rows at start skips a recipient whose erasure has started and sends nothing to a closed account | the channel is still a participant and completes; history and term unchanged |
+| The channel is switched off | its journal rows and its retention term; the assignment to delete the erased recipient's rows | the channel's own agent, which stays available for retention and erasure (question 4); the dispatcher only stops creating new deliveries | switching off writes nothing and deletes nothing; when the started fact exists, the built guard skips the send attempt and refuses an administrator retry in the channel's own words | the channel erasure part records `{"deliveries":<n>}`; prepared, with no live caller until HIL-1950/HIL-1952. History and term unchanged |
 | A backup is restored with an operation unfinished | whatever had committed when the archive was taken: a started fact, some results, a tombstone with its copy, rows half moved | the coordinator and every owner, at their start after the restore, exactly as after a death: open records are selected from the facts and finished | every step repeats from a recorded result or a conditional write; the archive carries the records because they are rows — which is why they are rows | the account is as closed as it was at the archive's moment, and the operation finishes; a restore into a lesser environment classifies the records with the rest ([backup-anonymization.md](backup-anonymization.md#core-rule)) |
 
 The restore path has one raw write today, `RestoredDeliveries::settlePending()`,

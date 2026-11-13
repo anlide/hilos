@@ -55,6 +55,9 @@ class NotificationDeliveries extends Objects
     /** Longest failure detail kept in `last_error` (column is VARCHAR(255)). */
     private const int LAST_ERROR_LIMIT = 255;
 
+    /** Maximum notification numbers accepted by a saved identity lookup. */
+    private const int MAX_IDENTITY_LOOKUP_NOTIFICATIONS = 1000;
+
     /** Whether the activation of the delivery table has already been confirmed. */
     private bool $tableActivationConfirmed = false;
 
@@ -255,6 +258,48 @@ class NotificationDeliveries extends Objects
             . ' AND `' . EntityNotificationDelivery::id . '` > ?'
             . ' ORDER BY `' . EntityNotificationDelivery::id . '` ASC LIMIT ?',
             [$recipientUserId, $afterId, $limit],
+            index: $entityClass::getDatabase()->connectionIndex,
+        )->rows() as $row) {
+            $identities[] = new NotificationDeliveryIdentity(
+                deliveryId: (int)$row[EntityNotificationDelivery::id],
+                notificationId: (int)$row[EntityNotificationDelivery::notification_id],
+                channel: (string)$row[EntityNotificationDelivery::channel],
+                routingKey: $row[EntityNotificationDelivery::routing_key] === null
+                    ? null : (int)$row[EntityNotificationDelivery::routing_key],
+            );
+        }
+
+        return ChangeLogReadCollection::fromArray($identities);
+    }
+
+    /**
+     * Reads saved channel identities by captured notification numbers, including orphaned deliveries.
+     *
+     * @param string $channel Saved channel to match
+     * @param list<int> $notificationIds Nonempty bounded list of captured notification numbers
+     * @return ChangeLogReadCollection<NotificationDeliveryIdentity> Dense snapshot in ascending delivery-id order
+     * @throws InvalidArgumentException When the list has fewer than one or more than 1000 notification numbers
+     * @throws TableNotActivatedException When the project has not activated the delivery table
+     * @throws DatabaseException When the binding or projection query fails
+     */
+    public function identitiesOfNotifications(string $channel, array $notificationIds): ChangeLogReadCollection
+    {
+        if ($notificationIds === [] || count($notificationIds) > self::MAX_IDENTITY_LOOKUP_NOTIFICATIONS) {
+            throw new InvalidArgumentException('Notification delivery identity lookup takes 1 to 1000 notification ids');
+        }
+        $this->requireActivatedTable();
+        $entityClass = static::entityClass();
+        $identities = [];
+        // fresh-sql: the erasure finds a channel's rows by the notification numbers its portions saved, which the mirror cannot index.
+        foreach (Database::sql(
+            'SELECT `' . EntityNotificationDelivery::id . '`, `' . EntityNotificationDelivery::notification_id . '`,'
+            . ' `' . EntityNotificationDelivery::channel . '`, `' . EntityNotificationDelivery::routing_key . '`'
+            . ' FROM ' . $entityClass::getSqlTableName()
+            . ' WHERE `' . EntityNotificationDelivery::channel . '` = ?'
+            . ' AND `' . EntityNotificationDelivery::notification_id . '` IN ('
+            . implode(', ', array_fill(0, count($notificationIds), '?')) . ')'
+            . ' ORDER BY `' . EntityNotificationDelivery::id . '` ASC',
+            [$channel, ...$notificationIds],
             index: $entityClass::getDatabase()->connectionIndex,
         )->rows() as $row) {
             $identities[] = new NotificationDeliveryIdentity(

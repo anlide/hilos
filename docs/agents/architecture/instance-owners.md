@@ -89,7 +89,8 @@ and an administrator's export of acceptances stay with the executor that writes
 them. These are their own writing responsibilities, with one writer for the
 work; belonging to a person's data does not assign the same row two owners:
 
-- `AbstractDeliveryChannelAgent` edits the delivery attempt it is running
+- `AbstractDeliveryChannelAgent` edits the delivery attempt it is running and
+  deletes its rows of an erased recipient as its erasure part
   (`framework/backend/Notification/Delivery/AbstractDeliveryChannelAgent.php`).
 - `AbstractDataExportAgent` owns personal data copies
   (`framework/backend/DataExport/AbstractDataExportAgent.php`).
