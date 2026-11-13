@@ -1,4 +1,4 @@
-# CLI is default-on and the only tooling of this stand.
+# CLI is default-on; only Mailpit and Playwright use the e2e profile.
 # The caller supplies HILOS_DAEMON_HOST per command when addressing a member.
 services:
   roblox-game-server-cluster-cli:
@@ -37,5 +37,46 @@ services:
     depends_on:
       roblox-game-server-cluster-proxy:
         condition: service_healthy
+    networks:
+      - cluster-net
+
+  roblox-game-server-cluster-mailpit:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
+    container_name: roblox-game-server-cluster-mailpit${HILOS_STAND_SUFFIX:-}
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      TZ: UTC
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    profiles: [e2e]
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER:-225}.0.20
+
+  roblox-game-server-cluster-e2e-runner:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+    container_name: roblox-game-server-cluster-e2e-runner${HILOS_STAND_SUFFIX:-}
+    # The browser's scratch lives in memory: chromium runs with
+    # --disable-dev-shm-usage, so its shared memory and profile churn land in
+    # /tmp - gigabytes per suite written through the container layer to disk.
+    tmpfs:
+      - /tmp
+    volumes:
+      - ../../../..:/hilos
+    working_dir: /hilos/demo/roblox-game-server/tests/e2e
+    environment:
+      CI: "1"
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      COMMAND_PORT: "8094"
+      MAILPIT_URL: http://roblox-game-server-cluster-mailpit:8025
+      HILOS_E2E_TIMEOUT_SCALE: ${HILOS_E2E_TIMEOUT_SCALE:-}
+    profiles: [e2e]
     networks:
       - cluster-net

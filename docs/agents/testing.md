@@ -1449,9 +1449,9 @@ switched off whole, the host-side twin of a static `test.fixme`: the host prints
 nor quarantine. `-- --daemon` with daemon switched off prints
 `browser suite skipped: phase daemon` and succeeds without collecting.
 
-The daemon scenario checks foreign Workers/Agents/Cron/HTTP/Env, a remote UI
-restart proved by fresh node journals, mismatch privacy, then loss of the
-original leader. Two original follower contexts retain scheme, placement,
+The roblox-game-server daemon scenario checks foreign Workers/Agents/Cron/HTTP/Env,
+a remote UI restart proved by fresh node journals, mismatch privacy, and loss of
+the original leader. Two original follower contexts retain scheme, placement,
 mismatch and dashboard tabs; the source that remains follower proves addressed
 `page_resubscribe`, ordinary subscribe and live updates on its original
 sockets/documents. Both LEADER rows (`hilos_index`, `hilos_daemon`) move; the
@@ -1460,7 +1460,7 @@ dead column remains unknown. The destructive spec has no retries.
 The host alone changes the remote environment; it kills the leader only after
 the browser's run-id-bound readiness request. On every exit it joins its
 controller, restores the master, clears that environment override, waits for
-all five members to converge, checks every restart for startup refusal and
+all members to converge, checks every restart for startup refusal and
 removes only that run's control files. Live delivery control likewise stops
 and joins before restoring its captured faults and checking controller errors.
 A main cleanup failure stays red, and any later main phase requires restored
@@ -1469,18 +1469,20 @@ failure becomes one final failed/not-run observation, without changing main rc.
 The original failure reason is retained alongside any recovery failure.
 Inspect before/after, fresh restart journal tails, Cron and mismatch page-response/table-window
 frames and socket/document recovery proof are Playwright attachments under
-main's `test-results/cluster-daemon`, or `test-results/quarantine/daemon` for
-the tagged scenario; the harness prints restoration/convergence too.
+`demo/roblox-game-server/tests/e2e/test-results/cluster-daemon`, or
+`demo/roblox-game-server/tests/e2e/test-results/quarantine/daemon` for the
+tagged scenario; the harness prints restoration/convergence too.
 The scenario and browser
 steps share a group because both reset the same compose project (HIL-1232).
 Before the browser stand starts, a fresh CLI image clears its stopped nodes'
 log directories, including rotation archives, while retaining `.gitkeep` and
 every `protected-mode.state.json*` store, including unfinished `.tmp` files.
 Ordinary `up` does not run this cleanup. Save a failed run's logs before
-starting another. The step runner copies `data/logs-cluster/<node>/` to
-`artifacts/binance-btc-tracker-cluster-e2e/nodes/<node>/` at every verdict,
-before teardown. Live logs and this run's archive and staging trees keep their
-relative paths. A missing root or unreadable source is listed in `SNAPSHOT.txt`
+starting another. The Binance cluster step copies `data/logs-cluster/<node>/` to
+`artifacts/binance-btc-tracker-cluster-e2e/nodes/<node>/`, and the Roblox-game-server
+cluster step copies it to `artifacts/roblox-game-server-cluster-e2e/nodes/<node>/`
+at every verdict, before teardown. Live logs and this run's archive and staging
+trees keep their relative paths. A missing root or unreadable source is listed in `SNAPSHOT.txt`
 under `missing`, without changing the test verdict; `data/logs-test` is not a
 substitute for these node journals. A direct composer run has no step snapshot
 collector, so preserve its journals before starting the next fresh stand. After
@@ -1495,7 +1497,8 @@ source/viewer pairs, each master followed by the next in the harness's list.
 The entry serves Angular's `dist/index.csr.html`; Mailpit and the browser runner
 belong to the `e2e` profile. This stand has only a live phase: no fault request,
 no after-loss phase and no slaves. Online-testing declares no `e2e.capabilities`;
-binance-btc-tracker declares all three: `daemon`, `delivery` and `env-mismatch`.
+binance-btc-tracker declares `delivery`; roblox-game-server declares `daemon`
+and `env-mismatch`.
 
 Each pair registers a person and an administrator in separate contexts, proves
 every actual WebSocket upgrade's master through CDP, waits for both Analytics
@@ -1528,6 +1531,18 @@ the repository root; it includes the step's dependencies. The collector keeps
 paths, plus Playwright evidence and `SNAPSHOT.txt`, before teardown, under the same
 missing-source rules as binance. It never substitutes `data/logs-test` for these
 journals. Save direct-run logs before another fresh stand empties them.
+
+The `roblox-game-server-cluster-e2e` step carries Daemon clock, environment
+mismatch and orphan cases plus section navigation. It runs after
+`roblox-game-server-e2e`, sharing `frontend/dist`, `tests/e2e/node_modules` and
+reports. The cluster-browser step shares the `roblox-game-server-cluster` group
+and stand with the cluster scenarios because both reset the same compose project;
+the ordinary e2e step uses its own stand and group. After
+`composer -d demo/roblox-game-server run test:e2e-build`, run the focused suite
+with `composer -d demo/roblox-game-server run test:cluster:e2e`. Passing
+`-- --daemon` prints `SKIP F-023` while that phase remains parked. The step
+runner copies node logs to
+`artifacts/roblox-game-server-cluster-e2e/nodes/<node>/`.
 
 The full run carries the fleets binance-btc-tracker, ecommerce-shop,
 online-testing and roblox-game-server; the other planned carriers above enter

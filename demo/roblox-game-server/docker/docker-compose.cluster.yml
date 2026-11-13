@@ -24,6 +24,9 @@
 # the framework's cluster probes among them - and publish nothing on the host: the harness reaches
 # them through the cli container. One nginx entry serves all masters on the stand network;
 # hilos_stand_master selects a master, while a request without that cookie rotates through them.
+# The e2e profile adds Mailpit and a one-shot Playwright runner; `cluster.py e2e`
+# raises them, and the browser enters through the one entry above, naming its
+# master by the cookie (HIL-1232).
 
 name: hilos-roblox-game-server-cluster${HILOS_STAND_SUFFIX:-}
 
@@ -34,6 +37,9 @@ x-hilos-cluster:
   cli: roblox-game-server-cluster-cli
   entry: roblox-game-server-cluster-entry
   scenarios: [26, 49]
+  e2e:
+    runner: roblox-game-server-cluster-e2e-runner
+    capabilities: [daemon, env-mismatch]
 
 
 # One included model: merge local services and tooling before importing shared resources.

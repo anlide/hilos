@@ -92,8 +92,7 @@ import {
 // keyboard access, themes, viewer privacy and the shared restart mark.
 // Vue alone submits a forged viewer restart request to check the server.
 // Kit unit tests cover Cron idle/empty and cluster mismatches (P-572);
-// cluster coverage stays in
-// demo/binance-btc-tracker/tests/e2e/cluster/daemon/daemon.spec.ts (HIL-2030).
+// cluster coverage lives in this demo's tests/e2e/cluster/daemon/daemon.spec.ts.
 const DATABASE_HOST = 'roblox-game-server-mysql-test'
 
 // Runner doubles exercise correlation and cleanup. The real browser and server

@@ -22,8 +22,6 @@ import {
   nodeHost,
 } from '../../helpers/cluster.js'
 
-// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
-
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 test.use({ timezoneId: 'Asia/Kuala_Lumpur' })
 

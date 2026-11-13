@@ -248,7 +248,7 @@ production the rows are carried and nothing is run.
 | `composer run test:cluster:logs -- m1` | follow one node's container logs; Ctrl-C stops following |
 | `composer run test:cluster:client -- m1 test:cluster:inspect` | run an existing CLI command through the selected node |
 | `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 17 20` runs only the ones named |
-| `composer run test:cluster:e2e` | fresh browser suite: Daemon/recovery, live, after-loss; build first with `test:e2e-build`; `-- --grep circle` points it |
+| `composer run test:cluster:e2e` | fresh browser suite: live, after-loss; build first with `test:e2e-build`; `-- --grep circle` points it |
 | `composer run test:cluster:down-volumes` | take the stand down, database included |
 | `composer run test:cluster:down` | stop the stand, retaining database data and protected-mode stores |
 

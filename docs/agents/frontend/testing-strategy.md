@@ -407,7 +407,7 @@ the demo's `test:e2e-time-zone` Composer command. Active ordinary demos provide
 it; each planned carrier must supply the same interface
 under its activation marker in the
 [ordinary carrier table](../testing.md#ordinary-demo-carriers).
-`binance-btc-tracker` and `online-testing` also provide
+`binance-btc-tracker`, `online-testing` and `roblox-game-server` also provide
 `test:cluster:e2e-time-zone` for their cluster browser entries. Use the command
 for the same stand the scenario runs on. From the repository root, for example:
 
@@ -608,14 +608,16 @@ Here `donor/live/{a,b}` means
 
 | Target / view | Whole areas and current source specs | Transfer owner |
 |---|---|---|
-| `roblox-game-server` / Vue | **Daemon and delivery:** `binance-btc-tracker/daemon/daemon`, `binance-btc-tracker/live/{daemon-clock,daemon-env-mismatch,daemon-env-orphans,daemon-section,delivery-window}`. | (not in the code yet — HIL-2030) |
+| `roblox-game-server` / Vue | **Daemon:** `binance-btc-tracker/daemon/daemon`, `binance-btc-tracker/live/{daemon-clock,daemon-env-mismatch,daemon-env-orphans,daemon-section}`. | HIL-2030 |
 | `roblox-game-server` / Vue | **Sessions, theme, i18n, protected mode:** `binance-btc-tracker/live/{sessions,theme,i18n,protected-mode}`. | (not in the code yet — HIL-2031) |
 | `concert-tickets` / Angular | **Moderation:** `online-testing/live/moderation`, with five rotations of three distinct roles instead of three; F-060 stays on its identified variant. | (not in the code yet — HIL-2033) |
 
 Binance keeps `live/{backup,logs,change-log}` and `after-loss/{backup,logs}`:
 these need an archive holder and journal writer on a slave, which Roblox's
-mixed roles do not guarantee. Online-testing keeps `live/analytics` with its
-three source/viewer rotations.
+mixed roles do not guarantee. Its `live/delivery-window` remains on Binance:
+the coalescing test reads Status hints, and Roblox declares no Status (HIL-2017),
+by the owner's decision of 2026-11-13 (HIL-2030). Online-testing keeps
+`live/analytics` with its three source/viewer rotations.
 
 React has no cluster-browser corpus to transfer. Cross-node sign-in, sign-out
 and grant/revoke on the new React and Angular carriers are new proofs
@@ -626,10 +628,9 @@ After the transfers each source file exists exactly once
 
 #### Current owners during activation
 
-The inventory and explanations below describe the working placement before the
-target transfers. They remain the place to find today's paths, not a competing
-target assignment. A leaf that actually moves an area updates its entries;
-this documentation change does not pretend the destination is active.
+The inventory and explanations below describe the current placement. A
+completed move updates its entries so they continue to name the active owner
+and paths.
 
 The operations moves of 2026-09-27 paired the demos by view framework:
 chat (Vue) → binance-btc-tracker (Vue), tasks (React) → ecommerce-shop (React),
@@ -641,7 +642,8 @@ polls (Angular) → online-testing (Angular).
 | Backup | roblox-game-server: backup, backup-reopen | roblox-game-server | HIL-1220, HIL-2017 |
 | Protected mode and maintenance | binance-btc-tracker: protected-mode; roblox-game-server: maintenance-restore, maintenance-words | binance-btc-tracker, roblox-game-server | HIL-1221, HIL-2017 |
 | Logs | roblox-game-server: logs, logs-rotation | roblox-game-server | HIL-1222, HIL-2017 |
-| Cluster browser — backup, logs, protected mode, one person's tabs, theme settings/choices/reset, Change Log and live i18n edits across masters | binance-btc-tracker: tests/e2e/cluster (live, after-loss), playwright.cluster.config.ts | binance-btc-tracker | HIL-1232, HIL-1443, HIL-1465, HIL-1505 |
+| Cluster browser — backup, logs, protected mode, one person's tabs, theme settings/choices/reset, Change Log, live i18n edits and delivery windows across nodes | binance-btc-tracker: tests/e2e/cluster (live, after-loss), playwright.cluster.config.ts | binance-btc-tracker | HIL-1232, HIL-1443, HIL-1465, HIL-1505 |
+| Cluster browser — Daemon: foreign node pages and leader loss (parked, F-023), clock gap, environment mismatch and orphans, section navigation | roblox-game-server: tests/e2e/cluster (daemon, live), playwright.cluster.config.ts | roblox-game-server | HIL-2030 |
 | Cluster browser — Analytics and Moderation across all three masters | online-testing: tests/e2e/cluster/live/analytics.spec.ts, tests/e2e/cluster/live/moderation.spec.ts, playwright.cluster.config.ts | online-testing | HIL-1423, HIL-1639 |
 | Tables | binance-btc-tracker: table-lag, table-refusal | binance-btc-tracker | HIL-1223 |
 | Notifications and communications | binance-btc-tracker: notifications, communications | binance-btc-tracker | HIL-1224 |
@@ -665,10 +667,10 @@ binance-btc-tracker (Vue), file-gallery-manager (React) and concert-tickets
 activates the feature without `LOGS` and carries a standalone smoke of its own.
 Online-testing has the backend feature without a UI. Chat checks the section's accessibility
 in its existing `tests/e2e/tests/a11y.spec.ts`. The matrix above moves the three
-ordinary `daemon` areas; the independent smoke and cluster proofs stay with
-their existing owners in this phase.
+ordinary `daemon` areas. Roblox-game-server now also carries the independent
+live cluster smoke and the selected cluster proofs.
 
-Binance carries an independent live cluster smoke at
+Roblox-game-server carries an independent live cluster smoke at
 `tests/e2e/cluster/live/daemon-section.spec.ts`, titled “daemon section
 navigation: follower entry points name the live leader and every section link
 owns its address”. It opens the browser on a follower, checks existing consensus
@@ -1424,7 +1426,7 @@ keyboard controls; `watchDaemonPlacementLive` and
 `daemonOverviewSchema`. `expectDaemonRootEntryPoints` checks source links on the
 Overview without assigning a Placement window to it.
 
-Binance's live cluster carrier is `cluster/live/daemon-section.spec.ts`; it is
+Roblox-game-server's live cluster carrier is `cluster/live/daemon-section.spec.ts`; it is
 separate from the parked destructive scenario in `cluster/daemon/daemon.spec.ts`.
 The live test opens on a follower and confirms the live leader's delivered
 entry-points projection, the source HTTP page and the separate addresses for

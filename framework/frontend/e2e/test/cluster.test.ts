@@ -25,6 +25,7 @@ describe('cluster node names', () => {
       'CLUSTER_LEADER',
       'CLUSTER_FOLLOWER',
       'CLUSTER_MASTERS',
+      'CLUSTER_SLAVES',
       'CLUSTER_NODE_HOSTS',
       'CLUSTER_NODE_IPS',
       'CLUSTER_NODE_LOGS',
@@ -61,6 +62,7 @@ describe('cluster browser environment', () => {
       CLUSTER_LEADER: 'm1',
       CLUSTER_FOLLOWER: 'm2',
       CLUSTER_MASTERS: 'm1,m2',
+      CLUSTER_SLAVES: 's1',
       CLUSTER_NODE_HOSTS: 'm1=master-one,m2=master-two,s1=slave-one',
       CLUSTER_NODE_IPS: 'm1=192.0.2.1,m2=192.0.2.2,s1=192.0.2.3',
       CLUSTER_NODE_NAMES: JSON.stringify(nodeNames),
@@ -80,11 +82,38 @@ describe('cluster browser environment', () => {
       leader: 'm1',
       follower: 'm2',
       masters: ['m1', 'm2'],
+      slaves: ['s1'],
       nodeNames,
       nodeHosts: { m1: 'master-one', m2: 'master-two', s1: 'slave-one' },
       nodeIps: { m1: '192.0.2.1', m2: '192.0.2.2', s1: '192.0.2.3' },
       nodeLogs: { m1: '/logs/m1', m2: '/logs/m2', s1: '/logs/s1' },
     })
+  })
+
+  it('accepts an empty slave list', () => {
+    vi.stubEnv('CLUSTER_SLAVES', '')
+    expect(readClusterBrowserStand().slaves).toEqual([])
+  })
+
+  it('refuses a slave that is also a master', () => {
+    vi.stubEnv('CLUSTER_SLAVES', 'm1')
+    expect(() => readClusterBrowserStand()).toThrow(
+      'Invalid cluster slave roles',
+    )
+  })
+
+  it('refuses a duplicate slave', () => {
+    vi.stubEnv('CLUSTER_SLAVES', 's1,s1')
+    expect(() => readClusterBrowserStand()).toThrow(
+      'Invalid cluster slave roles',
+    )
+  })
+
+  it('refuses a slave absent from every address map', () => {
+    vi.stubEnv('CLUSTER_SLAVES', 's1,s2')
+    expect(() => readClusterBrowserStand()).toThrow(
+      'Incomplete cluster address maps for s2',
+    )
   })
 
   it.each(['', '{', 'null', '[]', '42', '"name"'])(

@@ -29,8 +29,6 @@ import {
   nodeHost,
 } from '../../helpers/cluster.js'
 
-// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
-
 // Live browser proof of the section on a follower, independent of the parked
 // daemon fault scenario. The host keeps every node alive throughout this test.
 test('daemon section navigation: follower entry points name the live leader and every section link owns its address', async ({

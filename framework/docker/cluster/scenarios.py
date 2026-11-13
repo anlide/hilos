@@ -6171,6 +6171,9 @@ FLAKY_SKIP = {
     # dropped rather than held - that is the first thing to rule out.
     "39 person agents across nodes":
         "F-015: a cold person agent on s2 refused the unlock it started 70 ms later (red 1/8, last 2026-10-17)",
+    # FIXME(F-095, 2026-11-13): задача стартует после восстановления лидера до расширения ёмкости · свой · попытка 3 · HIL-2030
+    "44 waiting work survives leadership changes":
+        "F-095: target starts after leader recovery before capacity expands",
 }
 
 

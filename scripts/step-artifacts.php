@@ -70,7 +70,11 @@ const ARTIFACT_VALUE_SEPARATOR = '; ';
 const STAND_LOG_DIR = 'data/logs-test';
 
 /** The browser steps whose evidence belongs to separate cluster nodes. */
-const CLUSTER_BROWSER_STEPS = ['binance-btc-tracker-cluster-e2e', 'online-testing-cluster-e2e'];
+const CLUSTER_BROWSER_STEPS = [
+    'binance-btc-tracker-cluster-e2e',
+    'online-testing-cluster-e2e',
+    'roblox-game-server-cluster-e2e',
+];
 
 /** Node log trees, emptied at the start of each fresh cluster browser run. */
 const CLUSTER_LOG_DIR = 'data/logs-cluster';

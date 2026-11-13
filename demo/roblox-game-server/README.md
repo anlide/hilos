@@ -283,12 +283,17 @@ run has a step of its own, `roblox-game-server-cluster`.
 | `composer run test:cluster:logs -- m1` | follow one node's container logs; Ctrl-C stops following |
 | `composer run test:cluster:client -- m1 test:cluster:inspect` | run an existing CLI command through the selected node |
 | `composer run test:cluster:scenarios` | scenarios 26 and 49 on a fresh stand; `-- 49` runs only the one named |
+| `composer run test:cluster:e2e` | fresh browser suite: Daemon on live masters, the daemon phase is parked (F-023); build first with `test:e2e-build`; `-- --grep 'env mismatch'` points it |
+| `composer run test:cluster:e2e-time-zone` | draw an explicit browser zone for a new cluster spec |
 | `composer run test:cluster:down-volumes` | take the stand down, database included |
 | `composer run test:cluster:down` | stop the stand, retaining the database data |
 
-The browser commands (`test:cluster:e2e` and its time-zone variant) arrive with
-the stand's browser layer, HIL-2030. The harness commands — `kill`, `inspect`
-and the rest — use the shell entry point from this demo directory; see the
+The e2e profile adds Mailpit and a Playwright runner. The browser enters through
+one stand entry; every context selects a master with `hilos_stand_master` before
+its first navigation. Browsers start on a follower master.
+
+The harness commands — `kill`, `inspect` and the rest — use the shell entry
+point from this demo directory; see the
 [shared runner details](../../docs/agents/testing.md#cluster-harness-runner).
 
 ### Raising and raising again

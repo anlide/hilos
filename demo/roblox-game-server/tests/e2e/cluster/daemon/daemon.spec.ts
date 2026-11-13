@@ -45,8 +45,6 @@ import {
   requestLeaderKill,
 } from '../../helpers/daemonCluster.js'
 
-// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
-
 const LEADER_AGENTS = ['hilos_index', 'hilos_daemon']
 const RESTART_AGENT = 'hilos_log_store'
 

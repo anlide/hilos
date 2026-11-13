@@ -5,6 +5,7 @@ import {
   readFileSync,
   readSync,
   statSync,
+  writeFileSync,
 } from 'node:fs'
 import { isIP } from 'node:net'
 import { isAbsolute } from 'node:path'
@@ -25,6 +26,7 @@ export interface ClusterBrowserStand {
   leader: string
   follower: string
   masters: readonly string[]
+  slaves: readonly string[]
   nodeHosts: Readonly<Record<string, string>>
   nodeNames: Readonly<Record<string, string>>
   nodeIps: Readonly<Record<string, string>>
@@ -40,9 +42,9 @@ export interface ClusterInspection {
 
 export const STAND_MASTER_COOKIE = 'hilos_stand_master'
 
-function required(name: string): string {
+function required(name: string, allowEmpty = false): string {
   const value = process.env[name]?.trim()
-  if (!value) {
+  if (value === undefined || (!allowEmpty && !value)) {
     throw new Error(
       `cluster e2e requires ${name}; run it through composer run test:cluster:e2e`,
     )
@@ -105,6 +107,14 @@ export function readClusterBrowserStand(): ClusterBrowserStand {
   ) {
     throw new Error('Invalid cluster master roles')
   }
+  const slaveList = required('CLUSTER_SLAVES', true)
+  const slaves = slaveList === '' ? [] : slaveList.split(',')
+  if (
+    slaves.some((node) => !node || masters.includes(node)) ||
+    new Set(slaves).size !== slaves.length
+  ) {
+    throw new Error('Invalid cluster slave roles')
+  }
   const nodeHosts = addressMap('CLUSTER_NODE_HOSTS')
   const nodeIps = addressMap('CLUSTER_NODE_IPS')
   const nodeNames = readClusterNodeNames()
@@ -121,6 +131,7 @@ export function readClusterBrowserStand(): ClusterBrowserStand {
   }
   const nodes = new Set([
     ...masters,
+    ...slaves,
     ...Object.keys(nodeHosts),
     ...Object.keys(nodeIps),
     ...Object.keys(nodeNames),
@@ -144,6 +155,7 @@ export function readClusterBrowserStand(): ClusterBrowserStand {
     leader,
     follower,
     masters,
+    slaves,
     nodeHosts,
     nodeNames,
     nodeIps,
@@ -197,18 +209,56 @@ export async function setClusterMaster(
     ])
 }
 
+/** Read the command host of a member of the running stand. */
+export function clusterNodeHost(
+  stand: ClusterBrowserStand,
+  node: string,
+): string {
+  const host = stand.nodeHosts[node]
+  if (!host) throw new Error(`No command host for cluster node ${node}`)
+  return host
+}
+
 /** Bind the existing command channel to one member of the running stand. */
 export function clusterCommandChannel(
   stand: ClusterBrowserStand,
   node: string,
 ) {
-  const host = stand.nodeHosts[node]
-  if (!host) throw new Error(`No command host for cluster node ${node}`)
+  const host = clusterNodeHost(stand, node)
   const port = Number(process.env.COMMAND_PORT ?? 8094)
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error('Invalid cluster COMMAND_PORT')
   }
   return createCommandChannel({ host, port, timeoutMs: 15_000 })
+}
+
+/** Read a member's cluster view through its existing inspect command. */
+export async function inspectClusterNode(
+  stand: ClusterBrowserStand,
+  node: string,
+): Promise<ClusterInspection> {
+  return (await clusterCommandChannel(stand, node)(
+    'test:cluster:inspect',
+    {},
+  )) as unknown as ClusterInspection
+}
+
+/** Read the sole started placement while the harness leader and term stay put. */
+export async function clusterPlacementNode(
+  expect: Expect,
+  stand: ClusterBrowserStand,
+  agentId: string,
+): Promise<string> {
+  const view = await inspectClusterNode(stand, stand.leader)
+  await expectClusterLeaderUnchanged(expect, stand, view)
+  const placements = view.placements.filter(
+    (row) => row.agentId === agentId && row.state === 'started',
+  )
+  if (placements.length !== 1)
+    throw new Error(
+      `No started placement for ${agentId} on leader ${stand.leader}`,
+    )
+  return placements[0].nodeId
 }
 
 /** Read a fresh follower view; a changed leader or term invalidates this scenario. */
@@ -229,6 +279,38 @@ export async function expectClusterLeaderUnchanged(
     { leaderId: now.leaderId, term: now.term },
     'Cluster leadership must stay unchanged during the browser scenario',
   ).toEqual({ leaderId: before.leaderId, term: before.term })
+}
+
+/**
+ * Ask the host harness to stop a slave between Playwright phases.
+ *
+ * @param stand The running stand's slave roles.
+ * @param node Slave that holds the artifact under test.
+ * @param reason Human-readable reason printed by the harness.
+ * @param carry Data the after-loss phase needs from the live phase.
+ */
+export function requestClusterNodeStop(
+  stand: ClusterBrowserStand,
+  node: string,
+  reason: string,
+  carry: Record<string, unknown>,
+): void {
+  if (!stand.slaves.includes(node)) {
+    throw new Error(`A cluster browser spec may stop a slave only: ${node}`)
+  }
+  writeFileSync(
+    required('CLUSTER_FAULT_FILE'),
+    JSON.stringify({ stop: node, reason, carry }),
+    'utf8',
+  )
+}
+
+/** Read the values written by the live phase for the after-loss phase. */
+export function readClusterCarry(): Record<string, unknown> {
+  const request = JSON.parse(
+    readFileSync(required('CLUSTER_FAULT_FILE'), 'utf8'),
+  ) as { carry?: Record<string, unknown> }
+  return request.carry ?? {}
 }
 
 const ANALYTICS_READER = 'hilos_analytics'

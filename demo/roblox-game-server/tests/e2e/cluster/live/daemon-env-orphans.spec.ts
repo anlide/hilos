@@ -19,8 +19,6 @@ import {
   placementNode,
 } from '../../helpers/cluster.js'
 
-// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
-
 const ORPHANS_PAGE = 'hilos_daemon_env_orphans'
 const ORPHANS_WINDOW = 'hilosDaemonEnvOrphans'
 
