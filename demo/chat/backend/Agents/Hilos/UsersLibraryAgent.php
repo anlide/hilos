@@ -12,9 +12,11 @@ use Demo\Chat\Hilos;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Item\UserRename;
 use Hilos\HilosException;
 
@@ -62,12 +64,22 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * Writes the feed event, then asks the person's agent to link the journal row (HIL-1896).
      * An insert or enqueue failure reaches the framework caller, which logs it; the name stands.
      *
+     * A person whose erasure has begun gets neither the event nor the link frame: a link arriving
+     * after the capture would name an event the capture never kept, and ChatAgent would leave it
+     * standing. Skipping it here narrows that race of a late link to a rename already on its way
+     * (HIL-1940).
+     *
      * @param UserRename $rename Journal row of the rename just committed
+     * @throws DatabaseException When the begun-erasure lookup fails
+     * @throws InvalidArgumentException When the begun-erasure query is malformed
      * @throws HilosException When the event or the frame cannot be written
-     * @throws LogicException If event id is null after sync
+     * @throws LogicException If event id is null after sync, or the deletion collection is not configured
      */
     public function afterUserRenamed(UserRename $rename): void
     {
+        if (Hilos::$db->accountDeletions->startedOf($rename->userId) !== null) {
+            return;
+        }
         $event = Hilos::$db->events->actions->addUserRenamed($rename);
         $this->sendToAgent(
             ChatSignalConstants::USER_RENAME_FEED_LINK,

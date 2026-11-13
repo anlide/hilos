@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use Demo\Chat\Auth\ChatErasureRenameFeed;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
@@ -11,6 +12,10 @@ use Demo\Chat\Core\Router\DTO\UserRenameFeedLinkSignalData;
 use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkedSignalData;
 use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkSignalData;
 use Demo\Chat\Database\View\Item\UserRename;
+use Hilos\Auth\AccountOperation\AccountErasureCapture;
+use Hilos\Auth\AccountOperation\AccountErasureOpening;
+use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
+use Hilos\Auth\AccountOperation\AccountErasurePersonalCaptureResult;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Log\AgentLogStream;
@@ -28,8 +33,13 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
+use Hilos\Database\View\Item\AccountOperation;
+use Hilos\Database\View\Item\AccountOperationAssignment;
+use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\HilosException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\DTO\AdminRenameSignalData;
@@ -46,6 +56,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * link the journal row to it without an answer (HIL-1896).
  * The event's type follows the row's author, and a person renamed by somebody else is told so.
  * Clearing the room's history asks each person's agent to take its rows off, and keeps them (HIL-1897).
+ * The erasure's capture takes them off as well and keeps the events they named (HIL-1940).
  */
 final class RenameFeedTest extends IntegrationTestCase
 {
@@ -298,6 +309,113 @@ final class RenameFeedTest extends IntegrationTestCase
         self::assertFileDoesNotExist($this->personErrorLog($userId));
     }
 
+    /**
+     * The person's capture takes the journal off the feed in its own transaction and keeps the
+     * events it named, in id order; the events and the journal rows stay (HIL-1940).
+     */
+    public function testThePersonsCaptureTakesTheJournalOffTheFeedAndKeepsItsEvents(): void
+    {
+        $userId = (int)Hilos::$db->users->actions->createWithName('Captured feed')->id;
+        $first = Hilos::$db->userRenames->actions->add($userId, $userId, 'Before capture', 'Between captures');
+        $firstLink = $this->queuedFeedLink($first);
+        $this->deliverFeedLink($userId, $firstLink);
+        $second = Hilos::$db->userRenames->actions->add($userId, $userId, 'Between captures', 'Captured feed');
+        $secondLink = $this->queuedFeedLink($second);
+        $this->deliverFeedLink($userId, $secondLink);
+        self::assertLessThan($secondLink->eventId, $firstLink->eventId);
+        $assignment = $this->startedErasureCapture($userId);
+
+        $result = $this->captureFor($userId, (int)$assignment->id);
+
+        self::assertFalse(Database::hasOpenTransactions());
+        $eventIds = [$firstLink->eventId, $secondLink->eventId];
+        $capture = AccountErasurePersonalCaptureResult::of($assignment->operationId, $userId);
+        self::assertNotNull($capture);
+        self::assertSame([ChatErasureRenameFeed::RENAME_EVENTS => $eventIds], $capture->project);
+        self::assertSame($eventIds, ChatErasureRenameFeed::eventIdsOf($capture));
+        self::assertSame(
+            $eventIds,
+            ChatErasureRenameFeed::eventIdsOf(AccountErasurePersonalCaptureResult::fromPayload($result->payload)),
+        );
+        $rows = EntityUserRename::get([EntityUserRename::user_id => $userId]);
+        self::assertCount(2, $rows, 'The journal rows stay');
+        foreach ($rows as $row) {
+            self::assertNull($row->event_id);
+        }
+        self::assertNull($first->eventId);
+        self::assertNull($second->eventId);
+        foreach ($eventIds as $eventId) {
+            self::assertTrue(isset(Hilos::$db->events[$eventId]), 'The events stay for ChatAgent');
+        }
+        self::assertFileDoesNotExist($this->personErrorLog($userId));
+    }
+
+    /** Outside a transaction the erasure's unlink is refused and the journal keeps its links. */
+    public function testAnErasureUnlinkOutsideATransactionIsRefused(): void
+    {
+        $userId = (int)Hilos::$db->users->actions->createWithName('Untransacted feed')->id;
+        $row = Hilos::$db->userRenames->actions->add($userId, $userId, 'Before untransacted', 'Untransacted feed');
+        $link = $this->queuedFeedLink($row);
+        $this->deliverFeedLink($userId, $link);
+        $agent = $this->personAgent($userId);
+
+        try {
+            $this->underAgent($agent, static fn (): array => Hilos::$db->userRenames->actions->unlinkForErasure($userId));
+            self::fail('The erasure unlink ran outside a transaction');
+        } catch (DatabaseException $refusal) {
+            self::assertSame('A rename feed unlink for an erasure must run inside its participant transaction', $refusal->getMessage());
+        }
+
+        self::assertFalse(Database::hasOpenTransactions());
+        self::assertSame($link->eventId, $row->eventId);
+        self::assertSame($link->eventId, $this->onlyJournalRowOf($userId)->event_id);
+    }
+
+    /**
+     * A link frame arriving after the capture is served as before; the capture keeps what it
+     * recorded (HIL-1939, HIL-1940).
+     */
+    public function testALinkAfterTheCaptureIsServedAndLeavesTheCaptureAsItWas(): void
+    {
+        $userId = (int)Hilos::$db->users->actions->createWithName('Relinked feed')->id;
+        $row = Hilos::$db->userRenames->actions->add($userId, $userId, 'Before relink', 'Relinked feed');
+        $link = $this->queuedFeedLink($row);
+        $this->deliverFeedLink($userId, $link);
+        $assignment = $this->startedErasureCapture($userId);
+        $captured = $this->captureFor($userId, (int)$assignment->id)->payload->toJson();
+        self::assertNull($this->onlyJournalRowOf($userId)->event_id);
+
+        $this->deliverFeedLink($userId, $link);
+
+        self::assertSame($link->eventId, $row->eventId);
+        self::assertSame($link->eventId, $this->onlyJournalRowOf($userId)->event_id);
+        self::assertSame($captured, $this->captureFor($userId, (int)$assignment->id)->payload->toJson());
+        $capture = AccountErasurePersonalCaptureResult::of($assignment->operationId, $userId);
+        self::assertNotNull($capture);
+        self::assertSame([$link->eventId], ChatErasureRenameFeed::eventIdsOf($capture));
+        self::assertFalse($this->personAgent($userId)->shouldStop());
+        self::assertFileDoesNotExist($this->personErrorLog($userId));
+        $this->assertNoAgentReplies();
+    }
+
+    /** A rename reaching the library after the person's erasure began writes no feed line and asks no link (HIL-1940). */
+    public function testARenameAfterTheErasureBeganWritesNoFeedLine(): void
+    {
+        $userId = (int)Hilos::$db->users->actions->createWithName('Late rename')->id;
+        $row = Hilos::$db->userRenames->actions->add($userId, $userId, 'Before late rename', 'Late rename');
+        $this->beginErasure($userId);
+        $eventsBefore = count(Hilos::$db->events);
+        $library = $this->usersLibrary();
+
+        $this->underAgent($library, static fn () => $library->afterUserRenamed($row));
+
+        self::assertCount($eventsBefore, Hilos::$db->events);
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            self::assertNotSame(ChatSignalConstants::USER_RENAME_FEED_LINK, $signal->signalName->getName());
+        }
+        self::assertNull($this->onlyJournalRowOf($userId)->event_id);
+    }
+
     /** Set ownership logs a foreign row; a foreign addressee is an agent protocol error. */
     public function testAnotherPersonsRowAndAnotherAddresseeAreRefused(): void
     {
@@ -452,6 +570,46 @@ final class RenameFeedTest extends IntegrationTestCase
         self::assertNotNull($request);
         self::assertTrue($this->underAgent($this->personAgent($userId), static fn (): bool => $request->actions->start()));
         self::assertSame($request->id, Hilos::$db->accountDeletions->startedOf($userId)?->id);
+    }
+
+    /**
+     * Begins the person's erasure, then opens it and hands out its captures in the session holder
+     * with the chat's own participants, the way the coordinator will (HIL-1950).
+     *
+     * @param int $userId Person whose erasure begins
+     * @return AccountOperationAssignment The person's own capture assignment
+     * @throws HilosException When the erasure cannot be begun, opened or handed out
+     */
+    private function startedErasureCapture(int $userId): AccountOperationAssignment
+    {
+        $this->beginErasure($userId);
+        $request = Hilos::$db->accountDeletions->startedOf($userId);
+        self::assertNotNull($request);
+        $catalog = AccountErasureParticipantCatalog::installation();
+        $holder = $this->sessionsLibrary();
+        $erasure = $this->underAgent($holder, static fn (): ?AccountOperation => AccountErasureOpening::open($request, $catalog)->operation);
+        self::assertNotNull($erasure);
+        $key = AccountErasureCapture::personalKey($userId);
+        $captures = array_values(array_filter(
+            $this->underAgent($holder, static fn (): array => AccountErasureCapture::recordAfterStart($erasure, $catalog)),
+            static fn (AccountOperationAssignment $assignment): bool => $assignment->assignmentKey === $key,
+        ));
+        self::assertCount(1, $captures);
+
+        return $captures[0];
+    }
+
+    /**
+     * @param int $userId Person whose agent captures
+     * @param int $assignmentId The person's capture assignment
+     * @return AccountOperationResult The recorded or saved capture
+     * @throws HilosException When the capture is refused or fails
+     */
+    private function captureFor(int $userId, int $assignmentId): AccountOperationResult
+    {
+        $agent = $this->personAgent($userId);
+
+        return $this->underAgent($agent, static fn (): AccountOperationResult => $agent->captureForErasure($assignmentId));
     }
 
     /**

@@ -199,9 +199,13 @@ Keep the current grants and hook until their actual moves; the journal's
 terminal deletion remains at the holder until erasure's live switch
 (not in the code yet — HIL-1952).
 
-For erasure, rename-feed event ids are saved durably before their journal
-anchors go, and unlink is confirmed by the journal's personal owner
-(not in the code yet — HIL-1940). That owner deletes its journal only in the
+For erasure, the rename-feed event ids are kept by the capture of the journal's
+personal owner, whose transaction takes the journal off them
+(`UserRenamesActions::unlinkForErasure()`, `ChatErasureRenameFeed`); `ChatAgent`
+reads them from that capture and writes no journal. The chat's
+`afterUserRenamed()` writes no feed event, and asks for no link, for a person
+whose erasure has begun. This is prepared, with no live caller until
+HIL-1950/HIL-1952. That owner deletes its journal only in the
 final personal transaction after required results
 (not in the code yet — HIL-1942). These are the erasure steps of
 [account-operations.md](account-operations.md#erasure); neither gives

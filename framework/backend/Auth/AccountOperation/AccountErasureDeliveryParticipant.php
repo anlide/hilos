@@ -26,8 +26,9 @@ use Hilos\Notification\Delivery\DeliveryOwnerResolver;
 final class AccountErasureDeliveryParticipant implements AccountErasureParticipant
 {
     public const string KEY = 'delivery';
+    /** Between {@see KEY} and the channel in the participant key `delivery:<channel>`, which the delivery capture names too. */
+    public const string CHANNEL_SEPARATOR = ':';
 
-    private const string CHANNEL_SEPARATOR = ':';
     private const int DELIVERIES_PER_PAGE = 1000;
 
     /** @return string Participant key */

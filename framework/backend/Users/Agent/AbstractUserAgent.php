@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Users\Agent;
 
 use Closure;
+use Hilos\Auth\AccountOperation\AccountErasurePersonalCapture;
 use Hilos\Auth\AccountOperation\AccountErasureStart;
+use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\AuthMessages;
@@ -51,6 +53,7 @@ use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\View\Collection\Identities;
+use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Database\View\Item\UserRename;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -184,7 +187,9 @@ use Throwable;
  * ({@see HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET}), the trust restrictions applied
  * ({@see HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT}), a dead push endpoint
  * marked gone ({@see HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE}) and a push endpoint
- * released to another person ({@see HilosSignalConstants::HILOS_USER_PUSH_RELEASE}).
+ * released to another person ({@see HilosSignalConstants::HILOS_USER_PUSH_RELEASE}). Once the
+ * account has closed, the agent captures the person's addresses and whatever the project asks for
+ * before the ways in are deleted ({@see captureForErasure()}, HIL-1940).
  */
 abstract class AbstractUserAgent extends AbstractAgent
 {
@@ -492,6 +497,28 @@ abstract class AbstractUserAgent extends AbstractAgent
         }
 
         return (string)$this->userId;
+    }
+
+    /**
+     * Captures the person's addresses and the project's part as the agent's step in the erasure of
+     * the account, before the ways in are deleted (HIL-1940); a repeat answers the saved capture.
+     *
+     * SCAFFOLD: no live caller until the erasure coordinator drives the capture (HIL-1950), live at the switch (HIL-1952).
+     *
+     * @param int $assignmentId Capture assignment the coordinator gave this agent
+     * @return AccountOperationResult Committed capture or the saved one of an earlier attempt
+     * @throws AccountOperationStepRefusedException When the caller, assignment or current stage refuses new work
+     * @throws ValidationException When the operation is no erasure, the assignment is not this person's
+     *     capture, or the account has not closed yet
+     * @throws Throwable When storage or the project's part fails, preserving the original failure
+     */
+    public function captureForErasure(int $assignmentId): AccountOperationResult
+    {
+        return AccountErasurePersonalCapture::run(
+            $assignmentId,
+            $this->userId,
+            fn (): array => $this->erasureCaptureProjectPart($this->userId),
+        );
     }
 
     /**
@@ -1745,6 +1772,24 @@ abstract class AbstractUserAgent extends AbstractAgent
         $deletion = Hilos::$db->accountDeletions->liveOf($this->userId);
 
         return $deletion !== null && $deletion->actions->cancel();
+    }
+
+    /**
+     * What the project keeps beside the person's addresses in the erasure capture, for its own
+     * owners that delete after the ways in are gone (HIL-1940).
+     *
+     * Called inside the capture's transaction; it opens none of its own. A throw rolls the whole
+     * capture back: nothing it wrote stays, and no result is recorded.
+     *
+     * SCAFFOLD: no live caller until the erasure coordinator drives the capture (HIL-1950), live at the switch (HIL-1952).
+     *
+     * @param int $userId Person whose account is being erased
+     * @return array<string, mixed> Project's keys of the capture's `project` object; none by default
+     * @throws HilosException Whatever the project's part raises
+     */
+    protected function erasureCaptureProjectPart(int $userId): array
+    {
+        return [];
     }
 
     /**

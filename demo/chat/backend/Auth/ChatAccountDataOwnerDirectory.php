@@ -54,6 +54,11 @@ final class ChatAccountDataOwnerDirectory extends AccountDataOwnerDirectory
      * Asks after the rows the erasure of the feed removes: the person's messages, the registration
      * event that names them, and the events of their renames.
      *
+     * The rename events are seen through the journal only until the person's capture takes the
+     * journal off them; after it the third check finds none, so the answer may turn false while
+     * those events still stand, and they are seen through the capture ({@see ChatErasureRenameFeed})
+     * (HIL-1940). The code of this method does not change for it.
+     *
      * @param int $userId Account of the erasure circle
      * @return bool Whether the feed still holds rows of the person
      * @throws HilosException When a lookup fails

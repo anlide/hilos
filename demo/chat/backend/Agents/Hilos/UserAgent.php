@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Agents\Hilos;
 
+use Demo\Chat\Auth\ChatErasureRenameFeed;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\UserRenameFeedLinkSignalData;
 use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkSignalData;
@@ -18,6 +19,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Database\DatabaseException;
+use Hilos\HilosException;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\WiringRefusal;
 use Throwable;
@@ -91,6 +93,23 @@ final class UserAgent extends AbstractUserAgent
 
                 return;
         }
+    }
+
+    /**
+     * Takes the person's journal off the feed inside the capture's transaction and keeps the events
+     * it named in the capture, for ChatAgent to delete once the person is gone (HIL-1940). The link
+     * and unlink frames are served as before after the capture (HIL-1939).
+     *
+     * SCAFFOLD: no live caller until the erasure coordinator drives the capture (HIL-1950), live at the switch (HIL-1952).
+     *
+     * @param int $userId Person whose account is being erased
+     * @return array<string, list<int>> The capture's `project` keys: `renameEvents`, possibly empty
+     * @throws DatabaseException When no transaction carries the unlink
+     * @throws HilosException On database or truth-source failure, rolling the whole capture back
+     */
+    protected function erasureCaptureProjectPart(int $userId): array
+    {
+        return ChatErasureRenameFeed::partOf(Hilos::$db->userRenames->actions->unlinkForErasure($userId));
     }
 
     /**
