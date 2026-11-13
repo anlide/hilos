@@ -69,17 +69,12 @@ frontend iteration with HMR (the Vite dev server proxies `/ws` to the daemon,
 matching the same-origin behavior of production nginx). The difference is HMR
 versus the static compiled dist served by nginx.
 
-### Three things that bite in the build stack
+### Two things that bite in the build stack
 
 - **`demo/chat/.env` does not configure ports.** It is the container `env_file`.
   Compose *interpolation* (`${NGINX_HTTPS_PORT:-443}`, `${MYSQL_HOST_PORT:-33060}`)
   reads `demo/chat/docker/.env` — the file next to the compose file. Port
   overrides put in `demo/chat/.env` are silently ignored.
-- **Published attachments are not mounted here.** The prod and test composes
-  mount `chat_attachments/published` of their data root (the test stand's is
-  `../data/test/`) at `/published:ro` into nginx for the
-  daemon's `X-Accel-Redirect`; the local `full` profile does not, so attachment
-  downloads 404 in this stack even though upload and moderation work.
 - **The session cookie carries no `Secure` flag in this stack.** It follows
   `APP_ENV` and nothing else (HIL-582): `prod` and `staging` are secured, `dev`,
   `local` and `test` are not, so the plain-http dev stack works as it stands. To
