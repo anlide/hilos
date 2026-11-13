@@ -6,14 +6,14 @@ namespace Hilos\Tests\Integration;
 
 use Closure;
 use Hilos\Auth\AccountOperation\AccountErasureCensus;
-use Hilos\Auth\AccountOperation\AccountErasureExpectation;
-use Hilos\Auth\AccountOperation\AccountErasureExpectedSet;
 use Hilos\Auth\AccountOperation\AccountErasureOpening;
 use Hilos\Auth\AccountOperation\AccountErasureFixedOwner;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountMergeChoice;
 use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
 use Hilos\Auth\AccountOperation\AccountOperationCircle;
+use Hilos\Auth\AccountOperation\AccountOperationExpectation;
+use Hilos\Auth\AccountOperation\AccountOperationExpectedSet;
 use Hilos\Auth\AccountOperation\AccountOperationOutcome;
 use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
@@ -400,7 +400,7 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
         );
         self::assertSame(
             [41, 41, 42, 42, 42, 43, 43],
-            array_map(static fn (AccountErasureExpectation $expectation): int => $expectation->userId, $expectations),
+            array_map(static fn (AccountOperationExpectation $expectation): int => $expectation->userId, $expectations),
         );
     }
 
@@ -414,14 +414,14 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
         self::assertNotNull($operation);
         self::assertNull($opened->deferredByOperationId);
         self::assertSame(['wait:personal:43'], self::keysOf($opened->recorded));
-        self::assertSame(['wait:personal:43'], self::keysOf(AccountErasureExpectedSet::of($operation->id)->waiting()));
-        self::assertSame([], AccountErasureExpectedSet::of($operation->id)->expected());
+        self::assertSame(['wait:personal:43'], self::keysOf(AccountOperationExpectedSet::of($operation->id)->waiting()));
+        self::assertSame([], AccountOperationExpectedSet::of($operation->id)->expected());
 
         AccountErasureCensusHilos::initBrowser();
         $reconciled = AccountErasureOpening::reconcile($operation, AccountErasureParticipantCatalog::framework());
 
         self::assertSame(['expect:personal:hilos_user:43:43', 'expect:users_library:hilos_users_library:43'], self::keysOf($reconciled));
-        $set = AccountErasureExpectedSet::of($operation->id);
+        $set = AccountOperationExpectedSet::of($operation->id);
         self::assertSame([], $set->waiting());
         self::assertSame(self::idsOf($reconciled), self::idsOf($set->expected()));
         $stored = self::storedRows();
@@ -460,7 +460,7 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
             [41, 41, 42, 42, 43, 43],
             array_map(static fn (AccountOperationAssignment $assignment): ?int => $assignment->userId, $opened->recorded),
         );
-        self::assertSame(self::idsOf($opened->recorded), self::idsOf(AccountErasureExpectedSet::of($opened->operation->id)->expected()));
+        self::assertSame(self::idsOf($opened->recorded), self::idsOf(AccountOperationExpectedSet::of($opened->operation->id)->expected()));
     }
 
     /** Opening the same request again finds the same operation and its assignments, and stores nothing new. */
@@ -476,7 +476,7 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
         self::assertSame($first->operation?->id, $repeat->operation?->id);
         self::assertNull($repeat->deferredByOperationId);
         self::assertSame([], $repeat->recorded);
-        self::assertSame(self::idsOf($first->recorded), self::idsOf(AccountErasureExpectedSet::of($first->operation->id)->expected()));
+        self::assertSame(self::idsOf($first->recorded), self::idsOf(AccountOperationExpectedSet::of($first->operation->id)->expected()));
         self::assertSame($stored, self::storedRows());
     }
 
@@ -543,7 +543,7 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
             ['census-test', 'census-test'],
             array_map(static fn (AccountOperationAssignment $assignment): string => $assignment->stage, $reconciled),
         );
-        $set = AccountErasureExpectedSet::of($operation->id);
+        $set = AccountOperationExpectedSet::of($operation->id);
         self::assertSame([], $set->waiting());
         self::assertSame(self::idsOf($reconciled), self::idsOf($set->expected()));
         self::assertSame(
@@ -796,12 +796,12 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
     }
 
     /**
-     * @param list<AccountErasureExpectation> $expectations Census result
+     * @param list<AccountOperationExpectation> $expectations Census result
      * @return list<string> Assignment keys in census order
      */
     private static function assignmentKeys(array $expectations): array
     {
-        return array_map(static fn (AccountErasureExpectation $expectation): string => $expectation->assignmentKey(), $expectations);
+        return array_map(static fn (AccountOperationExpectation $expectation): string => $expectation->assignmentKey(), $expectations);
     }
 
     /**

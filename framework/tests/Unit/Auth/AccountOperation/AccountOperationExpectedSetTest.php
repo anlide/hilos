@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Auth\AccountOperation;
 
-use Hilos\Auth\AccountOperation\AccountErasureExpectation;
-use Hilos\Auth\AccountOperation\AccountErasureExpectedSet;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
+use Hilos\Auth\AccountOperation\AccountOperationExpectation;
+use Hilos\Auth\AccountOperation\AccountOperationExpectedSet;
 use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Database\Entity\Item\AccountOperation as EntityAccountOperation;
@@ -16,7 +16,7 @@ use Hilos\Database\View\Item\AccountOperationAssignment;
 use PHPUnit\Framework\TestCase;
 
 /** The expected composition of an erasure, read from a list of its stored assignments. */
-final class AccountErasureExpectedSetTest extends TestCase
+final class AccountOperationExpectedSetTest extends TestCase
 {
     private const int ROOT_ID = 43;
     private const int FOLDED_ID = 42;
@@ -24,10 +24,10 @@ final class AccountErasureExpectedSetTest extends TestCase
     /** An owner expected for the same participant and account lifts the wait; the owner itself is expected. */
     public function testAnOwnerExpectedForTheSameParticipantAndAccountLiftsTheWait(): void
     {
-        $wait = self::stored(1, new AccountErasureExpectation(AccountErasureParticipantCatalog::PERSONAL, self::ROOT_ID, null));
+        $wait = self::stored(1, new AccountOperationExpectation(AccountErasureParticipantCatalog::PERSONAL, self::ROOT_ID, null));
         $owner = self::stored(2, self::personalOwner(self::ROOT_ID));
 
-        $set = new AccountErasureExpectedSet([$wait, $owner]);
+        $set = new AccountOperationExpectedSet([$wait, $owner]);
 
         self::assertSame([], $set->waiting());
         self::assertSame([$owner], $set->expected());
@@ -36,15 +36,15 @@ final class AccountErasureExpectedSetTest extends TestCase
     /** An owner of another account or of another participant leaves the wait standing. */
     public function testAnOwnerOfAnotherAccountOrParticipantLeavesTheWait(): void
     {
-        $wait = self::stored(1, new AccountErasureExpectation(AccountErasureParticipantCatalog::PERSONAL, self::ROOT_ID, null));
+        $wait = self::stored(1, new AccountOperationExpectation(AccountErasureParticipantCatalog::PERSONAL, self::ROOT_ID, null));
         $otherAccount = self::stored(2, self::personalOwner(self::FOLDED_ID));
-        $otherParticipant = self::stored(3, new AccountErasureExpectation(
+        $otherParticipant = self::stored(3, new AccountOperationExpectation(
             AccountErasureParticipantCatalog::USERS_LIBRARY,
             self::ROOT_ID,
             new AccountOperationOwnerAddress(HilosAgentType::HILOS_USERS_LIBRARY),
         ));
 
-        $set = new AccountErasureExpectedSet([$wait, $otherAccount, $otherParticipant]);
+        $set = new AccountOperationExpectedSet([$wait, $otherAccount, $otherParticipant]);
 
         self::assertSame([$wait], $set->waiting());
         self::assertSame([$otherAccount, $otherParticipant], $set->expected());
@@ -57,9 +57,9 @@ final class AccountErasureExpectedSetTest extends TestCase
         $duty = self::assignment(2, 'erase-person', self::ROOT_ID, '{"participant":"personal"}');
         $expectLookalike = self::assignment(3, 'expected:personal:43', self::ROOT_ID, '{"participant":"personal"}');
         $waitLookalike = self::assignment(4, 'waiting:personal:42', self::FOLDED_ID, '{}');
-        $wait = self::stored(5, new AccountErasureExpectation(AccountErasureParticipantCatalog::PERSONAL, self::ROOT_ID, null));
+        $wait = self::stored(5, new AccountOperationExpectation(AccountErasureParticipantCatalog::PERSONAL, self::ROOT_ID, null));
 
-        $set = new AccountErasureExpectedSet([$owner, $duty, $expectLookalike, $waitLookalike, $wait]);
+        $set = new AccountOperationExpectedSet([$owner, $duty, $expectLookalike, $waitLookalike, $wait]);
 
         self::assertSame([$owner], $set->expected());
         self::assertSame([$wait], $set->waiting());
@@ -68,21 +68,21 @@ final class AccountErasureExpectedSetTest extends TestCase
     /** A delivery wait is lifted only by an owner of its own channel, read from the payload rather than the key. */
     public function testDeliveryWaitIsLiftedOnlyByAnOwnerOfItsChannel(): void
     {
-        $pigeonWait = self::stored(1, new AccountErasureExpectation('delivery:census_pigeon', self::ROOT_ID, null));
-        $letterOwner = self::stored(2, new AccountErasureExpectation(
+        $pigeonWait = self::stored(1, new AccountOperationExpectation('delivery:census_pigeon', self::ROOT_ID, null));
+        $letterOwner = self::stored(2, new AccountOperationExpectation(
             'delivery:census_letter',
             self::ROOT_ID,
             new AccountOperationOwnerAddress('census_letter_sender', '2'),
         ));
 
-        self::assertSame([$pigeonWait], (new AccountErasureExpectedSet([$pigeonWait, $letterOwner]))->waiting());
+        self::assertSame([$pigeonWait], (new AccountOperationExpectedSet([$pigeonWait, $letterOwner]))->waiting());
 
-        $pigeonOwner = self::stored(3, new AccountErasureExpectation(
+        $pigeonOwner = self::stored(3, new AccountOperationExpectation(
             'delivery:census_pigeon',
             self::ROOT_ID,
             new AccountOperationOwnerAddress('census_pigeon_sender', '1'),
         ));
-        $set = new AccountErasureExpectedSet([$pigeonWait, $letterOwner, $pigeonOwner]);
+        $set = new AccountOperationExpectedSet([$pigeonWait, $letterOwner, $pigeonOwner]);
 
         self::assertSame([], $set->waiting());
         self::assertSame([$letterOwner, $pigeonOwner], $set->expected());
@@ -90,11 +90,11 @@ final class AccountErasureExpectedSetTest extends TestCase
 
     /**
      * @param int $userId Account the personal owner carries
-     * @return AccountErasureExpectation The person's own agent expected for the personal participant
+     * @return AccountOperationExpectation The person's own agent expected for the personal participant
      */
-    private static function personalOwner(int $userId): AccountErasureExpectation
+    private static function personalOwner(int $userId): AccountOperationExpectation
     {
-        return new AccountErasureExpectation(
+        return new AccountOperationExpectation(
             AccountErasureParticipantCatalog::PERSONAL,
             $userId,
             new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$userId),
@@ -103,10 +103,10 @@ final class AccountErasureExpectedSetTest extends TestCase
 
     /**
      * @param int $id Assignment id
-     * @param AccountErasureExpectation $expectation Census expectation the assignment was written for
+     * @param AccountOperationExpectation $expectation Census expectation the assignment was written for
      * @return AccountOperationAssignment The assignment the census writes for it
      */
-    private static function stored(int $id, AccountErasureExpectation $expectation): AccountOperationAssignment
+    private static function stored(int $id, AccountOperationExpectation $expectation): AccountOperationAssignment
     {
         return self::assignment($id, $expectation->assignmentKey(), $expectation->userId, $expectation->payload()->toJson());
     }

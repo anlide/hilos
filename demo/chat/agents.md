@@ -77,7 +77,9 @@ Framework rules stay in `/docs/agents/**`; nothing here overrides them.
    The [chat merge part](spec/agents/chat-agent.md#responsibilities) transfers the
    loser's message authorship across all rooms in one `ChatAgent` transaction with
    its result (not in the code yet — HIL-1997), through the project participant
-   seam (not in the code yet — HIL-1996). The holder's current `applyAccountMerge()`
+   seam, which is ready: the chat directory already declares the `chat` owner,
+   and `ChatAgent` implements `AccountMergeProjectOwner`
+   (not in the code yet — HIL-1997). The holder's current `applyAccountMerge()`
    and borrowed `Update` on `eventMessages` remain until the single merge switch
    (not in the code yet — HIL-1999).
 2. `LibraryAgent` is the **only** truth source for the admin library DB collection `bots`

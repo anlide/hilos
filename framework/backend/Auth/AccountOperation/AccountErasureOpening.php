@@ -11,8 +11,6 @@ use Hilos\Database\View\Item\AccountDeletion;
 use Hilos\Database\View\Item\AccountOperation;
 use Hilos\Database\View\Item\AccountOperationAssignment;
 use Hilos\Hilos;
-use Hilos\HilosException;
-use JsonException;
 use Throwable;
 
 /**
@@ -40,7 +38,11 @@ final class AccountErasureOpening
         return Database::transaction(DatabaseNames::PRIMARY, static function () use ($request, $catalog): AccountErasureOpeningResult {
             $existing = Hilos::$db->accountOperations->byRequest($request->id);
             if ($existing !== null) {
-                return new AccountErasureOpeningResult($existing, null, self::recordMissing($existing, $catalog));
+                return new AccountErasureOpeningResult(
+                    $existing,
+                    null,
+                    AccountOperationComposition::recordMissing($existing, AccountErasureCensus::of($existing->circle, $catalog)),
+                );
             }
             if (!$request->isLive()) {
                 throw new ValidationException('The deletion request is no longer live.');
@@ -54,7 +56,11 @@ final class AccountErasureOpening
             }
             $operation = Hilos::$db->accountOperations->actions->recordErasure($request->id, $request->userId, $circle);
 
-            return new AccountErasureOpeningResult($operation, null, self::recordMissing($operation, $catalog));
+            return new AccountErasureOpeningResult(
+                $operation,
+                null,
+                AccountOperationComposition::recordMissing($operation, AccountErasureCensus::of($operation->circle, $catalog)),
+            );
         });
     }
 
@@ -73,51 +79,7 @@ final class AccountErasureOpening
 
         return Database::transaction(
             DatabaseNames::PRIMARY,
-            static fn (): array => self::recordMissing($operation, $catalog),
+            static fn (): array => AccountOperationComposition::recordMissing($operation, AccountErasureCensus::of($operation->circle, $catalog)),
         );
-    }
-
-    /**
-     * Records every census expectation the operation does not carry: a key already stored at any
-     * stage is skipped, and so is a wait whose participant and account already have an owner
-     * expected. Runs inside the caller's transaction.
-     *
-     * @param AccountOperation $operation Erasure to record on, at its current stage
-     * @param AccountErasureParticipantCatalog $catalog Participants of the installation
-     * @return list<AccountOperationAssignment> Assignments written, in census order
-     * @throws JsonException When a payload cannot be encoded or a stored one decoded
-     * @throws HilosException When the census, a reader or the record refuses
-     */
-    private static function recordMissing(AccountOperation $operation, AccountErasureParticipantCatalog $catalog): array
-    {
-        $keys = [];
-        $expected = [];
-        foreach (Hilos::$db->accountOperationAssignments->forOperation($operation->id) as $assignment) {
-            $keys[$assignment->assignmentKey] = true;
-            if (AccountErasureExpectation::isExpectKey($assignment->assignmentKey)) {
-                $expected[AccountErasureExpectation::participantOf($assignment->payload)][$assignment->userId] = true;
-            }
-        }
-        $recorded = [];
-        foreach (AccountErasureCensus::of($operation->circle, $catalog) as $expectation) {
-            $key = $expectation->assignmentKey();
-            if (isset($keys[$key]) || ($expectation->isWait() && isset($expected[$expectation->participantKey][$expectation->userId]))) {
-                continue;
-            }
-            $recorded[] = Hilos::$db->accountOperationAssignments->actions->record(
-                $operation->id,
-                $operation->stage,
-                $key,
-                $expectation->assignmentOwner(),
-                $expectation->userId,
-                $expectation->payload(),
-            );
-            $keys[$key] = true;
-            if (!$expectation->isWait()) {
-                $expected[$expectation->participantKey][$expectation->userId] = true;
-            }
-        }
-
-        return $recorded;
     }
 }

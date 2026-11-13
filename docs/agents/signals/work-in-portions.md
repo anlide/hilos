@@ -162,8 +162,9 @@ For [merge](../architecture/account-operations.md#merge), the loser commits
 its work with result and copy (not in the code yet — HIL-1992), the survivor
 its own work with receipt (not in the code yet — HIL-1994), and the holder
 its own work with result (not in the code yet — HIL-1995). Declared project
-participants follow that same local atomic boundary
-(not in the code yet — HIL-1996), including chat's author transfer
+participants follow that same local atomic boundary — `AccountMergeProjectStep`
+commits an owner's move with its result, built and live at the merge switch —
+including chat's author transfer
 (not in the code yet — HIL-1997). Operation/stage correlation rejects
 duplicate, old and foreign answers without advancing unrelated work
 (not in the code yet — HIL-2000). Recovery selects unfinished obligations

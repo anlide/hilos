@@ -14,8 +14,9 @@ use Hilos\Hilos;
  *
  * A project points {@see Hilos::ACCOUNT_DATA_OWNER_DIRECTORY} at a subclass and overrides
  * {@see owners()} and {@see exempt()}; the framework's own collections are not declared here.
- * {@see AccountErasureParticipantCatalog::installation()} takes the owners after the framework's
- * participants, in the order of this directory.
+ * Both account operations read it: {@see AccountErasureParticipantCatalog::installation()} takes
+ * the owners after the framework's participants, and {@see AccountMergeProjectCensus::of()} asks
+ * them about the loser of a merge, each in the order of this directory.
  *
  * The owners are a list, not a map, so a key typed twice reaches the check instead of silently
  * replacing the first entry. A key is lower snake case with no colon, because the colon separates

@@ -44,7 +44,7 @@ final class AccountErasureDeliveryParticipant implements AccountErasureParticipa
 
     /**
      * @param int $userId Account of the erasure circle
-     * @return list<AccountErasureExpectation> One per channel owner and one wait per ownerless channel, in delivery order
+     * @return list<AccountOperationExpectation> One per channel owner and one wait per ownerless channel, in delivery order
      * @throws ObjectCollectionNullException When the delivery collection is detached
      * @throws InvalidArgumentException When a page or a saved routing key cannot be read
      * @throws TableNotActivatedException When the project has not activated the delivery table
@@ -61,7 +61,7 @@ final class AccountErasureDeliveryParticipant implements AccountErasureParticipa
             $page = Hilos::$db->notificationDeliveries->recipientIdentitiesAfter($userId, $afterId, self::DELIVERIES_PER_PAGE);
             foreach ($page as $delivery) {
                 $owner = DeliveryOwnerResolver::forDelivery($delivery);
-                $expectation = new AccountErasureExpectation(
+                $expectation = new AccountOperationExpectation(
                     self::KEY . self::CHANNEL_SEPARATOR . $delivery->channel,
                     $userId,
                     $owner === null ? null : new AccountOperationOwnerAddress($owner->type, $owner->index),

@@ -24,7 +24,7 @@ interface AccountErasureParticipant
      * Asked only for a participant one of whose collections is activated.
      *
      * @param int $userId Account of the erasure circle
-     * @return list<AccountErasureExpectation> Expected owners and waits for the account, possibly none
+     * @return list<AccountOperationExpectation> Expected owners and waits for the account, possibly none
      * @throws HilosException When the participant cannot read its rows or name its owner
      */
     public function expectationsFor(int $userId): array;

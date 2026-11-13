@@ -12,11 +12,11 @@ use Hilos\Core\Exception\ValueTooLongException;
 use JsonException;
 
 /**
- * What the erasure census expects from one participant for one account of the circle: a named
+ * What one account operation expects from one participant for one account of its circle: a named
  * owner to carry its part, or a wait the coordinator holds while no owner is there to carry it.
- * SCAFFOLD: no live caller until the erasure coordinator opens its operation (HIL-1952).
+ * SCAFFOLD: no live caller until the erasure (HIL-1952) and merge (HIL-1999) switches.
  */
-final readonly class AccountErasureExpectation
+final readonly class AccountOperationExpectation
 {
     private const string EXPECT_PREFIX = 'expect';
     private const string WAIT_PREFIX = 'wait';
@@ -25,7 +25,7 @@ final readonly class AccountErasureExpectation
 
     /**
      * @param string $participantKey Participant the expectation belongs to, a channel-qualified one for deliveries
-     * @param int $userId Account of the erasure circle
+     * @param int $userId Account of the operation's circle
      * @param ?AccountOperationOwnerAddress $owner Expected owner, or null for a wait
      */
     public function __construct(
@@ -66,7 +66,7 @@ final readonly class AccountErasureExpectation
     {
         $fields = json_decode($payload->toJson(), true, flags: JSON_THROW_ON_ERROR);
         if (!is_array($fields) || !is_string($fields[self::PAYLOAD_PARTICIPANT] ?? null)) {
-            throw new InvalidFormatException('An erasure expectation payload must name its participant.');
+            throw new InvalidFormatException('An account operation expectation payload must name its participant.');
         }
 
         return $fields[self::PAYLOAD_PARTICIPANT];

@@ -27,5 +27,10 @@ export default defineConfig({
   test: {
     name: 'vue',
     environment: 'happy-dom',
+    // The status page case runs on fake clocks and advances about 120 ticks,
+    // each redrawing both strips: about 5.1 s on a loaded host in a full run
+    // (2026-11-12) against the default 5 s, and 5.3 s for its React twin. The
+    // React and Angular projects already allow 15 s.
+    testTimeout: 15_000,
   },
 })

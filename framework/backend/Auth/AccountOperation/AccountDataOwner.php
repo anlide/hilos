@@ -12,8 +12,8 @@ use Closure;
  * The record says only whose the rows are; it carries no erasure and no merge of its own. A
  * project declares it in its {@see AccountDataOwnerDirectory}, and each account operation reads
  * from it what it needs to know about the owner.
- * SCAFFOLD: `$perPerson` and `$hasRowsOf` have no live caller until the erasure coordinator opens its operation
- * (HIL-1952); the startup coverage gate reads the rest.
+ * SCAFFOLD: `$perPerson` and `$hasRowsOf` have no live caller until the erasure (HIL-1952) and merge
+ * (HIL-1999) switches; the startup coverage gate reads the rest.
  */
 final readonly class AccountDataOwner
 {

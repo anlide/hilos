@@ -43,7 +43,7 @@ final readonly class AccountErasureProjectParticipant implements AccountErasureP
 
     /**
      * @param int $userId Account of the erasure circle
-     * @return list<AccountErasureExpectation> The owner, a wait for remaining rows, or nothing
+     * @return list<AccountOperationExpectation> The owner, a wait for remaining rows, or nothing
      * @throws EmptyValueException When the owner type is empty
      * @throws ValueTooLongException When the owner type or the account id exceeds the address limit
      * @throws HilosException When the row question fails
@@ -51,14 +51,14 @@ final readonly class AccountErasureProjectParticipant implements AccountErasureP
     public function expectationsFor(int $userId): array
     {
         if ($this->isOwnerRegistered()) {
-            return [new AccountErasureExpectation(
+            return [new AccountOperationExpectation(
                 $this->owner->key,
                 $userId,
                 new AccountOperationOwnerAddress($this->owner->ownerType, $this->owner->perPerson ? (string)$userId : null),
             )];
         }
         if (($this->owner->hasRowsOf)($userId)) {
-            return [new AccountErasureExpectation($this->owner->key, $userId, null)];
+            return [new AccountOperationExpectation($this->owner->key, $userId, null)];
         }
 
         return [];

@@ -7,11 +7,11 @@ namespace Hilos\Tests\Unit\Auth\AccountOperation;
 use Hilos\Auth\AccountOperation\AccountDataOwner;
 use Hilos\Auth\AccountOperation\AccountDataOwnerDirectory;
 use Hilos\Auth\AccountOperation\AccountErasureExemption;
-use Hilos\Auth\AccountOperation\AccountErasureExpectation;
 use Hilos\Auth\AccountOperation\AccountErasureFixedOwner;
 use Hilos\Auth\AccountOperation\AccountErasureParticipant;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountErasureProjectParticipant;
+use Hilos\Auth\AccountOperation\AccountOperationExpectation;
 use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Feature\HilosFeature;
@@ -199,9 +199,9 @@ final class AccountErasureParticipantCatalogTest extends TestCase
 
     public function testExpectationKeysAndPayloadAreLiteral(): void
     {
-        $person = new AccountErasureExpectation('personal', 43, new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, '43'));
-        $library = new AccountErasureExpectation('users_library', 43, new AccountOperationOwnerAddress(HilosAgentType::HILOS_USERS_LIBRARY));
-        $wait = new AccountErasureExpectation('delivery:sms', 43, null);
+        $person = new AccountOperationExpectation('personal', 43, new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, '43'));
+        $library = new AccountOperationExpectation('users_library', 43, new AccountOperationOwnerAddress(HilosAgentType::HILOS_USERS_LIBRARY));
+        $wait = new AccountOperationExpectation('delivery:sms', 43, null);
 
         self::assertFalse($person->isWait());
         self::assertSame('expect:personal:hilos_user:43:43', $person->assignmentKey());

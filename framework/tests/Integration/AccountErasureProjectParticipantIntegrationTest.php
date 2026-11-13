@@ -9,7 +9,6 @@ use Hilos\Auth\AccountOperation\AccountDataOwner;
 use Hilos\Auth\AccountOperation\AccountDataOwnerDirectory;
 use Hilos\Auth\AccountOperation\AccountErasureCensus;
 use Hilos\Auth\AccountOperation\AccountErasureExemption;
-use Hilos\Auth\AccountOperation\AccountErasureExpectation;
 use Hilos\Auth\AccountOperation\AccountErasurePart;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountErasureProjectOwner;
@@ -17,6 +16,7 @@ use Hilos\Auth\AccountOperation\AccountErasureProjectParticipant;
 use Hilos\Auth\AccountOperation\AccountErasureProjectResult;
 use Hilos\Auth\AccountOperation\AccountErasureProjectStep;
 use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
+use Hilos\Auth\AccountOperation\AccountOperationExpectation;
 use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
 use Hilos\Auth\AccountOperation\AccountOperationStepRefusal;
 use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
@@ -347,10 +347,10 @@ final class AccountErasureProjectParticipantIntegrationTest extends FrameworkInt
         );
 
         return array_values(array_map(
-            static fn (AccountErasureExpectation $expectation): string => $expectation->assignmentKey(),
+            static fn (AccountOperationExpectation $expectation): string => $expectation->assignmentKey(),
             array_filter(
                 $expectations,
-                static fn (AccountErasureExpectation $expectation): bool => $expectation->participantKey === AccountErasureProjectDirectory::NOTES,
+                static fn (AccountOperationExpectation $expectation): bool => $expectation->participantKey === AccountErasureProjectDirectory::NOTES,
             ),
         ));
     }

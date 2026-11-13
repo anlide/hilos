@@ -441,6 +441,10 @@ does a directory naming a collection the installation does not mount — the gap
 is born with the table, not on the day somebody asks to be forgotten. The
 framework answers for its own tables. What an owner does and when:
 [../architecture/account-operations.md](../architecture/account-operations.md#erasure).
+If a merge has to move the loser's rows of the table, the class of its owner
+implements `AccountMergeProjectOwner`; an owner whose class does not keeps the
+merge waiting while the loser still has rows there
+([../architecture/account-operations.md](../architecture/account-operations.md#merge)).
 
 ## Settings Entity (special case)
 
