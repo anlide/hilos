@@ -2,16 +2,20 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
   computed,
   effect,
   input,
   signal,
+  viewChild,
 } from '@angular/core'
 import {
   formatMoment,
   hilosTimeZone,
   hilosToasts,
   type ActionError,
+  type DateTimePickerController,
+  type DateTimePickerSnapshot,
 } from '@hilos/core/base'
 import type {
   HilosStatusWorkCreate,
@@ -22,6 +26,7 @@ import type {
 } from '@hilos/core/admin/status'
 import {
   ConflictActions,
+  HilosDateTimePicker,
   HilosEditNotice,
   HilosFormError,
   HilosModal,
@@ -32,12 +37,16 @@ import {
 
 let workFormSequence = 0
 
-/** A new announcement or a captured live row, using the same native fields. */
+/**
+ * A new announcement or a captured live row in one form; the window is edited
+ * in its DateTimePicker.
+ */
 @Component({
   selector: 'hilos-status-work-modal',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     ConflictActions,
+    HilosDateTimePicker,
     HilosEditNotice,
     HilosFormError,
     HilosModal,
@@ -81,37 +90,16 @@ let workFormSequence = 0
               (input)="patchText('title', $event)"
             />
           </div>
-          <div class="row g-2 mb-1">
-            <div class="col-sm-6">
-              <label [for]="formId + '-starts'" class="form-label"
-                >Starts, {{ timeZone() }}</label
-              >
-              <input
-                [id]="formId + '-starts'"
-                [value]="form().startsAt"
-                type="datetime-local"
-                step="1"
-                class="form-control form-control-sm"
-                [attr.aria-describedby]="windowHintId"
-                data-id="hilos-status-work-starts"
-                (input)="patchText('startsAt', $event)"
+          <div #windowField class="mb-1">
+            @if (windowPicker(); as picker) {
+              <hilos-date-time-picker
+                [id]="formId + '-window'"
+                [picker]="picker"
+                [label]="'Window, ' + timeZone()"
+                [describedBy]="windowHintId"
+                dataId="hilos-status-work-window"
               />
-            </div>
-            <div class="col-sm-6">
-              <label [for]="formId + '-ends'" class="form-label"
-                >Ends, {{ timeZone() }}</label
-              >
-              <input
-                [id]="formId + '-ends'"
-                [value]="form().endsAt"
-                type="datetime-local"
-                step="1"
-                class="form-control form-control-sm"
-                [attr.aria-describedby]="windowHintId"
-                data-id="hilos-status-work-ends"
-                (input)="patchText('endsAt', $event)"
-              />
-            </div>
+            }
           </div>
           <div [id]="windowHintId" class="form-text mt-0 mb-2">
             The window cannot overlap another announcement, even if the
@@ -240,6 +228,16 @@ export class HilosStatusWorkModal {
   protected readonly editState = signal<ReturnType<
     HilosStatusWorkEdit['state']['get']
   > | null>(null)
+  protected readonly windowPicker = signal<DateTimePickerController<
+    'datetime',
+    'range'
+  > | null>(null)
+  private readonly windowState = signal<DateTimePickerSnapshot<
+    'datetime',
+    'range'
+  > | null>(null)
+  private readonly windowField =
+    viewChild<ElementRef<HTMLElement>>('windowField')
   private readonly editNotice = signal('')
   private readonly readerTimeZone = hilosSignal(hilosTimeZone)
   protected readonly editor = computed(() => {
@@ -286,7 +284,7 @@ export class HilosStatusWorkModal {
           field === 'componentKeys'
             ? this.componentNames(this.form().componentKeys)
             : momentField
-              ? `${this.form()[field]} (${this.timeZone()})`
+              ? this.windowText(field === 'startsAt' ? 'start' : 'end')
               : this.form()[field]
         return `${labels[field]}: Keep mine: ${mine}; Take theirs: ${theirs}`
       }),
@@ -303,6 +301,11 @@ export class HilosStatusWorkModal {
         mirrorHilosSignal(controller.form, this.form),
         mirrorHilosSignal(controller.dirty, this.dirty),
         mirrorHilosSignal(controller.timeZone, this.timeZone),
+        mirrorHilosSignal(controller.windowPicker, this.windowPicker),
+        mirrorHilosSignal(
+          { get: () => controller.windowPicker.get()?.state.get() ?? null },
+          this.windowState,
+        ),
         mirrorHilosSignal(editor?.saving ?? controller.busy, this.busy),
         mirrorHilosSignal(controller.error, this.error),
         mirrorHilosSignal(controller.failure, this.failure),
@@ -338,6 +341,21 @@ export class HilosStatusWorkModal {
     })
   }
 
+  /**
+   * The draft of one window edge as its parts show it, in the captured zone.
+   *
+   * @param edge The edge a conflicting moment field names.
+   */
+  private windowText(edge: 'start' | 'end'): string {
+    const parts = this.windowState()?.[edge]?.parts ?? []
+    const shown = parts.every((part) => part.text === '')
+      ? '—'
+      : parts
+          .map((part) => part.prefix + (part.text || part.placeholder))
+          .join('')
+    return `${shown} (${this.timeZone()})`
+  }
+
   private componentNames(keys: readonly string[]): string {
     return keys
       .map(
@@ -348,11 +366,8 @@ export class HilosStatusWorkModal {
       .join(', ')
   }
 
-  /** Native text stays local; the core interprets both moments in its captured zone. */
-  protected patchText(
-    field: Exclude<keyof HilosStatusWorkForm, 'componentKeys'>,
-    event: Event,
-  ): void {
+  /** Text fields only; the window is edited in its picker. */
+  protected patchText(field: 'title' | 'description', event: Event): void {
     this.controller().patchForm({
       [field]: (event.target as HTMLInputElement).value,
     })
@@ -371,6 +386,13 @@ export class HilosStatusWorkModal {
     void this.submit()
   }
 
+  /**
+   * Enter inside the window field while its calendar is open belongs to the
+   * calendar; elsewhere Enter follows the Save verdict; buttons activate
+   * themselves.
+   *
+   * @param event The keydown that reached the form.
+   */
   protected onEnter(event: Event): void {
     const key = event as KeyboardEvent
     if (key.key !== 'Enter') return
@@ -380,6 +402,12 @@ export class HilosStatusWorkModal {
     )
       return
     key.preventDefault()
+    if (
+      this.controller().windowPicker.get()?.calendar.state.get().open &&
+      key.target instanceof Node &&
+      this.windowField()?.nativeElement.contains(key.target)
+    )
+      return
     void this.submit()
   }
 

@@ -7,8 +7,9 @@ import {
   dismissToasts,
   draftStatusWork,
   enterCalendarDate,
-  enterCalendarDateTime,
+  enterPickerDateTime,
   expectPageReady,
+  expectPickerDateTime,
   expectPublicStatusPair,
   expectPublicStatusReadOnly,
   expectSelfReload,
@@ -130,7 +131,7 @@ test('Angular Works preserves a refused draft, merges another admin edit and can
     componentKeys: ['service'],
   }
   statusWorks.reserve(draft)
-  await test.step('Schedule uses native reader-zone inputs and the owner acknowledgement', async () => {
+  await test.step('Schedule enters the window in the reader zone and waits for the owner acknowledgement', async () => {
     await openStatusWorkSchedule(expect, page)
     await draftStatusWork(expect, page, draft)
     await submitStatusWork(expect, page, log, STATUS_WORK_SCHEDULE)
@@ -211,12 +212,8 @@ test('Angular Works preserves a refused draft, merges another admin edit and can
       startsAt: neighbor.startsAt,
     }
     await typeInto(page.getByTestId('hilos-status-work-title'), refused.title)
-    await enterCalendarDateTime(
-      expect,
-      page,
-      page.getByTestId('hilos-status-work-starts'),
-      refused.startsAt,
-    )
+    const window = page.getByTestId('hilos-status-work-window')
+    await enterPickerDateTime(expect, window, 'Starts', refused.startsAt)
     const since = log.sent.length
     await clickSubmit(expect, page.getByTestId('hilos-status-work-save'))
     await expect(page.getByTestId('hilos-status-work-error')).toContainText(
@@ -245,12 +242,8 @@ test('Angular Works preserves a refused draft, merges another admin edit and can
     await expect(page.getByTestId('hilos-status-work-description')).toHaveValue(
       refused.description,
     )
-    await expect(page.getByTestId('hilos-status-work-starts')).toHaveValue(
-      localDateTimeValue(refused.startsAt, zone).replace(/:00$/, ''),
-    )
-    await expect(page.getByTestId('hilos-status-work-ends')).toHaveValue(
-      localDateTimeValue(refused.endsAt, zone).replace(/:00$/, ''),
-    )
+    await expectPickerDateTime(expect, window, 'Starts', refused.startsAt)
+    await expectPickerDateTime(expect, window, 'Ends', refused.endsAt)
     await expect(
       page.getByTestId('hilos-status-work-component-service'),
     ).toBeChecked()
@@ -268,18 +261,9 @@ test('Angular Works preserves a refused draft, merges another admin edit and can
     await expect(other.getByTestId('hilos-status-work-title')).toBeFocused()
     await typeInto(other.getByTestId('hilos-status-work-title'), mine)
     await typeInto(page.getByTestId('hilos-status-work-title'), changed.title)
-    await enterCalendarDateTime(
-      expect,
-      page,
-      page.getByTestId('hilos-status-work-starts'),
-      changed.startsAt,
-    )
-    await enterCalendarDateTime(
-      expect,
-      page,
-      page.getByTestId('hilos-status-work-ends'),
-      changed.endsAt,
-    )
+    const window = page.getByTestId('hilos-status-work-window')
+    await enterPickerDateTime(expect, window, 'Starts', changed.startsAt)
+    await enterPickerDateTime(expect, window, 'Ends', changed.endsAt)
     await submitStatusWork(expect, page, log, STATUS_WORK_CHANGE)
     await expect(other.getByTestId('hilos-status-work-notice')).toContainText(
       'Changed elsewhere',

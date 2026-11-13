@@ -379,13 +379,11 @@ text, component list and both times, and the live row version is sent as
 `expectedVersion`. The work window is a `DateTimePicker` datetime range,
 `windowPicker`, made on each opening in the reader's IANA zone captured then.
 A repeated hour resolves only to the chosen or the loaded occurrence, and a
-DST gap is rejected instead of guessed. The Vue and React dialogs draw the
-picker as one field, `Window, <zone>`; Enter from inside that field while its
-calendar is open belongs to the calendar, and from any other field it follows
-the Save verdict, the narrow calendar sheet included. Until HIL-1982 adopts it,
-the native Angular view reads and writes the form's `startsAt`/`endsAt` text
-projected from and into its parts. Action frames continue to carry epoch
-milliseconds UTC.
+DST gap is rejected instead of guessed. The Vue, React and Angular dialogs
+draw the picker as one field, `Window, <zone>`; Enter from inside that field
+while its calendar is open belongs to the calendar, and from any other field it
+follows the Save verdict, the narrow calendar sheet included. Action frames
+continue to carry epoch milliseconds UTC.
 Cancellation remains bound to the focused row's immutable public id; an
 unrelated late acknowledgement cannot retarget another dialog. Vue uses the
 standard Status admin
@@ -394,8 +392,8 @@ the same pages, table and modals over the same core controllers. Chat and
 Binance mount thin Vue wrappers, Tasks and Ecommerce Shop thin React wrappers,
 and Polls and OnlineTesting mount the Angular pages through lazy wrappers that
 pass their shared Status context. Every work window states the non-overlap
-rule in a hint under it: the parts of the Vue and React Window field and the
-Angular Starts and Ends fields name that hint in `aria-describedby`.
+rule in a hint under it: the parts of the Window field in the Vue, React and
+Angular dialogs name that hint in `aria-describedby`.
 
 Overview source changes, including completed-history changes to `historyCount`,
 use the existing guarded `PageResender` / `resendPageWhole()` path. The narrow
