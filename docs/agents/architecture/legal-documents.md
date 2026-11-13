@@ -762,8 +762,12 @@ files of the directory no ready export names. An erased account removes every
 ready and failed export with its file and starts the export being built again
 (`hilos_legal_acceptances_export_forget`, [account-deletion.md](account-deletion.md)):
 which person is in which file is not known, and no copy on the server may
-outlive the records of an erased account. A file already downloaded is out of
-reach.
+outlive the records of an erased account. The participant protocol of the
+owners does the same in the legal agent's own step, which also deletes the
+account's order and records the counts ([account-operations.md](account-operations.md),
+*The legal export part*); the forget frame stays the live path until HIL-1952.
+An administrator whose erasure has begun orders no new export. A file already
+downloaded is out of reach.
 
 ### Settings
 

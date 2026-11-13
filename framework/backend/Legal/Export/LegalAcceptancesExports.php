@@ -5,6 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Legal\Export;
 
 use DateTimeZone;
+use Hilos\Auth\AccountOperation\AccountOperationKind;
+use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
+use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
+use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\SessionToastSeverity;
 use Hilos\Auth\StepUp\StepUpOperationKey;
@@ -19,6 +24,7 @@ use Hilos\Core\Daemon\Cron\CronRuleOrigin;
 use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Page\PageAgentInterface;
@@ -29,7 +35,10 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
+use Hilos\Database\Database;
 use Hilos\DataExport\DataExportTime;
+use Hilos\Database\View\Item\AccountOperationAssignment;
+use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Database\View\Item\LegalAcceptanceExport;
 use Hilos\Files\Download\PrivateDownloadResponse;
 use Hilos\Fs\Context\FsContext;
@@ -52,6 +61,7 @@ use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use Hilos\WiringRefusal;
 use Random\RandomException;
+use Throwable;
 
 /**
  * Files of acceptance records an administrator orders on the acceptances page (HIL-1234).
@@ -162,11 +172,15 @@ final class LegalAcceptancesExports
      * @param PageAgentInterface $agent Agent serving the acceptances page
      * @param string $acceptKey Connection that ordered
      * @param HilosLegalAcceptancesExportActionDTO $dto Filters and search of the table at the press
-     * @throws HilosException When the administrator, the confirmation or the order is refused, or the file cannot be removed
+     * @throws HilosException When the administrator, the confirmation or the order is refused, the administrator's erasure has
+     *     begun, or the file cannot be removed
      */
     public static function order(PageAgentInterface $agent, string $acceptKey, HilosLegalAcceptancesExportActionDTO $dto): void
     {
         $userId = AskingAdministrator::confirmed($acceptKey, StepUpOperationKey::EXPORT_LEGAL_ACCEPTANCES);
+        if (Hilos::$db->accountDeletions->startedOf($userId) !== null) {
+            throw new ValidationException(AbstractSessionsLibraryAgent::ERASING_ACCOUNT_REFUSED_MESSAGE);
+        }
         $previous = Hilos::$db->legalAcceptanceExports->ofUser($userId);
         if ($previous?->state === LegalAcceptancesExportState::PREPARING) {
             return;
@@ -199,6 +213,7 @@ final class LegalAcceptancesExports
      * Which person is in which file is not known, and the records of an erased account are gone with it;
      * no copy on the server may outlive them. Erasure already deleted the person's own order;
      * the directory sweep removes its file because no ready row keeps it (HIL-1202).
+     * The old erasure path's frame; the participant step is eraseAccountPart() (HIL-1947), the frame goes at the switch (HIL-1952).
      *
      * @param PageAgentInterface $agent The legal agent
      * @param int $userId Erased account
@@ -211,16 +226,85 @@ final class LegalAcceptancesExports
             self::remove($export);
             $touched[$export->userId] = true;
         }
-        if (self::$build !== null) {
-            FsPath::delete(self::directory()[self::$build->buildingName]->getPath());
-            self::$build = null;
-            self::$preparingMayWait = true;
-        }
-        self::expire($agent);
         $touched[$userId] = true;
-        foreach (array_keys($touched) as $adminId) {
-            self::sendState($agent, $adminId);
-        }
+        self::restartBuildAndTell($agent, array_keys($touched));
+    }
+
+    /**
+     * The legal agent's part of an account erasure, carried as its participant step (HIL-1947).
+     *
+     * Called by the agent in its own frame with the assignment the coordinator gave it. Before any work the
+     * assignment must be an erasure's and name its account, and the account's acceptances must already be
+     * gone, so no file built after this step can list them; each refusal writes nothing. Inside the step's
+     * transaction the account's own order is deleted, whatever its state, and so is every ready and failed
+     * export of any administrator, because which person is in which file is not known; both counts are
+     * recorded as the result in the same transaction, so a failure rolls back the deletions and the result
+     * together. The files leave only once that transaction commits: the deleted orders' files and the file
+     * being built go, the build starts again from its first line, the directory is swept, and each
+     * administrator whose order went is sent its state. A failed removal is logged and not repeated: a file
+     * no row keeps is left to the agent's start and to the hourly sweep. A repeated call returns the saved
+     * result without deleting or removing again.
+     * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950/HIL-1952).
+     *
+     * @param PageAgentInterface $agent The legal agent, the step's caller
+     * @param int $assignmentId Assignment the coordinator gave the agent
+     * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt
+     * @throws AccountOperationStepRefusedException When the caller, assignment or current stage refuses new work
+     * @throws ValidationException When the assignment is not an erasure's, names no account, or the account's acceptances remain
+     * @throws Throwable When storage or the deletion fails, preserving the original failure
+     */
+    public static function eraseAccountPart(PageAgentInterface $agent, int $assignmentId): AccountOperationResult
+    {
+        return AccountOperationParticipantStep::run(
+            $assignmentId,
+            static function (AccountOperationAssignment $assignment) use ($agent): AccountOperationResultPayload {
+                if ($assignment->operation?->kind !== AccountOperationKind::Erasure) {
+                    throw new ValidationException('A legal export erasure part must belong to an erasure.');
+                }
+                $userId = $assignment->userId;
+                if ($userId === null) {
+                    throw new ValidationException('A legal export erasure part must name its account.');
+                }
+                if (count(Hilos::$db->legalAcceptances->ofUser($userId)) > 0) {
+                    throw new ValidationException('A legal export erasure part waits for the account\'s acceptances to go.');
+                }
+                $storedNames = [];
+                $touched = [];
+                $ownOrders = 0;
+                $own = Hilos::$db->legalAcceptanceExports->ofUser($userId);
+                if ($own !== null) {
+                    $storedNames[(int) $own->id] = $own->storedName;
+                    $own->actions->delete();
+                    $ownOrders = 1;
+                }
+                $sharedExports = 0;
+                foreach (Hilos::$db->legalAcceptanceExports->allFinished() as $export) {
+                    $storedNames[(int) $export->id] = $export->storedName;
+                    $touched[$export->userId] = true;
+                    $export->actions->delete();
+                    $sharedExports++;
+                }
+                $touched[$userId] = true;
+                Database::afterCommit(static function () use ($agent, $userId, $storedNames, $touched): void {
+                    try {
+                        foreach ($storedNames as $exportId => $storedName) {
+                            if ($storedName !== null) {
+                                self::directory()[$storedName]->unlink();
+                            }
+                            unset(self::$toastSessions[$exportId]);
+                        }
+                        self::restartBuildAndTell($agent, array_keys($touched));
+                    } catch (HilosException $e) {
+                        Logger::logAgentError(
+                            $agent->getId(),
+                            "Account of user {$userId} erased, but what follows the commit of its legal exports failed: {$e->getMessage()}",
+                        );
+                    }
+                });
+
+                return LegalAcceptancesExportErasureResult::payloadOf($ownOrders, $sharedExports);
+            },
+        );
     }
 
     /**
@@ -505,6 +589,27 @@ final class LegalAcceptancesExports
         }
         unset(self::$toastSessions[(int) $export->id]);
         $export->actions->delete();
+    }
+
+    /**
+     * After an erasure removed finished orders: drops the file being built so it starts again from its first
+     * line, sweeps, and sends each named administrator their state.
+     *
+     * @param PageAgentInterface $agent The legal agent
+     * @param list<int> $adminIds Administrators whose order changed, and the erased account
+     * @throws HilosException When a file, an expired order or a state frame cannot be removed or sent
+     */
+    private static function restartBuildAndTell(PageAgentInterface $agent, array $adminIds): void
+    {
+        if (self::$build !== null) {
+            FsPath::delete(self::directory()[self::$build->buildingName]->getPath());
+            self::$build = null;
+            self::$preparingMayWait = true;
+        }
+        self::expire($agent);
+        foreach ($adminIds as $adminId) {
+            self::sendState($agent, $adminId);
+        }
     }
 
     /**

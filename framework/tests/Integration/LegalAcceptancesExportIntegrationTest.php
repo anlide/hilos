@@ -7,6 +7,13 @@ namespace Hilos\Tests\Integration;
 use Closure;
 use DateTimeImmutable;
 use DateTimeZone;
+use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
+use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Auth\AccountOperation\AccountOperationExpectation;
+use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
+use Hilos\Auth\AccountOperation\AccountOperationStepRefusal;
+use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\SessionToastSeverity;
@@ -14,13 +21,18 @@ use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\StepUp\StepUpSettingsCatalog;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Hilos\AbstractHilosLegalAgent;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\SourceChangeProvenance;
@@ -28,12 +40,20 @@ use Hilos\Core\Source\SourceMirrorSubscriberInterface;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Collection\LegalAcceptanceExports as ObjectLegalAcceptanceExports;
 use Hilos\Database\Object\Item\LegalAcceptanceExport as ObjectLegalAcceptanceExport;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\View\Collection\LegalAcceptanceExports as ViewLegalAcceptanceExports;
+use Hilos\Database\View\Item\AccountOperation;
+use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Database\View\Item\LegalAcceptanceExport;
 use Hilos\Fs\ClusterDirectoryMarker;
 use Hilos\Fs\Context\FsContext;
@@ -42,6 +62,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Legal\Export\DTO\LegalAcceptancesExportForgetSignalData;
 use Hilos\Legal\Export\LegalAcceptancesCsv;
+use Hilos\Legal\Export\LegalAcceptancesExportErasureResult;
 use Hilos\Legal\Export\LegalAcceptancesExportHttp;
 use Hilos\Legal\Export\LegalAcceptancesExports;
 use Hilos\Legal\Export\LegalAcceptancesExportState;
@@ -59,6 +80,7 @@ use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Tables\Legal\AbstractHilosLegalAcceptancesTable;
 use Hilos\Tables\Legal\HilosLegalAcceptanceTableRow;
+use Hilos\Users\SecondFactorFate;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -72,8 +94,17 @@ use PHPUnit\Framework\Attributes\DataProvider;
  */
 final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegrationTestCase
 {
-    /** Tables beside the session base's: the orders, and the passkeys a step-up resolver asks about. */
-    private const array EXTRA_TABLES = ['hilos_passkey_credential', 'hilos_legal_acceptance_export'];
+    /**
+     * Tables beside the session base's: the orders, the passkeys a step-up resolver asks about, and the account
+     * operations whose erasure part the agent carries, in the order their keys point.
+     */
+    private const array EXTRA_TABLES = [
+        'hilos_passkey_credential',
+        'hilos_legal_acceptance_export',
+        'hilos_account_operation',
+        'hilos_account_operation_assignment',
+        'hilos_account_operation_result',
+    ];
 
     private const int ADMIN_ID = 1;
     private const int OTHER_ADMIN_ID = 2;
@@ -94,6 +125,12 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
 
     /** The person every refusal and erasure case is about: no administrator. */
     private const int PERSON_ID = 101;
+
+    /** The deletion request an erasure case opens its operation for; the operation keeps it as a soft reference. */
+    private const int REQUEST_ID = 19470;
+
+    /** A table of the failing erasure case only: its row pins one finished export so that deleting it fails. */
+    private const string PIN_TABLE = 'legal_export_test_pin';
 
     /** People who accepted the documents, by id. */
     private const array PEOPLE = [
@@ -175,8 +212,8 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
     protected function setUp(): void
     {
         parent::setUp();
+        self::dropExtraTables();
         foreach (self::EXTRA_TABLES as $table) {
-            Database::sqlRun('DROP TABLE IF EXISTS `' . $table . '`');
             Database::sqlRun((string) file_get_contents(self::stubPath($table)));
         }
         Schema::reset();
@@ -200,6 +237,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
         LegalAdminAudience::reset();
         LegalAcceptancesExports::reset();
+        OwnershipDeclaration::claimDb(LegalExportIntegrationCoordinator::class, HilosAgentType::HILOS_SESSIONS_LIBRARY);
         self::seedPeopleAndSessions();
         $rt = new LegalExportIntegrationRtContext([
             LegalExportIntegrationConnection::create(self::ADMIN_KEY, self::ADMIN_ID, self::ADMIN_TOKEN, self::sessionIdOf(self::ADMIN_TOKEN)),
@@ -226,6 +264,10 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
      */
     protected function tearDown(): void
     {
+        foreach ([HilosAgentType::HILOS_LEGAL, HilosAgentType::HILOS_SESSIONS_LIBRARY] as $agentId) {
+            TruthSourceRegistry::unregisterAgent($agentId);
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($agentId));
+        }
         LegalAcceptancesExports::reset();
         LegalAdminAudience::reset();
         SourceChangeBus::reset();
@@ -249,9 +291,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         if (is_file($this->logFile)) {
             unlink($this->logFile);
         }
-        foreach (self::EXTRA_TABLES as $table) {
-            Database::sqlRun('DROP TABLE IF EXISTS `' . $table . '`');
-        }
+        self::dropExtraTables();
         Schema::reset();
         parent::tearDown();
     }
@@ -729,6 +769,301 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         self::assertSame([], self::toasts());
     }
 
+    /** @return iterable<string, array{string}> State of the erased administrator's own order */
+    public static function ownOrderStates(): iterable
+    {
+        yield 'ready, its file on disk' => [LegalAcceptancesExportState::READY];
+        yield 'failed' => [LegalAcceptancesExportState::FAILED];
+        yield 'preparing, its file being built' => [LegalAcceptancesExportState::PREPARING];
+    }
+
+    /**
+     * The participant step deletes the erased administrator's own order, whatever its state, with every finished
+     * export around it, and records both counts; after the commit its file or the file being built is gone too,
+     * and the order that went says nothing more.
+     *
+     * @param string $state State of the erased administrator's own order
+     * @throws HilosException When a fixture, the order, a tick or the step fails
+     */
+    #[DataProvider('ownOrderStates')]
+    public function testTheErasureStepDeletesTheAdministratorsOwnOrderAndItsFiles(string $state): void
+    {
+        $agent = self::startedAgent();
+        $this->seedFinished(self::OTHER_ADMIN_ID, 'other.csv');
+        if ($state === LegalAcceptancesExportState::PREPARING) {
+            self::confirm(self::ADMIN_TOKEN, self::ADMIN_ID);
+            self::order($agent, self::ADMIN_KEY);
+            $agent->onTick();
+            $agent->onTick();
+            $this->buildingFile();
+        } else {
+            $this->seedFinished(self::ADMIN_ID, $state === LegalAcceptancesExportState::READY ? 'own.csv' : null);
+        }
+        self::assertSame($state, self::exportOf(self::ADMIN_ID)?->state);
+        $assignmentId = self::legalPart(self::openErasure(self::ADMIN_ID), self::ADMIN_ID);
+
+        $result = self::erase($agent, $assignmentId);
+
+        self::assertSame('{"ownOrders":1,"sharedExports":1}', $result->payloadJson);
+        self::assertSame(['ownOrders' => 1, 'sharedExports' => 1], LegalAcceptancesExportErasureResult::countsOf($result->payload));
+        self::assertSame([[$assignmentId, HilosAgentType::HILOS_LEGAL, '{"ownOrders":1,"sharedExports":1}']], self::storedResults());
+        self::assertSame(0, self::exportRowCount());
+        self::assertSame([], $this->files());
+        $agent->onTick();
+        $agent->onTick();
+        self::assertSame([], $this->files());
+        self::assertSame(0, self::exportRowCount());
+        self::assertSame([], self::toasts());
+    }
+
+    /**
+     * Erasing a person who orders nothing deletes the finished exports of two administrators with their files, and
+     * the third administrator's file being built starts again from its first line: the shared export is not lost,
+     * and the rebuilt file no longer names the person.
+     *
+     * @throws HilosException When a fixture, the order, a tick or the step fails
+     */
+    public function testTheErasureStepDeletesSharedExportsAndRebuildsTheOneInProgress(): void
+    {
+        self::seedAcceptances();
+        $agent = self::startedAgent();
+        $this->seedFinished(self::OTHER_ADMIN_ID, 'other.csv');
+        $this->seedFinished(self::THIRD_ADMIN_ID, null);
+        self::confirm(self::ADMIN_TOKEN, self::ADMIN_ID);
+        self::order($agent, self::ADMIN_KEY);
+        $id = self::exportOf(self::ADMIN_ID)?->id;
+        $agent->onTick();
+        $agent->onTick();
+        $agent->onTick();
+        self::assertContains(self::PERSON_CELLS[self::PERSON_ID], array_map(self::personCellsOf(...), self::linesOf($this->buildingFile())));
+        Database::sqlRun('DELETE FROM `hilos_legal_acceptance` WHERE `user_id` = ?', [self::PERSON_ID]);
+        $assignmentId = self::legalPart(self::openErasure(self::PERSON_ID), self::PERSON_ID);
+
+        $result = self::erase($agent, $assignmentId);
+
+        self::assertSame('{"ownOrders":0,"sharedExports":2}', $result->payloadJson);
+        self::assertSame([[$assignmentId, HilosAgentType::HILOS_LEGAL, '{"ownOrders":0,"sharedExports":2}']], self::storedResults());
+        self::assertNull(self::exportOf(self::OTHER_ADMIN_ID));
+        self::assertNull(self::exportOf(self::THIRD_ADMIN_ID));
+        self::assertSame([], $this->files());
+        self::assertSame($id, self::exportOf(self::ADMIN_ID)?->id);
+        self::assertSame(LegalAcceptancesExportState::PREPARING, self::exportOf(self::ADMIN_ID)?->state);
+        self::assertSame(4, $this->finish($agent, self::ADMIN_ID));
+        $export = self::exportOf(self::ADMIN_ID);
+        self::assertSame(LegalAcceptancesExportState::READY, $export?->state);
+        $lines = self::linesOf($this->directory . '/' . $export->storedName);
+        self::assertSame(self::expectedLines(static fn (): bool => true, self::utc()), $lines);
+        self::assertCount(self::RECORDS - 201, $lines);
+        self::assertNotContains(self::PERSON_CELLS[self::PERSON_ID], array_map(self::personCellsOf(...), $lines));
+    }
+
+    /**
+     * With no order of the person and no finished export around, the step records none of either, and the file
+     * being built still starts again.
+     *
+     * @throws HilosException When a fixture, the order, a tick or the step fails
+     */
+    public function testTheErasureStepWithNothingToDeleteStillRestartsTheBuild(): void
+    {
+        $agent = self::startedAgent();
+        self::confirm(self::ADMIN_TOKEN, self::ADMIN_ID);
+        self::order($agent, self::ADMIN_KEY);
+        $id = self::exportOf(self::ADMIN_ID)?->id;
+        $agent->onTick();
+        $agent->onTick();
+        $building = $this->buildingFile();
+        $assignmentId = self::legalPart(self::openErasure(self::PERSON_ID), self::PERSON_ID);
+
+        $result = self::erase($agent, $assignmentId);
+
+        self::assertSame('{"ownOrders":0,"sharedExports":0}', $result->payloadJson);
+        self::assertSame(['ownOrders' => 0, 'sharedExports' => 0], LegalAcceptancesExportErasureResult::countsOf($result->payload));
+        self::assertFileDoesNotExist($building);
+        self::assertSame([], $this->files());
+        self::assertSame($id, self::exportOf(self::ADMIN_ID)?->id);
+        self::assertSame(2, $this->finish($agent, self::ADMIN_ID));
+        self::assertSame(LegalAcceptancesExportState::READY, self::exportOf(self::ADMIN_ID)?->state);
+    }
+
+    /**
+     * A repeat answers with the saved result and deletes nothing: an export finished after the first call stays.
+     *
+     * @throws HilosException When a fixture or the step fails
+     */
+    public function testARepeatedErasureStepAnswersTheSavedResultAndDeletesNothing(): void
+    {
+        $agent = self::startedAgent();
+        $this->seedFinished(self::ADMIN_ID, 'own.csv');
+        $assignmentId = self::legalPart(self::openErasure(self::ADMIN_ID), self::ADMIN_ID);
+        $first = self::erase($agent, $assignmentId);
+        $this->seedFinished(self::OTHER_ADMIN_ID, 'later.csv');
+
+        $repeat = self::erase($agent, $assignmentId);
+
+        self::assertSame($first->id, $repeat->id);
+        self::assertSame('{"ownOrders":1,"sharedExports":0}', $repeat->payloadJson);
+        self::assertSame([[$assignmentId, HilosAgentType::HILOS_LEGAL, '{"ownOrders":1,"sharedExports":0}']], self::storedResults());
+        self::assertSame(LegalAcceptancesExportState::READY, self::exportOf(self::OTHER_ADMIN_ID)?->state);
+        self::assertSame(['later.csv'], $this->files());
+    }
+
+    /**
+     * While the person's acceptances are still stored the step refuses and touches nothing, since a file built
+     * after it could list them; once they are gone the step is carried, and its result is written once.
+     *
+     * @throws HilosException When a fixture or the step fails
+     */
+    public function testTheErasureStepWaitsForThePersonsAcceptancesToGo(): void
+    {
+        Database::sqlRun(
+            'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, ?)',
+            [self::PERSON_ID, 'terms', 'old', self::FIRST_ACCEPTANCE],
+        );
+        $agent = self::startedAgent();
+        $this->seedFinished(self::OTHER_ADMIN_ID, 'other.csv');
+        $this->seedFinished(self::THIRD_ADMIN_ID, null);
+        $assignmentId = self::legalPart(self::openErasure(self::PERSON_ID), self::PERSON_ID);
+
+        $this->assertErasureRefused($agent, $assignmentId, 'A legal export erasure part waits for the account\'s acceptances to go.');
+
+        Database::sqlRun('DELETE FROM `hilos_legal_acceptance` WHERE `user_id` = ?', [self::PERSON_ID]);
+        $result = self::erase($agent, $assignmentId);
+        self::assertSame('{"ownOrders":0,"sharedExports":2}', $result->payloadJson);
+        self::assertSame([[$assignmentId, HilosAgentType::HILOS_LEGAL, '{"ownOrders":0,"sharedExports":2}']], self::storedResults());
+        self::assertSame(0, self::exportRowCount());
+        self::assertSame([], $this->files());
+    }
+
+    /**
+     * A legal export part assigned inside a merge is refused before any work.
+     *
+     * @throws HilosException When a fixture or the step fails otherwise
+     */
+    public function testAnErasureStepAssignedInAMergeIsRefused(): void
+    {
+        $agent = self::startedAgent();
+        $this->seedFinished(self::OTHER_ADMIN_ID, 'other.csv');
+        $this->seedFinished(self::THIRD_ADMIN_ID, null);
+        $merge = self::asCoordinator(static fn (): AccountOperation => Hilos::$db->accountOperations->actions->recordMerge(
+            102,
+            self::PERSON_ID,
+            new AccountMergeChoice(PasswordFate::SURVIVOR, SecondFactorFate::SURVIVOR, true, false),
+        ));
+
+        $this->assertErasureRefused($agent, self::legalPart($merge, self::PERSON_ID), 'A legal export erasure part must belong to an erasure.');
+    }
+
+    /**
+     * The part asked of the agent in the session holder's frame is somebody else's assignment there.
+     *
+     * @throws HilosException When a fixture or the step fails otherwise
+     */
+    public function testAnErasureStepInAnotherAgentsFrameIsRefused(): void
+    {
+        $agent = self::startedAgent();
+        $this->seedFinished(self::OTHER_ADMIN_ID, 'other.csv');
+        $this->seedFinished(self::THIRD_ADMIN_ID, null);
+        $assignmentId = self::legalPart(self::openErasure(self::PERSON_ID), self::PERSON_ID);
+
+        try {
+            self::asCoordinator(static fn (): AccountOperationResult => LegalAcceptancesExports::eraseAccountPart($agent, $assignmentId));
+            self::fail('The part was carried in a foreign frame');
+        } catch (AccountOperationStepRefusedException $refusal) {
+            self::assertSame(AccountOperationStepRefusal::ForeignAssignment, $refusal->reason);
+        }
+
+        $this->assertNothingErased();
+    }
+
+    /**
+     * A deletion failing after the person's own order went rolls back that order, the exports already deleted
+     * and the result together, and leaves every file where it was.
+     *
+     * @throws HilosException When a fixture or the step fails otherwise
+     */
+    public function testAFailedErasureStepRollsBackItsDeletionsAndKeepsTheFiles(): void
+    {
+        $agent = self::startedAgent();
+        $this->seedFinished(self::ADMIN_ID, 'own.csv');
+        $this->seedFinished(self::OTHER_ADMIN_ID, 'other.csv');
+        $this->seedFinished(self::THIRD_ADMIN_ID, null);
+        Database::sqlRun(
+            'CREATE TABLE `' . self::PIN_TABLE . '` (`export_id` INT UNSIGNED NOT NULL, FOREIGN KEY (`export_id`) '
+            . 'REFERENCES `hilos_legal_acceptance_export` (`id`)) ENGINE=InnoDB',
+        );
+        Database::sqlRun('INSERT INTO `' . self::PIN_TABLE . '` (`export_id`) VALUES (?)', [self::exportOf(self::THIRD_ADMIN_ID)?->id]);
+        $assignmentId = self::legalPart(self::openErasure(self::ADMIN_ID), self::ADMIN_ID);
+
+        try {
+            self::erase($agent, $assignmentId);
+            self::fail('The pinned export was deleted');
+        } catch (DatabaseException) {
+            // The pinned export refuses its deletion after the administrator's own order went.
+        }
+
+        self::assertFalse(Database::hasOpenTransactions());
+        self::assertSame(LegalAcceptancesExportState::READY, self::exportOf(self::ADMIN_ID)?->state);
+        self::assertSame(LegalAcceptancesExportState::READY, self::exportOf(self::OTHER_ADMIN_ID)?->state);
+        self::assertSame(LegalAcceptancesExportState::FAILED, self::exportOf(self::THIRD_ADMIN_ID)?->state);
+        self::assertSame(3, self::exportRowCount());
+        self::assertSame(['other.csv', 'own.csv'], $this->files());
+        self::assertSame([], self::storedResults());
+    }
+
+    /**
+     * An administrator whose erasure has begun cannot order a new file: the order is refused in the erasing words,
+     * and the ready order already there stays with its file.
+     *
+     * @throws HilosException When a fixture or the order fails otherwise
+     */
+    public function testAnAdministratorWhoseErasureHasBegunCannotOrder(): void
+    {
+        $agent = self::startedAgent();
+        $this->seedFinished(self::ADMIN_ID, 'own.csv');
+        self::requestDeletion(self::ADMIN_ID, 1767225660000);
+        self::confirm(self::ADMIN_TOKEN, self::ADMIN_ID);
+
+        try {
+            self::order($agent, self::ADMIN_KEY);
+            self::fail('The order must be refused');
+        } catch (ValidationException $e) {
+            self::assertSame('This account is being deleted.', $e->getMessage());
+        }
+
+        self::assertSame(LegalAcceptancesExportState::READY, self::exportOf(self::ADMIN_ID)?->state);
+        self::assertSame(1, self::exportRowCount());
+        self::assertSame(['own.csv'], $this->files());
+    }
+
+    /**
+     * A deletion scheduled but not yet begun leaves the administrator ordering as before.
+     *
+     * @throws HilosException When a fixture or the order fails
+     */
+    public function testAnAdministratorWhoseDeletionIsOnlyScheduledStillOrders(): void
+    {
+        $agent = self::startedAgent();
+        self::requestDeletion(self::ADMIN_ID, null);
+        self::confirm(self::ADMIN_TOKEN, self::ADMIN_ID);
+
+        self::order($agent, self::ADMIN_KEY);
+
+        self::assertSame(LegalAcceptancesExportState::PREPARING, self::exportOf(self::ADMIN_ID)?->state);
+    }
+
+    /** The agent claims the results of its own erasure steps by its id and reads the operations, not the results. */
+    public function testTheAgentClaimsItsErasureResultsAndReadsTheOperations(): void
+    {
+        $agent = new LegalExportIntegrationAgent();
+
+        self::assertSame([TruthSourceOperation::Add], LegalExportIntegrationAgent::OWNS_DB_SET[HilosDbContext::accountOperationResults]);
+        self::assertSame('hilos_legal', $agent->ownedDbSetKey(HilosDbContext::accountOperationResults));
+        self::assertSame('', $agent->ownedDbSetKey(HilosDbContext::legalAcceptanceExports));
+        self::assertContains(HilosDbContext::accountOperationAssignments, LegalExportIntegrationAgent::READS_DB);
+        self::assertContains(HilosDbContext::accountOperations, LegalExportIntegrationAgent::READS_DB);
+        self::assertNotContains(HilosDbContext::accountOperationResults, LegalExportIntegrationAgent::READS_DB);
+    }
+
     /**
      * A restarted agent builds an unfinished order again from its first line and says nothing about it.
      *
@@ -1013,9 +1348,157 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
     private static function startedAgent(): LegalExportIntegrationAgent
     {
         $agent = new LegalExportIntegrationAgent();
+        OwnershipDeclaration::claimAll($agent);
         $agent->onStart();
 
         return $agent;
+    }
+
+    /**
+     * Gives an administrator a finished order: ready, its file on disk, when a file is named, failed otherwise.
+     *
+     * @param int $userId Administrator
+     * @param ?string $storedName File of a ready order, or null for a failed one
+     * @throws HilosException When the order cannot be written
+     */
+    private function seedFinished(int $userId, ?string $storedName): void
+    {
+        $future = date('Y-m-d H:i:s', time() + self::SECONDS_PER_DAY);
+        $order = Hilos::$db->legalAcceptanceExports->actions->order($userId, null, null, null, self::PAST);
+        if ($storedName === null) {
+            self::assertTrue($order->actions->finishFailed(self::PAST, $future));
+
+            return;
+        }
+        self::assertTrue($order->actions->finishReady($storedName, 4, 0, self::PAST, $future, 'UTC'));
+        file_put_contents($this->directory . '/' . $storedName, 'file');
+    }
+
+    /**
+     * @param int $userId Account the request is for
+     * @param ?int $startedAt Moment its erasure began in epoch milliseconds, or null when it is only scheduled
+     * @throws HilosException When the row cannot be written
+     */
+    private static function requestDeletion(int $userId, ?int $startedAt): void
+    {
+        Database::sqlRun(
+            'INSERT INTO `hilos_account_deletion` (`user_id`, `requested_at`, `effective_at`, `started_at`) VALUES (?, ?, ?, ?)',
+            [$userId, 1767225600000, 1767312000000, $startedAt],
+        );
+    }
+
+    /**
+     * @param int $userId Account erased alone
+     * @return AccountOperation Its erasure, written by the session holder
+     * @throws HilosException When the operation cannot be written
+     */
+    private static function openErasure(int $userId): AccountOperation
+    {
+        return self::asCoordinator(static fn (): AccountOperation => Hilos::$db->accountOperations->actions->recordErasure(
+            self::REQUEST_ID,
+            $userId,
+            Hilos::$db->userMerges->erasureCircleOf($userId),
+        ));
+    }
+
+    /**
+     * Records the legal export part of an account on an operation, with the key, owner and payload the census
+     * writes; runs in the session holder's frame.
+     *
+     * @param AccountOperation $operation Operation to record on, at its current stage
+     * @param int $userId Account the part names
+     * @return int Id of the assignment
+     * @throws HilosException When the record refuses
+     */
+    private static function legalPart(AccountOperation $operation, int $userId): int
+    {
+        $expectation = new AccountOperationExpectation(
+            AccountErasureParticipantCatalog::LEGAL_EXPORT,
+            $userId,
+            new AccountOperationOwnerAddress(HilosAgentType::HILOS_LEGAL),
+        );
+
+        return self::asCoordinator(static fn (): int => Hilos::$db->accountOperationAssignments->actions->record(
+            $operation->id,
+            $operation->stage,
+            $expectation->assignmentKey(),
+            $expectation->assignmentOwner(),
+            $userId,
+            $expectation->payload(),
+        )->id);
+    }
+
+    /**
+     * @param LegalExportIntegrationAgent $agent Agent carrying the part, in its own frame
+     * @param int $assignmentId Assignment it carries
+     * @return AccountOperationResult The recorded or saved result
+     * @throws HilosException When the step refuses or fails
+     */
+    private static function erase(LegalExportIntegrationAgent $agent, int $assignmentId): AccountOperationResult
+    {
+        return ExecutionContext::run(
+            new ExecutionFrame(agentId: $agent->getId()),
+            static fn (): AccountOperationResult => LegalAcceptancesExports::eraseAccountPart($agent, $assignmentId),
+        );
+    }
+
+    /**
+     * Runs one write in the session holder's frame, which opens the erasure and writes its assignments.
+     *
+     * @template T
+     * @param callable(): T $write Write to run as the holder
+     * @return T Whatever the write returns
+     */
+    private static function asCoordinator(callable $write): mixed
+    {
+        return ExecutionContext::run(new ExecutionFrame(agentId: HilosAgentType::HILOS_SESSIONS_LIBRARY), $write);
+    }
+
+    /**
+     * @param LegalExportIntegrationAgent $agent Agent asked to carry the part
+     * @param int $assignmentId Assignment it carries
+     * @param string $words Words of the refusal
+     * @throws HilosException When the step fails otherwise or a row cannot be read
+     */
+    private function assertErasureRefused(LegalExportIntegrationAgent $agent, int $assignmentId, string $words): void
+    {
+        try {
+            self::erase($agent, $assignmentId);
+            self::fail('The part was not refused');
+        } catch (ValidationException $refusal) {
+            self::assertNotInstanceOf(AccountOperationStepRefusedException::class, $refusal);
+            self::assertSame($words, $refusal->getMessage());
+        }
+
+        $this->assertNothingErased();
+    }
+
+    /**
+     * The second administrator's ready order with its file and the third's failed one are where the fixture left
+     * them, and no result is stored.
+     *
+     * @throws HilosException When a row cannot be read
+     */
+    private function assertNothingErased(): void
+    {
+        self::assertFalse(Database::hasOpenTransactions());
+        self::assertSame(LegalAcceptancesExportState::READY, self::exportOf(self::OTHER_ADMIN_ID)?->state);
+        self::assertSame(LegalAcceptancesExportState::FAILED, self::exportOf(self::THIRD_ADMIN_ID)?->state);
+        self::assertSame(2, self::exportRowCount());
+        self::assertSame(['other.csv'], $this->files());
+        self::assertSame([], self::storedResults());
+    }
+
+    /**
+     * @return list<array{int, string, string}> Assignment, owner and payload of every stored result
+     * @throws HilosException When the query fails
+     */
+    private static function storedResults(): array
+    {
+        return array_map(
+            static fn (array $row): array => [(int) $row['assignment_id'], (string) $row['owner_agent_id'], (string) $row['payload_json']],
+            Database::sql('SELECT `assignment_id`, `owner_agent_id`, `payload_json` FROM `hilos_account_operation_result` ORDER BY `id`')->rows(),
+        );
     }
 
     /**
@@ -1384,6 +1867,19 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
     {
         return dirname(__DIR__, 2) . '/backend/Database/Migration/Stub/create_' . $table . '.sql';
     }
+
+    /**
+     * Drops the pin of the failing case and the extra tables, each before the table it points at.
+     *
+     * @throws HilosException When a drop fails
+     */
+    private static function dropExtraTables(): void
+    {
+        Database::sqlRun('DROP TABLE IF EXISTS `' . self::PIN_TABLE . '`');
+        foreach (array_reverse(self::EXTRA_TABLES) as $table) {
+            Database::sqlRun('DROP TABLE IF EXISTS `' . $table . '`');
+        }
+    }
 }
 
 /** The legal agent of the fixture project, its download answers captured. */
@@ -1398,6 +1894,11 @@ final class LegalExportIntegrationAgent extends AbstractHilosLegalAgent
     {
         $this->httpReply = $reply;
     }
+}
+
+/** The session holder, which opens the erasure and writes its assignments. */
+final class LegalExportIntegrationCoordinator extends AbstractSessionsLibraryAgent
+{
 }
 
 /** A private export directory per case. */
