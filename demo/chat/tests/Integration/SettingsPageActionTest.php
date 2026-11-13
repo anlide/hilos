@@ -777,8 +777,9 @@ final class SettingsPageActionTest extends IntegrationTestCase
     }
 
     /**
-     * With a fresh confirmation the value is stored, the session holder is handed the apply with the
-     * forget switch as it stands, and the write is answered only once the holder applied it (HIL-1303).
+     * With a fresh confirmation the value is stored, the session holder is handed the apply with no
+     * restriction to wait on, the forget switch being off, and the write is answered only once the holder
+     * applied it (HIL-1303, HIL-1909).
      */
     public function testTurningTheSecondFactorOffWithAConfirmationIsAppliedBeforeTheAnswer(): void
     {
@@ -808,7 +809,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 $this->assertSame([], $answers, 'The write waits for the session holder');
                 $this->assertCount(1, $apply);
                 $this->assertInstanceOf(AuthSecondFactorDisableApplySignalData::class, $apply[0]->data->data);
-                $this->assertFalse($apply[0]->data->data->forgetTrusts);
+                $this->assertNull($apply[0]->data->data->restrictionId);
                 $this->assertSame(self::ADMIN_KEY, $apply[0]->data->data->acceptKey);
                 $this->assertSame([], $this->newRestrictions(), 'Turned off with its trusts kept, nothing is restricted');
 
@@ -825,20 +826,20 @@ final class SettingsPageActionTest extends IntegrationTestCase
 
     /**
      * The console carries no connection and stands outside the confirmation; the apply goes all the same,
-     * carrying the forget switch's default (HIL-1303).
+     * carrying the restriction the forget switch's default recorded with the write (HIL-1303, HIL-1909).
      */
     public function testTheConsoleTurnsTheSecondFactorOffWithoutAConfirmation(): void
     {
         $this->withSettingsWriter(function (): void {
             $this->deleteSettingIfExists(SecondFactorSettings::ENABLED_KEY);
 
-            $this->writeFromTheConsole(SecondFactorSettings::ENABLED_KEY, 'false');
+            $restrictionId = $this->turnOffForgettingTrusts();
             [$apply, $answers] = $this->secondFactorFrames();
 
             $this->assertFalse(SecondFactorPolicy::current()->enabled);
             $this->assertSame([], $answers);
             $this->assertCount(1, $apply);
-            $this->assertTrue($apply[0]->data->data->forgetTrusts);
+            $this->assertSame($restrictionId, $apply[0]->data->data->restrictionId);
             $this->assertSame(HilosSignalConstants::HILOS_SETTING_COMMAND_DONE, $apply[0]->data->data->replySignal);
         }, [SecondFactorSettings::ENABLED_KEY]);
     }
@@ -1257,8 +1258,10 @@ final class SettingsPageActionTest extends IntegrationTestCase
     /**
      * Turns the second factor off from the console while forgetting the trusted browsers is on, as it is
      * by default, and checks the one restriction to no term at all that the write recorded (HIL-1900).
+     *
+     * @return int Id of the restriction the write recorded, which the apply to the session holder names (HIL-1909)
      */
-    private function turnOffForgettingTrusts(): void
+    private function turnOffForgettingTrusts(): int
     {
         $before = TimeHelper::nowMs();
         $this->writeFromTheConsole(SecondFactorSettings::ENABLED_KEY, 'false');
@@ -1269,6 +1272,8 @@ final class SettingsPageActionTest extends IntegrationTestCase
         $this->assertSame(0, $restrictions[0][1]);
         $this->assertGreaterThanOrEqual($before, $restrictions[0][0]);
         $this->assertLessThanOrEqual($after, $restrictions[0][0]);
+
+        return $this->restrictionCursor;
     }
 
     /**

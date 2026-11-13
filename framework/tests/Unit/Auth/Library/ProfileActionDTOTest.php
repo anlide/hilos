@@ -18,6 +18,7 @@ use Hilos\Auth\Library\DTO\ProfileSetPasswordActionDTO;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordOpeningReplyDTO;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
 use Hilos\Auth\Library\DTO\AuthImpersonationOffApplySignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorDisableApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordOpenActionDTO;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordCodeRequestActionDTO;
@@ -217,6 +218,44 @@ final class ProfileActionDTOTest extends TestCase
         self::assertSame($savedAt, $restored->savedAt);
         self::assertSame(7, $restored->trustDays);
         self::assertSame($dto->toArray(), $restored->toArray());
+    }
+
+    /** The session holder receives the restriction it waits on, or none, along with the original answer address. */
+    public function testSecondFactorDisableHandoverRoundTrips(): void
+    {
+        $kept = new AuthSecondFactorDisableApplySignalData(null, 'reply', 'accept', null, 'setting_update', null);
+        $forgotten = new AuthSecondFactorDisableApplySignalData(42, 'reply', 'accept', 'request-1', 'setting_update', 'Saved');
+
+        self::assertSame([
+            'restrictionId' => null,
+            'replySignal' => 'reply',
+            'acceptKey' => 'accept',
+            'requestId' => null,
+            'action' => 'setting_update',
+            'successMessage' => null,
+        ], $kept->toArray());
+        self::assertNull(AuthSecondFactorDisableApplySignalData::fromJson($kept->toJson())->restrictionId);
+        self::assertSame($kept->toArray(), AuthSecondFactorDisableApplySignalData::fromJson($kept->toJson())->toArray());
+        self::assertSame(42, AuthSecondFactorDisableApplySignalData::fromJson($forgotten->toJson())->restrictionId);
+        self::assertSame($forgotten->toArray(), AuthSecondFactorDisableApplySignalData::fromJson($forgotten->toJson())->toArray());
+    }
+
+    /** A restriction id of zero names no restriction and is refused rather than waited on. */
+    public function testSecondFactorDisableHandoverRefusesARestrictionIdOfZero(): void
+    {
+        $payload = new AuthSecondFactorDisableApplySignalData(null, 'reply', 'accept', null, 'setting_update', null)->toArray();
+
+        $this->expectException(InvalidFormatException::class);
+        AuthSecondFactorDisableApplySignalData::fromArray(['restrictionId' => 0] + $payload);
+    }
+
+    /** A negative restriction id names no restriction and is refused rather than waited on. */
+    public function testSecondFactorDisableHandoverRefusesANegativeRestrictionId(): void
+    {
+        $payload = new AuthSecondFactorDisableApplySignalData(null, 'reply', 'accept', null, 'setting_update', null)->toArray();
+
+        $this->expectException(InvalidFormatException::class);
+        AuthSecondFactorDisableApplySignalData::fromArray(['restrictionId' => -1] + $payload);
     }
 
     /** The session holder receives the original answer address of the write that switched impersonation off. */

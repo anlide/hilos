@@ -391,8 +391,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosDbContext::accountOperationAssignments => [TruthSourceOperation::Add],
         // Created on the way in, capped or erased by the days an administrator sets for every person, moved by the merge
         // and removed by the erasure: operations over many people. A standing pair is extended by the person's agent on
-        // this library's frame (HIL-1907); Update stays for the days (HIL-1908). One person's trust is taken away by their
-        // agent (HIL-1407). See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
+        // this library's frame (HIL-1907). Forgetting them when the second factor is turned off is the people's agents'
+        // work on the sweep's frame (HIL-1909); Update and Remove stay for the days (HIL-1908), Remove for the erasure
+        // and the merge. One person's trust is taken away by their agent (HIL-1407).
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::secondFactorTrusts => TruthSourceOperation::ALL,
         // The loser's block in the merge transaction and the erased person's row:
         // set operations of this library. The admin flag and the block are written by the person's agent.
@@ -808,6 +810,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /** Refusal shared by browser and command requests to remove the last administrator's rights. */
     private const string LAST_ADMINISTRATOR_REVOKE_MESSAGE = 'The last active administrator cannot lose the rights';
+
+    /** Why turning the second factor off is answered with a refusal: some owners have not forgotten their trusts yet (HIL-1909) */
+    private const string SECOND_FACTOR_OFF_TRUSTS_LEFT_MESSAGE
+        = 'Two-step verification is turned off, but some trusted browsers are not forgotten yet. They will be forgotten automatically.';
 
     /** Last private maintenance pass; attempts themselves live in the holder's RT collection. */
     private float $lastProfileNameSweepAt = 0.0;
@@ -7890,21 +7896,25 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Applies a second factor turned off for the installation, then answers the original setting action (HIL-1303).
      *
-     * Every trusted browser is forgotten when the setting asks it - the same erasure a trust term
-     * of 0 makes (HIL-1301) - and every sign-in still waiting on a code or on enrolment is let go
-     * back to the address field with no reason given, the way it is when a person's last app goes
-     * ({@see forgetSecondFactor()}): nothing will ask for that code any more, and the next proof
-     * walks through the gate.
+     * Every sign-in still waiting on a code or on enrolment is let go back to the address field with
+     * no reason given, the way it is when a person's last app goes ({@see forgetSecondFactor()}):
+     * nothing will ask for that code any more, and the next proof walks through the gate. A failure
+     * here is answered at once and asks the owners for nothing: the restriction already holds at the
+     * door, and the next pass of the sweep, or the owner's own start, forgets the trusts.
      *
-     * @param AuthSecondFactorDisableApplySignalData $ask Whether to forget trusts, and the original handover address
+     * When the switch-off recorded a trust restriction, the trusted browsers are forgotten by their
+     * owners, not here (HIL-1909): the holder waits on the trust restriction sweep for that
+     * restriction ({@see SecondFactorTrustRestrictionSweep::await()}) and answers when the pass ends -
+     * with success when nothing is owed, with a refusal when some trusts still stand. The switch-off
+     * itself is not taken back. A first portion that fails is logged and answered at the end of the
+     * pass, the way the sweep promises.
+     *
+     * @param AuthSecondFactorDisableApplySignalData $ask Restriction to wait on, if any, and the original handover address
      * @throws InvalidArgumentException When the handover answer cannot be routed
      */
     private function applySecondFactorDisable(AuthSecondFactorDisableApplySignalData $ask): void
     {
         try {
-            if ($ask->forgetTrusts) {
-                Hilos::$db->secondFactorTrusts->actions->deleteAll();
-            }
             foreach (Hilos::$db->sessions->findAwaitingSecondFactor() as $session) {
                 $this->releaseSecondFactorWait($session, null, null, null, null, null);
             }
@@ -7926,7 +7936,23 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, null));
+        if ($ask->restrictionId === null) {
+            $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, null));
+
+            return;
+        }
+
+        try {
+            $this->trustRestrictionSweep()->await($ask->restrictionId, function (int $owing) use ($ask): void {
+                $this->sendToAgent(
+                    $ask->replySignal,
+                    HandoverAnswerSignalData::to($ask, $owing === 0 ? null : ActionRefusal::said(self::SECOND_FACTOR_OFF_TRUSTS_LEFT_MESSAGE)),
+                );
+            });
+        } catch (HilosException $e) {
+            // The request stays with the sweep, which answers it when the pass ends.
+            $this->logAgentWarning("Second factor turned off: trusted browsers not asked yet: {$e->getMessage()}");
+        }
     }
 
     /**

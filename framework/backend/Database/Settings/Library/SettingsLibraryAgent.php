@@ -587,9 +587,9 @@ final class SettingsLibraryAgent extends AbstractAgent
      *
      * @param SettingWriteSignalData $ask Key and value the administrator asked for
      * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the write, or null when unread
-     * @return ActionRefusal|int Why the value was refused, or the moment it was written (epoch milliseconds)
+     * @return ActionRefusal|SettingSaved Why the value was refused, or the moment it was written and its restriction
      */
-    private function storeValue(SettingWriteSignalData $ask, ?SecondFactorPolicy $policyBefore): ActionRefusal|int
+    private function storeValue(SettingWriteSignalData $ask, ?SecondFactorPolicy $policyBefore): ActionRefusal|SettingSaved
     {
         try {
             return $this->saveWithRestriction($ask, $policyBefore, function () use ($ask): void {
@@ -647,9 +647,9 @@ final class SettingsLibraryAgent extends AbstractAgent
      *
      * @param SettingResetSignalData $ask Key the administrator asked to undo
      * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the reset, or null when unread
-     * @return ActionRefusal|int Why the reset was refused, or the moment it went through (epoch milliseconds)
+     * @return ActionRefusal|SettingSaved Why the reset was refused, or the moment it went through and its restriction
      */
-    private function resetToDefault(SettingResetSignalData $ask, ?SecondFactorPolicy $policyBefore): ActionRefusal|int
+    private function resetToDefault(SettingResetSignalData $ask, ?SecondFactorPolicy $policyBefore): ActionRefusal|SettingSaved
     {
         try {
             return $this->saveWithRestriction($ask, $policyBefore, function () use ($ask): void {
@@ -665,9 +665,9 @@ final class SettingsLibraryAgent extends AbstractAgent
      *
      * @param SettingDeleteSignalData $ask Key the administrator asked to drop
      * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the drop, or null when unread
-     * @return ActionRefusal|int Why the row was kept, or the moment it was dropped (epoch milliseconds)
+     * @return ActionRefusal|SettingSaved Why the row was kept, or the moment it was dropped and its restriction
      */
-    private function dropOrphan(SettingDeleteSignalData $ask, ?SecondFactorPolicy $policyBefore): ActionRefusal|int
+    private function dropOrphan(SettingDeleteSignalData $ask, ?SecondFactorPolicy $policyBefore): ActionRefusal|SettingSaved
     {
         try {
             return $this->saveWithRestriction($ask, $policyBefore, function () use ($ask): void {
@@ -689,9 +689,9 @@ final class SettingsLibraryAgent extends AbstractAgent
      *
      * @param SettingPresetApplySignalData $ask Group provider and preset the administrator picked
      * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the preset, or null when unread
-     * @return ActionRefusal|int Why the preset was refused, or the moment it was applied (epoch milliseconds)
+     * @return ActionRefusal|SettingSaved Why the preset was refused, or the moment it was applied and its restriction
      */
-    private function applyPreset(SettingPresetApplySignalData $ask, ?SecondFactorPolicy $policyBefore): ActionRefusal|int
+    private function applyPreset(SettingPresetApplySignalData $ask, ?SecondFactorPolicy $policyBefore): ActionRefusal|SettingSaved
     {
         if (!is_subclass_of($ask->groupProvider, SettingPresetGroupProviderInterface::class)) {
             return ActionRefusal::said('Setting preset group provider is not one: ' . $ask->groupProvider);
@@ -731,11 +731,14 @@ final class SettingsLibraryAgent extends AbstractAgent
      * @param HandoverAskInterface $ask The ask being written
      * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the write, or null when unread
      * @param Closure(): void $write The door's own write
-     * @return ActionRefusal|int Why the write was taken back, or the moment it was saved (epoch milliseconds)
+     * @return ActionRefusal|SettingSaved Why the write was taken back, or the moment it was saved and the restriction it recorded
      * @throws HilosException Whatever the write, the restriction, the transaction or the commit raised; nothing of the write stays
      */
-    private function saveWithRestriction(HandoverAskInterface $ask, ?SecondFactorPolicy $policyBefore, Closure $write): ActionRefusal|int
-    {
+    private function saveWithRestriction(
+        HandoverAskInterface $ask,
+        ?SecondFactorPolicy $policyBefore,
+        Closure $write,
+    ): ActionRefusal|SettingSaved {
         $touchesTrustDays = $this->touchesKey($ask, SecondFactorSettings::TRUST_DAYS_KEY);
         $touchesSwitch = $this->touchesKey($ask, SecondFactorSettings::ENABLED_KEY);
 
@@ -743,6 +746,7 @@ final class SettingsLibraryAgent extends AbstractAgent
         try {
             $write();
             $savedAt = TimeHelper::nowMs();
+            $restrictionId = null;
             if ($touchesTrustDays || $touchesSwitch) {
                 $policyAfter = $this->secondFactorPolicy();
                 if ($policyAfter === null) {
@@ -751,9 +755,9 @@ final class SettingsLibraryAgent extends AbstractAgent
                     return ActionRefusal::said(self::TRUST_POLICY_UNREAD);
                 }
                 if ($touchesTrustDays && ($policyBefore === null || $policyAfter->trustDays < $policyBefore->trustDays)) {
-                    Hilos::$db->secondFactorTrustRestrictions->actions->record($savedAt, $policyAfter->trustDays);
+                    $restrictionId = Hilos::$db->secondFactorTrustRestrictions->actions->record($savedAt, $policyAfter->trustDays);
                 } elseif ($policyBefore?->enabled === true && !$policyAfter->enabled && $policyAfter->forgetTrustsOnDisable) {
-                    Hilos::$db->secondFactorTrustRestrictions->actions->record($savedAt, 0);
+                    $restrictionId = Hilos::$db->secondFactorTrustRestrictions->actions->record($savedAt, 0);
                 }
             }
             Database::transactionCommit();
@@ -762,7 +766,7 @@ final class SettingsLibraryAgent extends AbstractAgent
             throw $failure;
         }
 
-        return $savedAt;
+        return new SettingSaved($savedAt, $restrictionId);
     }
 
     /**
@@ -800,8 +804,9 @@ final class SettingsLibraryAgent extends AbstractAgent
      * every connection, so the profile section and the code step redraw without a reload.
      *
      * A write that turned the second factor off (HIL-1303) - by whichever door: a screen, the console
-     * - is applied by the session holder before it is answered: the trusted browsers forgotten when
-     * the setting asks it, and every sign-in waiting on a code or on enrolment let go. Turning it
+     * - is applied by the session holder before it is answered: every sign-in waiting on a code or on
+     * enrolment let go and, when the setting asks it, the trusted browsers forgotten by their owners
+     * under the restriction the write recorded (HIL-1909). Turning it
      * back on applies nothing; the frame alone carries it. A key reset to its default, or a row
      * dropped, turns it on.
      *
@@ -822,7 +827,7 @@ final class SettingsLibraryAgent extends AbstractAgent
      * its trust restriction was recorded with ({@see saveWithRestriction()}, HIL-1900).
      *
      * @param HandoverAskInterface $ask The ask, carrying whom to answer and under which name
-     * @param ActionRefusal|int $saved Why the write was refused, or the moment it was saved (epoch milliseconds)
+     * @param ActionRefusal|SettingSaved $saved Why the write was refused, or the moment it was saved and the restriction it recorded
      * @param ?AuthMethodsSignalData $methodsBefore Method-set frame before the write, or null when unread
      * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the write, or null when unread
      * @param CodeDeliverySignalData $deliveryBefore Delivery availability before the write
@@ -832,7 +837,7 @@ final class SettingsLibraryAgent extends AbstractAgent
      */
     private function settle(
         HandoverAskInterface $ask,
-        ActionRefusal|int $saved,
+        ActionRefusal|SettingSaved $saved,
         ?AuthMethodsSignalData $methodsBefore,
         ?SecondFactorPolicy $policyBefore,
         CodeDeliverySignalData $deliveryBefore,
@@ -920,7 +925,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                 $this->sendToAgent(
                     HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_DISABLE_APPLY,
                     new AuthSecondFactorDisableApplySignalData(
-                        forgetTrusts: $policyAfter->forgetTrustsOnDisable,
+                        restrictionId: $saved->restrictionId,
                         replySignal: $ask->replySignal,
                         acceptKey: $ask->acceptKey,
                         requestId: $ask->requestId,
@@ -940,7 +945,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                 HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY,
                 new AuthSecondFactorTrustDaysApplySignalData(
                     trustDays: $policyAfter->trustDays,
-                    savedAt: $saved,
+                    savedAt: $saved->savedAt,
                     replySignal: $ask->replySignal,
                     acceptKey: $ask->acceptKey,
                     requestId: $ask->requestId,

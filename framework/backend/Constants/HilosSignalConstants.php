@@ -2340,8 +2340,8 @@ final class HilosSignalConstants
     public const string HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY = 'hilos_auth_second_factor_trust_days_apply';
 
     /**
-     * Settings library → session holder: forget trusts per setting and let every second-factor wait go
-     * before answering the write (HIL-1303).
+     * Settings library → session holder: let every second-factor wait go and, when the switch-off recorded a
+     * trust restriction, wait for the owners to forget the trusts under it before answering the write (HIL-1303, HIL-1909).
      * Carried by {@see AuthSecondFactorDisableApplySignalData}.
      */
     public const string HILOS_AUTH_SECOND_FACTOR_DISABLE_APPLY = 'hilos_auth_second_factor_disable_apply';

@@ -49,7 +49,7 @@ The transitions below do not make a future owner callable today.
 | `hilos_second_factor_backup_code` | users library `Add`; person's agent `Update`/`Remove`; holder `Update`/`Remove` for merge/erasure | one row per code, spent by a conditional write |
 | `hilos_second_factor_reset` | users library `Add`; person's agent `Update`/`Remove`; holder `Remove` for merge/erasure | removals: when asked, when due, the cancel token, last notice |
 | `hilos_second_factor_setting` | person's agent `Add`/`Update`; holder `Add`/`Update`/`Remove` for the merge's wait upsert and merge/erasure deletion | the person's removal wait and a shorter one not yet in force; the app-code miss count, its window, the lock step and its end |
-| `hilos_second_factor_trust` | holder `Add` for the creation on the way in, `Update`/`Remove` for the global term, the switch-off and merge/erasure; person's agent `Update`/`Remove` for personal revocations, for applying the saved restrictions and for renewing a standing pair | a browser (session row) trusted for a person until a moment, and the moment it was last granted |
+| `hilos_second_factor_trust` | holder `Add` for the creation on the way in, `Update`/`Remove` for the global term and merge/erasure; person's agent `Update`/`Remove` for personal revocations, for applying the saved restrictions and for renewing a standing pair | a browser (session row) trusted for a person until a moment, and the moment it was last granted |
 | `hilos_second_factor_trust_restriction` | settings library `Add` in the transaction of the save that shortened the term or turned the factor off; no `Update` or `Remove`; the holder and the person's agent read it | one shortening: the save moment and a term of 0 to 365 days; trusts granted no later than the save live no longer than the save plus the term, and 0 takes them out |
 
 The personal edits moved in HIL-1406 are written by the person's agent
@@ -199,9 +199,11 @@ shortening already ended, even when the person's agent has not yet applied it.
 
 Turning the second factor off for the installation (HIL-1303) forgets every
 trust when `auth.second_factor.forget_trusts_on_disable` says so — the same
-erasure a term of 0 makes, by the same holder, and with the same 0-day
-restriction recorded. When it says no, the trusts live
-to their own expiry, and turning the factor back on finds them: a trusted browser
+erasure a term of 0 makes, with the same 0-day restriction recorded in the
+write. The people's agents forget their trusts on that restriction, and the
+administrator's request succeeds when nobody owes any trust any more, otherwise
+it is refused with the sentence described under Policy below. When it says no,
+the trusts live to their own expiry, and turning the factor back on finds them: a trusted browser
 still skips the code step until its trust runs out.
 
 Password recovery and a profile password change revoke trust of every other
@@ -217,8 +219,9 @@ Who writes each of these today (HIL-1407). The session holder's `trust()`
 creates a new pair on the way in and leaves a standing pair as it is; the
 person's agent extends a standing pair on `hilos_user_browser_trust_renew`
 (HIL-1907, below). The holder applies the administrator's term
-installation-wide, removes trusts on switch-off when requested, and removes them
-in merge and erasure; it claims all three operations for those paths. Taking one
+installation-wide and removes trusts in merge and erasure; it claims all three
+operations for those paths. It no longer removes trusts on switch-off: that is
+the people's agents' work on the sweep's frame (HIL-1909, below). Taking one
 person's trust away is already that person's agent's, in the turn of the write
 that causes it:
 
@@ -293,7 +296,8 @@ answer is ok when, at the moment of the owner's commit, no trust of the person
 violates a restriction up to the one asked for, a trust violating one that
 applies to it when its term is 0 or it runs past its limit; the same test tells
 the sweep of HIL-1901 which work is unfinished. Today the sweep is what sends
-the frame; the term and the switch-off below do not yet (HIL-1908, HIL-1909).
+the frame; the switch-off below sends it through the request of the next
+paragraph (HIL-1909), the term does not yet (HIL-1908).
 The holder no longer extends a trust - the renewal is the owner's own write
 (HIL-1907) - so the application meets no extension from another process. Three
 gaps remain. The creation: a pair the holder writes while the owner takes every
@@ -330,11 +334,11 @@ during a move may both send frames, which is harmless because applying twice
 changes nothing more; a live move is HIL-1912.
 
 The holder also keeps an internal request for the term and the switch-off to
-wait on, "finish the restrictions up to R, then tell me": it starts a pass at
+wait on (`SecondFactorTrustRestrictionSweep::await()`), "finish the restrictions up to R, then tell me": it starts a pass at
 once when none runs, skips the hour's pause, answers at once when nobody owes,
 and otherwise answers at the end of the pass with the number of trusts still
-violating those restrictions, 0 meaning done. Only tests call it today
-(HIL-1908, HIL-1909). A holder that stops drops what waits, and no answer comes.
+violating those restrictions, 0 meaning done. The switch-off calls it today
+(HIL-1909); the term does not yet (HIL-1908). A holder that stops drops what waits, and no answer comes.
 
 The person's agent does not wait for the sweep. At start, whether it is the
 sweep's frame that woke it or not, it applies every saved restriction to the
@@ -345,10 +349,10 @@ and the sweep asks again. The frame of the sweep that woke the agent then
 arrives after the start, changes nothing, and is answered ok.
 
 The personal owners apply the saved cap, or remove their rows for a zero term
-(not in the code yet — HIL-1908). They also perform `forgetTrusts` when
-installation switch-off calls for it (not in the code yet — HIL-1909). The
-saved-moment rule, no extension of an earlier expiry, current gate checks and
-browser outcomes above stay requirements. The current holder calls remain
+(not in the code yet — HIL-1908). They also forget their trusts when installation
+switch-off calls for it, on the frame of the sweep that the switch-off asked for
+(HIL-1909). The saved-moment rule, no extension of an earlier expiry, current
+gate checks and browser outcomes above stay requirements. The current holder calls remain
 until each ordinary move is enabled. Its terminal removals then remain only
 until erasure's switch (not in the code yet — HIL-1952) and merge's switch
 (not in the code yet — HIL-1999).
@@ -449,10 +453,22 @@ Turning it off is applied whichever door wrote it — the two-factor screen, the
 general settings table, the console's `settings:set`. After the write the
 settings library compares the policy before and after; on "on → off" it sends the
 frame, then hands `hilos_auth_second_factor_disable_apply` to the session holder,
-which forgets the trusts when the second switch says so, lets every sign-in
-waiting on a code or on enrolment go back to its start with no reason given — as
-when a person's last app goes — and answers the write. A tab let go there finds
-an empty wait if it submits a code afterwards, and is told the step has expired.
+which lets every sign-in waiting on a code or on enrolment go back to its start
+with no reason given — as when a person's last app goes — and answers the write.
+When the second switch says to forget trusts, the write has recorded the
+restriction (S, 0) and the frame carries its id as `restrictionId` (empty
+otherwise); the holder erases nothing itself but waits on
+`SecondFactorTrustRestrictionSweep::await(restrictionId)`, so the people's
+agents forget their trusts, and answers by the result: 0 still owed is success,
+more than 0 is a refusal saying that some trusted browsers are not forgotten yet
+and will be forgotten automatically. The switch-off itself stands either way.
+The price is that the answer waits for the owners: with more than 100 people
+holding a trust, or a silent owner, it comes after the browser's 30 seconds and
+the console's 15, and the administrator sees the earlier "no answer" while the
+switch-off is already in force.
+
+A tab let go there finds an empty wait if it submits a code afterwards, and is
+told the step has expired.
 "Off → on", a reset of the key and a dropped row only send the frame. A browser
 write that turns it off is confirmed first: the settings library asks
 `AskingAdministrator::confirmed()` for `disable_second_factor` before the write

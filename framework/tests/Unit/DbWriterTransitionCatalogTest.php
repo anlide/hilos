@@ -160,7 +160,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             'secondFactorBackupCodes' => ['HIL-1952', 'HIL-1999'],
             'secondFactorResets' => ['HIL-1952', 'HIL-1999'],
             'secondFactorSettings' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorTrusts' => ['HIL-1908', 'HIL-1909', 'HIL-1952', 'HIL-1999'],
+            'secondFactorTrusts' => ['HIL-1908', 'HIL-1952', 'HIL-1999'],
             'stepUps' => ['HIL-1952'],
             'accountDeletions' => ['HIL-1952'],
             'legalAcceptances' => ['HIL-1952'],
@@ -290,13 +290,12 @@ final class DbWriterTransitionCatalogTest extends TestCase
     {
         $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['secondFactorTrusts']);
         self::assertSame([
-            '', 'HIL-1908,HIL-1909,HIL-1952,HIL-1999', 'HIL-1908,HIL-1952,HIL-1999',
-            'HIL-1909,HIL-1952,HIL-1999', 'HIL-1952,HIL-1999', 'HIL-1999',
+            '', 'HIL-1908,HIL-1952,HIL-1999', 'HIL-1952,HIL-1999', 'HIL-1999',
         ], array_keys($states));
         foreach ($states as $pending => $state) {
             $operations = match ($pending) {
                 '' => 'add',
-                'HIL-1909,HIL-1952,HIL-1999', 'HIL-1952,HIL-1999', 'HIL-1999' => 'add,remove',
+                'HIL-1952,HIL-1999', 'HIL-1999' => 'add,remove',
                 default => 'add,remove,update',
             };
             $this->assertVector([
@@ -563,9 +562,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
                 '' => ['person:set:add,remove,update'],
             ],
             'secondFactorTrusts' => [
-                'HIL-1908,HIL-1909,HIL-1952,HIL-1999' => ['person:set:remove,update', 'holder:whole:add,remove,update'],
                 'HIL-1908,HIL-1952,HIL-1999' => ['person:set:remove,update', 'holder:whole:add,remove,update'],
-                'HIL-1909,HIL-1952,HIL-1999' => ['person:set:remove,update', 'holder:whole:add,remove'],
                 'HIL-1952,HIL-1999' => ['person:set:remove,update', 'holder:whole:add,remove'],
                 'HIL-1999' => ['person:set:remove,update', 'holder:whole:add,remove'],
                 '' => ['person:set:remove,update', 'holder:whole:add'],

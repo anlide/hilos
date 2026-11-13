@@ -37,6 +37,8 @@ use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
 use Hilos\Users\DTO\UserPasswordChangeSignalData;
 use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
+use Hilos\Users\DTO\UserSecondFactorTrustRestrictDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorTrustRestrictSignalData;
 use Hilos\Users\SecondFactorFate;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
@@ -48,6 +50,7 @@ use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
@@ -93,7 +96,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
  * by mail does not sign in past the factor, and that an administrator's requirement enrols on
  * the way in. A code is checked by the person's agent, and its frames are carried both ways
  * (HIL-1406). Turned off for the installation (HIL-1303), the factor lets every proof through,
- * and the session holder applies the switch to the waits and the trusts.
+ * and the session holder applies the switch to the waits, then waits on the trusts' owners to
+ * forget them (HIL-1909): the restriction frames are carried to the people's agents and back.
  */
 final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTestCase
 {
@@ -108,6 +112,9 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
     private const string SIBLING_KEY = 'accept-sf-sibling';
 
     private const string REQUEST_ID = 'request-sf';
+
+    /** Agent signal the settings library would be answered under when the factor is turned off. */
+    private const string TURNED_OFF_REPLY = 'second-factor-off-test-done';
 
     private const int USER_ID = 77;
 
@@ -1200,10 +1207,11 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
             Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->pendingSecondFactorMode,
         );
         $this->assertSame(SecondFactorPendingMode::SETUP, Hilos::$db->sessions->findByToken($setupToken)?->pendingSecondFactorMode);
-        $this->drain();
         Hilos::$setting = new SettingsAccessor(SecondFactorTurnedOffTestCatalog::class);
+        $restrictionId = $this->restrict(TimeHelper::nowMs(), 0);
+        $this->drain();
 
-        $this->applyTurnedOff(forgetTrusts: true);
+        $this->applyTurnedOff($restrictionId);
 
         $signals = [];
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
@@ -1228,9 +1236,11 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
 
     /**
      * Turning the factor off forgets the trusts only when the setting says so; a trust kept lets the
-     * browser skip the code step until its end once the factor is back on (HIL-1303).
+     * browser skip the code step until its end once the factor is back on (HIL-1303). Forgetting is
+     * the owner's: until the person's agent answers, the trusts stand and the write is not answered,
+     * and once it is forgotten the browser trusted before is asked for the code again (HIL-1909).
      *
-     * @throws HilosException When enrolment, a trust write, the apply or the grant fails
+     * @throws HilosException When enrolment, a trust write, the apply, a frame or the grant fails
      */
     public function testTurningOffForgetsTrustsOnlyWhenTheSettingSays(): void
     {
@@ -1244,20 +1254,231 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         Hilos::$db->secondFactorTrusts->actions->trust($otherSessionId, self::USER_ID, $until, TimeHelper::nowMs());
         Hilos::$setting = new SettingsAccessor(SecondFactorTurnedOffTestCatalog::class);
 
-        $this->applyTurnedOff(forgetTrusts: false);
-        $this->drain();
+        $this->applyTurnedOff(null);
+        $kept = $this->queued();
 
+        $this->assertSame([], self::named($kept, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT), 'Nobody is asked to forget');
+        $this->assertCount(1, self::turnedOffAnswers($kept));
+        $this->assertNull(self::turnedOffAnswers($kept)[0]->error);
         $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, self::USER_ID, SecondFactorSettings::DEFAULT_TRUST_DAYS));
         Hilos::$setting = new SettingsAccessor(SecondFactorSettingsCatalog::class);
         $this->grant();
         $this->assertSame(self::USER_ID, $this->lastStateFrame()?->userId, 'The kept trust skips the code step once it is back on');
 
         Hilos::$setting = new SettingsAccessor(SecondFactorTurnedOffTestCatalog::class);
-        $this->applyTurnedOff(forgetTrusts: true);
+        $restrictionId = $this->restrict(TimeHelper::nowMs(), 0);
+        $this->applyTurnedOff($restrictionId);
+        $asked = $this->queued();
+        $frames = self::named($asked, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT);
+
+        $this->assertSame([self::USER_ID], self::askedPeople($frames), 'The owner is asked once for both browsers');
+        $this->assertSame([], self::turnedOffAnswers($asked), 'The write waits for the owner');
+        $this->assertNotNull(self::trustRow($sessionId), 'The trusts stand until their owner forgets them');
+        $this->assertNotNull(self::trustRow($otherSessionId));
+
+        $answers = self::turnedOffAnswers($this->carryRestrictions($frames));
+
+        $this->assertCount(1, $answers);
+        $this->assertNull($answers[0]->error);
+        $this->assertSame(self::REQUEST_ID, $answers[0]->requestId);
+        $this->assertNull(self::trustRow($sessionId));
+        $this->assertNull(self::trustRow($otherSessionId));
+        Hilos::$setting = new SettingsAccessor(SecondFactorSettingsCatalog::class);
+        $this->grant($otherToken);
+        $this->assertSame(
+            SecondFactorPendingMode::VERIFY,
+            Hilos::$db->sessions->findByToken($otherToken)?->pendingSecondFactorMode,
+            'The browser trusted before asks for the code again once the factor is back on',
+        );
+    }
+
+    /**
+     * Every owner of a trust is asked, the one whose agent sleeps as well, and the write is answered
+     * only after the last of them; what the people enrolled stays theirs (HIL-1909).
+     *
+     * @throws HilosException When enrolment, a trust write, the apply or a frame fails
+     */
+    public function testTurningOffWaitsForEveryOwnerTheSleepingOneToo(): void
+    {
+        $sleeperId = 79;
+        $sleeperToken = 'dd00000000000000000000000000dd94';
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Sleeper')", [$sleeperId]);
+        $this->enrol();
+        Hilos::$db->secondFactors->actions
+            ->startEnrolment($sleeperId, 'Phone', Base32::encode(self::SECRET_BYTES))
+            ->actions->confirm('Phone');
+        Hilos::$db->secondFactorBackupCodes->actions->issueSet(self::USER_ID, ['abcdefghjk']);
+        Hilos::$db->secondFactorBackupCodes->actions->issueSet($sleeperId, ['kjhgfedcba']);
+        $sessionId = (int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->id;
+        self::seedSession($sleeperToken, null, self::CREATED_AT, null);
+        $sleeperSessionId = (int)Hilos::$db->sessions->findByToken($sleeperToken)->id;
+        $now = TimeHelper::nowMs();
+        $this->trustSince($sessionId, $now);
+        Hilos::$db->secondFactorTrusts->actions->trust($sleeperSessionId, $sleeperId, $now + self::DAY_MS, $now);
+        $this->personAgent(self::USER_ID);
+        Hilos::$setting = new SettingsAccessor(SecondFactorTurnedOffTestCatalog::class);
+        $restrictionId = $this->restrict(TimeHelper::nowMs(), 0);
         $this->drain();
 
-        $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($otherSessionId, self::USER_ID, SecondFactorSettings::DEFAULT_TRUST_DAYS));
-        $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, self::USER_ID, SecondFactorSettings::DEFAULT_TRUST_DAYS));
+        $this->applyTurnedOff($restrictionId);
+        $frames = self::named($this->queued(), HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT);
+
+        $this->assertSame([self::USER_ID, $sleeperId], self::askedPeople($frames));
+        $this->assertSame([], self::turnedOffAnswers($this->carryRestrictions([$frames[0]])), 'One owner is still to answer');
+        $this->assertNull(self::trustRow($sessionId));
+        $this->assertSame(1, self::trustsOf($sleeperId), 'The sleeping owner has not forgotten yet');
+
+        $answers = self::turnedOffAnswers($this->carryRestrictions([$frames[1]]));
+
+        $this->assertCount(1, $answers);
+        $this->assertNull($answers[0]->error);
+        $this->assertSame(0, self::trustsOf(self::USER_ID, $sleeperId));
+        foreach ([self::USER_ID, $sleeperId] as $userId) {
+            $this->assertCount(1, Hilos::$db->secondFactors->listByUser($userId), 'The app stays');
+            $this->assertCount(1, Hilos::$db->secondFactorBackupCodes->listByUser($userId), 'The backup codes stay');
+        }
+    }
+
+    /**
+     * The waits on a code are let go before any owner is asked to forget a trust (HIL-1909).
+     *
+     * @throws HilosException When enrolment, a trust write, the grant or the apply fails
+     */
+    public function testTurningOffLetsTheWaitsGoBeforeAskingTheOwners(): void
+    {
+        $this->enrol();
+        $otherToken = 'ee00000000000000000000000000ee94';
+        self::seedSession($otherToken, null, self::CREATED_AT, null);
+        $this->trustSince((int)Hilos::$db->sessions->findByToken($otherToken)->id, TimeHelper::nowMs());
+        $this->grant();
+        Hilos::$setting = new SettingsAccessor(SecondFactorTurnedOffTestCatalog::class);
+        $restrictionId = $this->restrict(TimeHelper::nowMs(), 0);
+        $this->drain();
+
+        $this->applyTurnedOff($restrictionId);
+
+        $released = null;
+        $asked = null;
+        foreach ($this->queued() as $index => $signal) {
+            if ($released === null && $signal->data instanceof AgentSignalData && $signal->data->data instanceof SessionStateSignalData) {
+                $released = $index;
+            }
+            if ($asked === null && $signal->signalName->getName() === HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT) {
+                $asked = $index;
+            }
+        }
+        $this->assertNotNull($released, 'The waiting browser is let go');
+        $this->assertNotNull($asked, 'The owner is asked');
+        $this->assertLessThan($asked, $released);
+    }
+
+    /**
+     * The same switch-off handed over again asks nobody, everything owed being forgotten already,
+     * and is answered at once (HIL-1909).
+     *
+     * @throws HilosException When enrolment, a trust write, the apply or a frame fails
+     */
+    public function testTurningOffAgainAsksNobodyAndAnswersAtOnce(): void
+    {
+        $this->enrol();
+        $this->trustSince((int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->id, TimeHelper::nowMs());
+        Hilos::$setting = new SettingsAccessor(SecondFactorTurnedOffTestCatalog::class);
+        $restrictionId = $this->restrict(TimeHelper::nowMs(), 0);
+        $this->drain();
+        $this->applyTurnedOff($restrictionId);
+        $first = self::turnedOffAnswers(
+            $this->carryRestrictions(self::named($this->queued(), HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT)),
+        );
+        $this->assertCount(1, $first);
+
+        $this->applyTurnedOff($restrictionId);
+        $again = $this->queued();
+
+        $this->assertSame([], self::named($again, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT));
+        $this->assertCount(1, self::turnedOffAnswers($again));
+        $this->assertNull(self::turnedOffAnswers($again)[0]->error);
+    }
+
+    /**
+     * An owner who refuses leaves the trusts for later: the write is answered with the refusal that
+     * says so, the others' trusts are forgotten, and the factor stays off (HIL-1909). An owner whose
+     * agent is gone ends the same way; the holder hands that news to the sweep only where the project
+     * draws a sign-in surface, which this fixture does not, and
+     * {@see SecondFactorTrustRestrictionSweepIntegrationTest} drives it there.
+     *
+     * @throws HilosException When enrolment, a trust write, the apply, a frame or the grant fails
+     */
+    public function testAnOwnerWhoDoesNotForgetLeavesTheSwitchOffAnsweredWithARefusal(): void
+    {
+        $refusingId = 79;
+        $refusingToken = 'cd00000000000000000000000000cd94';
+        $this->enrol();
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Owner')", [$refusingId]);
+        self::seedSession($refusingToken, null, self::CREATED_AT, null);
+        $trusted = [self::USER_ID => self::SESSION_TOKEN, $refusingId => $refusingToken];
+        $now = TimeHelper::nowMs();
+        foreach ($trusted as $userId => $token) {
+            $sessionId = (int)Hilos::$db->sessions->findByToken($token)->id;
+            Hilos::$db->secondFactorTrusts->actions->trust($sessionId, $userId, $now + self::DAY_MS, $now);
+        }
+        Hilos::$setting = new SettingsAccessor(SecondFactorTurnedOffTestCatalog::class);
+        $restrictionId = $this->restrict(TimeHelper::nowMs(), 0);
+        $this->drain();
+        $this->applyTurnedOff($restrictionId);
+        $frames = self::named($this->queued(), HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT);
+        $this->assertSame([self::USER_ID, $refusingId], self::askedPeople($frames));
+        $this->assertSame([], self::turnedOffAnswers($this->carryRestrictions([$frames[0]])));
+
+        $this->holder->onSignalAgent(
+            new AgentSignalData(new UserSecondFactorTrustRestrictDoneSignalData(
+                self::restrictAsk($frames[1]),
+                'The trusts could not be changed',
+                DatabaseException::class,
+                'Trust storage failure',
+            )),
+            'test',
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT_DONE,
+        );
+        $answers = self::turnedOffAnswers($this->queued());
+
+        $this->assertCount(1, $answers);
+        $this->assertSame(
+            'Two-step verification is turned off, but some trusted browsers are not forgotten yet. They will be forgotten automatically.',
+            $answers[0]->error,
+        );
+        $this->assertSame(0, self::trustsOf(self::USER_ID), 'The owner who answered forgot');
+        $this->assertSame(1, self::trustsOf($refusingId), 'The refusing owner\'s trust is left for the next pass');
+        $this->assertSame($restrictionId, Hilos::$db->secondFactorTrustRestrictions->getObjectCollection()->latestId());
+        $this->grant();
+        $this->assertSame(self::USER_ID, $this->lastStateFrame()?->userId, 'The factor stays off');
+    }
+
+    /**
+     * A switch-off whose waits cannot be let go is refused at once, and no owner is asked (HIL-1909).
+     *
+     * @throws HilosException When enrolment, a trust write or the handover fails
+     */
+    public function testTurningOffThatCannotLetTheWaitsGoIsRefusedWithoutAskingTheOwners(): void
+    {
+        $this->enrol();
+        $this->trustSince((int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->id, TimeHelper::nowMs());
+        Hilos::$setting = new SettingsAccessor(SecondFactorTurnedOffTestCatalog::class);
+        $restrictionId = $this->restrict(TimeHelper::nowMs(), 0);
+        $this->drain();
+        $originalDb = Hilos::$db;
+        Hilos::$db = new SecondFactorRefusingTrustDbContext();
+        try {
+            $this->applyTurnedOff($restrictionId);
+        } finally {
+            Hilos::$db = $originalDb;
+        }
+        $queued = $this->queued();
+
+        $this->assertSame([], self::named($queued, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT));
+        $answers = self::turnedOffAnswers($queued);
+        $this->assertCount(1, $answers);
+        $this->assertNotNull($answers[0]->error);
+        $this->assertNotNull(self::trustRow((int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->id));
     }
 
     /**
@@ -1288,15 +1509,15 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
     /**
      * Hands the holder the settings library's ask to apply the factor turned off.
      *
-     * @param bool $forgetTrusts Whether every trusted browser is forgotten with it
+     * @param ?int $restrictionId Restriction the switch-off recorded, or null when the trusts are kept
      * @throws HilosException When the holder fails on the frame
      */
-    private function applyTurnedOff(bool $forgetTrusts): void
+    private function applyTurnedOff(?int $restrictionId): void
     {
         $this->holder->onSignalAgent(
             new AgentSignalData(new AuthSecondFactorDisableApplySignalData(
-                forgetTrusts: $forgetTrusts,
-                replySignal: 'second-factor-off-test-done',
+                restrictionId: $restrictionId,
+                replySignal: self::TURNED_OFF_REPLY,
                 acceptKey: self::ACCEPT_KEY,
                 requestId: self::REQUEST_ID,
                 action: HilosSignalConstants::SECURITY_2FA_SWITCH_SET,
@@ -1564,14 +1785,15 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
      *
      * @param int $savedAt Moment the restriction was saved (epoch milliseconds)
      * @param int $termDays Days a trust granted by then may still live; 0 takes it out
+     * @return int Id of the stored restriction
      * @throws HilosException When the restriction cannot be written
      */
-    private function restrict(int $savedAt, int $termDays): void
+    private function restrict(int $savedAt, int $termDays): int
     {
         $settings = new SettingsLibraryAgent();
         OwnershipDeclaration::claimDb($settings::class, $settings->getId());
         try {
-            ExecutionContext::run(
+            return ExecutionContext::run(
                 new ExecutionFrame(agentId: $settings->getId()),
                 static fn (): int => Hilos::$db->secondFactorTrustRestrictions->actions->record($savedAt, $termDays),
             );
@@ -1688,6 +1910,111 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         }
 
         return [(int)$row['id'], (int)$row['created_at'], (int)$row['granted_at'], (int)$row['trusted_until']];
+    }
+
+    /**
+     * Delivers restriction frames to the people's agents and hands each agent's answer back to the holder.
+     *
+     * @param list<SignalDTO> $frames Restriction frames the holder's sweep sent
+     * @return list<SignalDTO> Everything else queued meanwhile, the holder's own frames after the answers included
+     * @throws HilosException When an agent or the holder fails on a frame
+     */
+    private function carryRestrictions(array $frames): array
+    {
+        foreach ($frames as $frame) {
+            $this->deliverToPerson($frame);
+        }
+        $answers = [];
+        $others = [];
+        foreach ($this->queued() as $signal) {
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT_DONE) {
+                $this->assertInstanceOf(AgentSignalData::class, $signal->data);
+                $this->assertInstanceOf(UserSecondFactorTrustRestrictDoneSignalData::class, $signal->data->data);
+                $this->assertNull($signal->data->data->error);
+                $answers[] = $signal->data;
+            } else {
+                $others[] = $signal;
+            }
+        }
+        $this->assertCount(count($frames), $answers, 'Every owner answers once');
+        foreach ($answers as $answer) {
+            $this->holder->onSignalAgent($answer, 'test', HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT_DONE);
+        }
+
+        return [...$others, ...$this->queued()];
+    }
+
+    /**
+     * @return list<SignalDTO> Every signal queued since the last look, in the order it was queued
+     */
+    private function queued(): array
+    {
+        $signals = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $signals[] = $signal;
+        }
+
+        return $signals;
+    }
+
+    /**
+     * @param list<SignalDTO> $signals Queued signals
+     * @param string $name Signal name to keep
+     * @return list<SignalDTO> The signals under that name, in order
+     */
+    private static function named(array $signals, string $name): array
+    {
+        return array_values(array_filter($signals, static fn (SignalDTO $signal): bool => $signal->signalName->getName() === $name));
+    }
+
+    /**
+     * @param list<SignalDTO> $signals Queued signals
+     * @return list<HandoverAnswerSignalData> The holder's answers to the switch-off, in order
+     */
+    private static function turnedOffAnswers(array $signals): array
+    {
+        $answers = [];
+        foreach (self::named($signals, self::TURNED_OFF_REPLY) as $signal) {
+            self::assertInstanceOf(AgentSignalData::class, $signal->data);
+            self::assertInstanceOf(HandoverAnswerSignalData::class, $signal->data->data);
+            $answers[] = $signal->data->data;
+        }
+
+        return $answers;
+    }
+
+    /**
+     * @param SignalDTO $frame A restriction frame the holder's sweep sent
+     * @return UserSecondFactorTrustRestrictSignalData What the frame asks
+     */
+    private static function restrictAsk(SignalDTO $frame): UserSecondFactorTrustRestrictSignalData
+    {
+        self::assertInstanceOf(AgentSignalData::class, $frame->data);
+        self::assertInstanceOf(UserSecondFactorTrustRestrictSignalData::class, $frame->data->data);
+
+        return $frame->data->data;
+    }
+
+    /**
+     * @param list<SignalDTO> $frames Restriction frames the holder's sweep sent
+     * @return list<int> People asked, in the order of the frames
+     */
+    private static function askedPeople(array $frames): array
+    {
+        return array_map(static fn (SignalDTO $frame): int => self::restrictAsk($frame)->userId, $frames);
+    }
+
+    /**
+     * @param int ...$userIds People whose trusts are counted
+     * @return int Stored trusts of those people, in any browser
+     * @throws DatabaseException When the read fails
+     */
+    private static function trustsOf(int ...$userIds): int
+    {
+        $marks = implode(', ', array_fill(0, count($userIds), '?'));
+        Database::sql("SELECT COUNT(*) AS `n` FROM `hilos_second_factor_trust` WHERE `user_id` IN ({$marks})", $userIds);
+
+        return (int)Database::field('n');
     }
 
     /**
