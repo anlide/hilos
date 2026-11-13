@@ -145,11 +145,14 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
      *     (HIL-1132). A browser merge asks the administrator's confirmation, so
      *     `hilos_step_up` is there too, and `hilos_second_factor` the gate reads to choose the
      *     proof it would ask for (HIL-1275). The loser's access log moves to the survivor in the
-     *     same transaction, so `hilos_access_log` has to be there to be empty (HIL-1174).
+     *     same transaction, so `hilos_access_log` has to be there to be empty (HIL-1174). Whether a
+     *     person's erasure has begun is asked on the way to their agent, so the deletion requests
+     *     have to be there to be empty too (HIL-1939).
      */
     private const array TABLES = [
         'hilos_user',
         'hilos_user_merge',
+        'hilos_account_deletion',
         'hilos_identity',
         'hilos_passkey_credential',
         'hilos_session',

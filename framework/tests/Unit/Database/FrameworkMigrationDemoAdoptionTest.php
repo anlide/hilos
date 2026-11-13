@@ -21,6 +21,11 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
 
     private const string TRUST_RESTRICTION_CHANGE = '20261112084322628728_HIL-1900_second_factor_trust_restriction';
 
+    /** Deletion stub snapshot the HIL-1924 part was published with; the HIL-1939 part declares the current one. */
+    private const string ACCOUNT_DELETION_MOMENTS_UP_SHA256 = 'd9e8325f5c37e8a452bead3a59daa64eae3b17891fdb67ae78ca45ce727ca03c';
+
+    private const string ACCOUNT_DELETION_START_CHANGE = '20261112235132210121_HIL-1939_account_deletion_start';
+
     private const array GENESIS_UNITS = [
         'access_log', 'account_deletion', 'admin_view_mode_latch', 'analytics', 'auth_block', 'change_log',
         'country', 'country_name', 'data_export', 'database_marker', 'file', 'file_variant', 'i18n_reflow',
@@ -281,6 +286,9 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                     $origins[] = $restriction;
                     $coveredParts[] = $restriction->parts[0];
                 }
+                $start = $this->assertAccountDeletionStartPair($project->root, 21, $catalog, $schema);
+                $origins[] = $start;
+                $coveredParts[] = $start->parts[0];
                 $selectedUnits = array_column($schema->selectedUnits($project->facade), 'key');
                 self::assertSame(
                     $this->partRecords($catalog->partsForUnits($selectedUnits)),
@@ -771,7 +779,9 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 self::assertFalse($source->introducesUnit);
                 self::assertSame($key === 'user'
                     ? ['20261022124515804554_HIL-1582_browser_time_zones/user'] : [], $source->requires);
-                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
+                self::assertSame($key === 'account_deletion'
+                    ? self::ACCOUNT_DELETION_MOMENTS_UP_SHA256
+                    : FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
                     $source->afterStubUpSha256);
                 self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
                     $source->afterStubDownSha256);
@@ -882,6 +892,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
             self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
             $origins[] = $install;
+            $startIndices = [167, 124, 124, 105, 105, 107];
+            $origins[] = $this->assertAccountDeletionStartPair($project->root, $startIndices[$index], $catalog, $schema);
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $this->assertLaterSecondFactorMomentTracks($projects, $catalog, $schema);
@@ -1050,6 +1062,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $momentFiles[] = $momentBase . '_down.sql';
         }
         array_push($momentChanges, ...$this->assertTrustRestrictionPairs($root, 8, $catalog, $schema));
+        $momentChanges[] = $this->assertAccountDeletionStartPair($root, 10, $catalog, $schema);
         self::assertSame([
             $base . '.sql',
             $base . '_down.sql',
@@ -1057,6 +1070,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $changeBase . '_down.sql',
             ...$momentFiles,
             ...$this->trustRestrictionFiles($root, 8),
+            ...$this->accountDeletionStartFiles($root, 10),
         ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);
@@ -1073,7 +1087,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
 
     /**
      * Baseline projects whose tracks are not enumerated pair by pair still receive the five parts,
-     * and after them the trust restriction's install and the grant moment's change (HIL-1900).
+     * and after them the trust restriction's install and the grant moment's change (HIL-1900), and
+     * the deletion start's change (HIL-1939).
      *
      * @param list<object> $projects Registered projects in registry order
      */
@@ -1084,6 +1099,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
     ): void {
         $starts = [7 => 16, 9 => 7, 10 => 3];
         $restrictionStarts = [7 => 21, 9 => 12, 10 => 8];
+        $deletionStarts = [7 => 23, 9 => 14, 10 => 10];
         $parts = [
             'second_factor' => 'd387464f16783b3b26bc52ebfa8b58854d4fac281f71c95c06777b3ac2d71601',
             'second_factor_backup_code' => '97fb53ec00e51e213c862962f7bd493a885a3a467f4d176dced9ea1c84cbf362',
@@ -1109,6 +1125,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 $seen[] = $change;
             }
             array_push($seen, ...$this->assertTrustRestrictionPairs($project->root, $restrictionStarts[$index], $catalog, $schema));
+            $seen[] = $this->assertAccountDeletionStartPair($project->root, $deletionStarts[$index], $catalog, $schema);
             $selected = array_column($schema->selectedUnits($project->facade), 'key');
             $onDisk = [];
             foreach (glob($project->root . '/*_down.sql') as $down) {
@@ -1271,11 +1288,13 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $momentFiles[] = $momentBase . '_down.sql';
         }
         array_push($momentChanges, ...$this->assertTrustRestrictionPairs($root, 7, $catalog, $schema));
+        $momentChanges[] = $this->assertAccountDeletionStartPair($root, 9, $catalog, $schema);
         self::assertSame([
             $base . '.sql',
             $base . '_down.sql',
             ...$momentFiles,
             ...$this->trustRestrictionFiles($root, 7),
+            ...$this->accountDeletionStartFiles($root, 9),
         ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);
@@ -1375,6 +1394,63 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $root . '/' . sprintf('%03d', $first + 1)
                 . '_framework_change_fb8c3e6bd279d04e5c9de4da091a6dbbc474eda7a736995a8ace3b2334cf503e',
         ];
+    }
+
+    /**
+     * The start moment of a deletion request arrives as a change continuing the deletion chain past
+     * the HIL-1924 part, and declares the stubs current now (HIL-1939).
+     *
+     * @param string $root Migration track of the project
+     * @param int $number Number of the change pair
+     * @param FrameworkMigrationCatalog $catalog Framework change catalog
+     * @param FrameworkSchemaCatalog $schema Framework schema catalog
+     * @return FrameworkMigrationOrigin The change origin
+     */
+    private function assertAccountDeletionStartPair(
+        string $root,
+        int $number,
+        FrameworkMigrationCatalog $catalog,
+        FrameworkSchemaCatalog $schema,
+    ): FrameworkMigrationOrigin {
+        $base = $this->accountDeletionStartBase($root, $number);
+        $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+        self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+        self::assertSame(['account_deletion'], $change->units);
+        self::assertCount(1, $change->parts);
+        self::assertSame(self::ACCOUNT_DELETION_START_CHANGE . '/account_deletion', $change->parts[0]->key());
+        $source = $catalog->part(self::ACCOUNT_DELETION_START_CHANGE, 'account_deletion');
+        self::assertSame([$source->toArray()], $this->partRecords($change->parts));
+        self::assertFalse($source->introducesUnit);
+        self::assertSame(['20261110024242374685_HIL-1924_people_moments/account_deletion'], $source->requires);
+        self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('account_deletion')->upPath)),
+            $source->afterStubUpSha256);
+        self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('account_deletion')->downPath)),
+            $source->afterStubDownSha256);
+
+        return $change;
+    }
+
+    /**
+     * @param string $root Migration track of the project
+     * @param int $number Number of the deletion start's change pair
+     * @return list<string> Its two files in the order glob() lists them
+     */
+    private function accountDeletionStartFiles(string $root, int $number): array
+    {
+        $base = $this->accountDeletionStartBase($root, $number);
+
+        return [$base . '.sql', $base . '_down.sql'];
+    }
+
+    /**
+     * @param string $root Migration track of the project
+     * @param int $number Number of the deletion start's change pair
+     * @return string Its base path, without extension
+     */
+    private function accountDeletionStartBase(string $root, int $number): string
+    {
+        return $root . '/' . sprintf('%03d', $number)
+            . '_framework_change_95dd7cd4dd466b6484d24c16ee42c65f7c2d8ef3d869640f4009d7678cfdbf5e';
     }
 
     /**

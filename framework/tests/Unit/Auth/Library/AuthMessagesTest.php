@@ -40,6 +40,7 @@ final class AuthMessagesTest extends TestCase
             'expired second factor' => ['second_factor_expired', 'Your sign-in step expired. Sign in again.'],
             'second factor attempts' => ['second_factor_attempts', 'Too many wrong codes. Sign in again.'],
             'blocked account' => ['account_blocked', 'This account has been blocked by the project administration.'],
+            'erasing account' => ['account_erasing', 'This account is being deleted.'],
         ];
     }
 

@@ -39,6 +39,9 @@ use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
  * - {@see REASON_ACCOUNT_BLOCKED} — the provider proved the person, and the account is
  *   blocked (HIL-289): nobody was signed in, the session holds the "Access closed" card, and
  *   the surface lets the trip go. {@see email} / {@see linkToken} are null.
+ * - {@see REASON_ACCOUNT_ERASING} — the provider proved the person, and the account's
+ *   erasure has begun (HIL-1939): nobody was signed in, no card goes up, and the surface shows
+ *   the erasing words. {@see email} / {@see linkToken} are null.
  *
  * The {@see reason} is a stable, non-sensitive code; network/provider failure
  * detail stays in the agent log, never on the wire. {@see linkToken} is a signed,
@@ -72,6 +75,9 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
 
     /** The provider proved the person, whose account is blocked: nobody is signed in (HIL-289). */
     public const string REASON_ACCOUNT_BLOCKED = 'account_blocked';
+
+    /** The provider proved the person, whose account's erasure has begun: nobody is signed in (HIL-1939). */
+    public const string REASON_ACCOUNT_ERASING = 'account_erasing';
 
     /**
      * @param string $acceptKey Initiating connection accept key the signal targets

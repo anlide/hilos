@@ -343,7 +343,7 @@ final class LastBrowserTimeZoneTestDb extends HilosDbContext
     }
 }
 
-/** People and merges by key; every other collection holds nothing. */
+/** People and merges by key; every other collection holds nothing, and no erasure has begun. */
 final class LastBrowserTimeZoneTestRows implements ArrayAccess
 {
     /**
@@ -368,6 +368,15 @@ final class LastBrowserTimeZoneTestRows implements ArrayAccess
             return new LastBrowserTimeZoneTestUser(null);
         }
 
+        return null;
+    }
+
+    /**
+     * @param int $userId Person whose begun erasure is asked for
+     * @return null No erasure has begun
+     */
+    public function startedOf(int $userId): mixed
+    {
         return null;
     }
 

@@ -50,11 +50,12 @@ final class PasskeyUnlinkCascadeIntegrationTest extends FrameworkIntegrationTest
 
     /**
      * @var list<string> Framework tables this case needs, each after the table its foreign key names;
-     *     the merges are what the person's agent asks before it writes
+     *     the merges and the deletion requests are what the person's agent asks before it writes
      */
     private const array TABLES = [
         'hilos_user',
         'hilos_user_merge',
+        'hilos_account_deletion',
         'hilos_identity',
         'hilos_passkey_credential',
     ];

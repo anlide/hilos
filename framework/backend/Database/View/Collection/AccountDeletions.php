@@ -42,6 +42,20 @@ class AccountDeletions extends DbCollection
     }
 
     /**
+     * The standing request of a person whose erasure has begun, if any (HIL-1939).
+     *
+     * @param int $userId Person
+     * @return ?AccountDeletion The begun request, or null when none stands begun
+     * @throws DatabaseException When the lookup fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction or an object type does not match
+     * @throws LogicException When collection class constants are not configured
+     */
+    public function startedOf(int $userId): ?AccountDeletion
+    {
+        return $this->itemFor($this->objectCollection->startedOf($userId));
+    }
+
+    /**
      * Reads the database even while the export worker has not consumed deletion sync frames.
      *
      * @param int $userId Person whose erasure is checked

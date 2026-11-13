@@ -23,7 +23,8 @@ use Hilos\Utils\Helpers\TimeHelper;
  * AccountDeletions object collection - people's own requests to delete their accounts (HIL-302).
  *
  * {@see request()} opens one, {@see liveOf()} answers the profile and the account commands,
- * and {@see dueBy()} is what the session holder's erasure sweep reads.
+ * {@see startedOf()} answers whether a person's erasure has begun (HIL-1939), and
+ * {@see dueBy()} is what the session holder's erasure sweep reads.
  *
  * @extends Objects<ObjectAccountDeletion>
  * @method ObjectAccountDeletion|null current()
@@ -84,6 +85,25 @@ class AccountDeletions extends Objects
     {
         return $this->hydrateAll(static::entityClass()::get(
             '`' . EntityAccountDeletion::user_id . '` = ? AND ' . self::LIVE_CONDITION,
+            [$userId],
+            [EntityAccountDeletion::id => SqlSortDirection::DESC],
+            1,
+        ))[0] ?? null;
+    }
+
+    /**
+     * The standing request of a person whose erasure has begun, if any (HIL-1939).
+     *
+     * @param int $userId Person
+     * @return ?ObjectAccountDeletion The begun request, or null when none stands begun
+     * @throws DatabaseException When the lookup fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function startedOf(int $userId): ?ObjectAccountDeletion
+    {
+        return $this->hydrateAll(static::entityClass()::get( // fresh-sql: a start another worker committed closes the account at once.
+            '`' . EntityAccountDeletion::user_id . '` = ? AND `' . EntityAccountDeletion::started_at . '` IS NOT NULL AND '
+                . self::LIVE_CONDITION,
             [$userId],
             [EntityAccountDeletion::id => SqlSortDirection::DESC],
             1,

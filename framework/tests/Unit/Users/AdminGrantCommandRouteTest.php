@@ -567,7 +567,8 @@ abstract class AdminGrantRouteTestHilos extends Hilos
  * People and merges for the grant route, with no database behind them.
  *
  * The route refuses a missing person before the hop. Everyone but
- * {@see AdminGrantCommandRouteTest::MISSING_USER_ID} is present, and nobody is folded. Every
+ * {@see AdminGrantCommandRouteTest::MISSING_USER_ID} is present, nobody is folded, and no erasure
+ * has begun (HIL-1939). Every
  * other collection answers the reads the announcement makes on the way to its frame, with nothing.
  */
 final class AdminGrantRouteTestDb extends HilosDbContext
@@ -607,6 +608,11 @@ final class AdminGrantRouteRows implements ArrayAccess
     }
 
     public function liveOf(int $userId): mixed
+    {
+        return null;
+    }
+
+    public function startedOf(int $userId): mixed
     {
         return null;
     }

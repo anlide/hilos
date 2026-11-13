@@ -8,6 +8,8 @@ use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\UserRenameFeedLinkSignalData;
+use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkedSignalData;
+use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkSignalData;
 use Demo\Chat\Database\View\Item\UserRename;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
@@ -20,6 +22,7 @@ use Demo\Chat\Database\Entity\Item\UserRename as EntityUserRename;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\AgentSignalData;
@@ -31,6 +34,7 @@ use Hilos\HilosException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\Users\UserNotificationType;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Chat renames through the framework's journal and writes each rename into its feed (HIL-1196).
@@ -257,6 +261,43 @@ final class RenameFeedTest extends IntegrationTestCase
         self::assertFileDoesNotExist($this->personErrorLog($userId));
     }
 
+    /**
+     * A person whose erasure has begun still has the feed's service frames served - the row linked,
+     * then unlinked and answered - and the agent lives on for its last write (HIL-1939).
+     */
+    public function testAPersonWhoseErasureBeganHasItsFeedFramesServed(): void
+    {
+        $userId = (int)Hilos::$db->users->actions->createWithName('Erasing feed')->id;
+        $row = Hilos::$db->userRenames->actions->add($userId, $userId, 'Before erasure', 'Erasing feed');
+        $link = $this->queuedFeedLink($row);
+        $this->beginErasure($userId);
+
+        $this->deliverFeedLink($userId, $link);
+
+        self::assertSame($link->eventId, $this->onlyJournalRowOf($userId)->event_id);
+
+        $agent = $this->personAgent($userId);
+        $this->underAgent($agent, static fn () => $agent->onSignalAgent(
+            new AgentSignalData(new UserRenameFeedUnlinkSignalData($userId, 'erasing-clear')),
+            '',
+            ChatSignalConstants::USER_RENAME_FEED_UNLINK,
+        ));
+
+        $answers = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === ChatSignalConstants::USER_RENAME_FEED_UNLINKED) {
+                self::assertInstanceOf(AgentSignalData::class, $signal->data);
+                self::assertInstanceOf(UserRenameFeedUnlinkedSignalData::class, $signal->data->data);
+                $answers[] = $signal->data->data;
+            }
+        }
+        self::assertCount(1, $answers);
+        self::assertTrue($answers[0]->unlinked);
+        self::assertNull($this->onlyJournalRowOf($userId)->event_id);
+        self::assertFalse($agent->shouldStop());
+        self::assertFileDoesNotExist($this->personErrorLog($userId));
+    }
+
     /** Set ownership logs a foreign row; a foreign addressee is an agent protocol error. */
     public function testAnotherPersonsRowAndAnotherAddresseeAreRefused(): void
     {
@@ -394,6 +435,23 @@ final class RenameFeedTest extends IntegrationTestCase
         self::assertSame($row->id, $links[0]->renameId);
 
         return $links[0];
+    }
+
+    /**
+     * Opens the person's deletion request in the users library and marks its erasure begun in the person's agent.
+     *
+     * @param int $userId Person whose erasure begins
+     * @throws HilosException When the request cannot be written or begun
+     */
+    private function beginErasure(int $userId): void
+    {
+        $library = $this->usersLibrary();
+        $effectiveAt = TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
+        $this->underAgent($library, static fn () => Hilos::$db->accountDeletions->actions->request($userId, $effectiveAt));
+        $request = Hilos::$db->accountDeletions->liveOf($userId);
+        self::assertNotNull($request);
+        self::assertTrue($this->underAgent($this->personAgent($userId), static fn (): bool => $request->actions->start()));
+        self::assertSame($request->id, Hilos::$db->accountDeletions->startedOf($userId)?->id);
     }
 
     /**

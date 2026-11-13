@@ -39,6 +39,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Actions\Item\IdentityActions;
 use Hilos\Database\Entity\Item\UserMerge;
 use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\View\Collection\AccountDeletions;
 use Hilos\Database\View\Collection\Identities;
 use Hilos\Database\View\Item\Identity;
 use Hilos\Hilos;
@@ -113,7 +114,10 @@ final class AbstractUserAgentTest extends TestCase
         self::assertSame($agent->getId(), $daemon->getId());
         self::assertSame(['42'], $agent->ownedDbRowKeys(HilosDbContext::users));
         foreach (array_keys(TestUserAgent::OWNS_DB_SET) as $collection) {
-            self::assertSame('42', $agent->ownedDbSetKey($collection));
+            self::assertSame(
+                $collection === HilosDbContext::accountOperationResults ? 'hilos_user:42' : '42',
+                $agent->ownedDbSetKey($collection),
+            );
         }
     }
 
@@ -172,6 +176,7 @@ final class AbstractUserAgentTest extends TestCase
             HilosDbContext::notificationPreferences,
             HilosDbContext::pushSubscriptions,
             HilosDbContext::userRenames,
+            HilosDbContext::accountOperationResults,
         ], array_keys(TestUserAgent::OWNS_DB_SET));
         foreach (self::borrowedSets() as $collection) {
             self::assertSame([TruthSourceOperation::Update, TruthSourceOperation::Remove], TestUserAgent::OWNS_DB_SET[$collection]);
@@ -188,8 +193,16 @@ final class AbstractUserAgentTest extends TestCase
         self::assertSame(TruthSourceOperation::ALL, TestUserAgent::OWNS_DB_SET[HilosDbContext::stepUps]);
         self::assertSame(TruthSourceOperation::ALL, TestUserAgent::OWNS_DB_SET[HilosDbContext::notificationPreferences]);
         self::assertSame(TruthSourceOperation::ALL, TestUserAgent::OWNS_DB_SET[HilosDbContext::userPhotos]);
+        self::assertSame([TruthSourceOperation::Add], TestUserAgent::OWNS_DB_SET[HilosDbContext::accountOperationResults]);
         self::assertSame([], TestUserAgent::OWNS_DB);
-        self::assertSame([HilosDbContext::secondFactorTrustRestrictions], TestUserAgent::READS_DB);
+        self::assertSame(
+            [
+                HilosDbContext::secondFactorTrustRestrictions,
+                HilosDbContext::accountOperationAssignments,
+                HilosDbContext::accountOperations,
+            ],
+            TestUserAgent::READS_DB,
+        );
         self::assertSame([], TestUserAgent::OWNS_RT);
         self::assertSame([], TestUserAgent::OWNS_RT_ROWS);
         self::assertSame([], TestUserAgent::OWNS_RT_SET);
@@ -214,6 +227,7 @@ final class AbstractUserAgentTest extends TestCase
         );
         TruthSourceRegistry::checkCanCreate(HilosDbContext::stepUps, static fn (): array => ['42']);
         TruthSourceRegistry::checkCanCreate(HilosDbContext::notificationPreferences, static fn (): array => ['42']);
+        TruthSourceRegistry::checkCanCreate(HilosDbContext::accountOperationResults, static fn (): array => ['hilos_user:42']);
         foreach ([TruthSourceOperation::Update, TruthSourceOperation::Remove] as $operation) {
             TruthSourceRegistry::checkCanWriteItem(HilosDbContext::stepUps, '1', static fn (): array => ['42'], $operation);
         }
@@ -442,6 +456,7 @@ final class AbstractUserAgentTest extends TestCase
         $collections = [
             HilosDbContext::users => new ArrayObject($state === 'erased' ? [] : [42 => (object)[]]),
             HilosDbContext::userMerges => new ArrayObject($state === 'merged' ? [42 => (object)[]] : []),
+            HilosDbContext::accountDeletions => $this->createStub(AccountDeletions::class),
             HilosDbContext::identities => $identities,
         ];
         $db->method('__get')->willReturnCallback(static fn (string $key): mixed => $collections[$key]);
@@ -602,6 +617,7 @@ final class AbstractUserAgentTest extends TestCase
                 HilosDbContext::notificationPreferences,
                 HilosDbContext::userPhotos,
                 HilosDbContext::legalAcceptances,
+                HilosDbContext::accountOperationResults,
             ],
         ));
     }

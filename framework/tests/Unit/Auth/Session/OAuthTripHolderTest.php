@@ -142,6 +142,7 @@ final class OAuthTripHolderTest extends TestCase
             'linked' => ['oauth_link_ok', null],
             'second factor' => ['second_factor', null],
             'blocked' => ['account_blocked', null],
+            'erasing' => ['account_erasing', 'This account is being deleted.'],
         ];
     }
 

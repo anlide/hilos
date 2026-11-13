@@ -1,0 +1,19 @@
+{
+    "format": 1,
+    "id": "20261112235132210121_HIL-1939_account_deletion_start",
+    "parts": [
+        {
+            "unit": "account_deletion",
+            "up": "account_deletion.sql",
+            "down": "account_deletion_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261110024242374685_HIL-1924_people_moments",
+                    "unit": "account_deletion"
+                }
+            ],
+            "afterStubUpSha256": "f141cd76f1815fda07409776d11a3b78858db517466b3f905bc82f469edf69a4",
+            "afterStubDownSha256": "95ee233624f2203cf94b2814b79fab0c2e5564a5e7ac8235715e25b9342ae230"
+        }
+    ]
+}

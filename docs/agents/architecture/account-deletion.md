@@ -8,13 +8,17 @@ seam through which a project erases its own rows of the person (HIL-302).
 
 `hilos_account_deletion` holds one row per request: `requested_at`,
 `effective_at` fixed when the request is made (now plus the grace period in
-force), and two endings, `canceled_at` and `completed_at`. A request is live
-while both are null. Both endings are written by a conditional update carrying
-that condition (`AccountDeletion::cancel()` / `complete()`), so a
-"Keep my account" pressed in the minute the erasure runs and the erasure itself
-race in the database and exactly one wins. A carried-out row stays after the
-erasure: the number of an account that no longer exists and three dates are
-the trace that it was erased on request.
+force), `started_at` (the moment the person's agent began the erasure, null
+before it; HIL-1939) and two endings, `canceled_at` and `completed_at`. A
+request is live while both endings are null, and a begun request stays live
+until its own end. The endings and the start are written by conditional updates
+carrying that condition (`AccountDeletion::cancel()` / `complete()` /
+`start()`); cancel and start carry one more, that `started_at` is still null. So
+a "Keep my account" pressed in the minute the erasure runs and the erasure
+itself race in the database and exactly one wins, and so do "Keep my account"
+and the start. A carried-out row stays after the erasure: the number of an
+account that no longer exists and its dates are the trace that it was erased on
+request.
 
 The users library starts a request. The person's agent cancels it, whether the
 person or an administrator asked (HIL-1409). The session holder marks a request
@@ -24,14 +28,16 @@ That is the code today: `complete()` is written inside the erasure's one
 transaction and rolls back with it, so a committed `completed_at` still means
 the whole circle succeeded. The detailed
 [erasure canon](account-operations.md#erasure) separates the conditional start
-at the request's personal owner (not in the code yet — HIL-1939) from that
-owner's final completion after required results and the deletion of its person
-row (not in the code yet — HIL-1942). HIL-1936 builds the separate, inert
-[operation and assignment carriers](account-operations.md#erasure);
-it does not add a started field here or change today's `completed_at` meaning.
+at the request's personal owner from that owner's final completion after
+required results and the deletion of its person row (not in the code yet —
+HIL-1942). The start is built and inert (HIL-1939): the request carries
+`started_at`, `start()` stamps it for the one winner against "Keep my account",
+and the person's agent and the sessions holder refuse the account from it, but
+nothing live calls it until HIL-1950/HIL-1952. HIL-1936 builds the separate,
+inert [operation and assignment carriers](account-operations.md#erasure); it
+adds no started field and does not change today's `completed_at` meaning.
 HIL-1937's participant result carrier and generic atomic step are built but
-inert; HIL-1939's request-owner start and HIL-1942's final completion remain
-future physical work. The old writer, borrowed right
+inert; HIL-1942's final completion remains future physical work. The old writer, borrowed right
 and current `completed_at` semantics remain until the live switch
 (not in the code yet — HIL-1952); the cancel/due race and the retained trace
 remain requirements.

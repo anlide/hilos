@@ -22,6 +22,7 @@ use Hilos\Constants\TimeConstants;
  * @property-read int $requestedAt
  * @property-read int $effectiveAt
  * @property-read int $deletionGraceDays Whole-day duration fixed by this request's stored moments
+ * @property-read ?int $startedAt Moment the person's agent began the erasure, or null before it
  * @property-read ?int $canceledAt
  * @property-read ?int $completedAt
  * @property-read AccountDeletionActions $actions
@@ -52,6 +53,7 @@ class AccountDeletion extends DbItem
             self::deletionGraceDays => max(1, (int) ceil(
                 ($this->_object->effectiveAt - $this->_object->requestedAt) / self::DAY_MS,
             )),
+            ObjectAccountDeletion::startedAt => $this->_object->startedAt,
             ObjectAccountDeletion::canceledAt => $this->_object->canceledAt,
             ObjectAccountDeletion::completedAt => $this->_object->completedAt,
             default => parent::__get($name),

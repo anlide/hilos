@@ -29,12 +29,18 @@ use Hilos\Utils\Helpers\TimeHelper;
  * decides the race in the database. {@see expireGrace()} is the third conditional write,
  * reserved for the test-only force-purge command (HIL-316).
  *
+ * {@see start()} marks the erasure begun by the person's agent (HIL-1939). It writes only on a
+ * standing request that has not begun, and {@see cancel()} only on one that has not begun
+ * either, so of the start and "Keep my account" exactly one wins, and the start wins once.
+ * {@see complete()} does not look at the start.
+ *
  * @extends Object_<EntityAccountDeletion>
  *
  * @property-read ?int $id
  * @property int $userId
  * @property int $requestedAt
  * @property int $effectiveAt
+ * @property-read ?int $startedAt
  * @property-read ?int $canceledAt
  * @property-read ?int $completedAt
  */
@@ -46,6 +52,7 @@ class AccountDeletion extends Object_
     public const string userId = 'userId';
     public const string requestedAt = 'requestedAt';
     public const string effectiveAt = 'effectiveAt';
+    public const string startedAt = 'startedAt';
     public const string canceledAt = 'canceledAt';
     public const string completedAt = 'completedAt';
 
@@ -63,6 +70,7 @@ class AccountDeletion extends Object_
             self::userId => $this->entity->user_id,
             self::requestedAt => $this->entity->requested_at,
             self::effectiveAt => $this->entity->effective_at,
+            self::startedAt => $this->entity->started_at,
             self::canceledAt => $this->entity->canceled_at,
             self::completedAt => $this->entity->completed_at,
             default => parent::__get($property),
@@ -72,8 +80,8 @@ class AccountDeletion extends Object_
     /**
      * Magic setter for entity properties.
      *
-     * `canceledAt` and `completedAt` have no setter here; they move only through
-     * {@see cancel()} and {@see complete()}, whose writes carry the race condition.
+     * `startedAt`, `canceledAt` and `completedAt` have no setter here; they move only through
+     * {@see start()}, {@see cancel()} and {@see complete()}, whose writes carry the race condition.
      *
      * @param string $property Name of a settable property (see the class @property list)
      * @param mixed $value Value to set
@@ -100,9 +108,29 @@ class AccountDeletion extends Object_
     }
 
     /**
-     * Cancels the request, if it still stands.
+     * Marks the erasure of the account begun, if the request still stands and has not begun.
      *
-     * @return bool True when this call canceled it, false when it was canceled or carried out already
+     * Against {@see cancel()} exactly one of the two wins: once this answers true the cancel answers
+     * false, and a cancel that landed first makes this answer false. The row is not re-read: false
+     * covers a request begun, canceled or carried out already.
+     *
+     * @return bool True only when this call began the request
+     * @throws DatabaseException When the update, the row count or the re-announcement fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws CreateNotAllowedException Never for a persisted row; declared by the re-announcing sync
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws ObjectGetIdStringNotImplementedException If the primary key is null during the re-announcement
+     */
+    public function start(): bool
+    {
+        return $this->stamp(EntityAccountDeletion::started_at);
+    }
+
+    /**
+     * Cancels the request, if it still stands and its erasure has not begun.
+     *
+     * @return bool True when this call canceled it, false when it was begun, canceled or carried out already
      * @throws DatabaseException When the update, the row count or the re-announcement fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      * @throws CreateNotAllowedException Never for a persisted row; declared by the re-announcing sync
@@ -112,7 +140,7 @@ class AccountDeletion extends Object_
      */
     public function cancel(): bool
     {
-        return $this->end(EntityAccountDeletion::canceled_at);
+        return $this->stamp(EntityAccountDeletion::canceled_at);
     }
 
     /**
@@ -131,7 +159,7 @@ class AccountDeletion extends Object_
      */
     public function complete(): bool
     {
-        return $this->end(EntityAccountDeletion::completed_at);
+        return $this->stamp(EntityAccountDeletion::completed_at);
     }
 
     /**
@@ -180,13 +208,15 @@ class AccountDeletion extends Object_
     }
 
     /**
-     * Stamps one of the two ending columns under the condition that neither is stamped yet.
+     * Stamps the start or one of the two ending columns under the condition that neither ending is stamped yet.
      *
-     * Of two workers ending the same request exactly one changes the row; the winner's row is
-     * re-announced through {@see sync()}. An unpersisted request answers false.
+     * The start and the cancel also carry the condition that the start is not stamped, which the
+     * completion does not. Of two workers writing the same request under one condition exactly one
+     * changes the row; the winner's row is re-announced through {@see sync()}. An unpersisted
+     * request answers false.
      *
-     * @param string $column Ending column to stamp (canceled_at or completed_at)
-     * @return bool True when this call ended the request
+     * @param string $column Column to stamp (started_at, canceled_at or completed_at)
+     * @return bool True when this call stamped it
      * @throws DatabaseException When the update, the row count or the re-announcement fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      * @throws CreateNotAllowedException Never for a persisted row; declared by the re-announcing sync
@@ -194,7 +224,7 @@ class AccountDeletion extends Object_
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws ObjectGetIdStringNotImplementedException If the primary key is null during the re-announcement
      */
-    private function end(string $column): bool
+    private function stamp(string $column): bool
     {
         if ($this->entity->id === null) {
             return false;
@@ -211,18 +241,21 @@ class AccountDeletion extends Object_
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::int($now));
         $params->add(SqlParam::int($this->entity->id));
-        Database::sql(
-            'UPDATE `' . EntityAccountDeletion::_table . '` SET `' . $column . '` = ? WHERE `'
-                . EntityAccountDeletion::id . '` = ?'
-                . ' AND `' . EntityAccountDeletion::canceled_at . '` IS NULL'
-                . ' AND `' . EntityAccountDeletion::completed_at . '` IS NULL',
-            $params,
-        );
+        $sql = 'UPDATE `' . EntityAccountDeletion::_table . '` SET `' . $column . '` = ? WHERE `'
+            . EntityAccountDeletion::id . '` = ?'
+            . ' AND `' . EntityAccountDeletion::canceled_at . '` IS NULL'
+            . ' AND `' . EntityAccountDeletion::completed_at . '` IS NULL';
+        if ($column !== EntityAccountDeletion::completed_at) {
+            $sql .= ' AND `' . EntityAccountDeletion::started_at . '` IS NULL';
+        }
+        Database::sql($sql, $params);
         if (Database::affectedRows() !== 1) {
             return false;
         }
 
-        if ($column === EntityAccountDeletion::canceled_at) {
+        if ($column === EntityAccountDeletion::started_at) {
+            $this->entity->started_at = $now;
+        } elseif ($column === EntityAccountDeletion::canceled_at) {
             $this->entity->canceled_at = $now;
         } else {
             $this->entity->completed_at = $now;
@@ -235,7 +268,7 @@ class AccountDeletion extends Object_
     /**
      * Converts the request to an associative array.
      *
-     * @return array<string, mixed> Request data (id, userId, requestedAt, effectiveAt, canceledAt, completedAt)
+     * @return array<string, mixed> Request data (id, userId, requestedAt, effectiveAt, startedAt, canceledAt, completedAt)
      */
     public function toArray(): array
     {
@@ -244,6 +277,7 @@ class AccountDeletion extends Object_
             self::userId => $this->entity->user_id,
             self::requestedAt => $this->entity->requested_at,
             self::effectiveAt => $this->entity->effective_at,
+            self::startedAt => $this->entity->started_at,
             self::canceledAt => $this->entity->canceled_at,
             self::completedAt => $this->entity->completed_at,
         ];

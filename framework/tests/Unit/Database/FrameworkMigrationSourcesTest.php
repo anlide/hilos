@@ -135,7 +135,11 @@ final class FrameworkMigrationSourcesTest extends TestCase
         $catalog->verifyCurrentStubs(['session', 'verifier_circle']);
     }
 
-    /** Guards source identities and stub snapshots independently of project provenance. */
+    /**
+     * Guards source identities and stub snapshots independently of project provenance. The deletion
+     * stub has moved on since (HIL-1939): its part keeps the snapshot it was published with, and the
+     * chain goes on in the part that adds the start moment.
+     */
     public function testRealPersonMomentsCarrySixPartsWithCurrentStubHashesAndUserChain(): void
     {
         $schema = new FrameworkSchemaCatalog();
@@ -151,8 +155,9 @@ final class FrameworkMigrationSourcesTest extends TestCase
             '20261110024242374685_HIL-1924_people_moments/user_merge',
             '20261110024242374685_HIL-1924_people_moments/user_photo',
             '20261110024242374685_HIL-1924_people_moments/user_rename',
+            '20261112235132210121_HIL-1939_account_deletion_start/account_deletion',
         ], array_map(static fn (FrameworkMigrationPart $part): string => $part->key(), $parts));
-        $parts = array_slice($parts, 2);
+        $parts = array_slice($parts, 2, count($units));
         $this->assertSame($units, array_column($parts, 'unit'));
         foreach ($parts as $part) {
             $this->assertSame('20261110024242374685_HIL-1924_people_moments', $part->changeId);
@@ -160,10 +165,29 @@ final class FrameworkMigrationSourcesTest extends TestCase
                 ? ['20261022124515804554_HIL-1582_browser_time_zones/user'] : [], $part->requires);
             $this->assertFalse($part->introducesUnit);
             $unit = $schema->unit($part->unit);
-            $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->upPath)), $part->afterStubUpSha256);
+            $this->assertSame(
+                $part->unit === 'account_deletion'
+                    ? 'd9e8325f5c37e8a452bead3a59daa64eae3b17891fdb67ae78ca45ce727ca03c'
+                    : FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->upPath)),
+                $part->afterStubUpSha256,
+            );
             $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->downPath)), $part->afterStubDownSha256);
         }
         $catalog->verifyCurrentStubs($units);
+    }
+
+    public function testRealAccountDeletionStartContinuesTheDeletionChainWithCurrentStubHashes(): void
+    {
+        $schema = new FrameworkSchemaCatalog();
+        $catalog = new FrameworkMigrationCatalog($schema);
+        $part = $catalog->part('20261112235132210121_HIL-1939_account_deletion_start', 'account_deletion');
+
+        $this->assertSame(['20261110024242374685_HIL-1924_people_moments/account_deletion'], $part->requires);
+        $this->assertFalse($part->introducesUnit);
+        $unit = $schema->unit('account_deletion');
+        $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->upPath)), $part->afterStubUpSha256);
+        $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->downPath)), $part->afterStubDownSha256);
+        $catalog->verifyCurrentStubs(['account_deletion']);
     }
 
     public function testRealPushSubscriptionRevisionCarriesPartWithCurrentStubHashesAndChain(): void

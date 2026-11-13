@@ -44,6 +44,7 @@ final class PasswordRecoveryCodeIntegrationTest extends FrameworkIntegrationTest
     private const array TABLES = [
         'hilos_user',
         'hilos_user_merge',
+        'hilos_account_deletion',
         'hilos_identity',
         'hilos_user_verification',
         'hilos_second_factor_trust',

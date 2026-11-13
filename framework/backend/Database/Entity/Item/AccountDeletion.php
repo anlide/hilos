@@ -18,6 +18,10 @@ use Hilos\Database\PhpType;
  * after the account is gone: the number of an account that no longer exists and three
  * dates are the trace that it was erased on request.
  *
+ * `started_at` is the moment the person's agent began the erasure (HIL-1939). The start and
+ * the cancel are conditional against each other: each writes only while the other has not,
+ * so exactly one of them wins, and the start wins once.
+ *
  * @method static EntityAccountDeletions get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityAccountDeletions getAll()
  */
@@ -27,6 +31,7 @@ class AccountDeletion extends Entity
     public const string user_id = 'user_id';
     public const string requested_at = 'requested_at';
     public const string effective_at = 'effective_at';
+    public const string started_at = 'started_at';
     public const string canceled_at = 'canceled_at';
     public const string completed_at = 'completed_at';
 
@@ -37,17 +42,19 @@ class AccountDeletion extends Entity
         self::user_id,
         self::requested_at,
         self::effective_at,
+        self::started_at,
         self::canceled_at,
         self::completed_at,
     ];
 
-    public const array _moments = [self::requested_at, self::effective_at, self::canceled_at, self::completed_at];
+    public const array _moments = [self::requested_at, self::effective_at, self::started_at, self::canceled_at, self::completed_at];
 
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::user_id => PhpType::INTEGER->value,
         self::requested_at => PhpType::INTEGER->value,
         self::effective_at => PhpType::INTEGER->value,
+        self::started_at => PhpType::INTEGER->value,
         self::canceled_at => PhpType::INTEGER->value,
         self::completed_at => PhpType::INTEGER->value,
     ];
@@ -68,6 +75,7 @@ class AccountDeletion extends Entity
     public int $user_id;
     public int $requested_at;
     public int $effective_at;
+    public ?int $started_at = null;
     public ?int $canceled_at = null;
     public ?int $completed_at = null;
 }

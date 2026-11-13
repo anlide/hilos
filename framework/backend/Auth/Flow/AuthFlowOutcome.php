@@ -86,6 +86,12 @@ final class AuthFlowOutcome extends ActionReplyDTO
      */
     public const string CODE_ACCOUNT_BLOCKED = 'account_blocked';
 
+    /**
+     * The person proved who they are, and the account's erasure has started (HIL-1939): nothing
+     * is signed in, no card goes up, and the surface rolls back to the address field.
+     */
+    public const string CODE_ACCOUNT_ERASING = 'account_erasing';
+
     /** Wire key for the success flag. */
     private const string FIELD_OK = 'ok';
 

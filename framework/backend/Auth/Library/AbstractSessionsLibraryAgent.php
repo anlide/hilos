@@ -307,6 +307,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** Refusal of a write over an account folded into another one (HIL-1199). */
     public const string MERGED_ACCOUNT_REFUSED_MESSAGE = 'This account was merged into another one';
 
+    /** Refusal of sign-in and ordinary actions of an account whose erasure has begun (HIL-1939). */
+    public const string ERASING_ACCOUNT_REFUSED_MESSAGE = 'This account is being deleted.';
+
     /** Refusal when the account being folded was already merged (HIL-1294). */
     public const string ACCOUNT_MERGE_ALREADY_MERGED_MESSAGE = '%s was already merged into %s';
 
@@ -1706,13 +1709,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * The card is about an account that is no longer blocked by the time this is asked. It still
      * gives nothing back when the account is gone, when it is blocked again - a merged loser stays
-     * blocked for good, {@see AbstractUserAgent::writeBlockFlag()} refuses to lift it - when
-     * somebody is already signed in on the row, or when the row has outlived its own expiry: the
-     * limit of a return is the life of the session, not the length of the block.
+     * blocked for good, {@see AbstractUserAgent::writeBlockFlag()} refuses to lift it - when its
+     * erasure has begun (HIL-1939), when somebody is already signed in on the row, or when the row
+     * has outlived its own expiry: the limit of a return is the life of the session, not the length
+     * of the block. The deletion requests are read only for a session that holds a card.
      *
      * @param Session $session Session holding the card
      * @return ?int Person to sign back in, or null when the card can only be lowered
-     * @throws HilosException When the account cannot be read
+     * @throws HilosException When the account or its deletion requests cannot be read
      */
     private function returningBlockedUserId(Session $session): ?int
     {
@@ -1723,6 +1727,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         $user = Hilos::$db->users[$blockedUserId] ?? null;
         if ($user === null || $user->block === true) {
+            return null;
+        }
+        if (Hilos::$db->accountDeletions->startedOf($blockedUserId) !== null) {
             return null;
         }
 
@@ -6236,7 +6243,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * before the check moved here (HIL-1197): the asker must be an administrator, and only then is
      * the target looked up at all, so an unprivileged caller never learns from this whether the id
      * it named exists. A target folded into another account is refused next (HIL-1292), before any
-     * setting is asked: a tombstone is nobody to act as, whatever the settings allow. Then the
+     * setting is asked: a tombstone is nobody to act as, whatever the settings allow. A target
+     * whose erasure has begun is refused the same way (HIL-1939), in the erasing words. Then the
      * administrator's settings (HIL-1170, {@see ImpersonationSettings}):
      * impersonation must exist in the product, and the target must not be a blocked person, a
      * frozen person or another administrator whose row of the settings is switched off. The
@@ -6252,9 +6260,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * @param int $adminUserId User the acting session currently carries
      * @param int $targetUserId User that session asks to act as
-     * @throws ValidationException When the asker is not an administrator, the target is unknown or merged into another
-     *     account, or a setting closes the takeover
-     * @throws DatabaseException When reading the user collection, the target's merge row or standing, or a setting fails
+     * @throws ValidationException When the asker is not an administrator, the target is unknown, merged into another
+     *     account or being erased, or a setting closes the takeover
+     * @throws DatabaseException When reading the user collection, the target's merge row, deletion requests or standing,
+     *     or a setting fails
      * @throws SettingException When a setting catalog or value is invalid
      * @throws InvalidArgumentException When a loaded user object does not match the collection
      * @throws LogicException When the user collection is not configured
@@ -6273,6 +6282,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
         if (isset(Hilos::$db->userMerges[$targetUserId])) {
             throw new ValidationException(self::MERGED_ACCOUNT_REFUSED_MESSAGE);
+        }
+        if (Hilos::$db->accountDeletions->startedOf($targetUserId) !== null) {
+            throw new ValidationException(self::ERASING_ACCOUNT_REFUSED_MESSAGE);
         }
 
         if (!ImpersonationSettings::isAllowed()) {
@@ -7572,6 +7584,63 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Refuses a proven sign-in into an account whose erasure has begun (HIL-1939).
+     *
+     * Asked on every path that ends a proof, ahead of the block and of the second-factor gate: the
+     * person proved who they are, and the account they proved is on its way out, so nothing is
+     * bound and no code is asked for. It is a door of its own and not a kind of block - a project
+     * that enforces no block closes it all the same, and no "Access closed" card goes up, because
+     * there is nobody left to give the browser back to. The answer to the submit rolls the surface
+     * back to the address field with the erasing words; every tab is told the session as it is. A
+     * second-factor wait the proof arrived on is let go, as the block lets it go.
+     *
+     * No confirmation is credited and the throttle is not told: neither has anyone left to serve.
+     *
+     * @param Session $session Session the proof arrived on
+     * @param int $userId Person the proof resolved to
+     * @param ?string $initiatorAcceptKey Connection whose submit is answered, or null when nobody is waiting on one
+     * @param ?string $requestId Request id of the submit waiting on the answer, or null
+     * @param ?string $action Action name the answer is for, or null
+     * @return bool True when the sign-in was refused, false when no erasure of the account has begun
+     * @throws HilosException When the deletion requests or the session cannot be read or written
+     * @throws InvalidArgumentException When a state frame cannot be named
+     */
+    private function refuseErasingSignIn(
+        Session $session,
+        int $userId,
+        ?string $initiatorAcceptKey,
+        ?string $requestId,
+        ?string $action,
+    ): bool {
+        if (Hilos::$db->accountDeletions->startedOf($userId) === null) {
+            return false;
+        }
+
+        if ($session->pendingSecondFactorUserId !== null) {
+            $session->actions->releasePendingSecondFactor();
+        }
+        $this->logAgentInfo('account_erasing_refused ' . json_encode([
+            'event' => 'account_erasing_refused',
+            'user' => $userId,
+            'session' => $session->id,
+        ]));
+
+        $this->publishBlockedCardState(
+            $session,
+            $initiatorAcceptKey,
+            $requestId,
+            $action,
+            AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_ACCOUNT_ERASING,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::LOGIN,
+            )->toArray(),
+        );
+
+        return true;
+    }
+
+    /**
      * Refuses a proven sign-in into a blocked account, and leaves the "Access closed" card instead (HIL-289).
      *
      * Asked on every path that ends a proof, BEFORE the second-factor gate: a person whose account
@@ -8271,6 +8340,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * The pair went between the confirmation and the agent's turn - a restriction took it out, or
      * it was taken away. It is written again with the confirmation's end and grant only while the
+     * person can still be addressed - not gone, not folded, not being erased (HIL-1939) - the
      * browser is still signed in as the person, the person's password has not changed since the
      * confirmation, the person still has a confirmed authenticator and the policy still gives days;
      * otherwise it is gone for good, the ordinary end of a revoke, and nothing is logged. The
@@ -8288,6 +8358,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private function regrantTrust(UserBrowserTrustRenewSignalData $ask): void
     {
+        try {
+            AddressablePerson::require($ask->userId);
+        } catch (ValidationException) {
+            return;
+        }
         if (!isset(Hilos::$db->sessions[$ask->sessionId]) || Hilos::$db->sessions[$ask->sessionId]->userId !== $ask->userId) {
             return;
         }
@@ -8315,7 +8390,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * row instead, and the surface is moved to that step. A grant that says the factor was just
      * shown passes the gate, and writes the browser's trust if the person asked for it.
      *
-     * Ahead of both, a blocked account is refused outright ({@see refuseBlockedSignIn()}, HIL-289).
+     * Ahead of both, a blocked account is refused outright ({@see refuseBlockedSignIn()}, HIL-289),
+     * and ahead of the block an account whose erasure has begun ({@see refuseErasingSignIn()},
+     * HIL-1939) - a grant that says the factor was just shown included: the code may have been
+     * typed after the erasure began.
      *
      * @param AuthSessionGrantSignalData $frame Session, user, and the answer to give
      * @throws HilosException On database, runtime, or session failure
@@ -8331,6 +8409,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+        if ($session !== null && $this->refuseErasingSignIn(
+            $session,
+            $frame->userId,
+            $frame->acceptKey,
+            $frame->requestId,
+            $frame->action,
+        )) {
+            return;
+        }
         if ($session !== null && $this->refuseBlockedSignIn(
             $session,
             $frame->userId,
@@ -8490,6 +8577,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $trip = Hilos::$rt->hilosOAuthTrips[$tripKeyHash];
         if ($trip === null) {
             $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+            if ($session !== null && $this->refuseErasingSignIn(
+                $session,
+                $frame->userId,
+                $frame->acceptKey,
+                $frame->requestId,
+                $frame->action,
+            )) {
+                return;
+            }
             if ($session !== null && $this->refuseBlockedSignIn(
                 $session,
                 $frame->userId,
@@ -8542,6 +8638,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // Held, the trip ends in the second-factor step instead of a sign-in: nothing is bound,
         // and the tab learns where to go from the ending and from the frame the hold sent.
         $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+        if ($session !== null && $this->refuseErasingSignIn($session, $frame->userId, null, null, null)) {
+            // The trip ends in its own reason, as for a block (HIL-1939); no card reaches the tab.
+            $trip->actions->end(OAuthResultSignalData::REASON_ACCOUNT_ERASING);
+            $this->deliverOAuthTripResult($trip, OAuthResultSignalData::REASON_ACCOUNT_ERASING);
+
+            return;
+        }
         if ($session !== null && $this->refuseBlockedSignIn($session, $frame->userId, null, null, null)) {
             // Refused like the second factor holds it (HIL-289): the trip ends in its own reason, and
             // the card reaches the tab on the frame the refusal sent.
@@ -8660,6 +8763,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // Asked again at the moment the grant is applied (HIL-494): the person may have enrolled a
         // second factor, or had it required, while the grant was waiting for its tab.
         $session = Hilos::$db->sessions->findByToken($sessionToken);
+        if ($session !== null && $this->refuseErasingSignIn($session, $userId, null, null, null)) {
+            $trip->actions->end(OAuthResultSignalData::REASON_ACCOUNT_ERASING);
+            $this->deliverOAuthTripResult($trip, OAuthResultSignalData::REASON_ACCOUNT_ERASING);
+
+            return;
+        }
         if ($session !== null && $this->refuseBlockedSignIn($session, $userId, null, null, null)) {
             $trip->actions->end(OAuthResultSignalData::REASON_ACCOUNT_BLOCKED);
             $this->deliverOAuthTripResult($trip, OAuthResultSignalData::REASON_ACCOUNT_BLOCKED);
@@ -9025,8 +9134,21 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // A blocked account keeps the password it was just given - the users library wrote it before
         // this frame, and the person did prove the mailbox - but not the session (HIL-289): the
         // browser gets the card where the "password changed" panel would have been, and every other
-        // session still goes, as a reset promises.
+        // session still goes, as a reset promises. An account whose erasure has begun is refused the
+        // same way, without the card (HIL-1939).
         $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+        if ($session !== null && $this->refuseErasingSignIn(
+            $session,
+            $frame->userId,
+            $frame->acceptKey,
+            $frame->requestId,
+            $frame->action,
+        )) {
+            $this->convergeRecovery($frame->identifier, $frame->sessionToken, $frame->acceptKey, sameSessionHeld: true);
+            $this->deauthenticateOtherSessions($frame->userId, $frame->sessionToken, SessionAccessLossReason::PASSWORD_RECOVERED);
+
+            return;
+        }
         if ($session !== null && $this->refuseBlockedSignIn(
             $session,
             $frame->userId,

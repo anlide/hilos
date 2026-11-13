@@ -14,12 +14,19 @@
 -- Its user_id deliberately has no foreign key: RESTRICT would block the erasure,
 -- SET NULL would lose the number, and CASCADE would erase this trace. The export
 -- builder also reads completed requests to discard a copy built during erasure.
+--
+-- `started_at` is the moment the person's agent began erasing the account (HIL-1939). The
+-- start and the cancel carry each other's condition: the start writes only while the request
+-- is live and not yet started, the cancel only while it is not started, so of "Keep my account"
+-- and the start exactly one wins, and the start wins once. A started request stays live until
+-- it ends.
 
 CREATE TABLE `hilos_account_deletion` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `user_id` INT UNSIGNED NOT NULL,
     `requested_at` BIGINT NOT NULL,
     `effective_at` BIGINT NOT NULL,
+    `started_at` BIGINT NULL DEFAULT NULL,
     `canceled_at` BIGINT NULL DEFAULT NULL,
     `completed_at` BIGINT NULL DEFAULT NULL,
     PRIMARY KEY (`id`),

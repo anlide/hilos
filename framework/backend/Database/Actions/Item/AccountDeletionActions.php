@@ -18,7 +18,8 @@ use Hilos\Database\View\Item\AccountDeletion;
  * AccountDeletionActions - write operations for one request to delete an account (HIL-302).
  *
  * A request ends by exactly one of {@see cancel()} and {@see complete()}; both answer
- * whether this call was the one that ended it.
+ * whether this call was the one that ended it. {@see start()} begins the erasure (HIL-1939):
+ * of it and {@see cancel()} exactly one wins, and it answers whether this call began it.
  *
  * @extends DbActions<AccountDeletion, ObjectAccountDeletion>
  * @property-read ObjectAccountDeletion $object
@@ -26,9 +27,28 @@ use Hilos\Database\View\Item\AccountDeletion;
 class AccountDeletionActions extends DbActions
 {
     /**
-     * Cancels the request, if it still stands.
+     * Marks the erasure of the account begun, if the request still stands and has not begun.
      *
-     * @return bool True when this call canceled it, false when it was canceled or carried out already
+     * @return bool True only when this call began the request
+     * @throws ObjectCollectionNullException When the action is detached from its object collection
+     * @throws ObjectGetIdStringNotImplementedException When the request cannot expose its id string
+     * @throws WriteNotAllowedException When the truth source rejects the update
+     * @throws CreateNotAllowedException Never for a persisted row; declared by the re-announcing sync
+     * @throws DatabaseException When the update, the row count or the re-announcement fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     */
+    public function start(): bool
+    {
+        $this->ensureCanWrite();
+
+        return $this->object->start();
+    }
+
+    /**
+     * Cancels the request, if it still stands and its erasure has not begun.
+     *
+     * @return bool True when this call canceled it, false when it was begun, canceled or carried out already
      * @throws ObjectCollectionNullException When the action is detached from its object collection
      * @throws ObjectGetIdStringNotImplementedException When the request cannot expose its id string
      * @throws WriteNotAllowedException When the truth source rejects the update

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Users\Agent;
 
 use Closure;
+use Hilos\Auth\AccountOperation\AccountErasureStart;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\AuthMessages;
@@ -171,8 +172,19 @@ use Throwable;
  * coordinator does what follows the write. Background reports of the last usable browser zone
  * and an OAuth identity's provider name, and the transport's dead-endpoint reports, are written
  * without an answer; their refusals go to this agent's log. Creating a way in, an enrolment,
- * a set of backup codes or a removal stays with the libraries that create it. When the
- * person is erased, or folded into someone else, the agent stops itself.
+ * a set of backup codes or a removal stays with the libraries that create it.
+ *
+ * The agent follows the state of its person (HIL-1939). Open: every frame is served. Erasure
+ * begun - the person's deletion request is marked started, the first step of the agent's part in
+ * the erasure ({@see AccountErasureStart}): the ordinary frames are refused in the words of
+ * {@see AddressablePerson::require()}, the service frames and the steps of the person's own
+ * account operation are served, and the agent lives until its last write. Folded into someone
+ * else: the service frames are served, and after each of them the agent stops. The person's own
+ * row deleted: the agent stops. The service frames skip that check - the legal hold forgotten
+ * ({@see HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET}), the trust restrictions applied
+ * ({@see HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT}), a dead push endpoint
+ * marked gone ({@see HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE}) and a push endpoint
+ * released to another person ({@see HilosSignalConstants::HILOS_USER_PUSH_RELEASE}).
  */
 abstract class AbstractUserAgent extends AbstractAgent
 {
@@ -373,6 +385,8 @@ abstract class AbstractUserAgent extends AbstractAgent
      *     keyed by the person) is born the same way, by the first photo the person sets: the agent
      *     claims that set whole (owner's decision, 2026-10-10, HIL-1409). A claim that may add is not
      *     borrowed, so the start does not wait for it. Legal acceptances are removed here only by the test hold command.
+     *     The results of the agent's own steps in an account operation are added here and never
+     *     changed (HIL-1939): their set is keyed by the agent's full id, not by the person's.
      */
     public const array OWNS_DB_SET = [
         HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
@@ -390,14 +404,21 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosDbContext::notificationPreferences => TruthSourceOperation::ALL,
         HilosDbContext::pushSubscriptions => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::userRenames => [TruthSourceOperation::Add, TruthSourceOperation::Update],
+        HilosDbContext::accountOperationResults => [TruthSourceOperation::Add],
     ];
 
     /**
      * @var list<string> The stored trust restrictions, read when the person's trusts are restricted
      *     (HIL-1900): the settings library writes them, and this agent applies them to the person's
-     *     trusts it edits and removes.
+     *     trusts it edits and removes. The account operations and their assignments, read when the
+     *     agent runs its step of one (HIL-1939): the session holder writes them. Their results are
+     *     not listed here, because the set claim above already reads them.
      */
-    public const array READS_DB = [HilosDbContext::secondFactorTrustRestrictions];
+    public const array READS_DB = [
+        HilosDbContext::secondFactorTrustRestrictions,
+        HilosDbContext::accountOperationAssignments,
+        HilosDbContext::accountOperations,
+    ];
 
     private int $userId;
 
@@ -458,11 +479,18 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
+     * The results of the agent's account operation steps are keyed by the agent's full id, the
+     * owner their assignment names (HIL-1939); every other set by the person's id.
+     *
      * @param string $collection Collection whose set claim is being resolved
-     * @return string The person's root set key
+     * @return string The agent's full id for the results, the person's root set key otherwise
      */
     public function ownedDbSetKey(string $collection): string
     {
+        if ($collection === HilosDbContext::accountOperationResults) {
+            return $this->getId();
+        }
+
         return (string)$this->userId;
     }
 

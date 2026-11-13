@@ -1,0 +1,3 @@
+-- hilos-framework: {"format":1,"kind":"change","units":["account_deletion"],"parts":[{"changeId":"20261112235132210121_HIL-1939_account_deletion_start","unit":"account_deletion","upSha256":"9c4f15f334ed57e493037095add3c5d2df3fd16a6b374a99c351714eabef35f9","downSha256":"d867143c97a4f77f87137f92318930c23f136fb3b2f1cf4e0f6bc7e133973dcd"}],"upSha256":"9c4f15f334ed57e493037095add3c5d2df3fd16a6b374a99c351714eabef35f9","downSha256":"d867143c97a4f77f87137f92318930c23f136fb3b2f1cf4e0f6bc7e133973dcd"}
+ALTER TABLE `hilos_account_deletion`
+    ADD COLUMN `started_at` BIGINT NULL DEFAULT NULL AFTER `effective_at`;

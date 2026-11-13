@@ -156,10 +156,11 @@ final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
         // muted-channel rows and the photo row are the sets the agent adds to - the journal with
         // the name, the settings row on its first edit (HIL-1406), a confirmation of the person's
         // own proof (HIL-1407), a channel the person turned off (HIL-1408), the photo row on the
-        // first photo (HIL-1409) - and only to its own person's set.
+        // first photo (HIL-1409), the result of its own step in an account operation, keyed by the
+        // agent's full id (HIL-1939) - and only to its own person's set.
         foreach (self::addedSets() as $collection) {
-            TruthSourceRegistry::checkCanCreate($collection, static fn (): array => [self::USER_ID]);
-            $this->assertCreateDenied($collection, ['43']);
+            TruthSourceRegistry::checkCanCreate($collection, static fn (): array => [self::setKeyOf($collection, self::USER_ID)]);
+            $this->assertCreateDenied($collection, [self::setKeyOf($collection, '43')]);
         }
         TruthSourceRegistry::checkCanWriteItem(
             HilosDbContext::secondFactorSettings,
@@ -202,7 +203,7 @@ final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
         ExecutionContext::setCurrentAgentId(self::AGENT_ID);
         $this->assertWriteDenied(HilosDbContext::users, self::USER_ID, []);
         foreach (self::addedSets() as $collection) {
-            $this->assertCreateDenied($collection, [self::USER_ID]);
+            $this->assertCreateDenied($collection, [self::setKeyOf($collection, self::USER_ID)]);
         }
         $this->assertWriteDenied(HilosDbContext::secondFactorSettings, self::USER_ID, [self::USER_ID]);
         foreach (self::borrowedSets() as $collection) {
@@ -232,7 +233,18 @@ final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
             HilosDbContext::stepUps,
             HilosDbContext::notificationPreferences,
             HilosDbContext::userPhotos,
+            HilosDbContext::accountOperationResults,
         ];
+    }
+
+    /**
+     * @param string $collection Added set being checked
+     * @param string $userId Person whose set is meant
+     * @return string The person's agent id for operation results, the person's id for every other set
+     */
+    private static function setKeyOf(string $collection, string $userId): string
+    {
+        return $collection === HilosDbContext::accountOperationResults ? HilosAgentType::HILOS_USER . ':' . $userId : $userId;
     }
 
     /**
