@@ -364,9 +364,11 @@ as the last check: a forgotten row refuses the person's agent's final delete
 and rolls back that one transaction, the operation stays open at that step with
 the safe refusal named, and the end is proved by every owner's recorded result —
 the soft references among them, which no key catches
-(not in the code yet — HIL-1942). The sessions holder prepares its own confirmed
-release of all four references, waits and cards
-(not in the code yet — HIL-1943). These parts enter the live path only at the
+(not in the code yet — HIL-1942). The sessions holder has prepared its own
+confirmed release of all four references, waits and cards: its step
+`eraseAccountSessionsPart()` records `{"sessions":<n>,"accessLog":<m>}` in the
+same transaction and tells the tabs after the commit, with no live caller until
+HIL-1950/HIL-1952. These parts enter the live path only at the
 erasure switch (not in the code yet — HIL-1952). The keys, their `RESTRICT` /
 `SET NULL` choice and the absence of `CASCADE` do not change, and no key is
 added to a soft reference by it.

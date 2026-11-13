@@ -70,16 +70,21 @@ class AccessLogEntries extends Objects
      * A person with none is not an error.
      *
      * @param int $userId Person whose rows to delete
+     * @return int Number of rows deleted
      * @throws DatabaseException When the lookup or a delete fails
      * @throws InvalidArgumentException When the entity query or the queued DB-sync signal is invalid
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
-    public function deleteForUser(int $userId): void
+    public function deleteForUser(int $userId): int
     {
+        $deleted = 0;
         foreach ($this->hydrateAll(static::entityClass()::get([EntityAccessLogEntry::user_id => $userId])) as $entry) {
             $this->remove($entry);
+            $deleted++;
         }
+
+        return $deleted;
     }
 
     /**

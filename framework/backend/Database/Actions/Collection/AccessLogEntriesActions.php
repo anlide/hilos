@@ -53,16 +53,17 @@ class AccessLogEntriesActions extends DbActions
      * Deletes every access log row of a person - the account is being erased (HIL-1174).
      *
      * @param int $userId Person
+     * @return int Number of rows deleted
      * @throws WriteNotAllowedException When the truth source rejects the delete
      * @throws DatabaseException When the lookup or a delete fails
      * @throws InvalidArgumentException When a query or the queued DB-sync signal is invalid
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
-    public function deleteForUser(int $userId): void
+    public function deleteForUser(int $userId): int
     {
         $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);
 
-        $this->objectCollection->deleteForUser($userId);
+        return $this->objectCollection->deleteForUser($userId);
     }
 
     /**

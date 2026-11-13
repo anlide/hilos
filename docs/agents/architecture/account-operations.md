@@ -281,15 +281,20 @@ the users-library default expands to `Add`, `Remove`, and the channel default
 to `Update`. Read both that grant and the actual call below.
 
 **The sessions holder's claims.** `AbstractSessionsLibraryAgent::OWNS_DB`
-(`Auth/Library/AbstractSessionsLibraryAgent.php`) names twenty-three
+(`Auth/Library/AbstractSessionsLibraryAgent.php`) names twenty-five
 collections. Three are its own whole: `sessions`, `userMerges`,
-`accessLogEntries`; `secondFactorTrusts` carries `Add` (the pair written on the
+`accessLogEntries`; two are the working records of the coordinator,
+`accountOperations` with `Add` and `Update` and `accountOperationAssignments`
+with `Add`; `secondFactorTrusts` carries `Add` (the pair written on the
 way in) and `Remove` (the merge and the erasure) since HIL-1908; one is held whole for the merge's upsert and
 the erasure's delete, `secondFactorSettings`; `users` carries `Update` and `Remove` for the
 loser's block and the erased row; first-administrator creation is no longer a
 holder write. The other seventeen are borrowed — `Update` and `Remove`, or `Remove`
 alone, each with a comment naming the erasure or the merge and pointing at
-[instance-owners.md](instance-owners.md#operations-over-many-instances). The
+[instance-owners.md](instance-owners.md#operations-over-many-instances). Beside
+them `OWNS_DB_SET` holds one set claim since HIL-1943: `accountOperationResults`
+with `Add`, the holder's own results as a participant (*The participant result
+claim* below). The
 chat's `SessionsLibraryAgent` (`Agents/Hilos/SessionsLibraryAgent.php`) adds
 four more borrowed claims over the room tables for the same two operations.
 
@@ -433,9 +438,9 @@ An equal saved result or a duplicate insert encountered while recording may
 return a peer's winner, only after that transaction and its work roll back.
 The mechanism has typed refusals for a missing participant, unknown or foreign assignment, and closed
 stage, all exposed as a `ValidationException`. It adds no signal or route;
-answer correlation remains HIL-1950. No live erasure path uses it yet: its one
-production participant, the person's agent, has no caller of its step until
-HIL-1950/HIL-1952 (see *The erasure start* below), and the due and force-purge
+answer correlation remains HIL-1950. No live erasure path uses it yet: its
+production participants, the person's agent and the sessions holder, have no
+caller of their steps until HIL-1950/HIL-1952 (see *The erasure start* below), and the due and force-purge
 paths remain on the old flow until HIL-1952.
 
 **The participant result claim.** A participant using the generic step
@@ -452,8 +457,12 @@ collection and uses the full agent id there, preserving the person id for its
 other sets. The person's agent is the first production participant
 (HIL-1939): `AbstractUserAgent` declares exactly that claim and those two
 readers, and its `ownedDbSetKey()` returns `getId()` (`hilos_user:<id>`) for the
-results and the person's id for every other set. The common carriers themselves
-add no participant grant.
+results and the person's id for every other set. The sessions holder is the
+second (HIL-1943): `AbstractSessionsLibraryAgent` declares the same claim, and
+its `ownedDbSetKey()` returns `getId()` for the results and the base's answer
+for any other collection. Its `READS_DB` does not grow, because it holds
+`accountOperations` and `accountOperationAssignments` whole. The common carriers
+themselves add no participant grant.
 
 **The erasure census.** The plan of an erasure is a census taken from the
 circle and the activated tables, and it is written as ordinary assignments.
@@ -706,7 +715,8 @@ comes first there. A passkey is refused by the agent in the words of
 `AuthMessages::INVALID_PASSKEY`, because the users library replaces the words of
 a failed passkey proof (`AbstractUsersLibraryAgent`). A tab that reconnects
 (`resolveSession`) is not checked here; ending the sessions of an account being
-erased is the sessions holder's own step (not in the code yet — HIL-1943).
+erased is the sessions holder's own step, `eraseAccountSessionsPart()` (prepared,
+no live caller until HIL-1950/HIL-1952).
 
 **Creators.** `AbstractUsersLibraryAgent::OWNS_DB`
 (`Auth/Library/AbstractUsersLibraryAgent.php`) creates `users`,
@@ -1032,12 +1042,14 @@ path only at the [single cutover](#erasure-cutover-and-observation)
    yet — HIL-1942). This finishing mode does not turn
    `AddressablePerson::require()` into a general bypass for a missing or folded
    account. The sessions holder's own
-   participant step releases all four `RESTRICT` session references, signs out
+   participant step, `AbstractSessionsLibraryAgent::eraseAccountSessionsPart()`,
+   releases all four `RESTRICT` session references, signs out
    the affected sessions, clears second-factor waits and lowers closed-access
-   cards, with its recorded result. Session rows stay for the ordinary sweep;
-   the holder remains their writer
+   cards, and records `{"sessions":<n>,"accessLog":<m>}` in the same
+   transaction; the tabs are told only after the commit. Session rows stay for
+   the ordinary sweep; the holder remains their writer
    ([Session Ownership](entity-libraries.md#session-ownership))
-   (not in the code yet — HIL-1943). The visible progress and refusals have
+   (prepared, no live caller until HIL-1950/HIL-1952). The visible progress and refusals have
    their separate owners under [observation](#erasure-cutover-and-observation).
 4. **The participants are derived, not assumed.** Required participants are
    derived from activated tables before destructive work. A table *never activated*
@@ -1099,8 +1111,10 @@ path only at the [single cutover](#erasure-cutover-and-observation)
      cleanup remains outside the DB guarantee
      (not in the code yet — HIL-1947).
    - The sessions holder deletes access log entries as its own confirmed
-     part and remains the owner of its working rows
-     (not in the code yet — HIL-1943).
+     part, in the same step and transaction as the sessions, and remains the
+     owner of its working rows: `eraseAccountSessionsPart()` records
+     `{"sessions":<n>,"accessLog":<m>}` (prepared, no live caller until
+     HIL-1950/HIL-1952).
    - Each declared project owner deletes its own rows with its result: the
      class registered under the owner's type implements
      `AccountErasureProjectOwner`, and calls `AccountErasureProjectStep::run()`
@@ -1483,11 +1497,11 @@ moves.
 
 | Collection or record | Current writer and operations | Target writer | Creator and hand-over boundary |
 |---|---|---|---|
-| `sessions` | holder `Add`/`Update`/`Remove`: the anonymous row on the handshake, the bind at sign-in, the revert at sign-out, `killUserSessions()` in the merge and the erasure, the blocked notices released, the sweep `hilos_sessions_expire`; `SessionTestExpireCommand`, test-only | the holder, as today — a session has no instance owner ([Session Ownership](entity-libraries.md#session-ownership), HIL-1403). In the protocol the holder is a participant for its own rows: it releases every reference of a session to the person — the four `RESTRICT` columns, the waits, the cards — as its own step with a recorded result, before the person row can go | Created by the holder; `Add`/`Update`/`Remove` remain there. Release with an atomic participant result is prepared separately (not in the code yet — HIL-1943). For merge, the holder ends loser sessions after the fact and survivor sessions after receipt when the loser's factor first protects it (not in the code yet — HIL-1995). Its own release work becomes a participant step at the erasure switch (not in the code yet — HIL-1952) and merge switch (not in the code yet — HIL-1999); no ordinary writer move. |
-| `accessLogEntries` | holder `Add`/`Update`/`Remove`: `record()`, the hourly sweep, `rePointToUser()` in the merge, `deleteForUser()` in the erasure | the same owner; it moves and deletes its own rows itself as a participant, on the signal | Created by the holder; `Add`/`Update`/`Remove` remain there. Erasure with an atomic participant result is prepared separately (not in the code yet — HIL-1943). Merge transfer commits with its own result; a repeat does not transfer twice (not in the code yet — HIL-1995). Its own delete/repoint become participant steps at erasure (not in the code yet — HIL-1952) and merge (not in the code yet — HIL-1999); no foreign writer is added. |
+| `sessions` | holder `Add`/`Update`/`Remove`: the anonymous row on the handshake, the bind at sign-in, the revert at sign-out, `killUserSessions()` in the merge and the erasure, the blocked notices released, the sweep `hilos_sessions_expire`; `SessionTestExpireCommand`, test-only | the holder, as today — a session has no instance owner ([Session Ownership](entity-libraries.md#session-ownership), HIL-1403). In the protocol the holder is a participant for its own rows: it releases every reference of a session to the person — the four `RESTRICT` columns, the waits, the cards — as its own step with a recorded result, before the person row can go | Created by the holder; `Add`/`Update`/`Remove` remain there. Release with an atomic participant result is prepared: `eraseAccountSessionsPart()` records `{"sessions":<n>,"accessLog":<m>}` and tells the tabs after the commit (HIL-1943), with no live caller until HIL-1950/HIL-1952. For merge, the holder ends loser sessions after the fact and survivor sessions after receipt when the loser's factor first protects it (not in the code yet — HIL-1995). Its own release work becomes a participant step at the erasure switch (not in the code yet — HIL-1952) and merge switch (not in the code yet — HIL-1999); no ordinary writer move. |
+| `accessLogEntries` | holder `Add`/`Update`/`Remove`: `record()`, the hourly sweep, `rePointToUser()` in the merge, `deleteForUser()` in the erasure | the same owner; it moves and deletes its own rows itself as a participant, on the signal | Created by the holder; `Add`/`Update`/`Remove` remain there. Erasure with an atomic participant result is prepared: `deleteForUser()` runs in the holder's `eraseAccountSessionsPart()` and its count is the result's `accessLog` (HIL-1943), with no live caller until HIL-1950/HIL-1952. Merge transfer commits with its own result; a repeat does not transfer twice (not in the code yet — HIL-1995). Its own delete/repoint become participant steps at erasure (not in the code yet — HIL-1952) and merge (not in the code yet — HIL-1999); no foreign writer is added. |
 | `userMerges` | holder `Add`/`Update`/`Remove`: `add()` in `foldAccount()`, `deleteForUser()` in the erasure | changes and deletion go with the personal life cycle to the personal owner: the loser's agent writes its own tombstone with its block in the transaction that gives its rows away, and the erasure of a folded account deletes its merge row with its own rows, leaves before survivors so the survivor's `SET NULL` does not run | Created by the holder today. Leaf-first personal erasure of the merge row is prepared separately (not in the code yet — HIL-1941). Loser tombstone creation, merge row before its own block, commits with the transfer result (not in the code yet — HIL-1992). Erasure deletion moves with the personal life cycle (not in the code yet — HIL-1952); tombstone creation moves to the loser with live merge (not in the code yet — HIL-1999). Keep the old holder rights required by merge after erasure switches. |
 | the operation record | The legacy `AccountDeletion` and `UserMerge` rows still carry the live request and tombstone. The common `AccountOperation*` carriers are built but inert on both live paths; the due erasure and force-purge paths and the existing merge remain the production producers. | The sessions holder owns operation creation/change and initial assignment creation; assignments are immutable. Each participant owns its future preparation and result records. | `AbstractSessionsLibraryAgent::OWNS_DB` declares operations `[Add, Update]` and assignments `[Add]`. The record actions preserve exact repeats and reject conflicts; `AccountMergeOpening::open()` atomically stores a merge, its two initial assignments and the project's expected composition, and `AccountMergeOpening::reconcile()` appends what is missing, but neither has a live caller. Stage advance/finish are low-level persistence only; they do not establish start, participant results, business transitions or live recovery/failover. The common tables, whole-table `PURGE` verdicts and migration are documented above. Merge stage correlation (not in the code yet — HIL-2000), merge end after receipt, results and copy absence (not in the code yet — HIL-1998), and the live merge and erasure switches (not in the code yet — HIL-1999/HIL-1952) remain future work. |
-| the participants' preparations and results | The immutable result carrier and generic atomic step exist but are inert; no production participant is connected. | Each participant owns its preparation or result, written in the same transaction as its work; the coordinator may create the initial assignment and never edits a recorded result. These durable records use `Hilos::$db` collections and actions, not agent memory or a runtime overlay. A result carrying rows given away — the merge's hand-over copy at the loser — is personal data with a bounded life: kept until the survivor's confirmation, then deleted by its one writer. | Participant results are stored in `hilos_account_operation_result`, at most one immutable JSON payload per assignment. `owner_agent_id` is the full participant agent id and the result set key; the assignment foreign key cascades. The table is `PURGE` under anonymization and is not journaled. `record()` requires the participant transaction and its `Add` set claim, returns an exact semantic repeat, and rejects a changed result. `AccountOperationParticipantStep::run()` checks the caller, assignment and owner, returns a saved result before new work, then runs work and records its result in one transaction; an equal-result refusal or duplicate insert may return the committed winner only after that transaction rolls back. `forOperationStage()` returns a typed `AccountOperationResults` collection in result-id order. No production participant claim or consumer is wired yet. Merge reservations belong to each personal owner (not in the code yet — HIL-1988); each releases its own with result before the fact (not in the code yet — HIL-1990). Loser work/result and full copy (not in the code yet — HIL-1992); survivor work/receipt (not in the code yet — HIL-1994); holder work/result (not in the code yet — HIL-1995); project participants are built — `AccountMergeProjectStep` with its `{"rows":{…}}` result — with no live call; chat work/result (not in the code yet — HIL-1997). Only the loser cleans its copy after receipt and stops afterward (not in the code yet — HIL-1998). Live merge uses these records only at cutover (not in the code yet — HIL-1999). Live erasure uses them only at cutover (not in the code yet — HIL-1952). |
+| the participants' preparations and results | The immutable result carrier and generic atomic step exist. The person's agent (HIL-1939) and the sessions holder (HIL-1943) declare the result claim, and their steps are prepared with no live caller until HIL-1950/HIL-1952. | Each participant owns its preparation or result, written in the same transaction as its work; the coordinator may create the initial assignment and never edits a recorded result. These durable records use `Hilos::$db` collections and actions, not agent memory or a runtime overlay. A result carrying rows given away — the merge's hand-over copy at the loser — is personal data with a bounded life: kept until the survivor's confirmation, then deleted by its one writer. | Participant results are stored in `hilos_account_operation_result`, at most one immutable JSON payload per assignment. `owner_agent_id` is the full participant agent id and the result set key; the assignment foreign key cascades. The table is `PURGE` under anonymization and is not journaled. `record()` requires the participant transaction and its `Add` set claim, returns an exact semantic repeat, and rejects a changed result. `AccountOperationParticipantStep::run()` checks the caller, assignment and owner, returns a saved result before new work, then runs work and records its result in one transaction; an equal-result refusal or duplicate insert may return the committed winner only after that transaction rolls back. `forOperationStage()` returns a typed `AccountOperationResults` collection in result-id order. The production participant claims are the person's agent's (HIL-1939) and the sessions holder's (HIL-1943); no consumer of their results is wired until HIL-1950/HIL-1952. Merge reservations belong to each personal owner (not in the code yet — HIL-1988); each releases its own with result before the fact (not in the code yet — HIL-1990). Loser work/result and full copy (not in the code yet — HIL-1992); survivor work/receipt (not in the code yet — HIL-1994); holder work/result (not in the code yet — HIL-1995); project participants are built — `AccountMergeProjectStep` with its `{"rows":{…}}` result — with no live call; chat work/result (not in the code yet — HIL-1997). Only the loser cleans its copy after receipt and stops afterward (not in the code yet — HIL-1998). Live merge uses these records only at cutover (not in the code yet — HIL-1999). Live erasure uses them only at cutover (not in the code yet — HIL-1952). |
 
 **Deltas against the first census.** The census of the research base listed
 the four chat tables as "`ChatAgent` owns, the holder borrows"; the chat users

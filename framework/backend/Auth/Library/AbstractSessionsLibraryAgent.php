@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library;
 
+use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
+use Hilos\Auth\AccountOperation\AccountErasureSessionsResult;
+use Hilos\Auth\AccountOperation\AccountOperationExpectation;
+use Hilos\Auth\AccountOperation\AccountOperationKind;
+use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
+use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
+use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
 use Hilos\Auth\Library\DTO\AuthRegistrationHoldExpiredSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationHoldReleaseSignalData;
 use Hilos\DataExport\DTO\DataExportStateSignalData;
@@ -198,6 +205,8 @@ use Hilos\Database\Schema\Schema;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\View\Item\AccountDeletion;
+use Hilos\Database\View\Item\AccountOperationAssignment;
+use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Database\View\Item\Session;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Files\HilosFiles;
@@ -448,6 +457,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::userPhotos => [TruthSourceOperation::Remove],
         HilosDbContext::accessLogEntries => TruthSourceOperation::ALL,
+    ];
+
+    /**
+     * The results of the holder's own steps in an account operation are added here and never
+     * changed (HIL-1943): their set is keyed by the holder's full id, the owner their assignment
+     * names ({@see self::ownedDbSetKey()}). See docs/agents/architecture/account-operations.md,
+     * "The participant result claim".
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_DB_SET = [
+        HilosDbContext::accountOperationResults => [TruthSourceOperation::Add],
     ];
 
     /**
@@ -866,6 +887,22 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /** @var ?AdminCreateWaits Creation commands parked in this process */
     private ?AdminCreateWaits $adminCreateWaits = null;
+
+    /**
+     * The results of the holder's account operation steps are keyed by its full id, the owner
+     * their assignment names (HIL-1943); any other set is the base's refusal.
+     *
+     * @param string $collection Collection whose set claim is being resolved
+     * @return string The holder's full id for the results, the base's answer otherwise
+     */
+    public function ownedDbSetKey(string $collection): string
+    {
+        if ($collection === HilosDbContext::accountOperationResults) {
+            return $this->getId();
+        }
+
+        return parent::ownedDbSetKey($collection);
+    }
 
     /**
      * Arms the scheduled sweeps, and ends what a predecessor left open.
@@ -1464,9 +1501,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * already reported, so nothing would ever take it off. Silence and "you are owed nothing"
      * look the same from here and mean opposite things to the browser.
      *
+     * The list is read now and leaves after the commit, as {@see self::publishSessionState()} explains.
+     *
      * @param string $sessionTokenHash Hash of the session cookie token being told
      * @throws HilosException On runtime failure
-     * @throws InvalidArgumentException When the frame cannot be named or queued
+     * @throws InvalidArgumentException When the frame cannot be named or queued outside a transaction
      */
     private function publishSessionToasts(string $sessionTokenHash): void
     {
@@ -1475,11 +1514,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        $this->sendToSession(
-            HilosSignalConstants::HILOS_SESSION_TOASTS,
-            $sessionTokenHash,
-            SessionToastsSignalData::fromStack($stacks[$sessionTokenHash]),
-        );
+        $frame = SessionToastsSignalData::fromStack($stacks[$sessionTokenHash]);
+        Database::afterCommit(fn () => $this->sendToSession(HilosSignalConstants::HILOS_SESSION_TOASTS, $sessionTokenHash, $frame));
     }
 
     /**
@@ -1597,8 +1633,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * reason (HIL-945), and recorded as what that person's tabs were told unless a pass is
      * already on its way to telling all of them something newer.
      *
+     * The frame is built now - its card and standing are read as the session stands at this
+     * moment - but it leaves through {@see Database::afterCommit()} (HIL-1943). Outside a
+     * transaction that is at once, as before; inside one the tabs are told only once the writes
+     * stand, and a rollback drops the frame, so no tab hears of a sign-out the database never
+     * kept. The answer to a tracked action is still held back at once: the frame carries it. So a
+     * frame that answers an action must not be sent inside a transaction that may roll back - the
+     * dropped frame would leave the action with no answer at all. Every call inside a transaction
+     * today answers none.
+     *
      * @param SessionStateSignalData $state What the session is now, and whom to answer
-     * @throws InvalidArgumentException When the frame cannot be named or queued
+     * @throws InvalidArgumentException When the frame cannot be named or queued outside a transaction; inside one the
+     *     failure surfaces at its commit, as an AnnouncementFailedException held to the end of the handler
      * @throws HilosException When the session or its confirmed address cannot be read
      */
     private function publishSessionState(SessionStateSignalData $state): void
@@ -1608,10 +1654,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         if ($standing !== null) {
             $this->publishedStanding[$state->userId] ??= $standing;
         }
-        $this->sendToAgent(
-            HilosSignalConstants::HILOS_SESSION_STATE,
-            $state->withAccountBlocked($card)->withAccountStanding($standing?->toArray()),
-        );
+        $frame = $state->withAccountBlocked($card)->withAccountStanding($standing?->toArray());
+        Database::afterCommit(fn () => $this->sendToAgent(HilosSignalConstants::HILOS_SESSION_STATE, $frame));
         if ($state->requestId !== null) {
             $this->deferActionReply();
         }
@@ -4858,9 +4902,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * to a registration whose send was let go must be told the line is gone, or it will sit
      * under "sending" that nothing will ever move.
      *
+     * The line is read now and leaves after the commit, as {@see self::publishSessionState()} explains.
+     *
      * @param string $sessionTokenHash Hash of the session cookie token being told
      * @throws HilosException On runtime failure
-     * @throws InvalidArgumentException When the frame cannot be named or queued
+     * @throws InvalidArgumentException When the frame cannot be named or queued outside a transaction
      */
     private function publishCodeSendProgress(string $sessionTokenHash): void
     {
@@ -4869,11 +4915,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        $this->sendToSession(
-            HilosSignalConstants::HILOS_CODE_SEND_PROGRESS,
-            $sessionTokenHash,
-            CodeSendProgressSignalData::fromAttempt($attempts[$sessionTokenHash]),
-        );
+        $frame = CodeSendProgressSignalData::fromAttempt($attempts[$sessionTokenHash]);
+        Database::afterCommit(fn () => $this->sendToSession(HilosSignalConstants::HILOS_CODE_SEND_PROGRESS, $sessionTokenHash, $frame));
     }
 
     /**
@@ -4998,9 +5041,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * while it was away must be told there is nothing left, or its window would wait on a step
      * nothing will ever move.
      *
+     * The list is read now and leaves after the commit, as {@see self::publishSessionState()} explains.
+     *
      * @param string $sessionTokenHash Hash of the session cookie token being told
      * @throws HilosException On runtime failure
-     * @throws InvalidArgumentException When the frame cannot be named or queued
+     * @throws InvalidArgumentException When the frame cannot be named or queued outside a transaction
      */
     private function publishProfileFlows(string $sessionTokenHash): void
     {
@@ -5009,11 +5054,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        $this->sendToSession(
-            HilosSignalConstants::HILOS_PROFILE_FLOWS,
-            $sessionTokenHash,
-            ProfileFlowsSignalData::fromFlows($flows->forSessionTokenHash($sessionTokenHash), TimeHelper::nowMs()),
-        );
+        $frame = ProfileFlowsSignalData::fromFlows($flows->forSessionTokenHash($sessionTokenHash), TimeHelper::nowMs());
+        Database::afterCommit(fn () => $this->sendToSession(HilosSignalConstants::HILOS_PROFILE_FLOWS, $sessionTokenHash, $frame));
     }
 
     /**
@@ -5199,9 +5241,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * A public projection is addressed only to this browser's session, never the person's group.
      *
+     * The snapshot is read now and leaves after the commit, as {@see self::publishSessionState()} explains.
+     *
      * @param string $sessionTokenHash Browser whose snapshot is sent
      * @param ?int $userId Current person, or null when clearing an identity
-     * @throws HilosException When the attempt or frame cannot be read or queued
+     * @throws HilosException When the attempt or frame cannot be read, or queued outside a transaction
      */
     private function publishProfileNameChange(string $sessionTokenHash, ?int $userId): void
     {
@@ -5215,10 +5259,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             ProfileNameStateSignalData::PHASE => $change->phase,
             ProfileNameStateSignalData::REFUSAL => $change->refusal,
         ] : null;
-        $this->sendToSession(
-            HilosSignalConstants::HILOS_PROFILE_NAME_STATE, $sessionTokenHash,
-            new ProfileNameStateSignalData($userId, $public),
-        );
+        $frame = new ProfileNameStateSignalData($userId, $public);
+        Database::afterCommit(fn () => $this->sendToSession(HilosSignalConstants::HILOS_PROFILE_NAME_STATE, $sessionTokenHash, $frame));
     }
 
     /**
@@ -6661,16 +6703,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * administrator's way back on a session nobody was in.
      *
      * Runs after a merge commits, but inside an account erasure's transaction before the person
-     * row goes (HIL-1202). A rollback may leave the tabs already signed out; the owner accepted
-     * that rare cost so a forgotten session cannot silently survive the erasure.
+     * row goes (HIL-1202). Inside a transaction the tabs are told after the commit
+     * ({@see self::publishSessionState()}).
      *
      * @param int $loserId Merged loser or erased user id whose sessions are closed
+     * @return list<int> Keys of the sessions changed, each one the person stood in
      * @throws InvalidArgumentException When a state frame cannot be named
      * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
      * @throws HilosException When reading or reverting the person's sessions fails
      */
-    private function killUserSessions(int $loserId): void
+    private function killUserSessions(int $loserId): array
     {
+        $changed = [];
         foreach (Hilos::$db->sessions->findTouchingUser($loserId) as $session) {
             if ($session->pendingSecondFactorUserId === $loserId) {
                 $this->releaseSecondFactorWait($session, null, null, null, null, null);
@@ -6681,7 +6725,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     userId: null,
                 ));
             }
+            $changed[] = $session->id;
         }
+
+        return $changed;
     }
 
     /**
@@ -7301,17 +7348,64 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * Signs out the person, releases factor waits and lowers cards about their closed access.
      *
      * @param int $userId Person being erased
+     * @return int Different sessions changed: signed out, released from a wait or with a card lowered
      * @throws InvalidArgumentException When a browser state frame cannot be named
      * @throws RandomException When a session token cannot be rotated
      * @throws HilosException When a session cannot be read or changed
      */
-    private function releaseSessionsOf(int $userId): void
+    private function releaseSessionsOf(int $userId): int
     {
-        $this->killUserSessions($userId);
+        $changed = $this->killUserSessions($userId);
         foreach (Hilos::$db->sessions->findByBlockedUserId($userId) as $session) {
             $session->actions->releaseBlockedNotice();
             $this->publishBlockedCardState($session, null, null, null, null);
+            $changed[] = $session->id;
         }
+
+        return count(array_unique($changed));
+    }
+
+    /**
+     * The session holder's part of an account erasure, carried as its participant step (HIL-1943).
+     *
+     * Called by the holder in its own frame with the assignment the coordinator gave it. Before any
+     * work the assignment must be an erasure's, the holder's own expected part, and name its
+     * account; each refusal writes nothing. Inside the step's transaction the person leaves every
+     * session they stand in - signed in, taking over another account, waiting on a second factor,
+     * or shown the "Access closed" card - their access log goes, and the two counts are recorded as
+     * the result in the same transaction. The tabs are told only once it commits
+     * ({@see self::publishSessionState()}). A repeated call returns the saved result without doing
+     * the work again.
+     * SCAFFOLD: no live caller until HIL-1950/HIL-1952.
+     *
+     * @param int $assignmentId Assignment the coordinator gave the holder
+     * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt
+     * @throws AccountOperationStepRefusedException When the caller, assignment or current stage refuses new work
+     * @throws ValidationException When the assignment is not the holder's erasure part or names no account
+     * @throws Throwable When storage or the release fails, preserving the original failure
+     */
+    protected function eraseAccountSessionsPart(int $assignmentId): AccountOperationResult
+    {
+        return AccountOperationParticipantStep::run(
+            $assignmentId,
+            function (AccountOperationAssignment $assignment): AccountOperationResultPayload {
+                if ($assignment->operation?->kind !== AccountOperationKind::Erasure) {
+                    throw new ValidationException('An account erasure part must belong to an erasure.');
+                }
+                if (!AccountOperationExpectation::isExpectKey($assignment->assignmentKey)
+                    || AccountOperationExpectation::participantOf($assignment->payload) !== AccountErasureParticipantCatalog::SESSIONS_HOLDER) {
+                    throw new ValidationException('This assignment is not the session holder\'s erasure part.');
+                }
+                $userId = $assignment->userId;
+                if ($userId === null) {
+                    throw new ValidationException('An account erasure part must name its account.');
+                }
+                $sessions = $this->releaseSessionsOf($userId);
+                $accessLog = Hilos::$db->accessLogEntries->actions->deleteForUser($userId);
+
+                return (new AccountErasureSessionsResult($sessions, $accessLog))->payload();
+            },
+        );
     }
 
     /**
