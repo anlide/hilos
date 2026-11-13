@@ -18,6 +18,9 @@ PLAYWRIGHT_ENTRY = "../../../../framework/frontend/scripts/playwright-run.mjs"
 QUARANTINE_STATUSES = frozenset(("passed", "failed", "timedOut", "skipped", "interrupted", "notRun"))
 ENV_MISMATCH_SPEC = "live/daemon-env-mismatch.spec.ts"
 DELIVERY_SPEC = "live/delivery-window.spec.ts"
+# Host-owned run files live under the demo's tracked tests/, never data/: Docker may create
+# data/ as root on a fresh tree before this step starts (HIL-2111).
+RUN_FILES = ".hilos-cluster-e2e"
 
 # A phase switched off whole, the host-side twin of a static `test.fixme`: the host
 # prepares neither its main nor its quarantine run. A test that fails on its own test
@@ -89,7 +92,7 @@ def _environment(stand, leader, follower, phase, stopped=None):
             node: "/hilos/" + control.node_log_path(member).relative_to(stand.demo_dir.parent.parent).as_posix()
             for node, member in stand.members.items()
         }),
-        "CLUSTER_FAULT_FILE": f"/hilos/demo/{stand.demo_dir.name}/data/cluster-e2e-fault.json",
+        "CLUSTER_FAULT_FILE": _child_path(stand, _run_path(stand, "fault.json")),
         "CLUSTER_E2E_PHASE": phase,
     }
     if stopped is not None:
@@ -212,7 +215,7 @@ def _daemon_phase(stand, extra_args, hilos_phase="main", run_env=None):
     want of a regular worker fails the phase, as a retry that converged later would not (HIL-1671).
     """
     run_id = uuid.uuid4().hex
-    directory = stand.demo_dir / "data" / "cluster-daemon-e2e" / run_id
+    directory = _run_path(stand, "daemon", run_id)
     remote = stand.slaves[0]
     env_key, env_value = "MAIL_FROM_NAME", "hil1401-foreign-value"
     controller = None
@@ -237,8 +240,7 @@ def _daemon_phase(stand, extra_args, hilos_phase="main", run_env=None):
         env = _environment(stand, leader, follower, "daemon")
         env.update({"CLUSTER_DAEMON_NODE": remote, "CLUSTER_DAEMON_ENV_KEY": env_key,
                     "CLUSTER_DAEMON_ENV_VALUE": env_value, "CLUSTER_DAEMON_RUN_ID": run_id,
-                    "CLUSTER_DAEMON_CONTROL_DIR": "/hilos/" + directory.relative_to(
-                        stand.demo_dir.parent.parent).as_posix()})
+                    "CLUSTER_DAEMON_CONTROL_DIR": _child_path(stand, directory)})
         controller = _DaemonController(stand, directory, run_id, leader, term)
         thread = threading.Thread(target=controller.run, name=f"daemon-e2e-{run_id}")
         thread.start()
@@ -326,7 +328,7 @@ def _live_phase(stand, env, extra_args, leader, term, hilos_phase="main", run_en
     result = _PhaseResult()
     controller = None
     thread = None
-    directory = stand.demo_dir / "data" / "cluster-delivery-e2e" / uuid.uuid4().hex
+    directory = _run_path(stand, "delivery", uuid.uuid4().hex)
     directory_created = False
     override_attempted = False
     env_key, env_value = "MAIL_FROM_NAME", "hilos-env-mismatch-fixture"
@@ -401,6 +403,11 @@ def _live_phase(stand, env, extra_args, leader, term, hilos_phase="main", run_en
 def _child_path(stand, path):
     """The existing repository bind is the only host/runner file bridge."""
     return "/hilos/" + path.relative_to(stand.demo_dir.parent.parent).as_posix()
+
+
+def _run_path(stand, *parts):
+    """This step's own files, under the demo's tracked tests/ rather than Docker's data/."""
+    return stand.demo_dir.joinpath("tests", RUN_FILES, *parts)
 
 
 def _identity(test):
@@ -572,7 +579,7 @@ def run(stand, extra_args):
         return 0
     extra_args = [arg for arg in extra_args if arg != "--daemon"]
     diagnostic = any(arg == "--repeat-each" or arg.startswith("--repeat-each=") for arg in extra_args)
-    directory = stand.demo_dir / "data" / "cluster-quarantine" / uuid.uuid4().hex
+    directory = _run_path(stand, "quarantine", uuid.uuid4().hex)
     directory_created = False
     tests, quarantine, observations = [], [], []
     main_rc = 1
@@ -620,7 +627,7 @@ def run(stand, extra_args):
         _atomic_json(plan_file, {"version": 1, "tests": tests})
         quarantine = [] if diagnostic else [test for test in tests if test["flake"] is not None]
         main = tests if diagnostic else [test for test in tests if test["flake"] is None]
-        fault_file = stand.demo_dir / "data" / "cluster-e2e-fault.json"
+        fault_file = _run_path(stand, "fault.json")
         fault_file.unlink(missing_ok=True)
         loss = _LossState()
         try:

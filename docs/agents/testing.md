@@ -615,8 +615,18 @@ Quarantine runs with one worker, one attempt, no retries and retained failure
 traces. Its outputs live under `test-results/quarantine/<project>` and
 `playwright-report/quarantine/<project>`, separate from main and other projects;
 the ordinary recursive artifact collector keeps both. Each cluster invocation
-uses a private `data/cluster-quarantine/<uuid>` plan/result directory across the
-existing repository bind mount. Only its own files are removed.
+uses a private `tests/.hilos-cluster-e2e/quarantine/<uuid>` plan/result
+directory across the existing repository bind mount. Only its own files are
+removed.
+
+Host tooling keeps its own run files out of a demo's `data/`. Docker may
+create that directory as root on a fresh tree before any test step starts, so
+a host write there passes on one machine and fails on another. The cluster
+browser host keeps every run file — the quarantine plan and results, the
+daemon and delivery handshakes, the after-loss `fault.json` — in the demo's
+tracked `tests/`, under `tests/.hilos-cluster-e2e/`, outside the `tests/e2e`
+package whose format check would read it. The root `.gitignore` ignores that
+directory by name.
 
 `composer run test:framework:frontend:quarantine` runs the real, browserless
 Playwright CLI integration of the shared entry in the frontend container.

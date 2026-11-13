@@ -66,6 +66,10 @@ protected-mode.state.json.tmp
 # Owner claim a daemon leaves in its log directory (HIL-1083); ignored by name, not per demo.
 .hilos-log-root-owner.json
 .tmp-log-root-owner-*
+# Run files of the cluster browser host (HIL-2111): quarantine plan and results, daemon and
+# delivery handshakes, the after-loss fault request. Written under a demo's tests/, never
+# data/; ignored by name rather than per demo.
+.hilos-cluster-e2e/
 
 # Advisory lock shared by framework migration source writers and readers.
 .hilos-framework.lock

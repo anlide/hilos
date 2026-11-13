@@ -63,7 +63,7 @@ class BrowserQuarantineTest(unittest.TestCase):
             entry=SimpleNamespace(container="entry"))
         self.stand.members = {node: SimpleNamespace(container=node, ip="127.0.0.1", name=f"Node {node}")
                               for node in self.stand.masters + self.stand.slaves}
-        (self.stand.demo_dir / "data").mkdir(parents=True)
+        (self.stand.demo_dir / "tests").mkdir(parents=True)
         # The protocol is exercised with no phase switched off; parking has its own cases.
         stack.enter_context(patch.dict(browser.FLAKY_SKIP, clear=True))
         self.plan = [planned("live"), planned("after-loss"), planned("live", "F-016"),
@@ -160,14 +160,14 @@ class BrowserQuarantineTest(unittest.TestCase):
         project = args[-1].removeprefix("--project=")
         self.assertEqual(1, sum(arg.startswith("--project") for arg in args))
         if "delivery" in stand.e2e.capabilities and project == "live":
-            self.assertIn("/cluster-delivery-e2e/", env["CLUSTER_DELIVERY_CONTROL_DIR"])
-            self.assertNotIn("/cluster-quarantine/", env["CLUSTER_DELIVERY_CONTROL_DIR"])
+            self.assertEqual(browser._run_path(self.stand, "delivery"),
+                             self.host_path(env["CLUSTER_DELIVERY_CONTROL_DIR"]).parent)
         self.calls.append((phase, project, dict(env), args))
         self.events.append((phase, project))
         # Publication is delayed until every host check and its cleanup have finished.
         self.assertEqual([], self.lines())
         if phase == "main" and project == "live" and self.write_fault:
-            (self.stand.demo_dir / "data" / "cluster-e2e-fault.json").write_text(
+            self.host_path(env["CLUSTER_FAULT_FILE"]).write_text(
                 json.dumps({"stop": "s1", "reason": "the captured archive"}), encoding="utf-8")
         if phase == "quarantine":
             self.assertEqual("1", env["HILOS_E2E_DEFER_REPORT"])
@@ -198,7 +198,34 @@ class BrowserQuarantineTest(unittest.TestCase):
             self.assertEqual({node: f"Node {node}" for node in self.stand.members},
                              json.loads(env["CLUSTER_NODE_NAMES"]))
         self.assertEqual(["passed", "passed"], [row["status"] for row in self.lines()])
-        self.assertEqual([], list((self.stand.demo_dir / "data" / "cluster-quarantine").iterdir()))
+        self.assertEqual([], list(browser._run_path(self.stand, "quarantine").iterdir()))
+
+    def test_demo_data_neither_present_nor_writable_changes_no_verdict(self):
+        data = self.stand.demo_dir / "data"
+        for case in ("absent", "read-only"):
+            with self.subTest(data=case):
+                if case == "read-only":
+                    data.mkdir()
+                    data.chmod(0o555)
+                    # Handed back writable before the temporary tree is removed.
+                    self.addCleanup(data.chmod, 0o755)
+                self.output.seek(0)
+                self.output.truncate()
+                self.events.clear()
+                self.calls.clear()
+                self.leader, self.term = "m1", 4
+                self.assertEqual(0, browser.run(self.stand, []))
+                self.assertEqual([("main", "live"), ("main", "after-loss"),
+                                  ("quarantine", "live"), ("quarantine", "daemon")],
+                                 [(phase, project) for phase, project, _, _ in self.calls])
+                self.assertEqual(["passed", "passed"], [row["status"] for row in self.lines()])
+                # The run removed its own files from every kind of run directory.
+                for kind in ("quarantine", "daemon", "delivery"):
+                    self.assertEqual([], list(browser._run_path(self.stand, kind).iterdir()))
+                if case == "absent":
+                    self.assertFalse(data.exists())
+                else:
+                    self.assertEqual([], list(data.iterdir()))
 
     def test_native_main_red_still_runs_tail_and_does_not_run_dependent_main(self):
         self.codes[("main", "live")] = 7
@@ -301,7 +328,7 @@ class BrowserQuarantineTest(unittest.TestCase):
                 self.assertIn(f"{self.stand.compose}: {test['file']} ({test['project']}) needs capability "
                               f"{capability} in x-hilos-cluster.e2e.capabilities", self.output.getvalue())
                 self.assertEqual([], self.lines())
-                self.assertEqual([], list((self.stand.demo_dir / "data" / "cluster-quarantine").iterdir()))
+                self.assertEqual([], list(browser._run_path(self.stand, "quarantine").iterdir()))
 
     def test_declared_delivery_serves_a_live_phase_without_its_spec(self):
         self.plan = [planned("live")]
@@ -471,7 +498,7 @@ class BrowserQuarantineTest(unittest.TestCase):
 
     def test_online_testing_only_live_with_no_slave_or_daemon(self):
         self.stand.demo_dir = self.root / "demo" / "online-testing"
-        (self.stand.demo_dir / "data").mkdir(parents=True)
+        (self.stand.demo_dir / "tests").mkdir(parents=True)
         self.stand.e2e = SimpleNamespace(capabilities=frozenset())
         self.stand.slaves = []
         self.stand.members = {key: val for key, val in self.stand.members.items() if key in self.stand.masters}
@@ -590,7 +617,7 @@ class BrowserQuarantineTest(unittest.TestCase):
         self.assertEqual([], self.lines())
 
     def test_own_uuid_cleanup_leaves_other_runs_untouched(self):
-        other = self.stand.demo_dir / "data" / "cluster-quarantine" / "other-run"
+        other = browser._run_path(self.stand, "quarantine", "other-run")
         other.mkdir(parents=True)
         marker = other / "plan.json"
         marker.write_text("someone else's plan", encoding="utf-8")
