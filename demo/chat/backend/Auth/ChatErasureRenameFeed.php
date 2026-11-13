@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Auth;
 
+use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Agents\Hilos\UserAgent;
 use Hilos\Auth\AccountOperation\AccountErasurePersonalCaptureResult;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -11,8 +12,8 @@ use Hilos\Core\Exception\InvalidFormatException;
 /**
  * The chat's part of the person's erasure capture: the feed events the person's renames named,
  * kept by the person's agent ({@see UserAgent}) in the transaction that took its journal off
- * them (HIL-1940). The journal no longer knows them after that, so ChatAgent reads them here to
- * delete the events once the person is gone (HIL-1949).
+ * them (HIL-1940). The journal no longer knows them after that, so
+ * {@see ChatAgent::eraseAccountPart()} reads them here to delete the feed events (HIL-1949).
  *
  * The capture's `project` is exactly `{"renameEvents":[…]}`, the event ids in ascending order,
  * possibly none.

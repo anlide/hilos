@@ -20,12 +20,14 @@ use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
+use Hilos\Database\Database;
 use Hilos\Moderation\DTO\ModerationVerdictSignalData;
 use Hilos\Moderation\ModerationKindKey;
 use Hilos\Runtime\RtStaleness;
@@ -278,6 +280,39 @@ final class ChatAgentModerationTest extends IntegrationTestCase
     public static function invalidVerdicts(): array
     {
         return [[false, 'service_unavailable'], [false, ''], [false, 'policy'], [true, 'spam'], [false, 'ok'], [false, 'raw provider text']];
+    }
+
+    /** @param list<string> $ids Draft's attachment ids */
+    #[DataProvider('erasingDraftAttachments')]
+    public function testErasureBeginningDuringModerationReturnsTheDraftWithoutPublishing(array $ids): void
+    {
+        if ($ids !== []) {
+            $this->completeUpload(self::ACCEPT_KEY, $this->userId, 'doc', 'notes.pdf', 'application/pdf', 'pdf');
+        }
+        $this->submit('draft', $ids);
+        $check = $this->messageCheck();
+        $now = TimeHelper::nowMs();
+        Database::sqlRun(
+            'INSERT INTO `hilos_account_deletion` (`user_id`, `requested_at`, `effective_at`, `started_at`) VALUES (?, ?, ?, ?)',
+            [$this->userId, $now, $now + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND, $now],
+        );
+
+        $this->decideCheck($this->agent, $check);
+
+        self::assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
+            Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationPhase);
+        self::assertSame('draft', Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationMessage);
+        self::assertSame($ids, Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationAttachments);
+        self::assertNull(Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ChatModerationKindKey::MESSAGE));
+        self::assertNull(Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ChatModerationKindKey::MESSAGE_PICTURE));
+        $this->assertMessages([]);
+        self::assertSame([], $this->queuedNamed(HilosSignalConstants::HILOS_UPLOAD_PUBLISH));
+    }
+
+    /** @return array<string, array{list<string>}> Drafts with and without a document */
+    public static function erasingDraftAttachments(): array
+    {
+        return ['text' => [[]], 'text with a document' => [['doc']]];
     }
 
     public function testUnknownRequestOldAttemptAndChangedTextOrIdsCannotApproveTheDraft(): void

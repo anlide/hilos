@@ -71,6 +71,9 @@ final class EventUserRegistrationsActions extends DbActions
     /**
      * Deletes the registration event details of a person - the account is being erased (HIL-302).
      *
+     * Called by ChatAgent's erasure part (HIL-1949) and, until HIL-1952, by the session holder
+     * under its borrowed claim, inside the erasure transaction.
+     *
      * @param int $userId Registered user id
      * @return list<int> Event ids whose details went; the events themselves are the caller's to delete
      * @throws HilosException On database or truth-source failure

@@ -18,6 +18,7 @@ use Hilos\HilosException;
  * The chat agent, one for everybody, owns the feed: its events, the messages and attachments in
  * them, and the events that tell of a person's registration. The bots are nobody's personal data
  * and stay out of the erasure.
+ * ChatAgent erases its own part (HIL-1949); the census expects it for every account.
  */
 final class ChatAccountDataOwnerDirectory extends AccountDataOwnerDirectory
 {
@@ -53,6 +54,9 @@ final class ChatAccountDataOwnerDirectory extends AccountDataOwnerDirectory
     /**
      * Asks after the rows the erasure of the feed removes: the person's messages, the registration
      * event that names them, and the events of their renames.
+     *
+     * The census asks this only when the registered chat class does not implement the project
+     * erasure owner interface; with the normal ChatAgent registration it is never called.
      *
      * The rename events are seen through the journal only until the person's capture takes the
      * journal off them; after it the third check finds none, so the answer may turn false while

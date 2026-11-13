@@ -71,7 +71,13 @@ Framework rules stay in `/docs/agents/**`; nothing here overrides them.
    `userStates`.
    The [chat erasure part](spec/agents/chat-agent.md#responsibilities) deletes messages
    across all rooms, attachments, registrations and feed events in one `ChatAgent`
-   transaction with its result (not in the code yet — HIL-1949). The current borrowed
+   transaction with its result; `ChatAgent::eraseAccountPart()` is built but inert,
+   with no live caller until HIL-1950/HIL-1952. After erasure starts, ChatAgent
+   refuses a message after an approved verdict before handing attachments to the
+   registry, and again when the registry replies before writing; the connected tab
+   sees the unavailable state. ChatAgent is the sole message writer and runs each
+   handler to completion; the holder's post-commit sign-out frame cannot close this
+   door. The current borrowed
    erasure rights stay until the live switch (not in the code yet — HIL-1952), and
    whatever rights the old merge needs stay afterward.
    The [chat merge part](spec/agents/chat-agent.md#responsibilities) transfers the

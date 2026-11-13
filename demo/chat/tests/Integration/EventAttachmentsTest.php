@@ -19,6 +19,7 @@ use Demo\Chat\Files\ChatAttachmentUploadTarget;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -39,6 +40,7 @@ use Hilos\Files\Upload\DTO\UploadPublishSignalData;
 use Hilos\HilosException;
 use Hilos\Moderation\ModerationReason;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 
@@ -193,6 +195,30 @@ final class EventAttachmentsTest extends IntegrationTestCase
         self::assertInstanceOf(FileRemoveSignalData::class, $remove);
         self::assertSame([$orphan], $remove->fileIds);
         self::assertSame(0, $this->messagesWritten());
+    }
+
+    /** Erasure begins after publication was requested, while the registry's answer is still in flight. */
+    public function testErasureBeginningAfterPublicationRemovesTheFilesWithoutWritingAMessage(): void
+    {
+        $this->approveMessage();
+        self::assertInstanceOf(UploadPublishSignalData::class, $this->onlyQueued(HilosSignalConstants::HILOS_UPLOAD_PUBLISH));
+        self::assertNull(Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ChatModerationKindKey::MESSAGE));
+        $first = $this->registryFile('erasing-1.txt');
+        $second = $this->registryFile('erasing-2.txt');
+        $now = TimeHelper::nowMs();
+        Database::sqlRun(
+            'INSERT INTO `hilos_account_deletion` (`user_id`, `requested_at`, `effective_at`, `started_at`) VALUES (?, ?, ?, ?)',
+            [$this->userId, $now, $now + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND, $now],
+        );
+
+        $this->deliverPublished(new FilesPublishedSignalData(self::ACCEPT_KEY, ['u1', 'u2'], [$first, $second], null));
+
+        self::assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
+            Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationPhase);
+        self::assertSame(0, $this->messagesWritten());
+        $remove = $this->onlyQueued(HilosSignalConstants::HILOS_FILE_REMOVE);
+        self::assertInstanceOf(FileRemoveSignalData::class, $remove);
+        self::assertSame([$first, $second], $remove->fileIds);
     }
 
     public function testAnAnswerCannotPublishWhileAModerationCheckIsStillActive(): void

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Agents;
 
+use Demo\Chat\Auth\ChatErasureRenameFeed;
 use Demo\Chat\CLI\DTO\SendPauseEndCommandData;
 use Demo\Chat\CLI\DTO\SubmissionObserveCommandData;
 use Demo\Chat\Constants\ChatCommandConstants;
@@ -47,6 +48,10 @@ use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkedSignalData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Auth\AccountOperation\AccountErasurePart;
+use Hilos\Auth\AccountOperation\AccountErasurePersonalCaptureResult;
+use Hilos\Auth\AccountOperation\AccountErasureProjectOwner;
+use Hilos\Auth\AccountOperation\AccountErasureProjectStep;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosSignalConstants;
@@ -54,6 +59,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use LogicException as NativeLogicException;
 use Hilos\Core\Page\PageAccessReassessment;
@@ -69,6 +75,8 @@ use Hilos\Runtime\View\Collection\HilosSessionConnections;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
+use Hilos\Users\AccountErasure;
+use JsonException;
 
 /**
  * Monopolistic chat worker for chat events, users, runtime connections, WebSocket lifecycle, and bot messages.
@@ -85,8 +93,11 @@ use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
  * Since HIL-729 it asks the library for nothing at all: impersonation and account merge both
  * moved there whole, because the guards and the write they need are the same process again,
  * and what this project answers is a seam apiece.
+ *
+ * Its erasure part removes a person's feed rows (HIL-1949), and it refuses to write a message
+ * from a person whose erasure has begun.
  */
-final class ChatAgent extends AbstractAgent
+final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwner
 {
     /**
      * The room and everything written into it: the events, their messages, who joined, and what
@@ -110,6 +121,17 @@ final class ChatAgent extends AbstractAgent
     ];
 
     /**
+     * Results of this agent's erasure steps are added and never changed (HIL-1949). Their set
+     * is the agent's full id, the owner named by the assignment. See
+     * docs/agents/architecture/account-operations.md, "The participant result claim".
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_DB_SET = [
+        HilosDbContext::accountOperationResults => [TruthSourceOperation::Add],
+    ];
+
+    /**
      * Who is on the wire and what each of them is doing; what they upload is the framework
      * uploads agent's (HIL-144).
      *
@@ -129,8 +151,16 @@ final class ChatAgent extends AbstractAgent
     /** @var list<string> Readiness and provenance of the accepted attachments */
     public const array READS_RT = [HilosUpload::RT_COLLECTION];
 
-    /** @var list<string> Check settings, registry rows, and the journal rows whose owners a history clear asks to unlink */
-    public const array READS_DB = [HilosDbContext::settings, HilosDbContext::files, ChatDbContext::userRenames];
+    /**
+     * @var list<string> Settings, files, journals a history clear asks to unlink, and the erasure part's assignment and its operation
+     */
+    public const array READS_DB = [
+        HilosDbContext::settings,
+        HilosDbContext::files,
+        ChatDbContext::userRenames,
+        HilosDbContext::accountOperationAssignments,
+        HilosDbContext::accountOperations,
+    ];
 
     public const string AGENT_TYPE = AgentType::CHAT;
 
@@ -328,6 +358,51 @@ final class ChatAgent extends AbstractAgent
     public function ownedRtSetKey(string $collection): string
     {
         return $collection === HilosModerationCheck::RT_COLLECTION ? self::AGENT_TYPE : parent::ownedRtSetKey($collection);
+    }
+
+    /**
+     * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950/HIL-1952).
+     *
+     * @param string $collection Collection whose set claim is being resolved
+     * @return string The agent's full id for its results, the base's answer otherwise
+     */
+    public function ownedDbSetKey(string $collection): string
+    {
+        return $collection === HilosDbContext::accountOperationResults ? $this->getId() : parent::ownedDbSetKey($collection);
+    }
+
+    /**
+     * Deletes the person's messages, attachments, registrations and captured rename feed events
+     * inside the common step's transaction. Other people's mentions remain under SET NULL;
+     * registry files leave after commit through {@see AccountErasureProjectStep}.
+     * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950/HIL-1952).
+     *
+     * @param AccountErasurePart $part Operation and account whose chat rows go
+     * @return AccountErasure Deleted row counts and attachment registry ids
+     * @throws ValidationException When the person's capture has not been recorded
+     * @throws JsonException When the saved capture cannot be decoded
+     * @throws InvalidFormatException When the capture or its rename feed list is malformed
+     * @throws HilosException When storage or a truth-source check refuses a read or a delete
+     */
+    public function eraseAccountPart(AccountErasurePart $part): AccountErasure
+    {
+        $capture = AccountErasurePersonalCaptureResult::of($part->operationId, $part->userId)
+            ?? throw new ValidationException('A chat erasure part waits for the person\'s capture.');
+        $renameEventIds = ChatErasureRenameFeed::eventIdsOf($capture);
+        $messageIds = Hilos::$db->eventMessages->eventIdsByAuthor($part->userId);
+        $fileIds = Hilos::$db->eventAttachments->actions->deleteForMessages($messageIds);
+        $messages = Hilos::$db->eventMessages->actions->deleteByAuthor($part->userId);
+        $registrationIds = Hilos::$db->eventUserRegistrations->actions->deleteByTarget($part->userId);
+        $events = Hilos::$db->events->actions->deleteByIds([...$messageIds, ...$registrationIds, ...$renameEventIds]);
+
+        return new AccountErasure(
+            [
+                ChatCommandConstants::ROWS_ERASED_MESSAGES => $messages,
+                ChatCommandConstants::ROWS_ERASED_ATTACHMENTS => count($fileIds),
+                ChatCommandConstants::ROWS_ERASED_EVENTS => $events,
+            ],
+            $fileIds,
+        );
     }
 
     /**
@@ -875,6 +950,11 @@ final class ChatAgent extends AbstractAgent
         if ($check->deadlineAt <= TimeHelper::nowMs()) {
             throw new ValidationException('The message moderation deadline expired');
         }
+        if ($this->erasureBegun($check->userId)) {
+            $this->forgetMessageChecks($check->acceptKey, $check);
+            $this->failMessageModeration($check->acceptKey);
+            return;
+        }
         if (Hilos::$rt->connections[$check->acceptKey]->outboundModerationAttachments === []) {
             $message = Hilos::$rt->connections[$check->acceptKey]->outboundModerationMessage;
             Hilos::$db->events->actions->addMessage($message, userId: $check->userId);
@@ -941,6 +1021,20 @@ final class ChatAgent extends AbstractAgent
             ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
             ModerationReason::SERVICE_UNAVAILABLE,
         );
+    }
+
+    /**
+     * Chat's single writer runs each handler to completion; its erasure part is assigned only after start.
+     * The holder's post-commit sign-out frame is not durable, so it cannot close this door.
+     * A message written after the chat part would survive final erasure with its author set to null.
+     *
+     * @param int $userId Person attempting to publish a message
+     * @return bool Whether a standing erasure has begun in the database
+     * @throws HilosException When the standing request cannot be read
+     */
+    private function erasureBegun(int $userId): bool
+    {
+        return Hilos::$db->accountDeletions->startedOf($userId) !== null;
     }
 
     /**
@@ -1105,6 +1199,11 @@ final class ChatAgent extends AbstractAgent
             }
         }
         if (Hilos::$rt->hilosUploads->staleSince() !== null || Hilos::$rt->hilosModerationChecks->staleSince() !== null) {
+            $this->failMessageModeration($published->acceptKey);
+            $this->removeUnlinkedPublicationFiles($published->fileIds);
+            return;
+        }
+        if ($this->erasureBegun(Hilos::$rt->connections[$published->acceptKey]->userId)) {
             $this->failMessageModeration($published->acceptKey);
             $this->removeUnlinkedPublicationFiles($published->fileIds);
             return;

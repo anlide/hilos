@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Auth\AccountOperation;
 
 use Hilos\Database\Context\HilosDbContext;
-use Hilos\HilosException;
 use Hilos\Users\AccountErasure;
+use Throwable;
 
 /**
  * The agent class of a project's {@see AccountDataOwner} that erases its own rows of one account.
@@ -32,7 +32,7 @@ interface AccountErasureProjectOwner
      *
      * @param AccountErasurePart $part Operation and account to erase
      * @return AccountErasure Rows deleted per family and the registry files they pointed at
-     * @throws HilosException When the owner cannot read or delete its rows
+     * @throws Throwable Whatever the owner raises while reading or deleting its rows - the step rolls its transaction back and rethrows it unchanged
      */
     public function eraseAccountPart(AccountErasurePart $part): AccountErasure;
 }

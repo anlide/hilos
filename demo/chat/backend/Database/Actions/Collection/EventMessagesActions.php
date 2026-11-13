@@ -136,7 +136,8 @@ final class EventMessagesActions extends DbActions
      * Each message leaves through its object, so every reader hears the delete, as the merge's
      * re-point is heard. The attachments of these messages are the caller's to delete first
      * ({@see EventAttachmentsActions::deleteForMessages()}), and the events they belong to
-     * after. Runs inside the erasure transaction under the session holder's borrowed claim.
+     * after. Runs inside the erasure transaction for ChatAgent's part (HIL-1949) or, until
+     * HIL-1952, under the session holder's borrowed claim.
      *
      * @param int $userId Author user id
      * @return int Number of messages deleted

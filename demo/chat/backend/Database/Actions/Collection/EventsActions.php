@@ -198,6 +198,8 @@ final class EventsActions extends DbActions
      *
      * Their detail rows go first, by the caller: a detail restricts nothing here, but deleting
      * it through its own collection is what lets the readers of that collection hear it.
+     * ChatAgent's erasure part (HIL-1949) and, until HIL-1952, the session holder under its
+     * borrowed claim call this inside the erasure transaction.
      *
      * @param list<int> $eventIds Event ids to delete
      * @return int Number of events deleted
