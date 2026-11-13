@@ -539,11 +539,8 @@ final class EventAttachmentsTest extends IntegrationTestCase
             foreach (['u1', 'u2'] as $uploadId) {
                 $this->completeUpload(self::ACCEPT_KEY, $this->userId, $uploadId, $uploadId . '.txt', 'text/plain', 'retry bytes');
             }
-            // Exercise the real admission timer instead of rewriting the retained rate-limit state.
-            $remaining = Hilos::$rt->connections[self::ACCEPT_KEY]->userState->lastOutboundSubmittedAt + 10 - microtime(true);
-            if ($remaining > 0) {
-                usleep((int)ceil($remaining * 1_000_000));
-            }
+            // The chat's own test moment: age the last accepted send, the period stays the product's.
+            Hilos::$rt->userStates[$this->userId]->actions->endSendPause();
             new MainPage(new ChatAgent())->onAction(self::ACCEPT_KEY, ChatSignalConstants::MESSAGE,
                 new MessageActionDTO(self::TEXT, ['u1', 'u2']));
         } finally {
