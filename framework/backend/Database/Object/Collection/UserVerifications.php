@@ -317,13 +317,15 @@ class UserVerifications extends Objects
      * A person with none is not an error.
      *
      * @param int $userId Person whose rows to delete
+     * @return int Number of removed rows
      * @throws DatabaseException When the lookup or a delete fails
      * @throws InvalidArgumentException When the entity query or the queued DB-sync signal is invalid
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
-    public function deleteForUser(int $userId): void
+    public function deleteForUser(int $userId): int
     {
+        $removed = 0;
         foreach (static::entityClass()::get([EntityUserVerification::user_id => $userId]) as $entity) {
             $id = $entity->id;
             if ($id === null) {
@@ -334,7 +336,10 @@ class UserVerifications extends Objects
             }
             $this->objects[$id]->delete();
             unset($this[$id]);
+            $removed++;
         }
+
+        return $removed;
     }
 
     /**
@@ -379,18 +384,20 @@ class UserVerifications extends Objects
      * The challenge's user id may belong to anyone, or be null.
      *
      * @param list<string> $identifiers Addresses whose challenges are removed
+     * @return int Number of removed rows, 0 for no addresses
      * @throws DatabaseException When the lookup or a delete fails
      * @throws InvalidArgumentException When the query or a queued DB-sync signal is invalid
      * @throws WriteNotAllowedException When no truth source may remove a row
      * @throws SourceChangeSubscriberException When a store announcement fails
      */
-    public function deleteForIdentifiers(array $identifiers): void
+    public function deleteForIdentifiers(array $identifiers): int
     {
         $identifiers = array_values(array_unique($identifiers));
         if ($identifiers === []) {
-            return;
+            return 0;
         }
 
+        $removed = 0;
         $placeholders = implode(', ', array_fill(0, count($identifiers), '?'));
         foreach (static::entityClass()::get('`' . EntityUserVerification::identifier . "` IN ({$placeholders})", $identifiers) as $entity) {
             $id = $entity->id;
@@ -402,7 +409,10 @@ class UserVerifications extends Objects
             }
             $this->objects[$id]->delete();
             unset($this[$id]);
+            $removed++;
         }
+
+        return $removed;
     }
 
     /**

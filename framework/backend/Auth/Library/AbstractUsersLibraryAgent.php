@@ -5,6 +5,14 @@ declare(strict_types=1);
 namespace Hilos\Auth\Library;
 
 use Hilos\Auth\Registration\RegistrationReservationService;
+use Hilos\Auth\AccountOperation\AccountErasurePersonalCaptureResult;
+use Hilos\Auth\AccountOperation\AccountErasureVerificationsResult;
+use Hilos\Auth\AccountOperation\AccountOperationKind;
+use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
+use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
+use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
+use Hilos\Database\View\Item\AccountOperationAssignment;
+use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Auth\Code\DTO\AuthCodeMintSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationHoldExpiredSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationHoldReleaseSignalData;
@@ -303,7 +311,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * library does to a row it SHARES, and these rows are edited in place. Since HIL-1411 this
      * library is their only full writer: it issues a phone code on the code agent's frame after
      * the channel probe, and takes, releases and sweeps registration holds here. The session
-     * holder retains only the borrowed removal of an erased person's verification rows.
+     * holder retains the borrowed removal of an erased person's verification rows only until
+     * HIL-1952; beside it this library deletes the person's codes itself, by their user id and by
+     * the captured addresses, as its participant step of the erasure ({@see self::runErasurePart()}).
      *
      * The ways in and the passkey credentials are claimed for creation alone (HIL-1405). A
      * registration, an added password, phone or key is born here, and born whole - the secret and
@@ -368,6 +378,18 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     ];
 
     /**
+     * The results of the library's own steps in an account erasure are added here and never
+     * changed (HIL-1944): their set is keyed by the library's full id, the owner their assignment
+     * names ({@see self::ownedDbSetKey()}). See docs/agents/architecture/account-operations.md,
+     * "The participant result claim".
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_DB_SET = [
+        HilosDbContext::accountOperationResults => [TruthSourceOperation::Add],
+    ];
+
+    /**
      * The moderation checks whose verdicts come to this library, as one set of the shared queue
      * (HIL-1625): it opens them and ends them, and nothing edits a check in between. The set is
      * named by {@see self::ownedRtSetKey()}; the moderator only reads the checks.
@@ -388,12 +410,15 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * (HIL-1407): the gate's verdict and the choice of a way to confirm read them.
      * The person's agent writes the rename journal (HIL-1896); this library reads the completed row
      * for the notification and the project's afterUserRenamed hook.
+     * Its erasure step reads its own assignment and that assignment's operation (HIL-1944).
      */
     public const array READS_DB = [
         HilosDbContext::files,
         HilosDbContext::secondFactorSettings,
         HilosDbContext::stepUps,
         HilosDbContext::userRenames,
+        HilosDbContext::accountOperationAssignments,
+        HilosDbContext::accountOperations,
     ];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
@@ -950,6 +975,64 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     public function ownedRtSetKey(string $collection): string
     {
         return $collection === HilosModerationCheck::RT_COLLECTION ? self::AGENT_TYPE : parent::ownedRtSetKey($collection);
+    }
+
+    /**
+     * The results of the library's account erasure steps are keyed by its full id, the owner their
+     * assignment names (HIL-1944); any other set is the base's refusal.
+     *
+     * @param string $collection Collection whose set claim is being resolved
+     * @return string The library's full id for the results, the base's answer otherwise
+     */
+    public function ownedDbSetKey(string $collection): string
+    {
+        if ($collection === HilosDbContext::accountOperationResults) {
+            return $this->getId();
+        }
+
+        return parent::ownedDbSetKey($collection);
+    }
+
+    /**
+     * The users library's part of an account erasure, carried as its participant step (HIL-1944).
+     *
+     * Called by the library in its own frame with the assignment the coordinator gave it. Before any
+     * work the assignment must be an erasure's, name its account, and that account's personal capture
+     * must be recorded; each refusal writes nothing. Inside the step's transaction the codes on the
+     * captured addresses are deleted, whatever user id they carry or none, then the codes carrying the
+     * person's user id, and their count is recorded as the result in the same transaction, so a failure
+     * rolls back both. The addresses never enter the result. A repeated call returns the saved result
+     * without deleting again.
+     * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950/HIL-1952).
+     *
+     * @param int $assignmentId Assignment the coordinator gave the library
+     * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt
+     * @throws AccountOperationStepRefusedException When the caller, assignment or current stage refuses new work
+     * @throws ValidationException When the assignment is not an erasure's, names no account, or its capture is missing
+     * @throws Throwable When storage or the deletion fails, preserving the original failure
+     */
+    final public function runErasurePart(int $assignmentId): AccountOperationResult
+    {
+        return AccountOperationParticipantStep::run(
+            $assignmentId,
+            static function (AccountOperationAssignment $assignment): AccountOperationResultPayload {
+                if ($assignment->operation?->kind !== AccountOperationKind::Erasure) {
+                    throw new ValidationException('A users library erasure part must belong to an erasure.');
+                }
+                $userId = $assignment->userId;
+                if ($userId === null) {
+                    throw new ValidationException('A users library erasure part must name its account.');
+                }
+                $capture = AccountErasurePersonalCaptureResult::of($assignment->operationId, $userId);
+                if ($capture === null) {
+                    throw new ValidationException('A users library erasure part waits for the personal capture of its account.');
+                }
+                $deleted = Hilos::$db->verifications->deleteForIdentifiers($capture->addresses)
+                    + Hilos::$db->verifications->deleteForUser($userId);
+
+                return AccountErasureVerificationsResult::payloadOf($deleted);
+            },
+        );
     }
 
     /** @return list<CronRule> Current verification, second-factor and registration-hold sweep schedules */

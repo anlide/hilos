@@ -39,28 +39,30 @@ class UserVerifications extends DbCollection
      * The object collection carries each row out with its delete announcement.
      *
      * @param int $userId Person whose rows to delete
+     * @return int Number of removed rows
      * @throws DatabaseException When the lookup or a delete fails
      * @throws InvalidArgumentException When the entity query or the queued DB-sync signal is invalid
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
-    public function deleteForUser(int $userId): void
+    public function deleteForUser(int $userId): int
     {
-        $this->objectCollection->deleteForUser($userId);
+        return $this->objectCollection->deleteForUser($userId);
     }
 
     /**
      * Removes challenges on a person's current addresses, whatever user id they carry.
      *
      * @param list<string> $identifiers Addresses whose challenges are removed
+     * @return int Number of removed rows, 0 for no addresses
      * @throws DatabaseException When the lookup or a delete fails
      * @throws InvalidArgumentException When the query or a queued DB-sync signal is invalid
      * @throws WriteNotAllowedException When no truth source may remove a row
      * @throws SourceChangeSubscriberException When a store announcement fails
      */
-    public function deleteForIdentifiers(array $identifiers): void
+    public function deleteForIdentifiers(array $identifiers): int
     {
-        $this->objectCollection->deleteForIdentifiers($identifiers);
+        return $this->objectCollection->deleteForIdentifiers($identifiers);
     }
 
     /**

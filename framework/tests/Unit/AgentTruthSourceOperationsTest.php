@@ -164,6 +164,31 @@ final class AgentTruthSourceOperationsTest extends TestCase
     }
 
     /**
+     * The library adds the results of its own erasure steps and never changes one; their set is
+     * keyed by its full id (HIL-1944).
+     *
+     * The step reads its assignment and that assignment's operation. The results are not among the
+     * reads: the set claim is already their reader interest.
+     */
+    public function testLibraryAgentOnlyAddsItsErasureResults(): void
+    {
+        $claims = OwnershipDeclaration::dbSetCollectionsOf(AgentTruthSourceOperationsTestLibrary::class);
+
+        $this->assertSame([TruthSourceOperation::Add], AgentTruthSourceOperationsTestLibrary::OWNS_DB_SET[HilosDbContext::accountOperationResults]);
+        $this->assertTrue($claims[HilosDbContext::accountOperationResults]->allows(TruthSourceOperation::Add));
+        $this->assertFalse($claims[HilosDbContext::accountOperationResults]->allows(TruthSourceOperation::Update));
+        $this->assertFalse($claims[HilosDbContext::accountOperationResults]->allows(TruthSourceOperation::Remove));
+        $this->assertSame(
+            'unit_truth_source_operations_library',
+            (new AgentTruthSourceOperationsTestLibrary())->ownedDbSetKey(HilosDbContext::accountOperationResults),
+        );
+        $reads = AgentTruthSourceOperationsTestLibrary::readDbCollections();
+        $this->assertContains(HilosDbContext::accountOperationAssignments, $reads);
+        $this->assertContains(HilosDbContext::accountOperations, $reads);
+        $this->assertNotContains(HilosDbContext::accountOperationResults, $reads);
+    }
+
+    /**
      * The library only brings the second factor into being: every edit of it is the person's agent's (HIL-1406).
      *
      * An enrolment is only created: the unfinished one before it is dropped by the person's agent
