@@ -92,6 +92,8 @@ import {
 } from '../src/base/index.js'
 import {
   createHilosUserStanding,
+  HILOS_USER_ERASURE_SECTION,
+  readHilosAccountErasure,
   hilosStandingBadge,
   hilosUserFrozenRow,
   hilosUsersPath,
@@ -175,6 +177,8 @@ it('exports the @hilos/core public surface', () => {
   expect(ACCOUNT_STANDING_STRIP_COPY.keep).toBe('Keep my account')
   expect(HILOS_FROZEN_OPEN_PAGES).toHaveLength(7)
   expect(createHilosUserStanding).toBeTypeOf('function')
+  expect(HILOS_USER_ERASURE_SECTION).toBe('accountErasure')
+  expect(readHilosAccountErasure).toBeTypeOf('function')
   expect(hilosStandingBadge('none')).toBeNull()
   expect(hilosUserFrozenRow(null)).toBeNull()
   expect(hilosUsersPath('privacy')).toBe('/hilos/users/privacy')

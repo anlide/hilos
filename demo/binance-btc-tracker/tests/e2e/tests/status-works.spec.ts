@@ -10,6 +10,7 @@ import {
   statusHistoryDeliveries,
   expectStatusHistoryFact,
   armViewerSubmit,
+  cleanupFixtures,
   clickSubmit,
   controlSocketReconnect,
   deliveryObject,
@@ -43,6 +44,7 @@ import {
   watchPublicStatus,
   type StatusWorkDraft,
   type StatusWorkFixtureScope,
+  type TestCleanup,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   mailsTo,
@@ -63,8 +65,12 @@ import { readPublishedStatus } from '../helpers/status.js'
 import { STATUS_EXPECT_TIMEOUT_MS } from '../status.config.js'
 
 const expect = baseExpect.configure({ timeout: STATUS_EXPECT_TIMEOUT_MS })
-const test = base.extend<{ statusWorks: StatusWorkFixtureScope }>({
+const test = base.extend<{
+  statusWorks: StatusWorkFixtureScope
+  cleanup: TestCleanup
+}>({
   statusWorks: statusWorkFixtures(expect),
+  cleanup: cleanupFixtures,
 })
 const READER_ZONE = 'Pacific/Honolulu'
 const OVERLAP =
@@ -472,6 +478,7 @@ test('Status Works uses the published announcement during an actual freeze and c
   browser,
   baseURL,
   statusWorks,
+  cleanup,
 }) => {
   // Confirmation/event mail, an actual freeze and owner recovery.
   test.slow()
@@ -493,6 +500,25 @@ test('Status Works uses the published announcement during an actual freeze and c
   const adminLog = watchDeliveryFrames(page)
   const publicLog = watchPublicStatus(guest)
   const coldLog = watchPublicStatus(cold)
+  cleanup.defer(() =>
+    test.info().attach('status-works-actual-freeze-drained', {
+      body: JSON.stringify({
+        guestClosed: guest.isClosed(),
+        coldClosed: cold.isClosed(),
+        warm: publicLog.reads,
+        cold: coldLog.reads,
+      }),
+      contentType: 'application/json',
+    }),
+  )
+  cleanup.defer(() => adminLog.stop())
+  cleanup.defer(() => publicLog.stop())
+  cleanup.defer(() => coldLog.stop())
+  // LIFO cleanup closes both readers before draining their HTTP captures.
+  // Each operation is attempted even if another close or the scenario fails.
+  cleanup.defer(() => guestContext.close())
+  cleanup.defer(() => coldContext.close())
+  cleanup.defer(() => coldSocket.dispose())
   const email = uniqueEmail()
   try {
     await gotoPublicStatus(expect, guest)
@@ -706,11 +732,8 @@ test('Status Works uses the published announcement during an actual freeze and c
       ].sort(),
     )
   } finally {
-    try {
-      await openProtectedModeIfAny()
-      expect((await inspectProtectedMode()).phase).toBe('inactive')
-    } finally {
-      await test.info().attach('status-works-actual-freeze', {
+    cleanup.defer(() =>
+      test.info().attach('status-works-actual-freeze', {
         body: JSON.stringify({
           admin: adminLog,
           warm: publicLog.reads,
@@ -718,13 +741,11 @@ test('Status Works uses the published announcement during an actual freeze and c
           displayed: coldLog.displayed,
         }),
         contentType: 'application/json',
-      })
-      adminLog.stop()
-      await publicLog.stop()
-      await coldLog.stop()
-      await coldSocket.dispose()
-      await guestContext.close()
-      await coldContext.close()
-    }
+      }),
+    )
+    cleanup.defer(async () => {
+      await openProtectedModeIfAny()
+      expect((await inspectProtectedMode()).phase).toBe('inactive')
+    })
   }
 })

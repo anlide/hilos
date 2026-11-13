@@ -399,11 +399,12 @@ export interface AccountBlockedNotice {
 
 /**
  * The one fact of an account's standing that is shown (HIL-945), the one that
- * takes the most away: merged (HIL-1292), then blocked, then frozen, then a
- * scheduled deletion. Byte-equal to the backend `AccountStandingKind`.
+ * takes the most away: merged (HIL-1292), then erasing, then blocked, then
+ * frozen, then a scheduled deletion. Byte-equal to the backend
+ * `AccountStandingKind`.
  */
 export type HilosAccountStandingKind =
-  'none' | 'merged' | 'blocked' | 'frozen' | 'deletion_scheduled'
+  'none' | 'merged' | 'erasing' | 'blocked' | 'frozen' | 'deletion_scheduled'
 
 /**
  * One legal document with an outstanding acceptance deadline: past it in
@@ -462,7 +463,14 @@ export interface HilosAccountStanding {
  * standing with it.
  */
 export const accountStandingSchema = z.looseObject({
-  shown: z.enum(['none', 'merged', 'blocked', 'frozen', 'deletion_scheduled']),
+  shown: z.enum([
+    'none',
+    'merged',
+    'erasing',
+    'blocked',
+    'frozen',
+    'deletion_scheduled',
+  ]),
   blocked: z.boolean(),
   frozen: z.boolean(),
   deletionEffectiveAt: z.number().nullable(),

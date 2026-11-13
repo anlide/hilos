@@ -20,6 +20,9 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -43,6 +46,7 @@ use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
+use Hilos\Users\AccountErasureProgressResolver;
 use Hilos\WiringRefusal;
 use Random\RandomException;
 use Throwable;
@@ -67,6 +71,14 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     }
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_INDEX;
+
+    /** DB facts the user card's erasure progress and its audience read. */
+    public const array READS_DB = [
+        ...parent::READS_DB,
+        HilosDbContext::accountOperations,
+        HilosDbContext::accountOperationAssignments,
+        HilosDbContext::accountOperationResults,
+    ];
 
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => ManualMaintenanceEnableSignalData::class,
@@ -389,17 +401,74 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     }
 
     /**
-     * Forgets the people surfaces, Maintenance picture and deferred channel summary notification.
+     * Drops progress remembered before this reader began receiving DB facts.
+     *
+     * @throws HilosException When parent initialization fails
+     * @throws LogicException When parent initialization rejects an unsupported agent id
+     * @throws RandomException When parent initialization cannot draw secure entropy
+     */
+    public function onStart(): void
+    {
+        AccountErasureProgressResolver::forgetAll();
+        parent::onStart();
+    }
+
+    /**
+     * Forgets progress, the people surfaces, Maintenance picture and deferred channel summary notification.
      *
      * @throws HilosException When parent cleanup fails
      */
     public function onStop(): void
     {
+        AccountErasureProgressResolver::forgetAll();
         $this->clearManualMaintenance();
         parent::onStop();
         AccountStandingAudience::reset();
         AbstractHilosMaintenancePage::reset();
         CommunicationsChannelSummaryAudience::reset();
+    }
+
+    /**
+     * Invalidates progress even when the lazy ORM declined to retain a remote creation.
+     * Other collections leave this memory alone.
+     *
+     * @param DbSyncCreatedSignalData $data Accepted DB creation
+     * @param string $source Signal origin
+     * @param string $name DB creation signal name
+     * @throws HilosException When the parent DB creation handler fails
+     */
+    public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
+    {
+        $this->forgetErasureProgressFor($data->collectionKey);
+        parent::onSignalDbSyncCreated($data, $source, $name);
+    }
+
+    /**
+     * Invalidates progress for accepted updates of its sources; ignores other collections.
+     *
+     * @param DbSyncUpdatedSignalData $data Accepted DB update
+     * @param string $source Signal origin
+     * @param string $name DB update signal name
+     * @throws HilosException When the parent DB update handler fails
+     */
+    public function onSignalDbSyncUpdated(DbSyncUpdatedSignalData $data, string $source, string $name): void
+    {
+        $this->forgetErasureProgressFor($data->collectionKey);
+        parent::onSignalDbSyncUpdated($data, $source, $name);
+    }
+
+    /**
+     * Invalidates progress for accepted deletions of its sources; ignores other collections.
+     *
+     * @param DbSyncDeletedSignalData $data Accepted DB deletion
+     * @param string $source Signal origin
+     * @param string $name DB deletion signal name
+     * @throws HilosException When the parent DB deletion handler fails
+     */
+    public function onSignalDbSyncDeleted(DbSyncDeletedSignalData $data, string $source, string $name): void
+    {
+        $this->forgetErasureProgressFor($data->collectionKey);
+        parent::onSignalDbSyncDeleted($data, $source, $name);
     }
 
     /**
@@ -468,6 +537,19 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
         }
 
         $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+    }
+
+    /** @param string $collectionKey Accepted DB fact's source */
+    private function forgetErasureProgressFor(string $collectionKey): void
+    {
+        switch ($collectionKey) {
+            case HilosDbContext::accountOperations:
+            case HilosDbContext::accountOperationAssignments:
+            case HilosDbContext::accountOperationResults:
+            case HilosDbContext::accountDeletions:
+                AccountErasureProgressResolver::forgetAll();
+                break;
+        }
     }
 
     /**

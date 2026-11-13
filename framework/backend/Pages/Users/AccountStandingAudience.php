@@ -17,6 +17,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Legal\LegalDocument;
 use Hilos\Tables\Users\AbstractHilosUsersTable;
+use Hilos\Users\AccountErasureProgressResolver;
 use Hilos\Users\AccountStanding;
 use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\DTO\AccountStandingStateSignalData;
@@ -31,8 +32,9 @@ use Hilos\Users\DTO\AccountStandingStateSignalData;
  * resolver answers now ({@see AccountStandingResolver}). The resolver remembers, and drops what a
  * write changed, so an unchanged standing costs a comparison.
  *
- * A card whose person's standing moved is sent the new standing whole, through the card's own
- * road past the view mode's bridge ({@see AbstractHilosUserPage::standingFrame()}). A list window
+ * A card keeps both the person's standing and erasure progress in step. When either moves it is
+ * sent both whole, through the card's own road past the view mode's bridge
+ * ({@see AbstractHilosUserPage::standingFrame()}). A list window
  * narrowed to one document is sent again when the people past that document's deadline are no
  * longer the ones it was served with.
  *
@@ -47,6 +49,9 @@ final class AccountStandingAudience
     /** @var array<string, AccountStanding> Standing each card subscriber was last shown, keyed by accept key */
     private static array $shown = [];
 
+    /** @var array<string, ?array<string, mixed>> Erasure block each card subscriber was last shown, keyed by accept key */
+    private static array $shownErasure = [];
+
     /** @var array<string, true> Subscribers of the list of people, keyed by accept key */
     private static array $lists = [];
 
@@ -57,16 +62,17 @@ final class AccountStandingAudience
     private static array $listPeople = [];
 
     /**
-     * Holds a card subscriber and the standing its page answer showed.
+     * Holds a card subscriber and the standing and erasure progress its page answer showed.
      *
      * @param string $acceptKey Subscribing connection
      * @param int $userId Person the card shows
-     * @throws HilosException When the person's standing cannot be read
+     * @throws HilosException When the person's standing or erasure progress cannot be read
      */
     public static function addSubscriber(string $acceptKey, int $userId): void
     {
         self::$cards[$acceptKey] = $userId;
         self::$shown[$acceptKey] = AccountStandingResolver::of($userId);
+        self::$shownErasure[$acceptKey] = AccountErasureProgressResolver::of($userId)?->toArray();
     }
 
     /**
@@ -85,6 +91,7 @@ final class AccountStandingAudience
         unset(
             self::$cards[$acceptKey],
             self::$shown[$acceptKey],
+            self::$shownErasure[$acceptKey],
             self::$lists[$acceptKey],
             self::$listDocuments[$acceptKey],
             self::$listPeople[$acceptKey],
@@ -96,6 +103,7 @@ final class AccountStandingAudience
     {
         self::$cards = [];
         self::$shown = [];
+        self::$shownErasure = [];
         self::$lists = [];
         self::$listDocuments = [];
         self::$listPeople = [];
@@ -107,22 +115,24 @@ final class AccountStandingAudience
      * @param PageAgentInterface $agent Agent serving the surfaces; the card frames leave from it
      * @throws InvalidArgumentException When a frame cannot be named
      * @throws InvalidFormatException When a standing frame cannot be built for its person
-     * @throws HilosException When a standing, a list of people or a window cannot be read
+     * @throws HilosException When standing, erasure progress, a list of people or a window cannot be read
      */
     public static function onAgentTick(PageAgentInterface $agent): void
     {
         foreach (self::$cards as $acceptKey => $userId) {
             $standing = AccountStandingResolver::of($userId);
-            if ($standing->toArray() === self::$shown[$acceptKey]->toArray()) {
+            $erasure = AccountErasureProgressResolver::of($userId)?->toArray();
+            if ($standing->toArray() === self::$shown[$acceptKey]->toArray() && $erasure === self::$shownErasure[$acceptKey]) {
                 continue;
             }
 
             self::$shown[$acceptKey] = $standing;
+            self::$shownErasure[$acceptKey] = $erasure;
             $pageClass = Hilos::appClass()::PAGES[HilosPageConstants::HILOS_USER] ?? null;
             if ($pageClass === null || !is_subclass_of($pageClass, AbstractHilosUserPage::class)) {
                 continue;
             }
-            $frame = $pageClass::standingFrame($acceptKey, new AccountStandingStateSignalData($userId, $standing->toArray()));
+            $frame = $pageClass::standingFrame($acceptKey, new AccountStandingStateSignalData($userId, $standing->toArray(), $erasure));
             if ($frame === null) {
                 continue;
             }

@@ -7,11 +7,12 @@ drawing the standing in the shell or in the admin (HIL-945).
 
 ## The Verdict
 
-Four independent facts go in, and one of them is shown:
+Five independent facts go in, and one of them is shown:
 
 | Fact | Where it comes from |
 |---|---|
 | merged | the person's row in `hilos_user_merge`, the tombstone a merge leaves ([people-table.md](people-table.md), *A Merged Account*; HIL-1292) |
+| erasing | the person's live request has begun (`hilos_account_deletion.started_at`, HIL-1939) |
 | blocked | `hilos_user.block`, an administrator's decision, stored ([people-table.md](people-table.md); HIL-289) |
 | deletion scheduled | the live request in `hilos_account_deletion` and its `effective_at` ([account-deletion.md](account-deletion.md)) |
 | frozen | not stored: computed from the person's acceptance records ([legal-documents.md](legal-documents.md)) |
@@ -22,13 +23,18 @@ past its deadline), and for a merged account where it went: `mergedInto`, the
 live end of its merge chain (`UserMerges::liveSurvivorOf()`; `null` when the
 survivor was erased or the rows close a loop), and `mergedIntoName`, that
 account's name — and one `shown` (`AccountStandingKind`): the fact that takes
-the most away, in this order: `merged` → `blocked` → `frozen` →
-`deletion_scheduled` → `none`. None of the four replaces another. A merged
+the most away, in this order: `merged` → `erasing` → `blocked` → `frozen` →
+`deletion_scheduled` → `none`. None of the five replaces another. Erasure begun
+is irreversible; cancellation refuses after its start. A merged
 account is shown merged and keeps the block the merge closed its sign-in with
 (the flag is read as it is and never touched here); a blocked person with a
 scheduled deletion is shown blocked and keeps the deletion; lifting the block of
 a person who did not accept the new revision leaves them frozen, with nothing to
 restore.
+
+Begun erasure changes `shown` without adding a standing member: its details
+travel in the card's separate `accountErasure` block below. A merged account
+with a begun request still shows `merged`.
 
 ## The Freeze Is Computed
 
@@ -223,9 +229,20 @@ request, heartbeat, minute server frame, or epoch invalidation is introduced.
   `publishSessionState()` and `AbstractAgent::sendHandshakeResponse()` — the way
   the "Access closed" card is, so no builder of a frame passes it.
 - **Card.** The page answer of `/hilos/user/{userId}` carries `accountStanding`
-  (`AbstractHilosUserPage::ACCOUNT_STANDING`) of the person on the card; after
-  that, `hilos_account_standing_state` (WS_USER, `{userId, accountStanding}`,
-  `AccountStandingStateSignalData`) brings each change.
+  (`AbstractHilosUserPage::ACCOUNT_STANDING`) and `accountErasure`
+  (`ACCOUNT_ERASURE`) of the person on the card; after that,
+  `hilos_account_standing_state` (WS_USER,
+  `{userId, accountStanding, accountErasure}`, `AccountStandingStateSignalData`)
+  brings each change to either block (HIL-1954). `accountErasure` is `null`
+  without a begun, open erasure, otherwise
+  `{startedAt, parts: [{participant, owner, userId, done}], waits: [{participant, userId}]}`.
+  `startedAt` is the operation request's `started_at` in epoch milliseconds;
+  parts name expected owners and waits name participants without one. The
+  admin view mode uses `AccountErasureProgress::wireFields()` on both carriers:
+  both `userId` fields follow the `users.id` column verdict; `startedAt`,
+  `participant`, `owner` and `done` are not personal. Null stays null. No names
+  are carried. `done` stays false until HIL-1950; safe refusal is not in this
+  block yet (HIL-1942). The preparation stays inert until HIL-1952 opens erasure.
 - **Refusal.** `account_frozen` with status 403, as `errorCode` of
   `subscription_page_error` and of `action_error`. It is not a 401 and opens no
   sign-in.
@@ -252,7 +269,9 @@ costs an array comparison.
   frame that brought their tab carried the standing.
 - **`AccountStandingAudience`**, ticked by the index agent
   (`AbstractHilosIndexAgent::onTick()`), for the admin surfaces that show other
-  people. A card whose person's standing moved gets `hilos_account_standing_state`
+  people. It remembers and compares both standing and erasure progress per
+  subscriber. A card whose standing or erasure block moved gets one
+  `hilos_account_standing_state` with both, including `null` when the operation closes,
   through `AbstractHilosUserPage::standingFrame()`, which asks the gate for that
   connection again and passes the view mode's bridge. A people window narrowed by
   `lapsed` is sent again (`sendTableWindow`) when the people past that document's
@@ -263,6 +282,9 @@ costs an array comparison.
 
 The core binds the session's standing once, in `bootHilos`
 (`session/accountStanding.ts`); each SDK's shell only reads it.
+
+`erasing` is carried but is not drawn yet: Vue's list and card belong to
+HIL-1956/HIL-1957, React to HIL-1961 and Angular to HIL-1962.
 
 - **Deletion strip** (`hilosDeletionStrip`) — the standing the session acts as
   is `deletion_scheduled` with a known `deletionEffectiveAt`. It is shown during

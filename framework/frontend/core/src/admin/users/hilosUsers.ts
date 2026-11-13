@@ -390,6 +390,9 @@ export const HILOS_USERS_LAPSED_FILTER = 'lapsed'
  */
 export const HILOS_USER_STANDING_SECTION = 'accountStanding'
 
+/** Page data key of the erasure progress of the person the card shows. */
+export const HILOS_USER_ERASURE_SECTION = 'accountErasure'
+
 /**
  * Row slot key of the inline connection summary.
  *
@@ -1041,24 +1044,117 @@ export function createHilosUserPhoto<TUser extends User>(
   })
 }
 
-/** The standing of the person a card shows, and its mount lifecycle (HIL-945). */
+/** One participant's erasure part and the owner responsible for it. */
+export interface HilosAccountErasurePart {
+  /** The participant whose part this is. */
+  readonly participant: string
+  /** The owner responsible for erasing this part. */
+  readonly owner: string
+  /** The person whose part is being erased. */
+  readonly userId: number
+  /** Whether this part has finished. */
+  readonly done: boolean
+}
+
+/** One participant whose work the erasure is waiting for. */
+export interface HilosAccountErasureWait {
+  /** The participant whose work is still awaited. */
+  readonly participant: string
+  /** The person whose work is still awaited. */
+  readonly userId: number
+}
+
+/** The progress of a begun account erasure, as the card reads it. */
+export interface HilosAccountErasure {
+  /** The operation request's start, in absolute server epoch milliseconds. */
+  readonly startedAt: number
+  /** The participants' erasure parts. */
+  readonly parts: readonly HilosAccountErasurePart[]
+  /** The participants whose work is still awaited. */
+  readonly waits: readonly HilosAccountErasureWait[]
+}
+
+/** Erasure envelope; its entries are read independently below. */
+const accountErasureSchema = z.looseObject({
+  startedAt: z.number().int(),
+  parts: z.array(z.unknown()),
+  waits: z.array(z.unknown()),
+})
+
+/** One erasure part as the wire carries it. */
+const accountErasurePartSchema = z.looseObject({
+  participant: z.string(),
+  owner: z.string(),
+  userId: z.number().int(),
+  done: z.boolean(),
+})
+
+/** One erasure wait as the wire carries it. */
+const accountErasureWaitSchema = z.looseObject({
+  participant: z.string(),
+  userId: z.number().int(),
+})
+
+/**
+ * Read erasure progress, or null when its envelope cannot be read. A malformed
+ * or hidden part or wait drops out alone, preserving its readable neighbors.
+ *
+ * @param raw The progress as the page data or live frame carried it.
+ */
+export function readHilosAccountErasure(
+  raw: unknown,
+): HilosAccountErasure | null {
+  const parsed = accountErasureSchema.safeParse(raw)
+  if (!parsed.success) {
+    return null
+  }
+  const parts: HilosAccountErasurePart[] = []
+  for (const entry of parsed.data.parts) {
+    const part = accountErasurePartSchema.safeParse(entry)
+    if (part.success) {
+      parts.push({
+        participant: part.data.participant,
+        owner: part.data.owner,
+        userId: part.data.userId,
+        done: part.data.done,
+      })
+    }
+  }
+  const waits: HilosAccountErasureWait[] = []
+  for (const entry of parsed.data.waits) {
+    const wait = accountErasureWaitSchema.safeParse(entry)
+    if (wait.success) {
+      waits.push({
+        participant: wait.data.participant,
+        userId: wait.data.userId,
+      })
+    }
+  }
+
+  return { startedAt: parsed.data.startedAt, parts, waits }
+}
+
+/** The standing and erasure of the person a card shows, and their mount lifecycle. */
 export interface HilosUserStanding {
   /**
    * The standing, or `null` before the page answered and wherever it cannot be
    * read — a viewer of the admin view mode is sent it hidden.
    */
   readonly standing: ReadonlySignal<HilosAccountStanding | null>
-  /** Start taking the standing from the page data and the live frames — call on mount. */
+  /** The begun erasure's progress, or null when absent or unreadable. */
+  readonly erasure: ReadonlySignal<HilosAccountErasure | null>
+  /** Start taking standing and erasure from page data and live frames — call on mount. */
   start(): void
-  /** Stop taking it and forget it — call on unmount. */
+  /** Stop taking them and forget them — call on unmount. */
   dispose(): void
 }
 
 /**
  * The one verdict a user card reads its person's standing from (HIL-945): the
- * page's `accountStanding` data, then every `hilos_account_standing_state`
- * frame after it — whichever arrived last. A frame naming another person than
- * the card's row is a late one from the card left behind and is not taken.
+ * page's `accountStanding` and `accountErasure` data, then every
+ * `hilos_account_standing_state` frame after it — whichever arrived last.
+ * A frame naming another person than the card's row is a late one from the
+ * card left behind and is not taken.
  *
  * @param context The project context (the scope stores and the connection the frames ride).
  */
@@ -1066,6 +1162,7 @@ export function createHilosUserStanding(
   context: Pick<HilosUsersContext, 'scopes' | 'connection'>,
 ): HilosUserStanding {
   const standing = createSignal<HilosAccountStanding | null>(null)
+  const erasure = createSignal<HilosAccountErasure | null>(null)
   const detailRows = context.scopes.pageTableSignal(USER_DETAIL_TABLE)
   let stop: (() => void) | null = null
 
@@ -1083,12 +1180,20 @@ export function createHilosUserStanding(
 
   return {
     standing,
+    erasure,
     start() {
       stop?.()
       const section = context.scopes.pageDataSignal(HILOS_USER_STANDING_SECTION)
       standing.set(readHilosAccountStanding(section.get()))
       const offSection = subscribeSignal(section, (raw) =>
         standing.set(readHilosAccountStanding(raw)),
+      )
+      const erasureSection = context.scopes.pageDataSignal(
+        HILOS_USER_ERASURE_SECTION,
+      )
+      erasure.set(readHilosAccountErasure(erasureSection.get()))
+      const offErasureSection = subscribeSignal(erasureSection, (raw) =>
+        erasure.set(readHilosAccountErasure(raw)),
       )
       const offFrames = context.connection.on(
         'projectSignal',
@@ -1101,11 +1206,13 @@ export function createHilosUserStanding(
           >
           if (aboutShownPerson(frame.userId)) {
             standing.set(readHilosAccountStanding(frame.accountStanding))
+            erasure.set(readHilosAccountErasure(frame.accountErasure))
           }
         },
       )
       stop = () => {
         offSection()
+        offErasureSection()
         offFrames()
       }
     },
@@ -1113,6 +1220,7 @@ export function createHilosUserStanding(
       stop?.()
       stop = null
       standing.set(null)
+      erasure.set(null)
     },
   }
 }

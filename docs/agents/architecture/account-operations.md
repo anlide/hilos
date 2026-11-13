@@ -1444,10 +1444,15 @@ switches neither live erasure entry:
   the actual outcome, distinguishing start, waiting and completion. The CLI
   writes no DB row and introduces no universal clock; the exact new response
   belongs to its implementing contract (not in the code yet — HIL-1953).
-- The first `page_response` and live updates carry the started fact, progress,
-  expected owners and safe refusal. Existing admin view mode exposes no
-  personal data it withholds today and enables no mutation; exact wire fields
-  belong to that leaf (not in the code yet — HIL-1954).
+- The card's first `page_response` and existing `hilos_account_standing_state`
+  frame carry `accountErasure`: `null`, or `{startedAt, parts:
+  [{participant, owner, userId, done}], waits: [{participant, userId}]}`
+  (HIL-1954). The standing shows `erasing` after `merged` and before `blocked`.
+  Both carriers use the same viewer map: ids follow `users.id`, the other
+  progress fields are not personal, and no names travel in the block. Existing
+  admin view mode enables no mutation. The delivery is built and stays inert
+  until HIL-1952; `done` remains false (not in the code yet — HIL-1950), and
+  safe refusal is separate work (not in the code yet — HIL-1942).
 - The people list and card read durable erasure facts; ordinary rows keep
   Apply, and the people set gains no synthetic operation row
   (not in the code yet — HIL-1955).
@@ -1861,8 +1866,9 @@ operation.
 For erasure, missing owners leave an open obligation without a fallback
 (prepared, no live caller until HIL-1950/HIL-1952); a final `RESTRICT` refusal rolls back only
 the personal owner's final transaction and leaves the operation unfinished
-(not in the code yet — HIL-1942). The first page reply and live updates must
-carry that wait or safe refusal (not in the code yet — HIL-1954). These recovery
+(not in the code yet — HIL-1942). The card's first page reply and live updates
+carry that wait (HIL-1954), built and inert until the cutover; safe refusal
+is not carried yet (not in the code yet — HIL-1942). These recovery
 paths become live with the common erasure cutover
 (not in the code yet — HIL-1952). Their cluster/backup proof includes lost,
 duplicate and old frames, owner sleep/death/movement, missing owners and a

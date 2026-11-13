@@ -7,9 +7,9 @@ namespace Hilos\Users;
 /**
  * The one standing of an account that is shown, out of the facts that compose it (HIL-945).
  *
- * Ordered by how much each takes away: a merge took the account whole and left a tombstone, a
- * block takes the account, a freeze takes the product and leaves the exits, a scheduled deletion
- * takes nothing yet. When several facts hold at once the first of them in that order is the one
+ * Ordered by how much each takes away: a merge took the account whole and left a tombstone,
+ * begun erasure is irreversible, a block takes the account, a freeze takes the product and leaves
+ * the exits, a scheduled deletion takes nothing yet. When several facts hold at once the first of them in that order is the one
  * shown; the others stay named on the verdict itself ({@see AccountStanding}).
  */
 enum AccountStandingKind: string
@@ -25,6 +25,9 @@ enum AccountStandingKind: string
      * ahead of the block.
      */
     case MERGED = 'merged';
+
+    /** Account erasure has begun: it is irreversible, and cancellation refuses after the start (HIL-1954). */
+    case ERASING = 'erasing';
 
     /** An administrator blocked the account. */
     case BLOCKED = 'blocked';

@@ -100,6 +100,7 @@ use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Users\AccountErasureProgressChangeSubscriber;
 use Hilos\Users\AccountStandingChangeSubscriber;
 use Hilos\Users\AdminAudience;
 
@@ -1341,6 +1342,7 @@ abstract class Hilos implements TruthSourceOwner
         SourceChangeBus::subscribe(new SettingPresetChangeSubscriber());
         SourceChangeBus::subscribe(new LegalAcceptanceChangeSubscriber());
         SourceChangeBus::subscribe(new AccountStandingChangeSubscriber());
+        SourceChangeBus::subscribe(new AccountErasureProgressChangeSubscriber());
         SourceChangeBus::subscribe(new CommunicationsChannelSummaryAudience());
 
         static::validateTopologyReferences();

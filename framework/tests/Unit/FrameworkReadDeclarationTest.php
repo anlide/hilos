@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
+use Hilos\Core\Agent\Hilos\AbstractHilosAgent;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Closure;
@@ -267,6 +269,17 @@ final class FrameworkReadDeclarationTest extends TestCase
             ],
             SmsDeliveryChannelAgent::READS_DB,
         );
+    }
+
+    /** The card owner reads the erasure facts without claiming their writes or making them process-wide. */
+    public function testTheIndexAgentReadsTheErasureProgressSources(): void
+    {
+        self::assertSame([
+            ...AbstractHilosAgent::READS_DB,
+            HilosDbContext::accountOperations,
+            HilosDbContext::accountOperationAssignments,
+            HilosDbContext::accountOperationResults,
+        ], AbstractHilosIndexAgent::readDbCollections());
     }
 
     /** A raw-only SMS worker reads transport settings and has no delivery data or writing rights. */

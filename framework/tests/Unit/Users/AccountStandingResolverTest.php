@@ -17,6 +17,7 @@ use Hilos\AdminViewMode\WireField;
 use Hilos\Users\AccountStanding;
 use Hilos\Users\AccountStandingKind;
 use Hilos\Users\AccountStandingResolver;
+use Hilos\Users\DTO\AccountStandingStateSignalData;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -51,6 +52,14 @@ final class AccountStandingResolverTest extends TestCase
         $lapsed = [$this->lapsedTerms()];
         $freeze = LegalSettings::REFUSAL_FREEZE;
 
+        self::assertSame(
+            AccountStandingKind::ERASING,
+            AccountStandingResolver::compose(false, null, null, true, 1000, $lapsed, [], $freeze, erasing: true)->shown,
+        );
+        self::assertSame(
+            AccountStandingKind::MERGED,
+            AccountStandingResolver::compose(true, 9, 'S', true, 1000, $lapsed, [], $freeze, erasing: true)->shown,
+        );
         self::assertSame(AccountStandingKind::MERGED, AccountStandingResolver::compose(true, 9, 'S', true, 1000, $lapsed, [], $freeze)->shown);
         self::assertSame(AccountStandingKind::BLOCKED, AccountStandingResolver::compose(false, null, null, true, 1000, $lapsed, [], $freeze)->shown);
         self::assertSame(AccountStandingKind::FROZEN, AccountStandingResolver::compose(false, null, null, false, 1000, $lapsed, [], $freeze)->shown);
@@ -59,6 +68,26 @@ final class AccountStandingResolverTest extends TestCase
             AccountStandingResolver::compose(false, null, null, false, 1000, [], [], $freeze)->shown,
         );
         self::assertSame(AccountStandingKind::NONE, AccountStandingResolver::compose(false, null, null, false, null, [], [], $freeze)->shown);
+    }
+
+    public function testTheErasureFrameRoundTripsBothBlocksAndAcceptsAnOlderFrame(): void
+    {
+        $standing = AccountStandingResolver::compose(
+            false, null, null, true, 1000, [], [], LegalSettings::REFUSAL_FREEZE, erasing: true,
+        )->toArray();
+        $progress = ['startedAt' => 1000, 'parts' => [], 'waits' => [['participant' => 'delivery:mail', 'userId' => 7]]];
+        $frame = new AccountStandingStateSignalData(7, $standing, $progress);
+
+        self::assertSame([
+            'userId' => 7,
+            'accountStanding' => $standing,
+            'accountErasure' => $progress,
+        ], $frame->toArray());
+        self::assertEquals($frame, AccountStandingStateSignalData::fromArray($frame->toArray()));
+        $legacy = AccountStandingStateSignalData::fromArray(['userId' => 7, 'accountStanding' => $standing]);
+        self::assertNull($legacy->accountErasure);
+        self::assertArrayHasKey('accountErasure', $legacy->toArray());
+        self::assertEquals($legacy, AccountStandingStateSignalData::fromArray($legacy->toArray()));
     }
 
     public function testEveryFactIsNamedWhateverIsShown(): void

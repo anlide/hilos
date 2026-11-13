@@ -8,7 +8,7 @@ import { z } from 'zod'
 export const SIGNAL_ACCOUNT_STANDING_STATE = 'hilos_account_standing_state'
 
 /**
- * The live standing frame (PHP `AccountStandingStateSignalData`). Both members
+ * The live standing frame (PHP `AccountStandingStateSignalData`). Its members
  * are read past the parse boundary rather than at it: a viewer of the admin
  * view mode is sent hidden marks in their place, and such a frame is still one
  * to take — it says the standing cannot be read ({@link readHilosAccountStanding}).
@@ -16,6 +16,7 @@ export const SIGNAL_ACCOUNT_STANDING_STATE = 'hilos_account_standing_state'
 export const accountStandingStateSchema = z.looseObject({
   userId: z.unknown(),
   accountStanding: z.unknown(),
+  accountErasure: z.unknown().optional(),
 })
 
 /**

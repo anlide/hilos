@@ -26,9 +26,9 @@ use Hilos\Legal\LegalTally;
 /**
  * The one place the standing of an account is composed (HIL-945).
  *
- * Four facts go in, each read from where it is stored or derived: the merge from the tombstone
+ * Five facts go in, each read from where it is stored or derived: the merge from the tombstone
  * table, with the live end of its chain and that account's name (HIL-1292); the block from the
- * person's row; the scheduled deletion from the person's standing request; and the lapsed
+ * person's row; the scheduled deletion and begun erasure from the person's live request; and the lapsed
  * documents from the person's acceptance records against the declared revisions on the server's
  * date. The freeze is then the lapsed documents under the installation's refusal setting -
  * nothing stores it, so a revision published with a past effective date freezes everyone it
@@ -103,9 +103,9 @@ final class AccountStandingResolver
     }
 
     /**
-     * Composes the verdict out of the four facts - the only composition there is.
+     * Composes the verdict out of the five facts - the only composition there is.
      *
-     * Shown is the fact that takes the most away: merged, then blocked, then frozen, then deletion
+     * Shown is the fact that takes the most away: merged, then erasing, then blocked, then frozen, then deletion
      * scheduled. The documents inside their window are carried through untouched: they are the fact
      * the re-consent screen is drawn from (HIL-500), not a part of the verdict.
      *
@@ -118,6 +118,7 @@ final class AccountStandingResolver
      * @param list<LegalDocumentStanding> $window Documents whose deadline is still ahead for this person
      * @param string $refusal Treatment of a refusal after the deadline ({@see LegalSettings::refusal()})
      * @param ?int $deletionGraceDays Positive whole-day duration fixed by the live deletion request, or null
+     * @param bool $erasing Whether the live deletion request has begun erasure
      * @return AccountStanding The verdict
      */
     public static function compose(
@@ -130,12 +131,14 @@ final class AccountStandingResolver
         array $window,
         string $refusal,
         ?int $deletionGraceDays = null,
+        bool $erasing = false,
     ): AccountStanding {
         $frozen = $lapsed !== [] && $refusal === LegalSettings::REFUSAL_FREEZE;
 
         return new AccountStanding(
             match (true) {
                 $merged => AccountStandingKind::MERGED,
+                $erasing => AccountStandingKind::ERASING,
                 $blocked => AccountStandingKind::BLOCKED,
                 $frozen => AccountStandingKind::FROZEN,
                 $deletionEffectiveAt !== null => AccountStandingKind::DELETION_SCHEDULED,
@@ -213,7 +216,7 @@ final class AccountStandingResolver
     }
 
     /**
-     * Reads the four facts of one person and composes them.
+     * Reads the five facts of one person and composes them.
      *
      * The merge is the tombstone row keyed by the person; where it leads is the live end of the chain
      * ({@see UserMerges::liveSurvivorOf()}) and that account's name as the people hold it now.
@@ -249,6 +252,7 @@ final class AccountStandingResolver
             self::inStanding($documents, LegalStanding::WINDOW),
             $refusal,
             $deletion?->deletionGraceDays,
+            $deletion !== null && $deletion->startedAt !== null,
         );
     }
 

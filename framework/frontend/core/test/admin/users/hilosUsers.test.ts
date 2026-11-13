@@ -14,6 +14,11 @@ import {
   createHilosUserLifecycle,
   createHilosUsersTable,
   createHilosUserStanding,
+  HILOS_USER_ERASURE_SECTION,
+  HILOS_USER_STANDING_SECTION,
+  SIGNAL_ACCOUNT_STANDING_STATE,
+  readHilosAccountErasure,
+  type HilosAccountErasure,
   hilosPresenceBadge,
   HILOS_PRESENCE_WIDEST_LABEL,
   HILOS_USER_OVERVIEW_COPY,
@@ -60,7 +65,11 @@ import {
   bindSessionScope,
   type HilosAccountStanding,
 } from '../../../src/session/sessionScope.js'
-import { computedSignal, createSignal } from '../../../src/state/signal.js'
+import {
+  computedSignal,
+  createSignal,
+  subscribeSignal,
+} from '../../../src/state/signal.js'
 import {
   ActionError,
   type ActionHandle,
@@ -1406,6 +1415,192 @@ describe('createHilosUserStanding (HIL-945)', () => {
       accountStanding: wireStanding({ shown: 'frozen', frozen: true }),
     })
     expect(card.standing.get()).toBeNull()
+  })
+})
+
+describe('account erasure on the user card (HIL-1954)', () => {
+  const erasure: HilosAccountErasure = {
+    startedAt: 1_800_000_000_000,
+    parts: [{ participant: 'profile', owner: 'user', userId: 7, done: false }],
+    waits: [{ participant: 'merge', userId: 8 }],
+  }
+
+  it('reads page progress and live progress alongside an erasing standing', () => {
+    const { scopes } = userStore()
+    const page = scopes.page()!
+    const { connection, emit } = frameConnection()
+    const card = createHilosUserStanding({ scopes, connection })
+    expect(card.erasure.get()).toBeNull()
+    page.data.set(HILOS_USER_ERASURE_SECTION, erasure)
+    page.data.set(
+      HILOS_USER_STANDING_SECTION,
+      wireStanding({ shown: 'erasing' }),
+    )
+
+    card.start()
+    expect(card.erasure.get()).toEqual(erasure)
+    expect(card.standing.get()).toEqual(readStanding({ shown: 'erasing' }))
+
+    const waiting = { ...erasure, parts: [] }
+    page.data.set(HILOS_USER_ERASURE_SECTION, waiting)
+    expect(card.erasure.get()).toEqual(waiting)
+
+    // Until the detail row arrives, the frame belongs to the card by address.
+    emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+      userId: 7,
+      accountStanding: wireStanding({ shown: 'erasing' }),
+      accountErasure: { ...erasure, waits: [] },
+    })
+    expect(card.erasure.get()).toEqual({ ...erasure, waits: [] })
+    expect(card.standing.get()?.shown).toBe('erasing')
+    card.dispose()
+  })
+
+  it('ignores foreign frames and clears absent, null or unreadable progress', () => {
+    const { scopes } = userStore()
+    const page = scopes.page()!
+    page.tables.upsert('userDetail', 7, { users: { type: 'user', id: 7 } })
+    const { connection, emit } = frameConnection()
+    const card = createHilosUserStanding({ scopes, connection })
+    card.start()
+    expect(card.erasure.get()).toBeNull()
+    page.data.set(HILOS_USER_ERASURE_SECTION, erasure)
+    page.data.set(
+      HILOS_USER_STANDING_SECTION,
+      wireStanding({ shown: 'erasing' }),
+    )
+
+    emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+      userId: 8,
+      accountStanding: wireStanding(),
+      accountErasure: null,
+    })
+    expect(card.erasure.get()).toEqual(erasure)
+    expect(card.standing.get()?.shown).toBe('erasing')
+
+    emit('unrelated_signal', {
+      userId: 7,
+      accountStanding: wireStanding(),
+      accountErasure: null,
+    })
+    expect(card.erasure.get()).toEqual(erasure)
+
+    for (const raw of [null, undefined, HIDDEN_VALUE, { parts: [] }]) {
+      page.data.set(HILOS_USER_ERASURE_SECTION, raw)
+      expect(card.erasure.get()).toBeNull()
+      page.data.set(HILOS_USER_ERASURE_SECTION, erasure)
+      emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+        userId: 7,
+        accountStanding: wireStanding({ shown: 'erasing' }),
+        ...(raw === undefined ? {} : { accountErasure: raw }),
+      })
+      expect(card.erasure.get()).toBeNull()
+      page.data.set(HILOS_USER_ERASURE_SECTION, erasure)
+    }
+    card.dispose()
+  })
+
+  it('drops malformed or hidden parts and waits one at a time', () => {
+    const nextPart = {
+      participant: 'sessions',
+      owner: 'session',
+      userId: 7,
+      done: false,
+    }
+    const nextWait = { participant: 'export', userId: 7 }
+    expect(
+      readHilosAccountErasure({
+        ...erasure,
+        future: true,
+        parts: [
+          { ...erasure.parts[0], future: true },
+          { participant: 'broken', owner: 'user', userId: 7, done: 'no' },
+          { ...nextPart, userId: HIDDEN_VALUE },
+          null,
+          nextPart,
+        ],
+        waits: [
+          { ...erasure.waits[0], future: true },
+          { participant: 'broken', userId: '7' },
+          { ...nextWait, userId: HIDDEN_VALUE },
+          null,
+          nextWait,
+        ],
+      }),
+    ).toEqual({
+      startedAt: erasure.startedAt,
+      parts: [...erasure.parts, nextPart],
+      waits: [...erasure.waits, nextWait],
+    })
+    expect(
+      readHilosAccountErasure({ ...erasure, parts: [], waits: [] }),
+    ).toEqual({
+      startedAt: erasure.startedAt,
+      parts: [],
+      waits: [],
+    })
+    for (const raw of [
+      null,
+      undefined,
+      HIDDEN_VALUE,
+      { ...erasure, startedAt: 'now' },
+      { ...erasure, parts: null },
+      { ...erasure, waits: {} },
+    ]) {
+      expect(readHilosAccountErasure(raw)).toBeNull()
+    }
+  })
+
+  it('restarts without duplicate subscriptions and forgets both values on dispose', () => {
+    const { scopes } = userStore()
+    const page = scopes.page()!
+    const { connection, emit } = frameConnection()
+    const card = createHilosUserStanding({ scopes, connection })
+    const changed = vi.fn()
+    const standingChanged = vi.fn()
+    const offErasure = subscribeSignal(card.erasure, changed)
+    const offStanding = subscribeSignal(card.standing, standingChanged)
+    card.start()
+    card.start()
+
+    page.data.set(HILOS_USER_ERASURE_SECTION, erasure)
+    expect(changed).toHaveBeenCalledTimes(1)
+    page.data.set(
+      HILOS_USER_STANDING_SECTION,
+      wireStanding({ shown: 'erasing' }),
+    )
+    expect(standingChanged).toHaveBeenCalledTimes(1)
+    emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+      userId: 7,
+      accountStanding: wireStanding({ shown: 'erasing' }),
+      accountErasure: { ...erasure, waits: [] },
+    })
+    expect(changed).toHaveBeenCalledTimes(2)
+    expect(standingChanged).toHaveBeenCalledTimes(2)
+
+    card.dispose()
+    expect(card.erasure.get()).toBeNull()
+    expect(card.standing.get()).toBeNull()
+    changed.mockClear()
+    standingChanged.mockClear()
+    page.data.set(HILOS_USER_ERASURE_SECTION, { ...erasure, parts: [] })
+    page.data.set(HILOS_USER_STANDING_SECTION, wireStanding())
+    emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+      userId: 7,
+      accountStanding: wireStanding({ shown: 'erasing' }),
+      accountErasure: erasure,
+    })
+    expect(changed).not.toHaveBeenCalled()
+    expect(standingChanged).not.toHaveBeenCalled()
+    expect(card.erasure.get()).toBeNull()
+    expect(card.standing.get()).toBeNull()
+
+    card.start()
+    expect(card.erasure.get()).toEqual({ ...erasure, parts: [] })
+    expect(card.standing.get()?.shown).toBe('none')
+    card.dispose()
+    offErasure()
+    offStanding()
   })
 })
 

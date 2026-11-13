@@ -13,11 +13,11 @@ use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Users\DTO\AccountStandingStateSignalData;
 
 /**
- * The standing of one account: four independent facts and the one of them that is shown (HIL-945).
+ * The standing of one account: five independent facts and the one of them that is shown (HIL-945).
  *
- * A merge, a block and a scheduled deletion are stored; a freeze is not - it is what the acceptance
+ * A merge, begun erasure, a block and a scheduled deletion are stored; a freeze is not - it is what the acceptance
  * records and the revision catalog say today under the installation's refusal setting. None of the
- * four replaces another, so the verdict names each of them and picks the one to show separately
+ * five replaces another, so the verdict names their stored details and picks the one to show separately
  * ({@see AccountStandingKind}). Composed in exactly one place, {@see AccountStandingResolver},
  * and read by the session frame, the page guard and the admin card alike.
  *

@@ -41,6 +41,8 @@ use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\Users\DTO\HilosUserPageSubscribeParams;
+use Hilos\Users\AccountErasureProgress;
+use Hilos\Users\AccountErasureProgressResolver;
 use Hilos\Users\AccountStanding;
 use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\DTO\AccountAdminSetSignalData;
@@ -84,6 +86,9 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
 
     /** Page data key of the standing of the person the card shows (HIL-945): the one verdict the card reads. */
     public const string ACCOUNT_STANDING = 'accountStanding';
+
+    /** Page data key of the person's begun erasure progress, or null when none covers them (HIL-1954). */
+    public const string ACCOUNT_ERASURE = 'accountErasure';
 
     /** Page data key of the impersonation settings the card's takeover section is drawn from (HIL-1170). */
     public const string IMPERSONATION = 'impersonation';
@@ -302,7 +307,8 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      * Carries the deletion confirmation's grace period, the person's standing and the impersonation settings in the subscription's first answer.
      *
      * The standing is the one verdict the card reads its block, freeze and scheduled deletion from
-     * (HIL-945); later changes arrive as {@see HilosSignalConstants::HILOS_ACCOUNT_STANDING_STATE}.
+     * (HIL-945). Begun erasure progress accompanies it (HIL-1954); later changes to either arrive as
+     * {@see HilosSignalConstants::HILOS_ACCOUNT_STANDING_STATE}.
      * The impersonation settings decide whether the card has its takeover section and for whom its
      * button is switched off (HIL-1170); later changes arrive as
      * {@see HilosSignalConstants::HILOS_IMPERSONATION_POLICY} (HIL-1307). A viewer of the admin
@@ -312,12 +318,12 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      *
      * @param string $acceptKey Subscribing connection (unused)
      * @param PageRouteParams $params Route params naming the person
-     * @return ?PagePayload Grace period, standing snapshot, the Analytics link and the sessions flag, supplemented by the page's identity
+     * @return ?PagePayload Grace period, standing, erasure progress, settings and feature flags, supplemented by the page's identity
      * @throws MissingPageRouteParamException When `userId` is absent
      * @throws InvalidPageRouteParamException When `userId` is non-numeric or `<= 0`
      * @throws DatabaseException When the stored setting or the person's standing cannot be read
      * @throws SettingException When the setting catalog or value is invalid
-     * @throws HilosException When the person's standing cannot be read
+     * @throws HilosException When the person's standing or erasure progress cannot be read
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
@@ -326,6 +332,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
         return new PagePayload(data: [
             self::ACCOUNT_DELETION_GRACE_DAYS => AccountDeletionSettings::graceDays(),
             self::ACCOUNT_STANDING => AccountStandingResolver::of($userId)->toArray(),
+            self::ACCOUNT_ERASURE => AccountErasureProgressResolver::of($userId)?->toArray(),
             self::IMPERSONATION => ImpersonationCardSettings::current()->toArray(),
             self::ANALYTICS_ENABLED => self::analyticsEnabled(),
             self::USER_SESSIONS_ENABLED => self::userSessionsEnabled(static::PAGE),
@@ -336,7 +343,8 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      * Declares what of the card's data a viewer of the admin view mode is shown.
      *
      * The standing goes by the one map its live frame uses too ({@see AccountStanding::wireFields()},
-     * HIL-1254). The impersonation summary is sent only when every key behind its fields is open.
+     * HIL-1254), as does erasure progress ({@see AccountErasureProgress::wireFields()}, HIL-1954).
+     * The impersonation summary is sent only when every key behind its fields is open.
      * The Analytics link and the sessions flag are computed from the project's declaration, nobody's data.
      *
      * @return array<string, WireField> Data key to where it comes from
@@ -346,6 +354,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
         return [
             self::ACCOUNT_DELETION_GRACE_DAYS => WireField::setting(AccountDeletionSettings::GRACE_DAYS_KEY),
             self::ACCOUNT_STANDING => WireField::each(AccountStanding::wireFields()),
+            self::ACCOUNT_ERASURE => WireField::each(AccountErasureProgress::wireFields()),
             self::IMPERSONATION => WireField::settings([
                 ImpersonationSettings::ALLOWED_KEY,
                 ImpersonationSettings::SCOPE_KEY,
@@ -370,7 +379,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      * @param PageRouteParams $params Route params for the page subscription
      * @throws MissingPageRouteParamException When `userId` is absent
      * @throws InvalidPageRouteParamException When `userId` is non-numeric or `<= 0`
-     * @throws HilosException Whatever else the typed hook raises
+     * @throws HilosException When progress cannot be read or the typed hook raises
      */
     final protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
     {

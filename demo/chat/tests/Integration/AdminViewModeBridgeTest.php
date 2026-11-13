@@ -15,6 +15,9 @@ use Demo\Chat\Pages\Hilos\Users\UsersPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\AdminViewMode\HiddenValue;
+use Hilos\Auth\AccountOperation\AccountErasureOpening;
+use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
+use Hilos\Auth\AccountOperation\AccountOperationExpectation;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
@@ -49,6 +52,8 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\Tables\Users\HilosUserTableRow;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Users\AccountErasureProgress;
+use Hilos\Users\AccountErasureProgressResolver;
 use Hilos\Users\AccountStanding;
 use Hilos\Users\AccountStandingKind;
 use Hilos\Users\AccountStandingResolver;
@@ -86,9 +91,13 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT);
         TruthSourceRegistry::register(HilosDbContext::accountDeletions, TruthSourceKeys::all(), self::TEST_AGENT);
         TruthSourceRegistry::register(HilosDbContext::userMerges, TruthSourceKeys::all(), self::TEST_AGENT);
+        foreach ([HilosDbContext::accountOperations, HilosDbContext::accountOperationAssignments, HilosDbContext::accountOperationResults] as $key) {
+            TruthSourceRegistry::register($key, TruthSourceKeys::all(), self::TEST_AGENT);
+        }
         Hilos::$rt->connections->actions->clear();
         AccountStandingAudience::reset();
         AccountStandingResolver::forgetAll();
+        AccountErasureProgressResolver::forgetAll();
         // The demo's own router, so the dashboard serves the cards of the pages the demo registers.
         Hilos::$sr = new AdminViewModeBridgeRouter();
         RtTruthSourceRegistry::registerDaemon(AdminViewModeRuntime::RT_ITEM);
@@ -116,6 +125,7 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         Hilos::$rt->connections->actions->clear();
         AccountStandingAudience::reset();
         AccountStandingResolver::forgetAll();
+        AccountErasureProgressResolver::forgetAll();
         TruthSourceRegistry::unregisterAgent(self::TEST_AGENT);
         RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT);
         Hilos::$sr = null;
@@ -272,6 +282,45 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         self::assertFalse($standing[AccountStanding::blocked]);
         self::assertIsInt($standing[AccountStanding::deletionEffectiveAt]);
         self::assertTrue(HiddenValue::isMark($standing[AccountStanding::mergedIntoName]), 'The survivor name is personal (HIL-1292)');
+        unset($frame[AccountStandingStateSignalData::accountStanding][AccountStanding::mergedIntoName]);
+        self::assertStringNotContainsString(HiddenValue::KEY, json_encode($frame, JSON_THROW_ON_ERROR));
+    }
+
+    public function testAViewerReceivesTheSameErasureBlockInTheFirstAnswerAndLiveFrameWithoutNamesOrHiddenMarks(): void
+    {
+        $request = Hilos::$db->accountDeletions->liveOf($this->personId);
+        self::assertNotNull($request);
+        $operation = AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework())->operation;
+        self::assertNotNull($operation);
+        self::assertTrue($request->actions->start());
+        $this->connect(admin: false);
+
+        $first = $this->pageData($this->subscribe(UserPage::class, ['userId' => (string) $this->personId]));
+
+        self::assertSame('erasing', $first[UserPage::ACCOUNT_STANDING][AccountStanding::shown]);
+        $progress = $first[UserPage::ACCOUNT_ERASURE];
+        self::assertSame(AccountErasureProgressResolver::of($this->personId)->toArray(), $progress);
+        self::assertSame($request->startedAt, $progress[AccountErasureProgress::startedAt]);
+        self::assertNotSame([], $progress[AccountErasureProgress::parts]);
+        $wait = new AccountOperationExpectation('delivery:mail', $this->personId, null);
+        Hilos::$db->accountOperationAssignments->actions->record(
+            $operation->id, $operation->stage, $wait->assignmentKey(), $wait->assignmentOwner(), $wait->userId, $wait->payload(),
+        );
+        AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+        $frame = $this->frameNamed($this->queuedFrames(), HilosSignalConstants::HILOS_ACCOUNT_STANDING_STATE)->toArray();
+
+        self::assertSame($this->personId, $frame[AccountStandingStateSignalData::userId]);
+        self::assertSame($first[UserPage::ACCOUNT_STANDING], $frame[AccountStandingStateSignalData::accountStanding]);
+        self::assertSame([
+            ...$progress,
+            AccountErasureProgress::waits => [['participant' => 'delivery:mail', 'userId' => $this->personId]],
+        ], $frame[AccountStandingStateSignalData::accountErasure]);
+        self::assertSame(AccountErasureProgressResolver::of($this->personId)->toArray(), $frame[AccountStandingStateSignalData::accountErasure]);
+        self::assertTrue(HiddenValue::isMark($frame[AccountStandingStateSignalData::accountStanding][AccountStanding::mergedIntoName]));
+        $sentProgress = json_encode([$progress, $frame[AccountStandingStateSignalData::accountErasure]], JSON_THROW_ON_ERROR);
+        self::assertStringNotContainsString(HiddenValue::KEY, $sentProgress);
+        self::assertStringNotContainsString('Olena Kovalenko', $sentProgress);
+        self::assertStringNotContainsString($this->personAddress, $sentProgress);
         unset($frame[AccountStandingStateSignalData::accountStanding][AccountStanding::mergedIntoName]);
         self::assertStringNotContainsString(HiddenValue::KEY, json_encode($frame, JSON_THROW_ON_ERROR));
     }
