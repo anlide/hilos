@@ -170,10 +170,14 @@ replace the live schema pass.
 
 Every `phpunit.xml` in the repository — `framework/tests` and each demo's
 `tests` — sets `failOnDeprecation`, `failOnNotice` and `failOnWarning` to
-`true`. A deprecated call, a notice or a warning is therefore a red run, not a
-line in a summary nobody reads. PHPUnit prints the details itself: each
-`failOn*` raises the matching `displayDetailsOn*`, so the output names the
-file, the line and the test that triggered the issue.
+`true`. It also sets `failOnPhpunitWarning` to `true`: a warning raised by
+PHPUnit is a red run too. This catches failures while an extension bootstraps
+or an event subscriber runs; PHPUnit turns exceptions from either into its own
+warning, and without this flag a broken time-limit extension could leave a run
+green without enforcing its limit. A deprecated call, a notice or a warning is
+therefore a red run, not a line in a summary nobody reads. PHPUnit prints the
+details itself: each `failOn*` raises the matching `displayDetailsOn*`, so the
+output names the file, the line and the test that triggered the issue.
 
 `failOnAllIssues` is deliberately **not** used: it also turns on
 `failOnSkipped`, `failOnIncomplete`, `failOnRisky` and
@@ -186,18 +190,51 @@ line would go red on a defect nobody introduced.
 issue carries `#[IgnoreDeprecations]` (class or method) for a deprecation, or
 `#[WithoutErrorHandler]` (method) for a warning or a notice, with a comment
 saying why. PHPUnit 11 has no narrower attribute for warnings and notices.
-Removing one of the three attributes from a configuration is **not** a way out
+Removing one of the four attributes from a configuration is **not** a way out
 — it is undoing the gate, and it takes a person's decision.
 
 `PhpunitIssueGateTest` in the framework unit suite keeps the gate on: it reads
 every configuration — the framework's and one per demo — and requires the
-three attributes and the process-environment extension. The next demo is added
-to the list inside that test — a demo born without its gate fails there instead
-of running quiet.
+four attributes and both the process-environment and time-limit extensions.
+The next demo is added to the list inside that test — a demo born without its
+gate fails there instead of running quiet.
 
 *Why the gate exists.* The warning that a walk over a mutating collection was
 skipping a row was printed on every run and counted by nobody, and it stayed in
 the tree until it cost a wrong session (HIL-673).
+
+## A test that runs past 60 seconds fails
+
+Every `phpunit.xml` registers
+`Hilos\Testing\TimeLimit\TestTimeLimitExtension`. It puts one 60-second
+wall-clock limit around each test from `setUp()` through `tearDown()`, and
+around the class hooks `setUpBeforeClass()` and `tearDownAfterClass()`. When a
+test crosses the limit, the alarm immediately prints its name and PHPUnit
+reports an error under that test's name, with the stack location where it was
+interrupted. Catching the alarm does not make the test pass: if the test
+finishes before the 10-second grace period ends, it is still an error; if it is
+still running after those 10 seconds, the runner aborts with the same test name
+and a stack trace from the abort point.
+
+The limit has no test or configuration escape hatch: do not use `#[Large]`, a
+custom limit, PHPUnit's `enforceTimeLimit`, `defaultTimeLimit` or `timeoutFor*`
+settings, or a time-limit extension parameter. A test that reaches the limit
+has a defect to fix. Replace a real wait with the feature's test command that
+brings the moment to now ([Time rules](frontend/testing-strategy.md#time--a-command-brings-the-moment-to-now),
+[time-based CLI features](cli/commands.md#time-based-features-no-universal-clock));
+split long computation across tests so each test fits, as in
+`CodeStyleGuardTest`.
+
+The extension does not cover tests run in a separate process because PHPUnit
+does not load extensions in that child process, or data providers. A C call
+that hangs without returning to PHP cannot be interrupted by the alarm; the
+overall run limit remains the last line of defense. A class hook that swallows
+the first alarm and finishes before the next one is also a boundary: the limit
+does not guarantee an error for that case.
+
+*Why the limit exists.* The full run for HIL-2056 on 12 November 2026 spent 90
+minutes printing dots without identifying the test. `PhpunitIssueGateTest`
+requires the time-limit extension in every configuration.
 
 ---
 

@@ -191,7 +191,7 @@ final class IntegrationTestFixtureTest extends TestCase
     /** The extra suite index must never make test roots part of any production/THROWS index. */
     public function testProductionIndexStillExcludesEverySuiteRoot(): void
     {
-        $guard = new CodeStyleGuardTest('testSourcesCarryNoCodeStyleViolationsBeyondTheBaseline');
+        $guard = new CodeStyleGuardTest('testBaselineRecordsAreReadable');
         $roots = new ReflectionMethod($guard, 'indexedRoots')->invoke($guard);
         $expected = array_keys(array_filter(
             ScannedRoots::all(dirname(__DIR__, 4)),

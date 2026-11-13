@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Testing\TimeLimit\TestTimeLimit;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -548,6 +549,75 @@ final class StepArtifactsTest extends TestCase
         $this->assertCount(1, $matched);
         $this->assertStringContainsString('came up already frozen', $matched[0]);
         $this->assertStringContainsString('protected-mode.state.json', $matched[0]);
+    }
+
+    /**
+     * @param string $id Test or class named by the time limit.
+     * @param string $message First-stage or run-abort diagnostic.
+     */
+    #[DataProvider('timeLimitMessages')]
+    public function testRecognisesATestPastItsTimeLimit(string $id, string $message): void
+    {
+        $matched = matchTriageSignatures($this->collected(['stepLog' => $message . "\n"]));
+
+        $this->assertSame([
+            'A test ran past the PHPUnit time limit of 60 seconds: ' . $id
+                . '. A test that hits the limit is a defect of that test: '
+                . 'a real wait is replaced by the feature\'s test command, a long computation is split; the limit is not raised.'
+                . "\n  Check: the step log — the error under that name carries the stack of the line the test was stuck on.",
+        ], $matched);
+    }
+
+    /** @return array<string, array{string, string}> Both diagnostics for method, dataset and class identities. */
+    public static function timeLimitMessages(): array
+    {
+        return [
+            'method exceeded' => ['Fixture\SlowTest::testWaits', TestTimeLimit::exceededMessage('Fixture\SlowTest::testWaits')],
+            'method aborted' => ['Fixture\SlowTest::testWaits', TestTimeLimit::abortedMessage('Fixture\SlowTest::testWaits')],
+            'dataset exceeded' => [
+                'Fixture\SlowTest::testWaits#named data set',
+                TestTimeLimit::exceededMessage('Fixture\SlowTest::testWaits#named data set'),
+            ],
+            'dataset aborted' => [
+                'Fixture\SlowTest::testWaits#named data set',
+                TestTimeLimit::abortedMessage('Fixture\SlowTest::testWaits#named data set'),
+            ],
+            'class exceeded' => ['Fixture\SlowTest', TestTimeLimit::exceededMessage('Fixture\SlowTest')],
+            'class aborted' => ['Fixture\SlowTest', TestTimeLimit::abortedMessage('Fixture\SlowTest')],
+        ];
+    }
+
+    /** Repeated diagnostics keep each identity once, in the order it first appeared. */
+    public function testReportsTestsPastTheirTimeLimitOnceInFirstAppearanceOrder(): void
+    {
+        $matched = matchTriageSignatures($this->collected([
+            'stepLog' => implode("\n", [
+                TestTimeLimit::exceededMessage('Fixture\SlowTest::testWaits#named data set'),
+                TestTimeLimit::abortedMessage('Fixture\SlowTest'),
+                TestTimeLimit::abortedMessage('Fixture\SlowTest::testWaits#named data set'),
+                TestTimeLimit::exceededMessage('Fixture\SlowTest::testWaits'),
+                TestTimeLimit::exceededMessage('Fixture\SlowTest'),
+                TestTimeLimit::abortedMessage('Fixture\SlowTest::testWaits'),
+            ]),
+        ]));
+
+        $this->assertSame([
+            'A test ran past the PHPUnit time limit of 60 seconds: '
+                . 'Fixture\SlowTest::testWaits#named data set, Fixture\SlowTest, Fixture\SlowTest::testWaits. '
+                . 'A test that hits the limit is a defect of that test: '
+                . 'a real wait is replaced by the feature\'s test command, a long computation is split; the limit is not raised.'
+                . "\n  Check: the step log — the error under that name carries the stack of the line the test was stuck on.",
+        ], $matched);
+    }
+
+    /** An ordinary failure keeps the fallback without suggesting a test time limit. */
+    public function testDoesNotSuggestATestTimeLimitWithoutItsDiagnostic(): void
+    {
+        $matched = matchTriageSignatures($this->collected(['stepLog' => "A test failed with an assertion error.\n"]));
+
+        $this->assertCount(1, $matched);
+        $this->assertStringContainsString('not a clean bill of health', $matched[0]);
+        $this->assertStringNotContainsString('A test ran past the PHPUnit time limit', $matched[0]);
     }
 
     /**

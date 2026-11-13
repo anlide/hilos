@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\CodeStyle;
 
 use Hilos\Tests\CodeStyle\Baseline;
+use Hilos\Tests\CodeStyle\BaselineScope;
 use Hilos\Tests\CodeStyle\CodeStyleRule;
 use Hilos\Tests\CodeStyle\RootKind;
 use Hilos\Tests\CodeStyle\Rule\AgentSignalPayloadRule;
@@ -46,6 +47,7 @@ use Hilos\Tests\CodeStyle\Throws\CrossFileRule;
 use Hilos\Tests\CodeStyle\Throws\SourceIndex;
 use Hilos\Tests\CodeStyle\Throws\ThrowsOrphanRule;
 use Hilos\Tests\CodeStyle\Throws\ThrowsPropagationRule;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -115,26 +117,61 @@ final class CodeStyleGuardTest extends TestCase
         'Hilos.php',
     ];
 
-    public function testSourcesCarryNoCodeStyleViolationsBeyondTheBaseline(): void
+    /**
+     * @return iterable<string, array{string, RootKind}> One independently judged source root per piece
+     */
+    public static function sourceRoots(): iterable
     {
-        $reported = $this->reportedViolations();
-        $baseline = Baseline::fromText($this->baselineText());
-
-        if (getenv('CODESTYLE_BASELINE_UPDATE') === '1') {
-            $update = $baseline->update($reported);
-            if ($update->text() !== null) {
-                file_put_contents($this->repositoryRoot() . '/' . Baseline::PATH, $update->text());
-            }
-            $this->fail($update->message());
+        foreach (ScannedRoots::all(dirname(__DIR__, 4)) as $root => $kind) {
+            yield $root => [$root, $kind];
         }
+    }
 
-        $this->assertSame(
-            [],
-            $baseline->reconcile($reported),
-            'Code-style rules are checked by machine. Fix the lines below, or — if the debt is old and'
-                . ' owned by a leaf — record it in ' . Baseline::PATH . ' (regenerate with'
-                . ' CODESTYLE_BASELINE_UPDATE=1). ' . ThrowsPropagationRule::SCOPE . ' ' . ThrowsOrphanRule::SCOPE,
+    /** Only this piece reports parsing errors and unowned records; corruption refuses every rewrite. */
+    public function testBaselineRecordsAreReadable(): void
+    {
+        $scopes = [BaselineScope::forRules([(new IntegrationTestRule([]))->id()])];
+        foreach (self::sourceRoots() as [$root, $kind]) {
+            $scopes[] = BaselineScope::forRoot(
+                $root,
+                array_map(static fn(CodeStyleRule $rule): string => $rule->id(), $this->rules($root, $kind)),
+            );
+        }
+        $scopes[] = BaselineScope::forRules(array_map(static fn(CrossFileRule $rule): string => $rule->id(), $this->crossFileRules()));
+
+        $this->assertSame([], Baseline::fromText($this->baselineText())->reconcileUnowned($scopes));
+    }
+
+    /**
+     * @param string $root Source root relative to the repository
+     * @param RootKind $kind Rules this root earns
+     */
+    #[DataProvider('sourceRoots')]
+    public function testSourceRootCarriesNoCodeStyleViolationsBeyondTheBaseline(string $root, RootKind $kind): void
+    {
+        $this->assertReportMatchesBaseline(
+            $this->reportedViolations($root, $kind),
+            BaselineScope::forRoot($root, array_map(static fn(CodeStyleRule $rule): string => $rule->id(), $this->rules($root, $kind))),
         );
+    }
+
+    /** Cross-file rules share one complete production and standalone index and its baseline records. */
+    public function testCrossFileRulesCarryNoCodeStyleViolationsBeyondTheBaseline(): void
+    {
+        $rules = $this->crossFileRules();
+        $this->assertReportMatchesBaseline(
+            $this->reportedCrossFileViolations($rules),
+            BaselineScope::forRules(array_map(static fn(CrossFileRule $rule): string => $rule->id(), $rules)),
+        );
+    }
+
+    /** Integration contracts have their own suite-aware index and baseline records. */
+    public function testIntegrationContractsCarryNoCodeStyleViolationsBeyondTheBaseline(): void
+    {
+        $roots = ScannedRoots::all($this->repositoryRoot());
+        $rule = new IntegrationTestRule(array_keys(array_filter($roots, static fn(RootKind $kind): bool => $kind === RootKind::Suite)));
+
+        $this->assertReportMatchesBaseline($this->reportedIntegrationViolations($rule), BaselineScope::forRules([$rule->id()]));
     }
 
     /** Reclaims free allocator pages after the whole-tree scans have left scope. */
@@ -144,44 +181,70 @@ final class CodeStyleGuardTest extends TestCase
     }
 
     /**
+     * Reads the current file for each piece, so an update keeps earlier pieces' changes.
+     * Baseline owns the record boundary for both reconciliation and shrinking updates.
+     *
+     * @param array<string, list<string>> $reported Findings of this guard piece
+     * @param BaselineScope $scope Records this piece owns, even with no findings
+     */
+    private function assertReportMatchesBaseline(array $reported, BaselineScope $scope): void
+    {
+        $baseline = Baseline::fromText($this->baselineText());
+
+        if (getenv('CODESTYLE_BASELINE_UPDATE') === '1') {
+            $update = $baseline->update($reported, $scope, reportParseProblems: false);
+            if ($update->text() !== null) {
+                file_put_contents($this->repositoryRoot() . '/' . Baseline::PATH, $update->text());
+            }
+            $this->fail($update->message());
+        }
+
+        $this->assertSame(
+            [],
+            $baseline->reconcile($reported, $scope, reportParseProblems: false),
+            'Code-style rules are checked by machine. Fix the lines below, or — if the debt is old and'
+                . ' owned by a leaf — record it in ' . Baseline::PATH . ' (regenerate with'
+                . ' CODESTYLE_BASELINE_UPDATE=1). ' . ThrowsPropagationRule::SCOPE . ' ' . ThrowsOrphanRule::SCOPE,
+        );
+    }
+
+    /**
+     * @param string $root Source root relative to the repository
+     * @param RootKind $kind Rules this root earns
      * @return array<string, array<int, string>> Violation lines keyed by "<rule id> <path from repository root>"
      */
-    private function reportedViolations(): array
+    private function reportedViolations(string $root, RootKind $kind): array
     {
         $reported = [];
-
-        foreach (ScannedRoots::all($this->repositoryRoot()) as $root => $kind) {
-            $rules = $this->rulesFor($root, $kind);
-            $scanner = new SourceScanner($this->repositoryRoot() . '/' . $root, self::EXCLUDED_PATHS[$root] ?? []);
-            foreach ($scanner->files() as $file) {
-                $relativePath = $scanner->relativePath($file);
-                $tokens = token_get_all((string)file_get_contents($file->getPathname()));
-                foreach ($rules as $rule) {
-                    foreach ($rule->check($relativePath, $tokens) as $violation) {
-                        $reported[$rule->id() . ' ' . $root . '/' . $relativePath][]
-                            = $violation->withPathPrefix($root)->describe($rule->doc());
-                    }
+        $rules = $this->rulesFor($root, $kind);
+        $scanner = new SourceScanner($this->repositoryRoot() . '/' . $root, self::EXCLUDED_PATHS[$root] ?? []);
+        foreach ($scanner->files() as $file) {
+            $relativePath = $scanner->relativePath($file);
+            $tokens = token_get_all((string)file_get_contents($file->getPathname()));
+            foreach ($rules as $rule) {
+                foreach ($rule->check($relativePath, $tokens) as $violation) {
+                    $reported[$rule->id() . ' ' . $root . '/' . $relativePath][]
+                        = $violation->withPathPrefix($root)->describe($rule->doc());
                 }
             }
         }
 
-        return [...$reported, ...$this->reportedCrossFileViolations(), ...$this->reportedIntegrationViolations()];
+        return $reported;
     }
 
     /**
-     * The second source of violations, feeding the same report and therefore the same
-     * baseline file. It gets no guard test of its own on purpose: the baseline is one
-     * file, and `CODESTYLE_BASELINE_UPDATE=1` rewrites it whole from the violations of
-     * the test that regenerates it, so a second test would erase the other's records
-     * every time either one was run.
+     * The cross-file piece builds one full dependency index for all its rules.
+     * Baseline limits reconciliation and updates to their ids at every path,
+     * preserving every other piece's source lines.
      *
+     * @param list<CrossFileRule> $rules Rules sharing the complete index and one baseline scope
      * @return array<string, array<int, string>> Violation lines keyed by "<rule id> <path from repository root>"
      */
-    private function reportedCrossFileViolations(): array
+    private function reportedCrossFileViolations(array $rules): array
     {
         $index = SourceIndex::forRoots($this->repositoryRoot(), $this->indexedRoots());
         $reported = [];
-        foreach ($this->crossFileRules() as $rule) {
+        foreach ($rules as $rule) {
             foreach ($rule->check($index) as $violation) {
                 $reported[$rule->id() . ' ' . $violation->relativePath][] = $violation->describe($rule->doc());
             }
@@ -194,12 +257,12 @@ final class CodeStyleGuardTest extends TestCase
      * Integration contracts need suite declarations; this separate index never widens THROWS.
      * Both scans use the same exact fixture exclusions and feed the one baseline.
      *
+     * @param IntegrationTestRule $rule Integration rule configured with every suite root
      * @return array<string, list<string>> Integration findings keyed by rule and repository path
      */
-    private function reportedIntegrationViolations(): array
+    private function reportedIntegrationViolations(IntegrationTestRule $rule): array
     {
         $roots = ScannedRoots::all($this->repositoryRoot());
-        $rule = new IntegrationTestRule(array_keys(array_filter($roots, static fn(RootKind $kind): bool => $kind === RootKind::Suite)));
         $index = SourceIndex::forRoots(
             $this->repositoryRoot(),
             array_keys(array_filter($roots, static fn(RootKind $kind): bool => $kind !== RootKind::Standalone)),
@@ -211,6 +274,19 @@ final class CodeStyleGuardTest extends TestCase
         }
 
         return $reported;
+    }
+
+    /**
+     * @return list<CrossFileRule> Rules sharing one guard piece and owning all paths of their ids
+     */
+    private function crossFileRules(): array
+    {
+        return [
+            ThrowsPropagationRule::forWholeIndex(),
+            ThrowsOrphanRule::forWholeIndex(),
+            PageReachRule::forPageHierarchy(),
+            CliOptionsDeclaredRule::forCommandInterface(),
+        ];
     }
 
     /**
@@ -229,19 +305,6 @@ final class CodeStyleGuardTest extends TestCase
             ScannedRoots::all($this->repositoryRoot()),
             static fn(RootKind $kind): bool => $kind !== RootKind::Suite,
         ));
-    }
-
-    /**
-     * @return array<int, CrossFileRule> Cross-file rules under the guard, in report order
-     */
-    private function crossFileRules(): array
-    {
-        return [
-            ThrowsPropagationRule::forWholeIndex(),
-            ThrowsOrphanRule::forWholeIndex(),
-            PageReachRule::forPageHierarchy(),
-            CliOptionsDeclaredRule::forCommandInterface(),
-        ];
     }
 
     /**

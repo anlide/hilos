@@ -28,11 +28,15 @@ final class Baseline
      * @param array<string, int> $allowances Allowed count keyed by "<rule id> <path>"
      * @param array<string, string> $tickets Owing leaf keyed by "<rule id> <path>"
      * @param array<int, string> $parseProblems Records rejected while reading the file
+     * @param list<string> $sourceLines Original lines including their line endings
+     * @param array<int, string> $keysByLine Parsed record key at each source line
      */
     private function __construct(
         private readonly array $allowances,
         private readonly array $tickets,
         private readonly array $parseProblems,
+        private readonly array $sourceLines,
+        private readonly array $keysByLine,
     ) {
     }
 
@@ -45,8 +49,10 @@ final class Baseline
         $allowances = [];
         $tickets = [];
         $problems = [];
+        $sourceLines = preg_split('/(?<=\n)/', $text, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $keysByLine = [];
 
-        foreach (explode("\n", $text) as $index => $line) {
+        foreach ($sourceLines as $index => $line) {
             $line = trim($line);
             if ($line === '' || str_starts_with($line, '#')) {
                 continue;
@@ -65,9 +71,10 @@ final class Baseline
             $key = $fields[0] . ' ' . $fields[1];
             $allowances[$key] = (int)$fields[2];
             $tickets[$key] = $fields[4];
+            $keysByLine[$index] = $key;
         }
 
-        return new self($allowances, $tickets, $problems);
+        return new self($allowances, $tickets, $problems, $sourceLines, $keysByLine);
     }
 
     /**
@@ -75,14 +82,19 @@ final class Baseline
      * then the bookkeeping the baseline itself owes.
      *
      * @param array<string, array<int, string>> $reported Violation lines keyed by "<rule id> <path>"
+     * @param BaselineScope|null $scope Owned records, or null for the entire baseline
+     * @param bool $reportParseProblems Whether this is the piece that reports file parsing errors
      * @return array<int, string> Problems, ordered by record
      */
-    public function reconcile(array $reported): array
+    public function reconcile(array $reported, ?BaselineScope $scope = null, bool $reportParseProblems = true): array
     {
         ksort($reported);
-        $problems = $this->parseProblems;
+        $problems = $reportParseProblems ? $this->parseProblems : [];
 
         foreach ($reported as $key => $lines) {
+            if ($scope !== null && !$scope->contains($key)) {
+                continue;
+            }
             $allowance = $this->allowances[$key] ?? 0;
             if (count($lines) > $allowance) {
                 array_push($problems, ...array_slice($lines, $allowance));
@@ -92,6 +104,9 @@ final class Baseline
         $allowances = $this->allowances;
         ksort($allowances);
         foreach ($allowances as $key => $allowance) {
+            if ($scope !== null && !$scope->contains($key)) {
+                continue;
+            }
             $left = count($reported[$key] ?? []);
             if ($left === 0) {
                 $problems[] = sprintf('baseline record "%s" is paid off — delete the line', $key);
@@ -100,6 +115,30 @@ final class Baseline
             if ($left < $allowance) {
                 $problems[] = sprintf('baseline record "%s" allows %d, only %d left — lower the count', $key, $allowance, $left);
             }
+        }
+
+        return $problems;
+    }
+
+    /**
+     * The parser piece also catches records whose rule or path no guard piece owns.
+     * Splitting a scan must not silently exempt debt outside the declared scopes.
+     *
+     * @param list<BaselineScope> $scopes Every guard piece's record boundary
+     * @return list<string> Parse errors and baseline records with no guard owner
+     */
+    public function reconcileUnowned(array $scopes): array
+    {
+        $problems = $this->parseProblems;
+        $allowances = $this->allowances;
+        ksort($allowances);
+        foreach ($allowances as $key => $allowance) {
+            foreach ($scopes as $scope) {
+                if ($scope->contains($key)) {
+                    continue 2;
+                }
+            }
+            $problems[] = sprintf('baseline record "%s" has no guard owner — delete or correct the line', $key);
         }
 
         return $problems;
@@ -115,18 +154,23 @@ final class Baseline
      * by hand, where it reads as a decision instead of a side effect of the button.
      *
      * @param array<string, array<int, string>> $reported Violation lines keyed by "<rule id> <path>"
+     * @param BaselineScope|null $scope Owned records; other source lines are preserved verbatim
+     * @param bool $reportParseProblems Whether this is the piece that reports file parsing errors
      * @return BaselineUpdate File to write and the message the run reports
      */
-    public function update(array $reported): BaselineUpdate
+    public function update(array $reported, ?BaselineScope $scope = null, bool $reportParseProblems = true): BaselineUpdate
     {
         if ($this->parseProblems !== []) {
-            return BaselineUpdate::refused($this->parseProblems);
+            return BaselineUpdate::refused($reportParseProblems ? $this->parseProblems : []);
         }
 
         ksort($reported);
-        $lines = [self::HEADER];
+        $rewritten = [];
         $withheld = [];
         foreach ($reported as $key => $violations) {
+            if ($scope !== null && !$scope->contains($key)) {
+                continue;
+            }
             $found = count($violations);
             $allowance = $this->allowances[$key] ?? null;
             if ($allowance === null) {
@@ -153,10 +197,27 @@ final class Baseline
                 continue;
             }
 
-            $lines[] = sprintf('%s %d # %s', $key, $written, $this->tickets[$key]);
+            $rewritten[$key] = sprintf('%s %d # %s', $key, $written, $this->tickets[$key]) . "\n";
         }
 
-        return BaselineUpdate::rewritten(implode("\n", $lines) . "\n", $withheld);
+        if ($scope === null) {
+            return BaselineUpdate::rewritten(self::HEADER . "\n" . implode('', $rewritten), $withheld);
+        }
+
+        $lines = $this->sourceLines;
+        foreach ($this->keysByLine as $index => $key) {
+            if (!$scope->contains($key)) {
+                continue;
+            }
+            if (isset($rewritten[$key])) {
+                $lines[$index] = $rewritten[$key];
+                unset($rewritten[$key]);
+            } else {
+                unset($lines[$index]);
+            }
+        }
+
+        return BaselineUpdate::rewritten(implode('', $lines), $withheld);
     }
 
     /**

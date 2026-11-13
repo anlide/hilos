@@ -145,6 +145,9 @@ const STAND_NOT_READY_SIGNATURE = 'did not become ready within';
  */
 const UNHEALTHY_DEPENDENCY_PATTERN = '/dependency failed to start: container (\S+) is unhealthy/';
 
+/** The test or class and the limit reported by either stage of the test time limit. */
+const TEST_TIME_LIMIT_PATTERN = '/Test (.+?) exceeded the time limit of (\d+) seconds/';
+
 /** How much of an unhealthy dependency's log is lifted into the triage: its last refusals, not its boot. */
 const UNHEALTHY_DEPENDENCY_TAIL_LINES = 3;
 
@@ -534,6 +537,10 @@ function matchTriageSignatures(array $collected): array
             . " did.\n"
             . '  Check: stand/daemon.log from its first line, where the master says what it started.';
     }
+    preg_match_all(TEST_TIME_LIMIT_PATTERN, $collected['stepLog'], $pastTimeLimit);
+    if ($pastTimeLimit[1] !== []) {
+        $matched[] = triageOfATestPastItsTimeLimit(array_unique($pastTimeLimit[1]), (int) $pastTimeLimit[2][0]);
+    }
 
     return $matched === [] ? [triageOfNothingMatched($collected['holds'])] : $matched;
 }
@@ -577,6 +584,19 @@ function triageOfAStandThatWasWaitedFor(array $containers): string
         . STAND_NOT_READY_SIGNATURE . '") while every container docker held was running and healthy.'
         . "\n  Check: the tail of stand/daemon.log, and db/migration-status.txt — a schema behind the code"
         . ' is one way a node stands there and answers nothing.';
+}
+
+/**
+ * @param array<int, string> $testIds Distinct test or class names, in first-appearance order.
+ * @param int $seconds Limit reported in the step log.
+ * @return string Hypothesis and where to find the interrupted test's stack.
+ */
+function triageOfATestPastItsTimeLimit(array $testIds, int $seconds): string
+{
+    return 'A test ran past the PHPUnit time limit of ' . $seconds . ' seconds: '
+        . implode(', ', $testIds) . '. A test that hits the limit is a defect of that test: '
+        . 'a real wait is replaced by the feature\'s test command, a long computation is split; the limit is not raised.'
+        . "\n  Check: the step log — the error under that name carries the stack of the line the test was stuck on.";
 }
 
 /**

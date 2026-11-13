@@ -630,10 +630,18 @@ and 146 readers at the freeze, every one of them in `framework/backend`.
 Subsequent updates remain shrink-only.
 
 Regenerate it after paying debt off — the update mode rewrites the file and then
-fails on purpose, so the diff is reviewed rather than committed blind. Pressing
-the button only ever shrinks the file: a known record is written at the lower of
-its count and the tree, a record with nothing left disappears, and a key the
-baseline does not already carry is not written at all.
+fails on purpose, so the diff is reviewed rather than committed blind. The PHP
+guard runs one piece per source root, one shared piece for all cross-file rules,
+and one for integration contracts. The cross-file piece builds the complete
+production and standalone index once. `Baseline` limits each piece to its records:
+scanning rule ids below that exact root, or the piece's index rule ids at every
+path. Each piece reads the current file and preserves all other source lines
+verbatim, including their counts and owing tickets. The filter below runs every
+piece.
+
+Pressing the button only ever shrinks the file: a known record is written at the
+lower of its count and the tree, a record with nothing left disappears, and a key
+the baseline does not already carry is not written at all.
 
 ```bash
 docker compose -f framework/docker/docker-compose.yml run --rm \
@@ -646,8 +654,9 @@ Pass `--user` as shown: the test container otherwise runs as root and leaves a
 root-owned `baseline.txt` behind. The run reports every record it refused to
 write — a count that grew, a key that is new — and prints the lines those records
 do not cover, so nothing it left out stays invisible. A baseline whose own
-records do not parse is left untouched: they have to be readable before the tree
-is written into them.
+records do not parse is left untouched by every piece: they have to be readable
+before the tree is written into them. A separate short guard piece reports those
+parsing errors once and rejects records whose rule or path no piece owns.
 
 ### The frontend has a baseline of its own
 
@@ -655,13 +664,14 @@ The TypeScript rules record their debt in
 `framework/frontend/codestyle/baseline.txt`, which is the same file in a second
 copy: same record shape, same key, same four verdicts, same shrink-only update,
 same `CODESTYLE_BASELINE_UPDATE=1` flag. It is a separate file because the two
-suites run in separate processes and each rewrites its own whole; sharing one
-would mean whichever suite pressed the button last erased the other's records.
+suites have separate owners, and the frontend rewrites its file whole; sharing
+one would let that update erase the PHP records.
 
 Its guard is `framework/frontend/codestyle/guard.test.ts`, one test fed by every
-frontend rule, for the reason the PHP half gives above: a second guard test with
-a second baseline erases the first. Each rule keeps its fixture test, which is
-the only thing proving the checker still fires.
+frontend rule. Its baseline has no per-piece ownership boundary, so a second
+guard updating the same file from a partial report would erase the first
+guard's records. Each rule keeps its fixture test, which is the only thing
+proving the checker still fires.
 
 ```bash
 docker compose -f framework/docker/docker-compose.frontend.yml run --rm \
@@ -953,12 +963,12 @@ callee, and the callee almost never sits in the file being read.
    `ThrowsPropagationFixtureTest`. Seed the look-alikes that must stay silent as
    carefully as the hits. These fixtures need no path exclusion: the index reads
    the production roots, and `framework/tests` is not one of them.
-5. Register it in `CodeStyleGuardTest` as a second source feeding the same
-   report — **not** in a guard test of its own. The baseline is one file, and
-   `CODESTYLE_BASELINE_UPDATE=1` rewrites it whole from the violations of the
-   test that regenerates it, so a second test would erase the other's records
-   every time either one was run. This is the one point where this kind differs
-   from the markdown one, whose rules have no baseline to share.
+5. Register it in `CodeStyleGuardTest::crossFileRules()` so the shared cross-file
+   piece checks it over the same complete index as the other rules. That piece's
+   `BaselineScope` owns all its rule ids at every path; reconciliation checks
+   only those records, and `CODESTYLE_BASELINE_UPDATE=1`
+   preserves every other piece's source lines. Keep the class-wide update filter
+   so regeneration visits all pieces. Markdown rules have no baseline to share.
 
 ### A rule that reads markdown
 

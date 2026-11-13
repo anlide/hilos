@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Testing\ProcessEnvironment\ProcessEnvironmentExtension;
+use Hilos\Testing\TimeLimit\TestTimeLimitExtension;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -12,16 +14,17 @@ use PHPUnit\Framework\TestCase;
  * A deprecation, a notice or a warning is reported by PHPUnit but does not fail the run unless
  * the configuration asks it to, so a run counting them stays green and the count is read by
  * nobody. That is how a real defect stayed in the tree until it cost a wrong session (HIL-673).
- * The three attributes turn the count into a verdict, and this test keeps them on: a suite that
+ * The required attributes turn the count into a verdict, and this test keeps them on: a suite that
  * loses them, or a demo born without them, is caught here instead of going quiet.
- * The same list requires the process environment extension.
+ * The same list requires process environment restoration and the fixed 60-second test limit.
+ * PHPUnit's configurable timeout mechanism must stay off; extension warnings fail the run too.
  */
 final class PhpunitIssueGateTest extends TestCase
 {
     /**
      * The attributes a configuration is required to set, all of them to "true".
      */
-    private const REQUIRED_ATTRIBUTES = ['failOnDeprecation', 'failOnNotice', 'failOnWarning'];
+    private const REQUIRED_ATTRIBUTES = ['failOnDeprecation', 'failOnNotice', 'failOnWarning', 'failOnPhpunitWarning'];
 
     public function testEveryPhpunitConfigFailsOnIssues(): void
     {
@@ -40,9 +43,9 @@ final class PhpunitIssueGateTest extends TestCase
     }
 
     /**
-     * Each watched configuration registers the process environment extension.
+     * Each watched configuration registers both required process extensions.
      */
-    public function testEveryPhpunitConfigRestoresTheProcessEnvironment(): void
+    public function testEveryPhpunitConfigRegistersRequiredExtensions(): void
     {
         foreach ($this->phpunitConfigs() as $config) {
             $this->assertFileExists($config);
@@ -50,20 +53,38 @@ final class PhpunitIssueGateTest extends TestCase
             $xml = simplexml_load_file($config);
             $this->assertNotFalse($xml, "cannot parse {$config}");
 
-            $requiredClass = 'Hilos\Testing\ProcessEnvironment\ProcessEnvironmentExtension';
-            $registeredClass = null;
-            foreach ($xml->extensions->bootstrap as $bootstrap) {
-                $class = $bootstrap['class'];
-                if ($class !== null && (string)$class === $requiredClass) {
-                    $registeredClass = (string)$class;
+            foreach ([ProcessEnvironmentExtension::class, TestTimeLimitExtension::class] as $requiredClass) {
+                $registrations = 0;
+                foreach ($xml->extensions->bootstrap as $bootstrap) {
+                    if ((string)$bootstrap['class'] === $requiredClass) {
+                        $registrations++;
+                        if ($requiredClass === TestTimeLimitExtension::class) {
+                            $this->assertCount(0, $bootstrap->parameter, "{$config} configures the fixed time limit");
+                        }
+                    }
                 }
-            }
 
-            $this->assertSame(
-                $requiredClass,
-                $registeredClass,
-                "{$config} does not register the process environment extension",
-            );
+                $this->assertSame(1, $registrations, "{$config} must register {$requiredClass} exactly once");
+            }
+        }
+    }
+
+    /** Keeps PHPUnit's separate, size-dependent timeout mechanism disabled. */
+    public function testEveryPhpunitConfigOmitsPhpunitTimeoutAttributes(): void
+    {
+        foreach ($this->phpunitConfigs() as $config) {
+            $xml = simplexml_load_file($config);
+            $this->assertNotFalse($xml, "cannot parse {$config}");
+
+            foreach ([
+                'enforceTimeLimit',
+                'defaultTimeLimit',
+                'timeoutForSmallTests',
+                'timeoutForMediumTests',
+                'timeoutForLargeTests',
+            ] as $attribute) {
+                $this->assertNull($xml[$attribute], "{$config} sets PHPUnit timeout attribute {$attribute}");
+            }
         }
     }
 

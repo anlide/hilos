@@ -6,7 +6,8 @@
          colors="true"
          failOnDeprecation="true"
          failOnNotice="true"
-         failOnWarning="true">
+         failOnWarning="true"
+         failOnPhpunitWarning="true">
     <source>
         <include>
             <directory>../backend</directory>
@@ -28,5 +29,6 @@
     </php>
     <extensions>
         <bootstrap class="Hilos\Testing\ProcessEnvironment\ProcessEnvironmentExtension"/>
+        <bootstrap class="Hilos\Testing\TimeLimit\TestTimeLimitExtension"/>
     </extensions>
 </phpunit>
