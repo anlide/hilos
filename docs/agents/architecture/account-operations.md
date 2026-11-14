@@ -1618,7 +1618,7 @@ switches neither live erasure entry:
 - The existing merge refuses when any affected account is in the circle of an
   open erasure operation, from preparation on (owner's decision 2026-11-12,
   HIL-1938); this prepares no new merge, transfer right or receipt protocol
-  (not in the code yet — HIL-1960).
+  (`AbstractSessionsLibraryAgent::assertMergeable()`, HIL-1960).
 - React carries the corresponding states and actions
   (not in the code yet — HIL-1961). Angular carries them too
   (not in the code yet — HIL-1962). Their interviews choose the appearance of
@@ -1823,8 +1823,8 @@ row. It checks the resulting writer map; it does not design business or
 recovery logic (not in the code yet — HIL-1999). Until then all preparation
 is inert: a prepared handler neither activates a production path nor removes
 a right still used by `mergeAccounts()`. No new toggle or exception is granted.
-The old merge's started-erasure guard remains the separate HIL-1960 obligation
-under [Erasure Cutover And Observation](#erasure-cutover-and-observation);
+The old merge's open-erasure guard (HIL-1960) belongs to
+[Erasure Cutover And Observation](#erasure-cutover-and-observation);
 it does not build this protocol.
 
 The following leaves prepare observation and actions; none switches the live

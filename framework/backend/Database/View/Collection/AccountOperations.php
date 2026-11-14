@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\View\Collection;
 
 use Hilos\Auth\AccountOperation\AccountOperationKind;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Database\Object\Collection\AccountOperations as ObjectAccountOperations;
 use Hilos\Database\Object\Item\AccountOperation as ObjectAccountOperation;
 use Hilos\Database\View\Item\AccountOperation;
@@ -59,7 +60,8 @@ class AccountOperations extends DbCollection
     }
 
     /**
-     * SCAFFOLD: no live caller until the erasure opening (HIL-1952) and the merge refusal (HIL-1960).
+     * Asked by the old merge's refusal ({@see AbstractSessionsLibraryAgent::assertMergeable()}, HIL-1960); the erasure opening
+     * asks it once it is live (HIL-1952).
      *
      * @param int $userId Account asked about
      * @return ?AccountOperation First open erasure whose fixed circle contains the account

@@ -333,6 +333,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** Refusal when the account that would absorb the other was itself merged (HIL-1294). */
     public const string ACCOUNT_MERGE_SURVIVOR_MERGED_MESSAGE = '%s was itself merged into %s';
 
+    /** Refusal when an account of the merge is in the circle of an open erasure, from preparation on (HIL-1960). */
+    public const string ACCOUNT_MERGE_BEING_DELETED_MESSAGE = '%s is being deleted';
+
     /** Named end of a merge chain when that chain has no live account (HIL-1294). */
     public const string ACCOUNT_MERGE_ANOTHER_ACCOUNT = 'another account';
 
@@ -6474,7 +6477,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * Guards, in order: the two ids must differ, which is the one refusal that needs nobody's
      * help; then whether these two accounts may be merged at all ({@see self::assertMergeable()}):
-     * both exist and neither is folded already; then the passwords are weighed. One guard
+     * both exist, neither is folded already and neither is in the circle of an open erasure
+     * (HIL-1960); then the passwords are weighed. One guard
      * is about the merge rather than the ids (HIL-692): an account holds at most one password,
      * so two accounts that each have one cannot both be right and this refuses until the
      * operator says which stays. While at most one of the two has a password, that one
@@ -6849,12 +6853,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * asked before the passwords are weighed, so an id that names nobody is refused as such
      * rather than as a password question.
      *
+     * A third question is asked of the framework's own tables: whether either account is in the
+     * circle of an open erasure, from its preparation on (owner's decision of 12.11.2026,
+     * HIL-1938/HIL-1960). It is asked after existence and folding, so the earlier refusals keep
+     * their precedence. Asking it outside the transaction is enough: the holder is the only
+     * writer of the merges and the one that opens the operations, and the merge runs
+     * synchronously.
+     *
      * A project with a refusal of its own overrides this and calls the parent FIRST, so the
      * framework's refusals keep their order and the project only adds to them.
      *
      * @param int $survivorUserId Survivor user id that would absorb the loser
      * @param int $loserUserId Loser user id that would be folded in
-     * @throws ValidationException When either id names nobody, or either account is already merged
+     * @throws ValidationException When either id names nobody, or either account is already merged or in the circle of an open erasure
      * @throws HilosException On database failure while reading the two accounts or a merge chain
      */
     protected function assertMergeable(int $survivorUserId, int $loserUserId): void
@@ -6879,6 +6890,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 $this->mergeRefusalAccountLabel($loserUserId),
                 $this->mergeRefusalTargetLabel($loserUserId),
             ));
+        }
+
+        foreach ([$survivorUserId, $loserUserId] as $userId) {
+            if (Hilos::$db->accountOperations->openErasureCovering($userId) !== null) {
+                throw new ValidationException(sprintf(
+                    self::ACCOUNT_MERGE_BEING_DELETED_MESSAGE,
+                    $this->mergeRefusalAccountLabel($userId),
+                ));
+            }
         }
     }
 

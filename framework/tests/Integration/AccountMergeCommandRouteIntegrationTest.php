@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Generator;
+use Hilos\Auth\AccountOperation\AccountOperationKind;
+use Hilos\Auth\AccountOperation\AccountOperationOutcome;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\Totp;
@@ -42,6 +44,7 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\AccountOperation as EntityAccountOperation;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Settings\SettingsAccessor;
@@ -85,8 +88,8 @@ use mysqli;
  *
  * What is pinned is everything the FRAMEWORK owns, which since HIL-1199 is the whole operation
  * bar one question. The guards - two ids that are the same, an id that names nobody, an account
- * already folded into another, two accounts that each hold a password and nobody saying which
- * stays - the transaction, the identity re-point, the device keys that hang on those ways in
+ * already folded into another, an account in the circle of an open erasure, two accounts that
+ * each hold a password and nobody saying which stays - the transaction, the identity re-point, the device keys that hang on those ways in
  * (HIL-1132), the tombstone (a merge row and a closed sign-in), the password outcome read back
  * off the account and the loser's forced sign-out all live here. What a project answers is what
  * it keeps for a person, and what is pinned about
@@ -151,12 +154,15 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
      *     proof it would ask for (HIL-1275). The loser's access log moves to the survivor in the
      *     same transaction, so `hilos_access_log` has to be there to be empty (HIL-1174). Whether a
      *     person's erasure has begun is asked on the way to their agent, so the deletion requests
-     *     have to be there to be empty too (HIL-1939).
+     *     have to be there to be empty too (HIL-1939). Whether either account is in the circle of an
+     *     open erasure is asked before anything moves, so the account operations have to be there
+     *     (HIL-1960).
      */
     private const array TABLES = [
         'hilos_user',
         'hilos_user_merge',
         'hilos_account_deletion',
+        'hilos_account_operation',
         'hilos_identity',
         'hilos_passkey_credential',
         'hilos_session',
@@ -479,6 +485,70 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     }
 
     /**
+     * An account in the circle of an open erasure is refused on either side of the merge, and the
+     * refusal writes nothing; an erasure closed as not started no longer stands in the way
+     * (HIL-1960).
+     *
+     * @throws HilosException When a seed or the merge fails
+     */
+    public function testAnAccountInAnOpenErasureIsRefusedOnEitherSide(): void
+    {
+        $loserEmail = $this->seedMagicLink(self::LOSER_USER_ID);
+        $agent = new AccountMergeRouteTestAgent();
+
+        $survivorErasure = self::seedOpenErasure(901, [self::SURVIVOR_USER_ID]);
+        $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::LOSER_USER_ID);
+        self::assertSame('Survivor (#' . self::SURVIVOR_USER_ID . ') is being deleted', $this->refusal());
+        self::finishErasure($survivorErasure, AccountOperationOutcome::NotStarted);
+
+        $loserErasure = self::seedOpenErasure(902, [self::LOSER_USER_ID]);
+        $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::LOSER_USER_ID);
+        self::assertSame('Loser (#' . self::LOSER_USER_ID . ') is being deleted', $this->refusal());
+
+        self::assertNull($agent->vouchedFor);
+        self::assertNull($agent->moved);
+        self::assertNull(self::survivorOf(self::LOSER_USER_ID));
+        self::assertSame(
+            self::LOSER_USER_ID,
+            $this->identities()->findByIdentity(IdentityType::MAGIC_LINK, $loserEmail)?->userId,
+        );
+
+        self::finishErasure($loserErasure, AccountOperationOutcome::NotStarted);
+        $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::LOSER_USER_ID);
+        self::assertTrue($this->consumeReply()->isOk(), 'An erasure closed as not started does not refuse the merge');
+        self::assertSame([self::SURVIVOR_USER_ID, self::LOSER_USER_ID], $agent->moved);
+    }
+
+    /**
+     * A merge made before the erasure opened leaves the loser inside the survivor's circle, so
+     * the erasure of the survivor covers the loser too; a merge into the survivor is refused, and
+     * a merge of the folded loser keeps its earlier refusal (HIL-1960).
+     *
+     * @throws HilosException When a seed or the merge fails
+     */
+    public function testAMergeBeforeTheErasureLeavesTheLoserInsideItsCircle(): void
+    {
+        $agent = new AccountMergeRouteTestAgent();
+        $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::LOSER_USER_ID);
+        self::assertTrue($this->consumeReply()->isOk(), 'A wired merge answers ok');
+
+        $circle = Hilos::$db->userMerges->erasureCircleOf(self::SURVIVOR_USER_ID)->toArray();
+        self::assertContains(self::LOSER_USER_ID, $circle);
+        $erasure = self::seedOpenErasure(904, $circle);
+        self::assertSame($erasure, Hilos::$db->accountOperations->openErasureCovering(self::LOSER_USER_ID)?->id);
+
+        $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::THIRD_USER_ID);
+        self::assertSame('Survivor (#' . self::SURVIVOR_USER_ID . ') is being deleted', $this->refusal());
+        self::assertNull(self::survivorOf(self::THIRD_USER_ID));
+
+        $this->sendCommand($agent, self::THIRD_USER_ID, self::LOSER_USER_ID);
+        self::assertSame(
+            'Loser (#' . self::LOSER_USER_ID . ') was already merged into Survivor (#' . self::SURVIVOR_USER_ID . ')',
+            $this->refusal(),
+        );
+    }
+
+    /**
      * A loser folded into an account that was itself folded is named by the live end of that
      * chain, not by the account written on its own tombstone (HIL-1294).
      *
@@ -764,6 +834,32 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         self::assertNull($refused->successMessage);
         self::assertSame(self::SURVIVOR_USER_ID, self::survivorOf(self::LOSER_USER_ID));
         self::assertNull(self::survivorOf(self::SURVIVOR_USER_ID));
+    }
+
+    /**
+     * A browser merge over an account being deleted is handed back the server's sentence, and
+     * nothing is folded (HIL-1960).
+     *
+     * @throws HilosException When a seed or the merge fails
+     */
+    public function testABrowserMergeOverAnAccountBeingDeletedHandsBackTheSentence(): void
+    {
+        self::openAdministratorsTab();
+        self::confirmMerge();
+        self::seedOpenErasure(903, [self::LOSER_USER_ID]);
+        $agent = new AccountMergeRouteTestAgent();
+
+        $agent->onSignalAgent(
+            new AgentSignalData($this->browserRequest()),
+            '',
+            HilosSignalConstants::HILOS_ACCOUNT_MERGE,
+        );
+        $refused = $this->consumeMergeAnswer();
+        self::assertSame(self::ACCEPT_KEY, $refused->acceptKey);
+        self::assertSame('Loser (#' . self::LOSER_USER_ID . ') is being deleted', $refused->error);
+        self::assertNull($refused->successMessage);
+        self::assertNull(self::survivorOf(self::LOSER_USER_ID));
+        self::assertNull($agent->moved);
     }
 
     /**
@@ -1690,6 +1786,52 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         Database::sqlRun(
             'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, ?)',
             [$userId, $survivorUserId, TimeHelper::nowMs()],
+        );
+    }
+
+    /**
+     * Opens an erasure past the coordinator, the way its preparation leaves the row.
+     *
+     * @param int $requestId Deletion request the erasure answers
+     * @param list<int> $circleUserIds Fixed circle, the root last
+     * @return int Id of the open operation
+     * @throws DatabaseException When the insert fails
+     */
+    private static function seedOpenErasure(int $requestId, array $circleUserIds): int
+    {
+        $now = TimeHelper::nowMs();
+        // Not sqlRun(): it restores the statement timeout after the insert, and that statement
+        // resets the id the insert left behind.
+        Database::sql(
+            'INSERT INTO `hilos_account_operation`'
+            . ' (`kind`, `request_id`, `root_user_id`, `circle_user_ids`, `stage`, `created_at`, `updated_at`)'
+            . ' VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [
+                AccountOperationKind::Erasure->value,
+                $requestId,
+                $circleUserIds[array_key_last($circleUserIds)],
+                json_encode($circleUserIds, JSON_THROW_ON_ERROR),
+                EntityAccountOperation::INITIAL_STAGE,
+                $now,
+                $now,
+            ],
+        );
+
+        return Database::lastInsertId();
+    }
+
+    /**
+     * Closes an erasure past the coordinator with the outcome it ended on.
+     *
+     * @param int $operationId Operation to close
+     * @param AccountOperationOutcome $outcome Outcome it ended on
+     * @throws DatabaseException When the update fails
+     */
+    private static function finishErasure(int $operationId, AccountOperationOutcome $outcome): void
+    {
+        Database::sqlRun(
+            'UPDATE `hilos_account_operation` SET `finished_at` = ?, `outcome` = ? WHERE `id` = ?',
+            [TimeHelper::nowMs(), $outcome->value, $operationId],
         );
     }
 

@@ -312,8 +312,8 @@ retires its foreign writes, grants, comments, debt, locks, rereads and the
 immediate stop on a merge row
 (not in the code yet — HIL-1999). A prepared handler does not clear this marker.
 
-The existing merge gains a refusal (not in the code yet — HIL-1960) when any
-affected account is in the circle of an open erasure operation, from
+The existing merge refuses (HIL-1960) when either
+account is in the circle of an open erasure operation, from
 preparation on (owner's decision 2026-11-12, HIL-1938). This is a guard beside
 the erasure cutover; it does not implement the future merge or its
 transfer/receipt rules.

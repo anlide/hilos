@@ -45,7 +45,9 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
      *     sign-in the holder grants writes a row of it, and every handshake of a signed-in
      *     session from a new address does too (HIL-1174). The restrictions of browser trust
      *     join beside the trusts, because whether a trust still lets a person past the second
-     *     factor depends on the shortenings saved after it was granted (HIL-1900).
+     *     factor depends on the shortenings saved after it was granted (HIL-1900). The account
+     *     operations join because a merge asks whether either account is in the circle of an open
+     *     erasure (HIL-1960); the table has to be there to be empty.
      */
     private const array TABLES = [
         'hilos_user',
@@ -64,6 +66,7 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
         'hilos_step_up',
         'hilos_legal_acceptance',
         'hilos_account_deletion',
+        'hilos_account_operation',
         'hilos_data_export',
         'hilos_access_log',
     ];
