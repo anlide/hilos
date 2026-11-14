@@ -2,7 +2,8 @@
 of a wide screen (bottom-end unless the shell picks another), newest at the
 bottom, each self-expiring on the store's timer. On a narrow screen the stack
 sits at the bottom across the width whatever the corner, and at the top while a
-modal — a bottom sheet there — is open (hilos-styles.scss).
+modal — a bottom sheet there — is open, using Bootstrap classes selected by
+the core's bindNarrowScreen and bindModalOpen facts.
 It renders the shared core store (hilosToasts), so anything in the SDK or in a
 project can report an outcome without threading a store through props — the shell
 mounts this once (HilosLayout) and every page is covered.
@@ -24,14 +25,29 @@ all but disappears (mockups/components/toast). Bootstrap classes only; what stoc
 utilities cannot express lives in hilos-styles.scss (styling-rules.md). -->
 <script setup lang="ts">
 import type { ComponentPublicInstance } from 'vue'
-import { computed, onMounted, onUnmounted, onUpdated, reactive, ref } from 'vue'
+import {
+  computed,
+  onMounted,
+  onScopeDispose,
+  onUnmounted,
+  onUpdated,
+  reactive,
+  ref,
+  shallowRef,
+} from 'vue'
 import type {
   HilosToast,
   HilosToastSeverity,
   HilosToastStore,
   HilosToastViewer,
 } from '@hilos/core/base'
-import { hilosToasts, subscribeSignal } from '@hilos/core/base'
+import {
+  bindModalOpen,
+  bindNarrowScreen,
+  bindReducedMotion,
+  hilosToasts,
+  subscribeSignal,
+} from '@hilos/core/base'
 
 import HilosLink from './HilosLink.vue'
 import type { HilosToastCorner } from './hilosToastCorner.js'
@@ -51,6 +67,12 @@ const props = defineProps<{
 const store = props.store ?? hilosToasts
 const toasts = useSignal(store.toasts)
 const overflow = useSignal(store.overflow)
+const narrow = shallowRef(false)
+const modalOpen = shallowRef(false)
+const reducedMotion = shallowRef(false)
+onScopeDispose(bindNarrowScreen((value) => (narrow.value = value)))
+onScopeDispose(bindReducedMotion((value) => (reducedMotion.value = value)))
+let stopModalOpen: (() => void) | null = null
 
 // The measuring layer: a card the store has not measured yet is still rendered —
 // it has to be, to be measured — but it is taken out of the flow and out of
@@ -90,18 +112,17 @@ const TOAST_VISUAL: Record<HilosToastSeverity, ToastVisual> = {
   },
 }
 
-// Where the stack sits on a wide screen: the horizontal edge is a stock
-// Bootstrap utility, the vertical one is not, because the narrow screen
-// overrides it and the stock .bottom-0 carries !important that a media query
-// cannot outrank. On a narrow screen the full width covers the window from
-// either horizontal edge.
+// Bootstrap utilities select the wide corner or the full-width narrow stack.
+// An open modal moves that narrow stack to the top until its last layer closes.
 const corner = computed(() => props.corner ?? 'bottom-end')
-const cornerClasses = computed(() => [
-  corner.value.endsWith('-end') ? 'end-0' : 'start-0',
-  corner.value.startsWith('bottom-')
-    ? 'hilos-toast-stack-bottom'
-    : 'hilos-toast-stack-top',
-])
+const cornerClasses = computed(() =>
+  narrow.value
+    ? [modalOpen.value ? 'top-0' : 'bottom-0', 'end-0', 'w-100']
+    : [
+        corner.value.endsWith('-end') ? 'end-0' : 'start-0',
+        corner.value.startsWith('bottom-') ? 'bottom-0' : 'top-0',
+      ],
+)
 
 // The card the "N missed" control last put up, until the next pass that reports
 // heights: that pass is where the card is really on screen, and where focus
@@ -296,6 +317,7 @@ function followReturned(): void {
 }
 
 onMounted(() => {
+  stopModalOpen = bindModalOpen(document, (value) => (modalOpen.value = value))
   viewer = store.attach()
   viewer.setViewportHeight(window.innerHeight)
   onVisibility()
@@ -310,6 +332,8 @@ onUpdated(() => {
 })
 
 onUnmounted(() => {
+  stopModalOpen?.()
+  stopModalOpen = null
   window.removeEventListener('resize', onResize)
   document.removeEventListener('visibilitychange', onVisibility)
   stopFollowing?.()
@@ -429,7 +453,10 @@ function dismissIfNavigated(event: MouseEvent, id: number): void {
       :key="toast.id"
       :ref="(element) => keep(toast.id, element)"
       class="toast fade show overflow-hidden"
-      :class="toast.measured ? '' : MEASURING_LAYER"
+      :class="[
+        toast.measured ? '' : MEASURING_LAYER,
+        { 'w-100': narrow, 'pe-none': modalOpen },
+      ]"
       :data-id="`hilos-toast-${toast.severity}`"
     >
       <!-- The card's one positioned box: the rail, the icon and the text sit in
@@ -492,10 +519,13 @@ function dismissIfNavigated(event: MouseEvent, id: number): void {
       <div
         v-if="toast.measured && toast.severity !== 'error'"
         :key="toast.repeats"
-        class="hilos-toast-life border-top border-2 opacity-50"
+        class="border-top border-2 opacity-50"
         :class="[
           TOAST_VISUAL[toast.severity].rail,
-          { 'hilos-toast-life-paused': frozen },
+          {
+            'hilos-toast-life': !reducedMotion,
+            'hilos-toast-life-paused': frozen,
+          },
         ]"
         data-id="hilos-toast-life"
       ></div>
@@ -510,10 +540,12 @@ function dismissIfNavigated(event: MouseEvent, id: number): void {
     did not fit must not push out what did. It carries `pe-auto` because
     `.toast-container` turns pointer events off and only `.toast` turns them back
     on: without it the line would be the one part of the stack that the cursor
-    resting on it does not count as reading. -->
+    resting on it does not count as reading. While a modal is open, the line
+    and cards pass the pointer through to the dialog with `pe-none`. -->
     <div
       v-if="overflow.waiting > 0 || overflow.missed > 0"
-      class="bg-body border rounded-3 shadow-sm px-2 py-1 small text-body-secondary pe-auto"
+      class="bg-body border rounded-3 shadow-sm px-2 py-1 small text-body-secondary"
+      :class="modalOpen ? 'pe-none' : 'pe-auto'"
       data-id="hilos-toast-overflow"
     >
       <span v-if="overflow.waiting > 0"

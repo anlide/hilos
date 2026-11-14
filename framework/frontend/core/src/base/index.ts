@@ -320,6 +320,7 @@ export {
   type TableFocusReturnRow,
 } from '../dom/tableFocusReturn.js'
 export {
+  bindModalOpen,
   lockBodyScroll,
   unlockBodyScroll,
   type ScrollLockOwner,
@@ -331,6 +332,7 @@ export {
   revealNarrowPickerPanel,
 } from '../dom/popupEffects.js'
 export { bindNarrowScreen } from '../dom/narrowScreen.js'
+export { bindReducedMotion } from '../dom/reducedMotion.js'
 export {
   enterModalLayer,
   leaveModalLayer,

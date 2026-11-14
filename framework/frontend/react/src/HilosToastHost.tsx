@@ -1,8 +1,8 @@
 // HilosToastHost — the framework toast stack: transient notices in one corner
 // of a wide screen (bottom-end unless the shell picks another), newest at the
 // bottom, each self-expiring on the store's timer. On a narrow screen the stack
-// sits at the bottom across the width whatever the corner, and at the top while
-// a modal — a bottom sheet there — is open (hilos-styles.scss).
+// sits at the bottom across the width, and at the top while a modal is open.
+// Bootstrap utilities follow the core's bindNarrowScreen and bindModalOpen facts.
 // It renders the shared core store (hilosToasts), so anything in the SDK
 // or in a project can report an outcome without threading a store through props —
 // the shell mounts this once (HilosLayout) and every page is covered.
@@ -23,9 +23,15 @@
 // a thin border in its place all but disappears (mockups/components/toast).
 // Bootstrap classes only; what stock utilities cannot express lives in
 // hilos-styles.scss (styling-rules.md).
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { FocusEvent, MouseEvent } from 'react'
-import { hilosToasts, subscribeSignal } from '@hilos/core/base'
+import {
+  bindModalOpen,
+  bindNarrowScreen,
+  bindReducedMotion,
+  hilosToasts,
+  subscribeSignal,
+} from '@hilos/core/base'
 import type {
   HilosToast,
   HilosToastHoldReason,
@@ -96,6 +102,16 @@ const MEASURING_LAYER = 'position-absolute opacity-0 pe-none'
  * hold rather than being flattened into a count here.
  */
 type HoldKind = HilosToastHoldReason
+
+// A one-off read so the first render already has the width the cards are measured
+// at. The layout effect owns the standing listener.
+function readNarrowScreen(): boolean {
+  let narrow = false
+  bindNarrowScreen((value) => {
+    narrow = value
+  })()
+  return narrow
+}
 
 // A focus move inside the stack — tabbing from one close button to the next — is
 // neither an arrival nor a leave, and relatedTarget is what tells those apart;
@@ -177,6 +193,13 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
   // what the life bar draws its freeze from.
   const held = useRef({ cursor: false, focus: false, tab: false })
   const [frozen, setFrozen] = useState(false)
+  const [narrow, setNarrow] = useState(readNarrowScreen)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [reducedMotion, setReducedMotion] = useState(false)
+
+  useLayoutEffect(() => bindNarrowScreen(setNarrow), [])
+  useLayoutEffect(() => bindModalOpen(document, setModalOpen), [])
+  useLayoutEffect(() => bindReducedMotion(setReducedMotion), [])
 
   /**
    * Take one of the three holds, or give it back.
@@ -362,18 +385,16 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
     }
   }
 
-  // Where the stack sits on a wide screen: the horizontal edge is a stock
-  // Bootstrap utility, the vertical one is not, because the narrow screen
-  // overrides it and the stock .bottom-0 carries !important that a media query
-  // cannot outrank. On a narrow screen the full width covers the window from
-  // either horizontal edge.
+  // On a wide screen, the chosen corner maps to Bootstrap position utilities.
+  // On a narrow screen, the core facts choose a full-width bottom stack, or
+  // move it to the top while a modal is open.
   const chosen = corner ?? 'bottom-end'
-  const cornerClasses = [
-    chosen.endsWith('-end') ? 'end-0' : 'start-0',
-    chosen.startsWith('bottom-')
-      ? 'hilos-toast-stack-bottom'
-      : 'hilos-toast-stack-top',
-  ].join(' ')
+  const cornerClasses = narrow
+    ? `${modalOpen ? 'top-0' : 'bottom-0'} end-0 w-100`
+    : [
+        chosen.endsWith('-end') ? 'end-0' : 'start-0',
+        chosen.startsWith('bottom-') ? 'bottom-0' : 'top-0',
+      ].join(' ')
 
   // What the live regions say. A notice reaches them only once it is measured:
   // until then the store may still take it into the queue or into the missed
@@ -430,7 +451,7 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
           <div
             key={toast.id}
             ref={keep(toast.id)}
-            className={`toast fade show overflow-hidden${toast.measured ? '' : ` ${MEASURING_LAYER}`}`}
+            className={`toast fade show overflow-hidden${narrow ? ' w-100' : ''}${modalOpen ? ' pe-none' : ''}${toast.measured ? '' : ` ${MEASURING_LAYER}`}`}
             data-id={`hilos-toast-${toast.severity}`}
           >
             {/* The card's one positioned box: the rail, the icon and the text
@@ -494,7 +515,7 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
             {toast.measured && toast.severity !== 'error' && (
               <div
                 key={toast.repeats}
-                className={`hilos-toast-life border-top border-2 opacity-50 ${TOAST_VISUAL[toast.severity].rail}${frozen ? ' hilos-toast-life-paused' : ''}`}
+                className={`${reducedMotion ? '' : 'hilos-toast-life '}border-top border-2 opacity-50 ${TOAST_VISUAL[toast.severity].rail}${frozen ? ' hilos-toast-life-paused' : ''}`}
                 data-id="hilos-toast-life"
               ></div>
             )}
@@ -508,12 +529,12 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
         text, so speech input can name it (WCAG 2.5.3). It carries no ref, so it
         never reaches reportHeight() and never counts toward the height cap — a
         line that says what did not fit must not push out what did. It carries
-        `pe-auto` because `.toast-container` turns pointer events off and only
-        `.toast` turns them back on: without it the line would be the one part of
-        the stack that the cursor resting on it does not count as reading. */}
+        `pe-auto` while no modal is open because `.toast-container` turns pointer
+        events off and only `.toast` turns them back on. While a modal is open,
+        it uses `pe-none` like the cards so the pointer reaches the dialog. */}
         {(overflow.waiting > 0 || overflow.missed > 0) && (
           <div
-            className="bg-body border rounded-3 shadow-sm px-2 py-1 small text-body-secondary pe-auto"
+            className={`bg-body border rounded-3 shadow-sm px-2 py-1 small text-body-secondary ${modalOpen ? 'pe-none' : 'pe-auto'}`}
             data-id="hilos-toast-overflow"
           >
             {overflow.waiting > 0 && (

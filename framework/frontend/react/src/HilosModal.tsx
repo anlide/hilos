@@ -40,8 +40,8 @@
 // modal stack with its own entry, instead of discarding a dirty draft. The
 // confirm-step state machine is the core modal controller and the focus trap /
 // scroll lock are core/dom; this view only renders and wires events. Bootstrap
-// classes only, save for the declarations the Sass layer names — the bottom
-// sheet, which stock Bootstrap has nothing for, and the modal layer. A modal
+// classes only, save for the Sass declaration of the modal layer. At narrow
+// widths bindNarrowScreen selects the bottom-sheet classes. A modal
 // opened over a modal learns its depth from the core modal stack by itself, with
 // nothing passed by the surface that opens it, and hands the number to the Sass
 // layer through `--hilos-modal-depth`: each layer dims everything under it and
@@ -61,6 +61,7 @@ import {
   CONNECTION_INTERACTION_COPY,
   FocusTrap,
   bindInteractionBlock,
+  bindNarrowScreen,
   copyToClipboard,
   createModalController,
   enterModalLayer,
@@ -223,6 +224,9 @@ export function HilosModal({
   const confirmLayerOwner = useRef<ModalLayerOwner>({}).current
   const [confirmDepth, setConfirmDepth] = useState(0)
   const [copied, setCopied] = useState(false)
+  const [narrow, setNarrow] = useState(false)
+
+  useLayoutEffect(() => bindNarrowScreen(setNarrow), [])
 
   // The controller reads its config live through a ref so it is created once.
   const cfg = useRef({
@@ -399,11 +403,11 @@ export function HilosModal({
         }}
       >
         <div
-          className={`modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet${size === 'wide' ? ' modal-lg' : ''}`}
+          className={`modal-dialog modal-dialog-centered modal-dialog-scrollable${narrow ? ' m-0 mw-100 h-100 align-items-end' : ''}${size === 'wide' ? ' modal-lg' : ''}`}
         >
           <fieldset
             ref={interactionScope}
-            className="modal-content m-0 p-0"
+            className={`modal-content m-0 p-0${narrow ? ' rounded-bottom-0' : ''}`}
             data-id="modal-interaction-scope"
           >
             <span
@@ -479,10 +483,12 @@ export function HilosModal({
             data-id="modal-confirm"
             onKeyDown={(event) => onKeyDown(event, confirmRef.current)}
           >
-            <div className="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet">
+            <div
+              className={`modal-dialog modal-dialog-centered modal-dialog-scrollable${narrow ? ' m-0 mw-100 h-100 align-items-end' : ''}`}
+            >
               <fieldset
                 ref={confirmInteractionScope}
-                className="modal-content m-0 p-0"
+                className={`modal-content m-0 p-0${narrow ? ' rounded-bottom-0' : ''}`}
                 data-id="modal-confirm-interaction-scope"
               >
                 <span

@@ -960,7 +960,7 @@ describe('HilosModal', () => {
     expect(document.activeElement).toBe(opener)
   })
 
-  it('gives both dialogs a scrollable body and a narrow-screen sheet', async () => {
+  it('gives both dialogs a scrollable body', async () => {
     const wrapper = mount(HilosModal, {
       props: { modelValue: true, confirmOnClose: true },
     })
@@ -973,7 +973,6 @@ describe('HilosModal', () => {
     expect(dialogs).toHaveLength(2)
     dialogs.forEach((dialog) => {
       expect(dialog.classList.contains('modal-dialog-scrollable')).toBe(true)
-      expect(dialog.classList.contains('hilos-modal-sheet')).toBe(true)
     })
   })
 

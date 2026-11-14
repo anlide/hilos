@@ -52,6 +52,7 @@
   "src/dom/narrowScreen.ts",
   "src/dom/pageCopy.ts",
   "src/dom/popupEffects.ts",
+  "src/dom/reducedMotion.ts",
   "src/dom/scrollLock.ts",
   "src/dom/tableFocusReturn.ts",
   "src/format/bytes.ts",

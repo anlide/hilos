@@ -47,19 +47,29 @@ narrower (mockups/components/modal, D-106) — learning its depth from the core
 modal stack with its own entry, instead of discarding a dirty draft. The
 confirm-step state machine is the core modal controller and the focus trap /
 scroll lock are core/dom; this view only renders and wires events. Bootstrap
-classes only, save for the declarations the Sass layer names — the bottom
-sheet, which stock Bootstrap has nothing for, and the modal layer. A modal
+classes only, save for the modal layer's Sass declarations. The bottom sheet
+uses Bootstrap classes selected by bindNarrowScreen. A modal
 opened over a modal learns its depth from the core modal stack by itself, with
 nothing passed by the surface that opens it, and hands the number to the Sass
 layer through `--hilos-modal-depth`: each layer dims everything under it and
 stands one step narrower (mockups/components/modal, the node for a modal over
 a modal). -->
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, useId, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onScopeDispose,
+  onUnmounted,
+  ref,
+  shallowRef,
+  useId,
+  watch,
+} from 'vue'
 import {
   CONNECTION_INTERACTION_COPY,
   FocusTrap,
   bindInteractionBlock,
+  bindNarrowScreen,
   copyToClipboard,
   createModalController,
   enterModalLayer,
@@ -74,6 +84,9 @@ import {
 
 import { useConnectionInteraction } from './hilosConnectionInteraction.js'
 import { useSignal } from './useSignal.js'
+
+const narrow = shallowRef(false)
+onScopeDispose(bindNarrowScreen((value) => (narrow.value = value)))
 
 /**
  * The trap placement the prop maps onto: `'dialog'` when there is nothing to
@@ -375,12 +388,16 @@ function onTab(event: KeyboardEvent): void {
         @click.self="modal.onBackdrop()"
       >
         <div
-          class="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet"
-          :class="{ 'modal-lg': size === 'wide' }"
+          class="modal-dialog modal-dialog-centered modal-dialog-scrollable"
+          :class="{
+            'modal-lg': size === 'wide',
+            'm-0 mw-100 h-100 align-items-end': narrow,
+          }"
         >
           <fieldset
             ref="interactionScope"
             class="modal-content m-0 p-0"
+            :class="{ 'rounded-bottom-0': narrow }"
             data-id="modal-interaction-scope"
           >
             <span
@@ -457,11 +474,13 @@ function onTab(event: KeyboardEvent): void {
           @keydown.tab="onTab"
         >
           <div
-            class="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet"
+            class="modal-dialog modal-dialog-centered modal-dialog-scrollable"
+            :class="{ 'm-0 mw-100 h-100 align-items-end': narrow }"
           >
             <fieldset
               ref="confirmInteractionScope"
               class="modal-content m-0 p-0"
+              :class="{ 'rounded-bottom-0': narrow }"
               data-id="modal-confirm-interaction-scope"
             >
               <span

@@ -308,11 +308,13 @@ open** — a bottom sheet there; when the last modal has closed it returns to th
 bottom. The reason is that the bottom of a phone is free: every form is a modal,
 and a narrow modal is a bottom sheet, so the bottom is taken only for as long as
 a sheet is open. The stack is not put at the top of a narrow screen for good,
-and no centered position is added. The 768px line is Bootstrap's `md`, and the
-modal is read from `body.modal-open`, which the core scroll lock holds until
-the last modal releases it.
+and no centered position is added. The host applies Bootstrap's standard
+positioning utilities from the core's `bindNarrowScreen` fact at Bootstrap's
+`md` breakpoint and its `bindModalOpen` fact, which reports a document's first
+scroll lock and last unlock.
 
-While a modal is open the stack takes no pointer: a card that lands on the
+While a modal is open the stack takes no pointer. The host applies Bootstrap's
+`pe-none` utility to its cards and service line. A card that lands on the
 dialog's footer — on a wide screen, any window narrower than about 1230px puts
 the bottom-right corner there — would otherwise take the click meant for the
 dialog's button (HIL-1097). The rule is one and holds on every width. The cost

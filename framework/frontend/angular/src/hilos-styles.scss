@@ -212,17 +212,6 @@
   animation-play-state: paused;
 }
 
-// WHY: this is the app's own animation, so nobody else guards it: Bootstrap
-// covers only its own components, and a blanket reduced-motion reset is banned
-// (accessibility.md). The bar stands at full length instead of moving — the
-// COUNTDOWN still runs, because that is a rule about time and not about motion.
-// WHAT: the life bar for a reader who asked for less movement.
-@media (prefers-reduced-motion: reduce) {
-  .hilos-toast-life {
-    animation: none;
-  }
-}
-
 // WHY: Bootstrap has no display:contents utility. The slot needs a DOM
 // boundary for copying but no layout box, so page and skeleton h-100 still
 // measure their height from the shell's main region.
@@ -282,69 +271,6 @@
   }
 }
 
-// WHY: the stock .bottom-0 and .top-0 utilities carry !important, so a media
-// query in this layer cannot outrank them without a second one — and the
-// vertical edge of the toast stack moves on a narrow screen (below).
-// WHAT: the bottom corner of the stack on a wide screen, the default one. The
-// horizontal edge needs none of this and stays a stock utility.
-.hilos-toast-stack-bottom {
-  bottom: 0;
-}
-
-// WHY: same reason as the bottom corner — the stock utility's !important would
-// leave nothing for the narrow screen to override.
-// WHAT: the top corner of the stack on a wide screen, for a project that picked
-// it.
-.hilos-toast-stack-top {
-  top: 0;
-}
-
-// WHY: no stock utility holds only below a breakpoint and only while a modal is
-// open, and the stack's width is not a utility either: Bootstrap draws
-// .toast-container at max-content and each .toast at a fixed 350px.
-// WHAT: on a narrow screen the stack sits at the bottom across the width,
-// whichever corner the project picked. The bottom of a phone is free: every
-// form is a modal, a narrow modal is a bottom sheet (.hilos-modal-sheet below),
-// and the notice of an outcome arrives once the sheet has closed. So the bottom
-// is taken only while a sheet is open, and for that time the stack moves to the
-// top — body.modal-open, held by the core scroll lock
-// (core/src/dom/scrollLock.ts) until the last modal releases it.
-//
-// 767.98px is Bootstrap's `md` breakpoint less a hair, written out as a number
-// because the SDK loads Bootstrap compiled (index.ts) and its Sass variables
-// are not in scope; a full re-compile stays deferred (styling-rules.md), and
-// this comment is what to find when it happens.
-@media (max-width: 767.98px) {
-  .hilos-toast-stack-bottom,
-  .hilos-toast-stack-top {
-    top: auto;
-    bottom: 0;
-    width: 100%;
-
-    > .toast {
-      width: 100%;
-    }
-  }
-
-  body.modal-open .hilos-toast-stack-bottom,
-  body.modal-open .hilos-toast-stack-top {
-    top: 0;
-    bottom: auto;
-  }
-}
-
-// WHY: the stack stands above a modal by rule (docs/agents/frontend/toasts.md),
-// and on a window narrower than about 1230px its bottom-right card lands on the
-// dialog's footer, where the main button is, and takes the click meant for it
-// (HIL-1097). Bootstrap has no utility that holds only while a modal is open,
-// and the stack's service line carries .pe-auto, which is !important itself.
-// WHAT: while a modal is open (body.modal-open, held by the core scroll lock
-// until the last one closes), every card and the service line stay drawn over
-// the dialog but let the pointer through to it.
-body.modal-open .toast-container > * {
-  pointer-events: none !important;
-}
-
 // WHY: Bootstrap's white-space utilities stop at .text-wrap (normal) and
 // .text-nowrap (nowrap) — there is none for pre-wrap, and a <pre> without it
 // wraps a long line nowhere at all: pre breaks only where the text already
@@ -353,29 +279,6 @@ body.modal-open .toast-container > * {
 // indentation kept and its long line taken to the next row.
 .hilos-pre-wrap {
   white-space: pre-wrap;
-}
-
-// WHY: Bootstrap has no bottom sheet, and its nearest stock thing —
-// .modal-fullscreen-sm-down — stretches the window over the whole screen, so a
-// short reason hangs at the top while Close walks down to the bottom edge of
-// the phone. That is a different picture from the drawn one
-// (mockups/components/modal, the narrow-screen node).
-// WHAT: the dialog on a narrow screen — pinned to the bottom edge, full width,
-// no margin, and no rounding where it meets that edge.
-.hilos-modal-sheet {
-  // 767.98px is Bootstrap's `md` breakpoint less a hair, the same number the
-  // toast stack flips on above — the SDK keeps one idea of what a phone is.
-  @media (max-width: 767.98px) {
-    margin: 0;
-    max-width: none;
-    min-height: 100%;
-    align-items: flex-end;
-
-    .modal-content {
-      border-bottom-left-radius: 0;
-      border-bottom-right-radius: 0;
-    }
-  }
 }
 
 // WHY: Bootstrap stacks every modal on the same two z-indexes, so a modal opened
@@ -398,12 +301,8 @@ body.modal-open .toast-container > * {
   z-index: calc(var(--bs-backdrop-zindex) + var(--hilos-modal-depth) * 20);
 }
 
-// The narrow screen keeps the sheet: below this width .hilos-modal-sheet lifts
-// the width limit, and a layer rule outside the query would outweigh it there.
-@media (min-width: 768px) {
-  .hilos-modal-layer .modal-dialog {
-    max-width: calc(var(--bs-modal-width) - var(--hilos-modal-depth) * 3rem);
-  }
+.hilos-modal-layer .modal-dialog {
+  max-width: calc(var(--bs-modal-width) - var(--hilos-modal-depth) * 3rem);
 }
 
 // WHY: Bootstrap's progress bar takes its width from an inline style, and a width

@@ -14,9 +14,9 @@
 // cancels a vertical drag that no scroll container inside the body can take.
 //
 // What one document's lock added lives from its first owner to its last: the
-// classes it found missing and its touch listeners. That is the browser state
-// of one document, read by nobody else, so it stays here rather than in shared
-// application state.
+// classes it found missing and its touch listeners. bindModalOpen publishes
+// whether that document is locked; the rest of its browser state stays here
+// rather than in shared application state.
 
 /** The identity of one component instance holding a scroll lock. */
 export type ScrollLockOwner = object
@@ -32,6 +32,32 @@ const SCROLLPORT_OVERFLOW = ['auto', 'scroll']
 const SCROLLPORT_EDGE_PX = 1
 const lockOwners = new Map<ScrollLockOwner, Document>()
 const documentReleases = new WeakMap<Document, () => void>()
+const modalOpenSubscribers = new WeakMap<
+  Document,
+  Set<(open: boolean) => void>
+>()
+
+/**
+ * Report whether a document is locked by an open modal and follow changes.
+ *
+ * @param doc The document whose modal state is followed without accessing DOM.
+ * @param onChange The callback for the initial state and each lock change.
+ * @returns A function that removes the callback.
+ */
+export function bindModalOpen(
+  doc: Document,
+  onChange: (open: boolean) => void,
+): () => void {
+  let subscribers = modalOpenSubscribers.get(doc)
+  if (subscribers === undefined) {
+    subscribers = new Set()
+    modalOpenSubscribers.set(doc, subscribers)
+  }
+  subscribers.add(onChange)
+  onChange(documentReleases.has(doc))
+
+  return () => subscribers.delete(onChange)
+}
 
 /**
  * Lock background scroll for one owner while its modal is open.
@@ -43,6 +69,7 @@ export function lockBodyScroll(doc: Document, owner: ScrollLockOwner): void {
   lockOwners.set(owner, doc)
   if (!documentReleases.has(doc)) {
     documentReleases.set(doc, holdDocument(doc))
+    for (const onChange of modalOpenSubscribers.get(doc) ?? []) onChange(true)
   }
   for (const [element, name] of lockClasses(doc)) {
     element.classList.add(name)
@@ -68,6 +95,7 @@ export function unlockBodyScroll(owner: ScrollLockOwner): void {
   if (![...lockOwners.values()].includes(doc)) {
     documentReleases.get(doc)?.()
     documentReleases.delete(doc)
+    for (const onChange of modalOpenSubscribers.get(doc) ?? []) onChange(false)
   }
 }
 

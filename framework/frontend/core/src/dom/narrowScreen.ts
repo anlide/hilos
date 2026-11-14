@@ -2,7 +2,8 @@
 // around the DOM-free picker so its narrow view follows one rule across
 // frameworks (multiframework-core.md).
 
-// Match .hilos-modal-sheet in framework/frontend/vue/src/hilos-styles.scss.
+// The SDK's one phone threshold: Bootstrap md less a hair. Date pickers, toast
+// stacks and modal sheets select their classes from this fact, not CSS queries.
 const NARROW_SCREEN_QUERY = '(max-width: 767.98px)'
 
 /**

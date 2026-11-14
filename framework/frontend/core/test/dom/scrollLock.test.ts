@@ -3,14 +3,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  bindModalOpen,
   lockBodyScroll,
   unlockBodyScroll,
   type ScrollLockOwner,
 } from '../../src/dom/scrollLock.js'
 
 const owners: ScrollLockOwner[] = []
+const subscriptions: Array<() => void> = []
 
 afterEach(() => {
+  for (const unbind of subscriptions.splice(0)) unbind()
   for (const owner of owners.splice(0)) unlockBodyScroll(owner)
   vi.restoreAllMocks()
   Reflect.deleteProperty(window, 'visualViewport')
@@ -125,6 +128,73 @@ function drag(
 
   return touch(target, 'touchmove', [to])
 }
+
+describe('bindModalOpen', () => {
+  it('reports false immediately for a free document', () => {
+    const onChange = vi.fn()
+
+    subscriptions.push(bindModalOpen(document, onChange))
+
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(false)
+  })
+
+  it('reports true immediately for a locked document', () => {
+    lock(document)
+    const onChange = vi.fn()
+
+    subscriptions.push(bindModalOpen(document, onChange))
+
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(true)
+  })
+
+  it('reports only the first lock and the last unlock', () => {
+    const onChange = vi.fn()
+    subscriptions.push(bindModalOpen(document, onChange))
+    onChange.mockClear()
+
+    const first = lock(document)
+    const second = lock(document)
+    lock(document, first)
+
+    expect(onChange.mock.calls).toEqual([[true]])
+
+    unlockBodyScroll(first)
+
+    expect(onChange.mock.calls).toEqual([[true]])
+
+    unlockBodyScroll(second)
+
+    expect(onChange.mock.calls).toEqual([[true], [false]])
+  })
+
+  it('does not report another document changing', () => {
+    const onChange = vi.fn()
+    subscriptions.push(bindModalOpen(document, onChange))
+    onChange.mockClear()
+    const other = document.implementation.createHTMLDocument()
+
+    const owner = lock(other)
+    unlockBodyScroll(owner)
+
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('stops reporting after unsubscribe while other subscribers still follow', () => {
+    const onChange = vi.fn()
+    const remaining = vi.fn()
+    const unbind = bindModalOpen(document, onChange)
+    subscriptions.push(unbind, bindModalOpen(document, remaining))
+    onChange.mockClear()
+    remaining.mockClear()
+
+    unbind()
+    const owner = lock(document)
+    unlockBodyScroll(owner)
+
+    expect(onChange).not.toHaveBeenCalled()
+    expect(remaining.mock.calls).toEqual([[true], [false]])
+  })
+})
 
 describe('scroll lock', () => {
   it('keeps one document locked until its last owner releases it', () => {

@@ -375,7 +375,7 @@ describe('HilosModal', () => {
     expect(document.querySelector('.modal-title')).toBeNull()
   })
 
-  it('gives both dialogs a scrollable body and a narrow-screen sheet', () => {
+  it('gives both dialogs a scrollable body', () => {
     render(<HilosModal open confirmOnClose />)
     fireEvent.click(byId('modal-close') as Element)
 
@@ -383,7 +383,6 @@ describe('HilosModal', () => {
     expect(dialogs).toHaveLength(2)
     dialogs.forEach((dialog) => {
       expect(dialog.classList.contains('modal-dialog-scrollable')).toBe(true)
-      expect(dialog.classList.contains('hilos-modal-sheet')).toBe(true)
     })
   })
 

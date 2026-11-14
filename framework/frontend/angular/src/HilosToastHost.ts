@@ -2,7 +2,7 @@
 // of a wide screen (bottom-end unless the shell picks another), newest at the
 // bottom, each self-expiring on the store's timer. On a narrow screen the stack
 // sits at the bottom across the width whatever the corner, and at the top while
-// a modal — a bottom sheet there — is open (hilos-styles.scss).
+// a modal is open, from core's narrow-screen and modal facts.
 // It renders the shared core store (hilosToasts), so anything in the SDK
 // or in a project can report an outcome without threading a store through inputs —
 // the shell mounts this once (HilosLayout) and every page is covered.
@@ -24,20 +24,29 @@
 // Bootstrap classes only; what stock utilities cannot express lives in
 // hilos-styles.scss, which an application lists in angular.json because
 // ng-packagr ships no transitive CSS (styling-rules.md).
+import { DOCUMENT } from '@angular/common'
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   afterRenderEffect,
   computed,
   effect,
+  inject,
   input,
   signal,
   untracked,
   viewChild,
   viewChildren,
 } from '@angular/core'
-import { hilosToasts, subscribeSignal } from '@hilos/core/base'
+import {
+  bindModalOpen,
+  bindNarrowScreen,
+  bindReducedMotion,
+  hilosToasts,
+  subscribeSignal,
+} from '@hilos/core/base'
 import type {
   HilosToast,
   HilosToastHoldReason,
@@ -167,7 +176,7 @@ function occupiedHeight(element: HTMLElement): number {
         <div
           #card
           class="toast fade show overflow-hidden"
-          [class]="measuring(toast)"
+          [class]="cardClasses(toast)"
           [attr.data-id]="'hilos-toast-' + toast.severity"
         >
           <!-- The card's one positioned box: the rail, the icon and the text sit
@@ -230,8 +239,9 @@ function occupiedHeight(element: HTMLElement): number {
           @if (toast.measured && toast.severity !== 'error') {
             @for (round of [toast.repeats]; track round) {
               <div
-                class="hilos-toast-life border-top border-2 opacity-50"
+                class="border-top border-2 opacity-50"
                 [class]="visual(toast.severity).rail"
+                [class.hilos-toast-life]="!reducedMotion()"
                 [class.hilos-toast-life-paused]="frozen()"
                 data-id="hilos-toast-life"
               ></div>
@@ -250,10 +260,13 @@ function occupiedHeight(element: HTMLElement): number {
       did. It carries pe-auto because .toast-container turns pointer events off
       and only .toast turns them back on: without it the line would be the one
       part of the stack that the cursor resting on it does not count as
-      reading. -->
+      reading. While a modal is open, it and the cards let the pointer through
+      to the dialog. -->
       @if (overflow().waiting > 0 || overflow().missed > 0) {
         <div
-          class="bg-body border rounded-3 shadow-sm px-2 py-1 small text-body-secondary pe-auto"
+          class="bg-body border rounded-3 shadow-sm px-2 py-1 small text-body-secondary"
+          [class.pe-auto]="!modalOpen()"
+          [class.pe-none]="modalOpen()"
           data-id="hilos-toast-overflow"
         >
           @if (overflow().waiting > 0) {
@@ -292,6 +305,10 @@ export class HilosToastHost {
    */
   readonly corner = input<HilosToastCorner>('bottom-end')
 
+  protected readonly narrow = signal(false)
+  protected readonly modalOpen = signal(false)
+  protected readonly reducedMotion = signal(false)
+
   protected readonly toasts = signal<readonly HilosToast[]>([])
 
   protected readonly overflow = signal<HilosToastOverflow>({
@@ -299,17 +316,16 @@ export class HilosToastHost {
     missed: 0,
   })
 
-  // Where the stack sits on a wide screen: the horizontal edge is a stock
-  // Bootstrap utility, the vertical one is not, because the narrow screen
-  // overrides it and the stock .bottom-0 carries !important that a media query
-  // cannot outrank. On a narrow screen the full width covers the window from
-  // either horizontal edge.
+  // Map the core's narrow-screen and modal facts directly to Bootstrap
+  // positioning utilities; no media rule has to compete with their !important.
   protected readonly cornerClasses = computed(() => {
     const corner = this.corner()
+    if (this.narrow()) {
+      return `${this.modalOpen() ? 'top-0' : 'bottom-0'} end-0 w-100`
+    }
+
     const horizontal = corner.endsWith('-end') ? 'end-0' : 'start-0'
-    const vertical = corner.startsWith('bottom-')
-      ? 'hilos-toast-stack-bottom'
-      : 'hilos-toast-stack-top'
+    const vertical = corner.startsWith('bottom-') ? 'bottom-0' : 'top-0'
 
     return `${horizontal} ${vertical}`
   })
@@ -383,7 +399,26 @@ export class HilosToastHost {
     () => this.held.cursor() || this.held.focus() || this.held.tab(),
   )
 
+  private readonly doc = inject(DOCUMENT)
+
   constructor() {
+    const destroyRef = inject(DestroyRef)
+    destroyRef.onDestroy(
+      bindNarrowScreen((value) => {
+        this.narrow.set(value)
+      }),
+    )
+    destroyRef.onDestroy(
+      bindModalOpen(this.doc, (value) => {
+        this.modalOpen.set(value)
+      }),
+    )
+    destroyRef.onDestroy(
+      bindReducedMotion((value) => {
+        this.reducedMotion.set(value)
+      }),
+    )
+
     // Mirror the store's stack and what did not fit in it, re-subscribing if the
     // input is swapped. Done in an effect rather than a field initializer because
     // an input is not readable until it is bound.
@@ -409,23 +444,26 @@ export class HilosToastHost {
     // After render rather than in an effect, because the window belongs to the
     // browser and this component is also rendered on the server.
     afterRenderEffect((onCleanup) => {
+      const view = this.doc.defaultView
+      if (view === null) return
+
       const store = this.store()
       const viewer = store.attach()
       this.viewer = viewer
-      viewer.setViewportHeight(window.innerHeight)
+      viewer.setViewportHeight(view.innerHeight)
       const onResize = (): void => {
-        viewer.setViewportHeight(window.innerHeight)
+        viewer.setViewportHeight(view.innerHeight)
       }
       const onVisibility = (): void => {
-        this.setHold('tab', document.hidden)
+        this.setHold('tab', this.doc.hidden)
       }
       // Attaching the viewer must not track the holds this effect writes.
       untracked(onVisibility)
-      window.addEventListener('resize', onResize)
-      document.addEventListener('visibilitychange', onVisibility)
+      view.addEventListener('resize', onResize)
+      this.doc.addEventListener('visibilitychange', onVisibility)
       onCleanup(() => {
-        window.removeEventListener('resize', onResize)
-        document.removeEventListener('visibilitychange', onVisibility)
+        view.removeEventListener('resize', onResize)
+        this.doc.removeEventListener('visibilitychange', onVisibility)
         // detach gives back whatever holds this host was still holding, so the
         // bookkeeping of the ones it owns starts clean against the next viewer.
         viewer.detach()
@@ -435,12 +473,13 @@ export class HilosToastHost {
         this.held.focus.set(false)
       })
     })
-    // Measured after the browser has laid the cards out, and again after every
-    // render: a card is only really on screen once the store knows how tall it is,
-    // and every report after the first only updates the number. The same pass
-    // gives the focus hold back when focus has left the stack without a focusout
-    // and remembers which cards are on screen.
+    // Measured after changes to the stack or narrow-screen layout reach the DOM:
+    // a card is only really on screen once the store knows how tall it is, and
+    // every report after the first only updates the number. The same pass gives
+    // the focus hold back when focus has left the stack without a focusout and
+    // remembers which cards are on screen.
     afterRenderEffect(() => {
+      this.narrow()
       const viewer = this.viewer
       const cards = this.cards()
       const stack = this.toasts()
@@ -457,7 +496,7 @@ export class HilosToastHost {
       const container = this.stack()
       if (
         this.held.focus() &&
-        !(container?.nativeElement.contains(document.activeElement) ?? false)
+        !(container?.nativeElement.contains(this.doc.activeElement) ?? false)
       ) {
         this.setHold('focus', false)
       }
@@ -477,15 +516,24 @@ export class HilosToastHost {
   }
 
   /**
-   * The classes that keep one card out of sight while it is being measured.
+   * The card's width and inertness while it is being measured or a modal is open.
    *
-   * Only a rendered card can be measured, so the card stays in the loop and the
-   * classes come off the moment the store admits it.
+   * A narrow card uses the same width before and after measurement. The measuring
+   * layer already disables pointer events; a visible card joins it while modal UI
+   * is open so the pointer reaches the dialog.
    *
    * @param toast The card being drawn.
    */
-  protected measuring(toast: HilosToast): string {
-    return toast.measured ? '' : MEASURING_LAYER
+  protected cardClasses(toast: HilosToast): string {
+    const classes: string[] = []
+    if (this.narrow()) classes.push('w-100')
+    if (!toast.measured) {
+      classes.push(MEASURING_LAYER)
+    } else if (this.modalOpen()) {
+      classes.push('pe-none')
+    }
+
+    return classes.join(' ')
   }
 
   /**

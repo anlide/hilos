@@ -43,9 +43,9 @@
 // unlike the Vue (teleport) and React (createPortal) views, this renders in
 // place — Bootstrap's `.modal` is position:fixed, so it overlays the viewport
 // without a portal; a project needing to escape a transformed-ancestor stacking
-// context wraps it in a CDK overlay. Bootstrap classes only, save for the
-// declarations the Sass layer names — the bottom sheet, which stock Bootstrap
-// has nothing for, and the modal layer. A modal opened over a modal learns its
+// context wraps it in a CDK overlay. Bootstrap classes only; the Sass layer
+// carries only the modal layer. On a narrow screen bindNarrowScreen selects the
+// Bootstrap classes for a bottom sheet. A modal opened over a modal learns its
 // depth from the core modal stack by itself, with nothing passed by the surface
 // that opens it, and hands the number to the Sass layer through
 // `--hilos-modal-depth`: each layer dims everything under it and stands one step
@@ -56,6 +56,7 @@ import { DOCUMENT, NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   afterRenderEffect,
   computed,
@@ -74,6 +75,7 @@ import {
   CONNECTION_INTERACTION_COPY,
   FocusTrap,
   bindInteractionBlock,
+  bindNarrowScreen,
   copyToClipboard,
   createModalController,
   enterModalLayer,
@@ -143,12 +145,17 @@ export interface ModalBodyContext {
         (click)="onClick($event, dialog)"
       >
         <div
-          class="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet"
+          class="modal-dialog modal-dialog-centered modal-dialog-scrollable"
           [class.modal-lg]="size() === 'wide'"
+          [class.m-0]="narrow()"
+          [class.mw-100]="narrow()"
+          [class.h-100]="narrow()"
+          [class.align-items-end]="narrow()"
         >
           <fieldset
             #interactionScope
             class="modal-content m-0 p-0"
+            [class.rounded-bottom-0]="narrow()"
             data-id="modal-interaction-scope"
           >
             <span
@@ -236,11 +243,16 @@ export interface ModalBodyContext {
           (keydown)="onKeydown($event, confirmDialog)"
         >
           <div
-            class="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet"
+            class="modal-dialog modal-dialog-centered modal-dialog-scrollable"
+            [class.m-0]="narrow()"
+            [class.mw-100]="narrow()"
+            [class.h-100]="narrow()"
+            [class.align-items-end]="narrow()"
           >
             <fieldset
               #confirmInteractionScope
               class="modal-content m-0 p-0"
+              [class.rounded-bottom-0]="narrow()"
               data-id="modal-confirm-interaction-scope"
             >
               <span
@@ -393,6 +405,7 @@ export class HilosModal {
   /** The layer this modal stands on: 0 over the page, 1 over another modal. */
   protected readonly layerDepth = signal(0)
   protected readonly confirmDepth = signal(0)
+  protected readonly narrow = signal(false)
   protected readonly showCopy = computed(
     () => this.copyText() !== '' && isClipboardAvailable(),
   )
@@ -406,6 +419,12 @@ export class HilosModal {
   }
 
   constructor() {
+    inject(DestroyRef).onDestroy(
+      bindNarrowScreen((value) => {
+        this.narrow.set(value)
+      }),
+    )
+
     afterRenderEffect((onCleanup) => {
       const root = this.dialog()?.nativeElement
       const fieldset = this.interactionScope()?.nativeElement
