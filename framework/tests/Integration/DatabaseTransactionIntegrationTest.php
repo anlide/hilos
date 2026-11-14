@@ -246,36 +246,6 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
     }
 
     /**
-     * The self-broadcast registration travels with the frame: a dropped frame leaves no echo
-     * awaited, and a released one leaves exactly the one its row is awaited back under.
-     *
-     * @throws HilosException When a write or the transaction fails
-     */
-    public function testTheEchoRegistrationTravelsWithTheFrame(): void
-    {
-        $emitter = Hilos::$sr->getEmitter();
-
-        Database::transactionStart();
-        $dropped = $this->request(self::FIRST_USER_ID);
-        Database::transactionRollback();
-
-        self::assertFalse(
-            Hilos::$sr->shouldSkipDbSyncApply(HilosDbContext::accountDeletions, $dropped, $emitter),
-            'A dropped frame leaves no registration behind',
-        );
-
-        Database::transactionStart();
-        $released = $this->request(self::SECOND_USER_ID);
-        Database::transactionCommit();
-
-        self::assertSame([$released], $this->drainDbFrames());
-        self::assertTrue(
-            Hilos::$sr->shouldSkipDbSyncApply(HilosDbContext::accountDeletions, $released, $emitter),
-            'A released frame is awaited back',
-        );
-    }
-
-    /**
      * @throws HilosException When a write or the transaction fails
      */
     public function testAPlainStartInsideAnOpenTransactionIsRefusedAndTheOpenOneStands(): void

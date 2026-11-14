@@ -1057,9 +1057,6 @@ final class NamedDatabaseIntegrationTest extends FrameworkIntegrationTestCase
                 self::assertSame([], $this->mirror->seen);
                 self::assertSame([], $this->reaction->seen);
                 self::assertNull(Hilos::$sr->getNextQueuedSignal());
-                foreach (['1', '300'] as $id) {
-                    self::assertFalse(Hilos::$sr->shouldSkipDbSyncApply('namedSetChildren', $id, Hilos::$sr->getEmitter()));
-                }
                 // Inspect independently only after checking lastSql and cold membership.
                 self::assertSame($before, self::allRawLabels());
             }
@@ -1579,9 +1576,7 @@ final class NamedDatabaseIntegrationTest extends FrameworkIntegrationTestCase
         self::assertSame('committed', Hilos::$rt->namedRuntime['added']->label());
         self::assertSame(['remote', 'namedRuntime'], array_column($this->reaction->seen, 'sourceKey'));
         self::assertSame([SignalConstants::DB_SYNC_UPDATED, SignalConstants::RT_SYNC_CREATED], $this->drainFrames());
-        self::assertTrue(Hilos::$sr->shouldSkipDbSyncApply('remote', '1', Hilos::$sr->getEmitter()));
         self::assertTrue(Hilos::$sr->shouldSkipRtSyncApply('namedRuntime', 'added'));
-        self::assertFalse(Hilos::$sr->shouldSkipDbSyncApply('remote', '1', Hilos::$sr->getEmitter()));
         self::assertFalse(Hilos::$sr->shouldSkipRtSyncApply('namedRuntime', 'added'));
         self::assertFalse(Database::hasOpenTransactions());
         $this->assertAmbientDefaultRestored(1);
@@ -1668,10 +1663,10 @@ final class NamedDatabaseIntegrationTest extends FrameworkIntegrationTestCase
                 SyncSignalDataKey::ORIGIN_REQUEST_ID => null,
                 SyncSignalDataKey::EMITTER => Hilos::$sr->getEmitter(),
             ], $signal->data->toArray());
-            self::assertTrue(Hilos::$sr->shouldSkipDbSyncClearApply(Hilos::$sr->getEmitter()));
-            self::assertTrue(Hilos::$sr->shouldSkipDbSyncClearApply(Hilos::$sr->getEmitter()));
-            self::assertFalse(Hilos::$sr->shouldSkipDbSyncClearApply('foreign-emitter'));
-            self::assertFalse(Hilos::$sr->shouldSkipDbSyncClearApply(null));
+            self::assertTrue(Hilos::$sr->shouldSkipDbSyncApply(Hilos::$sr->getEmitter()));
+            self::assertTrue(Hilos::$sr->shouldSkipDbSyncApply(Hilos::$sr->getEmitter()));
+            self::assertFalse(Hilos::$sr->shouldSkipDbSyncApply('foreign-emitter'));
+            self::assertFalse(Hilos::$sr->shouldSkipDbSyncApply(null));
         } else {
             self::assertSame($before, self::allRawLabels());
             self::assertSame($first->getObject(), Hilos::$db->remote[1]->getObject());
@@ -1679,7 +1674,6 @@ final class NamedDatabaseIntegrationTest extends FrameworkIntegrationTestCase
             self::assertTrue(Hilos::$db->remote->getObjectCollection()->isAllLoaded());
             self::assertSame([], $this->reaction->seen);
         }
-        self::assertFalse(Hilos::$sr->shouldSkipDbSyncApply('remote', '1', Hilos::$sr->getEmitter()));
         self::assertNull(Hilos::$sr->getNextQueuedSignal());
         $this->assertAmbientDefaultRestored(1);
     }
@@ -1724,9 +1718,6 @@ final class NamedDatabaseIntegrationTest extends FrameworkIntegrationTestCase
     {
         self::assertSame([], $this->reaction->seen);
         self::assertNull(Hilos::$sr->getNextQueuedSignal());
-        foreach (['1', '2', '300'] as $id) {
-            self::assertFalse(Hilos::$sr->shouldSkipDbSyncApply('remote', $id, Hilos::$sr->getEmitter()));
-        }
         foreach (['kept', 'added', 'dropped'] as $id) {
             self::assertFalse(Hilos::$sr->shouldSkipRtSyncApply('namedRuntime', $id));
         }
@@ -1771,9 +1762,8 @@ final class NamedDatabaseIntegrationTest extends FrameworkIntegrationTestCase
                 self::assertNull($payload[SyncSignalDataKey::RECEIPT_ID]);
                 self::assertNull($payload[SyncSignalDataKey::WRITER_AGENT_ID]);
                 self::assertSame(Hilos::$sr->getEmitter(), $payload[SyncSignalDataKey::EMITTER]);
-                self::assertFalse(Hilos::$sr->shouldSkipDbSyncApply($key, $id, 'foreign-emitter'));
-                self::assertTrue(Hilos::$sr->shouldSkipDbSyncApply($key, $id, $payload[SyncSignalDataKey::EMITTER]));
-                self::assertFalse(Hilos::$sr->shouldSkipDbSyncApply($key, $id, $payload[SyncSignalDataKey::EMITTER]));
+                self::assertFalse(Hilos::$sr->shouldSkipDbSyncApply('foreign-emitter'));
+                self::assertTrue(Hilos::$sr->shouldSkipDbSyncApply($payload[SyncSignalDataKey::EMITTER]));
             } else {
                 self::assertTrue(Hilos::$sr->shouldSkipRtSyncApply($key, $id));
                 self::assertFalse(Hilos::$sr->shouldSkipRtSyncApply($key, $id));

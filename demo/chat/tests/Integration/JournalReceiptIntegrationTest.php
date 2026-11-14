@@ -491,7 +491,6 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
                 $this->assertNull(JournalReceiptScope::currentId());
                 ExecutionContext::setCurrentAgentId(self::INITIATOR_AGENT_ID);
                 $this->assertSame([], $this->drainSettingsFrames());
-                $this->assertFalse(Hilos::$sr->shouldSkipDbSyncApply(HilosDbContext::settings, (string) $rowId, Hilos::$sr->getEmitter()));
                 Database::transactionCommit();
             } catch (Throwable $failure) {
                 Database::transactionRollbackSilent();
@@ -512,15 +511,14 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
             $this->assertSettingLifecycleFrames($settings, $key, $rowId, $receiptId, self::WRITER_AGENT_ID);
             foreach ($frames as $frame) {
                 $this->assertTransportPreservesFrame($frame);
+                $this->assertTrue(Hilos::$sr->shouldSkipDbSyncApply($frame->data->emitter));
             }
-            $this->assertTrue(Hilos::$sr->shouldSkipDbSyncApply(HilosDbContext::settings, (string) $rowId, $frames[0]->data->emitter));
-            $this->assertFalse(Hilos::$sr->shouldSkipDbSyncApply(HilosDbContext::settings, (string) $rowId, Hilos::$sr->getEmitter()));
             $this->assertSame(3, $this->logCount($receiptId));
         }, [$key]);
     }
 
-    /** Rollback discards all three row frames and their pending self-echo registrations. */
-    public function testRollbackDropsOrmFramesAndTheirEchoRegistrations(): void
+    /** Rollback discards all three row frames. */
+    public function testRollbackDropsOrmFrames(): void
     {
         $key = self::KEY_PREFIX . 'orm-rollback';
         $this->withSettingsWriter(function () use ($key): void {
@@ -539,7 +537,6 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
                 $this->assertNull(JournalReceiptScope::currentId());
                 ExecutionContext::setCurrentAgentId(self::INITIATOR_AGENT_ID);
                 $this->assertSame([], $this->drainSettingsFrames());
-                $this->assertFalse(Hilos::$sr->shouldSkipDbSyncApply(HilosDbContext::settings, (string) $rowId, Hilos::$sr->getEmitter()));
                 Database::transactionRollback();
             } catch (Throwable $failure) {
                 Database::transactionRollbackSilent();
@@ -547,7 +544,6 @@ final class JournalReceiptIntegrationTest extends IntegrationTestCase
             }
 
             $this->assertSame([], $this->drainSettingsFrames());
-            $this->assertFalse(Hilos::$sr->shouldSkipDbSyncApply(HilosDbContext::settings, (string) $rowId, Hilos::$sr->getEmitter()));
             $this->assertArrayNotHasKey($key, Hilos::$db->settings);
             $this->assertNull($this->receiptFields($receiptId));
             $this->assertSame(0, $this->logCount($receiptId));

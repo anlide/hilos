@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
-use Hilos\Constants\SignalTypeConstants;
-use Hilos\Core\Router\SelfBroadcastRegistry;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
-use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -22,15 +19,10 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Covers the HIL-472 fault: self-echo suppression for a collection clear used to ride
- * {@see SelfBroadcastRegistry}, which is deliberately best-effort — past its cap the
- * oldest registration is evicted. A clear registration evicted by ordinary row syncs
- * made the emitting process apply the truncate to itself a second time, blanking its
- * in-memory mirror on top of rows written after the clear.
- *
- * Suppression now compares the emitter identity carried in the payload, so it holds no
- * state that could be evicted, and applying a clear re-reads the collection instead of
- * blanking it.
+ * Self-echo suppression for a collection clear compares the emitter identity carried in the
+ * payload, so it holds no state that could be evicted, and applying a clear re-reads the
+ * collection instead of blanking it. A best-effort per-collection mark, once evicted by
+ * ordinary row syncs, made the emitting process truncate its own mirror a second time (HIL-472).
  */
 final class DbSyncClearSelfEchoTest extends TestCase
 {
@@ -53,24 +45,6 @@ final class DbSyncClearSelfEchoTest extends TestCase
     {
         Hilos::$db = $this->previousDb;
         Hilos::$sr = $this->previousSignalRouter;
-    }
-
-    public function testClearSuppressionSurvivesRegistryPressure(): void
-    {
-        $router = new SignalRouter();
-        $router->queueDbSyncClearedSignal(new DbSyncClearedSignalData(self::COLLECTION_KEY));
-
-        // One tick of ordinary row syncs used to be enough to push the clear registration out.
-        for ($id = 1; $id <= SelfBroadcastRegistry::DEFAULT_MAX_ENTRIES; $id++) {
-            $router->queueDbSyncSignal(
-                SignalTypeConstants::DB_SYNC_CREATED,
-                new DbSyncCreatedSignalData(self::COLLECTION_KEY, (string) $id, ['id' => $id]),
-            );
-        }
-
-        // The verdict is read off the payload that actually left, not off the router's own
-        // identity: an unstamped send would then read as someone else's clear and re-apply.
-        $this->assertTrue($router->shouldSkipDbSyncClearApply($this->dequeueClear($router)->emitter));
     }
 
     public function testQueuedClearCarriesThisProcessEmitter(): void
@@ -98,21 +72,21 @@ final class DbSyncClearSelfEchoTest extends TestCase
         $delivered = WorkerDbSyncClearedMessageDTO::fromArray($transported)->signalData;
 
         $this->assertSame($router->getEmitter(), $delivered->emitter);
-        $this->assertTrue($router->shouldSkipDbSyncClearApply($delivered->emitter));
+        $this->assertTrue($router->shouldSkipDbSyncApply($delivered->emitter));
     }
 
     public function testForeignClearIsApplied(): void
     {
         $router = new SignalRouter();
 
-        $this->assertFalse($router->shouldSkipDbSyncClearApply('some-other-process'));
+        $this->assertFalse($router->shouldSkipDbSyncApply('some-other-process'));
     }
 
     public function testUnstampedClearIsApplied(): void
     {
         $router = new SignalRouter();
 
-        $this->assertFalse($router->shouldSkipDbSyncClearApply(null));
+        $this->assertFalse($router->shouldSkipDbSyncApply(null));
     }
 
     public function testTwoRoutersDoNotShareEmitterIdentity(): void

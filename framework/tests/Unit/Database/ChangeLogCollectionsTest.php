@@ -514,6 +514,24 @@ final class ChangeLogCollectionsTest extends TestCase
         $this->assertStoreEmpty();
     }
 
+    /** Two own writes of one row in flight: neither echo announces its fact a second time. */
+    public function testNoOwnEchoOfARowWrittenTwiceAnnouncesAgain(): void
+    {
+        $object = $this->store[1];
+        self::assertInstanceOf(CachelessObject::class, $object);
+        $object->remark('first local write');
+        $object->sync();
+        $object->remark('second local write');
+        $object->sync();
+        self::assertCount(2, $this->changes->seen);
+        foreach ([Hilos::$sr->getNextQueuedSignal(), Hilos::$sr->getNextQueuedSignal()] as $signal) {
+            self::assertInstanceOf(DbSyncUpdatedSignalData::class, $signal?->data);
+            DbSyncApplicator::applyUpdated($signal->data);
+        }
+        self::assertCount(2, $this->changes->seen, 'An own echo announces nothing twice');
+        $this->assertStoreEmpty();
+    }
+
     public function testLocalOrmUpdateStillAnnouncesAndQueuesItsDiffWithoutRetainingRows(): void
     {
         $snapshot = $this->view[1];

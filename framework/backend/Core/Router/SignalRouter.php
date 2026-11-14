@@ -170,9 +170,6 @@ class SignalRouter
     /** @var bool Whether DB sync broadcast is enabled (false for CLI/migrations) */
     public bool $dbSyncBroadcastEnabled = true;
 
-    /** @var SelfBroadcastRegistry DB sync ids this worker broadcast, pending self-apply skip */
-    private SelfBroadcastRegistry $dbSelfBroadcast;
-
     /** @var SelfBroadcastRegistry RT sync ids this worker broadcast, pending self-apply skip */
     private SelfBroadcastRegistry $rtSelfBroadcast;
 
@@ -201,27 +198,21 @@ class SignalRouter
     /**
      * @var string Identity of this process as the emitter of the DB syncs it sends.
      *
-     * A clear fact has no row id, so the self-broadcast registry cannot key it the way
-     * row syncs are keyed. The emitter identity replaces that registration entirely:
+     * The stamp is the whole verdict on every DB frame, a row sync and a clear alike:
      * it travels in the payload and is compared on receive, so suppression holds no
-     * state that could be evicted. Random rather than the worker index because indexes
-     * are reused after a worker restart, and an echo from the dead worker would then
-     * suppress a legitimate clear in its successor.
-     *
-     * A row sync carries the same stamp, but there it narrows the registration rather
-     * than replacing it: the registry says a row is awaited back, the stamp says by
-     * whom, and only both together mean "my own echo".
+     * state and nothing in it can be evicted or spent. Random rather than the worker
+     * index because indexes are reused after a worker restart, and an echo from the
+     * dead worker would then suppress a legitimate write in its successor.
      */
     private readonly string $emitter;
 
     /**
-     * Initializes the signal queue, worker-local subscription mirror, self-broadcast
-     * registries, and this process's emitter identity.
+     * Initializes the signal queue, worker-local subscription mirror, the RT self-broadcast
+     * registry, and this process's emitter identity.
      */
     public function __construct()
     {
         $this->queuedSignals = new SplQueue();
-        $this->dbSelfBroadcast = new SelfBroadcastRegistry();
         $this->rtSelfBroadcast = new SelfBroadcastRegistry();
         $this->subscriptions = new SubscriptionRegistry();
         $this->emitter = RandomHelper::hex(self::EMITTER_RANDOM_BYTES);
@@ -456,21 +447,15 @@ class SignalRouter
 
     /**
      * Queue DB sync signal (from Object_::sync/delete).
-     * Skips if broadcast disabled. Registers (collectionKey, idString) for self-apply
-     * skip when the payload names both; an unnamed one is broadcast without the
-     * self-apply guard, exactly as before, because a payload that cannot be deduped
-     * still has to reach the other processes.
+     * Skips if broadcast disabled.
      *
      * Stamps the payload with this process's emitter identity, the way
-     * {@see self::queueDbSyncClearedSignal()} does: the registration alone says a row
-     * is awaited back, not from whom, so the receiving side needs the stamp to tell
-     * this process's own echo from another writer's change to the same row.
+     * {@see self::queueDbSyncClearedSignal()} does: the stamp is what the receiving side
+     * recognizes its own echo by ({@see self::shouldSkipDbSyncApply()}), and it tells
+     * that echo from another writer's change to the same row.
      *
      * Under an open transaction the frame is queued when the outermost level commits,
-     * and a rollback drops it. The registration travels with the frame: registered at
-     * the write, a dropped frame would leave an echo awaited that never comes - the
-     * next foreign write to the row would raise the race warning, and the registration
-     * would then eat the echo of this process's next own write to it.
+     * and a rollback drops it.
      *
      * @param string $signalName Signal name (e.g. SignalConstants::DB_SYNC_CREATED)
      * @param DbSyncSignalDataInterface $signalData Signal data with collectionKey and idString
@@ -488,10 +473,6 @@ class SignalRouter
         }
 
         Database::afterCommit(function () use ($signalName, $signalData): void {
-            if ($signalData->collectionKey !== '' && $signalData->idString !== '') {
-                $this->dbSelfBroadcast->register($signalData->collectionKey, $signalData->idString);
-            }
-
             $this->queueSignal(
                 signalSource: new SignalSource(SignalSource::DB),
                 signalType: new SignalType($signalName),
@@ -502,41 +483,24 @@ class SignalRouter
     }
 
     /**
-     * Check if apply should be skipped (self-broadcast) and remove from registry.
+     * Check if a DB sync apply should be skipped because this process emitted the frame.
      *
-     * The verdict is keyed by the PAIR "emitter stamp, then pending registration". The
-     * stamp is compared first, and a foreign or missing one returns before the registry
-     * is read at all — which is the whole point of the order. A frame from another
-     * writer used to consume the registration standing for THIS process's write to the
-     * same row, so two changes were lost at once: the foreign one was dropped as an own
-     * echo, and this process's own echo later passed through unsuppressed and reached
-     * the agents as someone else's fact.
+     * One rule for every DB frame - created, updated, deleted and cleared: the frame is
+     * this process's own echo exactly when it carries this process's emitter stamp.
      *
-     * An unstamped frame counts as someone else's, the same way an unstamped clear does
-     * ({@see self::shouldSkipDbSyncClearApply()}).
+     * An unstamped frame counts as someone else's. For a clear that is the safe side:
+     * skipping a foreign truncate is more dangerous than applying an extra one, because
+     * rows left standing after a remote delete collide with freshly minted ids.
      *
-     * @param string $collectionKey Collection key for sync
-     * @param string $idString Entity ID string
+     * The verdict holds no state, so nothing in it is spent or evicted: no own echo of a
+     * row is applied, however many frames of this process for that row are in flight.
+     *
      * @param ?string $emitter Emitter identity from the sync payload, null when unstamped
      * @return bool True if this was our broadcast, skip apply
      */
-    public function shouldSkipDbSyncApply(string $collectionKey, string $idString, ?string $emitter): bool
+    public function shouldSkipDbSyncApply(?string $emitter): bool
     {
-        if ($emitter !== $this->emitter) {
-            if ($this->dbSelfBroadcast->has($collectionKey, $idString)) {
-                // The only place a genuine two-writer race on one row is visible from
-                // the outside: this process is still waiting for the echo of its own
-                // write when someone else's change to the same row arrives.
-                Logger::warning(
-                    "DB sync: a foreign write to row {$idString} of collection {$collectionKey} arrived "
-                    . 'while this process was still awaiting the echo of its own write to that row',
-                );
-            }
-
-            return false;
-        }
-
-        return $this->dbSelfBroadcast->consume($collectionKey, $idString);
+        return $emitter !== null && $emitter === $this->emitter;
     }
 
     /**
@@ -569,21 +533,6 @@ class SignalRouter
     }
 
     /**
-     * Check if a clear apply should be skipped because this process emitted it.
-     *
-     * An unstamped clear counts as someone else's: skipping a foreign truncate is more
-     * dangerous than applying an extra one, because rows left standing after a remote
-     * delete collide with freshly minted ids.
-     *
-     * @param ?string $emitter Emitter identity from the clear payload, null when unstamped
-     * @return bool True if this was our broadcast, skip apply
-     */
-    public function shouldSkipDbSyncClearApply(?string $emitter): bool
-    {
-        return $emitter !== null && $emitter === $this->emitter;
-    }
-
-    /**
      * Queue RT sync signal (from RtActions write operations).
      * Registers (collectionKey, stateId) for self-apply skip when the payload names
      * both; an unnamed one is broadcast without the self-apply guard, exactly as
@@ -592,9 +541,9 @@ class SignalRouter
      *
      * Under an open transaction the frame is queued when the outermost level commits,
      * and a rollback drops it, exactly as a DB-sync frame: one transaction covers the
-     * database and the runtime (HIL-1165). The registration travels with the frame for
-     * the same reason it does there - registered at the write, a dropped frame would
-     * leave an echo awaited that never comes.
+     * database and the runtime (HIL-1165). The registration travels with the frame:
+     * registered at the write, a dropped frame would leave an echo awaited that never
+     * comes.
      *
      * @param string $signalName Signal name (e.g. SignalConstants::RT_SYNC_CREATED)
      * @param RtSyncSignalDataInterface $signalData Signal data with collectionKey and stateId

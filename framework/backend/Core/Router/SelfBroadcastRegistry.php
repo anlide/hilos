@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace Hilos\Core\Router;
 
 /**
- * SelfBroadcastRegistry - Remembers sync ids this worker broadcast so it can skip
- * re-applying its own DB/RT changes when the broadcast loops back to it.
+ * SelfBroadcastRegistry - Remembers runtime sync ids this worker broadcast so it can
+ * skip re-applying its own RT changes when the broadcast loops back to it.
  *
- * Best-effort dedup, not a correctness store: registrations are bounded so a
- * broadcast that is never applied back cannot leak memory in a long-running
- * daemon. When the cap is exceeded the oldest registration is evicted; the worst
- * case is one redundant self-apply, never a wrong result.
+ * DB frames are not registered here: a DB echo is recognized by the emitter stamp
+ * the frame carries ({@see SignalRouter::shouldSkipDbSyncApply()}).
+ *
+ * Registrations are bounded so a broadcast that is never applied back cannot leak
+ * memory in a long-running daemon. When the cap is exceeded the oldest registration
+ * is evicted. An evicted or already consumed registration lets this worker's own
+ * stale echo apply over a newer write of the same state; HIL-2104 fixes that for RT.
  */
 final class SelfBroadcastRegistry
 {
@@ -32,12 +35,12 @@ final class SelfBroadcastRegistry
     /**
      * Records a broadcast id so the originating worker can skip re-applying it.
      *
-     * The queue methods of {@see SignalRouter} call this only when the payload names
+     * {@see SignalRouter::queueRtSyncSignal()} calls this only when the payload names
      * both parts, so this one holds no guard of its own. Re-registering refreshes
      * recency, and the oldest registration is evicted once the cap is exceeded.
      *
      * @param string $collectionKey Collection key for sync
-     * @param string $id Entity id (idString for DB, stateId for RT)
+     * @param string $id Runtime state id
      */
     public function register(string $collectionKey, string $id): void
     {
@@ -51,28 +54,10 @@ final class SelfBroadcastRegistry
     }
 
     /**
-     * Reports a pending registration without spending it.
-     *
-     * Lets a caller tell "a foreign fact arrived for a row this process is still
-     * awaiting its own echo of" from "a foreign fact arrived for a row nobody here
-     * wrote": the first is a real two-writer race and worth saying out loud, the second
-     * is ordinary traffic. Looking must not consume, because the echo of our own write
-     * is still to come and the registration is what will suppress it.
-     *
-     * @param string $collectionKey Collection key for sync
-     * @param string $id Entity id (idString for DB, stateId for RT)
-     * @return bool True if a registration for this pair is still pending
-     */
-    public function has(string $collectionKey, string $id): bool
-    {
-        return isset($this->ids[$collectionKey . ':' . $id]);
-    }
-
-    /**
      * Consumes a registration; true when this id was our own broadcast.
      *
      * @param string $collectionKey Collection key for sync
-     * @param string $id Entity id (idString for DB, stateId for RT)
+     * @param string $id Runtime state id
      * @return bool True if registered (now removed), so the apply should be skipped
      */
     public function consume(string $collectionKey, string $id): bool

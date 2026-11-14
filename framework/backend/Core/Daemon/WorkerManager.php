@@ -1708,7 +1708,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
      */
     private function handleDbSyncMessage(WorkerDbSyncMessageInterface $data): void
     {
-        if ($this->consumeIncomingDbSyncSelfBroadcast($data->signalData)) {
+        if ($this->isOwnDbSyncEcho($data->signalData)) {
             return;
         }
         match (true) {
@@ -2312,15 +2312,14 @@ abstract class WorkerManager extends BaseManager implements PageResender
     }
 
     /**
-     * Consume a DB sync self-broadcast marker before applying a daemon echo.
+     * Recognize this worker's own DB row echo before applying a daemon echo.
      *
      * The originating worker already recorded the local DB change for browser
      * state when it sent the sync to the daemon. The echoed worker message
      * must therefore neither re-apply nor re-emit the same fact.
      *
-     * Whose fact this is comes from the emitter stamp in the payload, not from the
-     * pending registration alone: another worker writing the same row must not be
-     * mistaken for this one's echo, nor spend the registration that suppresses it.
+     * Whose fact this is comes from the emitter stamp alone: another worker writing
+     * the same row must not be mistaken for this one's echo.
      *
      * The emptiness check stays until HIL-532 rules on whether an incomplete
      * signal payload must be rejected by fromArray(): this side reads a payload
@@ -2330,17 +2329,13 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * @param DbSyncSignalDataInterface $signalData DB sync payload
      * @return bool True when this worker should ignore the daemon echo
      */
-    private function consumeIncomingDbSyncSelfBroadcast(DbSyncSignalDataInterface $signalData): bool
+    private function isOwnDbSyncEcho(DbSyncSignalDataInterface $signalData): bool
     {
         if ($signalData->collectionKey === '' || $signalData->idString === '') {
             return false;
         }
 
-        return Hilos::$sr?->shouldSkipDbSyncApply(
-            $signalData->collectionKey,
-            $signalData->idString,
-            $signalData->emitter,
-        ) ?? false;
+        return Hilos::$sr?->shouldSkipDbSyncApply($signalData->emitter) ?? false;
     }
 
     /**
@@ -2349,9 +2344,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * The originating worker already cleared its in-memory rows and recorded the
      * browser fact when it queued the clear. Re-recording it on the echo would
      * wipe rows created in the same truncate (for example a follow-up marker
-     * event), so the originating worker must ignore its own clear echo. Unlike the
-     * row-sync sibling this consumes nothing: the payload carries the emitter
-     * identity and the check is a comparison with this process's own.
+     * event), so the originating worker must ignore its own clear echo. The payload
+     * carries the emitter identity and the check is a comparison with this process's
+     * own.
      *
      * The emptiness check stays until HIL-532 rules on whether an incomplete
      * signal payload must be rejected by fromArray(): this side reads a payload
@@ -2367,7 +2362,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return false;
         }
 
-        return Hilos::$sr?->shouldSkipDbSyncClearApply($signalData->emitter) ?? false;
+        return Hilos::$sr?->shouldSkipDbSyncApply($signalData->emitter) ?? false;
     }
 
     /**
@@ -2395,8 +2390,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
      *
      * Local writes are recorded when the worker first drains its queued sync
      * signal. Remote writes are recorded after the daemon sync message is
-     * accepted. Incoming self-broadcast echoes are consumed before this method,
-     * so one backend fact becomes one browser invalidation per worker.
+     * accepted. Incoming self-broadcast echoes are recognized and dropped before this
+     * method, so one backend fact becomes one browser invalidation per worker.
      *
      * A runtime row is handed on in the form the payload holds it - segmented from a local
      * writer, an array off the wire - so forwarding it converts and materializes nothing.
@@ -2470,8 +2465,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
     /**
      * Dispatches a locally-originated DB/RT sync fact to agents in this worker.
      *
-     * The daemon echo is intentionally consumed as a self-broadcast, so local
-     * agents must see the sync when the worker first drains the queued signal.
+     * The daemon echo is intentionally recognized and dropped as a self-broadcast, so
+     * local agents must see the sync when the worker first drains the queued signal.
      *
      * @param SyncSignalDataInterface $signalData Sync payload
      */

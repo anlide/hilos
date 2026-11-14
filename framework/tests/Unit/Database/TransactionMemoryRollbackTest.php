@@ -962,7 +962,6 @@ final class TransactionMemoryRollbackTest extends TestCase
         );
         self::assertSame([], $this->reaction->seen);
         self::assertSame([], $this->reaction->provenances);
-        self::assertFalse($router->shouldSkipDbSyncApply('events', 'indexed-row', $router->getEmitter()));
         self::assertNull($router->getNextQueuedSignal());
 
         Database::transactionCommit(0);
@@ -996,9 +995,9 @@ final class TransactionMemoryRollbackTest extends TestCase
         self::assertArrayNotHasKey('connectionIndex', $change->toArray());
         self::assertArrayNotHasKey('connectionIndex', $rowSignal->data->toArray());
         self::assertArrayNotHasKey('connectionIndex', $clearSignal->data->toArray());
-        self::assertFalse($router->shouldSkipDbSyncApply('events', 'indexed-row', 'another-process'));
-        self::assertTrue($router->shouldSkipDbSyncApply('events', 'indexed-row', $router->getEmitter()));
-        self::assertTrue($router->shouldSkipDbSyncClearApply($clearSignal->data->emitter));
+        self::assertFalse($router->shouldSkipDbSyncApply('another-process'));
+        self::assertTrue($router->shouldSkipDbSyncApply($rowSignal->data->emitter));
+        self::assertTrue($router->shouldSkipDbSyncApply($clearSignal->data->emitter));
         self::assertFalse(Database::hasOpenTransactions());
     }
 
@@ -1022,7 +1021,6 @@ final class TransactionMemoryRollbackTest extends TestCase
 
         self::assertSame([], $this->reaction->seen);
         self::assertNull($router->getNextQueuedSignal());
-        self::assertFalse($router->shouldSkipDbSyncApply('events', 'survivor', $router->getEmitter()));
 
         Database::transactionCommit(2);
 
@@ -1033,12 +1031,11 @@ final class TransactionMemoryRollbackTest extends TestCase
         $signal = $router->getNextQueuedSignal();
         self::assertNotNull($signal);
         self::assertSame(SignalConstants::DB_SYNC_CREATED, $signal->signalType->getType());
-        self::assertTrue($router->shouldSkipDbSyncApply('events', 'survivor', $router->getEmitter()));
         self::assertFalse(Database::hasOpenTransactions());
     }
 
-    /** Rolling back the selected connection drops its DB frame and its pending row echo. */
-    public function testIndexedDbSyncRollbackDropsTheFrameAndEchoRegistration(): void
+    /** Rolling back the selected connection drops its DB frame. */
+    public function testIndexedDbSyncRollbackDropsTheFrame(): void
     {
         $this->configureNamedArchive();
         $router = Hilos::$sr;
@@ -1053,7 +1050,6 @@ final class TransactionMemoryRollbackTest extends TestCase
         $router->queueDbSyncClearedSignal(new DbSyncClearedSignalData('events'), 2);
 
         self::assertNull($router->getNextQueuedSignal());
-        self::assertFalse($router->shouldSkipDbSyncApply('events', 'rolled-back', $router->getEmitter()));
 
         Database::transactionRollback(2);
 
@@ -1063,7 +1059,6 @@ final class TransactionMemoryRollbackTest extends TestCase
             $this->mirror->seen,
         );
         self::assertNull($router->getNextQueuedSignal());
-        self::assertFalse($router->shouldSkipDbSyncApply('events', 'rolled-back', $router->getEmitter()));
         self::assertFalse(Database::hasOpenTransactions());
     }
 
@@ -1095,14 +1090,19 @@ final class TransactionMemoryRollbackTest extends TestCase
             [[TableMutationType::Create, 'named', ['id' => 'named']]],
             $this->reaction->seen,
         );
-        self::assertSame(SignalConstants::DB_SYNC_CREATED, $router->getNextQueuedSignal()?->signalType->getType());
+        $rowSignal = $router->getNextQueuedSignal();
+        self::assertNotNull($rowSignal);
+        self::assertSame(SignalConstants::DB_SYNC_CREATED, $rowSignal->signalType->getType());
+        self::assertInstanceOf(DbSyncCreatedSignalData::class, $rowSignal->data);
+        self::assertSame('events', $rowSignal->data->collectionKey);
+        self::assertSame('named', $rowSignal->data->idString);
         $clearSignal = $router->getNextQueuedSignal();
         self::assertNotNull($clearSignal);
         self::assertSame(SignalConstants::DB_SYNC_CLEARED, $clearSignal->signalType->getType());
+        self::assertInstanceOf(DbSyncClearedSignalData::class, $clearSignal->data);
+        self::assertSame('named-clear', $clearSignal->data->collectionKey);
         self::assertNull($router->getNextQueuedSignal());
-        self::assertTrue($router->shouldSkipDbSyncApply('events', 'named', $router->getEmitter()));
-        self::assertFalse($router->shouldSkipDbSyncApply('events', 'zero', $router->getEmitter()));
-        self::assertTrue($router->shouldSkipDbSyncClearApply($clearSignal->data->emitter));
+        self::assertTrue($router->shouldSkipDbSyncApply($clearSignal->data->emitter));
 
         Database::transactionRollback(0);
 
@@ -1138,7 +1138,6 @@ final class TransactionMemoryRollbackTest extends TestCase
             $this->reaction->seen,
         );
         self::assertSame(SignalConstants::DB_SYNC_CREATED, $router->getNextQueuedSignal()?->signalType->getType());
-        self::assertTrue($router->shouldSkipDbSyncApply('events', 'ambient', $router->getEmitter()));
         self::assertFalse(Database::hasOpenTransactions());
     }
 

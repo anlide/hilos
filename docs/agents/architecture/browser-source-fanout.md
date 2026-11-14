@@ -26,12 +26,13 @@ state and does not decide which frontend collections changed.
 
 The originating worker receives its daemon echo too, but it recognizes its own
 broadcast and does not record the fact a second time. Every DB sync payload
-carries the `emitter` identity of the process that broadcast it, compared with
-the receiving process's own. A collection clear carries no row id and is
-recognized by that identity alone; a row sync needs the pair — the stamp says
-whose fact it is, and only then is the `(collectionKey, id)` self-broadcast
-marker consumed. An unstamped payload counts as someone else's, so a fact that
-cannot be attributed is applied rather than swallowed.
+carries the `emitter` identity of the process that broadcast it, and comparing
+it with the receiving process's own is the whole verdict, for a row sync and for
+a collection clear alike. No per-row marker is kept, so however many frames of
+its own for one row are in flight, none of their echoes is applied back. An
+unstamped payload counts as someone else's, so a fact that cannot be attributed
+is applied rather than swallowed. An RT sync is still recognized by a
+`(collectionKey, stateId)` self-broadcast marker, until HIL-2104.
 
 ## Delivery
 

@@ -238,7 +238,7 @@ final class DbSyncApplicator
             return;
         }
 
-        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipDbSyncClearApply($data->emitter)) {
+        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipDbSyncApply($data->emitter)) {
             return;
         }
 
@@ -290,9 +290,9 @@ final class DbSyncApplicator
     }
 
     /**
-     * The emitter stamp travels down here rather than being read off the registry alone:
-     * a row this process is awaiting an echo for can also be written by someone else, and
-     * only the stamp separates the two.
+     * The emitter stamp travels down here because it is the whole verdict: a frame carrying
+     * this process's own stamp is its echo, and any other frame, a foreign writer's change to
+     * the same row included, is applied.
      *
      * @param string $collectionKey DB collection key from sync payload
      * @param string $idString Target object id from sync payload
@@ -313,7 +313,7 @@ final class DbSyncApplicator
         if (
             $skipSelfBroadcastCheck
             && Hilos::$sr !== null
-            && Hilos::$sr->shouldSkipDbSyncApply($collectionKey, $idString, $emitter)
+            && Hilos::$sr->shouldSkipDbSyncApply($emitter)
         ) {
             return false;
         }

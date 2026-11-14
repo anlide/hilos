@@ -13,11 +13,9 @@ use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins where the non-empty check on a sync payload belongs: it guards the self-apply
- * REGISTRATION, never the broadcast.
- *
- * The verdicts below are asked with this process's OWN emitter stamp on purpose: these
- * cases are about the registration, so the stamp must not be what decides them.
+ * Pins where the non-empty check on a sync payload belongs: it guards the RT self-apply
+ * REGISTRATION, never the broadcast. A DB frame registers nothing, since its own echo is
+ * known by the emitter stamp alone, so the DB cases here pin only that the frame leaves.
  *
  * The check used to sit inside {@see SelfBroadcastRegistry::register()}, silently doing
  * nothing, while two of the three queue methods called it with no check at all. Moving
@@ -42,7 +40,6 @@ final class SignalRouterSyncQueueInvariantTest extends TestCase
         );
 
         $this->assertNotNull($router->getNextQueuedSignal());
-        $this->assertFalse($router->shouldSkipDbSyncApply('', self::ID, $router->getEmitter()));
     }
 
     public function testDbSyncSignalWithoutAnEntityIdIsStillBroadcast(): void
@@ -54,7 +51,6 @@ final class SignalRouterSyncQueueInvariantTest extends TestCase
         );
 
         $this->assertNotNull($router->getNextQueuedSignal());
-        $this->assertFalse($router->shouldSkipDbSyncApply(self::COLLECTION_KEY, '', $router->getEmitter()));
     }
 
     public function testRtSyncSignalWithoutAStateIdIsStillBroadcast(): void
@@ -69,7 +65,7 @@ final class SignalRouterSyncQueueInvariantTest extends TestCase
         $this->assertFalse($router->shouldSkipRtSyncApply(self::COLLECTION_KEY, ''));
     }
 
-    public function testDbSyncSignalNamingBothPartsIsBroadcastAndRegistered(): void
+    public function testDbSyncSignalNamingBothPartsIsBroadcastStamped(): void
     {
         $router = new SignalRouter();
         $router->queueDbSyncSignal(
@@ -77,8 +73,10 @@ final class SignalRouterSyncQueueInvariantTest extends TestCase
             new DbSyncCreatedSignalData(self::COLLECTION_KEY, self::ID, []),
         );
 
-        $this->assertNotNull($router->getNextQueuedSignal());
-        $this->assertTrue($router->shouldSkipDbSyncApply(self::COLLECTION_KEY, self::ID, $router->getEmitter()));
+        $signal = $router->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertInstanceOf(DbSyncCreatedSignalData::class, $signal->data);
+        $this->assertSame($router->getEmitter(), $signal->data->emitter);
     }
 
     public function testRtSyncSignalNamingBothPartsIsBroadcastAndRegistered(): void
