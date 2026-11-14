@@ -330,8 +330,9 @@ required results; its stop follows its last own write, made by the agent itself
 (HIL-1942, built and inert; the right to delete is not granted before the switch,
 not in the code yet — HIL-1952).
 The erasure coordinator correlates assignments and answers to one operation
-and stage (HIL-1950); start and recovery find open obligations from DB
-(not in the code yet — HIL-1951).
+and stage (HIL-1950); the holder's recovery pass and an owner's start find open
+obligations from DB (HIL-1951; [The erasure recovery](account-operations.md#current-implementation)),
+and no erasure is opened until HIL-1952.
 
 The detailed [merge canon](account-operations.md#merge) gives the folded loser
 a finishing mode: it accepts only continuation of its own operation, copy

@@ -19,6 +19,7 @@ use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Schema\Schema;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Legal\Deviation;
@@ -74,6 +75,13 @@ final class AccessLogIntegrationTest extends HilosSessionIntegrationTestCase
     /** One row beyond the sweep's batch proves the tail goes on the next tick. */
     private const int BATCH_PLUS_ONE = 501;
 
+    /** Account operation tables beyond the session base, which the holder's first tick reads (HIL-1951). */
+    private const array ACCOUNT_OPERATION_TABLES = [
+        'hilos_account_operation',
+        'hilos_account_operation_assignment',
+        'hilos_account_operation_result',
+    ];
+
     private string $boundAppClass;
 
     private ?SignalRouter $previousSignalRouter = null;
@@ -87,6 +95,10 @@ final class AccessLogIntegrationTest extends HilosSessionIntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        self::runAccountOperationStubs(down: true);
+        self::runAccountOperationStubs(down: false);
+        Schema::reset();
+        Schema::initialize();
 
         $this->boundAppClass = Hilos::appClass();
         $this->previousSignalRouter = Hilos::$sr;
@@ -121,6 +133,8 @@ final class AccessLogIntegrationTest extends HilosSessionIntegrationTestCase
         Hilos::$rt = $this->previousRt;
         Hilos::$sr = $this->previousSignalRouter;
         self::bindAppClass($this->boundAppClass);
+        self::runAccountOperationStubs(down: true);
+        Schema::reset();
 
         parent::tearDown();
     }
@@ -434,6 +448,22 @@ final class AccessLogIntegrationTest extends HilosSessionIntegrationTestCase
             StateHilosCodeSendAttempt::RT_COLLECTION,
             StateHilosProfileFlow::RT_COLLECTION,
         ];
+    }
+
+    /**
+     * Raises or drops the account operation tables beyond the session base: the holder's first
+     * tick walks the open account erasures (HIL-1951).
+     *
+     * @param bool $down Drop tables when true, create them when false
+     * @throws DatabaseException When a stub statement fails
+     */
+    private static function runAccountOperationStubs(bool $down): void
+    {
+        // external-boundary: the up stub has no suffix in its file name
+        $suffix = $down ? '_down' : '';
+        foreach ($down ? array_reverse(self::ACCOUNT_OPERATION_TABLES) : self::ACCOUNT_OPERATION_TABLES as $table) {
+            Database::sqlRun((string)file_get_contents(dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql"));
+        }
     }
 }
 

@@ -150,11 +150,12 @@ a retry.
 
 For erasure, the built participant step returns a saved result instead of
 running its work again; the coordinator advances only the matching operation
-and stage (HIL-1950). The HIL-1952 entry starts the coordinator, and the later
-recovery passes (HIL-1951), together with each participant's start or
-operation frame, select open obligations from DB. A lost frame needs no fresh
-external event, and no DB poll on every tick or remembered cursor is added
-(not in the code yet — HIL-1951). These paths become live at erasure's cutover
+and stage (HIL-1950). The HIL-1952 entry starts the coordinator, and the
+holder's recovery passes, together with each participant's start or
+operation frame, select open obligations from DB (HIL-1951, built). A lost
+frame needs no fresh external event, and no DB poll on every tick or remembered
+cursor is added: the pass keeps a position in memory only, and a tick with no
+pass running reads nothing. These paths become live at erasure's cutover
 (not in the code yet — HIL-1952).
 
 For [merge](../architecture/account-operations.md#merge), the loser commits

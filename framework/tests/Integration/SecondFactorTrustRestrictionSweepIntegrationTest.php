@@ -130,6 +130,13 @@ final class SecondFactorTrustRestrictionSweepIntegrationTest extends HilosSessio
     /** Why a person's agent refused in a case: the message of the failure held back. */
     private const string REFUSAL_DETAIL = 'Trust storage failure';
 
+    /** Account operation tables beyond the session base, which the holder's first tick reads (HIL-1951). */
+    private const array ACCOUNT_OPERATION_TABLES = [
+        'hilos_account_operation',
+        'hilos_account_operation_assignment',
+        'hilos_account_operation_result',
+    ];
+
     /** Journal tables, children first, as a case raises and drops them. */
     private const array JOURNAL_TABLES = [
         'hilos_change_log_value', 'hilos_change_log_change', 'hilos_change_log',
@@ -169,6 +176,10 @@ final class SecondFactorTrustRestrictionSweepIntegrationTest extends HilosSessio
     protected function setUp(): void
     {
         parent::setUp();
+        self::runAccountOperationStubs(down: true);
+        self::runAccountOperationStubs(down: false);
+        Schema::reset();
+        Schema::initialize();
 
         $this->previousRouter = Hilos::$sr;
         $this->previousApp = Hilos::appClass();
@@ -215,6 +226,8 @@ final class SecondFactorTrustRestrictionSweepIntegrationTest extends HilosSessio
         Hilos::$table = $this->previousTable;
         self::bindAppClass($this->previousApp);
         Hilos::$sr = $this->previousRouter;
+        self::runAccountOperationStubs(down: true);
+        Schema::reset();
 
         parent::tearDown();
     }
@@ -1555,6 +1568,22 @@ final class SecondFactorTrustRestrictionSweepIntegrationTest extends HilosSessio
     private static function bindAppClass(string $hilosClass): void
     {
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $hilosClass);
+    }
+
+    /**
+     * Raises or drops the account operation tables beyond the session base: the holder's first
+     * tick walks the open account erasures (HIL-1951).
+     *
+     * @param bool $down Drop tables when true, create them when false
+     * @throws DatabaseException When a stub statement fails
+     */
+    private static function runAccountOperationStubs(bool $down): void
+    {
+        // external-boundary: the up stub has no suffix in its file name
+        $suffix = $down ? '_down' : '';
+        foreach ($down ? array_reverse(self::ACCOUNT_OPERATION_TABLES) : self::ACCOUNT_OPERATION_TABLES as $table) {
+            Database::sqlRun((string)file_get_contents(dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql"));
+        }
     }
 }
 

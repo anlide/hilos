@@ -208,6 +208,11 @@ sessions holder owns in `AGENT_SIGNALS` with
 correlated notice; the participant's durable result remains the evidence of
 completion.
 
+A participant's start runs the ready assignments addressed to it through the
+same handler, in the worker, with the frame the coordinator would have sent and
+without a frame to itself; the answer goes to the holder as for any ask
+([The erasure recovery](../architecture/account-operations.md#current-implementation)).
+
 `TopologyValidator` checks that each non-empty participant signal is declared
 by that agent type alone, uses the exact ask DTO and, for indexed agents,
 indexes by `ownerIndex`. It also rejects a registered

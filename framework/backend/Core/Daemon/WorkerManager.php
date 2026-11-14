@@ -6,6 +6,7 @@ namespace Hilos\Core\Daemon;
 
 use Closure;
 use Generator;
+use Hilos\Auth\AccountOperation\AccountOperationAsks;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Constants\AgentConstants;
@@ -1391,6 +1392,14 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 $hookFailure->getLine(),
                 $hookFailure->getMessage(),
             ));
+        }
+        // The duties this owner is owed are taken up here, in the frame onStart() ran in: its
+        // claims stand, and the master holds every frame addressed to it until the started report
+        // below, so a live assignment frame arrives after the resume and not inside it. A start
+        // hook that threw does not cancel the resume - the agent is one this worker keeps. The
+        // address is the one the master routes the assignment frame by (HIL-1951).
+        if ($agent instanceof AbstractAgent) {
+            AccountOperationAsks::resume($agent, $agentType, $agentIndex);
         }
         Hilos::$ac?->openAgentSession($agentType, $agentIndex);
         Logger::info("Agent '{$agentId}' started");

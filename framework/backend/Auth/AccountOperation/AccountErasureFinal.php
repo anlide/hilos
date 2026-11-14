@@ -173,7 +173,7 @@ final class AccountErasureFinal
      * written in a second one. A repeat for the same account replaces its reason. The session
      * holder calls it; the operation is its own to change.
      *
-     * SCAFFOLD: no live caller until the erasure entry (HIL-1952) or recovery passes (HIL-1951).
+     * Live callers: the holder's recovery pass (HIL-1951); no erasure is opened until HIL-1952.
      *
      * @param AccountOperation $operation Open erasure whose final was refused
      * @param AccountErasureParticipantCatalog $catalog Participants of the installation

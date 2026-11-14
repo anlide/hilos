@@ -5,8 +5,15 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Closure;
+use Hilos\Auth\AccountOperation\AccountErasureStart;
+use Hilos\Auth\AccountOperation\AccountOperationAnswerKind;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentIdleTracker;
 use Hilos\Core\Agent\AgentInterface;
@@ -20,6 +27,8 @@ use Hilos\Core\Agent\Exception\WorkerClientNotFoundException;
 use Hilos\Core\Agent\TopologyAgentFactory;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
@@ -28,9 +37,13 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
+use Hilos\Database\Schema\Schema;
+use Hilos\Database\View\Item\AccountOperationAssignment;
 use Hilos\Hilos;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Server\WorkerServer;
@@ -40,6 +53,7 @@ use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\Agent\AbstractUserAgentDaemon;
+use Hilos\Utils\Helpers\TimeHelper;
 use LogicException;
 use ReflectionClass;
 use ReflectionProperty;
@@ -50,13 +64,20 @@ use ReflectionProperty;
  * The socket between master and worker is bridged in-process: its transport has separate tests.
  * Everything on either side of that socket is production code, including factory, start, claims,
  * idle verdict and stop cleanup. No production signal is added for this test. The start reads the
- * person's browser trusts (HIL-1901), so the case stands on the framework's account tables.
+ * person's browser trusts (HIL-1901), so the case stands on the framework's account tables. In a
+ * project with a sign-in surface the start also runs the erasure duty the agent is owed (HIL-1951).
  */
 final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
 {
     private const string USER_ID = '42';
 
     private const string AGENT_ID = HilosAgentType::HILOS_USER . ':' . self::USER_ID;
+
+    private const array ACCOUNT_OPERATION_TABLES = [
+        'hilos_account_operation',
+        'hilos_account_operation_assignment',
+        'hilos_account_operation_result',
+    ];
 
     /** @var class-string<Hilos> App class bound before this test */
     private string $previousAppClass;
@@ -117,6 +138,95 @@ final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertNotSame($first, $second);
         self::assertSame([self::AGENT_ID, self::AGENT_ID], $server->startedAgentIds);
         $this->assertPersonClaimsAndBoundary();
+    }
+
+    /**
+     * The worker that raises the person's agent runs the duty of the person's erasure the agent
+     * is owed right after its start hook, one that threw included, and the answer is queued for
+     * the session holder before anything else reaches the agent (HIL-1951).
+     */
+    public function testTheStartingWorkerResumesTheReadyErasureDutyEvenAfterAThrowingStartHook(): void
+    {
+        self::runAccountOperationStubs(down: true);
+        self::runAccountOperationStubs(down: false);
+        Schema::reset();
+        Schema::initialize();
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, UserAgentIntegrationAuthApp::class);
+        try {
+            $start = $this->openErasure((int)self::USER_ID);
+            $worker = new UserAgentIntegrationWorkerManager();
+            $master = new UserAgentIntegrationDaemonManager();
+            $server = new ReflectionClass(UserAgentIntegrationWorkerServer::class)->newInstanceWithoutConstructor();
+            new ReflectionProperty(WorkerServer::class, 'agentManager')->setValue($server, $master);
+            $server->worker = $worker;
+            $server->daemonManager = $master;
+
+            $this->sendFrame($server);
+
+            $agent = $worker->agentManagerDouble->getAgent(self::AGENT_ID);
+            self::assertInstanceOf(UserAgentIntegrationFailingStartWorker::class, $agent);
+            self::assertTrue($agent->startHookThrew);
+            $answers = [];
+            while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                if ($signal->signalName->getName() === HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER) {
+                    $answers[] = $signal->data->data;
+                }
+            }
+            self::assertCount(1, $answers);
+            self::assertInstanceOf(AccountOperationAnswerSignalData::class, $answers[0]);
+            self::assertSame($start->id, $answers[0]->assignmentId);
+            self::assertSame(AccountOperationAnswerKind::Done, $answers[0]->answer);
+        } finally {
+            TruthSourceRegistry::unregisterAgent(HilosAgentType::HILOS_USERS_LIBRARY);
+            TruthSourceRegistry::unregisterAgent(HilosAgentType::HILOS_SESSIONS_LIBRARY);
+            self::runAccountOperationStubs(down: true);
+            Schema::reset();
+        }
+    }
+
+    /**
+     * Opens the person's erasure past its census and records the root's start, the way the session
+     * holder does on entering it: the request in the users library's frame, the rest in the holder's.
+     *
+     * @param int $userId Person whose standing request the erasure answers
+     * @return AccountOperationAssignment The root's start, ready and without a result
+     */
+    private function openErasure(int $userId): AccountOperationAssignment
+    {
+        Database::sqlRun("INSERT IGNORE INTO `hilos_user` (`id`, `name`) VALUES (?, 'Person')", [$userId]);
+        OwnershipDeclaration::claimDb(UserAgentIntegrationUsersLibrary::class, HilosAgentType::HILOS_USERS_LIBRARY);
+        OwnershipDeclaration::claimDb(UserAgentIntegrationSessionsHolder::class, HilosAgentType::HILOS_SESSIONS_LIBRARY);
+        $request = ExecutionContext::run(
+            new ExecutionFrame(agentId: HilosAgentType::HILOS_USERS_LIBRARY),
+            static fn () => Hilos::$db->accountDeletions->actions->request(
+                $userId,
+                TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+            ),
+        );
+        $start = ExecutionContext::run(
+            new ExecutionFrame(agentId: HilosAgentType::HILOS_SESSIONS_LIBRARY),
+            static fn () => AccountErasureStart::recordMissing(
+                Hilos::$db->accountOperations->actions->recordErasure($request->id, $userId, Hilos::$db->userMerges->erasureCircleOf($userId)),
+            ),
+        );
+        self::assertNotNull($start);
+
+        return $start;
+    }
+
+    /**
+     * Raises or drops the account operation tables beyond the session base, which the starting
+     * agent's resume reads (HIL-1951).
+     *
+     * @param bool $down Drop tables when true, create them when false
+     */
+    private static function runAccountOperationStubs(bool $down): void
+    {
+        // external-boundary: the up stub has no suffix in its file name
+        $suffix = $down ? '_down' : '';
+        foreach ($down ? array_reverse(self::ACCOUNT_OPERATION_TABLES) : self::ACCOUNT_OPERATION_TABLES as $table) {
+            Database::sqlRun((string)file_get_contents(dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql"));
+        }
     }
 
     /**
@@ -306,6 +416,48 @@ final class UserAgentIntegrationWorker extends AbstractUserAgent
 {
 }
 
+/** The same app with a sign-in surface, whose person's agent has a start hook that throws (HIL-1951). */
+abstract class UserAgentIntegrationAuthApp extends Hilos
+{
+    protected const array FEATURES = [HilosFeature::AUTH];
+
+    public const array AGENTS = [
+        HilosAgentType::HILOS_USER => [
+            AgentRegistryKey::WORKER => UserAgentIntegrationFailingStartWorker::class,
+            AgentRegistryKey::DAEMON => UserAgentIntegrationDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+            AgentRegistryKey::IDLE_TIMEOUT => AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC,
+        ],
+        HilosAgentType::HILOS_USERS_LIBRARY => [AgentRegistryKey::WORKER => UserAgentIntegrationUsersLibrary::class],
+        HilosAgentType::HILOS_SESSIONS_LIBRARY => [AgentRegistryKey::WORKER => UserAgentIntegrationSessionsHolder::class],
+    ];
+}
+
+/** The person's agent whose start hook runs the framework's and then throws, as a defective project hook does. */
+final class UserAgentIntegrationFailingStartWorker extends AbstractUserAgent
+{
+    public bool $startHookThrew = false;
+
+    /** Applies what the framework's start applies, then fails. */
+    public function onStart(): void
+    {
+        parent::onStart();
+        $this->startHookThrew = true;
+        throw new LogicException('The fixture start hook fails');
+    }
+}
+
+/** The users library that records the person's deletion request. */
+final class UserAgentIntegrationUsersLibrary extends AbstractUsersLibraryAgent
+{
+}
+
+/** The session holder that records the erasure and receives the answer. */
+final class UserAgentIntegrationSessionsHolder extends AbstractSessionsLibraryAgent
+{
+}
+
 final class UserAgentIntegrationDaemon extends AbstractUserAgentDaemon
 {
 }
@@ -366,11 +518,11 @@ final class UserAgentIntegrationAgentManager extends AgentManager
     /**
      * @param string $agentType Type requested by the addressed frame
      * @param ?string $agentIndex Addressed person id
-     * @return AgentInterface Person agent from the test app registry
+     * @return AgentInterface Person agent from the registry of the test app the case bound
      */
     protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
     {
-        return TopologyAgentFactory::createWorker(UserAgentIntegrationApp::class, $agentType, $agentIndex);
+        return TopologyAgentFactory::createWorker(Hilos::appClass(), $agentType, $agentIndex);
     }
 }
 

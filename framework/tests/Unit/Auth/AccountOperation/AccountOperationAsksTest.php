@@ -15,7 +15,10 @@ use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalWaitsException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureUncapturedException;
 use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\AccountOperationAssignment as EntityAccountOperationAssignment;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
@@ -197,6 +200,45 @@ final class AccountOperationAsksTest extends TestCase
         }
     }
 
+    /** An agent that takes part in no account operation resumes nothing at its start and reads nothing, even with AUTH. */
+    public function testAnAgentWithoutAnAssignmentSignalResumesWithoutReading(): void
+    {
+        $agent = new AccountOperationAsksBystander();
+
+        $this->resumeOverUnreadableStorage($agent, AccountOperationAsksAuthHilos::class);
+
+        self::assertSame(0, $agent->frames);
+    }
+
+    /** A participant of a project without a sign-in surface resumes nothing at its start and reads nothing. */
+    public function testAProjectWithoutAuthResumesWithoutReading(): void
+    {
+        $agent = new AccountOperationAsksParticipant();
+
+        $this->resumeOverUnreadableStorage($agent, AccountOperationAsksNoAuthHilos::class);
+
+        self::assertSame(0, $agent->frames);
+    }
+
+    /**
+     * @param AbstractAgent $agent Starting agent
+     * @param class-string<Hilos> $appClass Project the start runs in
+     */
+    private function resumeOverUnreadableStorage(AbstractAgent $agent, string $appClass): void
+    {
+        $db = $this->createMock(HilosDbContext::class);
+        $db->expects(self::never())->method('__get')->willThrowException(new RuntimeException('No read is expected at this start'));
+        Hilos::$db = $db;
+        $boundApp = new ReflectionProperty(Hilos::class, 'appClass');
+        $previousApp = $boundApp->getValue();
+        $boundApp->setValue(null, $appClass);
+        try {
+            AccountOperationAsks::resume($agent, $agent->getType(), $agent->getIndex());
+        } finally {
+            $boundApp->setValue(null, $previousApp);
+        }
+    }
+
     /** @param ?AccountOperationAssignment $assignment Row the storage double returns, or absence */
     private function mount(?AccountOperationAssignment $assignment): void
     {
@@ -247,5 +289,64 @@ final class AccountOperationAsksTest extends TestCase
             'refusedUserId' => $userId,
             'refusedTable' => $table,
         ];
+    }
+}
+
+/** A project with a sign-in surface, so only the agent's own declaration can stop the resume. */
+abstract class AccountOperationAsksAuthHilos extends Hilos
+{
+    protected const array FEATURES = [HilosFeature::AUTH];
+}
+
+/** A project without a sign-in surface: it declares no feature. */
+abstract class AccountOperationAsksNoAuthHilos extends Hilos
+{
+}
+
+/** An account-operation participant counting the frames its handler is given. */
+final class AccountOperationAsksParticipant extends AbstractAgent
+{
+    public const string AGENT_TYPE = 'account_operation_asks_participant';
+
+    public const string ACCOUNT_OPERATION_SIGNAL = 'account_operation_asks_participant_step';
+
+    public int $frames = 0;
+
+    /**
+     * @param AgentSignalData $data Wrapped payload, unused
+     * @param string $sender Sender, unused
+     * @param string $name Signal name, unused
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        ++$this->frames;
+    }
+
+    /** Nothing to release. */
+    public function onStop(): void
+    {
+    }
+}
+
+/** An agent that takes part in no account operation, counting the frames its handler is given. */
+final class AccountOperationAsksBystander extends AbstractAgent
+{
+    public const string AGENT_TYPE = 'account_operation_asks_bystander';
+
+    public int $frames = 0;
+
+    /**
+     * @param AgentSignalData $data Wrapped payload, unused
+     * @param string $sender Sender, unused
+     * @param string $name Signal name, unused
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        ++$this->frames;
+    }
+
+    /** Nothing to release. */
+    public function onStop(): void
+    {
     }
 }

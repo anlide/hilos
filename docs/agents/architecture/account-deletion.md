@@ -165,8 +165,8 @@ target obligations, owners and order are detailed in
 [Erasure](account-operations.md#erasure). The generic participant step commits
 work and result in its local transaction and answers repeats from the saved
 result; the coordinator consumes it, while the production erasure entry remains
-for HIL-1952. After start, failure leaves an open operation for recovery
-(HIL-1951), without a common rollback. The fixed circle and folded-first ordering
+for HIL-1952. After start, failure leaves an open operation for the next
+recovery pass (built, HIL-1951), without a common rollback. The fixed circle and folded-first ordering
 are prepared, with no live caller until HIL-1952. The final personal
 delete follows required results and uses `RESTRICT` as the last safeguard; it
 is built and inert (HIL-1942), and a refusal leaves the operation open with a

@@ -17,7 +17,7 @@ Agent ID: `"type"` or `"type:index"` for multi-instance agents.
 
 | Method | When called | Notes |
 |---|---|---|
-| `onStart()` | After agent created in worker, and after its claims are laid | Seed runtime state; the claims are declared on the class, not registered here |
+| `onStart()` | After agent created in worker, and after its claims are laid | Seed runtime state; the claims are declared on the class, not registered here. After the hook, whether it returned or threw, in a project with the AUTH feature the worker resumes the ready duties of open erasures addressed to an agent with a non-empty `ACCOUNT_OPERATION_SIGNAL` ([Recovery](account-operations.md#recovery)) |
 | `onTick()` | Every worker loop iteration | **Must complete in < 0.1s**; idle wait is separate |
 | `onStop()` | Before removal | Cleanup while truth-source rights are still active |
 

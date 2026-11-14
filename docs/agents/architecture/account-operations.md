@@ -370,9 +370,11 @@ install references already name them; the restore mechanism is unchanged.
 `afterAnswer()` coordinate an open erasure from its operation, assignment and
 result records. `AbstractSessionsLibraryAgent::driveAccountErasure()` is the
 prepared entry: it calls `begin()` and sends the returned assignments. The due
-and force-purge paths still use the old flow until HIL-1952; startup and later
-recovery passes remain HIL-1951. `begin()` checks saved finals before recording
-captures, so a lost answer to the last final does not reopen capture work.
+and force-purge paths still use the old flow until HIL-1952, which opens an
+erasure for the first time; the holder's recovery pass and an owner's start enter
+one that is already open (*The erasure recovery*). `begin()` checks saved finals
+before recording captures, so a lost answer to the last final does not reopen
+capture work.
 
 The root's `start:personal:hilos_user:<id>:<id>` assignment is recorded when
 missing. An open start without a result is sent again; `{"start":"lost"}`
@@ -394,13 +396,63 @@ delivery, legal and final parts, another part opens the final, and a final runs
 `end()` then opens newly ready finals. `uncaptured` records new captures and
 resends that personal part only when capture changed; `waits` does nothing;
 `final_refused` records the safe table reason and opens newly ready parts;
-`refused` and `failed` leave the assignment open for HIL-1951. `parts[].done`
-is true when its assignment has a persisted result.
+`refused` and `failed` leave the assignment open for the next recovery pass.
+`parts[].done` is true when its assignment has a persisted result.
 
 The holder runs its sessions and access-log part inline through
 `AccountOperationAsks::answer()` and feeds that answer through the same
 `afterAnswer()` queue. Other owners receive their declared account-operation
 step signal with the owner's `ownerIndex`, when indexed.
+
+**The erasure recovery.** A frame or an answer that died on the way leaves
+facts behind, and two readers of those facts take the erasure up again without a
+new external event; both are built, and neither finds anything until HIL-1952
+opens an erasure.
+
+The holder enters every open erasure through the cron rule
+`hilos_account_erasure_recovery` (`'0 * * * *'`), armed only where the project
+has a sign-in surface. A new holder owes its first pass to its first tick: the
+hourly rule fires only in the first minute of an hour, whatever its last run
+says, so the arming sets a continuation flag and the holder, not the rule, takes
+up what its predecessor left. The rule then keeps the pass of every hour after.
+A pass walks the open erasures in ascending id order, ten to a tick, through
+`driveAccountErasure()` (`begin()` and the send of every ready assignment
+without a result). A full portion asks the next tick to go on without waiting
+for the rule, and a short one ends the pass. The position lives in the holder's
+memory only; a new holder starts from the first erasure and reads the same facts
+again. A tick with no pass running and no hour struck reads and writes nothing,
+so the database is not polled on every tick. The pass runs under one cron
+attempt receipt, opened by its first portion and closed by its end or by the
+holder's stop. Each entry has its own trap: a failure is a line in the holder's
+log, "Account erasure recovery of operation <id> failed, retried by the next
+pass", and the pass goes on. No failure is written to the database; the next
+pass reads the same facts.
+
+An owner that starts reads what it is owed.
+`AccountErasureCoordinator::owedTo()` takes the owner's address (agent type and
+index) and returns, read only, the assignments of open erasures addressed to it
+that are on the operation's current stage, have no result and pass the same
+readiness gates as the coordinator's send, in ascending id order. After
+`onStart()` returns or throws, the worker calls
+`AccountOperationAsks::resume($agent, $ownerType, $ownerIndex)`, in the frame
+`onStart()` ran in. An agent with no `ACCOUNT_OPERATION_SIGNAL`, or a project
+without the AUTH feature, returns at once. Each duty goes through the agent's own
+assignment handler in the process, with the frame the coordinator would have
+sent, so the step, the outcome and the answer to the holder are the handler's
+own. No frame is sent to the agent itself: a merged account's personal agent
+stops after each assignment frame, and a frame to itself would wake it again for
+a duty its step keeps refusing. The resume stops once the agent asks to stop and
+leaves the rest to the coordinator. It never throws: a read that fails or a duty
+that fails is a line in the agent's log ("Account operation assignment <id> not
+resumed at start"), and the start goes on.
+
+Doubles are the accepted cost. An owner woken by the frame itself runs the duty
+at its start and answers that frame again with the saved result, and at a daemon
+start the holder's pass and the owners' resume reach the same duty together: the
+step is atomic, and the second entry answers with the stored result. The
+coordinator keeps such doubles harmless: a repeated answer records nothing new,
+and the successors that still have no result are assigned again, each a double
+of the same kind ([Recovery](#recovery)).
 
 **The stop.** `AbstractUserAgent` (`Users/Agent/AbstractUserAgent.php`) stops
 itself the moment its person row is deleted (`onSignalDbSyncDeleted()`) or a
@@ -634,12 +686,13 @@ is activated.
 
 Apart from `erasureCircleOf()`, which the sessions library's `erasureOrderOf()`
 already calls, the opening is called by the cutover (not in the code yet —
-HIL-1952). Reconciliation runs at the start and in recovery passes (HIL-1951),
-after a `RESTRICT` refusal of a final, by `AccountErasureFinal::refused()`
-(*The erasure final*; no production caller until HIL-1952), and after the
+HIL-1952). Reconciliation runs when the holder enters an open erasure, at the
+holder's first tick and in its hourly passes (*The erasure recovery*; built, with
+no erasure opened until HIL-1952), after a `RESTRICT` refusal of a final, by
+`AccountErasureFinal::refused()` (*The erasure final*), and after the
 start, before notifications are deleted, by `AccountErasureCapture::recordAfterStart()`
-through the coordinator. A failed or refused participant remains open for a
-later recovery pass (HIL-1951).
+through the coordinator. A failed or refused participant remains open for the
+next recovery pass.
 
 A project declares the owners of its own collections in one directory: its
 facade points `ACCOUNT_DATA_OWNER_DIRECTORY` at a subclass of
@@ -1550,7 +1603,10 @@ path only at the [single cutover](#erasure-cutover-and-observation)
    Coordinator start and subsequent passes over open work, and participant
    start or an operation frame, select the unfinished obligations from DB and
    continue them; a lost frame needs no new external event. There is no saved
-   memory cursor or DB poll on every tick (not in the code yet — HIL-1951).
+   cursor and no DB poll on every tick: the holder's pass keeps only a position
+   in memory, a new holder starts it again from the facts, and a tick with no
+   pass running reads nothing (*The erasure recovery*; built, and no erasure is
+   opened until HIL-1952).
    Existing post-commit files and forget frames retain their present limits:
    failures are logged, with no automatic retry or new external guarantee
    ([Related Records](../signals/work-in-portions.md#related-records)).
@@ -1959,16 +2015,17 @@ are named below. Four rules hold the table together.
   ([After A Failure](../signals/work-in-portions.md#after-a-failure)). The
   read happens at start and when a frame of the operation arrives, not on
   every tick: the database is not polled for ordinary reading.
-  Erasure's selection and continuation from DB are prepared by its recovery
-  leaf (not in the code yet — HIL-1951).
+  Erasure's selection and continuation from DB are built (HIL-1951; *The
+  erasure recovery*); no erasure is opened until HIL-1952.
 - **The initiative is the coordinator's record and the owner's start, not the
   next frame.** A signal hastens; it is not what makes the work owed. The
   coordinator's record says which results are missing and the holder asks for
   them again when it starts and when it passes over its open records; a
   participant's start finds its assignments. "Another frame will come
   eventually" is not a mechanism.
-  Erasure recovery must progress after a lost frame without a new external
-  event (not in the code yet — HIL-1951).
+  Erasure recovery progresses after a lost frame without a new external
+  event: the holder's pass and an owner's start are built (HIL-1951), and
+  no erasure is opened until HIL-1952.
 - **A participant's atomic result is not exactly-once for the operation.** Each
   step is done once or not at all at its owner; the operation as a whole may
   ask twice, hear nothing or hear late, and every step is written so that the
@@ -2096,10 +2153,10 @@ start*, *The closed account*), and HIL-1937 the generic step for atomic
 participant work/result, and HIL-1942 the person's agent's final, the safe
 reason of its refusal and the coordinator's end after every final
 (*The erasure final*); all of them are inert until the live path. HIL-1950
-built the coordinator that drives the participants and finals. The right to
-delete the person row remains for HIL-1952, and forward recovery from restored DB
-obligations
-(not in the code yet — HIL-1951). They take effect on due/force-purge at the
+built the coordinator that drives the participants and finals, and HIL-1951 the
+forward recovery from the DB obligations, the holder's pass and an owner's start
+(*The erasure recovery*). The right to delete the person row remains for HIL-1952.
+They take effect on due/force-purge at the
 single cutover (not in the code yet — HIL-1952), with failure and backup evidence
 in its own leaf (not in the code yet — HIL-1964). No timing bound, common
 rollback after start, exactly-once claim or stronger file guarantee is added.

@@ -13,16 +13,21 @@ use Hilos\Database\View\Item\AccountOperation;
 use Hilos\Database\View\Item\AccountOperationAssignment;
 use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Hilos;
+use Hilos\HilosException;
+use JsonException;
 use Throwable;
 
 /**
  * The session holder's erasure transitions, selected from assignments and their saved results.
  * Participants carry their own work and record their own results. The coordinator records duties,
  * reconciles refusals and returns the assignments to send, keeping the operation at its current stage.
- * SCAFFOLD: no live caller until the erasure entry (HIL-1952) or recovery passes (HIL-1951).
+ * Live callers: the holder's recovery pass and an owner's start (HIL-1951); no erasure is opened until HIL-1952.
  */
 final class AccountErasureCoordinator
 {
+    /** Assignments of one owner read by one page of {@see self::owedTo()}; within the storage page ceiling. */
+    private const int OWED_PAGE = 100;
+
     /**
      * Enters an already open erasure, resending every ready assignment that has no result.
      * The root first gets its start; a lost start ends the operation without capturing or finalizing.
@@ -109,6 +114,43 @@ final class AccountErasureCoordinator
         }
 
         return self::ready($operation, self::successors($operation, $answered, $isFinal));
+    }
+
+    /**
+     * What the coordinator would send this owner now; read only. The owner's assignments in open
+     * erasures pass the same gates the holder's entry and transitions send by: the operation's
+     * current stage, no saved result and every prerequisite saved. A duty with a result is not
+     * given again - a lost answer is taken up by the holder's recovery pass. Nothing is recorded:
+     * the start, the captures, the finals and the end are written by the holder alone.
+     *
+     * @param AccountOperationOwnerAddress $owner Exact stable address of the participant
+     * @return list<AccountOperationAssignment> Ready duties of this owner, in ascending primary id order
+     * @throws HilosException When the assignments, their operations or their results cannot be read
+     * @throws JsonException When a stored assignment or result payload cannot be decoded
+     */
+    public static function owedTo(AccountOperationOwnerAddress $owner): array
+    {
+        $groups = [];
+        $afterId = 0;
+        do {
+            $page = Hilos::$db->accountOperationAssignments->openForOwner(AccountOperationKind::Erasure, $owner, $afterId, self::OWED_PAGE);
+            foreach ($page as $assignment) {
+                $groups[$assignment->operationId][] = $assignment;
+                $afterId = $assignment->id;
+            }
+        } while (count($page) === self::OWED_PAGE);
+
+        $owed = [];
+        foreach ($groups as $operationId => $group) {
+            $operation = Hilos::$db->accountOperations[$operationId] ?? null;
+            if ($operation === null || $operation->kind !== AccountOperationKind::Erasure || $operation->finishedAt !== null) {
+                continue;
+            }
+            $owed = [...$owed, ...self::ready($operation, $group)];
+        }
+        usort($owed, static fn (AccountOperationAssignment $a, AccountOperationAssignment $b): int => $a->id <=> $b->id);
+
+        return $owed;
     }
 
     /**

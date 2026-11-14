@@ -809,6 +809,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private const string ACCOUNT_DELETION_SWEEP_CRON = '* * * * *';
 
+    /** Name of the cron rule that enters every open account erasure again (HIL-1951). */
+    private const string ACCOUNT_ERASURE_RECOVERY_RULE = CronRule::FRAMEWORK_NAME_PREFIX . 'account_erasure_recovery';
+
+    /**
+     * Once an hour: a duty whose frame or answer was lost is sent again within the hour. The first
+     * tick after the holder starts runs a pass at once, so a new holder takes up what its
+     * predecessor left without waiting for the hour.
+     */
+    private const string ACCOUNT_ERASURE_RECOVERY_CRON = '0 * * * *';
+
+    /** Open erasures one tick of the recovery pass enters. */
+    private const int ACCOUNT_ERASURE_RECOVERY_PORTION = 10;
+
     /** Name of the cron rule that removes access log rows past their life (HIL-1174). */
     private const string ACCESS_LOG_SWEEP_RULE = CronRule::FRAMEWORK_NAME_PREFIX . 'access_log_expire';
 
@@ -864,6 +877,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** @var ?CronRule Schedule of the account erasure, or null when this project has no sign-in (HIL-302) */
     private ?CronRule $accountDeletionSweepRule = null;
 
+    /** @var ?CronRule Schedule of the account erasure recovery pass, or null when this project has no sign-in (HIL-1951) */
+    private ?CronRule $accountErasureRecoveryRule = null;
+
     /** @var ?CronRule Schedule of the access log sweep, or null when this project has no sign-in (HIL-1174) */
     private ?CronRule $accessLogSweepRule = null;
 
@@ -884,6 +900,22 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /** Receipt of this unfinished local sweep, separate from every other job. */
     private ?int $accessLogSweepReceiptId = null;
+
+    /**
+     * Last open erasure the running recovery pass entered; the next portion starts after it. Held
+     * by this instance alone, with the backlog flag and the receipt below: a pass never outlives
+     * its holder, and a new holder walks again from the start of the database's open erasures.
+     */
+    private int $accountErasureRecoveryAfterId = 0;
+
+    /**
+     * Whether the next tick goes on with a recovery pass without waiting for the hour: the start of
+     * this holder owes a pass at once, and a full portion asks for the rest of the running one.
+     */
+    private bool $accountErasureRecoveryBacklog = false;
+
+    /** Receipt of the unfinished recovery pass, separate from every other job. */
+    private ?int $accountErasureRecoveryReceiptId = null;
 
     /** @var array<int, AccountStanding> Standing last sent to every tab of each person with a live tab here (HIL-945) */
     private array $publishedStanding = [];
@@ -934,7 +966,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * HIL-1207); what an heir finds is what a fall left.
      *
      * The trust restriction sweep is armed to run on the first tick (HIL-1901): the passes of a
-     * predecessor died with it, and what they left is found again in the data.
+     * predecessor died with it, and what they left is found again in the data. So is the account
+     * erasure recovery pass (HIL-1951): the frames and answers a predecessor was waiting on may
+     * have died with it, and every open erasure is entered again from its saved facts.
      *
      * @throws EnvException When the sweep schedule key is missing, outside the catalog, or of the wrong type
      * @throws HilosException On runtime failure
@@ -946,6 +980,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->armPendingRegistrationSweep();
         $this->armSessionSweep();
         $this->armAccountDeletionSweep();
+        $this->armAccountErasureRecovery();
         $this->armAccessLogSweep();
         $this->armTrustRestrictionSweep();
         if ($this->hasSignInSurface()) {
@@ -1039,7 +1074,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * them on its start anyway ({@see self::onStart()}); ending them here tells the tabs still on
      * the wire while they are. The rest of its state is the database and the collections above,
      * which outlive the process that owns them - save the pass of the trust restriction sweep,
-     * which closes its receipt here and drops the requests waiting on it unanswered (HIL-1901).
+     * which closes its receipt here and drops the requests waiting on it unanswered (HIL-1901),
+     * and the account erasure recovery pass, which closes its receipt and drops its place: the
+     * heir walks the open erasures again from the start (HIL-1951).
      *
      * @throws HilosException On runtime failure
      * @throws InvalidArgumentException When a result or progress frame cannot be named or queued
@@ -1057,7 +1094,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 try {
                     $this->finishAccessLogSweep();
                 } finally {
-                    $this->trustRestrictionSweep?->stop();
+                    try {
+                        $this->finishAccountErasureRecovery();
+                    } finally {
+                        $this->trustRestrictionSweep?->stop();
+                    }
                 }
             }
         }
@@ -1138,6 +1179,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * raises rather than answering empty. That is the runtime collections doing their job: an
      * unmounted collection is not an empty one.
      *
+     * The account erasure recovery pass follows the erasure sweep (HIL-1951): a tick with no pass
+     * running and no hour struck reads nothing.
+     *
      * The trust restriction sweep goes last (HIL-1901): a tick of its schedule a minute, which
      * reads nothing between passes and sends the frames of a pass to the people who still owe a
      * restriction.
@@ -1166,6 +1210,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->sweepProfileNameChanges();
         $this->sweepOAuthTrips();
         $this->sweepAccountDeletions();
+        $this->sweepAccountErasureRecovery();
         $this->sweepAccessLog();
         $this->sweepTrustRestrictions();
     }
@@ -1177,6 +1222,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $this->pendingRegistrationSweepRule,
             $this->sessionSweepRule,
             $this->accountDeletionSweepRule,
+            $this->accountErasureRecoveryRule,
             $this->accessLogSweepRule,
             $this->trustRestrictionSweepRule,
         ]));
@@ -1342,6 +1388,21 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $receiptId = $this->accessLogSweepReceiptId;
         $this->accessLogSweepReceiptId = null;
         $this->accessLogSweepBacklog = false;
+        JournalReceiptScope::finish($receiptId);
+    }
+
+    /**
+     * Ends the account erasure recovery pass: its receipt closes and its place is dropped, so the
+     * next pass walks the open erasures from the first (HIL-1951).
+     *
+     * @throws DatabaseException When receipt finalization cannot resolve its connection
+     */
+    private function finishAccountErasureRecovery(): void
+    {
+        $receiptId = $this->accountErasureRecoveryReceiptId;
+        $this->accountErasureRecoveryReceiptId = null;
+        $this->accountErasureRecoveryAfterId = 0;
+        $this->accountErasureRecoveryBacklog = false;
         JournalReceiptScope::finish($receiptId);
     }
 
@@ -7019,6 +7080,88 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Arms the schedule of the account erasure recovery pass (HIL-1951), and owes the first pass to
+     * the first tick.
+     *
+     * Only where a sign-in surface exists, as the account erasure is armed: an erasure is asked for
+     * from a signed-in profile. The first tick of a new holder enters every open erasure whose
+     * frames or answers may have died with its predecessor. An hourly rule does not fire at a
+     * holder's start whatever its last run says - it fires only in the first minute of an hour -
+     * so the pass is owed here, as a full portion owes the rest of one, and the rule keeps the
+     * passes of the hours after.
+     *
+     * @throws CronRuleNameException When the rule name does not match framework origin
+     */
+    private function armAccountErasureRecovery(): void
+    {
+        if (!$this->hasSignInSurface()) {
+            return;
+        }
+
+        $this->accountErasureRecoveryRule = new CronRule(
+            self::ACCOUNT_ERASURE_RECOVERY_RULE,
+            self::ACCOUNT_ERASURE_RECOVERY_CRON,
+            CronRuleOrigin::FRAMEWORK,
+        );
+        $this->accountErasureRecoveryBacklog = true;
+    }
+
+    /**
+     * Enters one portion of the open account erasures again (HIL-1951).
+     *
+     * A pass starts on the first tick of this holder and every hour after, and walks the open
+     * erasures in id order, {@see self::ACCOUNT_ERASURE_RECOVERY_PORTION} a tick: a full portion asks
+     * the next tick to go on without waiting for the hour, and a short one ends the pass. Each entry
+     * is the holder's own ({@see self::driveAccountErasure()}): it sends every ready duty that has no
+     * saved result, and ends an erasure whose saved finals ended it. Each entry is on its own: one
+     * that fails is logged and the pass goes on, and the next pass reads the same facts again. A
+     * tick with no pass running and no hour struck reads nothing. The pass runs under one receipt,
+     * opened by its first portion - the one that starts from no place - and closed by its end or by
+     * the holder's stop.
+     *
+     * @throws HilosException When the open erasures cannot be read or the receipt cannot be opened
+     */
+    private function sweepAccountErasureRecovery(): void
+    {
+        if (!$this->accountErasureRecoveryBacklog && $this->accountErasureRecoveryRule?->shouldRun() !== true) {
+            return;
+        }
+
+        if ($this->accountErasureRecoveryAfterId === 0) {
+            $this->accountErasureRecoveryReceiptId = JournalReceiptScope::start(
+                JournalReceiptData::cron(self::ACCOUNT_ERASURE_RECOVERY_RULE, $this->accountErasureRecoveryRule?->expression, $this->getId()),
+            );
+        }
+        try {
+            JournalReceiptScope::runPart($this->accountErasureRecoveryReceiptId, $this->getId(), function (): void {
+                $page = Hilos::$db->accountOperations->openPage(
+                    AccountOperationKind::Erasure,
+                    $this->accountErasureRecoveryAfterId,
+                    self::ACCOUNT_ERASURE_RECOVERY_PORTION,
+                );
+                foreach ($page as $operation) {
+                    try {
+                        $this->driveAccountErasure($operation);
+                    } catch (Throwable $failure) {
+                        $this->logAgentError(
+                            "Account erasure recovery of operation {$operation->id} failed, retried by the next pass: {$failure->getMessage()}",
+                        );
+                    }
+                    $this->accountErasureRecoveryAfterId = $operation->id;
+                }
+                $this->accountErasureRecoveryBacklog = count($page) === self::ACCOUNT_ERASURE_RECOVERY_PORTION;
+            });
+        } catch (Throwable $failure) {
+            $this->accountErasureRecoveryBacklog = false;
+            throw $failure;
+        } finally {
+            if (!$this->accountErasureRecoveryBacklog) {
+                $this->finishAccountErasureRecovery();
+            }
+        }
+    }
+
+    /**
      * Arms the schedule of the access log sweep (HIL-1174).
      *
      * Only where a sign-in surface exists, as the account erasure is armed: the log is written by
@@ -7366,7 +7509,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /**
      * Enters an open erasure and sends every ready duty without a saved result.
-     * SCAFFOLD: production entry and recovery callers follow in HIL-1952 and HIL-1951.
+     * Called by the recovery pass (HIL-1951) on the holder's first tick and hourly; the production opening calls it from HIL-1952.
      *
      * @param AccountOperation $operation Already opened erasure
      * @throws Throwable When the coordinator cannot read or commit the operation's facts

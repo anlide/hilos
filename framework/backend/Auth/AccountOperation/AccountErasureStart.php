@@ -63,7 +63,7 @@ final class AccountErasureStart
     /**
      * Records the root's start at the current stage, unless its key is already stored at any stage.
      *
-     * SCAFFOLD: no live caller until the erasure entry (HIL-1952) or recovery passes (HIL-1951).
+     * Live callers: the holder's recovery pass (HIL-1951); no erasure is opened until HIL-1952.
      *
      * @param AccountOperation $operation Open erasure whose root is to start
      * @return ?AccountOperationAssignment New start assignment, or null on a repeat
