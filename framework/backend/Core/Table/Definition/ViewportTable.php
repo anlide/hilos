@@ -276,6 +276,7 @@ interface ViewportTable
      *
      * @return list<TableProgressDTO> Bars running on this table now, empty when none are
      * @throws InvalidArgumentException When the table builds a bar with a row key its place refuses
+     * @throws HilosException When the table cannot read the work it names
      */
     public function progressSnapshot(): array;
 

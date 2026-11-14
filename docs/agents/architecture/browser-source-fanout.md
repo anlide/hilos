@@ -413,6 +413,17 @@ of trying it with each portion: the mirror changes in portions within a worker
 tick, so a window built on the first portion would not hold the later ones. The
 flush tries the marked window once after those changes, from the table as the
 tick left it.
+A bar of work sent through `publishTableProgress()` stands outside both: it is
+neither a source fact nor a part of the window. The holder of a picture of work
+— today `AccountStandingAudience`, for the erasure bars of the people list
+(HIL-1955) — hands one subscriber one bar for one open window of a table its page
+binds. No total and no delivered row is touched. A page owed whole after a
+failed delivery is first sent whole, as by any publisher: that page then carries
+the picture, and the bar itself does not go. Only a window's debt is not tried,
+and a window set aside in that flush still gets the bar, since its catch-up
+carries rows and not bars. A bar that cannot be sent is logged and costs the tab
+that bar only;
+the page is not failed for it.
 A page tried whole is set aside for the rest of that flush too:
 another row fact sends neither a second full answer nor a partial delta or
 progress frame. Once a full answer pays the debt, the next flush can deliver

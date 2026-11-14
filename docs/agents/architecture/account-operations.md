@@ -1559,9 +1559,13 @@ switches neither live erasure entry:
   table that still references it, never the engine's text. Nothing
   writes a reason yet, so the list stays empty until the coordinator answers a
   refusal (not in the code yet — HIL-1950). The live frame is unchanged.
-- The people list and card read durable erasure facts; ordinary rows keep
-  Apply, and the people set gains no synthetic operation row
-  (not in the code yet — HIL-1955).
+- The people list shows the progress as a bar of work under the row of every
+  account of the circle (HIL-1955): a row bar under the key
+  `hilos-account-erasure` whose detail is the card's block above, counted by
+  the parts that are done. The rows, their order, the count and Apply stay as
+  they were, and the people set gains no synthetic operation row. The card
+  shows the same facts as its block (HIL-1954). Both read durable erasure facts
+  and stay inert until HIL-1952.
 - Vue's list shows progress (not in the code yet — HIL-1956). Vue's card shows
   waiting and refusal (not in the code yet — HIL-1957). These display leaves
   do not implement actions.

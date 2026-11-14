@@ -18,6 +18,8 @@ import {
   HILOS_USER_STANDING_SECTION,
   SIGNAL_ACCOUNT_STANDING_STATE,
   readHilosAccountErasure,
+  readHilosUsersErasureBar,
+  HILOS_USERS_ERASURE_PROGRESS_KEY,
   type HilosAccountErasure,
   hilosPresenceBadge,
   HILOS_PRESENCE_WIDEST_LABEL,
@@ -84,6 +86,7 @@ import { USER_ENTITY_TYPE, userFromFields } from '../../../src/state/entity.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { applyServerTime } from '../../../src/session/serverClock.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
+import { type HilosTableProgress } from '../../../src/table/tableProgress.js'
 
 /** Build a page scope and the typed user collection the admin module resolves through. */
 function userStore(): {
@@ -1415,6 +1418,74 @@ describe('createHilosUserStanding (HIL-945)', () => {
       accountStanding: wireStanding({ shown: 'frozen', frozen: true }),
     })
     expect(card.standing.get()).toBeNull()
+  })
+})
+
+describe('readHilosUsersErasureBar (HIL-1955)', () => {
+  const detail = {
+    startedAt: 1_800_000_000_000,
+    parts: [
+      { participant: 'profile', owner: 'user', userId: 7, done: true },
+      { participant: 'sessions', owner: 'session', userId: 7, done: false },
+    ],
+    waits: [{ participant: 'merge', userId: 8 }],
+  }
+
+  /** A row bar as the table's viewport controller holds it. */
+  function bar(
+    progressKey: string,
+    barDetail: Record<string, unknown>,
+  ): HilosTableProgress {
+    return {
+      progressKey,
+      current: 1,
+      total: 2,
+      fraction: 0.5,
+      detail: barDetail,
+    }
+  }
+
+  it('reads the erasure block of its own bar as the card reads it', () => {
+    const read = readHilosUsersErasureBar(
+      bar(HILOS_USERS_ERASURE_PROGRESS_KEY, detail),
+    )
+    expect(read).toEqual({ ...detail, refusals: [] })
+    expect(read).toEqual(readHilosAccountErasure(detail))
+  })
+
+  it('leaves the bar of other work alone', () => {
+    expect(readHilosUsersErasureBar(bar('other-work', detail))).toBeNull()
+    expect(
+      readHilosUsersErasureBar(bar(HILOS_USERS_ERASURE_PROGRESS_KEY, {})),
+    ).toBeNull()
+  })
+
+  it('drops a malformed part or wait of the block alone', () => {
+    const nextPart = {
+      participant: 'export',
+      owner: 'user',
+      userId: 7,
+      done: false,
+    }
+    expect(
+      readHilosUsersErasureBar(
+        bar(HILOS_USERS_ERASURE_PROGRESS_KEY, {
+          ...detail,
+          parts: [
+            detail.parts[0],
+            { participant: 'broken', owner: 'user', userId: 7, done: 'no' },
+            { ...nextPart, userId: HIDDEN_VALUE },
+            nextPart,
+          ],
+          waits: [{ participant: 'broken', userId: '8' }, detail.waits[0]],
+        }),
+      ),
+    ).toEqual({
+      startedAt: detail.startedAt,
+      parts: [detail.parts[0], nextPart],
+      waits: detail.waits,
+      refusals: [],
+    })
   })
 })
 

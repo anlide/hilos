@@ -246,7 +246,8 @@ request, heartbeat, minute server frame, or epoch invalidation is introduced.
   account and `table` the name of the table that still references it, or `null`
   when the refusal named no table the schema knows; the engine's text never
   travels. The admin view mode uses `AccountErasureProgress::wireFields()` on
-  both carriers: the `userId` of `parts`, `waits` and `refusals` follows the
+  both carriers and on the people list's bar below: the `userId` of `parts`,
+  `waits` and `refusals` follows the
   `users.id` column verdict; `startedAt`, `participant`, `owner`, `done` and
   `table` are not personal. Null stays null. No names are carried. The
   frontend core reads the block as `HilosAccountErasure`
@@ -261,6 +262,24 @@ request, heartbeat, minute server frame, or epoch invalidation is introduced.
   `terms` or `privacy`) keeps the people `lapsedUserIds()` names; the address is
   `/hilos/users/{lapsed?}`, and the third count of the `/hilos/legal` root links
   there when it is above zero.
+- **People list, erasure.** Under the row of every account a begun erasure
+  covers — its root and each account merged into it — the list carries a bar of
+  work (HIL-1955): a `table_progress` frame (`TableProgressSignalData`) and an
+  entry of the first window's `progress[]`, each
+  `{scope: 'row', progressKey: 'hilos-account-erasure', rowKey: '<userId>', current, total, detail}`
+  (`AbstractHilosUsersTable::PROGRESS_KEY_ERASURE`, `erasureBar()`). `current`
+  is the number of parts with `done`, `total` the number of parts and absent
+  while there is none, `detail` the card's `accountErasure` block whole. The
+  frontend core reads that block from a row's bar as `HilosAccountErasure`
+  (`readHilosUsersErasureBar()`, null for a bar of another key), the key as
+  `HILOS_USERS_ERASURE_PROGRESS_KEY`, both from `@hilos/core/admin/users`.
+  The bar comes down with `{scope: 'row', progressKey: 'hilos-account-erasure', rowKey,
+  current: 0, ended: true}`, with no total and no detail (`erasureBarEnded()`).
+  A viewer of the admin view mode gets the detail through the same
+  `AccountErasureProgress::wireFields()` (`progressDetailFields()`); `current`,
+  `total` and `ended` are always open. The person's row is unchanged in every
+  field and slot, and the list's rows, order and count are those it has
+  without the erasure: no row is added for it.
 
 ## Who Keeps Open Surfaces In Step
 
@@ -288,6 +307,19 @@ costs an array comparison.
   `lapsed` is sent again (`sendTableWindow`) when the people past that document's
   deadline change. It is process-local, like the subscriptions it follows, and
   forgets a subscriber on unsubscribe and on connection close.
+- **The list's erasure bars** are held by the same audience as one picture for
+  every open list: the bars last sent (`erasureBars()`, read through
+  `AccountErasureProgressResolver::begun()`, which drops with the rest of the
+  resolver's memory). A window is opened with that picture
+  (`AbstractHilosUsersTable::progressSnapshot()`); with no picture held, the
+  window reads one now and it counts as sent. On the tick the audience compares
+  the picture with the resolver's answer and sends each open people window only
+  the difference, one subscriber at a time (`BrowserContext::publishTableProgress()`):
+  a bar that appeared or changed goes whole, the bar of an account whose erasure
+  closed or whose row is gone goes ended, and an unchanged picture sends
+  nothing. A change of progress replaces the bar of the same key and moves no
+  row; a final row deleted goes as the usual `row_removed`, and its bar ends on
+  the next tick. With no list subscriber left the picture is forgotten.
 
 ## Who Draws What
 
@@ -295,7 +327,11 @@ The core binds the session's standing once, in `bootHilos`
 (`session/accountStanding.ts`); each SDK's shell only reads it.
 
 `erasing` is carried but is not drawn yet: Vue's list and card belong to
-HIL-1956/HIL-1957, React to HIL-1961 and Angular to HIL-1962.
+HIL-1956/HIL-1957, React to HIL-1961 and Angular to HIL-1962. The people list's
+erasure bar is drawn so far only as the shared row bar of the window table
+(`HilosViewportTable` of each SDK), with its common label and count; its own
+words and the block of work come with Vue HIL-1956, React HIL-1961 and Angular
+HIL-1962.
 
 - **Deletion strip** (`hilosDeletionStrip`) — the standing the session acts as
   is `deletion_scheduled` with a known `deletionEffectiveAt`. It is shown during

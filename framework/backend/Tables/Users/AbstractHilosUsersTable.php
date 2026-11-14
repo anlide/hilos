@@ -12,6 +12,7 @@ use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableProgressDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -25,6 +26,7 @@ use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableProgressScope;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\User as ObjectUser;
@@ -33,6 +35,7 @@ use Hilos\Database\View\Item\User as DbUser;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Legal\LegalDocument;
+use Hilos\Pages\Users\AccountStandingAudience;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
@@ -40,6 +43,7 @@ use Hilos\Runtime\State\Item\HilosConnection as StateHilosConnection;
 use Hilos\Runtime\View\Collection\HilosConnections as ViewHilosConnections;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
+use Hilos\Users\AccountErasureProgress;
 use Hilos\Users\AccountStandingResolver;
 use OutOfBoundsException;
 use Throwable;
@@ -53,6 +57,11 @@ use Throwable;
  * connections collection, which is the project's own by the way runtime keys are laid out. How
  * presence is read out of that collection and how a connection leads to its person are defaults
  * here too; a project whose presence is a collection of another kind overrides them.
+ *
+ * A person whose account erasure has begun keeps their row as it was and gets a bar of work under
+ * it, the same under every account of the erasure's circle (HIL-1955). The bars are kept by
+ * {@see AccountStandingAudience}: a window's snapshot carries the picture the audience last sent,
+ * and the audience's tick sends what changed. Nothing about them enters the row, the order or the count.
  */
 abstract class AbstractHilosUsersTable extends TableDefinition implements ViewportTable
 {
@@ -88,6 +97,14 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
      */
     public const string FILTER_LAPSED = 'lapsed';
 
+    /**
+     * Progress key of the bar a begun account erasure shows under each row of its circle (HIL-1955).
+     *
+     * One erasure is one piece of work: its bar counts the parts the erasure is made of, and its
+     * detail is the same block the person's card shows ({@see AccountErasureProgress::toArray()}).
+     */
+    public const string PROGRESS_KEY_ERASURE = 'hilos-account-erasure';
+
     /** The framework's people, as a browser source every project declares the same way. */
     public const array USERS_SOURCE = [
         BrowserSourceKey::TYPE => BrowserSourceType::DB,
@@ -111,6 +128,41 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
             ObjectUser::lastActivity => HilosUserTableRow::lastActivity,
         ],
     ];
+
+    /**
+     * Builds the bar a begun erasure shows under one account's row.
+     *
+     * @param int $userId Account of the erasure's circle the bar stands under
+     * @param AccountErasureProgress $progress Progress of the erasure covering that account
+     * @return TableProgressDTO Row bar counting the finished parts, without a total while no part is known
+     * @throws InvalidArgumentException Never: a row bar always names its row
+     */
+    public static function erasureBar(int $userId, AccountErasureProgress $progress): TableProgressDTO
+    {
+        $done = array_filter($progress->parts, static fn (array $part): bool => $part[AccountErasureProgress::done]);
+
+        return new TableProgressDTO(
+            TableProgressScope::Row,
+            self::PROGRESS_KEY_ERASURE,
+            (string) $userId,
+            count($done),
+            $progress->parts === [] ? null : count($progress->parts),
+            false,
+            $progress->toArray(),
+        );
+    }
+
+    /**
+     * Builds the frame that takes an account's erasure bar down.
+     *
+     * @param int $userId Account whose bar comes down
+     * @return TableProgressDTO Ended row bar, without a total and a detail
+     * @throws InvalidArgumentException Never: a row bar always names its row
+     */
+    public static function erasureBarEnded(int $userId): TableProgressDTO
+    {
+        return new TableProgressDTO(TableProgressScope::Row, self::PROGRESS_KEY_ERASURE, (string) $userId, 0, null, true);
+    }
 
     /**
      * Declares how many rows the first window of the Hilos users table carries.
@@ -409,6 +461,32 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
             HilosUserTableRow::openSessionCount => WireField::notPersonal(),
             HilosUserTableRow::merged => WireField::notPersonal(),
         ];
+    }
+
+    /**
+     * Names the erasure bars a window is opened with: the picture the audience last sent (HIL-1955).
+     *
+     * A window opened between two ticks shows the bars every other open list already shows, and the
+     * next tick sends it only what changed after that picture.
+     *
+     * @return list<TableProgressDTO> Bar of every account under a begun erasure, empty when none has begun
+     * @throws HilosException When the erasure progress cannot be read
+     */
+    public function progressSnapshot(): array
+    {
+        return AccountStandingAudience::erasureBars();
+    }
+
+    /**
+     * Declares the fields of the erasure bar's detail, for a viewer of the admin view mode (HIL-1955).
+     *
+     * The detail is the card's erasure block, so it is declared the way the card declares it.
+     *
+     * @return array<string, WireField> Detail field name to where it comes from
+     */
+    public function progressDetailFields(): array
+    {
+        return AccountErasureProgress::wireFields();
     }
 
     /**

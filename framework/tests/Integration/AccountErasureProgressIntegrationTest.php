@@ -163,6 +163,55 @@ final class AccountErasureProgressIntegrationTest extends FrameworkIntegrationTe
         self::assertNull(AccountErasureProgressResolver::of(self::OUTSIDER_ID));
     }
 
+    /** The list of people reads no erasure while none exists and none while its request has not started (HIL-1955). */
+    public function testNoErasureHasBegunWithoutAnOperationOrBeforeItsRequestStarts(): void
+    {
+        self::assertSame([], AccountErasureProgressResolver::begun());
+        self::open(self::requestDeletion());
+
+        self::assertSame([], AccountErasureProgressResolver::begun());
+        self::assertNull(AccountErasureProgressResolver::of(self::ROOT_ID));
+    }
+
+    /** Every account of a begun erasure's circle gets the block the card reads for it, and nobody else gets one. */
+    public function testABegunErasureHandsEveryAccountOfItsCircleTheBlockTheCardReads(): void
+    {
+        Database::sqlRun(
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, 1790416800000)',
+            [self::FOLDED_ID, self::ROOT_ID],
+        );
+        $request = self::requestDeletion();
+        $operation = self::open($request);
+        self::recordExpectation($operation, new AccountOperationExpectation('delivery:mail', self::FOLDED_ID, null));
+        self::assertTrue($this->asPerson(self::ROOT_ID, static fn (): bool => $request->actions->start()));
+
+        $begun = AccountErasureProgressResolver::begun();
+
+        self::assertSame([self::FOLDED_ID, self::ROOT_ID], array_keys($begun));
+        self::assertSame(AccountErasureProgressResolver::of(self::ROOT_ID)?->toArray(), $begun[self::ROOT_ID]->toArray());
+        self::assertSame(AccountErasureProgressResolver::of(self::FOLDED_ID)?->toArray(), $begun[self::FOLDED_ID]->toArray());
+        self::assertSame([['participant' => 'delivery:mail', 'userId' => 41]], $begun[self::FOLDED_ID]->waits);
+    }
+
+    /** The erasures read at once are remembered, and a write of an operation or of its assignment drops them. */
+    public function testAnOperationOrAssignmentWriteDropsTheBegunErasures(): void
+    {
+        $request = self::requestDeletion();
+        $operation = self::open($request);
+        self::assertTrue($this->asPerson(self::ROOT_ID, static fn (): bool => $request->actions->start()));
+        $begun = AccountErasureProgressResolver::begun();
+        self::assertSame($begun, AccountErasureProgressResolver::begun());
+        self::assertSame([], $begun[self::ROOT_ID]->waits);
+
+        self::recordExpectation($operation, new AccountOperationExpectation('delivery:mail', self::ROOT_ID, null));
+        $assigned = AccountErasureProgressResolver::begun();
+
+        self::assertNotSame($begun, $assigned);
+        self::assertSame([['participant' => 'delivery:mail', 'userId' => 43]], $assigned[self::ROOT_ID]->waits);
+        self::assertTrue($operation->actions->finish($operation->stage, AccountOperationOutcome::Completed));
+        self::assertSame([], AccountErasureProgressResolver::begun());
+    }
+
     public function testRefusedFinalsStandInCircleOrderUntilTheAccountHasItsFinalResult(): void
     {
         Database::sqlRun(

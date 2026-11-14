@@ -2332,6 +2332,51 @@ abstract class BrowserContext
     }
 
     /**
+     * Sends one subscriber a bar of work that the holder of its picture keeps, not a source change (HIL-1955).
+     *
+     * The bar is not part of the window: no total, no delivered row and no window debt is touched,
+     * and a window set aside this flush still gets it, since the catch-up it waits for carries rows
+     * and not bars. A tab that is not drawing the table - another page, a table the page does not
+     * bind, no open window - gets nothing. A viewer of the admin view mode gets the count and the
+     * detail its table declares ({@see ViewportTable::progressDetailFields()}). A failure costs the
+     * tab this bar and nothing else: it is logged, and the page is not failed for it.
+     *
+     * @param string $page Subscribed page
+     * @param string $acceptKey Connection receiving the bar
+     * @param string $tableKey Page-bound viewport table the bar stands on
+     * @param TableProgressDTO $bar Bar as it would travel to an admin
+     */
+    public function publishTableProgress(string $page, string $acceptKey, string $tableKey, TableProgressDTO $bar): void
+    {
+        try {
+            if ($this->publicationSubscription($page, $acceptKey) === null) {
+                return;
+            }
+            $bound = false;
+            foreach ($this->pageBindings($page) as $binding) {
+                $bound = $bound || $binding->browserKey === $tableKey;
+            }
+            $table = $this->viewportTable($tableKey);
+            if (!$bound || $table === null || Hilos::$sr?->getTableViewport($acceptKey, $tableKey) === null) {
+                return;
+            }
+            if ($this->isPageViewer($page, $acceptKey)) {
+                $bar = $this->progressForViewer($bar, $table);
+            }
+            $this->queueAddressedTableSignal(
+                SignalTypeConstants::TABLE_PROGRESS,
+                TableProgressSignalData::fromProgress($page, $tableKey, $bar),
+                $acceptKey,
+            );
+        } catch (Throwable $failure) {
+            Logger::error(
+                "Browser skipped a bar it could not send: table={$tableKey}, page={$page}, "
+                . "acceptKey={$acceptKey}, error={$failure->getMessage()}",
+            );
+        }
+    }
+
+    /**
      * Re-sends the whole page one agent owns after its node-local source changes.
      * A contained failure is logged; the private delivery path already tells the
      * subscriber and records the failure for recovery.

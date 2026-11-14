@@ -13,6 +13,7 @@ use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Table\DTO\TableProgressDTO;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Legal\LegalDocument;
@@ -38,6 +39,14 @@ use Hilos\Users\DTO\AccountStandingStateSignalData;
  * narrowed to one document is sent again when the people past that document's deadline are no
  * longer the ones it was served with.
  *
+ * The list also carries a bar of work under the row of every account a begun erasure covers
+ * (HIL-1955). Its bars are one picture for every open list: the picture last sent, which a window
+ * opened between two ticks is served from ({@see AbstractHilosUsersTable::progressSnapshot()}), and
+ * which the tick compares with the resolver's answer - a bar that appeared or moved is sent whole, a
+ * bar that is gone is sent ended. The tick holds the new picture before it sends a bar, since a page
+ * sent again in the middle of its round must carry the current picture. With no list open the
+ * picture is forgotten, and the next window reads it anew.
+ *
  * Process-local, like the page subscriptions it follows: a subscriber is held in the process that
  * serves its page.
  */
@@ -60,6 +69,9 @@ final class AccountStandingAudience
 
     /** @var array<string, array<string, list<int>>> People each list window was last served with, by accept key and table */
     private static array $listPeople = [];
+
+    /** @var ?array<int, TableProgressDTO> Erasure bar of each account the lists were last sent, null when no list holds one */
+    private static ?array $erasureBars = null;
 
     /**
      * Holds a card subscriber and the standing and erasure progress its page answer showed.
@@ -96,6 +108,9 @@ final class AccountStandingAudience
             self::$listDocuments[$acceptKey],
             self::$listPeople[$acceptKey],
         );
+        if (self::$lists === []) {
+            self::$erasureBars = null;
+        }
     }
 
     /** Clears the process-local audience when the serving agent stops. */
@@ -107,6 +122,23 @@ final class AccountStandingAudience
         self::$lists = [];
         self::$listDocuments = [];
         self::$listPeople = [];
+        self::$erasureBars = null;
+    }
+
+    /**
+     * Names the erasure bars the lists were last sent, reading them now when no list holds a picture.
+     *
+     * A picture read here counts as sent: the window it is read for carries it.
+     *
+     * @return list<TableProgressDTO> Bar of every account under a begun erasure
+     * @throws InvalidArgumentException Never: a row bar always names its row
+     * @throws HilosException When the erasure progress or an account cannot be read
+     */
+    public static function erasureBars(): array
+    {
+        self::$erasureBars ??= self::currentErasureBars();
+
+        return array_values(self::$erasureBars);
     }
 
     /**
@@ -165,5 +197,66 @@ final class AccountStandingAudience
                 }
             }
         }
+
+        self::sendErasureBars();
+    }
+
+    /**
+     * Sends every open list of people the erasure bars that changed since the picture it holds.
+     *
+     * The new picture is held before the first bar goes: a bar to a tab owed its page sends the page
+     * whole instead, and a page sent again in the middle of the round must carry the current picture.
+     *
+     * @throws InvalidArgumentException Never: a row bar always names its row
+     * @throws HilosException When the erasure progress or an account cannot be read
+     */
+    private static function sendErasureBars(): void
+    {
+        if (self::$lists === []) {
+            self::$erasureBars = null;
+
+            return;
+        }
+
+        $current = self::currentErasureBars();
+        $previous = self::$erasureBars ?? [];
+        $changed = [];
+        foreach ($current as $userId => $bar) {
+            if (!isset($previous[$userId]) || $previous[$userId]->toArray() !== $bar->toArray()) {
+                $changed[] = $bar;
+            }
+        }
+        foreach (array_keys(array_diff_key($previous, $current)) as $userId) {
+            $changed[] = AbstractHilosUsersTable::erasureBarEnded($userId);
+        }
+        self::$erasureBars = $current;
+
+        foreach (array_keys(self::$lists) as $acceptKey) {
+            foreach (array_keys(Hilos::$sr?->getTableViewports($acceptKey) ?? []) as $tableKey) {
+                if (!Hilos::$browser?->pageViewportTable(HilosPageConstants::HILOS_USERS, $tableKey) instanceof AbstractHilosUsersTable) {
+                    continue;
+                }
+                foreach ($changed as $bar) {
+                    Hilos::$browser->publishTableProgress(HilosPageConstants::HILOS_USERS, $acceptKey, $tableKey, $bar);
+                }
+            }
+        }
+    }
+
+    /**
+     * @return array<int, TableProgressDTO> Erasure bar of every existing account a begun erasure covers, keyed by account
+     * @throws InvalidArgumentException Never: a row bar always names its row
+     * @throws HilosException When the erasure progress or an account cannot be read
+     */
+    private static function currentErasureBars(): array
+    {
+        $bars = [];
+        foreach (AccountErasureProgressResolver::begun() as $userId => $progress) {
+            if (isset(Hilos::$db->users[$userId])) {
+                $bars[$userId] = AbstractHilosUsersTable::erasureBar($userId, $progress);
+            }
+        }
+
+        return $bars;
     }
 }

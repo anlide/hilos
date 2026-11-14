@@ -12,6 +12,7 @@ use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\Tables\Users\AbstractHilosUsersTable;
 use Hilos\Tables\Users\HilosUserTableRow;
+use Hilos\Users\AccountErasureProgress;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 
@@ -147,6 +148,54 @@ final class AbstractHilosUsersTableTest extends TestCase
         $this->assertNull(
             $browserRow[BrowserPageSignalData::sources][AbstractHilosUsersTable::SLOT_CONNECTIONS][HilosUserTableRow::openSessionCount],
         );
+    }
+
+    /** The erasure bar stands under the account's row, counts the parts that are done and carries the card's block (HIL-1955). */
+    public function testAnErasureBarStandsUnderTheAccountsRowAndCountsTheDoneParts(): void
+    {
+        $progress = new AccountErasureProgress(
+            1790416800000,
+            [
+                ['participant' => 'personal', 'owner' => 'hilos_user', 'userId' => 41, 'done' => true],
+                ['participant' => 'users_library', 'owner' => 'hilos_users_library', 'userId' => 41, 'done' => false],
+                ['participant' => 'personal', 'owner' => 'hilos_user', 'userId' => 43, 'done' => false],
+            ],
+            [['participant' => 'delivery:mail', 'userId' => 41]],
+            [['userId' => 43, 'table' => 'chat_message']],
+        );
+
+        $this->assertSame(
+            [
+                'scope' => 'row',
+                'progressKey' => 'hilos-account-erasure',
+                'current' => 1,
+                'rowKey' => '41',
+                'total' => 3,
+                'detail' => $progress->toArray(),
+            ],
+            AbstractHilosUsersTable::erasureBar(41, $progress)->toArray(),
+        );
+    }
+
+    /** An erasure with no part known yet has no estimate, and the frame that ends a bar carries only its address. */
+    public function testAnErasureWithNoPartHasNoTotalAndItsEndCarriesNeitherTotalNorDetail(): void
+    {
+        $progress = new AccountErasureProgress(1790416800000, [], [['participant' => 'delivery:mail', 'userId' => 43]], []);
+
+        $this->assertSame(
+            ['scope' => 'row', 'progressKey' => 'hilos-account-erasure', 'current' => 0, 'rowKey' => '43', 'detail' => $progress->toArray()],
+            AbstractHilosUsersTable::erasureBar(43, $progress)->toArray(),
+        );
+        $this->assertSame(
+            ['scope' => 'row', 'progressKey' => 'hilos-account-erasure', 'current' => 0, 'rowKey' => '43', 'ended' => true],
+            AbstractHilosUsersTable::erasureBarEnded(43)->toArray(),
+        );
+    }
+
+    /** A viewer of the admin view mode reads the bar's detail by the card's own declaration of the block. */
+    public function testTheErasureDetailIsDeclaredTheWayTheCardDeclaresIt(): void
+    {
+        $this->assertEquals(AccountErasureProgress::wireFields(), $this->table()->progressDetailFields());
     }
 
     /**

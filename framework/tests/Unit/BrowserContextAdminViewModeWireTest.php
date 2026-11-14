@@ -37,6 +37,7 @@ use Hilos\Core\Table\DTO\TableViewportOwnCreateDTO;
 use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableProgressScope;
 use Hilos\Core\Source\Interest\SourceConsumer;
@@ -378,6 +379,67 @@ final class BrowserContextAdminViewModeWireTest extends TestCase
         ];
         $this->assertSame($expected, $snapshotBar);
         $this->assertSame($expected, $frame->progress->toArray());
+    }
+
+    /** A bar its holder hands one subscriber passes the same bridge: the detail is hidden and the count is not (HIL-1955). */
+    public function testABarPublishedToOneSubscriberHidesItsDetailAndNotItsCount(): void
+    {
+        $browser = $this->boot(viewer: true);
+        $this->sendWindow($browser, null);
+        $this->nextSignal(SignalTypeConstants::TABLE_WINDOW, TableWindowSignalData::class);
+
+        $browser->publishTableProgress(
+            WireTestBrowser::PAGE,
+            self::ACCEPT_KEY,
+            WireTestTable::TABLE,
+            new TableProgressDTO(TableProgressScope::Row, 'erase', 'alpha', 1, 4, false, ['file' => 'olena.csv', 'phase' => 'read']),
+        );
+        $frame = $this->nextSignal(SignalTypeConstants::TABLE_PROGRESS, TableProgressSignalData::class);
+
+        $this->assertSame(WireTestTable::TABLE, $frame->tableKey);
+        $this->assertSame(
+            [
+                TableProgressDTO::scope => TableProgressScope::Row->value,
+                TableProgressDTO::progressKey => 'erase',
+                TableProgressDTO::current => 1,
+                TableProgressDTO::rowKey => 'alpha',
+                TableProgressDTO::total => 4,
+                TableProgressDTO::detail => ['file' => HiddenValue::mark(), 'phase' => HiddenValue::mark()],
+            ],
+            $frame->progress->toArray(),
+        );
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    /** A table the page does not bind, and a bound table with no window open, are handed no bar. */
+    public function testABarGoesToNoTableThePageDoesNotBindAndToNoClosedWindow(): void
+    {
+        $browser = $this->boot(viewer: false);
+        $unbound = 'adminViewModeWireUnboundTable';
+        Hilos::$table = new class($unbound) extends TableContext {
+            public function __construct(private readonly string $unbound)
+            {
+            }
+
+            public function configure(): void
+            {
+                $this->register(WireTestTable::TABLE, new WireTestTable());
+                $this->register($this->unbound, new WireTestTable());
+            }
+        };
+        Hilos::$table->configure();
+        Hilos::$sr?->setTableViewport(self::ACCEPT_KEY, new TableViewportSubscription(tableKey: $unbound, limit: 2));
+        $bar = new TableProgressDTO(TableProgressScope::Row, 'erase', 'alpha', 1, 4);
+
+        $browser->publishTableProgress(WireTestBrowser::PAGE, self::ACCEPT_KEY, $unbound, $bar);
+        $browser->publishTableProgress(WireTestBrowser::PAGE, self::ACCEPT_KEY, WireTestTable::TABLE, $bar);
+
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $this->sendWindow($browser, null);
+        $this->nextSignal(SignalTypeConstants::TABLE_WINDOW, TableWindowSignalData::class);
+        $browser->publishTableProgress(WireTestBrowser::PAGE, self::ACCEPT_KEY, WireTestTable::TABLE, $bar);
+        $frame = $this->nextSignal(SignalTypeConstants::TABLE_PROGRESS, TableProgressSignalData::class);
+        $this->assertSame($bar->toArray(), $frame->progress->toArray());
     }
 
     public function testADeclarativeRowIsHiddenOnceWholeAndItsJoinStillFindsItsRow(): void

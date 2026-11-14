@@ -91,6 +91,7 @@ import {
   type HilosTableColumnOf,
 } from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
+import { type HilosTableProgress } from '../../table/tableProgress.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { ANALYTICS_PERSON_ROUTE_PARAM } from '../analytics/hilosAnalyticsPerson.js'
 import { hiddenAsWord } from '../../state/viewMode.js'
@@ -392,6 +393,14 @@ export const HILOS_USER_STANDING_SECTION = 'accountStanding'
 
 /** Page data key of the erasure progress of the person the card shows. */
 export const HILOS_USER_ERASURE_SECTION = 'accountErasure'
+
+/**
+ * Key of the bar of work under a people-list row whose account's erasure has
+ * begun (PHP `AbstractHilosUsersTable::PROGRESS_KEY_ERASURE`, HIL-1955). The
+ * bar's `detail` is the block the card reads from
+ * {@link HILOS_USER_ERASURE_SECTION}.
+ */
+export const HILOS_USERS_ERASURE_PROGRESS_KEY = 'hilos-account-erasure'
 
 /**
  * Row slot key of the inline connection summary.
@@ -1161,6 +1170,23 @@ export function readHilosAccountErasure(
   }
 
   return { startedAt: parsed.data.startedAt, parts, waits, refusals }
+}
+
+/**
+ * Read the erasure block of a people-list row's bar, or null when the bar is
+ * about other work or its block cannot be read. The block is the card's, so a
+ * malformed or hidden part, wait or refusal drops out alone, as
+ * {@link readHilosAccountErasure} reads it.
+ *
+ * @param progress The row's bar, as the table's viewport controller holds it.
+ */
+export function readHilosUsersErasureBar(
+  progress: HilosTableProgress,
+): HilosAccountErasure | null {
+  if (progress.progressKey !== HILOS_USERS_ERASURE_PROGRESS_KEY) {
+    return null
+  }
+  return readHilosAccountErasure(progress.detail)
 }
 
 /** The standing and erasure of the person a card shows, and their mount lifecycle. */

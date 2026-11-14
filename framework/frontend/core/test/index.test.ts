@@ -93,7 +93,9 @@ import {
 import {
   createHilosUserStanding,
   HILOS_USER_ERASURE_SECTION,
+  HILOS_USERS_ERASURE_PROGRESS_KEY,
   readHilosAccountErasure,
+  readHilosUsersErasureBar,
   hilosStandingBadge,
   hilosUserFrozenRow,
   hilosUsersPath,
@@ -179,6 +181,8 @@ it('exports the @hilos/core public surface', () => {
   expect(createHilosUserStanding).toBeTypeOf('function')
   expect(HILOS_USER_ERASURE_SECTION).toBe('accountErasure')
   expect(readHilosAccountErasure).toBeTypeOf('function')
+  expect(HILOS_USERS_ERASURE_PROGRESS_KEY).toBe('hilos-account-erasure')
+  expect(readHilosUsersErasureBar).toBeTypeOf('function')
   expect(hilosStandingBadge('none')).toBeNull()
   expect(hilosUserFrozenRow(null)).toBeNull()
   expect(hilosUsersPath('privacy')).toBe('/hilos/users/privacy')

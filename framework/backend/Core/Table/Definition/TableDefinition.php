@@ -215,6 +215,7 @@ abstract class TableDefinition implements ArrayAccess
      *
      * @return list<TableProgressDTO> Bars running on this table now, empty when none are
      * @throws InvalidArgumentException When an override builds a bar with a row key its place refuses
+     * @throws HilosException When an override cannot read the work it names
      */
     public function progressSnapshot(): array
     {
