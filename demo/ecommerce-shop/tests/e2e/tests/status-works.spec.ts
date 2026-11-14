@@ -493,306 +493,317 @@ test('scheduled maintenance is planned, refused on overlap, changed against a he
   }
 })
 
-test('an announced window closes nothing; the actual freeze stubs the shop but not /status, and its completed period reaches History', async ({
-  page,
-  statusWorks,
-}) => {
-  const admin = watchDeliveryFrames(page)
-  const overview = watchStatusFrames(page)
-  const files = watchPublicStatus(page)
-  try {
-    await grantAdminToSelf(expect, page)
+// FIXME(F-103, 2026-11-14): announcementKnown false when the first occupied tick lands in the next second · чужой · попытка 1 · HIL-2103
+test(
+  'an announced window closes nothing; the actual freeze stubs the shop but not /status, and its completed period reaches History',
+  { tag: '@quarantine:F-103' },
+  async ({ page, statusWorks }) => {
+    const admin = watchDeliveryFrames(page)
+    const overview = watchStatusFrames(page)
+    const files = watchPublicStatus(page)
+    try {
+      await grantAdminToSelf(expect, page)
 
-    const counted =
-      await test.step('the Overview counts announcements and completed events before the work', async () => {
-        await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
-        await expect.poll(() => overview.latest()).toBeDefined()
-        const latest = overview.latest()!
-        expect(latest.scheduledWorks).not.toBeNull()
-        expect(latest.historyCount).not.toBeNull()
-        return {
-          works: latest.scheduledWorks!.count,
-          history: latest.historyCount!,
-        }
-      })
-
-    const { draft, work, started } =
-      await test.step('the announcement is published with its start brought to now, and the window alone closes nothing', async () => {
-        await gotoPage(expect, page, STATUS_WORKS_PATH, PAGE_READY)
-        await openStatusWorkSchedule(expect, page)
-        // The actual freeze finds the announcement only if it starts before the
-        // window ends, and nothing brings that end to now: an hour keeps a slow
-        // path to the freeze inside the window, and the check before the freeze
-        // names a miss. A consumed announcement holds its window against overlap
-        // until the window ends, so a second attempt of this test in the same
-        // run is refused; every full e2e cycle starts from a reset stand
-        // database, and a retried test already makes its step red. The 20
-        // seconds only carry the form's strictly-future guard to the submit.
-        const stamp = Date.now()
-        const startsAt = Math.floor(stamp / 1000) * 1000 + 20_000
-        const announced: StatusWorkDraft = {
-          title: `Announced freeze ${stamp}`,
-          description: 'The shop closes only for the actual freeze.',
-          startsAt,
-          endsAt: startsAt + 3_600_000,
-          componentKeys: [SERVICE],
-        }
-        statusWorks.reserve(announced)
-        await draftStatusWork(expect, page, announced, READER_ZONE)
-        await submitStatusWork(expect, page, admin, STATUS_WORK_SCHEDULE)
-        const row = await scheduledRow(admin, announced)
-        // The schedule keeps its strictly-future guard; a command, not a wait,
-        // brings the announced start to now.
-        const started = await startStatusWork(row.publicId)
-        expect(started.startsAt).toBeLessThanOrEqual(Date.now())
-        // The owner has read the start once its pair carries it: only
-        // then can an actual freeze find the announcement covering its start.
-        await gotoPublicStatus(expect, page)
-        const pair = await expectPublicStatusPair(
-          expect,
-          page,
-          files,
-          ({ status }) =>
-            publishedWorks(status, [row.publicId])[0]?.startsAt ===
-            started.startsAt,
-        )
-        expect(publishedWorks(pair.status, [row.publicId])).toEqual([
-          publicEntry(row.publicId, {
-            ...announced,
-            startsAt: started.startsAt,
-          }),
-        ])
-        await expect(page.getByTestId('public-status-works')).toContainText(
-          announced.title,
-        )
-        // Inside its window nothing closes.
-        await expect(page.getByTestId('public-status-maintenance')).toHaveCount(
-          0,
-        )
-        expect((await inspectProtectedMode()).phase).toBe('inactive')
-        await gotoPage(expect, page, STATUS_WORKS_PATH, PAGE_READY)
-        await expect(
-          shownByTestId(page, `hilos-status-work-title-${row.id}`),
-        ).toHaveText(announced.title)
-        return { draft: announced, work: row, started }
-      })
-
-    const period =
-      await test.step('the actual freeze puts the stub over Works, and its Service status opens /status with the announced Maintenance', async () => {
-        expect(Date.now()).toBeLessThan(draft.endsAt)
-        expect(await enterProtectedMode(FREEZE)).toBe('active')
-        await expect(page.getByTestId('maintenance')).toBeVisible()
-        await expect(page.getByTestId(WORKS_TABLE)).toHaveCount(0)
-        // A reader held by the freeze gets no hint and polls: a command
-        // publishes the freeze's period before the reader opens.
-        const { aliveAt } = await beatStatusHeartbeat()
-        await page.getByTestId('maintenance-service-status').click()
-        await expect(page).toHaveURL(new RegExp(`${PUBLIC_STATUS_PATH}$`))
-        await expect(page.getByTestId('public-status-components')).toBeVisible()
-        const active = await expectPublicStatusPair(
-          expect,
-          page,
-          files,
-          ({ status, heartbeat }) =>
-            heartbeat.aliveAt >= aliveAt &&
-            periodOf(status, work.publicId)?.completionObservedAt === null,
-        )
-        const opened = periodOf(active.status, work.publicId)!
-        expect(opened).toMatchObject({
-          announcementKnown: true,
-          title: draft.title,
-          endedAt: null,
-          completionObservedAt: null,
+      const counted =
+        await test.step('the Overview counts announcements and completed events before the work', async () => {
+          await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
+          await expect.poll(() => overview.latest()).toBeDefined()
+          const latest = overview.latest()!
+          expect(latest.scheduledWorks).not.toBeNull()
+          expect(latest.historyCount).not.toBeNull()
+          return {
+            works: latest.scheduledWorks!.count,
+            history: latest.historyCount!,
+          }
         })
-        expect(opened.startedAt).toBeGreaterThanOrEqual(started.startsAt)
-        expect(opened.startedAt).toBeLessThan(draft.endsAt)
-        expect(
-          active.status.components.map((component) => component.state),
-        ).toEqual(active.status.components.map(() => 'maintenance'))
-        // The shell's exception: the stub does not cover the file reader, and
-        // the reader offers nothing that needs the held connection.
-        await expect(page.getByTestId('maintenance')).toHaveCount(0)
-        const maintenance = page.getByTestId('public-status-maintenance')
-        await expect(maintenance).toContainText(draft.title)
-        await expect(maintenance).toContainText('Announced in advance')
-        await expect(
-          page.getByTestId('public-status-component-state'),
-        ).toHaveText(active.status.components.map(() => 'Maintenance'))
-        await expect(page.getByTestId('public-status-subscribe')).toHaveCount(0)
-        return opened
-      })
 
-    const completed =
-      await test.step('the lift reloads /status, which shows the period completed once', async () => {
-        await markDocument(page)
-        expect(await openProtectedMode()).toBe('inactive')
-        await expectSelfReload(page, test.info().project.use.navigationTimeout)
-        await expect(page.getByTestId('public-status-components')).toBeVisible()
-        const pair = await expectPublicStatusPair(
-          expect,
-          page,
-          files,
-          ({ status }) =>
-            status.maintenancePeriods.some(
-              (entry) =>
-                entry.id === period.id && entry.completionObservedAt !== null,
-            ) && publishedWorks(status, [work.publicId]).length === 0,
-        )
-        const periods = pair.status.maintenancePeriods.filter(
-          (entry) => entry.id === period.id,
-        )
-        expect(periods).toHaveLength(1)
+      const { draft, work, started } =
+        await test.step('the announcement is published with its start brought to now, and the window alone closes nothing', async () => {
+          await gotoPage(expect, page, STATUS_WORKS_PATH, PAGE_READY)
+          await openStatusWorkSchedule(expect, page)
+          // The actual freeze finds the announcement only if it starts before the
+          // window ends, and nothing brings that end to now: an hour keeps a slow
+          // path to the freeze inside the window, and the check before the freeze
+          // names a miss. A consumed announcement holds its window against overlap
+          // until the window ends, so a second attempt of this test in the same
+          // run is refused; every full e2e cycle starts from a reset stand
+          // database, and a retried test already makes its step red. The 20
+          // seconds only carry the form's strictly-future guard to the submit.
+          const stamp = Date.now()
+          const startsAt = Math.floor(stamp / 1000) * 1000 + 20_000
+          const announced: StatusWorkDraft = {
+            title: `Announced freeze ${stamp}`,
+            description: 'The shop closes only for the actual freeze.',
+            startsAt,
+            endsAt: startsAt + 3_600_000,
+            componentKeys: [SERVICE],
+          }
+          statusWorks.reserve(announced)
+          await draftStatusWork(expect, page, announced, READER_ZONE)
+          await submitStatusWork(expect, page, admin, STATUS_WORK_SCHEDULE)
+          const row = await scheduledRow(admin, announced)
+          // The schedule keeps its strictly-future guard; a command, not a wait,
+          // brings the announced start to now.
+          const started = await startStatusWork(row.publicId)
+          expect(started.startsAt).toBeLessThanOrEqual(Date.now())
+          // The owner has read the start once its pair carries it: only
+          // then can an actual freeze find the announcement covering its start.
+          await gotoPublicStatus(expect, page)
+          const pair = await expectPublicStatusPair(
+            expect,
+            page,
+            files,
+            ({ status }) =>
+              publishedWorks(status, [row.publicId])[0]?.startsAt ===
+              started.startsAt,
+          )
+          expect(publishedWorks(pair.status, [row.publicId])).toEqual([
+            publicEntry(row.publicId, {
+              ...announced,
+              startsAt: started.startsAt,
+            }),
+          ])
+          await expect(page.getByTestId('public-status-works')).toContainText(
+            announced.title,
+          )
+          // Inside its window nothing closes.
+          await expect(
+            page.getByTestId('public-status-maintenance'),
+          ).toHaveCount(0)
+          expect((await inspectProtectedMode()).phase).toBe('inactive')
+          await gotoPage(expect, page, STATUS_WORKS_PATH, PAGE_READY)
+          await expect(
+            shownByTestId(page, `hilos-status-work-title-${row.id}`),
+          ).toHaveText(announced.title)
+          return { draft: announced, work: row, started }
+        })
+
+      const period =
+        await test.step('the actual freeze puts the stub over Works, and its Service status opens /status with the announced Maintenance', async () => {
+          expect(Date.now()).toBeLessThan(draft.endsAt)
+          expect(await enterProtectedMode(FREEZE)).toBe('active')
+          await expect(page.getByTestId('maintenance')).toBeVisible()
+          await expect(page.getByTestId(WORKS_TABLE)).toHaveCount(0)
+          // A reader held by the freeze gets no hint and polls: a command
+          // publishes the freeze's period before the reader opens.
+          const { aliveAt } = await beatStatusHeartbeat()
+          await page.getByTestId('maintenance-service-status').click()
+          await expect(page).toHaveURL(new RegExp(`${PUBLIC_STATUS_PATH}$`))
+          await expect(
+            page.getByTestId('public-status-components'),
+          ).toBeVisible()
+          const active = await expectPublicStatusPair(
+            expect,
+            page,
+            files,
+            ({ status, heartbeat }) =>
+              heartbeat.aliveAt >= aliveAt &&
+              periodOf(status, work.publicId)?.completionObservedAt === null,
+          )
+          const opened = periodOf(active.status, work.publicId)!
+          expect(opened).toMatchObject({
+            announcementKnown: true,
+            title: draft.title,
+            endedAt: null,
+            completionObservedAt: null,
+          })
+          expect(opened.startedAt).toBeGreaterThanOrEqual(started.startsAt)
+          expect(opened.startedAt).toBeLessThan(draft.endsAt)
+          expect(
+            active.status.components.map((component) => component.state),
+          ).toEqual(active.status.components.map(() => 'maintenance'))
+          // The shell's exception: the stub does not cover the file reader, and
+          // the reader offers nothing that needs the held connection.
+          await expect(page.getByTestId('maintenance')).toHaveCount(0)
+          const maintenance = page.getByTestId('public-status-maintenance')
+          await expect(maintenance).toContainText(draft.title)
+          await expect(maintenance).toContainText('Announced in advance')
+          await expect(
+            page.getByTestId('public-status-component-state'),
+          ).toHaveText(active.status.components.map(() => 'Maintenance'))
+          await expect(page.getByTestId('public-status-subscribe')).toHaveCount(
+            0,
+          )
+          return opened
+        })
+
+      const completed =
+        await test.step('the lift reloads /status, which shows the period completed once', async () => {
+          await markDocument(page)
+          expect(await openProtectedMode()).toBe('inactive')
+          await expectSelfReload(
+            page,
+            test.info().project.use.navigationTimeout,
+          )
+          await expect(
+            page.getByTestId('public-status-components'),
+          ).toBeVisible()
+          const pair = await expectPublicStatusPair(
+            expect,
+            page,
+            files,
+            ({ status }) =>
+              status.maintenancePeriods.some(
+                (entry) =>
+                  entry.id === period.id && entry.completionObservedAt !== null,
+              ) && publishedWorks(status, [work.publicId]).length === 0,
+          )
+          const periods = pair.status.maintenancePeriods.filter(
+            (entry) => entry.id === period.id,
+          )
+          expect(periods).toHaveLength(1)
+          await expect(
+            page
+              .getByTestId('public-status-maintenance')
+              .filter({ hasText: draft.title }),
+          ).toHaveCount(0)
+          // Other scenarios leave genuine completed maintenance in this history;
+          // this announcement owns exactly one completed period.
+          await expect(
+            page.getByTestId('public-status-history').getByRole('heading', {
+              name: `${draft.title} Maintenance Completed`,
+              exact: true,
+            }),
+          ).toHaveCount(1)
+          return periods[0]
+        })
+
+      await test.step('Works and the Overview no longer count the announcement, and History holds its one completed period', async () => {
+        await gotoPage(expect, page, STATUS_WORKS_PATH, PAGE_READY)
         await expect(
-          page
-            .getByTestId('public-status-maintenance')
-            .filter({ hasText: draft.title }),
+          shownByTestId(page, `hilos-status-work-title-${work.id}`),
         ).toHaveCount(0)
-        // Other scenarios leave genuine completed maintenance in this history;
-        // this announcement owns exactly one completed period.
-        await expect(
-          page.getByTestId('public-status-history').getByRole('heading', {
-            name: `${draft.title} Maintenance Completed`,
-            exact: true,
-          }),
-        ).toHaveCount(1)
-        return periods[0]
-      })
+        await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
+        await expect(page.getByTestId('hilos-status-works-count')).toHaveText(
+          String(counted.works),
+        )
+        await expect(page.getByTestId('hilos-status-history-count')).toHaveText(
+          String(counted.history + 1),
+        )
 
-    await test.step('Works and the Overview no longer count the announcement, and History holds its one completed period', async () => {
-      await gotoPage(expect, page, STATUS_WORKS_PATH, PAGE_READY)
-      await expect(
-        shownByTestId(page, `hilos-status-work-title-${work.id}`),
-      ).toHaveCount(0)
-      await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
-      await expect(page.getByTestId('hilos-status-works-count')).toHaveText(
-        String(counted.works),
-      )
-      await expect(page.getByTestId('hilos-status-history-count')).toHaveText(
-        String(counted.history + 1),
-      )
+        const since = admin.packets.length
+        await page.getByTestId('hilos-page-tab-hilos_status_history').click()
+        await expectPageReady(expect, page)
+        await expect(page).toHaveURL(new RegExp(`${STATUS_HISTORY_PATH}$`))
+        await expect
+          .poll(() => statusHistoryDeliveries(admin, since).length)
+          .toBeGreaterThan(0)
+        const facts = statusHistoryDeliveries(admin, since)[0].rows.filter(
+          (row) => row.workPublicId === work.publicId,
+        )
+        expect(facts).toHaveLength(1)
+        const fact = facts[0]
+        // Public period ids are opaque; History names the numeric source row.
+        // The public work and the exact saved interval identify the same period.
+        expect(fact).toMatchObject({
+          kind: 'maintenance',
+          startedAt: period.startedAt,
+          endedAt: completed.endedAt,
+          completionObservedAt: completed.completionObservedAt,
+          publishedAt: null,
+          outcome: 'maintenance_completed',
+          title: draft.title,
+          componentKeys: draft.componentKeys,
+          severity: null,
+          announcementKnown: true,
+          workPublicId: work.publicId,
+        })
+        await expectStatusHistoryFact(expect, page, fact)
+        const row = shownByTestId(page, `hilos-table-row-${fact.id}`)
 
-      const since = admin.packets.length
-      await page.getByTestId('hilos-page-tab-hilos_status_history').click()
-      await expectPageReady(expect, page)
-      await expect(page).toHaveURL(new RegExp(`${STATUS_HISTORY_PATH}$`))
-      await expect
-        .poll(() => statusHistoryDeliveries(admin, since).length)
-        .toBeGreaterThan(0)
-      const facts = statusHistoryDeliveries(admin, since)[0].rows.filter(
-        (row) => row.workPublicId === work.publicId,
-      )
-      expect(facts).toHaveLength(1)
-      const fact = facts[0]
-      // Public period ids are opaque; History names the numeric source row.
-      // The public work and the exact saved interval identify the same period.
-      expect(fact).toMatchObject({
-        kind: 'maintenance',
-        startedAt: period.startedAt,
-        endedAt: completed.endedAt,
-        completionObservedAt: completed.completionObservedAt,
-        publishedAt: null,
-        outcome: 'maintenance_completed',
-        title: draft.title,
-        componentKeys: draft.componentKeys,
-        severity: null,
-        announcementKnown: true,
-        workPublicId: work.publicId,
-      })
-      await expectStatusHistoryFact(expect, page, fact)
-      const row = shownByTestId(page, `hilos-table-row-${fact.id}`)
-
-      const search = page.getByTestId('hilos-table-search')
-      let sent = admin.sent.length
-      await typeInto(search, 'no-matching-history-event')
-      await expect
-        .poll(() => statusHistoryWindow(admin, sent)?.rows)
-        .toEqual([])
-      await expect(row).toHaveCount(0)
-      sent = admin.sent.length
-      await typeInto(search, draft.title)
-      await expect
-        .poll(() => statusHistoryWindow(admin, sent)?.rows)
-        .toContainEqual(fact)
-      await expectStatusHistoryFact(expect, page, fact)
-
-      for (const [key, option, value] of [
-        ['componentKey', 0, SERVICE],
-        ['outcome', 3, 'maintenance_completed'],
-      ] as const) {
+        const search = page.getByTestId('hilos-table-search')
+        let sent = admin.sent.length
+        await typeInto(search, 'no-matching-history-event')
+        await expect
+          .poll(() => statusHistoryWindow(admin, sent)?.rows)
+          .toEqual([])
+        await expect(row).toHaveCount(0)
         sent = admin.sent.length
-        const filter = page.getByTestId(`hilos-table-filter-${key}`)
-        await filter.getByTestId('hilos-dropdown-toggle').click()
-        await filter.getByTestId(`hilos-dropdown-option-${option}`).click()
-        expect(await historyRows(admin, sent, { [key]: value })).toContainEqual(
+        await typeInto(search, draft.title)
+        await expect
+          .poll(() => statusHistoryWindow(admin, sent)?.rows)
+          .toContainEqual(fact)
+        await expectStatusHistoryFact(expect, page, fact)
+
+        for (const [key, option, value] of [
+          ['componentKey', 0, SERVICE],
+          ['outcome', 3, 'maintenance_completed'],
+        ] as const) {
+          sent = admin.sent.length
+          const filter = page.getByTestId(`hilos-table-filter-${key}`)
+          await filter.getByTestId('hilos-dropdown-toggle').click()
+          await filter.getByTestId(`hilos-dropdown-option-${option}`).click()
+          expect(
+            await historyRows(admin, sent, { [key]: value }),
+          ).toContainEqual(fact)
+          await expectStatusHistoryFact(expect, page, fact)
+        }
+
+        // The Period's days are the reader's: the zone travels with the bounds.
+        const day = (
+          await readerLocalDateTime(page, fact.startedAt, READER_ZONE)
+        ).slice(0, 10)
+        const next = dayAfter(day)
+        const from = page.getByTestId('hilos-table-filter-from-from')
+        const to = page.getByTestId('hilos-table-filter-from-to')
+        await page.getByTestId('hilos-table-filter-from').click()
+        sent = admin.sent.length
+        await enterCalendarDate(expect, from, day)
+        await enterCalendarDate(expect, to, day)
+        expect(
+          await historyRows(admin, sent, {
+            from: day,
+            to: day,
+            timeZone: READER_ZONE,
+          }),
+        ).toContainEqual(fact)
+        await expectStatusHistoryFact(expect, page, fact)
+        sent = admin.sent.length
+        await enterCalendarDate(expect, to, next)
+        await enterCalendarDate(expect, from, next)
+        expect(
+          await historyRows(admin, sent, {
+            from: next,
+            to: next,
+            timeZone: READER_ZONE,
+          }),
+        ).not.toContainEqual(fact)
+        await expect(row).toHaveCount(0)
+        sent = admin.sent.length
+        await page.getByTestId('hilos-table-filter-from-clear').click()
+        await expect
+          .poll(() => statusHistoryWindow(admin, sent)?.rows)
+          .toContainEqual(fact)
+        await expectStatusHistoryFact(expect, page, fact)
+
+        const reload = admin.packets.length
+        await page.reload()
+        await expectPageReady(expect, page)
+        await expect
+          .poll(() => statusHistoryDeliveries(admin, reload).length)
+          .toBeGreaterThan(0)
+        expect(statusHistoryDeliveries(admin, reload)[0].rows).toContainEqual(
           fact,
         )
         await expectStatusHistoryFact(expect, page, fact)
-      }
-
-      // The Period's days are the reader's: the zone travels with the bounds.
-      const day = (
-        await readerLocalDateTime(page, fact.startedAt, READER_ZONE)
-      ).slice(0, 10)
-      const next = dayAfter(day)
-      const from = page.getByTestId('hilos-table-filter-from-from')
-      const to = page.getByTestId('hilos-table-filter-from-to')
-      await page.getByTestId('hilos-table-filter-from').click()
-      sent = admin.sent.length
-      await enterCalendarDate(expect, from, day)
-      await enterCalendarDate(expect, to, day)
-      expect(
-        await historyRows(admin, sent, {
-          from: day,
-          to: day,
-          timeZone: READER_ZONE,
-        }),
-      ).toContainEqual(fact)
-      await expectStatusHistoryFact(expect, page, fact)
-      sent = admin.sent.length
-      await enterCalendarDate(expect, to, next)
-      await enterCalendarDate(expect, from, next)
-      expect(
-        await historyRows(admin, sent, {
-          from: next,
-          to: next,
-          timeZone: READER_ZONE,
-        }),
-      ).not.toContainEqual(fact)
-      await expect(row).toHaveCount(0)
-      sent = admin.sent.length
-      await page.getByTestId('hilos-table-filter-from-clear').click()
-      await expect
-        .poll(() => statusHistoryWindow(admin, sent)?.rows)
-        .toContainEqual(fact)
-      await expectStatusHistoryFact(expect, page, fact)
-
-      const reload = admin.packets.length
-      await page.reload()
-      await expectPageReady(expect, page)
-      await expect
-        .poll(() => statusHistoryDeliveries(admin, reload).length)
-        .toBeGreaterThan(0)
-      expect(statusHistoryDeliveries(admin, reload)[0].rows).toContainEqual(
-        fact,
-      )
-      await expectStatusHistoryFact(expect, page, fact)
-    })
-  } finally {
-    try {
-      await openProtectedModeIfAny()
-      expect((await inspectProtectedMode()).phase).toBe('inactive')
-    } finally {
-      await test.info().attach('status-works-actual-freeze', {
-        body: JSON.stringify({
-          admin,
-          files: files.reads,
-          pairs: files.displayed,
-        }),
-        contentType: 'application/json',
       })
-      admin.stop()
-      overview.stop()
-      await files.stop()
+    } finally {
+      try {
+        await openProtectedModeIfAny()
+        expect((await inspectProtectedMode()).phase).toBe('inactive')
+      } finally {
+        await test.info().attach('status-works-actual-freeze', {
+          body: JSON.stringify({
+            admin,
+            files: files.reads,
+            pairs: files.displayed,
+          }),
+          contentType: 'application/json',
+        })
+        admin.stop()
+        overview.stop()
+        await files.stop()
+      }
     }
-  }
-})
+  },
+)

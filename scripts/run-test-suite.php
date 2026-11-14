@@ -47,6 +47,11 @@ declare(strict_types=1);
  *                  every outcome, so that reading a red step starts from what it
  *                  left behind rather than from what the log seemed to say.
  *
+ * While a step runs, the run log carries a pulse line for it at most once a
+ * minute and only when its log file has grown; a hung step writes nothing, so a
+ * silent log stays silent on stdout, and the step's full output still arrives as
+ * one block when it finishes.
+ *
  * Composer and an external pipeline drive the same repository-owned command
  * line. The runner also works on a fresh checkout with no pipeline beside it: its verdict
  * depends only on each command's exit code and the hilos-unstable evidence it prints.
@@ -54,6 +59,39 @@ declare(strict_types=1);
 
 /** Poll interval while waiting for the running steps, in microseconds. */
 const POLL_INTERVAL_MICROSECONDS = 200_000;
+
+/** A running step reports a pulse line at most once per this many seconds. */
+const PULSE_INTERVAL_SECONDS = 60;
+
+/** Bytes read from the end of a running step's log to find its last line. */
+const PULSE_TAIL_BYTES = 8_192;
+
+/** Maximum character length of the last log line echoed in a pulse line. */
+const PULSE_ECHO_MAX_CHARACTERS = 120;
+
+/** ANSI CSI escape sequences stripped from a step log's echoed line. */
+const PULSE_ANSI_CSI_PATTERN = '/\e\[[0-?]*[ -\/]*[@-~]/';
+
+/** ANSI OSC escape sequences stripped from a step log's echoed line. */
+const PULSE_ANSI_OSC_PATTERN = '/\e\][^\a\e]*(?:\a|\e\\\\)/';
+
+/** Remaining C0 control characters and DEL stripped after tabs become spaces. */
+const PULSE_CONTROL_CHARACTERS_PATTERN = '/[\x00-\x1F\x7F]+/';
+
+/** Runs of three or more equals signs that could forge a runner banner. */
+const PULSE_EQUALS_RUN_PATTERN = '/={3,}/';
+
+/** Runs of three or more closing angle brackets that could forge a launch mark. */
+const PULSE_ANGLE_RUN_PATTERN = '/>{3,}/';
+
+/** Matches when a string is valid UTF-8. */
+const PULSE_VALID_UTF8_PATTERN = '//u';
+
+/** Non-ASCII bytes replaced when a tail slice is not valid UTF-8. */
+const PULSE_NON_ASCII_BYTE_PATTERN = '/[\x80-\xFF]/';
+
+/** Cuts an echoed line to PULSE_ECHO_MAX_CHARACTERS Unicode characters. */
+const PULSE_ECHO_TRUNCATE_PATTERN = '/\A(.{' . PULSE_ECHO_MAX_CHARACTERS . '}).+\z/su';
 
 /** The option overriding both the environment and the adaptive lane count. */
 const LANES_OPTION = '--lanes';
@@ -78,6 +116,9 @@ const LOG_REPLAY_CHUNK_BYTES = 65_536;
 
 /** /proc/meminfo reports memory in kB; this converts that to GiB. */
 const KIB_PER_GIB = 1024 * 1024;
+
+/** Bytes in a kibibyte, used to format a step log's size. */
+const BYTES_PER_KIB = 1024;
 
 /** Seconds in a minute. */
 const SECONDS_PER_MINUTE = 60;
@@ -572,7 +613,7 @@ function runPlan(
     /** @var array<int, string> $pending Ids not started yet, in {@see launchOrder()}. */
     $pending = launchOrder($manifest, $plan);
     /** @var array<string, array{handle: resource, since: float, at: string,
-     *     neighbors: array<int, string>}> $running */
+     *     neighbors: array<int, string>, pulseAt: float, pulseSize: int}> $running */
     $running = [];
     /** @var array<string, array{path: string, reason: string, standCommand: string|null,
      *     missing: array<int, string>}> $artifacts Snapshots taken, by step id. */
@@ -588,7 +629,7 @@ function runPlan(
         foreach (launchable($manifest, $pending, $running, $done, $lanes) as $id) {
             $pending = array_values(array_diff($pending, [$id]));
             $running[$id] = launch($root, $manifest[$id], $logs[$id], array_keys($running));
-            fwrite(STDOUT, sprintf(">>> launched %s at %s (%d running)\n", $id, $running[$id]['at'], count($running)));
+            fwrite(STDOUT, launchedLine($id, $running[$id]['at'], count($running), $logs[$id]));
         }
         if ($running === []) {
             // Nothing runs and nothing can start, so nothing will change: every
@@ -614,6 +655,9 @@ function runPlan(
             $artifacts[$id] = collectStepArtifacts($root, $id, $manifest[$id], $finished, $context, $artifactDir);
             dropStandAfterStep($root, $manifest[$id]);
             reportFinish($id, $finished, $logs[$id], $rc, $artifacts[$id]);
+        }
+        foreach (array_keys($running) as $id) {
+            $running[$id] = reportPulse($id, $running[$id], $logs[$id], microtime(true));
         }
     }
 
@@ -752,6 +796,20 @@ function dependenciesMet(array $deps, array $done): bool
 }
 
 /**
+ * The line printed when a step starts, naming its log file for live inspection.
+ *
+ * @param string $id The step that started.
+ * @param string $at Its start timestamp.
+ * @param int $running How many steps are now in flight.
+ * @param string $logPath Where the step's output is being written.
+ * @return string The formatted line, newline included.
+ */
+function launchedLine(string $id, string $at, int $running, string $logPath): string
+{
+    return sprintf(">>> launched %s at %s (%d running), log %s\n", $id, $at, $running, $logPath);
+}
+
+/**
  * Start one step with both its streams redirected to its own file.
  *
  * Per-step files rather than pipes: two docker chains writing one stream produce
@@ -763,7 +821,7 @@ function dependenciesMet(array $deps, array $done): bool
  * @param string $logPath Where its output goes.
  * @param array<int, string> $neighbors Ids already running, kept beside the record so
  *     that the step's snapshot can name who it shared the box with.
- * @return array{handle: resource, since: float, at: string, neighbors: array<int, string>}
+ * @return array{handle: resource, since: float, at: string, neighbors: array<int, string>, pulseAt: float, pulseSize: int}
  */
 function launch(string $root, array $step, string $logPath, array $neighbors): array
 {
@@ -772,8 +830,16 @@ function launch(string $root, array $step, string $logPath, array $neighbors): a
     if (!is_resource($handle)) {
         fail('could not start ' . $step['id']);
     }
+    $startedAt = microtime(true);
 
-    return ['handle' => $handle, 'since' => microtime(true), 'at' => now(), 'neighbors' => $neighbors];
+    return [
+        'handle' => $handle,
+        'since' => $startedAt,
+        'at' => now(),
+        'neighbors' => $neighbors,
+        'pulseAt' => $startedAt,
+        'pulseSize' => 0,
+    ];
 }
 
 /**
@@ -785,7 +851,7 @@ function launch(string $root, array $step, string $logPath, array $neighbors): a
  * the ledger and the summary consume the result.
  *
  * @param array<string, array{handle: resource, since: float, at: string,
- *     neighbors: array<int, string>}> $running Ids in flight.
+ *     neighbors: array<int, string>, pulseAt: float, pulseSize: int}> $running Ids in flight.
  * @param array<string, string> $logs Log path by step id.
  * @return array<string, array{outcome: StepOutcome, rc: int, at: string, seconds: float, note: string,
  *     unstable: array{count: int, tests: array<int, string>},
@@ -901,7 +967,8 @@ function skipped(array $step, array $done): array
  *
  * Concurrency is why the output is replayed here rather than streamed as it
  * happens — interleaved docker chains cannot be read line by line, and line by
- * line is how the playbook decides whose red it is.
+ * line is how the playbook decides whose red it is; while a step runs, only a
+ * periodic pulse line reports that its log is still growing.
  *
  * @param string $id The step that finished.
  * @param array{rc: int, at: string, seconds: float,
@@ -992,6 +1059,159 @@ function reportSkip(string $id, array $skipped, $rc): void
 {
     fwrite(STDOUT, sprintf("=== SKIP %s (%s) ===\n", $id, $skipped['note']));
     fwrite($rc, sprintf("%s SKIPPED (%s)\n", $id, $skipped['note']));
+}
+
+/**
+ * Print a pulse line for a running step when at least PULSE_INTERVAL_SECONDS have
+ * passed since its last pulse (or launch) and its log file has grown.
+ *
+ * @param string $id The running step's id.
+ * @param array{handle: resource, since: float, at: string, neighbors: array<int, string>,
+ *     pulseAt: float, pulseSize: int} $step The running step's state.
+ * @param string $logPath Its output file.
+ * @param float $now Current unix timestamp in seconds.
+ * @return array{handle: resource, since: float, at: string, neighbors: array<int, string>,
+ *     pulseAt: float, pulseSize: int} Updated state after the check.
+ */
+function reportPulse(string $id, array $step, string $logPath, float $now): array
+{
+    if ($now - $step['pulseAt'] < PULSE_INTERVAL_SECONDS) {
+        return $step;
+    }
+    $size = stepLogSize($logPath);
+    if (!pulseDue($now, $step['pulseAt'], $size, $step['pulseSize'])) {
+        return $step;
+    }
+    fwrite(
+        STDOUT,
+        pulseLine(
+            $id,
+            $now - $step['since'],
+            $size,
+            $size - $step['pulseSize'],
+            lastLogLine(readLogTail($logPath, $size)),
+        ),
+    );
+    $step['pulseAt'] = $now;
+    $step['pulseSize'] = $size;
+
+    return $step;
+}
+
+/**
+ * Whether a running step is due to report a pulse line now.
+ *
+ * @param float $now Current unix timestamp in seconds.
+ * @param float $pulseAt When the step last pulsed, or when it started.
+ * @param int $size Current byte size of the step's log file.
+ * @param int $pulseSize Byte size of the step's log file at `$pulseAt`.
+ * @return bool True when the interval has elapsed and the log has grown.
+ */
+function pulseDue(float $now, float $pulseAt, int $size, int $pulseSize): bool
+{
+    return $now - $pulseAt >= PULSE_INTERVAL_SECONDS && $size > $pulseSize;
+}
+
+/**
+ * Format one progress line for a step that is still running.
+ *
+ * @param string $id The running step's id.
+ * @param float $elapsed Seconds since the step started.
+ * @param int $size Current byte size of the step's log file.
+ * @param int $grown Bytes added since the previous pulse (or since launch).
+ * @param string $lastLine Sanitized last non-empty line from the log tail, or empty.
+ * @return string The formatted pulse line, newline included.
+ */
+function pulseLine(string $id, float $elapsed, int $size, int $grown, string $lastLine): string
+{
+    return sprintf(
+        "... %s %s, log %s (+%s)%s\n",
+        $id,
+        formatDuration($elapsed),
+        formatBytes($size),
+        formatBytes($grown),
+        $lastLine === '' ? '' : ' | ' . $lastLine,
+    );
+}
+
+/**
+ * The last non-empty line from a step log's tail, stripped of terminal control
+ * sequences and compressed so that echoed test output cannot forge a runner mark.
+ *
+ * @param string $tail Raw bytes from the end of a step's log file.
+ * @return string A single-line valid UTF-8 snippet, or an empty string when no line has text.
+ */
+function lastLogLine(string $tail): string
+{
+    $lines = explode("\n", $tail);
+    for ($index = count($lines) - 1; $index >= 0; $index--) {
+        $line = $lines[$index];
+        $carriage = strrpos($line, "\r");
+        if ($carriage !== false) {
+            $line = substr($line, $carriage + 1);
+        }
+        $line = (string)preg_replace([PULSE_ANSI_CSI_PATTERN, PULSE_ANSI_OSC_PATTERN], '', $line);
+        $line = str_replace("\t", ' ', $line);
+        $line = (string)preg_replace(PULSE_CONTROL_CHARACTERS_PATTERN, '', $line);
+        $line = (string)preg_replace([PULSE_EQUALS_RUN_PATTERN, PULSE_ANGLE_RUN_PATTERN], ['==', '>>'], $line);
+        $line = trim($line);
+        if ($line === '') {
+            continue;
+        }
+        if (preg_match(PULSE_VALID_UTF8_PATTERN, $line) !== 1) {
+            $line = (string)preg_replace(PULSE_NON_ASCII_BYTE_PATTERN, '?', $line);
+        }
+
+        return (string)preg_replace(PULSE_ECHO_TRUNCATE_PATTERN, '$1…', $line);
+    }
+
+    return '';
+}
+
+/**
+ * Current byte size of a running step's log file, or zero when the file is absent
+ * or unreadable. PHP caches stat results per path, so the cache for this file is
+ * cleared before each look.
+ *
+ * @param string $logPath The step's output file.
+ * @return int
+ */
+function stepLogSize(string $logPath): int
+{
+    clearstatcache(true, $logPath);
+    if (!is_file($logPath)) {
+        return 0;
+    }
+    $size = filesize($logPath);
+
+    return $size === false ? 0 : $size;
+}
+
+/**
+ * Read up to PULSE_TAIL_BYTES from the end of a step's log file.
+ *
+ * @param string $logPath The step's output file.
+ * @param int $size Current byte size of the file.
+ * @return string The tail bytes, or an empty string when nothing can be read.
+ */
+function readLogTail(string $logPath, int $size): string
+{
+    if ($size <= 0 || !is_readable($logPath)) {
+        return '';
+    }
+    $handle = fopen($logPath, 'r');
+    if (!is_resource($handle)) {
+        return '';
+    }
+    if (fseek($handle, max(0, $size - PULSE_TAIL_BYTES)) !== 0) {
+        fclose($handle);
+
+        return '';
+    }
+    $tail = fread($handle, PULSE_TAIL_BYTES);
+    fclose($handle);
+
+    return $tail === false ? '' : $tail;
 }
 
 /**
@@ -1169,6 +1389,24 @@ function formatDuration(float $seconds): string
     }
 
     return intdiv($whole, SECONDS_PER_MINUTE) . 'm' . str_pad((string)($whole % SECONDS_PER_MINUTE), 2, '0', STR_PAD_LEFT) . 's';
+}
+
+/**
+ * A byte count as `812 B`, `53 KB` or `2.1 MB` using 1024-byte units.
+ *
+ * @param int $bytes The size in bytes.
+ * @return string
+ */
+function formatBytes(int $bytes): string
+{
+    if ($bytes < BYTES_PER_KIB) {
+        return $bytes . ' B';
+    }
+    if ($bytes < BYTES_PER_KIB * BYTES_PER_KIB) {
+        return (int)round($bytes / BYTES_PER_KIB) . ' KB';
+    }
+
+    return sprintf('%.1f MB', $bytes / (BYTES_PER_KIB * BYTES_PER_KIB));
 }
 
 /**

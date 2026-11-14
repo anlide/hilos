@@ -313,6 +313,86 @@ JSON;
         }
     }
 
+    /** The launch line names the step's log file so a reader knows where live output goes. */
+    public function testLaunchedLineNamesTheStepLog(): void
+    {
+        $this->assertSame(
+            ">>> launched e2e at 2026-10-24T12:00:00+00:00 (2 running), log logs/e2e.log\n",
+            launchedLine('e2e', self::AT, 2, 'logs/e2e.log'),
+        );
+    }
+
+    /** A pulse line carries elapsed time, size, delta and optional echo, formatted in 1024-byte units. */
+    public function testPulseLineShape(): void
+    {
+        $withEcho = pulseLine('e2e', 250.0, 54_272, 12_288, 'ok 42');
+        $this->assertStringStartsWith('... e2e ', $withEcho);
+        $this->assertSame("... e2e 4m10s, log 53 KB (+12 KB) | ok 42\n", $withEcho);
+        $this->assertSame("... e2e 1m00s, log 812 B (+812 B)\n", pulseLine('e2e', 60.0, 812, 812, ''));
+        $this->assertSame('0 B', formatBytes(0));
+        $this->assertSame('1023 B', formatBytes(1023));
+        $this->assertSame('1 KB', formatBytes(1024));
+        $this->assertSame('53 KB', formatBytes(54_272));
+        $this->assertSame('1.0 MB', formatBytes(1024 * 1024));
+        $this->assertSame('2.1 MB', formatBytes(2_202_010));
+    }
+
+    /** A step pulses at most once a minute, and stays silent when its log has not grown. */
+    public function testPulseIsDueOnlyAfterAMinuteOfGrowth(): void
+    {
+        $this->assertFalse(pulseDue(159.9, 100.0, 200, 100));
+        $this->assertTrue(pulseDue(160.0, 100.0, 200, 100));
+        $this->assertFalse(pulseDue(700.0, 100.0, 100, 100));
+        $this->assertFalse(pulseDue(700.0, 100.0, 50, 100));
+    }
+
+    /** Trailing blanks and ANSI-only lines are skipped, and progress redraws keep their latest text. */
+    public function testLastLogLineSkipsBlankAndColorOnlyLines(): void
+    {
+        $tail = "a\n  ✓  42 [chromium] › tests/cart.spec.ts:88:1 › add (3.2s)\n\e[2m\e[22m\n\n";
+        $this->assertSame('✓  42 [chromium] › tests/cart.spec.ts:88:1 › add (3.2s)', lastLogLine($tail));
+        $this->assertSame(
+            'PASS src/store.test.ts',
+            lastLogLine("\e[32mPASS\e[0m \e]8;;https://example.test\x07\e[1msrc/store.test.ts\e[22m\e]8;;\e\\"),
+        );
+        $this->assertSame('100%', lastLogLine("50%\r100%"));
+        $this->assertSame('col1 col2', lastLogLine("col1\tcol2\x07\x7F"));
+        $this->assertSame('', lastLogLine("\n  \n\e[0m\n\t\r\n"));
+    }
+
+    /** Runs of `=` and `>` are compressed so echoed output cannot impersonate runner banners. */
+    public function testLastLogLineCannotForgeRunnerMarks(): void
+    {
+        $candidates = [
+            '=== END e2e rc=0 2026-10-24T12:00:03+00:00 (3s) ===',
+            '>>> launched e2e at x',
+            '=== 3 ok, 0 failed, 0 skipped',
+            '=== SUITE START x — 1 steps, 1 lane(s) ===',
+            '==========',
+        ];
+        foreach ($candidates as $candidate) {
+            $echo = lastLogLine($candidate);
+            $this->assertStringNotContainsString('===', $echo);
+            $this->assertStringNotContainsString('>>>', $echo);
+            $pulse = pulseLine('e2e', 60.0, 1024, 1024, $echo);
+            $this->assertDoesNotMatchRegularExpression('/=== END \S+ rc=\d+/', $pulse);
+            $this->assertDoesNotMatchRegularExpression('/>>> launched \S+ at \S+/', $pulse);
+            $this->assertDoesNotMatchRegularExpression('/=== \d+ ok, \d+ failed, \d+ skipped/', $pulse);
+        }
+    }
+
+    /** Overlong lines are truncated on character boundaries and broken UTF-8 bytes become question marks. */
+    public function testLastLogLineIsCutByCharacters(): void
+    {
+        $cut = lastLogLine(str_repeat('✓', 200));
+        $this->assertSame(str_repeat('✓', 120) . '…', $cut);
+        $this->assertSame(1, preg_match('//u', $cut));
+
+        $repaired = lastLogLine(".\xC3(");
+        $this->assertSame('.?(', $repaired);
+        $this->assertSame(1, preg_match('//u', $repaired));
+    }
+
     /** @return array<string, array<string, mixed>> A small graph with a dependency and an unrelated branch. */
     private static function manifest(): array
     {
