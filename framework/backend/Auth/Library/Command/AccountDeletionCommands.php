@@ -50,11 +50,13 @@ use Random\RandomException;
  *
  * Calling the deletion off is the opposite on purpose: no fresh proof, and not behind the
  * product's guard, because changing one's mind must be easier than deleting, and a frozen
- * account must still be able to do it. It is refused only under impersonation - what a
- * person does to their own account is never done with someone else's hands. The person's
- * agent writes the cancel (HIL-1409). Nothing left to cancel is a silent success, and no
- * state is fanned. A hop that loses the race to the erasure is refused in the words of
- * {@see AddressablePerson}.
+ * account must still be able to do it. It is refused under impersonation - what a person
+ * does to their own account is never done with someone else's hands - and in the words of
+ * {@see AddressablePerson}: the person is gone, the account was merged, or its erasure has
+ * begun ("This account is being deleted.", HIL-1939). Those words come before the hop, or
+ * from the person's agent when the start of the erasure overtakes a cancel on the hop. The
+ * person's agent writes the cancel (HIL-1409). Nothing left to cancel is a silent success,
+ * and neither it nor a refusal fans a state.
  *
  * A start fans the person's new state to their group, and a cancel that landed does the
  * same once the agent answers, so every open tab turns the danger zone into the warning

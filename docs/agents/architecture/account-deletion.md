@@ -67,8 +67,12 @@ passes it and the code of the window is the proof. The address is chosen by
 account no code can reach starts without one.
 
 Cancel stands outside the gate on purpose: changing one's mind must be easier
-than deleting, and a frozen account must be able to do it. It refuses only an
-impersonated session (`StepUpGate::isImpersonated()`). For the same reason it is
+than deleting, and a frozen account must be able to do it. It refuses an
+impersonated session (`StepUpGate::isImpersonated()`) and, in the words of
+`AddressablePerson::require()`, an account that is gone, was merged, or whose
+erasure has begun ("This account is being deleted.") — before the hop, or at the
+person's agent when the start overtakes a cancel on the hop. A refused cancel
+fans no `hilos_account_deletion_state`. Standing outside the gate also makes it
 an exit of the freeze: the users library lists it, and only it, in
 `FROZEN_EXIT_ACTIONS`, while open, code and start are closed to a frozen person
 like every other `AUTH_ACTIONS` name

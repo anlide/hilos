@@ -397,6 +397,31 @@ describe('HilosAccountDeletion', () => {
     expect(find('account-deletion-continue')).not.toBeNull()
   })
 
+  it('keeps the in-progress window with the refusal when Keep my account is refused', async () => {
+    const world = zoneWorld({
+      hilos_account_deletion_cancel: 'This account is being deleted.',
+    })
+    world.state({
+      deletion: {
+        requestedAt: Date.now(),
+        effectiveAt: Date.now() + 30 * DAY,
+      },
+    })
+    await nextTick()
+
+    byId('account-deletion-manage').click()
+    await flushPromises()
+    byId('account-deletion-keep').click()
+    await flushPromises()
+
+    expect(byId('account-deletion-error').textContent).toContain(
+      'This account is being deleted.',
+    )
+    expect(find('account-deletion-keep')).not.toBeNull()
+    expect(byId('account-deletion-close').matches(':disabled')).toBe(false)
+    expect(find('account-deletion-scheduled')).not.toBeNull()
+  })
+
   it('puts the focus on the code field on step 2', async () => {
     const world = zoneWorld({
       hilos_step_up_start: { required: false, purpose: 'delete your account' },

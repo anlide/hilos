@@ -14,6 +14,7 @@ use Hilos\Auth\AccountDeletion\DTO\AccountDeletionOpenActionDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionOpeningReplyDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionStartActionDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionStateSignalData;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
 use Hilos\Auth\StepUp\StepUpMessages;
@@ -647,6 +648,63 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
             }
         }
         self::assertTrue($failed, 'The cancel action must fail');
+    }
+
+    /**
+     * Once the erasure has begun, "Keep my account" is refused in the library: no ask leaves for
+     * the person's agent, no state is fanned and the request stays begun.
+     *
+     * @throws HilosException When the request cannot be written or a frame fails
+     */
+    public function testKeepMyAccountAfterTheStartIsRefusedBeforeTheHop(): void
+    {
+        $request = Hilos::$db->accountDeletions->actions->request(
+            self::USER_ID,
+            TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
+        Database::sqlRun('UPDATE `hilos_account_deletion` SET `started_at` = ? WHERE `id` = ?', [TimeHelper::nowMs(), $request->id]);
+
+        $this->assertRefused(
+            AbstractSessionsLibraryAgent::ERASING_ACCOUNT_REFUSED_MESSAGE,
+            HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL,
+            new AccountDeletionCancelActionDTO(),
+        );
+
+        foreach ($this->drainSignals() as $signal) {
+            self::assertNotSame(HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL, $signal->signalName->getName());
+            self::assertNotSame(HilosSignalConstants::HILOS_ACCOUNT_DELETION_STATE, $signal->signalName->getName());
+        }
+        self::assertSame($request->id, Hilos::$db->accountDeletions->startedOf(self::USER_ID)?->id);
+    }
+
+    /**
+     * A "Keep my account" that left before the start and reaches the person's agent after it is
+     * refused there in the same words: the action fails, no state is fanned and the request stays
+     * begun.
+     *
+     * @throws HilosException When the request cannot be written or a frame fails
+     */
+    public function testKeepMyAccountThatTheStartOvertakesOnTheHopIsRefusedInTheSameWords(): void
+    {
+        $request = Hilos::$db->accountDeletions->actions->request(
+            self::USER_ID,
+            TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
+
+        $this->submit(HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL, new AccountDeletionCancelActionDTO());
+        Database::sqlRun('UPDATE `hilos_account_deletion` SET `started_at` = ? WHERE `id` = ?', [TimeHelper::nowMs(), $request->id]);
+
+        $refused = false;
+        foreach ($this->drainSignals() as $signal) {
+            self::assertNotSame(HilosSignalConstants::HILOS_ACCOUNT_DELETION_STATE, $signal->signalName->getName());
+            $payload = $signal->data instanceof WebSocketSignalData ? $signal->data->data : null;
+            if ($payload instanceof PageActionErrorSignalData && $payload->action === HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL) {
+                $refused = true;
+                self::assertSame(AbstractSessionsLibraryAgent::ERASING_ACCOUNT_REFUSED_MESSAGE, $payload->reason);
+            }
+        }
+        self::assertTrue($refused, 'The cancel action must be refused');
+        self::assertSame($request->id, Hilos::$db->accountDeletions->startedOf(self::USER_ID)?->id);
     }
 
     /**

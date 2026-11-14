@@ -652,6 +652,24 @@ describe('the window', () => {
     expect(flow.step.get()).toBe('closed')
   })
 
+  it('keeps "in progress" and says the refusal when Keep my account is refused', async () => {
+    const { flow, sent, store } = flowSetup({
+      hilos_account_deletion_cancel: 'This account is being deleted.',
+    })
+    store.applyState(wireScheduled())
+    await flow.open()
+    expect(flow.step.get()).toBe('in-progress')
+
+    await flow.cancel()
+
+    expect(flow.step.get()).toBe('in-progress')
+    expect(flow.refusal.get()).toBe('This account is being deleted.')
+    expect(flow.busy.get()).toBe(false)
+    expect(sent.map((entry) => entry.name)).toStrictEqual([
+      'hilos_account_deletion_cancel',
+    ])
+  })
+
   it('stays closed when a reply arrives after the window was closed', async () => {
     const { flow } = flowSetup({
       hilos_step_up_start: ASK,

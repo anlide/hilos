@@ -1565,8 +1565,15 @@ switches neither live erasure entry:
 - Vue's list shows progress (not in the code yet — HIL-1956). Vue's card shows
   waiting and refusal (not in the code yet — HIL-1957). These display leaves
   do not implement actions.
-- The person's cancellation keeps the grace and cancel/start race before
-  start and honestly refuses afterward (not in the code yet — HIL-1958).
+- Every "Keep my account" of the person — the profile window, the standing
+  strip and the freeze screen — is the one action
+  `hilos_account_deletion_cancel`. Before start it keeps the grace and the
+  conditional cancel/start race. After start it is refused with "This account
+  is being deleted." — before the hop, or at the person's agent when the start
+  overtakes the cancel on the hop: the request stays begun, no
+  `hilos_account_deletion_state` is fanned, and the browser says the sentence
+  in the window's error line or as a toast. The refusal is built and stays
+  inert until HIL-1952 (HIL-1939, HIL-1958).
   Administrator cancellation has the same boundary
   (not in the code yet — HIL-1959).
 - The existing merge refuses when any affected account is in the circle of an
