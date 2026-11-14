@@ -79,6 +79,9 @@ use Demo\ConcertTickets\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\ConcertTickets\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\ConcertTickets\Pages\Hilos\Logs\LogsViewPage;
 use Demo\ConcertTickets\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\ConcertTickets\Pages\Hilos\Moderation\ModerationKindPage;
+use Demo\ConcertTickets\Pages\Hilos\Moderation\ModerationKindRulesPage;
+use Demo\ConcertTickets\Pages\Hilos\Moderation\ModerationPage;
 use Demo\ConcertTickets\Pages\Hilos\PrivacyPage;
 use Demo\ConcertTickets\Pages\Hilos\PrivacyHistoryPage;
 use Demo\ConcertTickets\Pages\Hilos\ProfileAgreementsPage;
@@ -169,6 +172,8 @@ use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
+use Hilos\Tables\Moderation\HilosModerationKindsTable;
+use Hilos\Tables\Moderation\HilosModerationRulesTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
@@ -232,6 +237,9 @@ final class Hilos extends HilosFacade
         LogsRotationsPage::PAGE => LogsRotationsPage::class,
         LogsViewPage::PAGE => LogsViewPage::class,
         LogsSettingsPage::PAGE => LogsSettingsPage::class,
+        ModerationPage::PAGE => ModerationPage::class,
+        ModerationKindPage::PAGE => ModerationKindPage::class,
+        ModerationKindRulesPage::PAGE => ModerationKindRulesPage::class,
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
         ProfilePage::PAGE => ProfilePage::class,
@@ -439,6 +447,8 @@ final class Hilos extends HilosFacade
         ConcertTicketsTableContext::hilosLogNodes => HilosLogNodesTable::class,
         ConcertTicketsTableContext::hilosLogRotations => HilosLogRotationsTable::class,
         ConcertTicketsTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
+        ConcertTicketsTableContext::hilosModerationKinds => HilosModerationKindsTable::class,
+        ConcertTicketsTableContext::hilosModerationRules => HilosModerationRulesTable::class,
         ConcertTicketsTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
         ConcertTicketsTableContext::hilosDaemonWorkers => HilosDaemonWorkersTable::class,
         ConcertTicketsTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
@@ -567,6 +577,16 @@ final class Hilos extends HilosFacade
         ],
         LogsWorkersPage::PAGE => [
             ConcertTicketsTableContext::hilosLogWorkers => [],
+        ],
+        ModerationPage::PAGE => [
+            ConcertTicketsTableContext::hilosModerationKinds => [],
+        ],
+        ModerationKindPage::PAGE => [
+            ConcertTicketsTableContext::hilosModerationKinds => [],
+        ],
+        ModerationKindRulesPage::PAGE => [
+            ConcertTicketsTableContext::hilosModerationKinds => [],
+            ConcertTicketsTableContext::hilosModerationRules => [],
         ],
         DaemonCronPage::PAGE => [
             ConcertTicketsTableContext::hilosDaemonCron => [],

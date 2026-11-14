@@ -1,0 +1,278 @@
+# Local bindings only. Canonical services never join this aggregate themselves.
+# !reset/!override are intentional: standalone ports, env and storage must not accumulate.
+#
+# The start order is the database's: galera1 raises the cluster (or joins galera2 or galera3 when
+# one of them answers), galera2 joins once galera1 is Synced, galera3 once galera2 is, the proxy
+# waits for all three, and the five nodes and the cli wait for the proxy.
+services:
+  concert-tickets-cluster-entry:
+    extends: {file: ./entry.yml, service: entry}
+    container_name: concert-tickets-cluster-entry${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    volumes:
+      - data-export:/data_export:ro
+      - files-published:/published:ro
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.30
+
+  # The ONE address of the database - the nodes and the cli know only this.
+  concert-tickets-cluster-proxy:
+    extends: {file: ./proxy.yml, service: proxy}
+    container_name: concert-tickets-cluster-proxy${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    # The harness finds this proxy by label to read the backend states.
+    labels:
+      hilos.database.proxy: "true"
+    environment:
+      HILOS_CLUSTER_GALERA_BACKEND_1: 10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.31:3306
+      HILOS_CLUSTER_GALERA_BACKEND_2: 10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.32:3306
+      HILOS_CLUSTER_GALERA_BACKEND_3: 10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.33:3306
+    depends_on:
+      concert-tickets-cluster-galera1:
+        condition: service_healthy
+      concert-tickets-cluster-galera2:
+        condition: service_healthy
+      concert-tickets-cluster-galera3:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.10
+
+  # The data member that starts first: it raises the cluster when neither galera2 nor galera3
+  # answers, and joins them when one does (bootstrap.sh). How the runner's artifact collector finds
+  # the database: the stands spell their database service several ways, so it is asked for by role
+  # rather than guessed at by name (HIL-841). And the one member the tooling execs into - db-sql
+  # without a member and the step's artifact collector; any member would answer the same, one
+  # keeps the answer off docker's listing order.
+  concert-tickets-cluster-galera1:
+    extends: {file: ./database.yml, service: database}
+    container_name: concert-tickets-cluster-galera1${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    labels:
+      hilos.role: database
+      hilos.database.member: "true"
+    environment:
+      HILOS_GALERA_DATA_PEERS: 10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.32 10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.33
+    command: ["mariadbd", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci",
+              "--wsrep-cluster-name=hilos-concert-tickets-cluster",
+              "--wsrep-cluster-address=gcomm://10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.31,10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.32,10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.33",
+              "--wsrep-node-name=galera1", "--wsrep-node-address=10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.31"]
+    volumes:
+      # Host memory keeps this member's data across down/up and kill/start;
+      # the harness wipes it on down --volumes (HIL-1327).
+      - /dev/shm/hilos-concert-tickets-cluster-galera1-data${HILOS_STAND_SUFFIX:-}:/var/lib/mysql
+      # The journal's database and its grant are made here alone, by the image's initialization
+      # of an empty directory; galera2 and galera3 receive them, with the users, by the full copy -
+      # once, through the replicating path. The script for an existing directory comes from the
+      # part, on every member, and is run on galera1 by hand (README, "Change Log provisioning").
+      - ../mysql/init-change-log.sh:/docker-entrypoint-initdb.d/init-change-log.sh:ro
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.31
+
+  # Joins, never raises the cluster; waits for galera1 to be Synced. The image still initializes
+  # its empty directory, and the full copy from a living member replaces all of it.
+  concert-tickets-cluster-galera2:
+    extends: {file: ./database.yml, service: database}
+    container_name: concert-tickets-cluster-galera2${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    labels:
+      hilos.database.member: "true"
+    entrypoint: ["bash", "/usr/local/bin/hilos-galera-member.sh", "docker-entrypoint.sh"]
+    command: ["mariadbd", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci",
+              "--wsrep-cluster-name=hilos-concert-tickets-cluster",
+              "--wsrep-cluster-address=gcomm://10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.31,10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.32,10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.33",
+              "--wsrep-node-name=galera2", "--wsrep-node-address=10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.32"]
+    volumes:
+      # Host memory keeps this member's data across down/up and kill/start;
+      # the harness wipes it on down --volumes (HIL-1327).
+      - /dev/shm/hilos-concert-tickets-cluster-galera2-data${HILOS_STAND_SUFFIX:-}:/var/lib/mysql
+    depends_on:
+      concert-tickets-cluster-galera1:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.32
+
+  # The same as galera2, after it: two joiners never pull a full copy from one donor at once.
+  concert-tickets-cluster-galera3:
+    extends: {file: ./database.yml, service: database}
+    container_name: concert-tickets-cluster-galera3${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    labels:
+      hilos.database.member: "true"
+    entrypoint: ["bash", "/usr/local/bin/hilos-galera-member.sh", "docker-entrypoint.sh"]
+    command: ["mariadbd", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci",
+              "--wsrep-cluster-name=hilos-concert-tickets-cluster",
+              "--wsrep-cluster-address=gcomm://10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.31,10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.32,10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.33",
+              "--wsrep-node-name=galera3", "--wsrep-node-address=10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.33"]
+    volumes:
+      # Host memory keeps this member's data across down/up and kill/start;
+      # the harness wipes it on down --volumes (HIL-1327).
+      - /dev/shm/hilos-concert-tickets-cluster-galera3-data${HILOS_STAND_SUFFIX:-}:/var/lib/mysql
+    depends_on:
+      concert-tickets-cluster-galera2:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.33
+
+  concert-tickets-cluster-m1:
+    extends: {file: ./node.yml, service: node}
+    container_name: concert-tickets-cluster-m1${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/m1.env
+    environment:
+      SSL_CERT_FILE: /hilos/framework/docker/stand-gateway/tls/ca.pem
+      HILOS_MODERATION_TEXT_URL: https://stand-gateway:18000/model
+      HILOS_MODERATION_IMAGE_URL: https://stand-gateway:18000/model
+    # Found by role for the same reason the database is (HIL-841), and carried by m1 ALONE: the
+    # five nodes share one schema (HIL-712), and the collector takes the first container wearing
+    # the label.
+    labels:
+      hilos.role: app
+    volumes:
+      - data:/app/data
+      - data-export:/app/data/data_export
+      - files-published:/app/data/files/published
+      - ../../data/logs-cluster/m1:/var/log/hilos
+    depends_on:
+      concert-tickets-cluster-proxy:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.11
+
+  concert-tickets-cluster-m2:
+    extends: {file: ./node.yml, service: node}
+    container_name: concert-tickets-cluster-m2${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/m2.env
+    environment:
+      SSL_CERT_FILE: /hilos/framework/docker/stand-gateway/tls/ca.pem
+      HILOS_MODERATION_TEXT_URL: https://stand-gateway:18000/model
+      HILOS_MODERATION_IMAGE_URL: https://stand-gateway:18000/model
+    volumes:
+      - data:/app/data
+      - data-export:/app/data/data_export
+      - files-published:/app/data/files/published
+      - ../../data/logs-cluster/m2:/var/log/hilos
+    depends_on:
+      concert-tickets-cluster-proxy:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.12
+
+  concert-tickets-cluster-m3:
+    extends: {file: ./node.yml, service: node}
+    container_name: concert-tickets-cluster-m3${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/m3.env
+    environment:
+      SSL_CERT_FILE: /hilos/framework/docker/stand-gateway/tls/ca.pem
+      HILOS_MODERATION_TEXT_URL: https://stand-gateway:18000/model
+      HILOS_MODERATION_IMAGE_URL: https://stand-gateway:18000/model
+    volumes:
+      - data:/app/data
+      - data-export:/app/data/data_export
+      - files-published:/app/data/files/published
+      - ../../data/logs-cluster/m3:/var/log/hilos
+    depends_on:
+      concert-tickets-cluster-proxy:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.13
+
+  concert-tickets-cluster-m4:
+    extends: {file: ./node.yml, service: node}
+    container_name: concert-tickets-cluster-m4${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/m4.env
+    environment:
+      SSL_CERT_FILE: /hilos/framework/docker/stand-gateway/tls/ca.pem
+      HILOS_MODERATION_TEXT_URL: https://stand-gateway:18000/model
+      HILOS_MODERATION_IMAGE_URL: https://stand-gateway:18000/model
+    volumes:
+      - data:/app/data
+      - data-export:/app/data/data_export
+      - files-published:/app/data/files/published
+      - ../../data/logs-cluster/m4:/var/log/hilos
+    depends_on:
+      concert-tickets-cluster-proxy:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.14
+
+  concert-tickets-cluster-m5:
+    extends: {file: ./node.yml, service: node}
+    container_name: concert-tickets-cluster-m5${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/m5.env
+    environment:
+      SSL_CERT_FILE: /hilos/framework/docker/stand-gateway/tls/ca.pem
+      HILOS_MODERATION_TEXT_URL: https://stand-gateway:18000/model
+      HILOS_MODERATION_IMAGE_URL: https://stand-gateway:18000/model
+    volumes:
+      - data:/app/data
+      - data-export:/app/data/data_export
+      - files-published:/app/data/files/published
+      - ../../data/logs-cluster/m5:/var/log/hilos
+    depends_on:
+      concert-tickets-cluster-proxy:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.15
+
+volumes:
+  # The stand's own data root: the export agent deletes files without ready rows in its
+  # own database at start and hourly, so the local installation's data/ must stay out of
+  # its sight. Every node and the CLI mount this volume at /app/data, and the harness's
+  # down --volumes clears it with the database each run.
+  data:
+    name: hilos-concert-tickets-cluster-data${HILOS_STAND_SUFFIX:-}
+
+  # Exports sit on a volume of their own over that root because the entry reads them at
+  # its own path, /data_export, and its part is shared with standalone and stays as is.
+  # All five nodes and the entry share this disk.
+  data-export:
+    name: hilos-concert-tickets-cluster-data-export${HILOS_STAND_SUFFIX:-}
+
+  # Published files sit on a volume of their own over the root for the same reason: the entry
+  # serves them from /published once a node's files library has checked the reader. All five
+  # nodes and the entry share this disk.
+  files-published:
+    name: hilos-concert-tickets-cluster-files-published${HILOS_STAND_SUFFIX:-}
+
+networks:
+  cluster-net:
+    name: hilos-concert-tickets-cluster-net${HILOS_STAND_SUFFIX:-}
+    driver: bridge
+    ipam:
+      config:
+        # Docker does not auto-assign 10/8, so these advertised addresses stay claimable.
+        - subnet: 10.${HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER:-229}.0.0/16

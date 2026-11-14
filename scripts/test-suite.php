@@ -87,8 +87,8 @@ require_once __DIR__ . '/framework-pieces.php';
  * process; rc=1 there meant either unit or integration failed.
  *
  * WHO MAY RUN BESIDE WHOM. Any cluster fleet — `binance-btc-tracker-cluster`,
- * `ecommerce-shop-cluster`, `online-testing-cluster` and
- * `roblox-game-server-cluster` — may run beside any
+ * `ecommerce-shop-cluster`, `online-testing-cluster`, `file-gallery-manager-cluster`,
+ * `roblox-game-server-cluster` and `concert-tickets-cluster` — may run beside any
  * e2e step. Neither an edge nor the order keeps them apart, and a fleet leaves
  * with its own step (`downsStand`), which is hygiene rather than separation.
  * Decided by the owner on 2026-09-29 on 43 full runs on the test box (27–29.09),
@@ -101,8 +101,9 @@ require_once __DIR__ . '/framework-pieces.php';
  * (2026-10-02, HIL-1216),
  * `binance-btc-tracker-cluster`, `ecommerce-shop-cluster` and
  * `online-testing-cluster` started in the same second, ran all three together
- * for 1m21s, and all were green. `roblox-game-server-cluster` (HIL-2029) has not
- * been measured beside the others yet. Log-streams may run beside any fleet too: in
+ * for 1m21s, and all were green. `file-gallery-manager-cluster` (HIL-2032),
+ * `roblox-game-server-cluster` (HIL-2029) and `concert-tickets-cluster` (HIL-2033)
+ * have not been measured beside the others yet. Log-streams may run beside any fleet too: in
  * 23 full runs on the test box (2026-10-02/03, runs 0748–0773) it overlapped
  * ecommerce-shop-cluster, which carries scenario 9, for 113–136s, and every run
  * was green (HIL-1218). Two steps of the same cluster stand share a group: each
@@ -349,7 +350,7 @@ $steps = array_merge($steps, [
         'seconds' => 90,
         'downsStand' => true,
     ],
-    // Analytics and Moderation in three master rotations, live only. The single-node e2e
+    // Analytics in three source/viewer rotations, live only. The single-node e2e
     // finishes using the shared dist, node_modules and reports before this starts;
     // the cluster group keeps the scenario matrix from resetting the browser stand.
     [
@@ -360,8 +361,10 @@ $steps = array_merge($steps, [
         'deps' => ['online-testing-e2e'],
         'group' => 'online-testing-cluster',
         'tags' => ['cluster', 'e2e'],
-        // The median of green full runs 2345…2377 on the test box, 2026-11-12 (HIL-2023).
-        'seconds' => 100,
+        // An estimate after the green full run 2380 less the three Moderation rotations of about
+        // 14 s each that moved to concert-tickets-cluster-e2e, not a measurement (HIL-2043
+        // measures it).
+        'seconds' => 60,
         'downsStand' => true,
     ],
     // The file-gallery-manager fleet: two masters without capacity and three slave workers,
@@ -432,6 +435,43 @@ $steps = array_merge($steps, [
         'tags' => ['cluster', 'e2e'],
         // An estimate; HIL-2043 measures it.
         'seconds' => 250,
+        'downsStand' => true,
+    ],
+    // The fleet of concert-tickets (HIL-2033): five equal masters that carry the work themselves,
+    // on production cluster timers, over a MariaDB Galera cluster of three data members behind
+    // HAProxy. Scenario 21 rolls the schema out once from five nodes started together on an empty
+    // Galera database, scenario 26 finds every member synced in one cluster and written to.
+    // Beside the other fleets and any e2e step, in the group of its stand, so that a browser step
+    // over the same compose project would not run beneath it (the head of this file); takes its
+    // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does. The
+    // demo's unit suite runs in concert-tickets-php. Seconds: an estimate after the green full run
+    // 2380 and a raise of a Galera stand of about 85 s, not a measurement (HIL-2043 measures it).
+    [
+        'id' => 'concert-tickets-cluster',
+        'command' => 'composer run test:cluster:scenarios',
+        'cwd' => 'demo/concert-tickets',
+        'stand' => 'concert-tickets-cluster',
+        'deps' => ['concert-tickets-deps'],
+        'group' => 'concert-tickets-cluster',
+        'tags' => ['cluster', 'backend'],
+        'seconds' => 110,
+        'downsStand' => true,
+    ],
+    // Moderation in five author/observer rotations over the five masters, live only. The
+    // single-node e2e builds the frontend/dist the entry serves and finishes using the shared
+    // node_modules and reports before this starts; the cluster group keeps the scenario matrix
+    // from resetting the browser stand.
+    [
+        'id' => 'concert-tickets-cluster-e2e',
+        'command' => 'composer run test:cluster:e2e',
+        'cwd' => 'demo/concert-tickets',
+        'stand' => 'concert-tickets-cluster',
+        'deps' => ['concert-tickets-e2e'],
+        'group' => 'concert-tickets-cluster',
+        'tags' => ['cluster', 'e2e'],
+        // An estimate after the green full run 2380 and a raise of a Galera stand of about 85 s,
+        // not a measurement (HIL-2043 measures it).
+        'seconds' => 170,
         'downsStand' => true,
     ],
     // Where every log line of a node lands, proven on the live tasks stand (HIL-1018): five

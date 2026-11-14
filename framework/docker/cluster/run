@@ -83,6 +83,13 @@ set -- "$image" python3 "$here/cluster.py" "$@"
 [ "${HILOS_CLUSTER_HTTP_M1+x}" != x ] || set -- --env "HILOS_CLUSTER_HTTP_M1=$HILOS_CLUSTER_HTTP_M1" "$@"
 [ "${HILOS_CLUSTER_HTTP_M2+x}" != x ] || set -- --env "HILOS_CLUSTER_HTTP_M2=$HILOS_CLUSTER_HTTP_M2" "$@"
 [ "${HILOS_CLUSTER_HTTP_M3+x}" != x ] || set -- --env "HILOS_CLUSTER_HTTP_M3=$HILOS_CLUSTER_HTTP_M3" "$@"
+[ "${HILOS_CLUSTER_WS_M4+x}" != x ] || set -- --env "HILOS_CLUSTER_WS_M4=$HILOS_CLUSTER_WS_M4" "$@"
+[ "${HILOS_CLUSTER_WS_M5+x}" != x ] || set -- --env "HILOS_CLUSTER_WS_M5=$HILOS_CLUSTER_WS_M5" "$@"
+[ "${HILOS_CLUSTER_HTTP_M4+x}" != x ] || set -- --env "HILOS_CLUSTER_HTTP_M4=$HILOS_CLUSTER_HTTP_M4" "$@"
+[ "${HILOS_CLUSTER_HTTP_M5+x}" != x ] || set -- --env "HILOS_CLUSTER_HTTP_M5=$HILOS_CLUSTER_HTTP_M5" "$@"
+[ "${HILOS_CLUSTER_GALERA_BACKEND_1+x}" != x ] || set -- --env "HILOS_CLUSTER_GALERA_BACKEND_1=$HILOS_CLUSTER_GALERA_BACKEND_1" "$@"
+[ "${HILOS_CLUSTER_GALERA_BACKEND_2+x}" != x ] || set -- --env "HILOS_CLUSTER_GALERA_BACKEND_2=$HILOS_CLUSTER_GALERA_BACKEND_2" "$@"
+[ "${HILOS_CLUSTER_GALERA_BACKEND_3+x}" != x ] || set -- --env "HILOS_CLUSTER_GALERA_BACKEND_3=$HILOS_CLUSTER_GALERA_BACKEND_3" "$@"
 
 exec docker --host "$endpoint" run --rm --init -i \
     --user "$(id -u):$(id -g)" --group-add "$socket_gid" \

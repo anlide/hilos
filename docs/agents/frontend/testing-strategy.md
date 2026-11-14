@@ -407,7 +407,8 @@ the demo's `test:e2e-time-zone` Composer command. Active ordinary demos provide
 it; each planned carrier must supply the same interface
 under its activation marker in the
 [ordinary carrier table](../testing.md#ordinary-demo-carriers).
-`binance-btc-tracker`, `online-testing` and `roblox-game-server` also provide
+`binance-btc-tracker`, `concert-tickets`, `file-gallery-manager`,
+`online-testing` and `roblox-game-server` also provide
 `test:cluster:e2e-time-zone` for their cluster browser entries. Use the command
 for the same stand the scenario runs on. From the repository root, for example:
 
@@ -610,7 +611,7 @@ Here `donor/live/{a,b}` means
 |---|---|---|
 | `roblox-game-server` / Vue | **Daemon:** `binance-btc-tracker/daemon/daemon`, `binance-btc-tracker/live/{daemon-clock,daemon-env-mismatch,daemon-env-orphans,daemon-section}`. | HIL-2030 |
 | `roblox-game-server` / Vue | **Sessions, theme, protected mode:** `binance-btc-tracker/live/{sessions,theme,protected-mode}`. | HIL-2031 |
-| `concert-tickets` / Angular | **Moderation:** `online-testing/live/moderation`, with five rotations of three distinct roles instead of three; F-060 stays on its identified variant. | (not in the code yet — HIL-2033) |
+| `concert-tickets` / Angular | **Moderation:** `online-testing/live/moderation`, with five rotations of three distinct roles instead of three; F-060 stays on its identified variant. | HIL-2033 |
 
 Binance keeps `live/{backup,logs,change-log}` and `after-loss/{backup,logs}`:
 these need an archive holder and journal writer on a slave, which Roblox's
@@ -648,7 +649,8 @@ polls (Angular) → online-testing (Angular).
 | Logs | roblox-game-server: logs, logs-rotation | roblox-game-server | HIL-1222, HIL-2017 |
 | Cluster browser — backup, logs, Change Log, live i18n edits and delivery windows across nodes | binance-btc-tracker: tests/e2e/cluster (live, after-loss), playwright.cluster.config.ts | binance-btc-tracker | HIL-1232, HIL-1443, HIL-1465, HIL-1505 |
 | Cluster browser — Daemon: foreign node pages and leader loss (parked, F-023), clock gap, environment mismatch and orphans, section navigation; one person's tabs and rights, theme settings/choices/reset, protected mode and manual maintenance across masters | roblox-game-server: tests/e2e/cluster (daemon, live), playwright.cluster.config.ts | roblox-game-server | HIL-2030, HIL-2031 |
-| Cluster browser — Analytics and Moderation across all three masters | online-testing: tests/e2e/cluster/live/analytics.spec.ts, tests/e2e/cluster/live/moderation.spec.ts, playwright.cluster.config.ts | online-testing | HIL-1423, HIL-1639 |
+| Cluster browser — Analytics across all three masters | online-testing: tests/e2e/cluster/live/analytics.spec.ts, playwright.cluster.config.ts | online-testing | HIL-1423 |
+| Cluster browser — Moderation across five masters | concert-tickets: tests/e2e/cluster/live/moderation.spec.ts, playwright.cluster.config.ts | concert-tickets | HIL-1639, HIL-2033 |
 | Tables | binance-btc-tracker: table-lag, table-refusal | binance-btc-tracker | HIL-1223 |
 | Notifications and communications | binance-btc-tracker: notifications, communications | binance-btc-tracker | HIL-1224 |
 | The operations half of tasks | ecommerce-shop: settings, notifications, protected-mode, maintenance, backup-reopen; file-gallery-manager: users | ecommerce-shop, file-gallery-manager | HIL-1225 |
@@ -748,15 +750,18 @@ in on `/hilos`, where its sign-in form opens in place, so they stand on
 no `spec-owner` line (HIL-1422); PMD retains the approved demo owner line for its
 moved Vue screen journeys (HIL-2016).
 
-online-testing additionally carries cluster browser proofs for Analytics and
-Moderation over the stand's three masters. The Analytics spec uses three
-sequential source/viewer pairs and the shared checks. The Moderation spec
-rotates a person, a rule-writing administrator and an observing administrator
-across distinct masters: the saved name rule reaches the observer without
-reload, governs one own-name model request, and its removal reaches the writer
-as pending until the standard Apply action removes the row. Both are framework
-specs; the separate cluster config keeps them out of the single-node suite, and
-the stand runs live only (HIL-1423, HIL-1639).
+online-testing additionally carries a cluster browser proof for Analytics over
+the stand's three masters: three sequential source/viewer pairs and the shared
+checks. The separate cluster config keeps it out of the single-node suite, and
+the stand runs live only (HIL-1423).
+
+concert-tickets carries the cluster browser proof for Moderation over its
+stand's five masters. Five sequential rotations put a person, a rule-writing
+administrator and an observing administrator on distinct masters: the saved
+name rule reaches the observer without reload, governs one own-name model
+request, and its removal reaches the writer as pending until the standard Apply
+action removes the row. The separate cluster config keeps it out of the
+single-node suite, and the stand runs live only (HIL-1639, HIL-2033).
 
 Current Theme coverage has one full UI owner per kit and separate build probes.
 The target matrix moves the named Theme/Appearance areas; first-frame build

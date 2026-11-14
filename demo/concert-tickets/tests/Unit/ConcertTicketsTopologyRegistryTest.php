@@ -114,6 +114,9 @@ use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Pages\Appearance\DTO\HilosAppearanceDefaultThemeSetActionDTO;
 use Hilos\Pages\Appearance\DTO\HilosAppearanceThemeSwitchingSetActionDTO;
 use Hilos\Pages\Communications\DTO\HilosDeliveryRetryActionDTO;
+use Hilos\Pages\Moderation\DTO\HilosModerationRuleAddActionDTO;
+use Hilos\Pages\Moderation\DTO\HilosModerationRuleDeleteActionDTO;
+use Hilos\Pages\Moderation\DTO\HilosModerationRuleUpdateActionDTO;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
@@ -161,6 +164,9 @@ use Demo\ConcertTickets\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\ConcertTickets\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\ConcertTickets\Pages\Hilos\Logs\LogsViewPage;
 use Demo\ConcertTickets\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\ConcertTickets\Pages\Hilos\Moderation\ModerationKindPage;
+use Demo\ConcertTickets\Pages\Hilos\Moderation\ModerationKindRulesPage;
+use Demo\ConcertTickets\Pages\Hilos\Moderation\ModerationPage;
 use Demo\ConcertTickets\Pages\Hilos\ProfileAgreementsPage;
 use Demo\ConcertTickets\Pages\Hilos\ProfileDataPage;
 use Demo\ConcertTickets\Pages\Hilos\ProfileSecurityPage;
@@ -381,6 +387,9 @@ final class ConcertTicketsTopologyRegistryTest extends TestCase
             LogsRotationsPage::PAGE => LogsRotationsPage::class,
             LogsViewPage::PAGE => LogsViewPage::class,
             LogsSettingsPage::PAGE => LogsSettingsPage::class,
+            ModerationPage::PAGE => ModerationPage::class,
+            ModerationKindPage::PAGE => ModerationKindPage::class,
+            ModerationKindRulesPage::PAGE => ModerationKindRulesPage::class,
             CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
             ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
             ProfilePage::PAGE => ProfilePage::class,
@@ -912,6 +921,8 @@ final class ConcertTicketsTopologyRegistryTest extends TestCase
             ConcertTicketsTableContext::hilosLogNodes => HilosLogNodesTable::class,
             ConcertTicketsTableContext::hilosLogRotations => HilosLogRotationsTable::class,
             ConcertTicketsTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
+            ConcertTicketsTableContext::hilosModerationKinds => HilosModerationKindsTable::class,
+            ConcertTicketsTableContext::hilosModerationRules => HilosModerationRulesTable::class,
             ConcertTicketsTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
             ConcertTicketsTableContext::hilosDaemonWorkers => HilosDaemonWorkersTable::class,
             ConcertTicketsTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
@@ -945,6 +956,9 @@ final class ConcertTicketsTopologyRegistryTest extends TestCase
             LogsKeysPage::PAGE,
             LogsRotationsPage::PAGE,
             LogsWorkersPage::PAGE,
+            ModerationPage::PAGE,
+            ModerationKindPage::PAGE,
+            ModerationKindRulesPage::PAGE,
             DaemonCronPage::PAGE,
             DaemonWorkersPage::PAGE,
             DaemonEnvPage::PAGE,
@@ -1266,15 +1280,57 @@ final class ConcertTicketsTopologyRegistryTest extends TestCase
         self::assertSame([ConcertTicketsTableContext::hilosAnalyticsBrowserSessions => []], Hilos::PAGE_TABLES[PersonPage::PAGE]);
     }
 
-    /** Moderation runs its rules library and its moderator; this demo registers none of the section's pages. */
+    /** Moderation runs its rules library and its moderator, and the section's three pages and two tables are mounted. */
     public function testModerationIsOnWithItsRulesLibraryAndItsModerator(): void
     {
         $this->assertContains(HilosFeature::MODERATION, Hilos::featuresOf(Hilos::class));
-        self::assertArrayNotHasKey(HilosPageConstants::HILOS_MODERATION, Hilos::PAGES);
-        self::assertArrayNotHasKey(HilosPageConstants::HILOS_MODERATION_KIND, Hilos::PAGES);
-        self::assertArrayNotHasKey(HilosPageConstants::HILOS_MODERATION_KIND_RULES, Hilos::PAGES);
-        self::assertArrayNotHasKey(HilosModerationKindsTable::TABLE, Hilos::TABLES);
-        self::assertArrayNotHasKey(HilosModerationRulesTable::TABLE, Hilos::TABLES);
+        self::assertSame(HilosModerationKindsTable::TABLE, ConcertTicketsTableContext::hilosModerationKinds);
+        self::assertSame(HilosModerationKindsTable::class, Hilos::TABLES[ConcertTicketsTableContext::hilosModerationKinds]);
+        self::assertSame(HilosModerationRulesTable::TABLE, ConcertTicketsTableContext::hilosModerationRules);
+        self::assertSame(HilosModerationRulesTable::class, Hilos::TABLES[ConcertTicketsTableContext::hilosModerationRules]);
+
+        foreach ([
+            ModerationPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MODERATION,
+            ModerationKindPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MODERATION_KIND,
+            ModerationKindRulesPage::class => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MODERATION_KIND_RULES,
+        ] as $page => $signal) {
+            self::assertSame($page, Hilos::PAGES[$page::PAGE]);
+            self::assertSame(AgentType::HILOS_INDEX, $page::SUBSCRIPTION_AGENT_TYPE);
+            self::assertSame(AgentType::HILOS_INDEX, Hilos::getPageRoutes()[$page::PAGE]);
+            self::assertSame([BrowserConfigKey::SIGNAL => $signal], $page::BROWSER);
+        }
+        self::assertSame(HilosPageConstants::HILOS_MODERATION, ModerationPage::PAGE);
+        self::assertSame(HilosPageConstants::HILOS_MODERATION_KIND, ModerationKindPage::PAGE);
+        self::assertSame(HilosPageConstants::HILOS_MODERATION_KIND_RULES, ModerationKindRulesPage::PAGE);
+
+        self::assertSame([ConcertTicketsTableContext::hilosModerationKinds => []],
+            Hilos::PAGE_TABLES[ModerationPage::PAGE]);
+        self::assertSame([ConcertTicketsTableContext::hilosModerationKinds => []],
+            Hilos::PAGE_TABLES[ModerationKindPage::PAGE]);
+        self::assertSame([
+            ConcertTicketsTableContext::hilosModerationKinds => [],
+            ConcertTicketsTableContext::hilosModerationRules => [],
+        ], Hilos::PAGE_TABLES[ModerationKindRulesPage::PAGE]);
+        self::assertSame(PageAccessLevel::ADMIN, ModerationKindPage::ACCESS_LEVEL);
+        self::assertSame(PageReach::ROUTE, ModerationKindPage::REACH);
+        self::assertSame([], ModerationKindPage::ACTIONS);
+        self::assertSame([], ModerationKindPage::SIGNALS);
+        self::assertSame([
+            HilosSignalConstants::HILOS_MODERATION_RULE_ADD => HilosModerationRuleAddActionDTO::class,
+            HilosSignalConstants::HILOS_MODERATION_RULE_DELETE => HilosModerationRuleDeleteActionDTO::class,
+            HilosSignalConstants::HILOS_MODERATION_RULE_UPDATE => HilosModerationRuleUpdateActionDTO::class,
+        ], ModerationKindRulesPage::ACTIONS);
+        self::assertSame([SignalTypeConstants::AGENT_SIGNAL => [
+            HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE => HandoverAnswerSignalData::class,
+        ]], ModerationKindRulesPage::SIGNALS);
+
+        foreach (ModerationKindRulesPage::ACTIONS as $action => $dto) {
+            self::assertSame(ModerationKindRulesPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+            self::assertSame(AgentType::HILOS_INDEX, Hilos::getActionAgentRoutes()[$action]);
+            self::assertSame($dto, Hilos::getActionDtoRoutes()[$action]);
+        }
+        self::assertSame(ModerationKindRulesPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL][HilosSignalConstants::HILOS_MODERATION_RULE_WRITE_DONE]);
 
         $entry = Hilos::AGENTS[HilosAgentType::HILOS_MODERATION_RULES_LIBRARY];
         $this->assertSame([

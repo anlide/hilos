@@ -300,7 +300,7 @@ registry of taken host ports:
 | preferans test | 33082 | 8253/8254/8255 | — | http 8257 / https 8258 | — | 10.218 |
 | concert-tickets local | 33083 | 8270/8271/8272 | 8280 | https 8276 | 5184 | 10.209 |
 | concert-tickets test | 33084 | 8273/8274/8275 | — | http 8277 / https 8278 | — | 10.219 |
-| concert-tickets cluster (not in the code yet — HIL-2033) | — | — | — | — | — | 10.229 |
+| concert-tickets cluster | — | — | — | — | — | 10.229 |
 | retired five-node stand — 10.185 stays unassigned (HIL-1218) | — | — | — | — | — | 10.185 |
 
 Every number comes from the stack's own compose file — the `${…:-N}` defaults

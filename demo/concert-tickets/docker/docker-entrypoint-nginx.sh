@@ -65,6 +65,6 @@ export FRONTEND_HTML_UPSTREAM="${FRONTEND_HTML_UPSTREAM:-concert-tickets-daemon-
 # Keep the allowlist explicit: nginx variables such as $host, $http_upgrade and
 # $request_uri remain for nginx to evaluate. The redirect suffix is built only
 # from the validated deployment port above.
-envsubst '${FRONTEND_HTML_UPSTREAM} ${NGINX_HTTPS_REDIRECT_SUFFIX} ${HILOS_CLUSTER_WS_M1} ${HILOS_CLUSTER_WS_M2} ${HILOS_CLUSTER_WS_M3} ${HILOS_CLUSTER_HTTP_M1} ${HILOS_CLUSTER_HTTP_M2} ${HILOS_CLUSTER_HTTP_M3}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
+envsubst '${FRONTEND_HTML_UPSTREAM} ${NGINX_HTTPS_REDIRECT_SUFFIX} ${HILOS_CLUSTER_WS_M1} ${HILOS_CLUSTER_WS_M2} ${HILOS_CLUSTER_WS_M3} ${HILOS_CLUSTER_WS_M4} ${HILOS_CLUSTER_WS_M5} ${HILOS_CLUSTER_HTTP_M1} ${HILOS_CLUSTER_HTTP_M2} ${HILOS_CLUSTER_HTTP_M3} ${HILOS_CLUSTER_HTTP_M4} ${HILOS_CLUSTER_HTTP_M5}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
 
 exec "$@"

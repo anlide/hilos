@@ -35,7 +35,7 @@ import {
 } from '../../../../../../framework/frontend/scripts/standModel.mjs'
 import { seedTestUser } from '../../../../../../framework/frontend/scripts/testUser.mjs'
 
-// spec-owner: demo — carries Online Testing's Angular cluster browser journeys
+// spec-owner: demo — carries Concert Tickets' Angular cluster browser journeys
 
 const test = base.extend<{ cleanup: TestCleanup }>({
   cleanup: cleanupFixtures,

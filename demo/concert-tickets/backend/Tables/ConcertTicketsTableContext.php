@@ -32,6 +32,8 @@ use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
+use Hilos\Tables\Moderation\HilosModerationKindsTable;
+use Hilos\Tables\Moderation\HilosModerationRulesTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 
@@ -58,6 +60,8 @@ use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
  * @property-read HilosLogNodesTable $hilosLogNodes
  * @property-read HilosLogRotationsTable $hilosLogRotations
  * @property-read HilosLogWorkersTable $hilosLogWorkers
+ * @property-read HilosModerationKindsTable $hilosModerationKinds
+ * @property-read HilosModerationRulesTable $hilosModerationRules
  * @property-read HilosDaemonCronTable $hilosDaemonCron
  * @property-read HilosDaemonWorkersTable $hilosDaemonWorkers
  * @property-read HilosDaemonEnvKeysTable $hilosDaemonEnvKeys
@@ -90,6 +94,8 @@ final class ConcertTicketsTableContext extends TableContext
     public const string hilosLogNodes = HilosLogNodesTable::TABLE;
     public const string hilosLogRotations = HilosLogRotationsTable::TABLE;
     public const string hilosLogWorkers = HilosLogWorkersTable::TABLE;
+    public const string hilosModerationKinds = HilosModerationKindsTable::TABLE;
+    public const string hilosModerationRules = HilosModerationRulesTable::TABLE;
     public const string hilosDaemonCron = HilosDaemonCronTable::TABLE;
     public const string hilosDaemonWorkers = HilosDaemonWorkersTable::TABLE;
     public const string hilosDaemonEnvKeys = HilosDaemonEnvKeysTable::TABLE;

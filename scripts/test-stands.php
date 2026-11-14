@@ -213,6 +213,16 @@ return [
         'holdsDatabase' => true,
     ],
     [
+        'id' => 'concert-tickets-cluster',
+        'cwd' => 'demo/concert-tickets',
+        'composeFile' => 'docker/docker-compose.cluster.yml',
+        'project' => 'hilos-concert-tickets-cluster' . standInstanceSuffix(),
+        'mode' => 'project',
+        'profiles' => [],
+        'networks' => [],
+        'holdsDatabase' => true,
+    ],
+    [
         'id' => 'preferans',
         'cwd' => 'demo/preferans',
         'composeFile' => 'docker/docker-compose.test.yml',

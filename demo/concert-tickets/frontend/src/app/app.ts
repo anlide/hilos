@@ -349,6 +349,21 @@ export class App {
     [HilosPages.LOGS_VIEW]: lazyPage(() =>
       import('./views/hilos/logs/view.js').then((module) => module.LogViewer),
     ),
+    [HilosPages.MODERATION]: lazyPage(() =>
+      import('./views/hilos/moderation/moderation.js').then(
+        (module) => module.Moderation,
+      ),
+    ),
+    [HilosPages.MODERATION_KIND]: lazyPage(() =>
+      import('./views/hilos/moderation/kind.js').then(
+        (module) => module.ModerationKind,
+      ),
+    ),
+    [HilosPages.MODERATION_KIND_RULES]: lazyPage(() =>
+      import('./views/hilos/moderation/rules/rules.js').then(
+        (module) => module.ModerationKindRules,
+      ),
+    ),
     [HilosPages.ABOUT]: About,
     [HilosPages.PROFILE]: Profile,
     [HilosPages.PROFILE_SIGN_IN]: ProfileSignIn,

@@ -817,10 +817,10 @@ the future Visits/cubes/rebuild work of HIL-1402.
 ## The cluster stands — six demos, six shapes
 
 The six cluster carriers are separate from the twelve ordinary-demo target:
-five stands work today — the three phase-one stands, roblox-game-server and
-file-gallery-manager — while concert-tickets remains an approved target under
-the owner's decision of 2026-11-04 (HIL-1985). The concert-tickets row below
-names the remaining planned stand; it does not exist yet.
+all six stands work today — the three phase-one stands, roblox-game-server,
+file-gallery-manager and concert-tickets, the last two approved under the
+owner's decision of 2026-11-04 (HIL-1985). The marked rows below name the
+leaves that will build what is still missing.
 See the [ordinary/cluster phase boundary](#ordinary-and-cluster-phases) for
 HIL-1984 and HIL-1985; it does not retire or unpark a scenario below.
 
@@ -842,7 +842,7 @@ carried every scenario on a single shape is retired (HIL-1218).
 | online-testing | Angular | three equal masters that host work themselves | one server, primary + derived journal | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 40 journal triggers installed once and unchanged on ordinary restart, 48 daemon hang self-heal |
 | roblox-game-server | Vue | three masters and one slave: `m1` without capacity — it votes and hosts no placed work; `m2`, `m3` workers with `ram=10`, `slots=64`; slave `s1` worker with `ram=4`, `slots=64` | Galera of two data nodes and the `garbd` arbitrator, which votes and stores no data, behind HAProxy; the application uses both data nodes: HAProxy gives each node a data node of its own — `m1` and `m3` the first, `m2` and `s1` the second — so a row written by one node is always read by a node on the other data node, and a node whose data node is down is led to the living one | 26 database is one cluster, 49 a row written by one node is read by another through another data node, past the process copy, and after that connection is lost; role and placement proofs below (not in the code yet — HIL-2036); Galera fault proofs below (not in the code yet — HIL-2040) |
 | file-gallery-manager | React | two masters without capacity and three slave workers with `ram=10` / `6` / `4`, each with `slots=64` | primary and one read-only replica behind one address that always leads to the primary, no automatic promotion | 31 |
-| concert-tickets | Angular | five equal master workers with `ram=10`, `slots=64`, no slaves (not in the code yet — HIL-2033) | Galera of three data nodes behind HAProxy; the application uses all three (not in the code yet — HIL-2033) | 26/27/28 (not in the code yet — HIL-2041) |
+| concert-tickets | Angular | five equal master workers with `ram=10`, `slots=64`, no slaves | Galera of three data nodes behind HAProxy; the application uses all three: HAProxy lays each next connection on the least busy data node | 21 schema rolled out once by five nodes that start together on an empty Galera database, 26 database is one cluster; 27/28 (not in the code yet — HIL-2041) |
 
 `ram` means abstract units of declared placement capacity, not gigabytes of RAM
 or a container memory limit.
@@ -881,7 +881,7 @@ Every carrier owes [the database guarantees](app-topology.md#database-guarantees
 `ONE_LOGICAL_DATABASE` and `READ_AFTER_WRITE` for both primary and
 `<primary>-change-log`. Roblox sets `wsrep_sync_wait=1` (the READ bit) in every
 application session, reconnects included, with `wsrep_dirty_reads` off.
-Concert-tickets uses that same session setup (not in the code yet — HIL-2033).
+Concert-tickets uses that same session setup.
 Hilos does not read the replica; losing acknowledged writes by promoting a
 lagging replica is not an accepted outcome.
 
@@ -1071,18 +1071,21 @@ ecommerce-shop; shared database facts and simultaneous schema rollout on
 online-testing. Roblox adds roles with and without capacity and a Galera
 arbitrator. Gallery adds the even quorum of two masters that must stop safely,
 and primary/replica. Tickets adds a quorum of five masters and
-three-node Galera (not in the code yet — HIL-2033). The owner's decision of
+three-node Galera. The owner's decision of
 2026-11-04 (HIL-1985) chooses different shapes for meaningful tests.
 The former primary/replica and Galera database topologies were replaced by
 one MariaDB on binance-btc-tracker, ecommerce-shop and online-testing by the
 owner's decision of 2026-10-14.
 Scenario **26** runs on roblox-game-server, whose database is one Galera
-cluster of two data nodes and the `garbd` arbitrator, and scenario **49** runs
-beside it. Scenarios **27/28 have no current carrier**: their implementations,
-registry entries and shape guards stay in the harness for future stands. They
-are not run or counted as passed by any current matrix. Scenario **31** is
-carried by file-gallery-manager.
-Scenarios 26/27/28 come to concert-tickets (not in the code yet — HIL-2041);
+cluster of two data nodes and the `garbd` arbitrator, and on concert-tickets,
+whose database is one Galera cluster of three data nodes; scenario **49** runs
+on roblox-game-server alone. Concert-tickets also carries scenario **21** on its
+Galera: five nodes started together on an empty database roll the schema out
+once. Scenario **31** is carried by file-gallery-manager. Scenarios **27/28
+have no current carrier**: their implementations, registry entries and shape
+guards stay in the harness for future stands. They are not run or counted as
+passed by any current matrix.
+Scenarios 27/28 return on concert-tickets (not in the code yet — HIL-2041);
 their component model and preconditions count votes separately from data
 members. Scenarios 27/28 also take the two-data-node + `garbd` form on
 roblox-game-server (not in the code yet — HIL-2040).
@@ -1150,8 +1153,9 @@ Each demo's root `docker/docker-compose.cluster.yml` keeps the project name and
 `cluster/tooling.yml`. Every service of `local.yml` that extends a file in that
 directory — a part — inherits its mounts and ports and resets the ports with
 `ports: !reset []`; today's parts are `database.yml`, `node.yml` and, where
-present, `entry.yml`; roblox-game-server adds `garbd.yml` and `haproxy.yml`, and
-the Galera scripts it mounts live in `framework/docker/galera/`. The services
+present, `entry.yml`; roblox-game-server adds `garbd.yml` and `haproxy.yml`,
+concert-tickets adds `proxy.yml`, and the Galera scripts both mount live in
+`framework/docker/galera/`. The services
 inside a part do not join the aggregate themselves; only the services that
 extend them do. Compose 5.6.1, pinned in the
 harness, resolves this model directly, including `!reset` and `!override`.
@@ -1169,9 +1173,14 @@ its nodes and entry; online-testing also serves Angular's `frontend/dist` at
 nodes and entry: the exports, and the published files the entry serves from
 `/published` through an internal `/__hilos_files/` location once a node's files
 library has checked the reader (its nodes carry `HILOS_FILES_XACCEL_LOCATION`
-for it). Ecommerce-shop has no entry, cluster browser suite or additional export
-volume. File-gallery-manager shares its named `data-export` volume among all
-five nodes and its entry; the entry serves React's `frontend/dist` at
+for it). Concert-tickets shares the same two, `data-export` and
+`files-published`, among its five nodes and entry, in the same way; its entry
+serves Angular's `frontend/dist` at `/usr/share/nginx/html`. Its first data node
+alone mounts the change-log initialization and provisioning scripts; the other
+two receive the databases and grant with their full copy. Ecommerce-shop has
+no entry, cluster browser suite or additional export volume.
+File-gallery-manager shares its named `data-export` volume among all five nodes
+and its entry; the entry serves React's `frontend/dist` at
 `/usr/share/nginx/html`. Its primary alone mounts the change-log initialization
 and provisioning scripts; the read-only replica receives the databases and
 grant through replication.
@@ -1295,15 +1304,16 @@ intact. When defined, the launcher passes the existing
 `HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER` and
 `HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER` variables. Its explicit deployment
 allowlist also carries the `HILOS_CLUSTER_*` runtime-file/storage selections,
-bind address, published ports and six entry upstream endpoints defined in the
-standalone examples. It preserves absent versus empty values and does not
-forward arbitrary host environment variables. A mistaken direct call to `cluster.py`
+bind address, published ports, ten entry upstream endpoints and the three
+Galera backends of a proxy, defined in the standalone examples. It preserves
+absent versus empty values and does not forward arbitrary host environment
+variables. A mistaken direct call to `cluster.py`
 under Python earlier than 3.10 exits before imports with a shell-runner hint;
 Python 3.10+ is not a host prerequisite.
 
 The harness carries multi-server database capabilities, in use on
-roblox-game-server and kept for the planned carriers above. Such a stand labels
-every member `hilos.database.member: "true"` and exactly one
+roblox-game-server, file-gallery-manager and concert-tickets.
+Such a stand labels every member `hilos.database.member: "true"` and exactly one
 `hilos.role: database` — the one `db-sql` and the artifact collector reach.
 The nodes use one address leading to the writable database. A replica is
 declared by `MARIADB_MASTER_HOST` and has no `MYSQL_DATABASE`, `MYSQL_USER` or
@@ -1323,13 +1333,16 @@ Scenario 49 checks the READ bit and disabled dirty reads in every application
 session when the stand has multiple writable backends; it reads a write from
 another node through the application's own connection (and, on multiple
 backends, from another backend), distinguishes that fresh query from the process
-copy, and verifies the next query after the reader connection is killed. A
-multi-primary carrier declares scenario 49 alongside scenario 26.
+copy, and verifies the next query after the reader connection is killed.
+Scenario 49 has one multi-primary carrier, roblox-game-server; other
+multi-primary stands do not repeat it.
 binance-btc-tracker, ecommerce-shop and online-testing declare no database
 member or proxy label; each labels its single MariaDB `hilos.role: database`.
 Roblox-game-server labels both data nodes `hilos.database.member`, the first of
 them also `hilos.role: database`, `garbd` `hilos.database.voter` and its
-HAProxy `hilos.database.proxy`.
+HAProxy `hilos.database.proxy`. Concert-tickets labels its three data nodes
+`hilos.database.member`, the first of them also `hilos.role: database`, and its
+HAProxy `hilos.database.proxy`; it has no voter.
 
 Every server of a fleet's database, whether one server or a member of a cluster,
 keeps its data in a host directory under `/dev/shm` and mounts
@@ -1365,7 +1378,8 @@ its matrix. Its nodes log to `data/logs-cluster/<node>`, and it has a TLS
 authority of its own, so two stands on one machine never trust each other. It
 has a step of its own in the full run, `<demo>-cluster`, which runs the demo's
 `composer run test:cluster:scenarios` — binance-btc-tracker's,
-ecommerce-shop's, online-testing's and roblox-game-server's.
+ecommerce-shop's, online-testing's, roblox-game-server's,
+file-gallery-manager's and concert-tickets'.
 
 A new scenario is written on the stand whose shape it needs. When two shapes
 would do, the reasons above decide. A scenario that needs a shape none of the
@@ -1505,8 +1519,8 @@ collector, so preserve its journals before starting the next fresh stand. After
 node loss the wait checks only placements that host an agent (`placing` or
 `started`); a refused record is no running work.
 
-The `online-testing-cluster-e2e` step proves Analytics and Moderation on the
-existing three-master stand (HIL-1423, HIL-1639). After
+The `online-testing-cluster-e2e` step proves Analytics on the existing
+three-master stand (HIL-1423). After
 `composer -d demo/online-testing run test:e2e-build`,
 `composer -d demo/online-testing run test:cluster:e2e` runs three sequential
 source/viewer pairs, each master followed by the next in the harness's list.
@@ -1525,19 +1539,6 @@ single started POLICY placement, and every member has one journal agent.
 Fresh node logs prove the LEADER/NODE agents, accounting for stops, worker death
 and daemon restarts; inspect's POLICY placements are not their registry.
 The leader and term must stay unchanged throughout each pair.
-
-The same step runs `cluster/live/moderation.spec.ts` in three master rotations.
-Each rotation puts a person (S), the rule-writing administrator (A) and the
-observing administrator (O) on distinct masters, and checks every actual socket
-upgrade against its assigned master. A saves a Profile name rule with a
-`modelKey`; O sees the exact rule without reload. S changes their own name
-without supplying a key and sees it published, with exactly one model request
-using the key from A's rule. O deletes the rule; A receives a pending removal,
-uses the standard Apply action, and then sees the row disappear without reload.
-Before and after the browser work, the spec checks both POLICY singleton
-placements and the current journal agents on all nodes. The leader and term
-remain unchanged. The removal is not expected to disappear from A's view before
-A applies it.
 
 The graph runs this step after `online-testing-e2e`, and both it and
 `online-testing-cluster` share the `online-testing-cluster` group. A directed graph
@@ -1565,9 +1566,48 @@ with `composer -d demo/roblox-game-server run test:cluster:e2e`. Passing
 runner copies node logs to
 `artifacts/roblox-game-server-cluster-e2e/nodes/<node>/`.
 
+The `concert-tickets-cluster` step runs scenarios 21 and 26 on a fresh stand in
+the `concert-tickets-cluster` group; from the repository root,
+`composer -d demo/concert-tickets run test:cluster:scenarios` runs the same
+matrix.
+
+The `concert-tickets-cluster-e2e` step proves Moderation across the five
+masters of the same stand (HIL-1639, HIL-2033). After
+`composer -d demo/concert-tickets run test:e2e-build`,
+`composer -d demo/concert-tickets run test:cluster:e2e` runs
+`cluster/live/moderation.spec.ts` in five sequential rotations over the
+harness's list of masters. Rotation i puts a person (S) on master i, the
+rule-writing administrator (A) on master i+1 and the observing administrator
+(O) on master i+2, modulo five, so the three are always distinct, and checks
+every actual socket upgrade against its assigned master. A saves a Profile name
+rule with a `modelKey`; O sees the exact rule without reload. S changes their
+own name without supplying a key and sees it published, with exactly one model
+request using the key from A's rule. O deletes the rule; A receives a pending
+removal, uses the standard Apply action, and then sees the row disappear
+without reload. Before and after the browser work, the spec checks both POLICY
+singleton placements and the current journal agents on all nodes. The leader
+and term remain unchanged. The removal is not expected to disappear from A's
+view before A applies it.
+
+Like online-testing, this stand has only a live phase: no fault request, no
+after-loss phase, no `e2e.capabilities` and no slaves. The entry serves
+Angular's `dist/index.csr.html`; global setup waits for the shell and for every
+master's WebSocket through the entry, then clears Mailpit. Rotation 0 — S on
+m1, A on m2, O on m3, the variant online-testing carried before — keeps
+`@quarantine:F-060` and runs in the quarantine tail after the main rotations,
+without changing the verdict.
+
+The graph runs this step after `concert-tickets-e2e`, which builds the
+`frontend/dist` the entry serves; it shares the `concert-tickets-cluster` group
+with `concert-tickets-cluster` and takes the stand down at any outcome. A
+directed graph run is `composer run test:suite -- concert-tickets-cluster-e2e --lanes=1`
+from the repository root. The collector keeps
+`artifacts/concert-tickets-cluster-e2e/nodes/<node>/`, including archive and
+staging paths, plus Playwright evidence and `SNAPSHOT.txt`, before teardown,
+under the same missing-source rules as binance.
+
 The full run carries the fleets binance-btc-tracker, ecommerce-shop,
-online-testing and roblox-game-server; the other planned carriers above enter
-under the same rule.
+online-testing, roblox-game-server, file-gallery-manager and concert-tickets.
 An e2e step may stand beside any fleet in the lane plan: nothing keeps them
 apart, and each fleet leaves with its own step (HIL-1227).
 

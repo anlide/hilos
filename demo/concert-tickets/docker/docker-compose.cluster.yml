@@ -1,0 +1,39 @@
+# The cluster stand of concert-tickets: five equal masters that carry the work themselves, on one
+# MariaDB Galera cluster of three data members.
+#
+# The database is one Galera cluster of three data members behind one HAProxy
+# (framework/docker/galera/ and haproxy/haproxy.cfg). The nodes and the cli know that one address
+# alone; the proxy lays each next connection on the least busy member, so the application writes
+# to all three, and a read waits for what the cluster committed (wsrep_sync_wait=1). Three data
+# members keep the majority when one is lost, so there is no arbitrator.
+#
+# Five daemon nodes roll the schema out themselves as they start together, under the rollout
+# claim in the database (HIL-1228), on a dedicated bridge with static IPs - five masters, each
+# the consensus and the data plane at once, all `worker,ram=10,slots=64` - and a long-lived CLI
+# container the shared cluster harness `docker exec`s to run `test:cluster:inspect` against each
+# node. Node role, identity, capabilities and master set come from CLUSTER_* env, so the same
+# image is a master or a data-plane node purely by configuration; the cluster timers are the
+# production ones.
+#
+# A compose project of its own, beside the demo's local and test stacks rather than inside one of
+# them: the demo's e2e steps take their whole project down when they start, and a fleet inside it
+# would fall in the middle of its matrix. The nodes run the whole demo - every agent it registers,
+# the framework's cluster probes among them - and publish nothing on the host: the harness reaches
+# them through the cli container. One nginx entry serves all masters on the stand network;
+# hilos_stand_master selects a master, while a request without that cookie rotates through them.
+
+name: hilos-concert-tickets-cluster${HILOS_STAND_SUFFIX:-}
+
+# What the shared cluster harness (framework/docker/cluster/cluster.py) reads besides the services
+# in the included model; node identity, addresses, roles, room and logs come from its services,
+# and the shape of the database from the labels of its servers.
+x-hilos-cluster:
+  cli: concert-tickets-cluster-cli
+  entry: concert-tickets-cluster-entry
+  scenarios: [21, 26]
+  e2e:
+    runner: concert-tickets-cluster-e2e-runner
+
+# One included model: merge local services and tooling before importing shared resources.
+include:
+  - path: [./cluster/local.yml, ./cluster/tooling.yml]

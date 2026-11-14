@@ -503,7 +503,8 @@ File-gallery-manager's primary/replica follows it. Its primary alone runs
 `init-change-log.sh` on a fresh data directory and
 `provision-change-log.sh` for an existing catalog; the journal database and
 application grant replicate to the read-only replica. Concert-tickets'
-three-data-node Galera follows this path (not in the code yet — HIL-2033).
+three-data-node Galera follows this path: galera1 alone creates them, galera2
+and galera3 receive them with their full copy.
 
 When binary logging is enabled, the application user can install journal
 triggers only with `log_bin_trust_function_creators=1`; without it, MariaDB
@@ -947,8 +948,9 @@ The roblox-game-server cluster stand runs a Galera of two data nodes: the
 journal is prepared on the first data node and reaches the second as a copy, as
 [Where The Journal Lives](#where-the-journal-lives) describes. The
 file-gallery-manager primary/replica prepares the journal once through the
-same replicating path. Concert-tickets' three-data-node Galera remains planned
-and will prepare the journal once through that path.
+same replicating path. Concert-tickets' three-data-node Galera prepares the
+journal once through that path too: galera2 and galera3 receive it from galera1
+with their full copy.
 On this stand the Galera members set `log_bin_trust_function_creators=1`
 (`framework/docker/galera/galera.cnf`): a Galera member counts as a server with
 binary logging on and refuses `CREATE TRIGGER` to a user without SUPER (error
@@ -996,9 +998,12 @@ Peer forwarding preserves the business-row frame's `receiptId` and
 The journal agent applies attribution through that frame path under its declared
 `Update` operation (HIL-1618).
 
-The existing stands no longer carry primary/replica or Galera topologies, by
-the owner's decision of 2026-10-14. The shared harness retains scenarios
-26/27/28/31 and their shape guards; their planned carriers are in
+The owner's decision of 2026-10-14 took the primary/replica and Galera
+topologies off the earlier stands, and they have returned since:
+roblox-game-server (Galera) and concert-tickets (Galera) carry scenario 26, and
+file-gallery-manager (primary/replica) carries 31; scenarios 27/28 return on
+concert-tickets (not in the code yet — HIL-2041). The shared harness keeps the
+shape guards of all four; the carriers are in
 [The cluster stands](../testing.md#the-cluster-stands--six-demos-six-shapes).
 This leaf (HIL-1621) does not establish non-duplication on Galera or trigger
 behavior on a replica; those guarantees need their future carriers as well as

@@ -80,6 +80,7 @@ final class StepArtifactsTest extends TestCase
     {
         return [
             'binance-btc-tracker' => ['binance-btc-tracker-cluster-e2e', 'demo/binance-btc-tracker'],
+            'concert-tickets' => ['concert-tickets-cluster-e2e', 'demo/concert-tickets'],
             'file-gallery-manager' => ['file-gallery-manager-cluster-e2e', 'demo/file-gallery-manager'],
             'online-testing' => ['online-testing-cluster-e2e', 'demo/online-testing'],
             'roblox-game-server' => ['roblox-game-server-cluster-e2e', 'demo/roblox-game-server'],

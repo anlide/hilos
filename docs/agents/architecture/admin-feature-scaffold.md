@@ -861,9 +861,10 @@ stay with their marked leaves:
    `@hilos/react/admin/moderation` entry exports those three pages and their
    `Props` types, while the compatibility root exports only
    `HilosModerationPage` from moderation.
-   Angular/polls mounts the root, kind and rules pages through lazy wrappers in
-   `views/hilos/moderation/`; all three use the shared `hilosModerationContext`,
-   and `app.ts` maps their routes to those wrappers.
+   Angular/polls and Angular/concert-tickets mount the root, kind and rules
+   pages through lazy wrappers in `views/hilos/moderation/`; all three use the
+   shared `hilosModerationContext`, and `app.ts` maps their routes to those
+   wrappers.
 
 The name window's framework wiring and `Checking your name…` line are separate
 from mounting the admin section.
