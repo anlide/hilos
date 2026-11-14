@@ -32,6 +32,9 @@ use Hilos\Testing\IntegrationTest;
 #[IntegrationTest]
 final class StatusPublicFilesIntegrationTest extends StatusPublicFilesStorageTestCase
 {
+    /** Start of observation of the one catalog component, for builds that do not read it from storage. */
+    private const array OBSERVED_SINCE = ['service' => 1000];
+
     public function testPublishedIntersectionAndIdPagesExcludeEveryHiddenHistory(): void
     {
         $this->startMachine();
@@ -71,7 +74,7 @@ final class StatusPublicFilesIntegrationTest extends StatusPublicFilesStorageTes
         )->rows()));
 
         $builder = new StatusPublicSnapshotBuilder();
-        $builder->begin(StatusSnapshot::read(), 'window', $now, 30, 120);
+        $builder->begin(StatusSnapshot::read(), 'window', $now, 30, 120, self::OBSERVED_SINCE);
         $snapshot = $this->finish($builder);
         self::assertSame(['recent', 'edge', 'old-open'], array_column($snapshot->toArray()['outages'], 'componentKey'));
         self::assertSame([['componentKey' => 'service', 'detectedAt' => $now]], $snapshot->toArray()['candidates']);
@@ -97,7 +100,7 @@ final class StatusPublicFilesIntegrationTest extends StatusPublicFilesStorageTes
             );
         }
         $builder = new StatusPublicSnapshotBuilder();
-        $builder->begin(StatusSnapshot::read(), 'large', $now, 30, 120);
+        $builder->begin(StatusSnapshot::read(), 'large', $now, 30, 120, self::OBSERVED_SINCE);
         $lastQuery = $this->lastProfileId();
         $historyQueries = [];
         $timelineQueries = [];
@@ -167,7 +170,7 @@ final class StatusPublicFilesIntegrationTest extends StatusPublicFilesStorageTes
             );
         }
         $builder = new StatusPublicSnapshotBuilder();
-        $builder->begin(StatusSnapshot::read(), 'discarded', 10000, 30, 120);
+        $builder->begin(StatusSnapshot::read(), 'discarded', 10000, 30, 120, self::OBSERVED_SINCE);
         $builder->advance();
         $builder->advance();
         self::assertFalse($builder->isReady());
@@ -183,14 +186,14 @@ final class StatusPublicFilesIntegrationTest extends StatusPublicFilesStorageTes
         );
         $incident->actions->resolve(9000);
         $builder->reset();
-        $builder->begin(StatusSnapshot::read(), 'fresh', 10000, 30, 120);
+        $builder->begin(StatusSnapshot::read(), 'fresh', 10000, 30, 120, self::OBSERVED_SINCE);
         $snapshot = $this->finish($builder);
         self::assertSame('fresh', $snapshot->revision);
         self::assertCount(StatusIncidentUpdates::MAX_PORTION_ROWS + 2, $snapshot->outages[0]->updates);
         self::assertSame(['at' => 9000, 'source' => 'automatic', 'text' => 'Resolved.'], $snapshot->outages[0]->updates[0]->toArray());
         self::assertSame(9000, $snapshot->outages[0]->resolvedAt);
 
-        $builder->begin(StatusSnapshot::read(), 'frozen-partial', 10000, 30, 120);
+        $builder->begin(StatusSnapshot::read(), 'frozen-partial', 10000, 30, 120, self::OBSERVED_SINCE);
         $builder->advance();
         $this->machineRuntime->phase(ProtectedModeRuntime::PHASE_ACTIVE);
         $lastQuery = $this->lastProfileId();
@@ -198,7 +201,10 @@ final class StatusPublicFilesIntegrationTest extends StatusPublicFilesStorageTes
         self::assertSame([], $this->sourceQueriesSince($lastQuery));
         self::assertFalse($builder->isBuilding());
         self::assertFalse($builder->isReady());
-        self::assertSame($snapshot->toArray()['outages'], $snapshot->withCurrent(StatusSnapshot::read(), 'maintenance', 10001)->toArray()['outages']);
+        self::assertSame(
+            $snapshot->toArray()['outages'],
+            $snapshot->withCurrent(StatusSnapshot::read(), 'maintenance', 10001, self::OBSERVED_SINCE)->toArray()['outages'],
+        );
     }
 
     public function testOwnerExpiresHistoryWithoutNewReportsAndKeepsHeartbeatIndependentOfTheMachine(): void
@@ -231,6 +237,26 @@ final class StatusPublicFilesIntegrationTest extends StatusPublicFilesStorageTes
         self::assertSame($now + 32000, $heartbeat->aliveAt);
     }
 
+    public function testOwnerPublishesTheStartOfObservationItReadsFromTheDatabase(): void
+    {
+        Hilos::$db->statusObservedComponents->actions->record('service', -42000);
+        $owner = $this->startMachine();
+        $now = 1800000000000;
+        $this->freshReport($owner, $now, [true, true]);
+        for ($step = 0; $step < 8; ++$step) {
+            $owner->tickAt($now + $step);
+        }
+        $published = json_decode(Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame(4, $published['schemaVersion']);
+        self::assertSame([['service', -42000]], array_map(
+            static fn(array $component): array => [$component['componentKey'], $component['observedSince']], $published['components'],
+        ));
+        self::assertSame([['component_key' => 'service', 'observed_since' => -42000]], array_map(
+            static fn(array $row): array => ['component_key' => $row['component_key'], 'observed_since' => (int)$row['observed_since']],
+            Database::sql('SELECT component_key, observed_since FROM hilos_status_observed_component')->rows(),
+        ), 'The owner keeps the first recorded moment');
+    }
+
     public function testV2BuildKeepsActiveAnnouncementsAndRetainsPeriodsByCompletionKnowledge(): void
     {
         $this->startMachine();
@@ -258,7 +284,7 @@ final class StatusPublicFilesIntegrationTest extends StatusPublicFilesStorageTes
         self::assertSame([$open->id, $observed->id, $exact->id], array_keys(iterator_to_array($retained)));
 
         $builder = new StatusPublicSnapshotBuilder();
-        $builder->begin(StatusSnapshot::read(), 'maintenance-v2', $now, 30, 120);
+        $builder->begin(StatusSnapshot::read(), 'maintenance-v2', $now, 30, 120, self::OBSERVED_SINCE);
         $snapshot = $this->finish($builder);
         self::assertSame([$active->publicId, $during->publicId, $next->publicId], array_column($snapshot->toArray()['scheduledWorks'], 'id'));
         self::assertSame([$open->publicId, $observed->publicId, $exact->publicId], array_column($snapshot->toArray()['maintenancePeriods'], 'id'));
@@ -291,7 +317,7 @@ final class StatusPublicFilesIntegrationTest extends StatusPublicFilesStorageTes
                 'Period ' . $index, ['retired-component'], 1000 + $index)->publicId;
         }
         $builder = new StatusPublicSnapshotBuilder();
-        $builder->begin(StatusSnapshot::read(), 'large-v2', $now, 30, 120);
+        $builder->begin(StatusSnapshot::read(), 'large-v2', $now, 30, 120, self::OBSERVED_SINCE);
         $previousWorks = [];
         $previousPeriods = [];
         for ($steps = 0; !$builder->isReady() && $steps < 200; ++$steps) {
@@ -358,7 +384,7 @@ final class StatusPublicFilesIntegrationTest extends StatusPublicFilesStorageTes
                 Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read(), true, flags: JSON_THROW_ON_ERROR,
             ));
             self::assertSame([
-                'schemaVersion' => 3, 'revision' => $snapshot->revision, 'aliveAt' => $snapshot->generatedAt,
+                'schemaVersion' => 4, 'revision' => $snapshot->revision, 'aliveAt' => $snapshot->generatedAt,
             ], json_decode(Hilos::$fs->status[StatusPublicFiles::HEARTBEAT_FILENAME]->read(), true, flags: JSON_THROW_ON_ERROR));
             self::assertSame($snapshot->toArray(), (new StatusPublicFiles())->restore()->toArray());
             self::assertSame([], $this->sourceQueriesSince($lastQuery), 'Writing and restoring detached values must not query sources');

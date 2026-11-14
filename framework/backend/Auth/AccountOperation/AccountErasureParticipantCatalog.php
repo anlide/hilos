@@ -71,6 +71,7 @@ final class AccountErasureParticipantCatalog
         HilosDbContext::statusWorkComponents => AccountErasureExemption::NotPersonal,
         HilosDbContext::statusMaintenancePeriods => AccountErasureExemption::NotPersonal,
         HilosDbContext::statusSilencePeriods => AccountErasureExemption::NotPersonal,
+        HilosDbContext::statusObservedComponents => AccountErasureExemption::NotPersonal,
         HilosDbContext::statusSubscribers => AccountErasureExemption::OutsideAccount,
     ];
 

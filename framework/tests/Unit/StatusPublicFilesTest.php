@@ -40,9 +40,12 @@ use Hilos\Status\StatusTestCommandConstants;
 use Hilos\Tests\Unit\Status\StatusReadTestCase;
 use Hilos\Utils\Helpers\TimeHelper;
 
-/** Public v2, real atomic files and detached recovery without a daemon or database. */
+/** Public v4, real atomic files and detached recovery without a daemon or database. */
 final class StatusPublicFilesTest extends StatusReadTestCase
 {
+    /** Start of observation of each fixture component; alpha's precedes the epoch, since the moment is signed. */
+    private const array OBSERVED_SINCE = ['zeta' => 1699999990000, 'alpha' => -86400000];
+
     private string $path;
     private ?FsContext $previousFs;
     private ?EnvAccessor $previousEnv;
@@ -83,22 +86,25 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         }
     }
 
-    public function testLiteralV3KeepsCatalogOrderNullsAndOnlyCurrentChecking(): void
+    public function testLiteralV4KeepsCatalogOrderNullsMomentsAndOnlyCurrentChecking(): void
     {
         $this->observe('zeta', 0);
         $this->observe('alpha', 2);
         $candidate = $this->incident(17, 'zeta', suppressedAt: 1700000000005);
         $this->incident(18, 'alpha', active: false);
         $snapshot = (new StatusPublicSnapshot('opaque-revision', 1700000000100, 30, 120, [], [], []))
-            ->withCurrent(StatusSnapshot::read(), 'opaque-revision', 1700000000100);
+            ->withCurrent(StatusSnapshot::read(), 'opaque-revision', 1700000000100, self::OBSERVED_SINCE);
         self::assertSame([
-            'schemaVersion' => 3,
+            'schemaVersion' => 4,
             'revision' => 'opaque-revision',
             'generatedAt' => 1700000000100,
             'config' => ['pollIntervalSeconds' => 30, 'staleAfterSeconds' => 120],
             'components' => [
-                ['componentKey' => 'zeta', 'name' => 'Zeta API', 'description' => 'Public endpoints', 'state' => 'checking'],
-                ['componentKey' => 'alpha', 'name' => 'Alpha mail', 'description' => null, 'state' => 'operational'],
+                [
+                    'componentKey' => 'zeta', 'name' => 'Zeta API', 'description' => 'Public endpoints', 'state' => 'checking',
+                    'observedSince' => 1699999990000,
+                ],
+                ['componentKey' => 'alpha', 'name' => 'Alpha mail', 'description' => null, 'state' => 'operational', 'observedSince' => -86400000],
             ],
             'candidates' => [['componentKey' => 'zeta', 'detectedAt' => 1700000000000]],
             'outages' => [], 'scheduledWorks' => [], 'maintenancePeriods' => [], 'silencePeriods' => [],
@@ -153,11 +159,11 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         Hilos::$setting = null;
         try {
             $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE);
-            $maintenance = $known->withCurrent(StatusSnapshot::read(), 'maintenance', 1700000000200);
+            $maintenance = $known->withCurrent(StatusSnapshot::read(), 'maintenance', 1700000000200, self::OBSERVED_SINCE);
             self::assertSame(['maintenance', 'maintenance'], array_column($maintenance->toArray()['components'], 'state'));
             self::assertSame([], $maintenance->candidates);
             Hilos::$rt = null;
-            $unknown = $maintenance->withCurrent(StatusSnapshot::read(), 'unknown', 1700000000300);
+            $unknown = $maintenance->withCurrent(StatusSnapshot::read(), 'unknown', 1700000000300, self::OBSERVED_SINCE);
             self::assertSame(['unknown', 'unknown'], array_column($unknown->toArray()['components'], 'state'));
             self::assertSame($known->toArray()['outages'], $unknown->toArray()['outages']);
         } finally {
@@ -172,7 +178,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         $builder = new StatusPublicSnapshotBuilder();
         self::assertFalse($builder->isReady());
         self::assertFalse($builder->isBuilding());
-        $builder->begin(StatusSnapshot::read(), 'first', 1700000000100, 30, 120);
+        $builder->begin(StatusSnapshot::read(), 'first', 1700000000100, 30, 120, self::OBSERVED_SINCE);
         self::assertTrue($builder->isBuilding());
         self::assertFalse($builder->isReady());
         $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE);
@@ -198,7 +204,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         self::assertNull($files->heartbeat(100000));
         self::assertNull($files->advance(100000));
         $receipt = $this->publish($files, $snapshot, 100000);
-        self::assertSame(['schemaVersion' => 3, 'revision' => 'first', 'aliveAt' => 100000], $receipt->toArray());
+        self::assertSame(['schemaVersion' => 4, 'revision' => 'first', 'aliveAt' => 100000], $receipt->toArray());
         self::assertSame($snapshot, $files->getSnapshot());
         self::assertSame($snapshot->toArray(), $this->readStatus());
         self::assertSame($receipt->toArray(), $this->readHeartbeat());
@@ -207,7 +213,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         $inode = fileinode($this->path . '/status-inode');
         self::assertNull($files->heartbeat(129999));
         $heartbeat = $files->heartbeat(130000);
-        self::assertSame(['schemaVersion' => 3, 'revision' => 'first', 'aliveAt' => 130000], $heartbeat->toArray());
+        self::assertSame(['schemaVersion' => 4, 'revision' => 'first', 'aliveAt' => 130000], $heartbeat->toArray());
         self::assertNull($files->heartbeat(130000));
         self::assertSame($statusBytes, Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read());
         clearstatcache();
@@ -222,7 +228,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         $files = new StatusPublicFiles();
         $this->publish($files, $snapshot, 0);
         self::assertSame([
-            'schemaVersion' => 3, 'revision' => 'empty', 'generatedAt' => 0,
+            'schemaVersion' => 4, 'revision' => 'empty', 'generatedAt' => 0,
             'config' => ['pollIntervalSeconds' => 30, 'staleAfterSeconds' => 120],
             'components' => [], 'candidates' => [], 'outages' => [], 'scheduledWorks' => [], 'maintenancePeriods' => [], 'silencePeriods' => [],
         ], $this->readStatus());
@@ -257,7 +263,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         $this->publish($files, $this->publicSnapshot(), 200000);
         $statusBytes = Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read();
         $aged = $files->publishAgedHeartbeat(79000);
-        self::assertSame(['schemaVersion' => 3, 'revision' => 'first', 'aliveAt' => 79000], $aged->toArray());
+        self::assertSame(['schemaVersion' => 4, 'revision' => 'first', 'aliveAt' => 79000], $aged->toArray());
         self::assertSame($aged->toArray(), $this->readHeartbeat());
         self::assertSame($statusBytes, Hilos::$fs->status[StatusPublicFiles::STATUS_FILENAME]->read());
         self::assertSame(109000, $files->heartbeat(109000)->aliveAt, 'The ordinary cadence counts from the aged moment');
@@ -271,11 +277,11 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         $this->publish($files, $this->publicSnapshot(), 100000);
         self::assertNull($files->heartbeat(100001), 'A whole pair clears the due mark');
         $files->makeHeartbeatDue();
-        self::assertSame(['schemaVersion' => 3, 'revision' => 'first', 'aliveAt' => 100001], $files->heartbeat(100001)->toArray());
+        self::assertSame(['schemaVersion' => 4, 'revision' => 'first', 'aliveAt' => 100001], $files->heartbeat(100001)->toArray());
         self::assertNull($files->heartbeat(100001), 'The heartbeat it published spends the due mark');
         self::assertNull($files->heartbeat(130000));
         self::assertSame(130001, $files->heartbeat(130001)->aliveAt);
-        self::assertSame(['schemaVersion' => 3, 'revision' => 'first', 'aliveAt' => 130001], $this->readHeartbeat());
+        self::assertSame(['schemaVersion' => 4, 'revision' => 'first', 'aliveAt' => 130001], $this->readHeartbeat());
     }
 
     public function testFrozenOwnerAgesItsHeartbeatPastStaleHoldsEveryPublicationAndBeatsAgainWhenAsked(): void
@@ -300,7 +306,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
             $aged = $reply->payload[StatusTestCommandConstants::FIELD_ALIVE_AT];
             self::assertGreaterThanOrEqual($before - $staleMs, $aged);
             self::assertLessThanOrEqual($after - $staleMs, $aged);
-            self::assertSame(['schemaVersion' => 3, 'revision' => $first['revision'], 'aliveAt' => $aged], $this->readHeartbeat());
+            self::assertSame(['schemaVersion' => 4, 'revision' => $first['revision'], 'aliveAt' => $aged], $this->readHeartbeat());
             self::assertSame($first, $this->readStatus());
             $this->assertOneFilesHint($hints);
 
@@ -432,7 +438,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         $this->publish($files, $this->publicSnapshot());
         $before = $this->readHeartbeat();
         $broken = new StatusPublicSnapshot('broken', 2000, 30, 120, [
-            new StatusPublicComponent('bad', "\xFF", null, StatusComponentState::UNKNOWN),
+            new StatusPublicComponent('bad', "\xFF", null, StatusComponentState::UNKNOWN, 1000),
         ], [], []);
         $files->begin($broken);
         try {
@@ -515,11 +521,11 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         }
         rmdir($this->path . '/heartbeat.json');
         rename($this->path . '/saved-heartbeat', $this->path . '/heartbeat.json');
-        self::assertSame(['schemaVersion' => 3, 'revision' => 'first', 'aliveAt' => 1000], $this->readHeartbeat());
+        self::assertSame(['schemaVersion' => 4, 'revision' => 'first', 'aliveAt' => 1000], $this->readHeartbeat());
         self::assertNull((new StatusPublicFiles())->restore(), 'Mismatching revisions are never recovered');
         self::assertTrue(link($this->path . '/status.json', $this->path . '/installed-inode'));
         $inode = fileinode($this->path . '/installed-inode');
-        self::assertSame(['schemaVersion' => 3, 'revision' => 'second', 'aliveAt' => 3000], $files->advance(3000)->toArray());
+        self::assertSame(['schemaVersion' => 4, 'revision' => 'second', 'aliveAt' => 3000], $files->advance(3000)->toArray());
         clearstatcache();
         self::assertSame($inode, fileinode($this->path . '/status.json'), 'Retry only the matching heartbeat');
         self::assertSame($files->getSnapshot()->toArray(), (new StatusPublicFiles())->restore()->toArray());
@@ -557,7 +563,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         $json = json_encode($snapshot->toArray(), JSON_THROW_ON_ERROR);
         $invalid = ['{', 'null', '[]', '{}'];
         foreach ([
-            ['schemaVersion', 4], ['schemaVersion', '1'], ['revision', ''], ['revision', 7],
+            ['schemaVersion', 5], ['schemaVersion', 3], ['schemaVersion', '1'], ['revision', ''], ['revision', 7],
             ['generatedAt', -1], ['generatedAt', 1.5], ['generatedAt', '1000'],
             ['components', (object)[]], ['candidates', null], ['outages', (object)[]],
             ['config', []], ['scheduledWorks', (object)[]], ['scheduledWorks', [['id' => 'future']]],
@@ -576,6 +582,8 @@ final class StatusPublicFilesTest extends StatusReadTestCase
             ['config', null, 'staleAfterSeconds', 0], ['config', null, 'pollIntervalSeconds', false],
             ['components', 0, 'state', 'future'], ['components', 0, 'description', 5],
             ['components', 0, 'name', null], ['components', 0, 'componentKey', ''],
+            ['components', 0, 'observedSince', '1000'], ['components', 0, 'observedSince', 1.5],
+            ['components', 0, 'observedSince', null], ['components', 0, 'firstSeenAt', 1000],
             ['candidates', 0, 'detectedAt', -1], ['candidates', 0, 'componentKey', 8],
             ['outages', 0, 'id', null], ['outages', 0, 'severity', 'checking'],
             ['outages', 0, 'resolvedAt', false], ['outages', 0, 'updates', (object)[]],
@@ -626,21 +634,22 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         $files = new StatusPublicFiles();
         $this->publish($files, $snapshot);
         foreach (['{', 'null', '[]', '{}',
-            '{"schemaVersion":4,"revision":"first","aliveAt":1000}',
-            '{"schemaVersion":3,"revision":"other","aliveAt":1000}',
-            '{"schemaVersion":3,"revision":"","aliveAt":1000}',
-            '{"schemaVersion":3,"revision":"first","aliveAt":"1000"}',
-            '{"schemaVersion":3,"revision":"first","aliveAt":-1}',
-            '{"schemaVersion":3,"revision":"first","aliveAt":1.5}',
-            '{"schemaVersion":3,"revision":"first"}',
-            '{"schemaVersion":3,"revision":"first","aliveAt":1000,"pid":42}',
+            '{"schemaVersion":5,"revision":"first","aliveAt":1000}',
+            '{"schemaVersion":3,"revision":"first","aliveAt":1000}',
+            '{"schemaVersion":4,"revision":"other","aliveAt":1000}',
+            '{"schemaVersion":4,"revision":"","aliveAt":1000}',
+            '{"schemaVersion":4,"revision":"first","aliveAt":"1000"}',
+            '{"schemaVersion":4,"revision":"first","aliveAt":-1}',
+            '{"schemaVersion":4,"revision":"first","aliveAt":1.5}',
+            '{"schemaVersion":4,"revision":"first"}',
+            '{"schemaVersion":4,"revision":"first","aliveAt":1000,"pid":42}',
         ] as $badJson) {
             FsPath::write($this->path . '/heartbeat.json', $badJson);
             self::assertNull((new StatusPublicFiles())->restore(), $badJson);
         }
         FsPath::delete($this->path . '/heartbeat.json');
         self::assertNull((new StatusPublicFiles())->restore());
-        FsPath::write($this->path . '/heartbeat.json', '{"schemaVersion":3,"revision":"first","aliveAt":1000}');
+        FsPath::write($this->path . '/heartbeat.json', '{"schemaVersion":4,"revision":"first","aliveAt":1000}');
         $database = Hilos::$db;
         $settings = Hilos::$setting;
         $runtime = Hilos::$rt;
@@ -651,13 +660,13 @@ final class StatusPublicFilesTest extends StatusReadTestCase
             $cold = new StatusPublicFiles();
             $restored = $cold->restore();
             self::assertSame($snapshot->toArray(), $restored->toArray());
-            $maintenance = $restored->withCurrent(StatusSnapshot::read(), 'frozen', 2000);
+            $maintenance = $restored->withCurrent(StatusSnapshot::read(), 'frozen', 2000, self::OBSERVED_SINCE);
             self::assertSame(['maintenance', 'maintenance'], array_column($maintenance->toArray()['components'], 'state'));
             $this->publish($cold, $maintenance, 2000);
             self::assertSame($snapshot->toArray()['outages'], $this->readStatus()['outages']);
             self::assertSame(32000, $cold->heartbeat(32000)->aliveAt);
             Hilos::$rt = null;
-            $unknown = $cold->getSnapshot()->withCurrent(StatusSnapshot::read(), 'unknown', 33000);
+            $unknown = $cold->getSnapshot()->withCurrent(StatusSnapshot::read(), 'unknown', 33000, self::OBSERVED_SINCE);
             $this->publish($cold, $unknown, 33000);
             self::assertSame(['unknown', 'unknown'], array_column($this->readStatus()['components'], 'state'));
             self::assertSame($snapshot->toArray()['outages'], $this->readStatus()['outages']);
@@ -789,20 +798,19 @@ final class StatusPublicFilesTest extends StatusReadTestCase
     public function testLegacyPairRestoresOutagesAndMigratesOnlyAsAWholePair(): void
     {
         $snapshot = $this->publicSnapshot()->withMaintenance([], []);
-        $legacy = $snapshot->toArray();
-        $legacy['schemaVersion'] = 1;
-        unset($legacy['silencePeriods']);
+        $legacy = $this->legacyFields($snapshot, 1);
         FsPath::write($this->path . '/status.json', json_encode($legacy, JSON_THROW_ON_ERROR));
         FsPath::write($this->path . '/heartbeat.json', '{"schemaVersion":1,"revision":"first","aliveAt":1000}');
         $files = new StatusPublicFiles();
         $restored = $files->restore();
-        self::assertSame($snapshot->toArray(), $restored->toArray());
+        self::assertSame(serialize($this->withoutMoments($snapshot, 1)), serialize($restored));
         self::assertSame(1, $restored->sourceSchemaVersion);
         self::assertSame($snapshot->outages[0]->toArray(), $restored->outages[0]->toArray());
-        self::assertNull($files->heartbeat(999999), 'A v2 heartbeat cannot be paired with legacy status bytes');
-        $this->publish($files, $restored, 2000);
-        self::assertSame(3, $this->readStatus()['schemaVersion']);
-        self::assertSame(3, $this->readHeartbeat()['schemaVersion']);
+        self::assertNull($files->heartbeat(999999), 'A v4 heartbeat cannot be paired with legacy status bytes');
+        $this->publish($files, $restored->withCurrent(StatusSnapshot::read(), 'second', 2000, self::OBSERVED_SINCE), 2000);
+        self::assertSame(4, $this->readStatus()['schemaVersion']);
+        self::assertSame(4, $this->readHeartbeat()['schemaVersion']);
+        self::assertSame(self::OBSERVED_SINCE, array_column($this->readStatus()['components'], 'observedSince', 'componentKey'));
         foreach ([[1, 2], [2, 1]] as [$statusVersion, $heartbeatVersion]) {
             $legacy['schemaVersion'] = $statusVersion;
             FsPath::write($this->path . '/status.json', json_encode($legacy, JSON_THROW_ON_ERROR));
@@ -817,14 +825,33 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         StatusPublicSnapshot::fromJson(json_encode($legacy, JSON_THROW_ON_ERROR));
     }
 
-    public function testV3RoundtripPreservesBothSetsAndRejectsUnprovenRelationsAndMoments(): void
+    /** A copy of a v1-v3 pair would carry no start of observation; the gap waits for the owner's whole v4 pair instead. */
+    public function testGapOverALegacyPairStartsNoCopyAndClosesInTheOwnersWholeV4Pair(): void
+    {
+        FsPath::write($this->path . '/status.json', json_encode($this->legacyFields($this->publicSnapshot('legacy'), 3), JSON_THROW_ON_ERROR));
+        FsPath::write($this->path . '/heartbeat.json', '{"schemaVersion":3,"revision":"legacy","aliveAt":1000}');
+        $files = new StatusPublicFiles();
+        $restored = $files->restore();
+        self::assertNull($files->advance(121001), 'A stale legacy pair starts a gap without failing a copy of itself');
+        self::assertFalse($files->isPublishing(), 'No copy of the legacy pair is being written');
+        $open = $files->getSilenceObservation();
+        self::assertSame(1000, $open->startedAt);
+        self::assertNull($open->endedAt);
+        self::assertSame('legacy', $this->readStatus()['revision']);
+        $this->publish($files, $restored->withCurrent(StatusSnapshot::read(), 'whole', 130000, self::OBSERVED_SINCE), 130000);
+        self::assertSame(4, $this->readStatus()['schemaVersion']);
+        self::assertSame(4, $this->readHeartbeat()['schemaVersion']);
+        self::assertSame([['id' => $open->id, 'startedAt' => 1000, 'endedAt' => 130000]], $this->readStatus()['silencePeriods']);
+    }
+
+    public function testV4RoundtripPreservesBothSetsAndRejectsUnprovenRelationsAndMoments(): void
     {
         $snapshot = $this->publicSnapshot();
         $fields = $snapshot->toArray();
         self::assertSame($fields, StatusPublicSnapshot::fromJson(json_encode($fields, JSON_THROW_ON_ERROR))->toArray());
         self::assertSame($fields['scheduledWorks'], $snapshot->withOutages([])->toArray()['scheduledWorks']);
         self::assertSame($fields['maintenancePeriods'], $snapshot->withOutages([])->toArray()['maintenancePeriods']);
-        $changed = $snapshot->withCurrent(StatusSnapshot::read(), 'new', 2000)->toArray();
+        $changed = $snapshot->withCurrent(StatusSnapshot::read(), 'new', 2000, self::OBSERVED_SINCE)->toArray();
         self::assertSame($fields['scheduledWorks'], $changed['scheduledWorks']);
         self::assertSame($fields['maintenancePeriods'], $changed['maintenancePeriods']);
         foreach (['scheduledWorks', 'maintenancePeriods'] as $list) {
@@ -1154,7 +1181,7 @@ final class StatusPublicFilesTest extends StatusReadTestCase
     {
         $periods = [new StatusPublicSilencePeriod(str_repeat('a', 32), -2000, -1000)];
         $snapshot = $this->publicSnapshot()->withSilencePeriods($periods);
-        self::assertSame($periods, $snapshot->withCurrent(StatusSnapshot::read(), 'current', 2000)->silencePeriods);
+        self::assertSame($periods, $snapshot->withCurrent(StatusSnapshot::read(), 'current', 2000, self::OBSERVED_SINCE)->silencePeriods);
         self::assertSame($periods, $snapshot->withOutages([])->silencePeriods);
         self::assertSame($periods, $snapshot->withMaintenance([], [])->silencePeriods);
         self::assertEquals($snapshot, StatusPublicSnapshot::fromJson(json_encode($snapshot->toArray(), JSON_THROW_ON_ERROR)));
@@ -1171,25 +1198,57 @@ final class StatusPublicFilesTest extends StatusReadTestCase
                 self::assertTrue(true);
             }
         }
-        foreach ([1, 2] as $version) {
-            $legacy = ($version === 1 ? new StatusPublicSnapshot('legacy', 1000, 30, 120, [], [], [])
-                : $this->publicSnapshot('legacy'))->toArray();
-            $legacy['schemaVersion'] = $version;
-            unset($legacy['silencePeriods']);
-            FsPath::write($this->path . '/status.json', json_encode($legacy, JSON_THROW_ON_ERROR));
+        foreach ([1, 2, 3] as $version) {
+            $source = $version === 1 ? new StatusPublicSnapshot('legacy', 1000, 30, 120, [], [], []) : $this->publicSnapshot('legacy');
+            $source = $version === 3 ? $source->withSilencePeriods($periods) : $source;
+            FsPath::write($this->path . '/status.json', json_encode($this->legacyFields($source, $version), JSON_THROW_ON_ERROR));
             FsPath::write($this->path . '/heartbeat.json', json_encode([
                 'schemaVersion' => $version, 'revision' => 'legacy', 'aliveAt' => 1000,
             ], JSON_THROW_ON_ERROR));
             $files = new StatusPublicFiles();
             $restored = $files->restore();
             self::assertSame($version, $restored->sourceSchemaVersion);
-            self::assertSame([], $restored->silencePeriods);
-            self::assertSame($legacy['scheduledWorks'], $restored->toArray()['scheduledWorks']);
-            self::assertSame($legacy['maintenancePeriods'], $restored->toArray()['maintenancePeriods']);
-            self::assertNull($files->heartbeat(2000));
-            $this->publish($files, $restored, 2000);
-            self::assertSame(3, $this->readStatus()['schemaVersion']);
-            self::assertSame(3, $this->readHeartbeat()['schemaVersion']);
+            self::assertSame(serialize($version === 3 ? $periods : []), serialize($restored->silencePeriods));
+            self::assertSame(
+                serialize($this->withoutMoments($source, $version)),
+                serialize($restored),
+                'A v1-v3 file is read whole, without a moment',
+            );
+            self::assertNull($files->heartbeat(2000), 'A v4 heartbeat waits for the whole v4 pair');
+            $this->publish($files, $restored->withCurrent(StatusSnapshot::read(), 'whole', 2000, self::OBSERVED_SINCE), 2000);
+            self::assertSame(4, $this->readStatus()['schemaVersion']);
+            self::assertSame(4, $this->readHeartbeat()['schemaVersion']);
+            self::assertSame($version === 3 ? [$periods[0]->toArray()] : [], $this->readStatus()['silencePeriods']);
+        }
+    }
+
+    public function testAComponentWithoutAStartOfObservationIsNeverWritten(): void
+    {
+        $files = new StatusPublicFiles();
+        $this->publish($files, $this->publicSnapshot());
+        $before = $this->readHeartbeat();
+        $component = new StatusPublicComponent('zeta', 'Zeta API', null, StatusComponentState::OPERATIONAL, null);
+        try {
+            $component->toArray();
+            self::fail('A component read from a v1-v3 file has no moment to write');
+        } catch (StatusException) {
+            self::assertNull($component->observedSince);
+        }
+        $files->begin(new StatusPublicSnapshot('momentless', 2000, 30, 120, [$component], [], []));
+        try {
+            $files->advance(2000);
+            self::fail('A component without a moment must refuse the whole status file');
+        } catch (StatusException) {
+            self::assertSame($before, $this->readHeartbeat());
+            self::assertSame('first', $this->readStatus()['revision']);
+            self::assertNull($files->heartbeat(999999));
+        }
+        try {
+            (new StatusPublicSnapshot('current', 2000, 30, 120, [], [], []))
+                ->withCurrent(StatusSnapshot::read(), 'current', 2000, ['zeta' => 1000]);
+            self::fail('Every current component needs its moment');
+        } catch (StatusException) {
+            self::assertSame('first', $this->readStatus()['revision']);
         }
     }
 
@@ -1232,8 +1291,8 @@ final class StatusPublicFilesTest extends StatusReadTestCase
     private function publicSnapshot(string $revision = 'first'): StatusPublicSnapshot
     {
         return new StatusPublicSnapshot($revision, 1000, 30, 120, [
-            new StatusPublicComponent('zeta', 'Zeta API', 'Public endpoints', StatusComponentState::CHECKING),
-            new StatusPublicComponent('alpha', 'Alpha mail', null, StatusComponentState::OPERATIONAL),
+            new StatusPublicComponent('zeta', 'Zeta API', 'Public endpoints', StatusComponentState::CHECKING, self::OBSERVED_SINCE['zeta']),
+            new StatusPublicComponent('alpha', 'Alpha mail', null, StatusComponentState::OPERATIONAL, self::OBSERVED_SINCE['alpha']),
         ], [new StatusPublicCandidate('zeta', 500)], [StatusPublicOutage::fromArray([
             'id' => 'opaque-outage', 'componentKey' => 'alpha', 'severity' => 'major_outage',
             'detectedAt' => 200, 'publishedAt' => 300, 'resolvedAt' => null,
@@ -1241,6 +1300,41 @@ final class StatusPublicFilesTest extends StatusReadTestCase
         ])], [new StatusPublicWork('work', 'Upgrade', null, ['alpha'], 500, 1000)], [
             new StatusPublicMaintenancePeriod('period', 'work', true, 'Upgrade', ['alpha'], 600, 900, null, null),
         ]);
+    }
+
+    /**
+     * @param StatusPublicSnapshot $snapshot Current v4 value
+     * @param int $version Older public version to write it as
+     * @return array<string, mixed> The same facts as a v1-v3 status.json: no moment, and no silence before v3
+     */
+    private function legacyFields(StatusPublicSnapshot $snapshot, int $version): array
+    {
+        $fields = $snapshot->toArray();
+        $fields['schemaVersion'] = $version;
+        foreach (array_keys($fields['components']) as $index) {
+            unset($fields['components'][$index]['observedSince']);
+        }
+        if ($version < StatusPublicSnapshot::SILENCE_SCHEMA_VERSION) {
+            unset($fields['silencePeriods']);
+        }
+        return $fields;
+    }
+
+    /**
+     * @param StatusPublicSnapshot $snapshot Current v4 value
+     * @param int $version Older public version it was read as
+     * @return StatusPublicSnapshot What recovery reads from {@see legacyFields()}
+     */
+    private function withoutMoments(StatusPublicSnapshot $snapshot, int $version): StatusPublicSnapshot
+    {
+        return new StatusPublicSnapshot(
+            $snapshot->revision, $snapshot->generatedAt, $snapshot->pollIntervalSeconds, $snapshot->staleAfterSeconds,
+            array_map(static fn (StatusPublicComponent $component): StatusPublicComponent => new StatusPublicComponent(
+                $component->componentKey, $component->name, $component->description, $component->state, null,
+            ), $snapshot->components),
+            $snapshot->candidates, $snapshot->outages, $snapshot->scheduledWorks, $snapshot->maintenancePeriods, $version,
+            $version >= StatusPublicSnapshot::SILENCE_SCHEMA_VERSION ? $snapshot->silencePeriods : [],
+        );
     }
 
     /**

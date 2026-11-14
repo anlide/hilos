@@ -96,6 +96,11 @@ export const publicStatusSilencePeriodSchema = z
   })
   .refine((period) => period.endedAt > period.startedAt)
 
+/** v4 component: the moment its observation began, signed like a gap start. */
+const publicStatusObservedComponentSchema = publicStatusComponentSchema.extend({
+  observedSince: z.int(),
+})
+
 /** Literal v2: required keys, explicit nulls and no private/extra fields. */
 const publicStatusV2FileSchema = z.strictObject({
   schemaVersion: z.literal(2),
@@ -112,7 +117,31 @@ const publicStatusV2FileSchema = z.strictObject({
   maintenancePeriods: z.array(publicStatusMaintenancePeriodSchema),
 })
 
-/** Keep literal legacy boundaries: only v3 may carry closed publication gaps. */
+/** Literal v3: v2 plus closed publication gaps in canonical order. */
+const publicStatusV3FileSchema = publicStatusV2FileSchema.extend({
+  schemaVersion: z.literal(3),
+  silencePeriods: z
+    .array(publicStatusSilencePeriodSchema)
+    .refine(
+      (periods) =>
+        new Set(periods.map((period) => period.id)).size === periods.length,
+    )
+    .refine((periods) =>
+      periods.every((period, index) => {
+        const previous = periods[index - 1]
+        return (
+          previous === undefined ||
+          period.startedAt > previous.startedAt ||
+          (period.startedAt === previous.startedAt && period.id >= previous.id)
+        )
+      }),
+    ),
+})
+
+/**
+ * Keep literal legacy boundaries: v1 and v2 carry no publication gaps, and only
+ * v4 says when each component came under observation.
+ */
 export const publicStatusFileSchema = z.discriminatedUnion('schemaVersion', [
   publicStatusV2FileSchema.extend({
     schemaVersion: z.literal(1),
@@ -120,38 +149,31 @@ export const publicStatusFileSchema = z.discriminatedUnion('schemaVersion', [
     maintenancePeriods: z.array(publicStatusMaintenancePeriodSchema).max(0),
   }),
   publicStatusV2FileSchema,
-  publicStatusV2FileSchema.extend({
-    schemaVersion: z.literal(3),
-    silencePeriods: z
-      .array(publicStatusSilencePeriodSchema)
-      .refine(
-        (periods) =>
-          new Set(periods.map((period) => period.id)).size === periods.length,
-      )
-      .refine((periods) =>
-        periods.every((period, index) => {
-          const previous = periods[index - 1]
-          return (
-            previous === undefined ||
-            period.startedAt > previous.startedAt ||
-            (period.startedAt === previous.startedAt &&
-              period.id >= previous.id)
-          )
-        }),
-      ),
+  publicStatusV3FileSchema,
+  publicStatusV3FileSchema.extend({
+    schemaVersion: z.literal(4),
+    components: z.array(publicStatusObservedComponentSchema),
   }),
 ])
 
 /** Only aliveAt of a coherent pair proves publisher freshness. */
 export const publicStatusHeartbeatSchema = z.strictObject({
-  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  schemaVersion: z.union([
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+  ]),
   revision: publicIdSchema,
   aliveAt: momentSchema,
 })
 
 export type PublicStatusFile = z.infer<typeof publicStatusFileSchema>
 export type PublicStatusHeartbeat = z.infer<typeof publicStatusHeartbeatSchema>
-export type PublicStatusComponent = z.infer<typeof publicStatusComponentSchema>
+/** A v1–v3 component, or a v4 one with its start of observation; `'observedSince' in` tells them apart. */
+export type PublicStatusComponent =
+  | z.infer<typeof publicStatusComponentSchema>
+  | z.infer<typeof publicStatusObservedComponentSchema>
 export type PublicStatusState = PublicStatusComponent['state']
 export type PublicStatusCandidate = z.infer<typeof publicStatusCandidateSchema>
 export type PublicStatusOutage = z.infer<typeof publicStatusOutageSchema>

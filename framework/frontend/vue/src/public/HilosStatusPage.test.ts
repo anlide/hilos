@@ -24,13 +24,17 @@ import { readerTimeZone } from '../../test/helpers/readerTimeZone.js'
 import HilosStatusPage from './HilosStatusPage.vue'
 
 const NOW = Date.parse('2026-10-25T12:00:00Z')
+/** Observation began before every day these tests draw, so none of them is empty. */
+const OBSERVED_SINCE = Date.parse('2025-01-01T00:00:00Z')
 const cleanup: Array<() => void> = []
 
+type CurrentStatusFile = Extract<PublicStatusFile, { schemaVersion: 4 }>
+
 function statusFile(
-  overrides: Partial<PublicStatusFile> = {},
-): PublicStatusFile {
+  overrides: Partial<CurrentStatusFile> = {},
+): CurrentStatusFile {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     revision: 'public-revision',
     generatedAt: NOW - 5000,
     config: { pollIntervalSeconds: 30, staleAfterSeconds: 120 },
@@ -40,6 +44,7 @@ function statusFile(
         name: 'Site',
         description: 'Pages and live updates.',
         state: 'operational',
+        observedSince: OBSERVED_SINCE,
       },
     ],
     candidates: [],
@@ -130,7 +135,7 @@ function harness(
   )
   let status: unknown = initial
   let beat: PublicStatusHeartbeat = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     revision: 'public-revision',
     aliveAt: NOW,
   }
@@ -373,6 +378,7 @@ describe('public HilosStatusPage', () => {
         name: 'Notifications',
         description: null,
         state: 'maintenance',
+        observedSince: OBSERVED_SINCE,
       })
       const h = harness(file)
       await settle()
@@ -666,7 +672,7 @@ describe('public HilosStatusPage', () => {
           url.endsWith('/status.json')
             ? statusFile()
             : {
-                schemaVersion: 3,
+                schemaVersion: 4,
                 revision: 'public-revision',
                 aliveAt: Date.now(),
               },
@@ -920,6 +926,48 @@ describe('public HilosStatusPage', () => {
       }
     },
   )
+
+  it('names a day before observation Not monitored yet, without a mark, and selects it by keyboard focus', async () => {
+    const observedSince = Date.parse('2026-10-20T10:00:00Z')
+    // A gap with an outage in it would mark that day, were the day not before the moment.
+    const file = statusFile({
+      silencePeriods: [
+        {
+          id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          startedAt: Date.parse('2026-10-18T09:00:00Z'),
+          endedAt: Date.parse('2026-10-18T11:00:00Z'),
+        },
+      ],
+      outages: [
+        outage({
+          detectedAt: Date.parse('2026-10-18T09:30:00Z'),
+          publishedAt: Date.parse('2026-10-18T09:30:00Z'),
+          resolvedAt: Date.parse('2026-10-18T10:30:00Z'),
+        }),
+      ],
+    })
+    file.components[0]!.observedSince = observedSince
+    const h = harness(file)
+    await settle()
+    // Two days earlier is a whole reader day before the moment in any zone.
+    const emptyLabel = `${formatMoment(Date.parse('2026-10-18T10:00:00Z'), { kind: 'date' })} · Not monitored yet`
+    const startedLabel = `${formatMoment(observedSince, { kind: 'date' })} · Operational`
+    const detail = h.wrapper.get('[data-id="public-status-day-detail"]')
+    for (const count of [90, 30]) {
+      const strip = h.wrapper.get(`[data-id="public-status-days-${count}"]`)
+      const empty = strip.get(`button[aria-label="${emptyLabel}"]`)
+      expect(strip.find(`button[aria-label="${startedLabel}"]`).exists()).toBe(
+        true,
+      )
+      expect(empty.find('[aria-hidden="true"]').exists()).toBe(false)
+      ;(empty.element as HTMLButtonElement).focus()
+      await nextTick()
+      expect(document.activeElement).toBe(empty.element)
+      expect(detail.text()).toBe(emptyLabel)
+      expect(empty.attributes('aria-describedby')).toBe(detail.attributes('id'))
+    }
+    expect(h.send).not.toHaveBeenCalled()
+  })
 
   // FIXME(F-094, 2026-11-12): keyboard-focused strip date test timeout · чужой · попытка 1 · HIL-1981
   it.skip.each([90, 30])(

@@ -1,0 +1,15 @@
+{
+    "format": 1,
+    "id": "20261114021837718689_HIL-1887_status_observed_component",
+    "parts": [
+        {
+            "unit": "status_observed_component",
+            "up": "create_hilos_status_observed_component.sql",
+            "down": "create_hilos_status_observed_component_down.sql",
+            "requires": [],
+            "introducesUnit": true,
+            "afterStubUpSha256": "44505a6f93423ed002c25eb8777523b576b30bbd096a6fbd3ca9cce8337e3c74",
+            "afterStubDownSha256": "c21849997d6a6641a4a31b7770acc0b8d5f6cd70bf6ebb7195c1e8eeacd6a7d6"
+        }
+    ]
+}

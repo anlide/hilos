@@ -205,6 +205,44 @@ export async function expectPublicStatusArchive(
   ).toEqual(expected)
 }
 
+/**
+ * Oracle from the accepted file and the page's own calendar: a 90-day strip day
+ * that ended by its component's start of observation reads Not monitored yet,
+ * and no other day does; a v1–v3 file carries no such moment.
+ */
+export async function expectPublicStatusNotMonitoredDays(
+  expect: Expect,
+  page: Page,
+  accepted: PublicStatusPair,
+): Promise<void> {
+  const ends = await page.evaluate((aliveAt) => {
+    const today = new Date(aliveAt)
+    return Array.from({ length: 90 }, (_, index) =>
+      new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate() - 88 + index,
+      ).getTime(),
+    )
+  }, accepted.heartbeat.aliveAt)
+  const expected = accepted.status.components.flatMap((component) => {
+    const observedSince =
+      'observedSince' in component ? component.observedSince : null
+    return ends.map((end) => observedSince !== null && end <= observedSince)
+  })
+  const buttons = page.getByTestId('public-status-days-90').getByRole('button')
+  await expect(buttons).toHaveCount(expected.length)
+  expect(
+    await buttons.evaluateAll((days) =>
+      days.map(
+        (day) =>
+          day.getAttribute('aria-label')?.endsWith(' · Not monitored yet') ??
+          false,
+      ),
+    ),
+  ).toEqual(expected)
+}
+
 /** Check one gap's reader-local date and keep its selected detail through recovery. */
 export async function expectPublicStatusSilenceDay(
   expect: Expect,
@@ -268,7 +306,7 @@ export function expectedPublicStatusArchiveDays(
   }))
   const gaps = [
     ...newGaps,
-    ...(status.schemaVersion === 3
+    ...('silencePeriods' in status
       ? status.silencePeriods.map((period) => ({
           start: period.startedAt,
           end: period.endedAt,
@@ -438,7 +476,7 @@ export async function expectPublicStatusAccessibility(
     )
   expect(
     labels.every((label) =>
-      /\S+ · (Operational|Maintenance|Partial outage|Major outage|No data(?: · (Maintenance|Partial outage|Major outage) recorded)?)$/.test(
+      /\S+ · (Operational|Maintenance|Partial outage|Major outage|No data(?: · (Maintenance|Partial outage|Major outage) recorded)?|Not monitored yet)$/.test(
         label ?? '',
       ),
     ),

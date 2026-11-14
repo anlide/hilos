@@ -7,6 +7,7 @@ import { subscribeSignal } from '../../src/state/signal.js'
 import {
   createPublicStatus,
   type PublicStatusFetch,
+  type PublicStatusFile,
   type PublicStatusOptions,
 } from '../../src/status/index.js'
 import {
@@ -14,6 +15,7 @@ import {
   hilosTimeZone,
 } from '../../src/timeZone/timeZoneState.js'
 import {
+  component,
   deferred,
   heartbeat,
   legacyStatusFile,
@@ -52,7 +54,7 @@ function mount(live = false, options: PublicStatusOptions = {}) {
     connection.connect()
     socket.emit('open')
   }
-  let status = statusFile()
+  let status: PublicStatusFile = statusFile()
   let beat = heartbeat()
   let ok = true
   const fetchFile = vi.fn<PublicStatusFetch>(async (url) =>
@@ -71,7 +73,10 @@ function mount(live = false, options: PublicStatusOptions = {}) {
     factory,
     fetchFile,
     hint: () => socket.push(STATUS_FILES_CHANGED_SIGNAL),
-    publish: (nextStatus = statusFile(), nextBeat = heartbeat()) => {
+    publish: (
+      nextStatus: PublicStatusFile = statusFile(),
+      nextBeat = heartbeat(),
+    ) => {
       status = nextStatus
       beat = nextBeat
     },
@@ -407,9 +412,7 @@ describe('freshness and truthful current state', () => {
       const h = mount()
       h.publish(
         statusFile({
-          components: [
-            { componentKey: 'site', name: 'Site', description: null, state },
-          ],
+          components: [component({ state })],
           outages: [outage()],
         }),
       )
@@ -424,14 +427,7 @@ describe('freshness and truthful current state', () => {
     const h = mount(true)
     h.publish(
       statusFile({
-        components: [
-          {
-            componentKey: 'site',
-            name: 'Site',
-            description: null,
-            state: 'unknown',
-          },
-        ],
+        components: [component({ state: 'unknown' })],
         outages: [outage()],
       }),
     )

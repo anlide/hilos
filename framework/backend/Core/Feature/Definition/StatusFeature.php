@@ -15,6 +15,7 @@ use Hilos\Database\Entity\Item\StatusWork;
 use Hilos\Database\Entity\Item\StatusWorkComponent;
 use Hilos\Database\Entity\Item\StatusMaintenancePeriod;
 use Hilos\Database\Entity\Item\StatusSilencePeriod;
+use Hilos\Database\Entity\Item\StatusObservedComponent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Collection\HilosStatusComponents as StateHilosStatusComponents;
@@ -69,6 +70,7 @@ final class StatusFeature extends FeatureDefinition
             requiredDbTables: [
                 StatusIncident::_table, StatusIncidentUpdate::_table, StatusSubscriber::_table,
                 StatusWork::_table, StatusWorkComponent::_table, StatusMaintenancePeriod::_table, StatusSilencePeriod::_table,
+                StatusObservedComponent::_table,
             ],
         );
     }

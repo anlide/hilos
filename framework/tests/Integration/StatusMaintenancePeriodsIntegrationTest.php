@@ -78,7 +78,8 @@ use Throwable;
 final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegrationTestCase
 {
     private const array TABLES = ['hilos_setting', 'hilos_status_incident', 'hilos_status_incident_update',
-        'hilos_status_work', 'hilos_status_work_component', 'hilos_status_maintenance_period', 'hilos_status_silence_period'];
+        'hilos_status_work', 'hilos_status_work_component', 'hilos_status_maintenance_period', 'hilos_status_silence_period',
+        'hilos_status_observed_component'];
 
     private StatusAgent $owner;
     private StatusMaintenanceLifecycleRuntime $runtime;
@@ -671,10 +672,10 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
     {
         $work = new StatusPublicWork(str_repeat('c', 32), 'Unproven announcement', null, ['service'], $this->now, $this->now + 10000);
         $this->publish(new StatusPublicSnapshot('coherent-before-tear', $this->now - 1000, 30, 120, [
-            new StatusPublicComponent('service', 'Service', null, StatusComponentState::OPERATIONAL),
+            new StatusPublicComponent('service', 'Service', null, StatusComponentState::OPERATIONAL, $this->now - 60000),
         ], [], [], [$work]));
         FsPath::write(Hilos::$fs->status['heartbeat.json']->getPath(), json_encode([
-            'schemaVersion' => 3, 'revision' => 'different', 'aliveAt' => $this->now,
+            'schemaVersion' => 4, 'revision' => 'different', 'aliveAt' => $this->now,
         ], JSON_THROW_ON_ERROR));
         $this->releaseOwner();
         $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
@@ -765,7 +766,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
         $snapshot = StatusPublicWork::fromWork($work);
         $active = StatusMaintenanceObservation::start($this->now - 1000, $this->now - 500, true, $snapshot);
         $this->publish(new StatusPublicSnapshot('active-before-restart', $this->now - 500, 30, 120, [
-            new StatusPublicComponent('service', 'Service', null, StatusComponentState::MAINTENANCE),
+            new StatusPublicComponent('service', 'Service', null, StatusComponentState::MAINTENANCE, $this->now - 60000),
         ], [], [], [$snapshot], [$active->period]));
         $this->releaseOwner();
         $this->startOwner();
@@ -838,7 +839,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
         $active = StatusMaintenanceObservation::start($this->now - 1000, $this->now - 500, false, null);
         $completed = StatusMaintenanceObservation::start($this->now - 3000, $this->now - 2500, true, null)->complete($this->now - 2000, true);
         $snapshot = new StatusPublicSnapshot('recovery', $this->now - 100, 30, 120, [
-            new StatusPublicComponent('service', 'Service', null, StatusComponentState::MAINTENANCE),
+            new StatusPublicComponent('service', 'Service', null, StatusComponentState::MAINTENANCE, $this->now - 60000),
         ], [], [], [], [$active->period, $completed->period]);
         $this->publish($snapshot);
         $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));

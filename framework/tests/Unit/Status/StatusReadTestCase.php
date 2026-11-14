@@ -20,6 +20,7 @@ use Hilos\Database\Entity\Item\StatusIncident as EntityStatusIncident;
 use Hilos\Database\Entity\Item\Setting as EntitySetting;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Entity\Item\StatusIncidentUpdate as EntityStatusIncidentUpdate;
+use Hilos\Database\Entity\Item\StatusObservedComponent as EntityStatusObservedComponent;
 use Hilos\Database\Object\Collection\StatusWorks as ObjectStatusWorks;
 use Hilos\Database\View\Collection\StatusWorks;
 use Hilos\Database\Object\Collection\StatusWorkComponents as ObjectStatusWorkComponents;
@@ -27,12 +28,15 @@ use Hilos\Database\View\Collection\StatusWorkComponents;
 use Hilos\Database\Object\Collection\StatusMaintenancePeriods as ObjectStatusMaintenancePeriods;
 use Hilos\Database\View\Collection\StatusMaintenancePeriods;
 use Hilos\Database\Object\Collection\StatusSilencePeriods as ObjectStatusSilencePeriods;
+use Hilos\Database\Object\Collection\StatusObservedComponents as ObjectStatusObservedComponents;
 use Hilos\Database\View\Collection\StatusSilencePeriods;
+use Hilos\Database\View\Collection\StatusObservedComponents;
 use Hilos\Database\Object\Collection\StatusIncidents as ObjectStatusIncidents;
 use Hilos\Database\Object\Collection\StatusIncidentUpdates as ObjectStatusIncidentUpdates;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
 use Hilos\Database\Object\Item\StatusIncident as ObjectStatusIncident;
 use Hilos\Database\Object\Item\StatusIncidentUpdate as ObjectStatusIncidentUpdate;
+use Hilos\Database\Object\Item\StatusObservedComponent as ObjectStatusObservedComponent;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\View\Collection\StatusIncidents;
 use Hilos\Database\View\Collection\StatusIncidentUpdates;
@@ -241,6 +245,16 @@ final class StatusProjectionDbContext extends HilosDbContext
         $this->setRepresent(self::statusMaintenancePeriods, StatusProjectionMaintenancePeriods::class);
         $this->_objectCollections[self::statusSilencePeriods] = ObjectStatusSilencePeriods::initEmpty();
         $this->setRepresent(self::statusSilencePeriods, StatusProjectionSilencePeriods::class);
+        $this->_objectCollections[self::statusObservedComponents] = ObjectStatusObservedComponents::initEmpty();
+        $this->setRepresent(self::statusObservedComponents, StatusObservedComponents::class);
+        // Both components were recorded before the owner started, so its first pass only reads their moments.
+        foreach ([1 => 'zeta', 2 => 'alpha'] as $id => $key) {
+            $row = new EntityStatusObservedComponent();
+            $row->id = $id;
+            $row->component_key = $key;
+            $row->observed_since = 1000;
+            $this->_objectCollections[self::statusObservedComponents][$id] = ObjectStatusObservedComponent::fromEntity($row);
+        }
         $this->_objectCollections[self::settings] = ObjectSettings::initEmpty();
         $this->setRepresent(self::settings, Settings::class);
         $this->_dbItemCollections[self::statusSubscribers] = StatusProjectionSubscribers::initEmpty();

@@ -17,10 +17,15 @@ export type PublicStatusDayState = Exclude<
   'checking' | 'unknown'
 >
 
-/** Absence of data and the worst known event outside it are independent facts. */
+/**
+ * Absence of data and the worst known event outside it are independent facts.
+ * A day that ended before its component came under observation carries neither:
+ * it is Operational without No data, and nothing about it was seen.
+ */
 export interface PublicStatusDay extends CalendarDay {
   readonly state: PublicStatusDayState
   readonly hasNoData: boolean
+  readonly notMonitored: boolean
 }
 
 /** A component's full strip and its exact narrow-screen suffix. */
@@ -345,7 +350,7 @@ function silenceIntervals(
   heartbeat: PublicStatusHeartbeat,
 ): readonly CalendarDay[] {
   const intervals =
-    status.schemaVersion === 3
+    'silencePeriods' in status
       ? status.silencePeriods.map((period) => ({
           startTs: period.startedAt,
           endTs: Math.min(period.endedAt, now),
@@ -390,7 +395,8 @@ function hasKnownInterval(
 }
 
 /**
- * One date and both facts, shared by accessible names and selected-day text.
+ * One date and its facts, shared by accessible names and selected-day text; a
+ * day before observation names nothing else.
  */
 export function publicStatusDayLabel(day: PublicStatusDay): string {
   const labels: Readonly<Record<PublicStatusDayState, string>> = {
@@ -399,16 +405,22 @@ export function publicStatusDayLabel(day: PublicStatusDay): string {
     partial_outage: 'Partial outage',
     major_outage: 'Major outage',
   }
-  const fact = day.hasNoData
-    ? day.state === 'operational'
-      ? 'No data'
-      : `No data · ${labels[day.state]} recorded`
-    : labels[day.state]
+  const fact = day.notMonitored
+    ? 'Not monitored yet'
+    : day.hasNoData
+      ? day.state === 'operational'
+        ? 'No data'
+        : `No data · ${labels[day.state]} recorded`
+      : labels[day.state]
 
   return `${formatMoment(day.startTs, { kind: 'date' }) ?? '—'} · ${fact}`
 }
 
-/** Paint known intervals outside silence, keeping catalog order and 30 as a suffix. */
+/**
+ * Paint known intervals outside silence, keeping catalog order and 30 as a
+ * suffix. A reader day ending by the moment its component came under
+ * observation stays empty, whatever was recorded; v1–v3 carry no such moment.
+ */
 export function publicStatusDayStrips(
   status: PublicStatusFile,
   days: readonly CalendarDay[],
@@ -420,7 +432,17 @@ export function publicStatusDayStrips(
     const outages = status.outages.filter(
       (outage) => outage.componentKey === component.componentKey,
     )
+    const observedSince =
+      'observedSince' in component ? component.observedSince : null
     const painted = days.map((day): PublicStatusDay => {
+      if (observedSince !== null && day.endTs <= observedSince) {
+        return {
+          ...day,
+          state: 'operational',
+          hasNoData: false,
+          notMonitored: true,
+        }
+      }
       const elapsed = { startTs: day.startTs, endTs: Math.min(day.endTs, now) }
       const hasNoData = gaps.some((gap) =>
         intersects(elapsed, gap.startTs, gap.endTs),
@@ -454,7 +476,7 @@ export function publicStatusDayStrips(
         }
       }
 
-      return { ...day, state, hasNoData }
+      return { ...day, state, hasNoData, notMonitored: false }
     })
 
     return {

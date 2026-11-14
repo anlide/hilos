@@ -269,7 +269,7 @@ final class FrameworkMigrationCatalogTest extends TestCase
             requiredDbTables: [
                 'hilos_oauth_provider', 'hilos_legal_acceptance_export', 'hilos_status_incident', 'hilos_status_incident_update',
                 'hilos_status_subscriber', 'hilos_status_work', 'hilos_status_work_component', 'hilos_status_maintenance_period',
-                'hilos_status_silence_period',
+                'hilos_status_silence_period', 'hilos_status_observed_component',
             ],
         );
         $registry = new class ($allRequirements) extends FeatureRegistry {

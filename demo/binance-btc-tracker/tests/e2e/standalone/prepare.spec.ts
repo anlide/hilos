@@ -272,7 +272,7 @@ test('prepare an accepted public archive through real loss, publication and reso
       [`${today.label} · Major outage`],
       accepted.status,
       [today],
-      accepted.status.schemaVersion === 3 ? accepted.status.silencePeriods : [],
+      'silencePeriods' in accepted.status ? accepted.status.silencePeriods : [],
       today.end,
     )
     expect(days.at(-1)).toBe(expectedDays.at(-1))

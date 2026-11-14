@@ -516,7 +516,7 @@ function PublicStatusView({ reader, subscription }: PublicStatusGeneration) {
                               <button
                                 key={day.startTs}
                                 type="button"
-                                className={`btn flex-fill p-0 py-2 border-0 rounded-1 position-relative overflow-hidden btn-${day.hasNoData ? 'secondary' : STATES[day.state].tone}`}
+                                className={`btn flex-fill p-0 py-2 rounded-1 position-relative overflow-hidden ${day.notMonitored ? 'btn-outline-secondary bg-transparent' : `btn-${day.hasNoData ? 'secondary' : STATES[day.state].tone}`}`}
                                 aria-label={publicStatusDayLabel(day)}
                                 aria-describedby={`${detailId}-${componentIndex}`}
                                 onFocus={select}

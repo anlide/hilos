@@ -462,8 +462,12 @@ onUnmounted(() => {
                 v-for="day in variant.days"
                 :key="day.startTs"
                 type="button"
-                class="btn flex-fill p-0 py-2 border-0 rounded-1 position-relative"
-                :class="`btn-${day.hasNoData ? 'secondary' : states[day.state].tone}`"
+                class="btn flex-fill p-0 py-2 rounded-1 position-relative"
+                :class="
+                  day.notMonitored
+                    ? 'btn-outline-secondary bg-transparent'
+                    : `btn-${day.hasNoData ? 'secondary' : states[day.state].tone}`
+                "
                 :aria-label="dayLabel(day)"
                 :aria-describedby="`${detailId}-${componentIndex}`"
                 @focus="

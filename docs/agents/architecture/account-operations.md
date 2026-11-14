@@ -541,18 +541,18 @@ gives no participant, and the trusts it limits are the personal owner's);
 `OutsideAccount`; and `fileVariants`, `settings`, `verifierCircle`,
 `oauthProviders`, `languages`, `languageNames`, `countries`, `countryNames`,
 `locales`, `i18nReflows`, `probeValues` and `moderationRules` are
-`NotPersonal`. Thirteen more are mounted only under a feature. Under
+`NotPersonal`. Fourteen more are mounted only under a feature. Under
 `CHANGE_LOG`, `changeLogTables` and `changeLogFields` are `NotPersonal`, and
 `changeLogReceipts`, `changeLogEntries`, `changeLogChanges` and
 `changeLogValues` are `Trace`: the journal is not a store of personal data, and
 a receipt keeps an erased person's number by design
 ([change-log.md](change-log.md)). Under `STATUS`, `statusIncidents`,
 `statusIncidentUpdates`, `statusWorks`, `statusWorkComponents`,
-`statusMaintenancePeriods` and `statusSilencePeriods` are `NotPersonal`, since
-no Status table has an account column, and `statusSubscribers` is
-`OutsideAccount`: a subscriber is an address, not an account. With every
-feature on, the 22 covered and the 33 exempt collections are the 55 mounted
-framework collections, and a unit check holds that equality.
+`statusMaintenancePeriods`, `statusSilencePeriods` and `statusObservedComponents`
+are `NotPersonal`, since no Status table has an account column, and
+`statusSubscribers` is `OutsideAccount`: a subscriber is an address, not an
+account. With every feature on, the 22 covered and the 34 exempt collections are
+the 56 mounted framework collections, and a unit check holds that equality.
 
 `AccountErasureCensus::of($circle, $catalog)` returns the
 `AccountOperationExpectation` list, by the accounts of the circle in its order

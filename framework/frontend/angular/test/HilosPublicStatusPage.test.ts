@@ -96,7 +96,7 @@ describe('public Angular Status over the real core reader', () => {
     expect(text('public-status-connection')).toContain('system is up')
     h.publish(publicStatusFile({ components: [] }))
     h.beat({
-      schemaVersion: 3,
+      schemaVersion: 4,
       revision: 'another-revision',
       aliveAt: Date.now(),
     })
@@ -246,6 +246,52 @@ describe('public Angular Status over the real core reader', () => {
       expect(h.sent).toEqual([])
     },
   )
+
+  it('names a day before observation Not monitored yet, without a mark, and selects it by keyboard focus', async () => {
+    vi.setSystemTime(Date.parse('2026-10-25T12:00:00Z'))
+    const observedSince = Date.parse('2026-10-20T10:00:00Z')
+    // A gap with an outage in it would mark that day, were the day not before the moment.
+    const file = publicStatusFile({
+      silencePeriods: [
+        {
+          id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          startedAt: Date.parse('2026-10-18T09:00:00Z'),
+          endedAt: Date.parse('2026-10-18T11:00:00Z'),
+        },
+      ],
+      outages: [
+        {
+          ...outage(),
+          detectedAt: Date.parse('2026-10-18T09:30:00Z'),
+          publishedAt: Date.parse('2026-10-18T09:30:00Z'),
+          resolvedAt: Date.parse('2026-10-18T10:30:00Z'),
+        },
+      ],
+    })
+    file.components[0]!.observedSince = observedSince
+    const h = mount(file)
+    await h.settle()
+    // Two days earlier is a whole reader day before the moment in any zone.
+    const emptyLabel = `${formatMoment(Date.parse('2026-10-18T10:00:00Z'), { kind: 'date' })} · Not monitored yet`
+    const startedLabel = `${formatMoment(observedSince, { kind: 'date' })} · Operational`
+    const detail = el('public-status-day-detail')
+    for (const count of [90, 30]) {
+      const strip = el(`public-status-days-${count}`)
+      const empty = strip.querySelector<HTMLButtonElement>(
+        `button[aria-label="${emptyLabel}"]`,
+      )
+      expect(empty).not.toBeNull()
+      expect(
+        strip.querySelector(`button[aria-label="${startedLabel}"]`),
+      ).not.toBeNull()
+      expect(empty!.querySelector('[aria-hidden="true"]')).toBeNull()
+      h.act(() => empty!.focus())
+      expect(document.activeElement).toBe(empty)
+      expect(detail.textContent?.trim()).toBe(emptyLabel)
+      expect(empty!.getAttribute('aria-describedby')).toBe(detail.id)
+    }
+    expect(h.sent).toEqual([])
+  })
 
   it.each([90, 30])(
     'keeps the keyboard-focused date in the %s-day strip through heartbeat aging, midnight and recovery',
@@ -440,7 +486,7 @@ describe('public Angular Status over the real core reader', () => {
             url.endsWith('/status.json')
               ? late
               : {
-                  schemaVersion: 3,
+                  schemaVersion: 4,
                   revision: late.revision,
                   aliveAt: Date.now(),
                 },

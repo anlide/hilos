@@ -952,6 +952,22 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $origins[] = $this->assertExportLegalMomentPair(
                 $project->root, $acceptanceExportMomentIndices[$index], 'legal_acceptance_export', $catalog, $schema,
             );
+            $observedIndices = [172, 129, 129, 110, 110, 112];
+            $base = $project->root . '/' . sprintf('%03d', $observedIndices[$index]) . '_framework_install_status_observed_component';
+            $up = FsPath::read($base . '.sql');
+            $down = FsPath::read($base . '_down.sql');
+            $install = $catalog->verifyPair($up, $down);
+            self::assertSame(FrameworkMigrationOrigin::INSTALL, $install->kind);
+            self::assertSame(['status_observed_component'], $install->units);
+            self::assertCount(1, $install->parts);
+            self::assertSame('20261114021837718689_HIL-1887_status_observed_component/status_observed_component', $install->parts[0]->key());
+            $source = $catalog->part($install->parts[0]->changeId, 'status_observed_component');
+            self::assertTrue($source->introducesUnit);
+            self::assertSame([], $source->requires);
+            $unit = $schema->unit('status_observed_component');
+            self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
+            self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
+            $origins[] = $install;
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $this->assertLaterSecondFactorMomentTracks($projects, $catalog, $schema);

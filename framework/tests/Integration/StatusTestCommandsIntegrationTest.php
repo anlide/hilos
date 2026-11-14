@@ -78,7 +78,7 @@ final class StatusTestCommandsIntegrationTest extends FrameworkIntegrationTestCa
         $aged = $reply->payload[StatusTestCommandConstants::FIELD_ALIVE_AT];
         self::assertGreaterThanOrEqual($before - $staleMs, $aged);
         self::assertLessThanOrEqual($after - $staleMs, $aged);
-        self::assertSame(['schemaVersion' => 3, 'revision' => $first['status']['revision'], 'aliveAt' => $aged],
+        self::assertSame(['schemaVersion' => 4, 'revision' => $first['status']['revision'], 'aliveAt' => $aged],
             $this->pair()['heartbeat']);
         self::assertSame(1, $this->hints($frames));
 

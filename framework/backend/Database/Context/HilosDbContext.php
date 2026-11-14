@@ -81,6 +81,9 @@ use Hilos\Database\Actions\Item\StatusMaintenancePeriodActions;
 use Hilos\Database\View\Collection\StatusSilencePeriods as DbCollectionStatusSilencePeriods;
 use Hilos\Database\Actions\Collection\StatusSilencePeriodsActions;
 use Hilos\Database\Actions\Item\StatusSilencePeriodActions;
+use Hilos\Database\View\Collection\StatusObservedComponents as DbCollectionStatusObservedComponents;
+use Hilos\Database\Actions\Collection\StatusObservedComponentsActions;
+use Hilos\Database\Actions\Item\StatusObservedComponentActions;
 use Hilos\Database\View\Collection\StepUps as DbCollectionStepUps;
 use Hilos\Database\View\Collection\UserMerges as DbCollectionUserMerges;
 use Hilos\Database\View\Collection\UserPhotos as DbCollectionUserPhotos;
@@ -225,6 +228,7 @@ use Hilos\Database\Exception\InvalidMountedCollectionException;
  * @property-read DbCollectionStatusWorkComponents $statusWorkComponents Durable Status storage, mounted only for STATUS
  * @property-read DbCollectionStatusMaintenancePeriods $statusMaintenancePeriods Durable Status storage, mounted only for STATUS
  * @property-read DbCollectionStatusSilencePeriods $statusSilencePeriods Closed publication gaps, mounted only for STATUS
+ * @property-read DbCollectionStatusObservedComponents $statusObservedComponents Observation starts, mounted only for STATUS
  */
 abstract class HilosDbContext extends DbContext
 {
@@ -245,6 +249,7 @@ abstract class HilosDbContext extends DbContext
     public const string statusWorkComponents = 'statusWorkComponents';
     public const string statusMaintenancePeriods = 'statusMaintenancePeriods';
     public const string statusSilencePeriods = 'statusSilencePeriods';
+    public const string statusObservedComponents = 'statusObservedComponents';
     public const string identity = 'identity';
     public const string verifications = 'verifications';
     public const string verification = 'verification';
@@ -752,6 +757,13 @@ abstract class HilosDbContext extends DbContext
                 DbCollectionStatusSilencePeriods::class,
                 StatusSilencePeriodsActions::class,
                 StatusSilencePeriodActions::class,
+            );
+            $this->mountFramework(
+                self::statusObservedComponents,
+                Objects::LAZY_STRATEGY_KEY,
+                DbCollectionStatusObservedComponents::class,
+                StatusObservedComponentsActions::class,
+                StatusObservedComponentActions::class,
             );
         }
 

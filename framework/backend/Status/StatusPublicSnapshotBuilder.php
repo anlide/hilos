@@ -87,8 +87,9 @@ final class StatusPublicSnapshotBuilder
      * @param int $generatedAt Generation epoch milliseconds UTC and history-window reference
      * @param int $pollIntervalSeconds Positive reader polling interval
      * @param int $staleAfterSeconds Positive heartbeat freshness threshold
+     * @param array<string, int> $observedSince Start of observation of every current component, by component key
      * @param iterable<StatusPublicSilencePeriod> $transit Closed observations not yet removed after import
-     * @throws StatusException When the source is unavailable or publication metadata is invalid
+     * @throws StatusException When the source is unavailable, a component has no start of observation or publication metadata is invalid
      */
     public function begin(
         StatusSnapshot $current,
@@ -96,6 +97,7 @@ final class StatusPublicSnapshotBuilder
         int $generatedAt,
         int $pollIntervalSeconds,
         int $staleAfterSeconds,
+        array $observedSince,
         iterable $transit = [],
     ): void {
         $this->reset();
@@ -103,7 +105,7 @@ final class StatusPublicSnapshotBuilder
             throw new StatusException('Public history requires an available incident source.');
         }
         $this->base = (new StatusPublicSnapshot($revision, $generatedAt, $pollIntervalSeconds, $staleAfterSeconds, [], [], []))
-            ->withCurrent($current, $revision, $generatedAt);
+            ->withCurrent($current, $revision, $generatedAt, $observedSince);
         $this->silenceSinceMs = $generatedAt - self::HISTORY_WINDOW_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         $this->sinceMs = max(0, $this->silenceSinceMs);
         $this->ordered = new SplPriorityQueue();

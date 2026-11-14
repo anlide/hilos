@@ -263,9 +263,9 @@ test('full daemon stop keeps nginx Status readable, stale and cold, then recover
       ({ heartbeat }) => heartbeat.aliveAt > frozen.heartbeat.aliveAt,
     )
     events.firstFresh = firstFresh
-    expect(firstFresh.status.schemaVersion).toBe(3)
+    expect(firstFresh.status.schemaVersion).toBe(4)
     const closedPeriods =
-      firstFresh.status.schemaVersion === 3
+      firstFresh.status.schemaVersion === 4
         ? firstFresh.status.silencePeriods.filter(
             (period) => period.id === silencePeriodId,
           )
@@ -346,7 +346,7 @@ test('full daemon stop keeps nginx Status readable, stale and cold, then recover
     )
     expect(sourceReady.status.outages).toEqual(archive.accepted.status.outages)
     expect(
-      sourceReady.status.schemaVersion === 3
+      sourceReady.status.schemaVersion === 4
         ? sourceReady.status.silencePeriods.filter(
             (period) => period.id === silencePeriodId,
           )
@@ -382,7 +382,7 @@ test('full daemon stop keeps nginx Status readable, stale and cold, then recover
     )
     expect(fresh.status.outages).toEqual(archive.accepted.status.outages)
     expect(
-      fresh.status.schemaVersion === 3
+      fresh.status.schemaVersion === 4
         ? fresh.status.silencePeriods.filter(
             (period) => period.id === silencePeriodId,
           )

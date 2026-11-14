@@ -84,6 +84,7 @@ final class StatusAdminNotificationIntegrationTest extends FrameworkIntegrationT
         'hilos_user', 'hilos_user_merge', 'hilos_identity', 'hilos_setting', 'hilos_notification', 'hilos_account_deletion',
         'hilos_notification_delivery', 'hilos_notification_preference', 'hilos_status_incident', 'hilos_status_incident_update',
         'hilos_status_work', 'hilos_status_work_component', 'hilos_status_maintenance_period', 'hilos_status_silence_period',
+        'hilos_status_observed_component',
     ];
     private const int AT = 1791722096789;
 

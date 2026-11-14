@@ -503,12 +503,17 @@ export async function settled<T>(fixture: ComponentFixture<T>): Promise<void> {
   fixture.detectChanges()
 }
 
-/** A coherent public v3 projection; time is supplied by the test's fake clock. */
+type CurrentStatusFile = Extract<PublicStatusFile, { schemaVersion: 4 }>
+
+/**
+ * A coherent public v4 projection; time is supplied by the test's fake clock,
+ * and observation began before every day the tests draw.
+ */
 export function publicStatusFile(
-  overrides: Partial<PublicStatusFile> = {},
-): PublicStatusFile {
+  overrides: Partial<CurrentStatusFile> = {},
+): CurrentStatusFile {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     revision: 'public-revision',
     generatedAt: Date.now() - 5000,
     config: { pollIntervalSeconds: 30, staleAfterSeconds: 120 },
@@ -518,6 +523,7 @@ export function publicStatusFile(
         name: 'Site',
         description: 'Pages and live updates.',
         state: 'operational',
+        observedSince: Date.parse('2025-01-01T00:00:00Z'),
       },
     ],
     candidates: [],
@@ -543,7 +549,7 @@ export function mountPublicStatus<T>(
   cleanups.push(bindTimeZoneState(h.context.connection))
   let status = initial
   let heartbeat: unknown = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     revision: 'public-revision',
     aliveAt: Date.now(),
   }
@@ -573,7 +579,7 @@ export function mountPublicStatus<T>(
     },
     publish(next: unknown, aliveAt = Date.now()) {
       status = next
-      heartbeat = { schemaVersion: 3, revision: 'public-revision', aliveAt }
+      heartbeat = { schemaVersion: 4, revision: 'public-revision', aliveAt }
       h.emit('projectSignal', { type: 'status_files_changed', data: {} })
     },
     beat(next: unknown) {

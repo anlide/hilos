@@ -19,8 +19,12 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\StatusIncident as EntityStatusIncident;
+use Hilos\Database\Entity\Item\StatusObservedComponent as EntityStatusObservedComponent;
+use Hilos\Database\Object\Collection\StatusObservedComponents as ObjectStatusObservedComponents;
 use Hilos\Database\Object\Item\StatusIncident as ObjectStatusIncident;
+use Hilos\Database\Object\Item\StatusObservedComponent as ObjectStatusObservedComponent;
 use Hilos\Database\View\Collection\StatusIncidents;
+use Hilos\Database\View\Collection\StatusObservedComponents;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Database\View\Item\StatusIncident;
 use Hilos\Core\Router\SignalRouter;
@@ -363,6 +367,16 @@ final class StatusReadDbContext extends HilosDbContext
     public function __construct(private readonly StatusReadIncidents $incidents)
     {
         parent::__construct();
+        // Both components were recorded before this owner started, so its first pass only reads their moments.
+        $this->_objectCollections[self::statusObservedComponents] = ObjectStatusObservedComponents::initEmpty();
+        $this->setRepresent(self::statusObservedComponents, StatusObservedComponents::class);
+        foreach ([1 => 'service', 2 => 'other'] as $id => $key) {
+            $row = new EntityStatusObservedComponent();
+            $row->id = $id;
+            $row->component_key = $key;
+            $row->observed_since = 1000;
+            $this->_objectCollections[self::statusObservedComponents][$id] = ObjectStatusObservedComponent::fromEntity($row);
+        }
     }
 
     public function configure(): void

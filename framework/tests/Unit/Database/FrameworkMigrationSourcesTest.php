@@ -73,7 +73,7 @@ final class FrameworkMigrationSourcesTest extends TestCase
         $schema = new FrameworkSchemaCatalog();
         $catalog = new FrameworkMigrationCatalog($schema);
         $catalog->verifyCurrentStubs();
-        $this->assertCount(55, $schema->allUnits());
+        $this->assertCount(56, $schema->allUnits());
         $this->assertSame(
             [
                 '20261021021039718057_HIL-1580_add_user_time_zone/user',
@@ -97,6 +97,11 @@ final class FrameworkMigrationSourcesTest extends TestCase
         $this->assertCount(1, $silence);
         $this->assertSame('20261105060052889668_HIL-1886_status_silence_period/status_silence_period', $silence[0]->key());
         $this->assertTrue($silence[0]->introducesUnit);
+        $this->assertSame([], $schema->unit('status_observed_component')->dependencies);
+        $observed = $catalog->partsForUnits(['status_observed_component']);
+        $this->assertCount(1, $observed);
+        $this->assertSame('20261114021837718689_HIL-1887_status_observed_component/status_observed_component', $observed[0]->key());
+        $this->assertTrue($observed[0]->introducesUnit);
     }
 
     public function testRealBootstrapMomentsHaveThreePartsAndNoInstallStubs(): void

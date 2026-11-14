@@ -6,6 +6,7 @@ import {
   STATUS_PATH,
   deliveryObject,
   expectPageReady,
+  expectPublicStatusNotMonitoredDays,
   expectPublicStatusPair,
   expectPublicStatusReadOnly,
   expectTableTotal,
@@ -77,20 +78,34 @@ test('the app renders, and Status shows this project from its first answers and 
     try {
       const { aliveAt } = await beatStatusHeartbeat()
       await gotoPublicStatus(expect, page)
-      const { status } = await expectPublicStatusPair(
+      const accepted = await expectPublicStatusPair(
         expect,
         page,
         log,
         (pair) => pair.heartbeat.aliveAt >= aliveAt,
       )
+      const { status, heartbeat } = accepted
       expect(status.components).toEqual([
         {
           componentKey: SERVICE.componentKey,
           name: SERVICE.name,
           description: SERVICE.description,
           state: expect.any(String),
+          observedSince: expect.any(Number),
         },
       ])
+      // The owner came under observation on this stand, before the pair it published.
+      const [component] = status.components
+      expect(
+        'observedSince' in component ? component.observedSince : null,
+      ).toBeLessThanOrEqual(heartbeat.aliveAt)
+      await expectPublicStatusNotMonitoredDays(expect, page, accepted)
+      // This stand came under observation inside the 90-day window, so the oracle cannot pass on zero empty days.
+      await expect(
+        page
+          .getByTestId('public-status-days-90')
+          .getByRole('button', { name: / · Not monitored yet$/ }),
+      ).not.toHaveCount(0)
       await expect(page.getByTestId('public-status-components')).toContainText(
         SERVICE.name,
       )

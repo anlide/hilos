@@ -72,7 +72,7 @@ describe('public Status body capture completion', () => {
 
 describe('public archive silence oracle', () => {
   const status = {
-    schemaVersion: 3 as const,
+    schemaVersion: 4 as const,
     revision: 'accepted',
     generatedAt: 100,
     config: { pollIntervalSeconds: 30, staleAfterSeconds: 120 },
@@ -82,6 +82,7 @@ describe('public archive silence oracle', () => {
         name: 'API',
         description: null,
         state: 'operational' as const,
+        observedSince: 0,
       },
     ],
     candidates: [],

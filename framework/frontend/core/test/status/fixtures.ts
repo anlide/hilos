@@ -10,22 +10,35 @@ import {
 
 export const NOW = Date.parse('2026-10-25T12:00:00Z')
 
-export function statusFile(
-  overrides: Partial<PublicStatusFile> = {},
-): PublicStatusFile {
+/** Observation began before every day these tests draw, so none of them is empty. */
+export const OBSERVED_SINCE = Date.parse('2025-01-01T00:00:00Z')
+
+type CurrentStatusFile = Extract<PublicStatusFile, { schemaVersion: 4 }>
+type CurrentStatusComponent = CurrentStatusFile['components'][number]
+
+/** A v4 catalog entry, observed since long before the visible window. */
+export function component(
+  overrides: Partial<CurrentStatusComponent> = {},
+): CurrentStatusComponent {
   return {
-    schemaVersion: 3,
+    componentKey: 'site',
+    name: 'Site',
+    description: null,
+    state: 'operational',
+    observedSince: OBSERVED_SINCE,
+    ...overrides,
+  }
+}
+
+export function statusFile(
+  overrides: Partial<CurrentStatusFile> = {},
+): CurrentStatusFile {
+  return {
+    schemaVersion: 4,
     revision: 'opaque/revision',
     generatedAt: NOW - 5000,
     config: { pollIntervalSeconds: 30, staleAfterSeconds: 120 },
-    components: [
-      {
-        componentKey: 'site',
-        name: 'Site',
-        description: null,
-        state: 'operational',
-      },
-    ],
+    components: [component()],
     candidates: [],
     outages: [],
     scheduledWorks: [],
@@ -35,30 +48,40 @@ export function statusFile(
   }
 }
 
-/** A literal legacy file, without the v3-only list. */
+/**
+ * A literal legacy file: no component carries its observation moment, and v1
+ * and v2 lack the gap list.
+ */
 export function legacyStatusFile(
-  schemaVersion: 1 | 2,
-  overrides: Partial<PublicStatusFile> = {},
+  schemaVersion: 1 | 2 | 3,
+  overrides: Partial<CurrentStatusFile> = {},
 ): PublicStatusFile {
   const status = statusFile(overrides)
-  return {
-    schemaVersion,
+  const legacy = {
     revision: status.revision,
     generatedAt: status.generatedAt,
     config: status.config,
-    components: status.components,
+    components: status.components.map((entry) => ({
+      componentKey: entry.componentKey,
+      name: entry.name,
+      description: entry.description,
+      state: entry.state,
+    })),
     candidates: status.candidates,
     outages: status.outages,
     scheduledWorks: status.scheduledWorks,
     maintenancePeriods: status.maintenancePeriods,
   }
+  return schemaVersion === 3
+    ? { ...legacy, schemaVersion, silencePeriods: status.silencePeriods }
+    : { ...legacy, schemaVersion }
 }
 
 export function heartbeat(
   overrides: Partial<PublicStatusHeartbeat> = {},
 ): PublicStatusHeartbeat {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     revision: 'opaque/revision',
     aliveAt: NOW,
     ...overrides,

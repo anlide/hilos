@@ -184,7 +184,7 @@ final class StatusSilenceStorageIntegrationTest extends FrameworkIntegrationTest
             Hilos::$db->statusSilencePeriods->actions->import(str_repeat('f', 32), -2000, $now - $window);
         });
         $builder = new StatusPublicSnapshotBuilder();
-        $builder->begin(StatusSnapshot::read(), 'bounded', $now, 30, 120);
+        $builder->begin(StatusSnapshot::read(), 'bounded', $now, 30, 120, ['service' => $now, 'mail' => $now]);
         $steps = 0;
         while (!$builder->isReady() && ++$steps < 100) {
             $builder->advance();

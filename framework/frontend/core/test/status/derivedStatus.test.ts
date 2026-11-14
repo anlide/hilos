@@ -9,10 +9,12 @@ import {
   publicStatusOutageViews,
   publicStatusOverall,
   publicStatusUpcomingWorks,
+  type PublicStatusDay,
   type PublicStatusState,
 } from '../../src/status/index.js'
 import { calendarDays } from '../../src/timeZone/calendarPeriods.js'
 import {
+  component,
   heartbeat,
   legacyStatusFile,
   maintenance,
@@ -381,18 +383,12 @@ describe('published calendar day facts', () => {
     const days = calendarDays(Date.parse('2026-01-03T12:00:00Z'), 'UTC', 3)
     const status = statusFile({
       components: [
-        {
+        component({
           componentKey: 'second',
           name: 'Second',
-          description: null,
           state: 'checking',
-        },
-        {
-          componentKey: 'site',
-          name: 'Site',
-          description: null,
-          state: 'maintenance',
-        },
+        }),
+        component({ state: 'maintenance' }),
       ],
       candidates: [
         {
@@ -623,18 +619,12 @@ describe('known day events beside publication silence', () => {
       }
       const status = statusFile({
         components: [
-          {
-            componentKey: 'site',
-            name: 'Site',
-            description: null,
-            state: 'operational',
-          },
-          {
+          component(),
+          component({
             componentKey: 'other',
             name: 'Other',
-            description: null,
             state: 'checking',
-          },
+          }),
         ],
         silencePeriods: [gap],
         outages: [
@@ -835,14 +825,7 @@ describe('known day events beside publication silence', () => {
   it('does not turn Checking or a scheduled announcement into a known event marker', () => {
     const days = calendarDays(NOW, 'UTC', 1)
     const status = statusFile({
-      components: [
-        {
-          componentKey: 'site',
-          name: 'Site',
-          description: null,
-          state: 'checking',
-        },
-      ],
+      components: [component({ state: 'checking' })],
       candidates: [{ componentKey: 'site', detectedAt: NOW - 1000 }],
       scheduledWorks: [work({ startsAt: NOW - 1000 })],
       silencePeriods: [
@@ -897,12 +880,208 @@ describe('known day events beside publication silence', () => {
         ...calendarDays(NOW, 'UTC', 1)[0]!,
         state,
         hasNoData: false,
+        notMonitored: false,
       }
       const date = formatMoment(day.startTs, { kind: 'date' })
       expect(publicStatusDayLabel(day)).toBe(`${date} · ${normal}`)
       expect(publicStatusDayLabel({ ...day, hasNoData: true })).toBe(
         `${date} · ${missing}`,
       )
+    },
+  )
+})
+
+describe('days before a component came under observation', () => {
+  const facts = (days: readonly PublicStatusDay[]) =>
+    days.map(({ state, hasNoData, notMonitored }) => ({
+      state,
+      hasNoData,
+      notMonitored,
+    }))
+  const empty = { state: 'operational', hasNoData: false, notMonitored: true }
+  const ordinary = {
+    state: 'operational',
+    hasNoData: false,
+    notMonitored: false,
+  }
+
+  it('leaves each day ending by the moment empty and keeps the day observation began ordinary', () => {
+    const days = calendarDays(NOW, 'UTC', 4)
+    const strip = (observedSince: number) =>
+      publicStatusDayStrips(
+        statusFile({ components: [component({ observedSince })] }),
+        days,
+        NOW,
+        heartbeat(),
+      )[0]!.days
+    expect(facts(strip(days[2]!.startTs + 1000))).toEqual([
+      empty,
+      empty,
+      ordinary,
+      ordinary,
+    ])
+    expect(facts(strip(days[2]!.startTs))).toEqual([
+      empty,
+      empty,
+      ordinary,
+      ordinary,
+    ])
+    expect(facts(strip(days[2]!.startTs - 1))).toEqual([
+      empty,
+      ordinary,
+      ordinary,
+      ordinary,
+    ])
+    const [first, , started] = strip(days[2]!.startTs + 1000)
+    expect(publicStatusDayLabel(first!)).toBe(
+      `${formatMoment(days[0]!.startTs, { kind: 'date' })} · Not monitored yet`,
+    )
+    expect(publicStatusDayLabel(started!)).toBe(
+      `${formatMoment(days[2]!.startTs, { kind: 'date' })} · Operational`,
+    )
+  })
+
+  it('gives a component added later its own empty days in catalog order', () => {
+    const days = calendarDays(NOW, 'UTC', 3)
+    const strips = publicStatusDayStrips(
+      statusFile({
+        components: [
+          component(),
+          component({
+            componentKey: 'late',
+            name: 'Late',
+            observedSince: days[1]!.endTs,
+          }),
+        ],
+      }),
+      days,
+      NOW,
+      heartbeat(),
+    )
+    expect(strips.map((strip) => strip.componentKey)).toEqual(['site', 'late'])
+    expect(facts(strips[0]!.days)).toEqual([ordinary, ordinary, ordinary])
+    expect(facts(strips[1]!.days)).toEqual([empty, empty, ordinary])
+  })
+
+  it('does not let recorded work, outages or gaps before the moment mark an empty day', () => {
+    const days = calendarDays(NOW, 'UTC', 3)
+    const status = statusFile({
+      components: [component({ observedSince: days[1]!.endTs })],
+      silencePeriods: [
+        {
+          id: '0123456789abcdef0123456789abcdef',
+          startedAt: days[0]!.startTs + 1000,
+          endedAt: days[0]!.startTs + 2000,
+        },
+      ],
+      outages: [
+        outage({
+          detectedAt: days[0]!.startTs,
+          resolvedAt: days[0]!.endTs,
+        }),
+        outage({
+          id: 'started',
+          severity: 'partial_outage',
+          detectedAt: days[1]!.startTs,
+          resolvedAt: days[2]!.startTs + 1000,
+        }),
+      ],
+      maintenancePeriods: [
+        maintenance({
+          startedAt: days[1]!.startTs,
+          lastObservedAt: days[1]!.startTs + 1000,
+          endedAt: days[1]!.startTs + 1000,
+          completionObservedAt: days[1]!.startTs + 1000,
+        }),
+      ],
+    })
+    const strip = (aliveAt: number) =>
+      publicStatusDayStrips(status, days, NOW, heartbeat({ aliveAt }))[0]!.days
+    const [first, second, started] = strip(NOW)
+    expect(facts([first!, second!])).toEqual([empty, empty])
+    expect(started).toMatchObject({
+      state: 'partial_outage',
+      hasNoData: false,
+      notMonitored: false,
+    })
+    expect(publicStatusDayLabel(second!)).toBe(
+      `${formatMoment(days[1]!.startTs, { kind: 'date' })} · Not monitored yet`,
+    )
+    expect(facts(strip(days[0]!.startTs))).toEqual([
+      empty,
+      empty,
+      { state: 'operational', hasNoData: true, notMonitored: false },
+    ])
+  })
+
+  it('keeps narrow30 the same objects as the suffix of 90, empty days included', () => {
+    const days = calendarDays(NOW, 'UTC', 90)
+    const strip = publicStatusDayStrips(
+      statusFile({
+        components: [component({ observedSince: days[70]!.startTs })],
+      }),
+      days,
+      NOW,
+      heartbeat(),
+    )[0]!
+    expect(strip.days.filter((day) => day.notMonitored)).toHaveLength(70)
+    expect(strip.narrowDays).toHaveLength(30)
+    expect(strip.narrowDays.filter((day) => day.notMonitored)).toHaveLength(10)
+    for (let i = 0; i < 30; i++)
+      expect(strip.narrowDays[i]).toBe(strip.days[i + 60])
+  })
+
+  it.each([
+    ['2026-03-28T23:00:00Z', '2026-03-29T22:00:00Z'],
+    ['2026-10-24T22:00:00Z', '2026-10-25T23:00:00Z'],
+  ])(
+    'ends the empty days at the reader zone DST day [%s, %s)',
+    (startText, endText) => {
+      const end = Date.parse(endText)
+      const now = end + 1
+      const warsaw = calendarDays(now, 'Europe/Warsaw', 3)
+      expect(warsaw[1]).toEqual({ startTs: Date.parse(startText), endTs: end })
+      const strip = (days: typeof warsaw, observedSince: number) =>
+        facts(
+          publicStatusDayStrips(
+            statusFile({ components: [component({ observedSince })] }),
+            days,
+            now,
+            heartbeat({ aliveAt: now }),
+          )[0]!.days,
+        )
+      expect(strip(warsaw, end - 1)).toEqual([empty, ordinary, ordinary])
+      expect(strip(warsaw, end)).toEqual([empty, empty, ordinary])
+      expect(strip(calendarDays(now, 'UTC', 3), end - 1)).toEqual([
+        empty,
+        empty,
+        ordinary,
+      ])
+    },
+  )
+
+  it.each([1, 2, 3] as const)(
+    'draws no empty day from legacy %s, which carries no moment',
+    (schemaVersion) => {
+      const days = calendarDays(NOW, 'UTC', 90)
+      const start = days[0]!.startTs
+      const status = legacyStatusFile(schemaVersion, {
+        silencePeriods: [
+          {
+            id: '0123456789abcdef0123456789abcdef',
+            startedAt: start + 1000,
+            endedAt: start + 2000,
+          },
+        ],
+      })
+      const strip = publicStatusDayStrips(
+        status,
+        days,
+        NOW,
+        heartbeat({ schemaVersion }),
+      )[0]!
+      expect(strip.days.some((day) => day.notMonitored)).toBe(false)
+      expect(strip.days[0]?.hasNoData).toBe(schemaVersion === 3)
     },
   )
 })

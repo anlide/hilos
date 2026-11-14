@@ -100,9 +100,9 @@ final class AccountErasureParticipantCatalogTest extends TestCase
         }
         $declared = [...$covered, ...array_keys(AccountErasureParticipantCatalog::EXEMPT)];
 
-        self::assertCount(55, $mounted);
+        self::assertCount(56, $mounted);
         self::assertCount(22, $covered);
-        self::assertCount(33, AccountErasureParticipantCatalog::EXEMPT);
+        self::assertCount(34, AccountErasureParticipantCatalog::EXEMPT);
         foreach ($mounted as $key) {
             self::assertSame(1, count(array_keys($declared, $key, true)), "Collection [{$key}] is covered or exempt exactly once");
         }

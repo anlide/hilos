@@ -51,7 +51,8 @@ the project activates it and declares its component content; it does not copy
 the outage machine. `StatusFeature` requires `DAEMON`, `NOTIFICATION_DELIVERY`
 and `AUTH_THROTTLE`, the `HILOS_STATUS` agent, the shared mail-delivery agent,
 the `StatusSettingsCatalog` fragment, the incident, incident-update, subscriber,
-work, work-component and maintenance-period tables, all five Status admin
+work, work-component, maintenance-period, silence-period and observed-component
+tables, all five Status admin
 pages, all four Status tables, and the Components, Subscribers, Works and
 History page-to-table bindings. It mounts the feature-owned component and
 maintenance runtime collections.
@@ -1111,21 +1112,22 @@ content revision and then sends the hint. A failed build or write is retried
 without advancing the heartbeat or sending a success hint; if the files
 temporarily disagree, the reader accepts neither revision-mixed pair.
 
-### Public JSON v3
+### Public JSON v4
 
 These are JSON shape declarations, not PHP/TS implementation types. All keys
 are present: nullable fields serialize as `null`, lists as `[]` when empty.
 Existing moments — including `at`, `startsAt` and `endsAt` — remain integer
 epoch milliseconds UTC under [A Moment On The Wire](time-zones.md#a-moment-on-the-wire).
-The new silence bounds are also epoch milliseconds UTC, but signed so a proven
-start before 1970 is retained. All prior moment constraints remain unchanged.
+The silence bounds and a component's `observedSince` are also epoch
+milliseconds UTC, but signed so a proven moment before 1970 is retained. All
+prior moment constraints remain unchanged.
 Every public `id`, including `workId`, is opaque and never a DB integer id.
 The content `revision` is opaque and has no node id or term; the heartbeat
 repeats the last successfully published `status.json` revision.
 
 ```text
 status.json = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   revision: string,
   generatedAt: int,
   config: {pollIntervalSeconds: int, staleAfterSeconds: int},
@@ -1136,12 +1138,13 @@ status.json = {
   maintenancePeriods: MaintenancePeriod[],
   silencePeriods: SilencePeriod[]
 }
-heartbeat.json = {schemaVersion: 3, revision: string, aliveAt: int}
+heartbeat.json = {schemaVersion: 4, revision: string, aliveAt: int}
 
 Component = {
   componentKey: string, name: string, description: ?string,
   state: 'operational' | 'checking' | 'partial_outage' |
-         'major_outage' | 'maintenance' | 'unknown'
+         'major_outage' | 'maintenance' | 'unknown',
+  observedSince: int
 }
 Candidate = {componentKey: string, detectedAt: int}
 Outage = {
@@ -1162,23 +1165,77 @@ MaintenancePeriod = {
 SilencePeriod = {id: string, startedAt: int, endedAt: int}
 ```
 
-Only closed silence periods appear in v3. Their bounds form a half-open
+Only closed silence periods appear, from v3 on. Their bounds form a half-open
 interval, require `endedAt > startedAt`, and use unique opaque IDs in stable
 `(startedAt, id)` order. The 90-day public window includes periods that
 intersect it; a long period keeps its original `startedAt` rather than being
 clipped to the window. No internal row id, node, PID or reason is published.
 `heartbeat.json` keeps exactly its existing three keys.
 
-The writer always emits schema version 3 in both files. PHP recovery and the
-TypeScript reader accept versions 1, 2 and 3; a pair is accepted only when both
-files have the same supported version and revision. The actual earlier v1 shape
-still requires empty `scheduledWorks` and `maintenancePeriods`; nonempty lists
-remain unsupported. V2 has no `silencePeriods`. Their other shape and moment
-limits remain as before; this is not a migration of older Status moments.
-For both v1 and v2, the reader supplies an empty silence-period list.
-Before a readable v1 or v2 pair can be followed by a v3 heartbeat, the owner
-publishes a complete matching v3 pair. Accepted outage fields remain in the
-public shape through that upgrade.
+V4 is every v3 key unchanged plus `Component.observedSince`, required on every
+component: the moment the owner began observing it ([Start Of
+Observation](#start-of-observation)). `heartbeat.json` keeps its keys.
+
+The writer always emits schema version 4 in both files. PHP recovery and the
+TypeScript reader accept versions 1, 2, 3 and 4; a pair is accepted only when
+both files have the same supported version and revision. The actual earlier v1
+shape still requires empty `scheduledWorks` and `maintenancePeriods`; nonempty
+lists remain unsupported. V2 has no `silencePeriods`, and v1 to v3 have no
+`observedSince`. Their other shape and moment limits remain as before; this is
+not a migration of older Status moments. For both v1 and v2, the reader
+supplies an empty silence-period list; for v1 to v3 a component has no start of
+observation, so no day is drawn as not yet monitored. Recovery reads a v1 to v3
+component without the moment, and the writer refuses to serialize a component
+that has none. Before a readable v1, v2 or v3 pair can be followed by a v4
+heartbeat, the owner publishes a complete matching v4 pair, giving each
+component its moment. Accepted outage fields remain in the public shape through
+that upgrade.
+
+### Start Of Observation
+
+Each catalog component has its own start of observation, a signed epoch
+millisecond UTC. The owner's *memorable moment* is the later of its own process
+start and its entry into the last freeze it saw; it is private to that instance.
+An unknown freeze state counts as an entry too: a protected-mode row that is
+missing or stale moves the moment just as a freeze does.
+
+On the first pass where the database is available — the branch that imports
+closed silence, before the build reads anything — the owner gives every catalog
+key a row: a key without one gets the memorable moment, and an existing row is
+kept whatever the owner remembers (the first writer wins). The write runs in the
+owner's own transaction. A refused read or write is logged and retried at the
+existing publication retry rhythm; the source counts as unavailable for that
+pass, and until the write succeeds the publication carries the memorable moment,
+never an invented one. A new owner reads the rows. Rows are never deleted,
+including those of keys that left the catalog.
+
+The durable record is `Hilos::$db->statusObservedComponents`, mounted only when
+Status is active with `Objects::LAZY_STRATEGY_KEY` and owned by `StatusAgent`
+for collection `Add` only. Its primary table `hilos_status_observed_component`
+has `id BIGINT UNSIGNED`, `component_key VARCHAR(128)` and `observed_since
+BIGINT`, all not null; the moment is a signed epoch millisecond with no SQL
+clock default. `id` is the auto-increment primary key and `component_key` is
+unique. `record($componentKey, $observedSince)` returns the existing row
+unchanged, and after a lost insert race it rereads the committed winner. The
+entity is not journaled, and its columns are classified as non-personal. The
+owner reads it by key with `findByComponentKey()`, never by walking the lazy
+collection, and keeps the values, limited to the catalog, as detached private
+fields of the one cluster owner; they are not runtime state.
+
+Under freeze the database is not touched. The owner publishes the moment of a
+key from the restored v4 pair when the pair carries it, otherwise the memorable
+moment. A component first seen under freeze therefore gets the owner's start,
+and a restart under the same freeze moves it by at most the freeze's length.
+After the lift the owner reads the rows again and the publication carries the
+database values; only after a restore can they differ from the published ones,
+and then the next publication is an ordinary complete pair with a new
+revision. A heartbeat-only publication never changes a moment.
+
+A restore replaces the database under its freeze, and its source invalidation
+resets the build. After the lift the moments are read from the restored
+database, and a missing key is written with the memorable moment, which is then
+the entry into the restore's freeze. As with closed silence, the public copy
+never repopulates a row the restored database lacks.
 
 ### Closed Publication Gaps
 
@@ -1458,6 +1515,13 @@ gives known maintenance priority, then Major outage, Partial outage and
 Checking; Operational requires every component to be operational. Staleness
 overrides the current verdict with “not responding”.
 
+A reader day that ended by its component's `observedSince` — its end at or
+before that moment, on the reader-zone calendar — is not yet monitored. It is
+drawn as an empty outlined day with no fill and no marker, whatever was
+recorded on it, and its label and selected-day detail read “<date> · Not
+monitored yet”; `PublicStatusDay.notMonitored` carries it. The day observation
+began is an ordinary day. A v1 to v3 file has no such moment and no such day.
+
 The 90-day calendar subtracts the union of closed silence periods and a current
 `[aliveAt, now)` silence, which the reader calculates locally only after the
 strict stale threshold. Reader-zone calendar days use the shared calendar
@@ -1564,6 +1628,7 @@ current validation surfaces.
 | SDK packaging and lazy entrypoints | `framework/frontend/core/test/packaging/coreEntryPoints.test.ts`, `framework/frontend/core/test/bin/initialBundleBudget.test.mjs`, `framework/frontend/vue/test/packaging.smoke.mjs`, `framework/frontend/react/test/packaging.smoke.mjs`, `framework/frontend/react/package.json`, `framework/frontend/react/vite.config.ts`, `framework/frontend/angular/admin/status/`, `framework/frontend/angular/status/`, `framework/frontend/angular/test/packaging.smoke.mjs` | Core, Vue, React and Angular export `/admin/status` lazily and `/status` as a separate entry; eager base closures remain free of Status. |
 | Public files, bounded builder, heartbeat, hint and reader | `framework/backend/Status/StatusPublicSnapshotBuilder.php`, `framework/backend/Status/StatusPublicFiles.php`, `framework/tests/Unit/StatusPublicFilesTest.php`, `framework/tests/Integration/StatusPublicFilesIntegrationTest.php`; `framework/frontend/core/src/status/`, `framework/frontend/core/test/status/` | The original public pair landed by HIL-1690; its v3 silence archive and current-gap derivation landed in HIL-1886. |
 | Closed silence archive, private recovery transit and test cleanup | `framework/backend/Status/StatusPublicSilencePeriod.php`, `StatusSilenceObservation.php`, `StatusSilenceObservationStore.php`, `StatusAgent.php`; `framework/backend/Database/Entity/Item/StatusSilencePeriod.php`, `framework/backend/Database/Actions/Collection/StatusSilencePeriodsActions.php`, `framework/backend/Database/View/Collection/StatusSilencePeriods.php`, `framework/backend/Database/Migration/Change/20261105060052889668_HIL-1886_status_silence_period/`; `framework/backend/Core/CLI/Commands/StatusTestSilenceRemoveCommand.php`; `framework/tests/Unit/StatusSilenceObservationTest.php`, `StatusSilenceObservationStoreTest.php`, `StatusPublicFilesTest.php`; `framework/tests/Integration/StatusSilenceSchemaIntegrationTest.php`, `StatusSilenceStorageIntegrationTest.php`, `StatusSilencePeriodsIntegrationTest.php`, `StatusPublicFilesIntegrationTest.php`, `StatusTestCommandsIntegrationTest.php` | Implemented by HIL-1886. The DB archive is durable; public output retains only its 90-day projection, and exact cleanup stays on the existing command channel. |
+| Start of observation: record, freeze, restore, v4 pair and not-monitored days | `framework/backend/Status/StatusAgent.php`, `StatusPublicComponent.php`, `StatusPublicSnapshot.php`, `StatusPublicHeartbeat.php`, `StatusPublicSnapshotBuilder.php`; `framework/backend/Database/Entity/Item/StatusObservedComponent.php`, `framework/backend/Database/Actions/Collection/StatusObservedComponentsActions.php`, `framework/backend/Database/View/Collection/StatusObservedComponents.php`; `framework/frontend/core/src/status/statusFiles.ts`, `derivedStatus.ts` and the three SDK public pages; `framework/tests/Unit/StatusPublicFilesTest.php`; `framework/tests/Integration/StatusObservedComponentsIntegrationTest.php`, `StatusPublicFilesIntegrationTest.php`; `framework/frontend/core/test/status/`; `framework/frontend/e2e/publicStatus.ts`; `demo/tasks/tests/e2e/tests/smoke.spec.ts` | Implemented by HIL-1887. Rows are write-once and never removed; days before an installation existed are empty, not Operational. |
 | Two-fact public calendar | `framework/frontend/core/src/status/statusFiles.ts`, `derivedStatus.ts`; `framework/frontend/vue/src/public/HilosStatusPage.vue`, `framework/frontend/react/src/public/HilosStatusPage.tsx`, `framework/frontend/angular/src/public/HilosStatusPage.ts`; `framework/frontend/core/test/status/statusFiles.test.ts`, `derivedStatus.test.ts`, `publicStatus.test.ts`; the three SDK public-page tests | Implemented by HIL-1886. The calendar preserves No data and the worst known event as separate facts, with no independent cluster or failover proof claimed. |
 | Public route, Vue, React and Angular pages and standalone browser coverage | `framework/frontend/core/src/routing/hilosPages.ts`, `framework/frontend/core/src/routing/HilosRouter.ts`, `framework/frontend/core/src/routing/pageTitle.ts`; `framework/frontend/e2e/publicStatus.ts`, `framework/frontend/e2e/test/publicStatus.test.ts`; `framework/frontend/vue/src/public/HilosStatusPage.vue` and `framework/frontend/vue/src/public/HilosStatusPage.test.ts`; `framework/frontend/react/src/public/HilosStatusPage.tsx` and `framework/frontend/react/test/HilosPublicStatusPage.test.tsx`; `framework/frontend/angular/src/public/HilosStatusPage.ts`, `framework/frontend/angular/test/HilosPublicStatusPage.test.ts`; `demo/binance-btc-tracker/tests/e2e/tests/status.spec.ts`, `demo/binance-btc-tracker/tests/e2e/standalone/loss.spec.ts`, and `demo/binance-btc-tracker/tests/e2e/tests/a11y.spec.ts`; `demo/ecommerce-shop/tests/e2e/tests/status.spec.ts` and `demo/ecommerce-shop/tests/e2e/tests/a11y.spec.ts`; `demo/tasks/tests/e2e/tests/smoke.spec.ts` and `demo/tasks/tests/e2e/tests/a11y.spec.ts` | Core route and Vue, React and Angular readers are built; the two Binance journeys cover silence identity/bounds and warm/cold reading, not cluster failover. Polls and OnlineTesting mount the Angular public reader. |
 | Guest subscriptions, primary storage, links and mail | `framework/backend/Status/StatusAgent.php`, `framework/backend/Status/StatusSubscriptionLink.php`, `framework/backend/Status/StatusSubscriberMailTask.php`, `framework/backend/Database/Entity/Item/StatusSubscriber.php`, `framework/backend/Database/Actions/Collection/StatusSubscribersActions.php`, `framework/backend/Database/Actions/Item/StatusSubscriberActions.php`, `framework/backend/Mail/Template/Status*MailTemplate.php`; `framework/tests/Unit/StatusGuestActionDTOTest.php`, `StatusSubscriptionLinkTest.php`, `StatusMailTemplatesTest.php`; `framework/tests/Integration/StatusSubscriberSchemaIntegrationTest.php`, `StatusSubscriberStorageIntegrationTest.php`, `StatusSubscriptionIntegrationTest.php`, `StatusSubscriberMailIntegrationTest.php` | Landed by HIL-1691; storage, guest actions and best-effort mail are documented above |

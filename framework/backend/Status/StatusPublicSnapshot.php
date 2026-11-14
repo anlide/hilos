@@ -6,10 +6,12 @@ namespace Hilos\Status;
 
 use Hilos\Status\Exception\StatusException;
 
-/** Public v3 values only; safe to retain when the database is unavailable or replaced. */
+/** Public v4 values only; safe to retain when the database is unavailable or replaced. */
 final readonly class StatusPublicSnapshot
 {
-    public const int SCHEMA_VERSION = 3;
+    public const int SCHEMA_VERSION = 4;
+    /** First version that carries closed silence periods. */
+    public const int SILENCE_SCHEMA_VERSION = 3;
     public const int PREVIOUS_SCHEMA_VERSION = 2;
     public const int LEGACY_SCHEMA_VERSION = 1;
 
@@ -23,7 +25,7 @@ final readonly class StatusPublicSnapshot
      * @param list<StatusPublicOutage> $outages Complete published history in descending detection/id source order
      * @param list<StatusPublicWork> $scheduledWorks Upcoming and active-known announcements in start/id order
      * @param list<StatusPublicMaintenancePeriod> $maintenancePeriods Active and retained completed observations
-     * @param int $sourceSchemaVersion Input version retained solely for coherent-pair recovery; serialization always writes v3
+     * @param int $sourceSchemaVersion Input version retained solely for coherent-pair recovery; serialization always writes v4
      * @param list<StatusPublicSilencePeriod> $silencePeriods Closed gaps in start/id order
      * @throws StatusException When publication metadata is invalid
      */
@@ -54,20 +56,22 @@ final readonly class StatusPublicSnapshot
     {
         $decoded = StatusPublicJson::decode($json);
         $version = $decoded->schemaVersion ?? null;
-        if (!in_array($version, [self::LEGACY_SCHEMA_VERSION, self::PREVIOUS_SCHEMA_VERSION, self::SCHEMA_VERSION], true)) {
+        if (!in_array($version, [
+            self::LEGACY_SCHEMA_VERSION, self::PREVIOUS_SCHEMA_VERSION, self::SILENCE_SCHEMA_VERSION, self::SCHEMA_VERSION,
+        ], true)) {
             throw new StatusException('Unsupported public Status schema.');
         }
         $keys = [
             'schemaVersion', 'revision', 'generatedAt', 'config', 'components', 'candidates', 'outages',
             'scheduledWorks', 'maintenancePeriods',
         ];
-        if ($version === self::SCHEMA_VERSION) {
+        if ($version >= self::SILENCE_SCHEMA_VERSION) {
             $keys[] = 'silencePeriods';
         }
         $data = StatusPublicJson::fields($decoded, $keys);
         $silencePeriods = [];
         $identities = [];
-        foreach ($version === self::SCHEMA_VERSION ? StatusPublicJson::items($data['silencePeriods']) : [] as $value) {
+        foreach ($version >= self::SILENCE_SCHEMA_VERSION ? StatusPublicJson::items($data['silencePeriods']) : [] as $value) {
             $period = StatusPublicSilencePeriod::fromArray(StatusPublicJson::fields($value, ['id', 'startedAt', 'endedAt']));
             $previous = $silencePeriods === [] ? null : $silencePeriods[array_key_last($silencePeriods)];
             if (isset($identities[$period->id]) || ($previous !== null
@@ -98,8 +102,12 @@ final readonly class StatusPublicSnapshot
         }
         $config = StatusPublicJson::fields($data['config'], ['pollIntervalSeconds', 'staleAfterSeconds']);
         $components = [];
+        $componentKeys = ['componentKey', 'name', 'description', 'state'];
+        if ($version === self::SCHEMA_VERSION) {
+            $componentKeys[] = 'observedSince';
+        }
         foreach (StatusPublicJson::items($data['components']) as $value) {
-            $component = StatusPublicJson::fields($value, ['componentKey', 'name', 'description', 'state']);
+            $component = StatusPublicJson::fields($value, $componentKeys);
             $state = StatusComponentState::tryFrom(StatusPublicJson::text($component['state']));
             if ($state === null) {
                 throw new StatusException('Invalid public Status component state.');
@@ -107,6 +115,7 @@ final readonly class StatusPublicSnapshot
             $components[] = new StatusPublicComponent(
                 StatusPublicJson::text($component['componentKey']), StatusPublicJson::text($component['name']),
                 $component['description'] === null ? null : StatusPublicJson::text($component['description'], true), $state,
+                $version === self::SCHEMA_VERSION ? StatusPublicJson::signedInteger($component['observedSince']) : null,
             );
         }
         $candidates = [];
@@ -136,10 +145,11 @@ final readonly class StatusPublicSnapshot
      * @param StatusSnapshot $current Temporary source read; no source objects are retained
      * @param string $revision New opaque content revision
      * @param int $generatedAt Generation epoch milliseconds UTC
+     * @param array<string, int> $observedSince Start of observation of every current component, by component key
      * @return self New current values with the same complete history
-     * @throws StatusException When publication metadata is invalid
+     * @throws StatusException When publication metadata is invalid or a current component has no start of observation
      */
-    public function withCurrent(StatusSnapshot $current, string $revision, int $generatedAt): self
+    public function withCurrent(StatusSnapshot $current, string $revision, int $generatedAt, array $observedSince): self
     {
         $components = [];
         $candidates = [];
@@ -149,6 +159,8 @@ final readonly class StatusPublicSnapshot
                 $component->component->name,
                 $component->component->description,
                 $component->state,
+                $observedSince[$component->component->componentKey]
+                    ?? throw new StatusException('A public Status component requires its start of observation.'),
             );
             if ($component->state === StatusComponentState::CHECKING && $component->incident !== null
                 && $component->incident->publishedAt === null && $component->incident->resolvedAt === null) {
@@ -203,7 +215,10 @@ final readonly class StatusPublicSnapshot
         );
     }
 
-    /** @return array<string, mixed> Complete literal status.json v3 */
+    /**
+     * @return array<string, mixed> Complete literal status.json v4
+     * @throws StatusException When a component carries no start of observation, as one read from a v1-v3 file
+     */
     public function toArray(): array
     {
         return [

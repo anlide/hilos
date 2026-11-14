@@ -213,6 +213,7 @@ class FrameworkSchemaCatalog
             $this->tableUnit('status_work_component', 'hilos_status_work_component', ['status_work']),
             $this->tableUnit('status_maintenance_period', 'hilos_status_maintenance_period', ['status_work']),
             $this->tableUnit('status_silence_period', 'hilos_status_silence_period'),
+            $this->tableUnit('status_observed_component', 'hilos_status_observed_component'),
             new FrameworkSchemaUnit(
                 'analytics',
                 FrameworkTablesWithoutEntity::analyticsTables(),

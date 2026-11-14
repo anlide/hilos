@@ -34,8 +34,12 @@ use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Entity\Item\StatusObservedComponent as EntityStatusObservedComponent;
 use Hilos\Database\Object\Collection\StatusIncidents as ObjectStatusIncidents;
+use Hilos\Database\Object\Collection\StatusObservedComponents as ObjectStatusObservedComponents;
+use Hilos\Database\Object\Item\StatusObservedComponent as ObjectStatusObservedComponent;
 use Hilos\Database\View\Collection\StatusIncidents;
+use Hilos\Database\View\Collection\StatusObservedComponents;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\State\Item\HilosStatusMaintenance;
@@ -482,6 +486,14 @@ final class StatusObservationDbContext extends HilosDbContext
     {
         $this->_objectCollections[self::statusIncidents] = ObjectStatusIncidents::initEmpty();
         $this->setRepresent(self::statusIncidents, StatusIncidents::class);
+        $this->_objectCollections[self::statusObservedComponents] = ObjectStatusObservedComponents::initEmpty();
+        $this->setRepresent(self::statusObservedComponents, StatusObservedComponents::class);
+        // The one component both catalogs share was recorded before the owner started, so its first pass only reads the moment.
+        $row = new EntityStatusObservedComponent();
+        $row->id = 1;
+        $row->component_key = 'service';
+        $row->observed_since = 1000;
+        $this->_objectCollections[self::statusObservedComponents][$row->id] = ObjectStatusObservedComponent::fromEntity($row);
     }
 }
 

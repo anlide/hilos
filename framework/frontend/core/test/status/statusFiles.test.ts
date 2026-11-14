@@ -6,6 +6,7 @@ import {
   type PublicStatusFetch,
 } from '../../src/status/index.js'
 import {
+  component,
   deferred,
   heartbeat,
   legacyStatusFile,
@@ -47,7 +48,7 @@ const complete = statusFile({
   ],
 })
 
-describe('literal public v3', () => {
+describe('literal public v4', () => {
   it('accepts all declared fields, explicit nulls/empty lists, opaque ids and plain text', () => {
     expect(publicStatusFileSchema.parse(complete)).toEqual(complete)
     expect(publicStatusFileSchema.parse(statusFile())).toEqual(statusFile())
@@ -111,7 +112,7 @@ describe('literal public v3', () => {
   })
 
   it.each([
-    { schemaVersion: 4 },
+    { schemaVersion: 5 },
     { revision: 42 },
     { generatedAt: 1.5 },
     { config: { pollIntervalSeconds: 0, staleAfterSeconds: 120 } },
@@ -120,6 +121,7 @@ describe('literal public v3', () => {
     { components: [{ ...complete.components[0], description: undefined }] },
     { components: [{ ...complete.components[0], state: 'healthy' }] },
     { components: [{ ...complete.components[0], agentType: 100 }] },
+    { components: [{ ...complete.components[0], observedSince: undefined }] },
     { candidates: [{ ...complete.candidates[0], deadline: NOW }] },
     { outages: [{ ...complete.outages[0], suppressed: false }] },
     {
@@ -152,7 +154,7 @@ describe('literal public v3', () => {
   })
 
   it.each([
-    { schemaVersion: 4 },
+    { schemaVersion: 5 },
     { aliveAt: 0.5 },
     { aliveAt: 'today' },
     { aliveAt: Number.MAX_SAFE_INTEGER + 1 },
@@ -217,7 +219,7 @@ describe('public GET boundary', () => {
           }
         return response(
           failure === 'version'
-            ? { ...complete, schemaVersion: 4 }
+            ? { ...complete, schemaVersion: 5 }
             : failure === 'private'
               ? { ...complete, token: 'secret' }
               : complete,
@@ -230,11 +232,11 @@ describe('public GET boundary', () => {
     },
   )
 
-  it.each([1, 2, 3] as const)(
+  it.each([1, 2, 3, 4] as const)(
     'accepts a coherent supported version %s without losing outage history',
     async (schemaVersion) => {
       const status =
-        schemaVersion === 3
+        schemaVersion === 4
           ? statusFile({ outages: complete.outages })
           : legacyStatusFile(schemaVersion, { outages: complete.outages })
       const beat = { ...heartbeat(), schemaVersion }
@@ -253,6 +255,12 @@ describe('public GET boundary', () => {
     [2, 3],
     [3, 1],
     [3, 2],
+    [1, 4],
+    [2, 4],
+    [3, 4],
+    [4, 1],
+    [4, 2],
+    [4, 3],
   ] as const)(
     'refuses a mixed supported schema pair %s/%s',
     async (statusVersion, heartbeatVersion) => {
@@ -260,7 +268,7 @@ describe('public GET boundary', () => {
         await readPublicStatusFiles(new AbortController().signal, async (url) =>
           response(
             url.endsWith('/status.json')
-              ? statusVersion === 3
+              ? statusVersion === 4
                 ? statusFile()
                 : legacyStatusFile(statusVersion)
               : { ...heartbeat(), schemaVersion: heartbeatVersion },
@@ -330,6 +338,22 @@ describe('closed public silence periods', () => {
         response(url.endsWith('/status.json') ? status : heartbeat()),
       ),
     ).toEqual({ kind: 'valid', pair: { status, heartbeat: heartbeat() } })
+  })
+
+  it('accepts a v3 file with its gaps through GET, as a restored v3 pair still publishes', async () => {
+    const status = legacyStatusFile(3, {
+      silencePeriods: [
+        period,
+        { id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', startedAt: 0, endedAt: 10 },
+      ],
+    })
+    const beat = heartbeat({ schemaVersion: 3 })
+    expect(publicStatusFileSchema.parse(status)).toEqual(status)
+    expect(
+      await readPublicStatusFiles(new AbortController().signal, async (url) =>
+        response(url.endsWith('/status.json') ? status : beat),
+      ),
+    ).toEqual({ kind: 'valid', pair: { status, heartbeat: beat } })
   })
 
   it.each([
@@ -450,4 +474,57 @@ describe('closed public silence periods', () => {
       publicStatusFileSchema.safeParse({ ...status, schemaVersion: 3 }).success,
     ).toBe(false)
   })
+})
+
+describe('component observation moment', () => {
+  it('accepts a signed epoch millisecond moment on every v4 component through GET', async () => {
+    const status = statusFile({
+      components: [
+        component({ observedSince: -1000 }),
+        component({ componentKey: 'late', name: 'Late', observedSince: NOW }),
+      ],
+    })
+    expect(publicStatusFileSchema.parse(status)).toEqual(status)
+    expect(
+      await readPublicStatusFiles(new AbortController().signal, async (url) =>
+        response(url.endsWith('/status.json') ? status : heartbeat()),
+      ),
+    ).toEqual({ kind: 'valid', pair: { status, heartbeat: heartbeat() } })
+  })
+
+  it.each([
+    { observedSince: undefined },
+    { observedSince: null },
+    { observedSince: 1.5 },
+    { observedSince: '2026-01-01' },
+    { observedSince: Number.MAX_SAFE_INTEGER + 1 },
+  ])(
+    'requires an exact moment of every v4 component, refusing %j',
+    async (change) => {
+      const status = {
+        ...statusFile(),
+        components: [component(), { ...component(), ...change }],
+      }
+      expect(publicStatusFileSchema.safeParse(status).success).toBe(false)
+      expect(
+        await readPublicStatusFiles(new AbortController().signal, async (url) =>
+          response(url.endsWith('/status.json') ? status : heartbeat()),
+        ),
+      ).toEqual({ kind: 'unavailable' })
+    },
+  )
+
+  it.each([1, 2, 3] as const)(
+    'keeps legacy %s components without a moment and refuses one there',
+    (schemaVersion) => {
+      const legacy = legacyStatusFile(schemaVersion)
+      expect(publicStatusFileSchema.parse(legacy)).toEqual(legacy)
+      expect(
+        publicStatusFileSchema.safeParse({
+          ...legacy,
+          components: [component()],
+        }).success,
+      ).toBe(false)
+    },
+  )
 })

@@ -1019,7 +1019,7 @@ test(
         [`${today.label} · Major outage`],
         resolved.status,
         [today],
-        resolved.status.schemaVersion === 3
+        resolved.status.schemaVersion === 4
           ? resolved.status.silencePeriods
           : [],
         today.end,
@@ -1258,9 +1258,9 @@ test(
         endedAt: beat.aliveAt,
       }
       expect(closed.endedAt).toBeGreaterThan(closed.startedAt)
-      expect(accepted.status.schemaVersion).toBe(3)
+      expect(accepted.status.schemaVersion).toBe(4)
       expect(
-        accepted.status.schemaVersion === 3
+        accepted.status.schemaVersion === 4
           ? accepted.status.silencePeriods.filter(
               (period) => period.id === silencePeriodId,
             )
@@ -1289,7 +1289,7 @@ test(
           ),
       )
       expect(
-        later.status.schemaVersion === 3
+        later.status.schemaVersion === 4
           ? later.status.silencePeriods.filter(
               (period) => period.id === silencePeriodId,
             )
@@ -1312,7 +1312,7 @@ test(
           ) && heartbeat.aliveAt >= laterBeat.aliveAt,
       )
       expect(
-        coldAccepted.status.schemaVersion === 3
+        coldAccepted.status.schemaVersion === 4
           ? coldAccepted.status.silencePeriods.filter(
               (period) => period.id === silencePeriodId,
             )
@@ -1458,7 +1458,7 @@ test('nginx serves only the two no-store JSON names through GET and HEAD', async
           )
           expect(response.headers()['cache-control']).toBe('no-store')
           if (method === 'GET')
-            expect(await response.json()).toHaveProperty('schemaVersion', 3)
+            expect(await response.json()).toHaveProperty('schemaVersion', 4)
           else expect(await response.body()).toHaveLength(0)
           await response.dispose()
         }

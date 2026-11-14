@@ -345,7 +345,7 @@ final class StatusPublicFiles
         $this->published = $snapshot;
         $this->lastHeartbeat = $heartbeat;
         $this->silenceRecovery = new ArrayIterator($snapshot->silencePeriods);
-        // A legacy pair is readable, but must be republished together before any v3 heartbeat.
+        // A v1-v3 pair is readable, but must be republished together before any v4 heartbeat.
         $this->pairCoherent = $snapshot->sourceSchemaVersion === StatusPublicSnapshot::SCHEMA_VERSION;
         return $snapshot;
     }
@@ -558,7 +558,9 @@ final class StatusPublicFiles
             if ($this->silenceSavePending) {
                 $this->advanceSilenceRecovery();
             }
-            if ($beginGeneration && $this->silence !== null && $this->pending === null && $this->published !== null) {
+            // A v1-v3 pair has no start of observation to copy; the owner's own full v4 pair carries the gap instead.
+            if ($beginGeneration && $this->silence !== null && $this->pending === null && $this->published !== null
+                && $this->published->sourceSchemaVersion === StatusPublicSnapshot::SCHEMA_VERSION) {
                 $base = $this->published;
                 $this->begin(new StatusPublicSnapshot(
                     RandomHelper::secureHex(self::PUBLIC_REVISION_BYTES), $nowMs, $base->pollIntervalSeconds, $base->staleAfterSeconds,
@@ -636,7 +638,7 @@ final class StatusPublicFiles
 
     /**
      * @param StatusPublicSnapshot $snapshot Detached generation
-     * @return Generator<int, string> Literal v3 JSON with one reserved closing boundary
+     * @return Generator<int, string> Literal v4 JSON with one reserved closing boundary
      */
     private function jsonFragments(StatusPublicSnapshot $snapshot): Generator
     {

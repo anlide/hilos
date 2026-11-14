@@ -353,12 +353,14 @@ let publicStatusSequence = 0
                       ) {
                         <button
                           type="button"
-                          class="btn flex-fill p-0 py-2 border-0 rounded-1 position-relative overflow-hidden"
+                          class="btn flex-fill p-0 py-2 rounded-1 position-relative overflow-hidden"
                           [class]="
-                            'btn-' +
-                            (day.hasNoData
-                              ? 'secondary'
-                              : states[day.state].tone)
+                            day.notMonitored
+                              ? 'btn-outline-secondary bg-transparent'
+                              : 'btn-' +
+                                (day.hasNoData
+                                  ? 'secondary'
+                                  : states[day.state].tone)
                           "
                           [attr.aria-label]="dayLabel(day)"
                           [attr.aria-describedby]="

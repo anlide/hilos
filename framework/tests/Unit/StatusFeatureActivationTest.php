@@ -33,6 +33,7 @@ use Hilos\Database\Entity\Item\StatusWork;
 use Hilos\Database\Entity\Item\StatusWorkComponent;
 use Hilos\Database\Entity\Item\StatusMaintenancePeriod;
 use Hilos\Database\Entity\Item\StatusSilencePeriod;
+use Hilos\Database\Entity\Item\StatusObservedComponent;
 use Hilos\Database\View\Collection\StatusSubscribers;
 use Hilos\Database\Actions\Collection\StatusSubscribersActions;
 use Hilos\Database\Actions\Item\StatusSubscriberActions;
@@ -51,6 +52,9 @@ use Hilos\Database\Actions\Item\StatusMaintenancePeriodActions;
 use Hilos\Database\View\Collection\StatusSilencePeriods;
 use Hilos\Database\Actions\Collection\StatusSilencePeriodsActions;
 use Hilos\Database\Actions\Item\StatusSilencePeriodActions;
+use Hilos\Database\View\Collection\StatusObservedComponents;
+use Hilos\Database\Actions\Collection\StatusObservedComponentsActions;
+use Hilos\Database\Actions\Item\StatusObservedComponentActions;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos;
@@ -131,6 +135,7 @@ final class StatusFeatureActivationTest extends TestCase
             requiredDbTables: [
                 StatusIncident::_table, StatusIncidentUpdate::_table, StatusSubscriber::_table,
                 StatusWork::_table, StatusWorkComponent::_table, StatusMaintenancePeriod::_table, StatusSilencePeriod::_table,
+                StatusObservedComponent::_table,
             ],
         ), $definition->requirements());
         self::assertFalse((new StatusAgentDaemon())->requiresMonopolisticProcess());
@@ -310,6 +315,15 @@ final class StatusFeatureActivationTest extends TestCase
         self::assertSame(StatusSilencePeriodsActions::class, $mounts[HilosDbContext::statusSilencePeriods]->actions);
         self::assertSame(StatusSilencePeriodActions::class, $mounts[HilosDbContext::statusSilencePeriods]->itemActions);
         self::assertNotContains(HilosDbContext::statusSilencePeriods, $enabled->processWideReadsForTest());
+        self::assertArrayNotHasKey(HilosDbContext::statusObservedComponents, $disabled->getMountedEntities());
+        self::assertNotContains(HilosDbContext::statusObservedComponents, $disabled->processWideReadsForTest());
+        self::assertSame(StatusObservedComponent::class, $enabled->getMountedEntities()[HilosDbContext::statusObservedComponents]);
+        self::assertSame(Objects::LAZY_STRATEGY_KEY, $enabled->mountedObjectCollection(HilosDbContext::statusObservedComponents)->getLazyStrategy());
+        self::assertFalse($enabled->mountedObjectCollection(HilosDbContext::statusObservedComponents)->isAllLoaded());
+        self::assertSame(StatusObservedComponents::class, $mounts[HilosDbContext::statusObservedComponents]->collection);
+        self::assertSame(StatusObservedComponentsActions::class, $mounts[HilosDbContext::statusObservedComponents]->actions);
+        self::assertSame(StatusObservedComponentActions::class, $mounts[HilosDbContext::statusObservedComponents]->itemActions);
+        self::assertNotContains(HilosDbContext::statusObservedComponents, $enabled->processWideReadsForTest());
     }
 
     public function testTheOwnerHasExactlyTheApprovedOperations(): void
@@ -322,6 +336,7 @@ final class StatusFeatureActivationTest extends TestCase
             HilosDbContext::statusWorkComponents => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
             HilosDbContext::statusMaintenancePeriods => [TruthSourceOperation::Add, TruthSourceOperation::Update],
             HilosDbContext::statusSilencePeriods => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+            HilosDbContext::statusObservedComponents => [TruthSourceOperation::Add],
         ], StatusAgent::OWNS_DB);
         self::assertSame([
             HilosStatusComponent::RT_COLLECTION => TruthSourceOperation::ALL,
@@ -335,7 +350,7 @@ final class StatusFeatureActivationTest extends TestCase
             [
                 HilosDbContext::statusIncidents, HilosDbContext::statusIncidentUpdates, HilosDbContext::statusSubscribers,
                 HilosDbContext::statusWorks, HilosDbContext::statusWorkComponents, HilosDbContext::statusMaintenancePeriods,
-                HilosDbContext::statusSilencePeriods,
+                HilosDbContext::statusSilencePeriods, HilosDbContext::statusObservedComponents,
             ],
             array_keys(OwnershipDeclaration::dbCollectionsOf(StatusAgent::class)),
         );

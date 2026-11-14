@@ -149,6 +149,7 @@ final class StatusAgent extends AbstractHilosAgent
         HilosDbContext::statusWorkComponents => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
         HilosDbContext::statusMaintenancePeriods => [TruthSourceOperation::Add, TruthSourceOperation::Update],
         HilosDbContext::statusSilencePeriods => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+        HilosDbContext::statusObservedComponents => [TruthSourceOperation::Add],
     ];
 
     public const array OWNS_RT = [
@@ -233,6 +234,13 @@ final class StatusAgent extends AbstractHilosAgent
     private ?string $publicCommandRemoveId = null;
     private int $publicCommandDeadline = 0;
     private int $silenceImportRetryAt = 0;
+    // Start of observation by catalog key (HIL-1887): detached values of this one owner, read from the recovered
+    // v4 pair and then from Hilos::$db; nobody else reads them, so they are not Hilos::$rt.
+    /** @var array<string, int> Known starts of observation, limited to the catalog */
+    private array $observedSince = [];
+    // Memorable moment: the later of this owner's start and its last freeze entry; a component without a known start carries it.
+    private int $observationBaseAt = 0;
+    private bool $observedComponentsPending = true;
 
     // Private transit/recovery work of this owner; the shared current verdict is in RT.
     private StatusMaintenanceObservationStore $maintenanceStore;
@@ -273,6 +281,15 @@ final class StatusAgent extends AbstractHilosAgent
         $this->publicPollIntervalSeconds = Hilos::$env[EnvConstants::STATUS_POLL_INTERVAL_SECONDS]->int();
         $this->publicStaleAfterSeconds = Hilos::$env[EnvConstants::STATUS_STALE_AFTER_SECONDS]->int();
         $this->publicArchive = $this->publicFiles->restore();
+        $this->observationBaseAt = TimeHelper::nowMs();
+        $archived = [];
+        foreach ($this->publicArchive?->components ?? [] as $component) {
+            if ($component->observedSince !== null) {
+                $archived[$component->componentKey] = $component->observedSince;
+            }
+        }
+        $this->observedSince = array_intersect_key($archived, iterator_to_array(Hilos::statusComponents()));
+        $this->observedComponentsPending = true;
         $this->publicCurrent = null;
         $this->publicInvalidated = true;
         $this->publicReadPending = true;
@@ -1763,6 +1780,50 @@ final class StatusAgent extends AbstractHilosAgent
     }
 
     /**
+     * Gives every catalog component its start of observation once (HIL-1887): a component without a
+     * row gets the memorable moment, and an existing row wins whatever this owner remembers. Rows are
+     * never removed, those of keys gone from the catalog included. The map then holds the database values.
+     *
+     * @throws HilosException When the catalog, a read or the record is refused
+     */
+    private function ensureObservedComponents(): void
+    {
+        $observationBaseAt = $this->observationBaseAt;
+        try {
+            $moments = Database::transaction(DatabaseNames::PRIMARY, static function () use ($observationBaseAt): array {
+                $moments = [];
+                foreach (Hilos::statusComponents() as $component) {
+                    $moments[$component->componentKey] = (Hilos::$db->statusObservedComponents->findByComponentKey($component->componentKey)
+                        ?? Hilos::$db->statusObservedComponents->actions->record($component->componentKey, $observationBaseAt))->observedSince;
+                }
+                return $moments;
+            });
+        } catch (WiringRefusal $failure) {
+            throw $failure;
+        } catch (Throwable $failure) {
+            throw new StatusException('Cannot record when Status components came under observation.', previous: $failure);
+        }
+        if ($moments !== $this->observedSince) {
+            $this->publicInvalidated = true;
+        }
+        $this->observedSince = $moments;
+        $this->observedComponentsPending = false;
+    }
+
+    /**
+     * @return array<string, int> Start of observation of every catalog component: the known one, else the memorable moment
+     * @throws StatusComponentDeclarationException When the project's component declaration is invalid
+     */
+    private function publicObservedSince(): array
+    {
+        $moments = [];
+        foreach (Hilos::statusComponents() as $component) {
+            $moments[$component->componentKey] = $this->observedSince[$component->componentKey] ?? $this->observationBaseAt;
+        }
+        return $moments;
+    }
+
+    /**
      * @param ?StatusPublicHeartbeat $receipt Successful matching-pair or heartbeat receipt
      * @param ?string $error Bounded refusal or stop reason
      * @throws InvalidArgumentException When the command reply cannot be queued
@@ -1832,6 +1893,18 @@ final class StatusAgent extends AbstractHilosAgent
                 $this->logAgentError('Status silence import will retry: ' . $failure->getMessage());
             }
         }
+        if ($this->observedComponentsPending && !$this->wasFrozen && Hilos::$db !== null && $nowMs >= $this->publicDatabaseRetryAt) {
+            try {
+                $this->ensureObservedComponents();
+            } catch (WiringRefusal $failure) {
+                throw $failure;
+            } catch (HilosException $failure) {
+                // Until the record succeeds the source is unavailable, and publication carries the memorable moment.
+                $this->publicDatabaseRetryAt = $nowMs + self::FIRST_SNAPSHOT_RETRY_INTERVAL_MS;
+                $this->publicInvalidated = true;
+                $this->logAgentError('Status observation starts will retry: ' . $failure->getMessage());
+            }
+        }
         if ($this->publicHeld || !$this->publicFiles->hasRecoveredSilence()) {
             return null;
         }
@@ -1867,9 +1940,10 @@ final class StatusAgent extends AbstractHilosAgent
                     $this->publicSourceAvailable = false;
                     $this->publicNeedsBuild = true;
                 }
+                $observedSince = $this->publicObservedSince();
                 $projection = $this->publicUnavailable($nowMs);
                 if ($current !== null) {
-                    $projection = $projection->withCurrent($current, $projection->revision, $nowMs);
+                    $projection = $projection->withCurrent($current, $projection->revision, $nowMs, $observedSince);
                 }
                 if ($this->publicNeedsBuild || $projection->components != $this->publicCurrent?->components
                     || $projection->candidates != $this->publicCurrent?->candidates) {
@@ -1880,7 +1954,7 @@ final class StatusAgent extends AbstractHilosAgent
                     } else {
                         $this->publicBuilder->begin(
                             $current, $projection->revision, $nowMs, $this->publicPollIntervalSeconds, $this->publicStaleAfterSeconds,
-                            $this->publicFiles->getTransitSilencePeriods(),
+                            $observedSince, $this->publicFiles->getTransitSilencePeriods(),
                         );
                     }
                     $this->publicCurrent = $projection;
@@ -1948,6 +2022,7 @@ final class StatusAgent extends AbstractHilosAgent
             $components[] = new StatusPublicComponent(
                 $component->componentKey, $component->name, $component->description,
                 $this->freezeState ?? StatusComponentState::UNKNOWN,
+                $this->observedSince[$component->componentKey] ?? $this->observationBaseAt,
             );
         }
         try {
@@ -2418,6 +2493,10 @@ final class StatusAgent extends AbstractHilosAgent
             }
         }
         if ($state !== null) {
+            if (!$this->wasFrozen) {
+                // Entry: a component recorded after this freeze, as after a restore, came under observation at it at the latest.
+                $this->observationBaseAt = max($this->observationBaseAt, TimeHelper::nowMs());
+            }
             $this->resetNotices();
             $this->resetSubscriberNotices();
             $this->resetObservation();
@@ -2429,6 +2508,8 @@ final class StatusAgent extends AbstractHilosAgent
             $this->nextReconcileAt = null;
             $this->reconcilePending = false;
             $this->lastWatchAt = null;
+            // The database may have been replaced under the freeze; its rows, not this map, decide.
+            $this->observedComponentsPending = true;
             $this->wasFrozen = false;
         }
     }
