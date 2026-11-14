@@ -9,6 +9,7 @@ use Hilos\Auth\AccountOperation\AccountDataOwner;
 use Hilos\Auth\AccountOperation\AccountDataOwnerDirectory;
 use Hilos\Auth\AccountOperation\AccountErasurePart;
 use Hilos\Auth\AccountOperation\AccountErasureProjectOwner;
+use Hilos\Auth\AccountOperation\AccountErasureProjectStep;
 use Hilos\Auth\AccountOperation\AccountMergeChoice;
 use Hilos\Auth\AccountOperation\AccountMergeDuty;
 use Hilos\Auth\AccountOperation\AccountMergeOpening;
@@ -19,6 +20,7 @@ use Hilos\Auth\AccountOperation\AccountMergeProjectParticipant;
 use Hilos\Auth\AccountOperation\AccountMergeProjectResult;
 use Hilos\Auth\AccountOperation\AccountMergeProjectStep;
 use Hilos\Auth\AccountOperation\AccountMergeStage;
+use Hilos\Auth\AccountOperation\AccountOperationAsks;
 use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
 use Hilos\Auth\AccountOperation\AccountOperationCircle;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
@@ -28,17 +30,24 @@ use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
 use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
 use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
 use Hilos\Auth\AccountOperation\AccountOperationStepRefusal;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Topology\AgentSignalRouteRegistry;
+use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
@@ -53,6 +62,7 @@ use Hilos\Database\PhpType;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\View\Item\AccountOperation;
 use Hilos\Database\View\Item\AccountOperationAssignment;
+use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Hilos;
 use Hilos\Users\AccountErasure;
 use Hilos\Users\SecondFactorFate;
@@ -130,6 +140,28 @@ final class AccountMergeProjectParticipantIntegrationTest extends FrameworkInteg
             Hilos::$db = $this->previousDb;
             parent::tearDown();
         }
+    }
+
+    /** Registered erasure owners have typed, addressable step declarations beside their real handlers. */
+    public function testProjectFixtureAccountOperationRoutesAreValid(): void
+    {
+        $agents = [
+            'notes_owner' => [AgentRegistryKey::WORKER => AccountMergeProjectNoteKeeper::class],
+            'other_owner' => [AgentRegistryKey::WORKER => AccountMergeProjectErasingKeeper::class],
+        ];
+        $errors = (function () use ($agents): array {
+            $errors = [];
+            $this->validateAccountOperationRoutes(
+                $agents,
+                AgentSignalRouteRegistry::routes($agents),
+                AgentSignalRouteRegistry::dtoRoutes($agents),
+                AgentSignalRouteRegistry::indexFields($agents),
+                $errors,
+            );
+
+            return $errors;
+        })->call(new TopologyValidator());
+        self::assertSame([], $errors);
     }
 
     /** The keeper registered for the merge is expected for the loser by its agent id, whether the loser has notes or not. */
@@ -744,6 +776,9 @@ abstract class AccountMergeProjectTwiceDirectory extends AccountMergeProjectDire
  */
 final class AccountMergeProjectNoteKeeper extends AbstractAgent implements AccountMergeProjectOwner, AccountErasureProjectOwner
 {
+    public const string ACCOUNT_OPERATION_SIGNAL = 'accountmergeprojectnotekeeper_account_operation_step';
+    public const array AGENT_SIGNALS = [self::ACCOUNT_OPERATION_SIGNAL => AccountOperationAskSignalData::class];
+
     public const string AGENT_TYPE = 'merge_note_keeper';
     public const string FAMILY = 'notes';
     public const array OWNS_DB = [AccountMergeProjectNotes::COLLECTION_KEY => [TruthSourceOperation::Update, TruthSourceOperation::Remove]];
@@ -800,6 +835,33 @@ final class AccountMergeProjectNoteKeeper extends AbstractAgent implements Accou
         return new AccountErasure([self::FAMILY => count($keys)], []);
     }
 
+    /**
+     * @param AgentSignalData $data Wrapped account operation step
+     * @param string $sender Sending coordinator, unused
+     * @param string $name Declared step name
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        switch ($name) {
+            case self::ACCOUNT_OPERATION_SIGNAL:
+                $ask = $data->data;
+                if (!$ask instanceof AccountOperationAskSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountOperationAskSignalData::class, $ask);
+                }
+                $this->sendToAgent(HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER, AccountOperationAsks::answer(
+                    $ask,
+                    fn (AccountOperationAssignment $assignment): AccountOperationResult =>
+                        AccountErasureProjectStep::run($this, $assignment->id),
+                    $this->getId(),
+                ));
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
+    }
+
     /** Nothing to release. */
     public function onStop(): void
     {
@@ -853,6 +915,9 @@ final class AccountMergeProjectStrayOwner extends AbstractAgent implements Accou
 /** An agent registered under the keeper's type that erases its part and does not move it. */
 final class AccountMergeProjectErasingKeeper extends AbstractAgent implements AccountErasureProjectOwner
 {
+    public const string ACCOUNT_OPERATION_SIGNAL = 'accountmergeprojecterasingkeeper_account_operation_step';
+    public const array AGENT_SIGNALS = [self::ACCOUNT_OPERATION_SIGNAL => AccountOperationAskSignalData::class];
+
     /**
      * @param AccountErasurePart $part Operation and account to erase
      * @return AccountErasure Nothing erased
@@ -860,6 +925,33 @@ final class AccountMergeProjectErasingKeeper extends AbstractAgent implements Ac
     public function eraseAccountPart(AccountErasurePart $part): AccountErasure
     {
         return new AccountErasure([], []);
+    }
+
+    /**
+     * @param AgentSignalData $data Wrapped account operation step
+     * @param string $sender Sending coordinator, unused
+     * @param string $name Declared step name
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        switch ($name) {
+            case self::ACCOUNT_OPERATION_SIGNAL:
+                $ask = $data->data;
+                if (!$ask instanceof AccountOperationAskSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountOperationAskSignalData::class, $ask);
+                }
+                $this->sendToAgent(HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER, AccountOperationAsks::answer(
+                    $ask,
+                    fn (AccountOperationAssignment $assignment): AccountOperationResult =>
+                        AccountErasureProjectStep::run($this, $assignment->id),
+                    $this->getId(),
+                ));
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
     }
 
     /** Nothing to release. */

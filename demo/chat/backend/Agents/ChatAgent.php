@@ -15,12 +15,16 @@ use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Files\ChatAttachmentUploadTarget;
 use Demo\Chat\Moderation\ChatModerationKindKey;
 use Demo\Chat\Moderation\ChatModerationRefusal;
+use Hilos\Auth\AccountOperation\AccountOperationAsks;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseNames;
 use Hilos\Database\Exception\Transaction\AnnouncementFailedException;
+use Hilos\Database\View\Item\AccountOperationAssignment;
+use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Environment\NonProductionGate;
 use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Files\Upload\DTO\UploadHoldSettleSignalData;
@@ -164,6 +168,8 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
 
     public const string AGENT_TYPE = AgentType::CHAT;
 
+    public const string ACCOUNT_OPERATION_SIGNAL = ChatSignalConstants::CHAT_ACCOUNT_OPERATION_STEP;
+
     public const array AGENT_COMMANDS = [
         ChatCommandConstants::SUBMISSION_TEST_OBSERVE => SubmissionObserveCommandData::class,
         ChatCommandConstants::SEND_PAUSE_TEST_END => SendPauseEndCommandData::class,
@@ -173,6 +179,7 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
     // this agent: a destination is taken from whoever names a signal, and the library naming
     // its own outgoing frame would send it back to itself (HIL-710).
     public const array AGENT_SIGNALS = [
+        ChatSignalConstants::CHAT_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
         ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
         HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class,
         ChatSignalConstants::ATTACHMENTS_PUBLISHED => FilesPublishedSignalData::class,
@@ -361,7 +368,7 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
     }
 
     /**
-     * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950/HIL-1952).
+     * SCAFFOLD: the production erasure entry opens in HIL-1952.
      *
      * @param string $collection Collection whose set claim is being resolved
      * @return string The agent's full id for its results, the base's answer otherwise
@@ -375,7 +382,7 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
      * Deletes the person's messages, attachments, registrations and captured rename feed events
      * inside the common step's transaction. Other people's mentions remain under SET NULL;
      * registry files leave after commit through {@see AccountErasureProjectStep}.
-     * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950/HIL-1952).
+     * SCAFFOLD: the production erasure entry opens in HIL-1952.
      *
      * @param AccountErasurePart $part Operation and account whose chat rows go
      * @return AccountErasure Deleted row counts and attachment registry ids
@@ -495,7 +502,7 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Agent signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this agent
-     * @throws InvalidAgentSignalPayloadException When an unlink answer differs from its declaration
+     * @throws InvalidAgentSignalPayloadException When an unlink answer or account operation ask differs from its declaration
      * @throws InvalidArgumentException When a signal of the session-state answer cannot be named
      * @throws HilosException On bot message publish failure, or on database or runtime failure
      * @throws LogicException On payload type mismatch, or if event id is null after sync
@@ -504,6 +511,21 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
+            case ChatSignalConstants::CHAT_ACCOUNT_OPERATION_STEP:
+                $ask = $data->data;
+                if (!$ask instanceof AccountOperationAskSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountOperationAskSignalData::class, $ask);
+                }
+
+                $this->sendToAgent(HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER, AccountOperationAsks::answer(
+                    $ask,
+                    fn (AccountOperationAssignment $assignment): AccountOperationResult =>
+                        AccountErasureProjectStep::run($this, $assignment->id),
+                    $this->getId(),
+                ));
+
+                return;
+
             case HilosSignalConstants::HILOS_MODERATION_VERDICT:
                 if (!$data->data instanceof ModerationVerdictSignalData) {
                     throw new LogicException('Moderation verdict payload must be ' . ModerationVerdictSignalData::class);

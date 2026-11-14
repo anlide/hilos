@@ -276,10 +276,62 @@ final class AccountStandingCardTest extends IntegrationTestCase
             });
             self::assertSame($cached, AccountErasureProgressResolver::of($this->personId));
             $worker->deliver(new WorkerDbSyncCreatedMessageDTO($result, 'other-node'));
-            self::assertNotSame($cached, AccountErasureProgressResolver::of($this->personId));
-            self::assertSame($cached->toArray(), AccountErasureProgressResolver::of($this->personId)->toArray());
+            $progress = AccountErasureProgressResolver::of($this->personId);
+            self::assertNotSame($cached, $progress);
+            $expectedErasure = [
+                AccountErasureProgress::startedAt => Hilos::$db->accountDeletions->liveOf($this->personId)->startedAt,
+                AccountErasureProgress::parts => [
+                    [
+                        AccountErasureProgress::participant => 'personal',
+                        AccountErasureProgress::owner => HilosAgentType::HILOS_USER,
+                        AccountErasureProgress::userId => $this->personId,
+                        AccountErasureProgress::done => false,
+                    ],
+                    [
+                        AccountErasureProgress::participant => 'users_library',
+                        AccountErasureProgress::owner => HilosAgentType::HILOS_USERS_LIBRARY,
+                        AccountErasureProgress::userId => $this->personId,
+                        AccountErasureProgress::done => false,
+                    ],
+                    [
+                        AccountErasureProgress::participant => AccountErasureParticipantCatalog::SESSIONS_HOLDER,
+                        AccountErasureProgress::owner => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                        AccountErasureProgress::userId => $this->personId,
+                        AccountErasureProgress::done => false,
+                    ],
+                    [
+                        AccountErasureProgress::participant => AccountErasureParticipantCatalog::DATA_EXPORT,
+                        AccountErasureProgress::owner => HilosAgentType::HILOS_DATA_EXPORT,
+                        AccountErasureProgress::userId => $this->personId,
+                        AccountErasureProgress::done => false,
+                    ],
+                    [
+                        AccountErasureProgress::participant => AccountErasureParticipantCatalog::LEGAL_EXPORT,
+                        AccountErasureProgress::owner => HilosAgentType::HILOS_LEGAL,
+                        AccountErasureProgress::userId => $this->personId,
+                        AccountErasureProgress::done => false,
+                    ],
+                    [
+                        AccountErasureProgress::participant => 'delivery:mail',
+                        AccountErasureProgress::owner => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                        AccountErasureProgress::userId => $this->personId,
+                        AccountErasureProgress::done => true,
+                    ],
+                ],
+                AccountErasureProgress::waits => [],
+                AccountErasureProgress::refusals => [],
+            ];
+            self::assertSame($expectedErasure, $progress->toArray());
             AccountStandingAudience::onAgentTick($worker->index());
-            self::assertSame([], $this->standingFrames(), 'Results do not complete a part before the end predicate exists');
+            $frames = $this->standingFrames();
+            self::assertCount(1, $frames);
+            self::assertSame([
+                AccountStandingStateSignalData::userId => $this->personId,
+                AccountStandingStateSignalData::accountStanding => $before[UserPage::ACCOUNT_STANDING],
+                AccountStandingStateSignalData::accountErasure => $expectedErasure,
+            ], $frames[0]->toArray());
+            AccountStandingAudience::onAgentTick($worker->index());
+            self::assertSame([], $this->standingFrames());
         });
     }
 

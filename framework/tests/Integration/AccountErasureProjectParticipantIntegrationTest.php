@@ -15,15 +15,20 @@ use Hilos\Auth\AccountOperation\AccountErasureProjectOwner;
 use Hilos\Auth\AccountOperation\AccountErasureProjectParticipant;
 use Hilos\Auth\AccountOperation\AccountErasureProjectResult;
 use Hilos\Auth\AccountOperation\AccountErasureProjectStep;
+use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Auth\AccountOperation\AccountOperationAsks;
 use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
 use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
 use Hilos\Auth\AccountOperation\AccountOperationStepRefusal;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -33,22 +38,28 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Topology\AgentSignalRouteRegistry;
+use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\PhpType;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\View\Item\AccountOperation;
+use Hilos\Database\View\Item\AccountOperationAssignment;
+use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Files\DTO\FileRemoveSignalData;
 use Hilos\Files\HilosFiles;
 use Hilos\Files\Storage\LocalFilesStorage;
 use Hilos\Hilos;
 use Hilos\Users\AccountErasure;
+use Hilos\Users\SecondFactorFate;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Throwable;
 
@@ -125,6 +136,28 @@ final class AccountErasureProjectParticipantIntegrationTest extends FrameworkInt
             Hilos::$db = $this->previousDb;
             parent::tearDown();
         }
+    }
+
+    /** Registered erasure owners have typed, addressable step declarations beside their real handlers. */
+    public function testProjectFixtureAccountOperationRoutesAreValid(): void
+    {
+        $agents = [
+            'notes_owner' => [AgentRegistryKey::WORKER => AccountErasureProjectNoteKeeper::class],
+            'other_owner' => [AgentRegistryKey::WORKER => AccountErasureProjectStrayOwner::class],
+        ];
+        $errors = (function () use ($agents): array {
+            $errors = [];
+            $this->validateAccountOperationRoutes(
+                $agents,
+                AgentSignalRouteRegistry::routes($agents),
+                AgentSignalRouteRegistry::dtoRoutes($agents),
+                AgentSignalRouteRegistry::indexFields($agents),
+                $errors,
+            );
+
+            return $errors;
+        })->call(new TopologyValidator());
+        self::assertSame([], $errors);
     }
 
     /** The installation takes the owner after the framework's participants and the exemption beside the framework's. */
@@ -307,6 +340,29 @@ final class AccountErasureProjectParticipantIntegrationTest extends FrameworkInt
             self::assertSame([self::USER_ID, self::USER_ID], self::storedNoteOwners());
             self::assertCount(1, self::storedResults());
         });
+    }
+
+    /** An erasure step refuses a merge assignment before asking the owner or changing its rows. */
+    public function testAMergeAssignmentCannotEraseTheProjectPart(): void
+    {
+        self::seedNote(self::USER_ID, null);
+        $operation = Hilos::$db->accountOperations->actions->recordMerge(
+            self::NEIGHBOUR_ID,
+            self::USER_ID,
+            new AccountMergeChoice(PasswordFate::SURVIVOR, SecondFactorFate::SURVIVOR, true, false),
+        );
+        $assignmentId = self::keeperAssignment($operation);
+
+        try {
+            $this->asAgent($this->keeper, fn () => AccountErasureProjectStep::run($this->keeper, $assignmentId));
+            self::fail('A merge assignment erased project rows');
+        } catch (ValidationException $failure) {
+            self::assertSame('An account erasure part must belong to an erasure.', $failure->getMessage());
+        }
+        self::assertFalse(Database::hasOpenTransactions());
+        self::assertSame([], $this->keeper->parts);
+        self::assertSame([self::USER_ID], self::storedNoteOwners());
+        self::assertSame([], self::storedResults());
     }
 
     /** An assignment naming no account is refused inside the step, and nothing is deleted or recorded. */
@@ -575,6 +631,9 @@ abstract class AccountErasureProjectDirectory extends AccountDataOwnerDirectory
 /** The notes keeper: deletes an account's notes through its collection and names the files they pointed at. */
 final class AccountErasureProjectNoteKeeper extends AbstractAgent implements AccountErasureProjectOwner
 {
+    public const string ACCOUNT_OPERATION_SIGNAL = 'accounterasureprojectnotekeeper_account_operation_step';
+    public const array AGENT_SIGNALS = [self::ACCOUNT_OPERATION_SIGNAL => AccountOperationAskSignalData::class];
+
     public const string AGENT_TYPE = 'erasure_note_keeper';
     public const string FAMILY = 'notes';
     public const array OWNS_DB = [AccountErasureProjectNotes::COLLECTION_KEY => [TruthSourceOperation::Remove]];
@@ -625,6 +684,33 @@ final class AccountErasureProjectNoteKeeper extends AbstractAgent implements Acc
         return new AccountErasure([self::FAMILY => count($keys)], $fileIds);
     }
 
+    /**
+     * @param AgentSignalData $data Wrapped account operation step
+     * @param string $sender Sending coordinator, unused
+     * @param string $name Declared step name
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        switch ($name) {
+            case self::ACCOUNT_OPERATION_SIGNAL:
+                $ask = $data->data;
+                if (!$ask instanceof AccountOperationAskSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountOperationAskSignalData::class, $ask);
+                }
+                $this->sendToAgent(HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER, AccountOperationAsks::answer(
+                    $ask,
+                    fn (AccountOperationAssignment $assignment): AccountOperationResult =>
+                        AccountErasureProjectStep::run($this, $assignment->id),
+                    $this->getId(),
+                ));
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
+    }
+
     /** Nothing to release. */
     public function onStop(): void
     {
@@ -634,6 +720,9 @@ final class AccountErasureProjectNoteKeeper extends AbstractAgent implements Acc
 /** Another owner with its own result set, which no assignment of the keeper is written to. */
 final class AccountErasureProjectStrayOwner extends AbstractAgent implements AccountErasureProjectOwner
 {
+    public const string ACCOUNT_OPERATION_SIGNAL = 'accounterasureprojectstrayowner_account_operation_step';
+    public const array AGENT_SIGNALS = [self::ACCOUNT_OPERATION_SIGNAL => AccountOperationAskSignalData::class];
+
     public const string AGENT_TYPE = 'erasure_stray_keeper';
     public const array OWNS_DB_SET = [HilosDbContext::accountOperationResults => [TruthSourceOperation::Add]];
     public const array READS_DB = [HilosDbContext::accountOperationAssignments, HilosDbContext::accountOperations];
@@ -659,6 +748,33 @@ final class AccountErasureProjectStrayOwner extends AbstractAgent implements Acc
         $this->parts[] = $part->userId;
 
         return new AccountErasure([], []);
+    }
+
+    /**
+     * @param AgentSignalData $data Wrapped account operation step
+     * @param string $sender Sending coordinator, unused
+     * @param string $name Declared step name
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        switch ($name) {
+            case self::ACCOUNT_OPERATION_SIGNAL:
+                $ask = $data->data;
+                if (!$ask instanceof AccountOperationAskSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountOperationAskSignalData::class, $ask);
+                }
+                $this->sendToAgent(HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER, AccountOperationAsks::answer(
+                    $ask,
+                    fn (AccountOperationAssignment $assignment): AccountOperationResult =>
+                        AccountErasureProjectStep::run($this, $assignment->id),
+                    $this->getId(),
+                ));
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
     }
 
     /** Nothing to release. */

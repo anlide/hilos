@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Users\Agent;
 
 use Closure;
+use Hilos\Auth\AccountOperation\AccountErasureCapture;
 use Hilos\Auth\AccountOperation\AccountErasureDeliveryCapture;
+use Hilos\Auth\AccountOperation\AccountErasureFinal;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountErasurePersonalCapture;
 use Hilos\Auth\AccountOperation\AccountErasurePersonalCaptureResult;
@@ -13,10 +15,12 @@ use Hilos\Auth\AccountOperation\AccountErasurePersonalFinal;
 use Hilos\Auth\AccountOperation\AccountErasureProjectResult;
 use Hilos\Auth\AccountOperation\AccountErasureStart;
 use Hilos\Auth\AccountOperation\AccountOperationActivation;
+use Hilos\Auth\AccountOperation\AccountOperationAsks;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
 use Hilos\Auth\AccountOperation\AccountOperationKind;
 use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
 use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalRefusedException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalWaitsException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureUncapturedException;
@@ -219,11 +223,17 @@ abstract class AbstractUserAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = HilosAgentType::HILOS_USER;
 
+    public const string ACCOUNT_OPERATION_SIGNAL = HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP;
+
     /**
      * The edits of one person, each addressed by the person's id; the answers go back to the
      * coordinator under the name each frame carries.
      */
     public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP => [
+            AgentSignalConfigKey::INDEX_FIELD => AccountOperationAskSignalData::ownerIndex,
+            AgentSignalConfigKey::DTO => AccountOperationAskSignalData::class,
+        ],
         HilosSignalConstants::HILOS_USER_RENAME => [
             AgentSignalConfigKey::INDEX_FIELD => UserRenameSignalData::userId,
             AgentSignalConfigKey::DTO => UserRenameSignalData::class,
@@ -531,7 +541,7 @@ abstract class AbstractUserAgent extends AbstractAgent
      * Captures the person's addresses and the project's part as the agent's step in the erasure of
      * the account, before the ways in are deleted (HIL-1940); a repeat answers the saved capture.
      *
-     * SCAFFOLD: no live caller until the erasure coordinator drives the capture (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: the production erasure entry opens in HIL-1952.
      *
      * @param int $assignmentId Capture assignment the coordinator gave this agent
      * @return AccountOperationResult Committed capture or the saved one of an earlier attempt
@@ -562,7 +572,7 @@ abstract class AbstractUserAgent extends AbstractAgent
      * for the files library only once that transaction commits ({@see HilosFiles::remove()}); a failed
      * removal is logged and not repeated.
      *
-     * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: the production erasure entry opens in HIL-1952.
      *
      * @param int $assignmentId The person's expected part the coordinator gave this agent
      * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt
@@ -593,6 +603,9 @@ abstract class AbstractUserAgent extends AbstractAgent
                 if ($notificationIds !== []) {
                     throw AccountErasureUncapturedException::deliveries($notificationIds);
                 }
+                if ($assignment->operation->rootUserId !== $this->userId) {
+                    AccountErasureStart::startOwnRequest($this->userId);
+                }
                 $erasure = $this->erasePersonalChildren($this->userId);
                 if ($erasure->fileIds !== [] && Hilos::hasFeature(HilosFeature::FILES)) {
                     Database::afterCommit(function () use ($erasure): void {
@@ -622,7 +635,7 @@ abstract class AbstractUserAgent extends AbstractAgent
      * The stop is asked after the step returned, outside its transaction, so it follows only a
      * committed or saved final; a refusal leaves the agent running.
      *
-     * SCAFFOLD: no live caller until the erasure coordinator delivers the final (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: the production erasure entry opens in HIL-1952.
      *
      * @param int $assignmentId The person's final the coordinator gave this agent
      * @return AccountOperationResult Committed final or the saved outcome of an earlier attempt
@@ -648,6 +661,8 @@ abstract class AbstractUserAgent extends AbstractAgent
      * A frame naming another person never reached the right agent, and is refused as such rather
      * than written: the claims of this agent cover its own person alone.
      *
+     * Account operation steps answer after start, capture, personal erasure or final; begun and folded
+     * accounts still serve these frames. The folded account stops after queuing its answer.
      * A frame of the second factor is answered by {@see SecondFactorPersonEdits}, whatever came of
      * it: the browser action, the sweep or the operator's command waits on the answer (HIL-1406).
      * A confirmation recorded and a trust taken away are answered as a flag is (HIL-1407): the
@@ -674,13 +689,39 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws AgentException When the frame names another person
      * @throws InvalidArgumentException When the answer frame cannot be named or queued
-     * @throws InvalidFormatException When a renewal answer is both renewed and refused
+     * @throws InvalidFormatException When a renewal or account operation answer is malformed
      * @throws DatabaseException When the folded-account lookup fails
      * @throws LogicException When the folded-account collection cannot be read
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
+            case HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP:
+                $ask = $data->data;
+                if (!$ask instanceof AccountOperationAskSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountOperationAskSignalData::class, $ask);
+                }
+
+                $this->refuseAnotherPerson((int)$ask->ownerIndex, $name);
+                $this->sendToAgent(HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER, AccountOperationAsks::answer(
+                    $ask,
+                    fn (AccountOperationAssignment $assignment): AccountOperationResult => match ($assignment->assignmentKey) {
+                        AccountErasureStart::personalKey($this->userId) => AccountErasureStart::run($assignment->id),
+                        AccountErasureCapture::personalKey($this->userId) => $this->captureForErasure($assignment->id),
+                        AccountErasureFinal::personalKey($this->userId) => $this->finishAccountErasure($assignment->id),
+                        default => AccountOperationExpectation::isExpectKey($assignment->assignmentKey)
+                            && AccountOperationExpectation::participantOf($assignment->payload) === AccountErasureParticipantCatalog::PERSONAL
+                                ? $this->eraseAccountPersonalPart($assignment->id)
+                                : throw new ValidationException('This assignment is not one of the person\'s account operation steps.'),
+                    },
+                    $this->getId(),
+                ));
+                if (isset(Hilos::$db->userMerges[$this->userId])) {
+                    $this->selfStop();
+                }
+
+                return;
+
             case HilosSignalConstants::HILOS_USER_RENAME:
                 $rename = $data->data;
                 if (!$rename instanceof UserRenameSignalData) {
@@ -1902,7 +1943,7 @@ abstract class AbstractUserAgent extends AbstractAgent
      * Called inside the capture's transaction; it opens none of its own. A throw rolls the whole
      * capture back: nothing it wrote stays, and no result is recorded.
      *
-     * SCAFFOLD: no live caller until the erasure coordinator drives the capture (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: the production erasure entry opens in HIL-1952.
      *
      * @param int $userId Person whose account is being erased
      * @return array<string, mixed> Project's keys of the capture's `project` object; none by default
@@ -1925,7 +1966,7 @@ abstract class AbstractUserAgent extends AbstractAgent
      *
      * Not final: the framework's test stands replace it to make the part fail.
      *
-     * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: the production erasure entry opens in HIL-1952.
      *
      * @param int $userId Person whose account is being erased
      * @return AccountErasure The photo row and its registry file, or nothing when there was no photo or photos are not activated

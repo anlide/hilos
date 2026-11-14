@@ -17,6 +17,9 @@ use Hilos\Auth\AccountOperation\AccountErasureCapture;
 use Hilos\Auth\AccountOperation\AccountErasureOpening;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountErasureProjectStep;
+use Hilos\Auth\AccountOperation\AccountOperationAnswerKind;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\ValidationException;
@@ -115,6 +118,39 @@ final class ChatErasurePartTest extends IntegrationTestCase
         self::assertSame($otherId, (int)$otherJournal[0]['user_id']);
         self::assertSame($personId, (int)$otherJournal[0]['renamed_by_user_id'], 'Personal erasure has not deleted the account yet');
         self::assertSame([[$fileId]], $this->takeFileRemovals(), 'Exactly one file removal follows the committed result');
+    }
+
+    /** The real step frame commits the chat erasure and queues its correlated done answer. */
+    public function testTheAccountOperationStepFrameErasesChatRowsAndAnswersDone(): void
+    {
+        $userId = (int)Hilos::$db->users->actions->createWithName('Chat step frame')->id;
+        $message = (int)Hilos::$db->events->actions->addMessage('goodbye by frame', userId: $userId)->id;
+        $operation = $this->openErasure($userId);
+        $this->capture($operation, $userId);
+        $assignment = $this->chatAssignment($operation, $userId);
+        $this->drainSignals();
+
+        $this->underAgent($this->chat, fn () => $this->chat->onSignalAgent(
+            new AgentSignalData(new AccountOperationAskSignalData($operation->id, $operation->stage, $assignment->id, null)),
+            '',
+            ChatSignalConstants::CHAT_ACCOUNT_OPERATION_STEP,
+        ));
+
+        $answers = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER) {
+                self::assertInstanceOf(AgentSignalData::class, $signal->data);
+                self::assertInstanceOf(AccountOperationAnswerSignalData::class, $signal->data->data);
+                $answers[] = $signal->data->data->toArray();
+            }
+        }
+        self::assertSame([
+            new AccountOperationAnswerSignalData($operation->id, $operation->stage, $assignment->id, AccountOperationAnswerKind::Done)->toArray(),
+        ], $answers);
+        $this->assertEvents([$message], false);
+        self::assertCount(1, Database::sql(
+            'SELECT `id` FROM `hilos_account_operation_result` WHERE `assignment_id` = ?', [$assignment->id],
+        )->rows());
     }
 
     /** An uncaptured part refuses without deleting a row or recording an outcome. */

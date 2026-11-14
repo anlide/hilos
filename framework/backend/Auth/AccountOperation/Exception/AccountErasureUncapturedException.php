@@ -14,7 +14,7 @@ use Hilos\Users\Agent\AbstractUserAgent;
  * while the person's addresses wait for their capture or while some of the person's notifications
  * still have deliveries no portion names. No person reads the words; the erasure coordinator tells
  * the wait apart by this type and by {@see $notificationIds}.
- * SCAFFOLD: no live caller until the erasure coordinator answers the wait (HIL-1950), live at the switch (HIL-1952).
+ * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
  */
 final class AccountErasureUncapturedException extends ValidationException
 {

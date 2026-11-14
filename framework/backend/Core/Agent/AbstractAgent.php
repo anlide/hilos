@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Auth\Impersonation\DTO\ImpersonationPolicySignalData;
 use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Auth\Method\PasskeyAddressPolicy;
@@ -299,6 +300,13 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
 
     /** Each parking agent owns a distinct verdict signal carrying ThrottleVerdictSignalData. */
     public const string THROTTLE_VERDICT_SIGNAL = HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT;
+
+    /**
+     * An account-operation participant owns its distinct signal in AGENT_SIGNALS with
+     * {@see AccountOperationAskSignalData}; an indexed owner also declares
+     * AgentSignalConfigKey::INDEX_FIELD => 'ownerIndex'. Empty means this agent is not a participant.
+     */
+    public const string ACCOUNT_OPERATION_SIGNAL = '';
 
     /** Worker fallback for agents without an explicit longer idle allowance, in seconds. */
     public const float DEFAULT_IDLE_SLEEP_SECONDS = 0.1;

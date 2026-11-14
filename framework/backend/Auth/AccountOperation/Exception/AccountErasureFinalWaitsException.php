@@ -15,7 +15,7 @@ use Hilos\Core\Exception\ValidationException;
  * an expected owner has not recorded its result or while a wait for an owner stands; a folded
  * account waits until its own final removed its merge row. No person reads the words; the erasure
  * coordinator tells the wait apart by this type, by {@see $participants} and by {@see $foldedUserIds}.
- * SCAFFOLD: no live caller until the erasure coordinator answers the wait (HIL-1950), live at the switch (HIL-1952).
+ * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
  */
 final class AccountErasureFinalWaitsException extends ValidationException
 {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Users;
 
 use ArrayObject;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
@@ -37,6 +38,7 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Actions\Item\IdentityActions;
+use Hilos\Database\Entity\Item\AccountOperation;
 use Hilos\Database\Entity\Item\UserMerge;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\View\Collection\AccountDeletions;
@@ -333,6 +335,7 @@ final class AbstractUserAgentTest extends TestCase
     public function testEveryEditFrameIsAddressedByThePersonId(): void
     {
         self::assertSame([
+            HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
             HilosSignalConstants::HILOS_USER_RENAME => UserRenameSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE => UserAdminWriteSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => UserAdminCommandSignalData::class,
@@ -378,9 +381,34 @@ final class AbstractUserAgentTest extends TestCase
             static fn (array $config): string => $config[AgentSignalConfigKey::DTO],
             TestUserAgent::AGENT_SIGNALS,
         ));
-        foreach (TestUserAgent::AGENT_SIGNALS as $config) {
-            self::assertSame('userId', $config[AgentSignalConfigKey::INDEX_FIELD]);
+        foreach (TestUserAgent::AGENT_SIGNALS as $name => $config) {
+            self::assertSame(
+                $name === HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP ? 'ownerIndex' : 'userId',
+                $config[AgentSignalConfigKey::INDEX_FIELD],
+            );
         }
+    }
+
+    public function testAnAccountOperationStepCannotRetargetAnotherPersonsAgent(): void
+    {
+        $this->expectException(AgentException::class);
+
+        new TestUserAgent('42')->onSignalAgent(
+            new AgentSignalData(new AccountOperationAskSignalData(1, AccountOperation::INITIAL_STAGE, 1, '43')),
+            'coordinator',
+            HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP,
+        );
+    }
+
+    public function testAnAccountOperationStepRefusesAnUnparsedPayload(): void
+    {
+        $this->expectException(InvalidAgentSignalPayloadException::class);
+
+        new TestUserAgent('42')->onSignalAgent(
+            new AgentSignalData(new SignalData()),
+            'coordinator',
+            HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP,
+        );
     }
 
     public function testADeadEndpointReportCannotRetargetAnotherPersonsAgent(): void

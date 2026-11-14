@@ -13,6 +13,8 @@ use Demo\Chat\CLI\DTO\SubmissionObserveCommandData;
 use Demo\Chat\Core\Router\DTO\UserRenameFeedLinkSignalData;
 use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkSignalData;
 use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkedSignalData;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Moderation\ModerationCommandConstants;
 use Hilos\Moderation\DTO\ModerationObserveCommandData;
 
@@ -2132,11 +2134,14 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testComputedAgentSignalRoutesMatchChatAgentOwnership(): void
     {
         $this->assertSame([
+            HilosSignalConstants::HILOS_DATA_EXPORT_ACCOUNT_OPERATION_STEP => HilosAgentType::HILOS_DATA_EXPORT,
             HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => HilosAgentType::HILOS_DATA_EXPORT,
+            ChatSignalConstants::CHAT_ACCOUNT_OPERATION_STEP => AgentType::CHAT,
             ChatSignalConstants::BOT_MESSAGE => AgentType::CHAT,
             HilosSignalConstants::HILOS_SESSION_STATE => AgentType::CHAT,
             ChatSignalConstants::ATTACHMENTS_PUBLISHED => AgentType::CHAT,
             ChatSignalConstants::USER_RENAME_FEED_UNLINKED => AgentType::CHAT,
+            HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_RENAME => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => HilosAgentType::HILOS_USER,
@@ -2180,6 +2185,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_PUSH_RELEASE => HilosAgentType::HILOS_USER,
             ChatSignalConstants::USER_RENAME_FEED_LINK => HilosAgentType::HILOS_USER,
             ChatSignalConstants::USER_RENAME_FEED_UNLINK => HilosAgentType::HILOS_USER,
+            HilosSignalConstants::HILOS_USERS_LIBRARY_ACCOUNT_OPERATION_STEP => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_CODE_MINT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -2225,6 +2231,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_SESSION_REBIND => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_MERGE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_SESSION_TOAST_RAISE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -2285,6 +2292,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::MAINTENANCE_AGENT_PASS => HilosAgentType::HILOS_INDEX,
             HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => HilosAgentType::HILOS_LOGS,
             HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION => HilosAgentType::HILOS_DAEMON,
+            HilosSignalConstants::HILOS_LEGAL_ACCOUNT_OPERATION_STEP => HilosAgentType::HILOS_LEGAL,
             HilosSignalConstants::HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET => HilosAgentType::HILOS_LEGAL,
             HilosSignalConstants::BACKUP_AGENT_CREATE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_DELETE => AgentType::HILOS_BACKUP,
@@ -2294,12 +2302,15 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT => AgentType::HILOS_BACKUP,
             HilosSignalConstants::HILOS_OAUTH_PENDING => AgentType::HILOS_OAUTH,
+            HilosSignalConstants::HILOS_MAIL_ACCOUNT_OPERATION_STEP => AgentType::HILOS_MAIL,
             HilosSignalConstants::HILOS_MAIL_DELIVER => AgentType::HILOS_MAIL,
             HilosSignalConstants::HILOS_MAIL_SEND => AgentType::HILOS_MAIL,
             HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY => AgentType::HILOS_MAIL,
+            HilosSignalConstants::HILOS_SMS_ACCOUNT_OPERATION_STEP => AgentType::HILOS_SMS,
             HilosSignalConstants::HILOS_SMS_DELIVER => AgentType::HILOS_SMS,
             HilosSignalConstants::HILOS_SMS_SEND => AgentType::HILOS_SMS,
             HilosSignalConstants::HILOS_SMS_DELIVERY_RETRY => AgentType::HILOS_SMS,
+            HilosSignalConstants::HILOS_PUSH_ACCOUNT_OPERATION_STEP => AgentType::HILOS_PUSH,
             HilosSignalConstants::HILOS_PUSH_DELIVER => AgentType::HILOS_PUSH,
             HilosSignalConstants::HILOS_PUSH_DELIVERY_RETRY => AgentType::HILOS_PUSH,
             HilosSignalConstants::LOGS_AGENT_READ_LINES => HilosAgentType::HILOS_LOG_STORE,
@@ -2444,6 +2455,7 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testComputedAgentSignalIndexFieldsMatchBotAgentDeclaration(): void
     {
         $this->assertSame([
+            HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::ownerIndex,
             HilosSignalConstants::HILOS_USER_RENAME => 'userId',
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE => 'userId',
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => 'userId',
@@ -2489,12 +2501,15 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::USER_RENAME_FEED_UNLINK => 'userId',
             ChatSignalConstants::BOT_AGENT_START => 'botId',
             ChatSignalConstants::BOT_ANSWER_NOW => 'botId',
+            HilosSignalConstants::HILOS_MAIL_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::ownerIndex,
             HilosSignalConstants::HILOS_MAIL_DELIVER => NotificationDeliverSignalData::shardKey,
             HilosSignalConstants::HILOS_MAIL_SEND => MailSendSignalData::shardKey,
             HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY => NotificationDeliveryRetrySignalData::shardKey,
+            HilosSignalConstants::HILOS_SMS_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::ownerIndex,
             HilosSignalConstants::HILOS_SMS_DELIVER => NotificationDeliverSignalData::shardKey,
             HilosSignalConstants::HILOS_SMS_SEND => SmsSendSignalData::shardKey,
             HilosSignalConstants::HILOS_SMS_DELIVERY_RETRY => NotificationDeliveryRetrySignalData::shardKey,
+            HilosSignalConstants::HILOS_PUSH_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::ownerIndex,
             HilosSignalConstants::HILOS_PUSH_DELIVER => NotificationDeliverSignalData::shardKey,
             HilosSignalConstants::HILOS_PUSH_DELIVERY_RETRY => NotificationDeliveryRetrySignalData::shardKey,
         ], Hilos::getAgentSignalIndexFields());
@@ -2537,11 +2552,14 @@ final class ChatTopologyRegistryTest extends TestCase
         }
 
         $this->assertSame([
+            HilosSignalConstants::HILOS_DATA_EXPORT_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
             HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => DataExportForgetUserSignalData::class,
+            ChatSignalConstants::CHAT_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
             ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
             HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class,
             ChatSignalConstants::ATTACHMENTS_PUBLISHED => FilesPublishedSignalData::class,
             ChatSignalConstants::USER_RENAME_FEED_UNLINKED => UserRenameFeedUnlinkedSignalData::class,
+            HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
             HilosSignalConstants::HILOS_USER_RENAME => UserRenameSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE => UserAdminWriteSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => UserAdminCommandSignalData::class,
@@ -2585,6 +2603,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_PUSH_RELEASE => UserPushReleaseSignalData::class,
             ChatSignalConstants::USER_RENAME_FEED_LINK => UserRenameFeedLinkSignalData::class,
             ChatSignalConstants::USER_RENAME_FEED_UNLINK => UserRenameFeedUnlinkSignalData::class,
+            HilosSignalConstants::HILOS_USERS_LIBRARY_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
             HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE => ProfileNameContinueSignalData::class,
             HilosSignalConstants::HILOS_AUTH_CODE_MINT => AuthCodeMintSignalData::class,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE => AuthRegistrationHoldReleaseSignalData::class,
@@ -2630,6 +2649,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => AuthRecoveryWaitMovedSignalData::class,
             HilosSignalConstants::HILOS_SESSION_REBIND => SessionRebindSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_MERGE => AccountMergeSignalData::class,
+            HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER => AccountOperationAnswerSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET => AccountAdminSetSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET => AccountBlockSetSignalData::class,
             HilosSignalConstants::HILOS_SESSION_TOAST_RAISE => RaiseSessionToastSignalData::class,
@@ -2690,6 +2710,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::MAINTENANCE_AGENT_PASS => ManualMaintenancePassSignalData::class,
             HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => ClusterLogIndexPortionSignalData::class,
             HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION => DaemonClusterPicturePortionSignalData::class,
+            HilosSignalConstants::HILOS_LEGAL_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
             HilosSignalConstants::HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET => LegalAcceptancesExportForgetSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
@@ -2699,12 +2720,15 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED => DeferredSessionsCarriedSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT => DeferredNoticesSentSignalData::class,
             HilosSignalConstants::HILOS_OAUTH_PENDING => OAuthPendingLoginSignalData::class,
+            HilosSignalConstants::HILOS_MAIL_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
             HilosSignalConstants::HILOS_MAIL_DELIVER => NotificationDeliverSignalData::class,
             HilosSignalConstants::HILOS_MAIL_SEND => MailSendSignalData::class,
             HilosSignalConstants::HILOS_MAIL_DELIVERY_RETRY => NotificationDeliveryRetrySignalData::class,
+            HilosSignalConstants::HILOS_SMS_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
             HilosSignalConstants::HILOS_SMS_DELIVER => NotificationDeliverSignalData::class,
             HilosSignalConstants::HILOS_SMS_SEND => SmsSendSignalData::class,
             HilosSignalConstants::HILOS_SMS_DELIVERY_RETRY => NotificationDeliveryRetrySignalData::class,
+            HilosSignalConstants::HILOS_PUSH_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
             HilosSignalConstants::HILOS_PUSH_DELIVER => NotificationDeliverSignalData::class,
             HilosSignalConstants::HILOS_PUSH_DELIVERY_RETRY => NotificationDeliveryRetrySignalData::class,
             HilosSignalConstants::LOGS_AGENT_READ_LINES => LogsReadLinesSignalData::class,

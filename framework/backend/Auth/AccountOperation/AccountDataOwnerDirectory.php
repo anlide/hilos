@@ -7,6 +7,7 @@ namespace Hilos\Auth\AccountOperation;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Hilos;
+use Hilos\Notification\Delivery\DeliveryOwnerResolver;
 
 /**
  * The one place a project says whose its collections are, and which of them the account erasure
@@ -128,6 +129,11 @@ abstract class AccountDataOwnerDirectory
                 $errors[] = "Agent type [{$owner->ownerType}] owns for both [{$keyByType[$owner->ownerType]}] and [{$owner->key}]";
             }
             $keyByType[$owner->ownerType] ??= $owner->key;
+            foreach (array_keys(Hilos::notificationChannelRegistryClass()::all()) as $name) {
+                if (DeliveryOwnerResolver::forChannel($name) === $owner->ownerType) {
+                    $errors[] = "Account data owner [{$owner->key}] names the delivery channel owner type [{$owner->ownerType}]";
+                }
+            }
             if ($owner->collections === []) {
                 $errors[] = "Account data owner [{$owner->key}] covers no collection";
             }

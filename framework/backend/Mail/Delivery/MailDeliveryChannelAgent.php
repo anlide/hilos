@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Mail\Delivery;
 
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
@@ -77,13 +78,20 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 {
     public const string AGENT_TYPE = HilosAgentType::HILOS_MAIL;
 
+    public const string ACCOUNT_OPERATION_SIGNAL = HilosSignalConstants::HILOS_MAIL_ACCOUNT_OPERATION_STEP;
+
     /**
-     * Pool routes: both intakes and the retry request are fanned across the pool by the recipient's shard key.
+     * Pool routes: intakes and retry requests use the recipient's shard key; account operation
+     * steps carry their saved owner index directly.
      *  - HILOS_MAIL_DELIVER (input A) carries a notification delivery;
      *  - HILOS_MAIL_SEND (input B) carries a raw send;
      *  - HILOS_MAIL_DELIVERY_RETRY carries the library's request to take a failed delivery back (HIL-1910).
      */
     public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_MAIL_ACCOUNT_OPERATION_STEP => [
+            AgentSignalConfigKey::INDEX_FIELD => AccountOperationAskSignalData::ownerIndex,
+            AgentSignalConfigKey::DTO => AccountOperationAskSignalData::class,
+        ],
         HilosSignalConstants::HILOS_MAIL_DELIVER => [
             AgentSignalConfigKey::INDEX_FIELD => NotificationDeliverSignalData::shardKey,
             AgentSignalConfigKey::DTO => NotificationDeliverSignalData::class,

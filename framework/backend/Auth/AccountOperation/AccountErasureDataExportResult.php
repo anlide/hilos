@@ -14,7 +14,7 @@ use stdClass;
  *
  * The payload is exactly `{"orders":<int>}`: how many data copy orders this step deleted - one at
  * most, as a person has one order. With no order to delete it is `{"orders":0}`.
- * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950/HIL-1952).
+ * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
  */
 final class AccountErasureDataExportResult
 {

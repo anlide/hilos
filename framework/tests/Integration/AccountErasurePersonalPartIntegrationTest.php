@@ -430,6 +430,26 @@ final class AccountErasurePersonalPartIntegrationTest extends HilosSessionIntegr
         self::assertTrue(self::personExists($foldedId));
     }
 
+    /** A folded account's own live request begins with its personal part, after the captures. */
+    public function testAFoldedAccountsPartStartsItsOwnLiveDeletionRequest(): void
+    {
+        $rootId = $this->seedPerson();
+        $foldedId = $this->seedPerson();
+        self::seedSets($foldedId, photo: false);
+        $request = $this->requestDeletion($foldedId);
+        self::seedMerge($foldedId, $rootId);
+        $erasure = $this->openCaptured($rootId);
+        self::assertNull(Hilos::$db->accountDeletions->startedOf($foldedId));
+
+        $this->runPart($foldedId, self::personalPart($erasure, $foldedId));
+
+        $rows = Database::sql('SELECT `id`, `started_at` FROM `hilos_account_deletion` WHERE `user_id` = ?', [$foldedId])->rows();
+        self::assertCount(1, $rows);
+        self::assertSame($request->id, (int)$rows[0]['id']);
+        self::assertNotNull($rows[0]['started_at']);
+        self::assertSame(array_fill_keys(self::PERSONAL_SETS, 0), self::setsOf($foldedId));
+    }
+
     /**
      * Assignments that are not the person's part are refused before any work: one handed out in a
      * merge, the wait for the person's part, the person's capture handed out and not answered yet -

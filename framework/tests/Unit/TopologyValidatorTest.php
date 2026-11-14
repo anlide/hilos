@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Auth\AccountOperation\AccountErasurePart;
+use Hilos\Auth\AccountOperation\AccountErasureProjectOwner;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Topology\AgentSignalRouteRegistry;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Core\TruthSource\DbWriterPartition;
 use Hilos\Core\TruthSource\DbWriterClaimWidth;
@@ -21,6 +25,7 @@ use Hilos\Sms\Delivery\SmsRawSendAgent;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\DeliveryChannelRegistry;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
+use Hilos\Users\AccountErasure;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\CliCommands;
@@ -1949,6 +1954,89 @@ final class TopologyValidatorTest extends TestCase
                 "Declare AgentSignalConfigKey::INDEX_FIELD => '" . ThrottleVerdictSignalData::agentIndex . "'",
             ],
         );
+    }
+
+    public function testAnAccountOperationStepMustBeDeclaredByItsOwnAgentType(): void
+    {
+        $missing = $this->accountOperationRouteErrors([
+            'participant' => [AgentRegistryKey::WORKER => TopologyAccountOperationMissingAgent::class],
+        ]);
+        self::assertCount(1, $missing);
+        self::assertStringContainsString('account operation step account_operation_step but no agent declares it in AGENT_SIGNALS', $missing[0]);
+
+        $elsewhere = $this->accountOperationRouteErrors([
+            'participant' => [AgentRegistryKey::WORKER => TopologyAccountOperationMissingAgent::class],
+            'other' => [AgentRegistryKey::WORKER => TopologyAccountOperationAgent::class],
+        ]);
+        self::assertCount(1, $elsewhere);
+        self::assertStringContainsString('account operation step account_operation_step but it is declared by AGENTS[other]', $elsewhere[0]);
+    }
+
+    public function testAnAccountOperationStepRequiresTheExactAskDto(): void
+    {
+        foreach ([TopologyAccountOperationUntypedAgent::class, TopologyAccountOperationWrongDtoAgent::class] as $class) {
+            $errors = $this->accountOperationRouteErrors(['participant' => [AgentRegistryKey::WORKER => $class]]);
+            self::assertCount(1, $errors);
+            self::assertStringContainsString(
+                'account operation step account_operation_step without ' . AccountOperationAskSignalData::class,
+                $errors[0],
+            );
+        }
+    }
+
+    public function testAnIndexedAccountOperationStepUsesTheSavedOwnerIndex(): void
+    {
+        foreach ([TopologyAccountOperationAgent::class, TopologyAccountOperationWrongIndexAgent::class] as $class) {
+            $errors = $this->accountOperationRouteErrors([
+                'participant' => [AgentRegistryKey::WORKER => $class, AgentRegistryKey::INDEXED => true],
+            ]);
+            self::assertCount(1, $errors);
+            self::assertStringContainsString('is indexed but declares account operation step', $errors[0]);
+            self::assertStringContainsString("Declare AgentSignalConfigKey::INDEX_FIELD => 'ownerIndex'", $errors[0]);
+        }
+        self::assertSame([], $this->accountOperationRouteErrors([
+            'participant' => [AgentRegistryKey::WORKER => TopologyAccountOperationIndexedAgent::class, AgentRegistryKey::INDEXED => true],
+            'singleton' => [AgentRegistryKey::WORKER => TopologyAccountOperationAgent::class],
+        ]));
+    }
+
+    public function testARegisteredProjectErasureOwnerMustNameItsAccountOperationStep(): void
+    {
+        $errors = $this->accountOperationRouteErrors([
+            'project_owner' => [AgentRegistryKey::WORKER => TopologyAccountOperationEmptyProjectAgent::class],
+        ]);
+        self::assertCount(1, $errors);
+        self::assertStringContainsString('is an account erasure project owner but ACCOUNT_OPERATION_SIGNAL must be a non-empty', $errors[0]);
+        self::assertStringContainsString('account operation step signal name', $errors[0]);
+        $this->assertTopologyErrors(
+            static fn (): mixed => TopologyAccountOperationEmptyProjectHilos::validateTopology(),
+            ['ACCOUNT_OPERATION_SIGNAL must be a non-empty account operation step signal name'],
+        );
+        self::assertSame([], $this->accountOperationRouteErrors([
+            'unrelated' => [AgentRegistryKey::WORKER => TopologyTestAgent::class],
+        ]));
+    }
+
+    /**
+     * Uses the declaration judge alone; real demo startup tests cover its public validation entry.
+     *
+     * @param array $agents Registered worker classes
+     * @return list<string> Account operation route refusals
+     */
+    private function accountOperationRouteErrors(array $agents): array
+    {
+        return (function () use ($agents): array {
+            $errors = [];
+            $this->validateAccountOperationRoutes(
+                $agents,
+                AgentSignalRouteRegistry::routes($agents),
+                AgentSignalRouteRegistry::dtoRoutes($agents),
+                AgentSignalRouteRegistry::indexFields($agents),
+                $errors,
+            );
+
+            return $errors;
+        })->call(new TopologyValidator());
     }
 
     public function testAnAgentTakingTheVerdictWithItsDtoMayParkThrottledActions(): void
@@ -10089,4 +10177,63 @@ abstract class TopologyResurrectedDeliveryDebtHilos extends TopologyRawSmsHilos
 abstract class TopologyResurrectedRetryDebtHilos extends TopologyResurrectedDeliveryDebtHilos
 {
     public const array SHARED_DB_OWNERS = [HilosDbContext::notificationDeliveries => ['HIL-1910', 'HIL-1952']];
+}
+
+/** Account operation participants with deliberately broken declarations. */
+class TopologyAccountOperationAgent extends TopologyTestAgent
+{
+    public const string ACCOUNT_OPERATION_SIGNAL = 'account_operation_step';
+    public const array AGENT_SIGNALS = [self::ACCOUNT_OPERATION_SIGNAL => AccountOperationAskSignalData::class];
+}
+
+final class TopologyAccountOperationMissingAgent extends TopologyAccountOperationAgent
+{
+    public const array AGENT_SIGNALS = [];
+}
+
+final class TopologyAccountOperationUntypedAgent extends TopologyAccountOperationAgent
+{
+    public const array AGENT_SIGNALS = [self::ACCOUNT_OPERATION_SIGNAL];
+}
+
+final class TopologyAccountOperationWrongDtoAgent extends TopologyAccountOperationAgent
+{
+    public const array AGENT_SIGNALS = [self::ACCOUNT_OPERATION_SIGNAL => TopologyTestAgentSignalData::class];
+}
+
+final class TopologyAccountOperationWrongIndexAgent extends TopologyAccountOperationAgent
+{
+    public const array AGENT_SIGNALS = [self::ACCOUNT_OPERATION_SIGNAL => [
+        AgentSignalConfigKey::DTO => AccountOperationAskSignalData::class,
+        AgentSignalConfigKey::INDEX_FIELD => 'userId',
+    ]];
+}
+
+final class TopologyAccountOperationIndexedAgent extends TopologyAccountOperationAgent
+{
+    public const string ACCOUNT_OPERATION_SIGNAL = 'indexed_account_operation_step';
+    public const array AGENT_SIGNALS = [self::ACCOUNT_OPERATION_SIGNAL => [
+        AgentSignalConfigKey::DTO => AccountOperationAskSignalData::class,
+        AgentSignalConfigKey::INDEX_FIELD => 'ownerIndex',
+    ]];
+}
+
+/** A project owner with no step address must fail startup even with no rows yet. */
+final class TopologyAccountOperationEmptyProjectAgent extends TopologyTestAgent implements AccountErasureProjectOwner
+{
+    /**
+     * @param AccountErasurePart $part Unused account erasure address
+     * @return AccountErasure Empty fixture part
+     */
+    public function eraseAccountPart(AccountErasurePart $part): AccountErasure
+    {
+        return new AccountErasure([], []);
+    }
+}
+
+abstract class TopologyAccountOperationEmptyProjectHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        'project_owner' => [AgentRegistryKey::WORKER => TopologyAccountOperationEmptyProjectAgent::class],
+    ];
 }

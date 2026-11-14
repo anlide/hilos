@@ -25,7 +25,7 @@ use Throwable;
  * no other assignment, result or log line carries an address. The channel owners get the numbers of
  * the person's notifications whose deliveries are theirs ({@see AccountErasureDeliveryCapture}), and
  * {@see recordAfterStart()} hands out both kinds.
- * SCAFFOLD: no live caller until the erasure coordinator drives the capture (HIL-1950), live at the switch (HIL-1952).
+ * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
  */
 final class AccountErasureCapture
 {
@@ -34,7 +34,7 @@ final class AccountErasureCapture
     public const string ASSIGNMENT_KEY_SEPARATOR = ':';
 
     /**
-     * SCAFFOLD: no live caller until the erasure coordinator drives the capture (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
      *
      * @param int $userId Account of the erasure's circle whose agent captures
      * @return string Assignment key `capture:personal:<owner agent id>:<user id>`
@@ -61,7 +61,7 @@ final class AccountErasureCapture
      * what is missing. The start is read in the table, not in the coordinator's memory: the root's
      * agent commits it in its own worker, and the coordinator would learn of it only by sync.
      *
-     * SCAFFOLD: no live caller until the erasure coordinator drives the capture (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
      *
      * @param AccountOperation $operation Open erasure to hand the captures out on, at its current stage
      * @param AccountErasureParticipantCatalog $catalog Participants of the installation

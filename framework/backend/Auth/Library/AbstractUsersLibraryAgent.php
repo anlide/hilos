@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library;
 
+use Hilos\Auth\AccountOperation\AccountOperationAsks;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\AccountOperation\AccountErasurePersonalCaptureResult;
 use Hilos\Auth\AccountOperation\AccountErasureVerificationsResult;
@@ -423,6 +425,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
 
+    public const string ACCOUNT_OPERATION_SIGNAL = HilosSignalConstants::HILOS_USERS_LIBRARY_ACCOUNT_OPERATION_STEP;
+
     /**
      * This library owns its throttle verdict name: its dispatcher parks the sign-in commands
      * and waits for that answer. Other parking agents declare their own verdict names so
@@ -444,6 +448,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * Hold releases reach that same writer when the session holder forgets a browser (HIL-1411).
      */
     public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_USERS_LIBRARY_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
         HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE => ProfileNameContinueSignalData::class,
         HilosSignalConstants::HILOS_AUTH_CODE_MINT => AuthCodeMintSignalData::class,
         HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE => AuthRegistrationHoldReleaseSignalData::class,
@@ -1003,7 +1008,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * person's user id, and their count is recorded as the result in the same transaction, so a failure
      * rolls back both. The addresses never enter the result. A repeated call returns the saved result
      * without deleting again.
-     * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950/HIL-1952).
+     * SCAFFOLD: the production erasure entry opens in HIL-1952.
      *
      * @param int $assignmentId Assignment the coordinator gave the library
      * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt
@@ -1227,6 +1232,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * A moderation verdict comes here for every kind that names this library as its recipient,
      * though no declaration says so: the router reads the recipient off the kind (HIL-1625). It
      * is applied by the command of its kind - the profile photo alone today.
+     * Account operation steps erase captured verifications and queue the correlated answer.
      * Code mint requests write the hold and challenge after the code agent's probe; release
      * requests remove only the forgotten browser's hold (HIL-1411).
      *
@@ -1243,6 +1249,20 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
+            case HilosSignalConstants::HILOS_USERS_LIBRARY_ACCOUNT_OPERATION_STEP:
+                $ask = $data->data;
+                if (!$ask instanceof AccountOperationAskSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountOperationAskSignalData::class, $ask);
+                }
+
+                $this->sendToAgent(HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER, AccountOperationAsks::answer(
+                    $ask,
+                    fn (AccountOperationAssignment $assignment): AccountOperationResult => $this->runErasurePart($assignment->id),
+                    $this->getId(),
+                ));
+
+                return;
+
             case HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE:
                 if (!$data->data instanceof ProfileNameContinueSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, ProfileNameContinueSignalData::class, $data->data);

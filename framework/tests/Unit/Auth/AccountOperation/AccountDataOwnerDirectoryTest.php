@@ -8,8 +8,12 @@ use Hilos\Auth\AccountOperation\AccountDataOwner;
 use Hilos\Auth\AccountOperation\AccountDataOwnerDirectory;
 use Hilos\Auth\AccountOperation\AccountErasureExemption;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Hilos;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
+use Hilos\Notification\Delivery\DeliveryChannelRegistry;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -55,6 +59,20 @@ final class AccountDataOwnerDirectoryTest extends TestCase
             AccountDataOwnerForeignExemptionDirectory::class,
             AccountDataOwnerForeignExemptionDirectory::class . ' exempts [chatReports] for string, not an ' . AccountErasureExemption::class,
         ];
+    }
+
+    public function testAProjectOwnerCannotTakeADeliveryChannelOwnerType(): void
+    {
+        $previousApp = Hilos::appClass();
+        try {
+            AccountDataOwnerMailHilos::initBrowser();
+            $this->expectException(InvalidTopologyException::class);
+            $this->expectExceptionMessage('Account data owner [chat] names the delivery channel owner type [hilos_mail]');
+            AccountDataOwnerDeliveryTypeDirectory::declaredOwners();
+        } finally {
+            $previousApp::initBrowser();
+            Hilos::resetBrowser();
+        }
     }
 
     public function testTheDefaultDeclaresNothing(): void
@@ -232,5 +250,29 @@ abstract class AccountDataOwnerManyMistakesDirectory extends AccountDataOwnerFix
     protected static function exempt(): array
     {
         return ['chatReports' => null];
+    }
+}
+
+abstract class AccountDataOwnerDeliveryTypeDirectory extends AccountDataOwnerFixtureDirectory
+{
+    protected static function owners(): array
+    {
+        return [self::owner('chat', HilosAgentType::HILOS_MAIL)];
+    }
+}
+
+abstract class AccountDataOwnerMailHilos extends Hilos
+{
+    protected const string NOTIFICATION_CHANNEL_REGISTRY = AccountDataOwnerMailChannels::class;
+    public const array AGENTS = [
+        HilosAgentType::HILOS_MAIL => [AgentRegistryKey::WORKER => MailDeliveryChannelAgent::class, AgentRegistryKey::INDEXED => true],
+    ];
+}
+
+abstract class AccountDataOwnerMailChannels extends DeliveryChannelRegistry
+{
+    protected static function channels(): array
+    {
+        return [MailDeliveryChannel::NAME => new MailDeliveryChannel()];
     }
 }

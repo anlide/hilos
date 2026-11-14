@@ -6,6 +6,7 @@ namespace Hilos\Push\Delivery;
 
 use Hilos\API\AsyncHttpClient;
 use Hilos\API\Exception\AsyncHttpException;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
@@ -67,11 +68,18 @@ class PushDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_PUSH;
 
+    public const string ACCOUNT_OPERATION_SIGNAL = HilosSignalConstants::HILOS_PUSH_ACCOUNT_OPERATION_STEP;
+
     /**
      * Pool routes: both the notification-delivery signal and the library's request to take a failed delivery
      * back (HIL-1910) are fanned across the pool by the recipient's shard key.
+     * Account operation steps carry their saved owner index directly.
      */
     public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_PUSH_ACCOUNT_OPERATION_STEP => [
+            AgentSignalConfigKey::INDEX_FIELD => AccountOperationAskSignalData::ownerIndex,
+            AgentSignalConfigKey::DTO => AccountOperationAskSignalData::class,
+        ],
         HilosSignalConstants::HILOS_PUSH_DELIVER => [
             AgentSignalConfigKey::INDEX_FIELD => NotificationDeliverSignalData::shardKey,
             AgentSignalConfigKey::DTO => NotificationDeliverSignalData::class,

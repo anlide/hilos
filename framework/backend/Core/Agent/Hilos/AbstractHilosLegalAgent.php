@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Hilos;
 
+use Hilos\Auth\AccountOperation\AccountOperationAsks;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
@@ -13,6 +15,8 @@ use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\View\Item\AccountOperationAssignment;
+use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\HilosException;
 use Hilos\Legal\Export\DTO\LegalAcceptancesExportForgetSignalData;
 use Hilos\Legal\Export\LegalAcceptancesExportHttp;
@@ -71,7 +75,10 @@ abstract class AbstractHilosLegalAgent extends AbstractHilosAgent
         HilosDbContext::accountOperations,
     ];
 
+    public const string ACCOUNT_OPERATION_SIGNAL = HilosSignalConstants::HILOS_LEGAL_ACCOUNT_OPERATION_STEP;
+
     public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_LEGAL_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
         HilosSignalConstants::HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET => LegalAcceptancesExportForgetSignalData::class,
     ];
 
@@ -126,7 +133,7 @@ abstract class AbstractHilosLegalAgent extends AbstractHilosAgent
     }
 
     /**
-     * Removes the exports an erasure makes stale.
+     * Removes stale exports directly or as an account operation step with its correlated answer.
      *
      * @param AgentSignalData $data Typed erasure frame
      * @param string $sender Sending agent identity
@@ -136,6 +143,21 @@ abstract class AbstractHilosLegalAgent extends AbstractHilosAgent
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
+            case HilosSignalConstants::HILOS_LEGAL_ACCOUNT_OPERATION_STEP:
+                $ask = $data->data;
+                if (!$ask instanceof AccountOperationAskSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountOperationAskSignalData::class, $ask);
+                }
+
+                $this->sendToAgent(HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER, AccountOperationAsks::answer(
+                    $ask,
+                    fn (AccountOperationAssignment $assignment): AccountOperationResult =>
+                        LegalAcceptancesExports::eraseAccountPart($this, $assignment->id),
+                    $this->getId(),
+                ));
+
+                return;
+
             case HilosSignalConstants::HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET:
                 if (!$data->data instanceof LegalAcceptancesExportForgetSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, LegalAcceptancesExportForgetSignalData::class, $data->data);

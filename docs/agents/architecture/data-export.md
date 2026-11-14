@@ -176,7 +176,7 @@ the saved result and sweeps nothing. The census waits for this part only while
 the person has an order saved
 (`AccountErasureParticipantCatalog::hasDataExport()`).
 
-The step has no live caller until HIL-1950/HIL-1952. Until HIL-1952 the old
+The step has no live caller until HIL-1952. Until HIL-1952 the old
 path stays the one in use: the sessions holder deletes the order inside the
 erasure's transaction, and after the commit `DataExportNotifier::forgetUser()`
 sends the forget frame.

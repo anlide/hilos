@@ -23,7 +23,7 @@ through this agent. Uploads belong to the framework uploads agent.
 - **Erasure participant**: deletes the person's messages across every room, attachment
   links, registration details and feed events in one transaction of its own with its result.
   `ChatAgent::eraseAccountPart()` is built but inert, with no live caller until
-  HIL-1950/HIL-1952.
+  HIL-1952.
   It uses saved event ids and the personal journal owner's confirmed unlink; other
   people's mentions keep their existing `SET NULL` fate, and attachment files follow
   the existing post-commit path. After erasure starts, ChatAgent refuses a message

@@ -244,7 +244,7 @@ final class LegalAcceptancesExports
      * administrator whose order went is sent its state. A failed removal is logged and not repeated: a file
      * no row keeps is left to the agent's start and to the hourly sweep. A repeated call returns the saved
      * result without deleting or removing again.
-     * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950/HIL-1952).
+     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
      *
      * @param PageAgentInterface $agent The legal agent, the step's caller
      * @param int $assignmentId Assignment the coordinator gave the agent

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\AccountOperation;
 
-use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalRefusedException;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -31,7 +30,7 @@ use Throwable;
  * kept on the operation as its safe reason ({@see refused()}) until a repeat of the same final
  * passes; the operation ends ({@see end()}) only when every account of the circle has its final.
  * These are durable records of the operation, so they live in `Hilos::$db` and never in `Hilos::$rt`.
- * SCAFFOLD: no live caller until the erasure coordinator drives the final (HIL-1950), live at the switch (HIL-1952).
+ * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
  */
 final class AccountErasureFinal
 {
@@ -44,7 +43,7 @@ final class AccountErasureFinal
     private const string ASSIGNMENT_KEY_SEPARATOR = ':';
 
     /**
-     * SCAFFOLD: no live caller until the erasure coordinator drives the final (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
      *
      * @param int $userId Account of the erasure's circle whose agent runs the final
      * @return string Assignment key `final:personal:<owner agent id>:<user id>`
@@ -66,7 +65,7 @@ final class AccountErasureFinal
      * stored at no stage gets one at the current stage, written to the account's own agent. A repeat
      * records only what is missing.
      *
-     * SCAFFOLD: no live caller until the erasure coordinator drives the final (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
      *
      * @param AccountOperation $operation Open erasure to hand the finals out on, at its current stage
      * @return list<AccountOperationAssignment> Final assignments written, in circle order
@@ -115,7 +114,7 @@ final class AccountErasureFinal
      * the account with no result yet, and of every wait for an owner of the account that no expected
      * owner answers. The same predicate gates the final of the person's agent.
      *
-     * SCAFFOLD: no live caller until the erasure coordinator reads the parts (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
      *
      * @param int $operationId Erasure whose circle the account belongs to
      * @param int $userId Account whose parts are read
@@ -146,7 +145,7 @@ final class AccountErasureFinal
     /**
      * Whether the account's final has a result, at whatever stage it was assigned.
      *
-     * SCAFFOLD: no live caller until the erasure coordinator reads the finals (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
      *
      * @param int $operationId Erasure whose circle the account belongs to
      * @param int $userId Account whose final is read
@@ -174,11 +173,12 @@ final class AccountErasureFinal
      * written in a second one. A repeat for the same account replaces its reason. The session
      * holder calls it; the operation is its own to change.
      *
-     * SCAFFOLD: no live caller until the erasure coordinator answers the refusal (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: no live caller until the erasure entry (HIL-1952) or recovery passes (HIL-1951).
      *
      * @param AccountOperation $operation Open erasure whose final was refused
      * @param AccountErasureParticipantCatalog $catalog Participants of the installation
-     * @param AccountErasureFinalRefusedException $refusal The refusal the person's agent answered with
+     * @param int $userId Account whose final the person's agent answered was refused
+     * @param ?string $table Referencing table when known, without the database engine's words
      * @return list<AccountOperationAssignment> Assignments written by the reconciliation, in census order
      * @throws ValidationException When the operation is not an open erasure, or the refusal names an account outside its circle
      * @throws Throwable When reading or writing fails; each of the two transactions rolls back whole
@@ -186,18 +186,19 @@ final class AccountErasureFinal
     public static function refused(
         AccountOperation $operation,
         AccountErasureParticipantCatalog $catalog,
-        AccountErasureFinalRefusedException $refusal,
+        int $userId,
+        ?string $table,
     ): array {
         if ($operation->kind !== AccountOperationKind::Erasure || $operation->finishedAt !== null) {
             throw new ValidationException('Only an open erasure records a refused final.');
         }
-        if (!$operation->circle->contains($refusal->userId)) {
+        if (!$operation->circle->contains($userId)) {
             throw new ValidationException('A refused final must name an account of its erasure.');
         }
         $reconciled = AccountErasureOpening::reconcile($operation, $catalog);
         Database::transaction(
             DatabaseNames::PRIMARY,
-            static fn (): bool => $operation->actions->noteFinalRefusal($refusal->userId, $refusal->table),
+            static fn (): bool => $operation->actions->noteFinalRefusal($userId, $table),
         );
 
         return $reconciled;
@@ -207,7 +208,7 @@ final class AccountErasureFinal
      * Ends an open erasure once every account of its circle has its final; until then it writes
      * nothing. The check and the end run in one transaction.
      *
-     * SCAFFOLD: no live caller until the erasure coordinator ends the operation (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
      *
      * @param AccountOperation $operation Open erasure to end, at its current stage
      * @return bool Whether this call ended the operation; false while an account has no final, or when
@@ -237,7 +238,7 @@ final class AccountErasureFinal
      * circle whose final was refused and has not passed since.
      *
      * The account card's erasure block reads them ({@see AccountErasureProgressResolver}).
-     * SCAFFOLD: no refusal is written live until the erasure coordinator answers it (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
      *
      * @param AccountOperation $operation Erasure whose refusals are read
      * @return list<array{userId: int, table: ?string}> Refusals in circle order; empty when none stands

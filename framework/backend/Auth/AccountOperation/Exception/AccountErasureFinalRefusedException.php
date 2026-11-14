@@ -18,7 +18,7 @@ use Hilos\Database\Exception\SqlRuntime\ForeignKeyConstraintException;
  * table, when the schema knows it - which the coordinator keeps on the operation
  * ({@see AccountErasureFinal::refused()}). The engine's own text is never part of the words; it stays
  * on the previous exception, for the log.
- * SCAFFOLD: no live caller until the erasure coordinator answers the refusal (HIL-1950), live at the switch (HIL-1952).
+ * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
  */
 final class AccountErasureFinalRefusedException extends ValidationException
 {

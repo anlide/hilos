@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Core\Topology;
 
 use Closure;
+use Hilos\Auth\AccountOperation\AccountErasureProjectOwner;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
@@ -199,6 +201,13 @@ final class TopologyValidator
         $this->validateThrottleVerdictRoutes(
             $agents,
             $pages,
+            $hilosClass::getAgentSignalRoutes(),
+            $hilosClass::getAgentSignalDtoRoutes(),
+            $hilosClass::getAgentSignalIndexFields(),
+            $errors,
+        );
+        $this->validateAccountOperationRoutes(
+            $agents,
             $hilosClass::getAgentSignalRoutes(),
             $hilosClass::getAgentSignalDtoRoutes(),
             $hilosClass::getAgentSignalIndexFields(),
@@ -2926,6 +2935,62 @@ final class TopologyValidator
                     . " '" . AgentSignalConfigKey::INDEX_FIELD . "': the verdict names the parking instance in its"
                     . " {$indexField} payload field, and without the declaration it is delivered to the wrong"
                     . ' instance. Declare AgentSignalConfigKey::INDEX_FIELD => ' . "'{$indexField}'.";
+            }
+        }
+    }
+
+    /**
+     * Each account operation participant owns a typed step route; an indexed route uses the saved owner index.
+     *
+     * @param array $agents Agent registry
+     * @param array $agentSignalRoutes Computed agent signal route registry
+     * @param array $agentSignalDtoRoutes Computed agent signal payload DTO registry
+     * @param array $agentSignalIndexFields Computed index fields of indexed agent signal routes
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateAccountOperationRoutes(
+        array $agents,
+        array $agentSignalRoutes,
+        array $agentSignalDtoRoutes,
+        array $agentSignalIndexFields,
+        array &$errors,
+    ): void {
+        $stepDto = AccountOperationAskSignalData::class;
+        $indexField = AccountOperationAskSignalData::ownerIndex;
+        foreach ($agents as $agentType => $registryEntry) {
+            $agentClass = AgentRegistry::workerClass($registryEntry);
+            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
+                continue;
+            }
+
+            $where = "AGENTS[{$agentType}] class {$agentClass}";
+            $step = $agentClass::ACCOUNT_OPERATION_SIGNAL;
+            if ($step === '') {
+                if (is_a($agentClass, AccountErasureProjectOwner::class, true)) {
+                    $errors[] = "{$where} is an account erasure project owner but ACCOUNT_OPERATION_SIGNAL must be a non-empty"
+                        . ' account operation step signal name';
+                }
+                continue;
+            }
+
+            $holder = $agentSignalRoutes[$step] ?? null;
+            if ($holder === null) {
+                $errors[] = "{$where} names account operation step {$step} but no agent declares it in AGENT_SIGNALS."
+                    . " Declare it with {$stepDto}.";
+                continue;
+            }
+            if ($holder !== $agentType) {
+                $errors[] = "{$where} names account operation step {$step} but it is declared by AGENTS[{$holder}]."
+                    . ' Each participant must own its ACCOUNT_OPERATION_SIGNAL: an account operation step names one agent type.';
+                continue;
+            }
+            if (($agentSignalDtoRoutes[$step] ?? null) !== $stepDto) {
+                $errors[] = "{$where} declares account operation step {$step} without {$stepDto}: the assignment arrives untyped.";
+                continue;
+            }
+            if (AgentRegistry::requiresIndex($registryEntry) && ($agentSignalIndexFields[$step] ?? null) !== $indexField) {
+                $errors[] = "{$where} is indexed but declares account operation step {$step} without the saved owner index."
+                    . " Declare AgentSignalConfigKey::INDEX_FIELD => '{$indexField}'.";
             }
         }
     }

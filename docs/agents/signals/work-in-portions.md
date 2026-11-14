@@ -111,10 +111,9 @@ signal between owners
 erasure, the obligation is durable and the participant alone writes its
 assigned result. The generic participant step commits callback work and result
 in one local transaction, and a repeat answers from the saved result. It is
-built but inert: no production participant uses it yet. The coordinator
-correlates assignments and answers by operation and stage, without a
-transaction across frames
-(not in the code yet — HIL-1950). The old
+built. The coordinator correlates assignments and answers by operation and
+stage, without a transaction across frames (HIL-1950). The production entry
+remains HIL-1952. The old
 terminal path and its required grants remain until the live erasure switch
 (not in the code yet — HIL-1952); an inert preparatory handler does not clear
 that marker. The linked canon records the detailed erasure norms. This boundary
@@ -150,13 +149,13 @@ production participants and cut over the flow. No after-commit step receives
 a retry.
 
 For erasure, the built participant step returns a saved result instead of
-running its work again; a duplicate, old or foreign answer cannot advance the
-current operation (not in the code yet — HIL-1950). The coordinator
-at start and on a later pass, and each participant at start or on an operation
-frame, select open obligations from DB. A lost frame needs no fresh external
-event, and no DB poll on every tick or remembered cursor is added
-(not in the code yet — HIL-1951). These paths become live only at erasure's
-cutover (not in the code yet — HIL-1952).
+running its work again; the coordinator advances only the matching operation
+and stage (HIL-1950). The HIL-1952 entry starts the coordinator, and the later
+recovery passes (HIL-1951), together with each participant's start or
+operation frame, select open obligations from DB. A lost frame needs no fresh
+external event, and no DB poll on every tick or remembered cursor is added
+(not in the code yet — HIL-1951). These paths become live at erasure's cutover
+(not in the code yet — HIL-1952).
 
 For [merge](../architecture/account-operations.md#merge), the loser commits
 its work with result and copy (not in the code yet — HIL-1992), the survivor

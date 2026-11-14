@@ -16,7 +16,7 @@ use stdClass;
  * The payload is exactly `{"ownOrders":<int>,"sharedExports":<int>}`: how many export orders of the
  * erased account this step deleted - one at most, as an administrator has one order - and how many
  * finished exports of any administrator it deleted because they may list the account's acceptances.
- * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950/HIL-1952).
+ * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
  */
 final class LegalAcceptancesExportErasureResult
 {

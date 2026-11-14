@@ -308,7 +308,7 @@ final class AccountErasureProgressIntegrationTest extends FrameworkIntegrationTe
         self::assertNotNull(AccountErasureProgressResolver::of(self::ROOT_ID));
     }
 
-    public function testResultsAndAssignmentsDropMemoryWithoutCompletingAPart(): void
+    public function testResultsAndAssignmentsDropMemoryAndCompleteOnlyTheRecordedPart(): void
     {
         $request = self::requestDeletion();
         $operation = self::open($request);
@@ -320,16 +320,29 @@ final class AccountErasureProgressIntegrationTest extends FrameworkIntegrationTe
         $assigned = AccountErasureProgressResolver::of(self::ROOT_ID);
         self::assertNotSame($before, $assigned);
         self::assertCount(3, $assigned->parts);
+        $begun = AccountErasureProgressResolver::begun();
+        self::assertSame([false, false, false], array_column($begun[self::ROOT_ID]->parts, AccountErasureProgress::done));
 
-        Database::transaction(DatabaseNames::PRIMARY, static function () use ($assignment, $assigned): void {
+        Database::transaction(DatabaseNames::PRIMARY, static function () use ($assignment, $assigned, $begun): void {
             Hilos::$db->accountOperationResults->actions->record($assignment, AccountOperationResultPayload::fromJson('{}'));
             self::assertNotSame($assigned, AccountErasureProgressResolver::of(self::ROOT_ID));
+            self::assertNotSame($begun, AccountErasureProgressResolver::begun());
         });
         $recorded = AccountErasureProgressResolver::of(self::ROOT_ID);
 
         self::assertNotSame($assigned, $recorded);
-        self::assertSame($assigned->toArray(), $recorded->toArray());
-        self::assertSame([false, false, false], array_column($recorded->parts, AccountErasureProgress::done));
+        self::assertSame([
+            'startedAt' => $request->startedAt,
+            'parts' => [
+                ['participant' => 'personal', 'owner' => HilosAgentType::HILOS_USER, 'userId' => 43, 'done' => false],
+                ['participant' => 'users_library', 'owner' => HilosAgentType::HILOS_USERS_LIBRARY, 'userId' => 43, 'done' => false],
+                ['participant' => 'delivery:mail', 'owner' => HilosAgentType::HILOS_SESSIONS_LIBRARY, 'userId' => 43, 'done' => true],
+            ],
+            'waits' => [],
+            'refusals' => [],
+        ], $recorded->toArray());
+        self::assertSame([false, false, true], array_column($recorded->parts, AccountErasureProgress::done));
+        self::assertSame($recorded->toArray(), AccountErasureProgressResolver::begun()[self::ROOT_ID]->toArray());
         self::assertNotNull(Hilos::$db->accountOperationResults->byAssignment($assignment->id));
     }
 
@@ -397,7 +410,33 @@ final class AccountErasureProgressIntegrationTest extends FrameworkIntegrationTe
         self::recordResult($assignment);
         $recorded = AccountErasureProgressResolver::of(self::ROOT_ID);
         self::assertNotSame($assigned, $recorded);
-        self::assertSame($assigned->toArray(), $recorded->toArray());
+        self::assertSame([
+            'startedAt' => $request->startedAt,
+            'parts' => [
+                ['participant' => 'personal', 'owner' => HilosAgentType::HILOS_USER, 'userId' => 43, 'done' => false],
+                ['participant' => 'users_library', 'owner' => HilosAgentType::HILOS_USERS_LIBRARY, 'userId' => 43, 'done' => false],
+                ['participant' => 'delivery:mail', 'owner' => HilosAgentType::HILOS_SESSIONS_LIBRARY, 'userId' => 43, 'done' => true],
+            ],
+            'waits' => [],
+            'refusals' => [],
+        ], $recorded->toArray());
+        self::assertNotNull(Hilos::$db->accountOperationResults->byAssignment($assignment->id));
+    }
+
+    /** A first read sees a previously saved part result without needing a preceding cached model. */
+    public function testAnAlreadySavedResultMakesItsPartDoneOnTheFirstRead(): void
+    {
+        $request = self::requestDeletion();
+        $operation = self::open($request);
+        self::assertTrue($this->asPerson(self::ROOT_ID, static fn (): bool => $request->actions->start()));
+        $assignment = self::recordExpectation($operation, new AccountOperationExpectation(
+            'delivery:mail', self::ROOT_ID, new AccountOperationOwnerAddress(HilosAgentType::HILOS_SESSIONS_LIBRARY),
+        ));
+        self::recordResult($assignment);
+
+        self::assertSame([false, false, true], array_column(
+            AccountErasureProgressResolver::of(self::ROOT_ID)->parts, AccountErasureProgress::done,
+        ));
         self::assertNotNull(Hilos::$db->accountOperationResults->byAssignment($assignment->id));
     }
 

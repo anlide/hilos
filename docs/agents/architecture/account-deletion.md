@@ -34,12 +34,12 @@ inert (HIL-1942): the personal owner's one transaction completes the request,
 deletes its merge row, rename journal, capture and person row and records
 `{"request":<id>|null}`, and a `RESTRICT` refusal rolls it back whole with a
 safe reason kept on the operation; it has no live caller until
-HIL-1950/HIL-1952 and its right to delete is not granted before the switch
+HIL-1952 and its right to delete is not granted before the switch
 ([*The erasure final*](account-operations.md#current-implementation)). The
 start is built and inert (HIL-1939): the request carries
 `started_at`, `start()` stamps it for the one winner against "Keep my account",
 and the person's agent and the sessions holder refuse the account from it, but
-nothing live calls it until HIL-1950/HIL-1952. HIL-1936 builds the separate,
+nothing live calls it until HIL-1952. HIL-1936 builds the separate,
 inert [operation and assignment carriers](account-operations.md#erasure); it
 adds no started field and does not change today's `completed_at` meaning.
 HIL-1937's participant result carrier and generic atomic step are built but
@@ -164,10 +164,10 @@ That one transaction and its rollback are the implementation in the tree. The
 target obligations, owners and order are detailed in
 [Erasure](account-operations.md#erasure). The generic participant step commits
 work and result in its local transaction and answers repeats from the saved
-result; it is built but has no live erasure consumer yet. After start, failure
-leaves an open operation to finish forward, without a common rollback
-(not in the code yet — HIL-1950). The fixed circle and folded-first ordering
-are prepared, with no live caller until HIL-1950/HIL-1952. The final personal
+result; the coordinator consumes it, while the production erasure entry remains
+for HIL-1952. After start, failure leaves an open operation for recovery
+(HIL-1951), without a common rollback. The fixed circle and folded-first ordering
+are prepared, with no live caller until HIL-1952. The final personal
 delete follows required results and uses `RESTRICT` as the last safeguard; it
 is built and inert (HIL-1942), and a refusal leaves the operation open with a
 safe reason, the account's number and the referencing table's name, kept on it.
@@ -241,6 +241,6 @@ implements `AccountErasureProjectOwner` and carries its part through
 `AccountErasureProjectStep`; and the daemon refuses to start over a mounted
 table that no owner covers and no exemption names
 (`AccountErasureCoverageGuard`). The directory and the gate are live; the
-owners' part is prepared, with no live caller until HIL-1950/HIL-1952. The
+owners' part is prepared, with no live caller until HIL-1952. The
 seam and its borrowed rights stay live until the
 HIL-1952 switch retires them (not in the code yet — HIL-1952).

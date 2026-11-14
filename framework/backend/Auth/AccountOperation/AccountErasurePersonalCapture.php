@@ -24,12 +24,12 @@ use Throwable;
  * ({@see AccountErasurePersonalCaptureResult}); a failure of the project's part rolls the whole
  * capture back. A repeated call returns the saved capture without reading the ways in again, even
  * when they are gone already. No address is written to a log.
- * SCAFFOLD: no live caller until the erasure coordinator drives the capture (HIL-1950), live at the switch (HIL-1952).
+ * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
  */
 final class AccountErasurePersonalCapture
 {
     /**
-     * SCAFFOLD: no live caller until the erasure coordinator drives the capture (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
      *
      * @param int $assignmentId Capture assignment the coordinator gave the person's agent
      * @param int $userId Person whose agent captures

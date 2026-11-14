@@ -15,7 +15,7 @@ use stdClass;
  * The payload is exactly `{"verifications":<int>}`: how many code rows this step deleted - those on
  * the addresses the personal capture names and those carrying the person's user id, together. The
  * addresses themselves never enter the result. With no code to delete it is `{"verifications":0}`.
- * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950/HIL-1952).
+ * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
  */
 final class AccountErasureVerificationsResult
 {

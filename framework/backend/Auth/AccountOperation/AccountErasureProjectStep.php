@@ -36,7 +36,7 @@ final class AccountErasureProjectStep
      * @param int $assignmentId Assignment the coordinator gave the owner
      * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt
      * @throws AccountOperationStepRefusedException When the caller, assignment or current stage refuses new work
-     * @throws ValidationException When the assignment names no account
+     * @throws ValidationException When the assignment is not an erasure's or names no account
      * @throws Throwable When storage or the owner's erasure fails, preserving the original failure
      */
     public static function run(AccountErasureProjectOwner $owner, int $assignmentId): AccountOperationResult
@@ -44,6 +44,9 @@ final class AccountErasureProjectStep
         return AccountOperationParticipantStep::run(
             $assignmentId,
             static function (AccountOperationAssignment $assignment) use ($owner): AccountOperationResultPayload {
+                if ($assignment->operation?->kind !== AccountOperationKind::Erasure) {
+                    throw new ValidationException('An account erasure part must belong to an erasure.');
+                }
                 $userId = $assignment->userId;
                 if ($userId === null) {
                     throw new ValidationException('An account erasure part must name its account.');

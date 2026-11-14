@@ -311,7 +311,9 @@ final class AccountErasureFinalIntegrationTest extends HilosSessionIntegrationTe
         self::assertNull(self::completedAt($requestId));
 
         $catalog = AccountErasureParticipantCatalog::framework();
-        self::assertSame([], $this->asHolder(static fn (): array => AccountErasureFinal::refused($erasure, $catalog, $refusal)));
+        self::assertSame([], $this->asHolder(
+            static fn (): array => AccountErasureFinal::refused($erasure, $catalog, $refusal->userId, $refusal->table),
+        ));
         self::assertSame([$foldedId => 'hilos_access_log'], self::finalRefusals($erasure));
         $standing = Hilos::$db->accountOperations[$erasure->id];
         self::assertSame(
@@ -320,7 +322,7 @@ final class AccountErasureFinalIntegrationTest extends HilosSessionIntegrationTe
         );
         $stranger = AccountErasureFinalRefusedException::of($outsiderId, null, $engine);
         try {
-            $this->asHolder(static fn (): array => AccountErasureFinal::refused($erasure, $catalog, $stranger));
+            $this->asHolder(static fn (): array => AccountErasureFinal::refused($erasure, $catalog, $stranger->userId, $stranger->table));
             self::fail('A refusal of an account outside the circle was kept');
         } catch (ValidationException $e) {
             self::assertSame('A refused final must name an account of its erasure.', $e->getMessage());
@@ -440,7 +442,8 @@ final class AccountErasureFinalIntegrationTest extends HilosSessionIntegrationTe
             'Only an open erasure records a refused final.' => static fn (): array => AccountErasureFinal::refused(
                 $ended,
                 AccountErasureParticipantCatalog::framework(),
-                AccountErasureFinalRefusedException::of($rootId, null, new ForeignKeyConstraintException('refused')),
+                $rootId,
+                null,
             ),
         ] as $words => $step) {
             try {

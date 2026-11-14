@@ -64,6 +64,9 @@ final class ChatSignalConstants
      */
     public const string USER_RENAME_FEED_UNLINKED = 'chat_user_rename_feed_unlinked';
 
+    /** Sessions library → ChatAgent: run an account-operation assignment. */
+    public const string CHAT_ACCOUNT_OPERATION_STEP = 'chat_account_operation_step';
+
     // ── Bot agent lifecycle ─────────────────────────────────────────────
     /** @var string LibraryAgent → BotAgent: start (sending to agent triggers framework start if not running) */
     public const string BOT_AGENT_START = 'bot_agent_start';

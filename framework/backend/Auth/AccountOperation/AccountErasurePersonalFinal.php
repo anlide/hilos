@@ -28,12 +28,12 @@ use Throwable;
  * completed. A table that still references the person makes the database refuse the delete of the
  * row; the whole final rolls back, and the refusal names that table only when the schema knows it,
  * never in the engine's words. A repeated call returns the saved result without doing the work again.
- * SCAFFOLD: no live caller until the erasure coordinator delivers the final (HIL-1950), live at the switch (HIL-1952).
+ * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
  */
 final class AccountErasurePersonalFinal
 {
     /**
-     * SCAFFOLD: no live caller until the erasure coordinator delivers the final (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
      *
      * @param int $assignmentId Final assignment the coordinator gave the person's agent
      * @param int $userId Person whose agent runs the final

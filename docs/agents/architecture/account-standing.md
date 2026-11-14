@@ -252,9 +252,9 @@ request, heartbeat, minute server frame, or epoch invalidation is introduced.
   `table` are not personal. Null stays null. No names are carried. The
   frontend core reads the block as `HilosAccountErasure`
   (`readHilosAccountErasure()`), `refusals` as `HilosAccountErasureRefusal[]`.
-  `done` stays false until HIL-1950, and `refusals` stays empty until the
-  coordinator answers a refusal (not in the code yet — HIL-1950). The
-  preparation stays inert until HIL-1952 opens erasure.
+  `done` is true when the assignment has a persisted result. The coordinator
+  records a safe reason when it answers a final refusal (HIL-1950); production
+  erasure remains inert until HIL-1952.
 - **Refusal.** `account_frozen` with status 403, as `errorCode` of
   `subscription_page_error` and of `action_error`. It is not a 401 and opens no
   sign-in.

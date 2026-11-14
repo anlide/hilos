@@ -5,16 +5,21 @@ declare(strict_types=1);
 namespace Hilos\Auth\AccountOperation;
 
 use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
+use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Exception\ValueTooLongException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\DatabaseNames;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
+use Hilos\Database\View\Item\AccountOperation;
 use Hilos\Database\View\Item\AccountOperationAssignment;
 use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Hilos;
@@ -30,11 +35,71 @@ use Throwable;
  * transaction. A repeated call returns the saved result without starting again. The agent of an
  * account folded into the root marks its own standing request begun as the first write of its
  * part, inside that part's transaction ({@see startOwnRequest()}). Neither sends a frame: the
- * assignment's frame, its key and its stage are not this class's.
- * SCAFFOLD: no live caller until HIL-1950/HIL-1952.
+ * coordinator assigns the step at its current stage through recordMissing().
+ * SCAFFOLD: the production erasure entry opens in HIL-1952.
  */
 final class AccountErasureStart
 {
+    /** First part of the root account's start assignment key. */
+    public const string START_PREFIX = 'start';
+    public const string ASSIGNMENT_KEY_SEPARATOR = ':';
+
+    /**
+     * @param int $userId Root account whose agent starts the deletion request
+     * @return string Assignment key `start:personal:<owner agent id>:<user id>`
+     * @throws EmptyValueException Never for the person's agent type; declared by the owner address
+     * @throws ValueTooLongException Never for the person's agent type and an integer id; declared by the owner address
+     */
+    public static function personalKey(int $userId): string
+    {
+        return implode(self::ASSIGNMENT_KEY_SEPARATOR, [
+            self::START_PREFIX,
+            AccountErasureParticipantCatalog::PERSONAL,
+            new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$userId)->agentId(),
+            (string)$userId,
+        ]);
+    }
+
+    /**
+     * Records the root's start at the current stage, unless its key is already stored at any stage.
+     *
+     * SCAFFOLD: no live caller until the erasure entry (HIL-1952) or recovery passes (HIL-1951).
+     *
+     * @param AccountOperation $operation Open erasure whose root is to start
+     * @return ?AccountOperationAssignment New start assignment, or null on a repeat
+     * @throws ValidationException When the operation is not an open erasure
+     * @throws Throwable When reading or recording fails; the transaction rolls back whole
+     */
+    public static function recordMissing(AccountOperation $operation): ?AccountOperationAssignment
+    {
+        if ($operation->kind !== AccountOperationKind::Erasure || $operation->finishedAt !== null) {
+            throw new ValidationException('Only an open erasure records its start.');
+        }
+
+        return Database::transaction(DatabaseNames::PRIMARY, static function () use ($operation): ?AccountOperationAssignment {
+            $key = self::personalKey($operation->rootUserId);
+            foreach (Hilos::$db->accountOperationAssignments->forOperation($operation->id) as $assignment) {
+                if ($assignment->assignmentKey === $key) {
+                    return null;
+                }
+            }
+            $personal = new AccountOperationExpectation(
+                AccountErasureParticipantCatalog::PERSONAL,
+                $operation->rootUserId,
+                new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$operation->rootUserId),
+            );
+
+            return Hilos::$db->accountOperationAssignments->actions->record(
+                $operation->id,
+                $operation->stage,
+                $key,
+                $personal->assignmentOwner(),
+                $operation->rootUserId,
+                $personal->payload(),
+            );
+        });
+    }
+
     /**
      * @param int $assignmentId Assignment the session holder gave the root account's agent
      * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt

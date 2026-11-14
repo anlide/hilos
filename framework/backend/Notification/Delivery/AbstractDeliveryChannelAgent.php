@@ -7,11 +7,14 @@ namespace Hilos\Notification\Delivery;
 use DateTimeImmutable;
 use Hilos\Auth\AccountOperation\AccountErasureDeliveryCapture;
 use Hilos\Auth\AccountOperation\AccountErasureDeliveryResult;
+use Hilos\Auth\AccountOperation\AccountOperationAsks;
 use Hilos\Auth\AccountOperation\AccountOperationKind;
 use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
 use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
@@ -80,8 +83,8 @@ use Throwable;
  *
  * Each channel or shard also takes part in account erasure by deleting its own
  * captured delivery rows. It does not begin an attempt for a recipient whose
- * erasure has started; the erasure part is prepared, with no live caller until
- * HIL-1950/HIL-1952.
+ * erasure has started; the erasure part is prepared, with no production caller
+ * until HIL-1952.
  *
  * Under a freeze that silences the writers the roster walk leaves running
  * ({@see ProtectedModeRuntime::silencesUnstoppedWriters()}) the pipeline drops everything it
@@ -239,7 +242,7 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
     /**
      * Deletes captured deliveries held by this channel/shard's current route and records their count atomically.
      * Uncaptured account deliveries or a silencing freeze refuse the part before any deletion.
-     * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950/HIL-1952).
+     * SCAFFOLD: the production erasure entry opens in HIL-1952.
      *
      * @param int $assignmentId Assignment the coordinator gave this channel/shard
      * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt
@@ -330,18 +333,32 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
     }
 
     /**
-     * Handles this channel's durable intake and its retry request, and ignores unrelated signal names.
+     * Handles this channel's intake, retry and account operation steps; ignores unrelated signal names.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender identity, unused
      * @param string $name Routed agent-signal name
-     * @throws InvalidAgentSignalPayloadException When the deliver or retry name carries another payload type
-     * @throws InvalidArgumentException When the answer to a retry request cannot be named or queued
+     * @throws InvalidAgentSignalPayloadException When an intake, retry or account operation name carries another payload type
+     * @throws InvalidArgumentException When a retry or account operation answer cannot be named or queued
      * @throws HilosException When saved coordinates cannot be read or the pool configuration is invalid
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
+            case static::ACCOUNT_OPERATION_SIGNAL:
+                $ask = $data->data;
+                if (!$ask instanceof AccountOperationAskSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountOperationAskSignalData::class, $ask);
+                }
+
+                $this->sendToAgent(HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER, AccountOperationAsks::answer(
+                    $ask,
+                    fn (AccountOperationAssignment $assignment): AccountOperationResult => $this->runErasurePart($assignment->id),
+                    $this->getId(),
+                ));
+
+                return;
+
             case $this->channel()->deliverSignalName():
                 $payload = $data->data;
                 if (!$payload instanceof NotificationDeliverSignalData) {

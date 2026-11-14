@@ -164,8 +164,7 @@ final class AccountErasureProgressResolver
                 AccountErasureProgress::participant => AccountOperationExpectation::participantOf($assignment->payload),
                 AccountErasureProgress::owner => $assignment->owner->ownerType,
                 AccountErasureProgress::userId => $assignment->userId,
-                // SCAFFOLD: HIL-1950 fills done from the coordinator's end predicate.
-                AccountErasureProgress::done => false,
+                AccountErasureProgress::done => Hilos::$db->accountOperationResults->byAssignment($assignment->id) !== null,
             ];
         }
         $waits = [];

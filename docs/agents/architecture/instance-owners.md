@@ -324,14 +324,14 @@ debt; HIL-1999 switches merge and removes that remainder. The detailed
 mode: the same agent, including a folded account's, closes ordinary actions
 and late frames, accepts only continuation of its own operation and finishes
 its own part. The closing and the refusal are built and inert (HIL-1939), with
-no live caller until HIL-1950/HIL-1952. Its final deletion of the
+no live caller until HIL-1952. Its final deletion of the
 merge row, journal, capture and person and completion of its request follow the
 required results; its stop follows its last own write, made by the agent itself
 (HIL-1942, built and inert; the right to delete is not granted before the switch,
 not in the code yet — HIL-1952).
-Assignments and answers belong to one operation and stage
-(not in the code yet — HIL-1950), and start/recovery finds open obligations
-from DB (not in the code yet — HIL-1951).
+The erasure coordinator correlates assignments and answers to one operation
+and stage (HIL-1950); start and recovery find open obligations from DB
+(not in the code yet — HIL-1951).
 
 The detailed [merge canon](account-operations.md#merge) gives the folded loser
 a finishing mode: it accepts only continuation of its own operation, copy

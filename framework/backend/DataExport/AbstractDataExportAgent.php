@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Hilos\DataExport;
 
 use Hilos\Auth\AccountOperation\AccountErasureDataExportResult;
+use Hilos\Auth\AccountOperation\AccountOperationAsks;
 use Hilos\Auth\AccountOperation\AccountOperationKind;
 use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
 use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
@@ -109,7 +111,12 @@ abstract class AbstractDataExportAgent extends AbstractAgent
      * is outside AUTH_ACTIONS today, so nothing closes it yet; declared, it stays open when it joins.
      */
     public const array FROZEN_EXIT_ACTIONS = [HilosSignalConstants::HILOS_DATA_EXPORT_ORDER];
-    public const array AGENT_SIGNALS = [HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => DataExportForgetUserSignalData::class];
+    public const string ACCOUNT_OPERATION_SIGNAL = HilosSignalConstants::HILOS_DATA_EXPORT_ACCOUNT_OPERATION_STEP;
+
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_DATA_EXPORT_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
+        HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => DataExportForgetUserSignalData::class,
+    ];
 
     public const array AGENT_HTTP_ROUTES = [HttpConstants::METHOD_GET => [DataExportHttp::DOWNLOAD_PATH]];
 
@@ -217,6 +224,20 @@ abstract class AbstractDataExportAgent extends AbstractAgent
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
+            case HilosSignalConstants::HILOS_DATA_EXPORT_ACCOUNT_OPERATION_STEP:
+                $ask = $data->data;
+                if (!$ask instanceof AccountOperationAskSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountOperationAskSignalData::class, $ask);
+                }
+
+                $this->sendToAgent(HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER, AccountOperationAsks::answer(
+                    $ask,
+                    fn (AccountOperationAssignment $assignment): AccountOperationResult => $this->runErasurePart($assignment->id),
+                    $this->getId(),
+                ));
+
+                return;
+
             case HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER:
                 if (!$data->data instanceof DataExportForgetUserSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, DataExportForgetUserSignalData::class, $data->data);
@@ -276,7 +297,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
      * ready order keeps, the person's copy and an interrupted build among them, and the person's
      * tabs are told the copy is gone ({@see self::forgetUser()}); a failed removal is logged and
      * not repeated. A repeated call returns the saved result without deleting or sweeping again.
-     * SCAFFOLD: no live caller until the erasure coordinator delivers the assignment (HIL-1950/HIL-1952).
+     * SCAFFOLD: the production erasure entry opens in HIL-1952.
      *
      * @param int $assignmentId Assignment the coordinator gave the agent
      * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt

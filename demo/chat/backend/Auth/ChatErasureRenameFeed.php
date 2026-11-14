@@ -17,7 +17,7 @@ use Hilos\Core\Exception\InvalidFormatException;
  *
  * The capture's `project` is exactly `{"renameEvents":[…]}`, the event ids in ascending order,
  * possibly none.
- * SCAFFOLD: no live caller until the erasure coordinator drives the capture (HIL-1950), live at the switch (HIL-1952).
+ * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
  */
 final class ChatErasureRenameFeed
 {
@@ -25,7 +25,7 @@ final class ChatErasureRenameFeed
     public const string RENAME_EVENTS = 'renameEvents';
 
     /**
-     * SCAFFOLD: no live caller until the erasure coordinator drives the capture (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
      *
      * @param list<int> $eventIds Feed events of the person's renames, in id order
      * @return array<string, list<int>> The capture's `project` keys: `renameEvents` alone
@@ -36,7 +36,7 @@ final class ChatErasureRenameFeed
     }
 
     /**
-     * SCAFFOLD: no live caller until the erasure coordinator drives the capture (HIL-1950), live at the switch (HIL-1952).
+     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
      *
      * @param AccountErasurePersonalCaptureResult $capture Capture the person's agent recorded
      * @return list<int> Feed events of the person's renames, in id order

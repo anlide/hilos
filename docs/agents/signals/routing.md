@@ -180,6 +180,40 @@ signal-routing mechanism. See
 [Auth Throttle](../architecture/auth-throttle.md#each-parking-agent-owns-its-verdict-signal)
 for the dispatch and outage-grace behavior.
 
+## Account operation steps
+
+Each erasure participant owns its own agent signal. The framework participants
+declare `HILOS_USER_ACCOUNT_OPERATION_STEP`,
+`HILOS_USERS_LIBRARY_ACCOUNT_OPERATION_STEP`,
+`HILOS_DATA_EXPORT_ACCOUNT_OPERATION_STEP`,
+`HILOS_LEGAL_ACCOUNT_OPERATION_STEP`, `HILOS_MAIL_ACCOUNT_OPERATION_STEP`,
+`HILOS_SMS_ACCOUNT_OPERATION_STEP` and `HILOS_PUSH_ACCOUNT_OPERATION_STEP`;
+Chat declares `CHAT_ACCOUNT_OPERATION_STEP`. A participant names its signal in
+`AGENT_SIGNALS` with the exact `AccountOperationAskSignalData` DTO.
+`AbstractAgent::ACCOUNT_OPERATION_SIGNAL` defaults to the empty string, which
+means the agent is not an account-operation participant.
+
+The ask carries `{operationId, stage, assignmentId, ownerIndex}`. The
+`ownerIndex` is the assignment's `AccountOperationOwnerAddress::$ownerIndex`;
+it is null for an unindexed owner. An indexed participant declares
+`AgentSignalConfigKey::INDEX_FIELD => 'ownerIndex'`, so the step reaches the
+owner named by that assignment.
+
+Every participant answers on `HILOS_ACCOUNT_OPERATION_ANSWER`, which the
+sessions holder owns in `AGENT_SIGNALS` with
+`AccountOperationAnswerSignalData`. Its payload carries
+`{operationId, stage, assignmentId, answer, refusedUserId, refusedTable}`;
+`answer` is `done`, `uncaptured`, `waits`, `final_refused`, `refused` or
+`failed`. Only `final_refused` carries the safe refusal fields. The answer is a
+correlated notice; the participant's durable result remains the evidence of
+completion.
+
+`TopologyValidator` checks that each non-empty participant signal is declared
+by that agent type alone, uses the exact ask DTO and, for indexed agents,
+indexes by `ownerIndex`. It also rejects a registered
+`AccountErasureProjectOwner` with no step signal: otherwise the census could
+owe work that the coordinator cannot address.
+
 ## Indexed agent signals
 
 Multi-instance agents (one process per entity, keyed by `agentIndex`) can be

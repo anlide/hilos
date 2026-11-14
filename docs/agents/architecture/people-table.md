@@ -104,7 +104,7 @@ separate from ordinary creation. Under the detailed
 [erasure canon](account-operations.md#erasure), the personal owner removes its
 merge row, `userRenames` and `users` last, after required participant results,
 and completes its own request in that final local transaction. That final is
-built and inert (HIL-1942), with no live caller until HIL-1950/HIL-1952; the
+built and inert (HIL-1942), with no live caller until HIL-1952; the
 right to remove the person row is not granted before the switch
 (not in the code yet — HIL-1952). Under the detailed
 [merge canon](account-operations.md#merge), the loser writes its own block
@@ -207,7 +207,7 @@ personal owner, whose transaction takes the journal off them
 reads them from that capture and writes no journal. The chat's
 `afterUserRenamed()` writes no feed event, and asks for no link, for a person
 whose erasure has begun. This is prepared, with no live caller until
-HIL-1950/HIL-1952. That owner deletes its journal only in the
+HIL-1952. That owner deletes its journal only in the
 final personal transaction after required results; the final is built and inert
 (HIL-1942), and its right to delete the journal is not granted before the switch
 (not in the code yet — HIL-1952). These are the erasure steps of
@@ -275,11 +275,11 @@ accounts first (HIL-1200), so this key does not run on its normal path. The
 HIL-1202 confirms this choice as the pattern for the other person keys.
 
 In the split erasure, the circle is fixed before any link is broken
-(prepared, no live caller until HIL-1950/HIL-1952). Each folded account's
+(prepared, no live caller until HIL-1952). Each folded account's
 personal owner removes its own merge row before its survivor goes, keeping that
 leaf-first order: the merge row is the first row its final deletes, and the
 survivor's final waits while any account is folded into it. This is built and
-inert (HIL-1942), with no live caller until HIL-1950/HIL-1952. The holder retains
+inert (HIL-1942), with no live caller until HIL-1952. The holder retains
 today's erasure rights until the live switch (not in the code yet — HIL-1952).
 
 The table is the sessions library's whole, and the whole operation is framework
@@ -377,11 +377,11 @@ the safe refusal named — the account's number and the referencing table's name
 kept on the operation and shown in the card's erasure block — and the end is
 proved by every owner's recorded result, the soft references among them, which
 no key catches. The final and its refusal are built and inert (HIL-1942), with
-no live caller until HIL-1950/HIL-1952. The sessions holder has prepared its own
+no live caller until HIL-1952. The sessions holder has prepared its own
 confirmed release of all four references, waits and cards: its step
 `eraseAccountSessionsPart()` records `{"sessions":<n>,"accessLog":<m>}` in the
 same transaction and tells the tabs after the commit, with no live caller until
-HIL-1950/HIL-1952. These parts enter the live path only at the
+HIL-1952. These parts enter the live path only at the
 erasure switch (not in the code yet — HIL-1952). The keys, their `RESTRICT` /
 `SET NULL` choice and the absence of `CASCADE` do not change, and no key is
 added to a soft reference by it.

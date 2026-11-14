@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library;
 
+use Hilos\Auth\AccountOperation\AccountErasureCoordinator;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountErasureSessionsResult;
+use Hilos\Auth\AccountOperation\AccountOperationAnswerKind;
+use Hilos\Auth\AccountOperation\AccountOperationAsks;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
 use Hilos\Auth\AccountOperation\AccountOperationKind;
 use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
 use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
 use Hilos\Auth\Library\DTO\AuthRegistrationHoldExpiredSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationHoldReleaseSignalData;
@@ -151,6 +156,8 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\HttpConstants;
+use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
@@ -205,6 +212,7 @@ use Hilos\Database\Schema\Schema;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\View\Item\AccountDeletion;
+use Hilos\Database\View\Item\AccountOperation;
 use Hilos\Database\View\Item\AccountOperationAssignment;
 use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Database\View\Item\Session;
@@ -593,6 +601,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => AuthRecoveryWaitMovedSignalData::class,
         HilosSignalConstants::HILOS_SESSION_REBIND => SessionRebindSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_MERGE => AccountMergeSignalData::class,
+        HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER => AccountOperationAnswerSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET => AccountAdminSetSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET => AccountBlockSetSignalData::class,
         HilosSignalConstants::HILOS_SESSION_TOAST_RAISE => RaiseSessionToastSignalData::class,
@@ -4240,6 +4249,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * too, so a person whose agent fell is not waited for (HIL-1901). The last of that agent
      * answers a trust renewal: a refusal is logged, and a pair the agent no longer found is
      * written again while the confirmation still holds (HIL-1907).
+     * Account-operation answers advance only a correlated open erasure; participant results
+     * remain the durable evidence of completion (HIL-1950).
      *
      * The switch is the framework's rather than a project's because what each frame means
      * is: the users library ends a ceremony by saying what happened, and the order this
@@ -4433,6 +4444,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 }
 
                 $this->handleAccountMergeRequest($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER:
+                $answer = $data->data;
+                if (!$answer instanceof AccountOperationAnswerSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountOperationAnswerSignalData::class, $answer);
+                }
+                $this->askAccountOperation($this->afterAccountOperationAnswer($answer));
 
                 return;
 
@@ -7366,6 +7386,97 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Enters an open erasure and sends every ready duty without a saved result.
+     * SCAFFOLD: production entry and recovery callers follow in HIL-1952 and HIL-1951.
+     *
+     * @param AccountOperation $operation Already opened erasure
+     * @throws Throwable When the coordinator cannot read or commit the operation's facts
+     */
+    protected function driveAccountErasure(AccountOperation $operation): void
+    {
+        $this->askAccountOperation(AccountErasureCoordinator::begin($operation, AccountErasureParticipantCatalog::installation()));
+    }
+
+    /**
+     * Rejects stale or foreign frames before considering their outcome. A done frame is only
+     * a notification: the participant must already have committed its result.
+     *
+     * @param AccountOperationAnswerSignalData $answer Participant's correlated address and outcome
+     * @return list<AccountOperationAssignment> Ready direct successors, or none for an unusable answer
+     * @throws HilosException When the transition cannot read or commit its facts, preserving framework refusals
+     */
+    private function afterAccountOperationAnswer(AccountOperationAnswerSignalData $answer): array
+    {
+        $assignment = Hilos::$db->accountOperationAssignments[$answer->assignmentId] ?? null;
+        $operation = Hilos::$db->accountOperations[$answer->operationId] ?? null;
+        if ($operation?->kind === AccountOperationKind::Merge) {
+            $this->logAgentWarning('Account merge answers await HIL-2000.');
+
+            return [];
+        }
+        if ($assignment === null || $operation === null || $assignment->operationId !== $operation->id
+            || $operation->kind !== AccountOperationKind::Erasure || $operation->finishedAt !== null
+            || $answer->stage !== $assignment->stage || $answer->stage !== $operation->stage) {
+            $this->logAgentWarning("Ignored account operation answer {$answer->operationId}/{$answer->stage}/{$answer->assignmentId}.");
+
+            return [];
+        }
+        if (in_array($answer->answer, [AccountOperationAnswerKind::Refused, AccountOperationAnswerKind::Failed], true)
+            || ($answer->answer === AccountOperationAnswerKind::Done
+                && Hilos::$db->accountOperationResults->byAssignment($assignment->id) === null)) {
+            $this->logAgentWarning("Unfinished account operation assignment {$assignment->id}: {$answer->answer->value}.");
+
+            return [];
+        }
+
+        try {
+            return AccountErasureCoordinator::afterAnswer($operation, $assignment, $answer, AccountErasureParticipantCatalog::installation());
+        } catch (HilosException $failure) {
+            throw $failure;
+        } catch (Throwable $failure) {
+            throw new AgentException('The account erasure transition failed.', previous: $failure);
+        }
+    }
+
+    /**
+     * The queue lasts only for this frame; durable duties and results live in the DB collections.
+     * The holder executes its own part inline, while every other owner receives its declared signal.
+     *
+     * @param list<AccountOperationAssignment> $assignments Ready duties selected by a coordinator transition
+     * @throws HilosException When an inline answer or a coordinator transition cannot be processed
+     */
+    private function askAccountOperation(array $assignments): void
+    {
+        while (($assignment = array_shift($assignments)) !== null) {
+            $ask = new AccountOperationAskSignalData(
+                $assignment->operationId,
+                $assignment->stage,
+                $assignment->id,
+                $assignment->owner->ownerIndex,
+            );
+            if ($assignment->owner->ownerType === HilosAgentType::HILOS_SESSIONS_LIBRARY) {
+                $answer = AccountOperationAsks::answer(
+                    $ask,
+                    fn (AccountOperationAssignment $a): AccountOperationResult => $this->eraseAccountSessionsPart($a->id),
+                    $this->getId(),
+                );
+                array_push($assignments, ...$this->afterAccountOperationAnswer($answer));
+
+                continue;
+            }
+            $type = $assignment->owner->ownerType;
+            $config = Hilos::appClass()::AGENTS[$type] ?? null;
+            $worker = $config === null ? null : AgentRegistry::workerClass($config);
+            if ($worker === null || $worker::ACCOUNT_OPERATION_SIGNAL === '') {
+                $this->logAgentWarning("No account operation signal for owner {$type}, assignment {$assignment->id}.");
+
+                continue;
+            }
+            $this->sendToAgent($worker::ACCOUNT_OPERATION_SIGNAL, $ask);
+        }
+    }
+
+    /**
      * The session holder's part of an account erasure, carried as its participant step (HIL-1943).
      *
      * Called by the holder in its own frame with the assignment the coordinator gave it. Before any
@@ -7376,7 +7487,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * the result in the same transaction. The tabs are told only once it commits
      * ({@see self::publishSessionState()}). A repeated call returns the saved result without doing
      * the work again.
-     * SCAFFOLD: no live caller until HIL-1950/HIL-1952.
+     * The coordinator runs this part inline in the holder's frame.
      *
      * @param int $assignmentId Assignment the coordinator gave the holder
      * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt

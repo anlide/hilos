@@ -2831,6 +2831,30 @@ final class HilosSignalConstants
      */
     public const string HILOS_ACCOUNT_MERGE_DONE = 'hilos_account_merge_done';
 
+    /** Account-operation participant → sessions library: answer one assignment. */
+    public const string HILOS_ACCOUNT_OPERATION_ANSWER = 'hilos_account_operation_answer';
+
+    /** Sessions library → personal agent: run an account-operation assignment, indexed by ownerIndex. */
+    public const string HILOS_USER_ACCOUNT_OPERATION_STEP = 'hilos_user_account_operation_step';
+
+    /** Sessions library → users library: run an account-operation assignment. */
+    public const string HILOS_USERS_LIBRARY_ACCOUNT_OPERATION_STEP = 'hilos_users_library_account_operation_step';
+
+    /** Sessions library → data export owner: run an account-operation assignment. */
+    public const string HILOS_DATA_EXPORT_ACCOUNT_OPERATION_STEP = 'hilos_data_export_account_operation_step';
+
+    /** Sessions library → legal owner: run an account-operation assignment. */
+    public const string HILOS_LEGAL_ACCOUNT_OPERATION_STEP = 'hilos_legal_account_operation_step';
+
+    /** Sessions library → mail owner: run an account-operation assignment, indexed by ownerIndex. */
+    public const string HILOS_MAIL_ACCOUNT_OPERATION_STEP = 'hilos_mail_account_operation_step';
+
+    /** Sessions library → SMS owner: run an account-operation assignment, indexed by ownerIndex. */
+    public const string HILOS_SMS_ACCOUNT_OPERATION_STEP = 'hilos_sms_account_operation_step';
+
+    /** Sessions library → push owner: run an account-operation assignment, indexed by ownerIndex. */
+    public const string HILOS_PUSH_ACCOUNT_OPERATION_STEP = 'hilos_push_account_operation_step';
+
     /**
      * Hilos user page → sessions library: set administrator rights (HIL-304).
      *
